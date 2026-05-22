@@ -13,7 +13,7 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
     AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EXTENDED_ATTRIBUTE_RANGE_END,
-    EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
+    EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, Extent, ExtentMode, ExtentValue,
     FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes,
     ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
     ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
@@ -958,7 +958,7 @@ impl<'a> ScannedStore<'a> {
             ))?;
         }
         let item = Item::new(
-            AllocatorKey { device_range: ExtentKey::new(device_offset..device_offset + len) },
+            AllocatorKey { device_range: Extent(device_offset..device_offset + len) },
             AllocatorValue::Abs { count: 1, owner_object_id: self.store_id },
         );
         let lower_bound: AllocatorKey = item.key.lower_bound_for_merge_into();
@@ -1105,17 +1105,14 @@ async fn scan_extents_and_directory_children<'a>(
                     ObjectKey {
                         object_id,
                         data:
-                            ObjectKeyData::Attribute(
-                                attribute_id,
-                                AttributeKey::Extent(ExtentKey { range }),
-                            ),
+                            ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent_key)),
                     },
                 value: ObjectValue::Extent(extent),
                 ..
             } => {
                 // Ignore deleted extents.
                 if let ExtentValue::Some { device_offset, mode, .. } = extent {
-                    let size = range.length().unwrap_or(0);
+                    let size = extent_key.length().unwrap_or(0);
                     allocated_bytes += size;
 
                     if previous_object_id != *object_id {
@@ -1138,7 +1135,7 @@ async fn scan_extents_and_directory_children<'a>(
                     scanned.process_extent(
                         *object_id,
                         *attribute_id,
-                        range,
+                        extent_key,
                         *device_offset,
                         bs,
                         is_overwrite_extent,

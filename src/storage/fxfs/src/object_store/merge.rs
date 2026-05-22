@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::extent_record::{ExtentKey, ExtentValue};
 use super::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty};
+use super::{Extent, ExtentValue};
 use crate::log::*;
 use crate::lsm_tree::merge::ItemOp::{Discard, Keep, Replace};
 use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
@@ -14,8 +14,8 @@ fn merge_extents(
     attribute_id: u64,
     left: &MergeLayerIterator<'_, ObjectKey, ObjectValue>,
     right: &MergeLayerIterator<'_, ObjectKey, ObjectValue>,
-    left_key: &ExtentKey,
-    right_key: &ExtentKey,
+    left_key: &Extent,
+    right_key: &Extent,
     left_value: &ExtentValue,
     right_value: &ExtentValue,
 ) -> MergeResult<ObjectKey, ObjectValue> {
@@ -40,7 +40,7 @@ fn merge_extents(
         }
     }
 
-    if left_key.range.end <= right_key.range.start {
+    if left_key.end <= right_key.start {
         // Extents don't overlap.
         return MergeResult::EmitLeft;
     }
@@ -63,32 +63,26 @@ fn merge_extents(
 
     if right.layer_index < left.layer_index {
         // Right layer is newer.
-        debug_assert!(left_key.range.start < right_key.range.start);
+        debug_assert!(left_key.start < right_key.start);
         return MergeResult::Other {
             emit: Some(
                 Item::new(
-                    ObjectKey::extent(
-                        object_id,
-                        attribute_id,
-                        left_key.range.start..right_key.range.start,
+                    ObjectKey::extent(object_id, attribute_id, left_key.start..right_key.start),
+                    ObjectValue::Extent(
+                        left_value.shrunk(
+                            left_key.end - left_key.start,
+                            right_key.start - left_key.start,
+                        ),
                     ),
-                    ObjectValue::Extent(left_value.shrunk(
-                        left_key.range.end - left_key.range.start,
-                        right_key.range.start - left_key.range.start,
-                    )),
                 )
                 .boxed(),
             ),
             left: Replace(
                 Item::new(
-                    ObjectKey::extent(
-                        object_id,
-                        attribute_id,
-                        right_key.range.start..left_key.range.end,
-                    ),
+                    ObjectKey::extent(object_id, attribute_id, right_key.start..left_key.end),
                     ObjectValue::Extent(left_value.offset_by(
-                        right_key.range.start - left_key.range.start,
-                        left_key.range.end - left_key.range.start,
+                        right_key.start - left_key.start,
+                        left_key.end - left_key.start,
                     )),
                 )
                 .boxed(),
@@ -97,7 +91,7 @@ fn merge_extents(
         };
     }
     // Left layer is newer.
-    if left_key.range.end >= right_key.range.end {
+    if left_key.end >= right_key.end {
         // The left key entirely contains the right key.
         return MergeResult::Other { emit: None, left: Keep, right: Discard };
     }
@@ -106,11 +100,11 @@ fn merge_extents(
         left: Keep,
         right: Replace(
             Item::new(
-                ObjectKey::extent(object_id, attribute_id, left_key.range.end..right_key.range.end),
-                ObjectValue::Extent(right_value.offset_by(
-                    left_key.range.end - right_key.range.start,
-                    right_key.range.end - right_key.range.start,
-                )),
+                ObjectKey::extent(object_id, attribute_id, left_key.end..right_key.end),
+                ObjectValue::Extent(
+                    right_value
+                        .offset_by(left_key.end - right_key.start, right_key.end - right_key.start),
+                ),
             )
             .boxed(),
         ),
@@ -121,16 +115,16 @@ fn merge_extents(
 fn merge_deleted_extents(
     object_id: u64,
     attribute_id: u64,
-    left_key: &ExtentKey,
-    right_key: &ExtentKey,
+    left_key: &Extent,
+    right_key: &Extent,
 ) -> MergeResult<ObjectKey, ObjectValue> {
-    if left_key.range.end < right_key.range.start {
+    if left_key.end < right_key.start {
         // The extents are not adjacent or overlapping.
         return MergeResult::EmitLeft;
     }
     // Both of these are deleted extents which are either adjacent or overlapping, which means
     // we can coalesce the records.
-    if left_key.range.end >= right_key.range.end {
+    if left_key.end >= right_key.end {
         // The left deletion eclipses the right, so just keep the left.
         return MergeResult::Other { emit: None, left: Keep, right: Discard };
     }
@@ -138,7 +132,7 @@ fn merge_deleted_extents(
         emit: None,
         left: Discard,
         right: Replace(Box::new(Item::new(
-            ObjectKey::extent(object_id, attribute_id, left_key.range.start..right_key.range.end),
+            ObjectKey::extent(object_id, attribute_id, left_key.start..right_key.end),
             ObjectValue::deleted_extent(),
         ))),
     }
@@ -1149,7 +1143,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_extent_complex_multi_layer() {
         use crate::lsm_tree::cache::NullCache;
-        use crate::object_store::extent_record::{ExtentKey, ExtentValue};
+        use crate::object_store::extent_record::ExtentValue;
         use crate::object_store::object_record::{
             AttributeKey, ObjectKey, ObjectKeyData, ObjectValue,
         };
@@ -1266,13 +1260,9 @@ mod tests {
                 for e in expected {
                     let crate::object_store::ItemRef { key, value, .. } =
                         iter.get().expect("get failed");
-                    if let ObjectKeyData::Attribute(
-                        aid,
-                        AttributeKey::Extent(ExtentKey { range }),
-                    ) = &key.data
-                    {
+                    if let ObjectKeyData::Attribute(aid, AttributeKey::Extent(extent)) = &key.data {
                         assert_eq!(aid, &attr_id);
-                        assert_eq!(range, &e.0);
+                        assert_eq!(&**extent, &e.0);
                     } else {
                         panic!("Unexpected key type");
                     }

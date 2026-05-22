@@ -257,7 +257,7 @@ impl SerializeKey for std::num::NonZeroU64 {
 mod tests {
     use super::*;
     use crate::lsm_tree::types::OrdUpperBound;
-    use crate::object_store::ExtentKey;
+    use crate::object_store::Extent;
     use crate::object_store::allocator::AllocatorKey;
     use crate::object_store::object_record::{ObjectKey, ObjectKeyData};
 
@@ -322,13 +322,13 @@ mod tests {
     #[test]
     fn test_allocator_key_order_matches_cmp_upper_bound() {
         let mut keys = Vec::new();
-        keys.push(AllocatorKey { device_range: ExtentKey::new(0..100 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(0..200 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(100 * 512..200 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(100 * 512..150 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(50 * 512..150 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(0..50 * 512) });
-        keys.push(AllocatorKey { device_range: ExtentKey::new(50 * 512..100 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(0..100 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(0..200 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(100 * 512..200 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(100 * 512..150 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(50 * 512..150 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(0..50 * 512) });
+        keys.push(AllocatorKey { device_range: Extent(50 * 512..100 * 512) });
 
         // Compare all pairs. We compare against `cmp_upper_bound` which is now a total order
         // for ranges, matching serialization order.

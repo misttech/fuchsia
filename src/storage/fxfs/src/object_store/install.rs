@@ -14,7 +14,7 @@ use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{Item, ItemRef, Layer, LayerIterator, LayerWriter as _};
 use crate::lsm_tree::{LayerSet, Query, layers_from_handles};
 use crate::object_store::extent_mapping_iterator::ExtentMappingIterator;
-use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
+use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ReservationUpdate;
 use crate::object_store::object_record::{
     AttributeKey, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
@@ -344,13 +344,13 @@ async fn create_metadata_ownership_layer(
                 // This is equivalent to the *logical* offset within `extents`. Thus we need to use
                 // the device range of the extent records as the logical range we want to remove.
                 let ObjectKey {
-                    data: ObjectKeyData::Attribute(_, AttributeKey::Extent(ExtentKey { range })),
+                    data: ObjectKeyData::Attribute(_, AttributeKey::Extent(extent)),
                     ..
                 } = item_ref.key
                 else {
                     bail!(FxfsError::Inconsistent);
                 };
-                let len = range.length()?;
+                let len = extent.length()?;
                 let item = Item {
                     key: ObjectKey::extent(
                         object_id.get(),

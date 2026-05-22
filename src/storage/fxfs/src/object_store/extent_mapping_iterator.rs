@@ -15,8 +15,8 @@
 
 use crate::errors::FxfsError;
 use crate::object_store::{
-    AttributeKey, ExtentKey, ExtentValue, FileExtent, ItemRef, LayerIterator, ObjectKey,
-    ObjectKeyData, ObjectValue,
+    AttributeKey, ExtentValue, FileExtent, ItemRef, LayerIterator, ObjectKey, ObjectKeyData,
+    ObjectValue,
 };
 use crate::range::RangeExt as _;
 use anyhow::{Context as _, Error};
@@ -208,7 +208,7 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectVa
 }
 
 /// Extension trait to more concisely obtain a reference to the range of an extent key.
-trait ExtentKeyExt {
+trait ExtentExt {
     /// Reference to the logical range for this extent. Will panic if key is not an extent.
     fn extent_range(&self) -> &Range<u64>;
 
@@ -216,27 +216,23 @@ trait ExtentKeyExt {
     fn extent_range_mut(&mut self) -> &mut Range<u64>;
 }
 
-impl ExtentKeyExt for ObjectKey {
+impl ExtentExt for ObjectKey {
     fn extent_range(&self) -> &Range<u64> {
-        let ObjectKey {
-            data: ObjectKeyData::Attribute(_, AttributeKey::Extent(ExtentKey { range })),
-            ..
-        } = self
+        let ObjectKey { data: ObjectKeyData::Attribute(_, AttributeKey::Extent(extent)), .. } =
+            self
         else {
             unreachable!()
         };
-        range
+        extent
     }
 
     fn extent_range_mut(&mut self) -> &mut Range<u64> {
-        let ObjectKey {
-            data: ObjectKeyData::Attribute(_, AttributeKey::Extent(ExtentKey { range })),
-            ..
-        } = self
+        let ObjectKey { data: ObjectKeyData::Attribute(_, AttributeKey::Extent(extent)), .. } =
+            self
         else {
             unreachable!()
         };
-        range
+        extent
     }
 }
 

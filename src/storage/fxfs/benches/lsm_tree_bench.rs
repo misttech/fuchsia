@@ -11,7 +11,7 @@ use fxfs::lsm_tree::merge::{MergeLayerIterator, MergeResult};
 use fxfs::lsm_tree::types::{Item, LayerIterator};
 use fxfs::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles};
 use fxfs::object_handle::ObjectHandle;
-use fxfs::object_store::ExtentKey;
+use fxfs::object_store::Extent;
 use fxfs::object_store::journal::CompactionYielder;
 use fxfs::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use fxfs::testing::fake_object::{FakeObject, FakeObjectHandle};
@@ -100,7 +100,7 @@ fn create_extent_tree(depth: u64, size: u64) -> LSMTree<ObjectKey, ObjectValue> 
                 object_id: 1,
                 data: ObjectKeyData::Attribute(
                     0,
-                    AttributeKey::Extent(ExtentKey::new(offset..offset + 1024)),
+                    AttributeKey::Extent(Extent(offset..offset + 1024)),
                 ),
             };
             let value = ObjectValue::Some;
@@ -207,7 +207,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
                         object_id: 1,
                         data: ObjectKeyData::Attribute(
                             0,
-                            AttributeKey::Extent(ExtentKey::new(
+                            AttributeKey::Extent(Extent(
                                 (size / 2 * 1024)..(size / 2 * 1024 + 1024),
                             )),
                         ),
@@ -223,7 +223,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
                                     AttributeKey::Extent(extent_key),
                                 ) = &item.key.data
                                 {
-                                    if extent_key.range.start >= query_end {
+                                    if extent_key.start >= query_end {
                                         break;
                                     }
                                 }

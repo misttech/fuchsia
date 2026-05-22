@@ -5,7 +5,7 @@
 use crate::lsm_tree::merge::ItemOp::{Discard, Keep, Replace};
 use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
 use crate::lsm_tree::types::{Item, LayerIterator};
-use crate::object_store::ExtentKey;
+use crate::object_store::Extent;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
 use anyhow::Error;
 use std::collections::HashSet;
@@ -40,7 +40,7 @@ pub fn merge(
                 right: Replace(
                     Item::new(
                         AllocatorKey {
-                            device_range: ExtentKey::new(
+                            device_range: Extent(
                                 left.key().device_range.start..right.key().device_range.end,
                             ),
                         },
@@ -70,7 +70,7 @@ pub fn merge(
                         Replace(
                             Item::new(
                                 AllocatorKey {
-                                    device_range: ExtentKey::new(
+                                    device_range: Extent(
                                         left.key().device_range.end..right.key().device_range.end,
                                     ),
                                 },
@@ -100,7 +100,7 @@ pub fn merge(
                         Replace(
                             Item::new(
                                 AllocatorKey {
-                                    device_range: ExtentKey::new(
+                                    device_range: Extent(
                                         right.key().device_range.end..left.key().device_range.end,
                                     ),
                                 },
@@ -126,7 +126,7 @@ pub fn merge(
         emit: Some(
             Item::new(
                 AllocatorKey {
-                    device_range: ExtentKey::new(
+                    device_range: Extent(
                         left.key().device_range.start..right.key().device_range.start,
                     ),
                 },
@@ -137,7 +137,7 @@ pub fn merge(
         left: Replace(
             Item::new(
                 AllocatorKey {
-                    device_range: ExtentKey::new(
+                    device_range: Extent(
                         right.key().device_range.start..left.key().device_range.end,
                     ),
                 },

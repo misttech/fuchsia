@@ -14,9 +14,8 @@ use crate::lsm_tree::types::{
     SortByU64, Value,
 };
 use crate::object_store::ProjectId;
-use crate::object_store::extent_record::{
-    ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
-};
+use crate::object_store::extent::{Extent, ExtentPartitionIterator};
+use crate::object_store::extent_record::{ExtentValue, ExtentValueV38};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use fprint::TypeFingerprint;
 use fxfs_crypto::{WrappedKey, WrappingKeyId};
@@ -177,7 +176,7 @@ pub type AttributeKey = AttributeKeyV32;
 pub enum AttributeKeyV32 {
     // Order here is important: code expects Attribute to precede Extent.
     Attribute,
-    Extent(ExtentKeyV32),
+    Extent(Extent),
 }
 
 /// ObjectKey is a key in the object store.
@@ -231,15 +230,12 @@ impl ObjectKey {
     pub fn extent(object_id: u64, attribute_id: u64, range: std::ops::Range<u64>) -> Self {
         Self {
             object_id,
-            data: ObjectKeyData::Attribute(
-                attribute_id,
-                AttributeKey::Extent(ExtentKey::new(range)),
-            ),
+            data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(Extent(range))),
         }
     }
 
     /// Creates an ObjectKey from an extent.
-    pub fn from_extent(object_id: u64, attribute_id: u64, extent: ExtentKey) -> Self {
+    pub fn from_extent(object_id: u64, attribute_id: u64, extent: Extent) -> Self {
         Self {
             object_id,
             data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
@@ -391,7 +387,7 @@ impl LayerKey for ObjectKey {
 
     fn next_key(&self) -> Option<Self> {
         match &self.data {
-            ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(ExtentKey { range })) => {
+            ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent)) => {
                 // This key comes before (or is equal to) any extent starting at or after the
                 // end of `self`. Searching for its `search_key` finds extents that end after
                 // the end of `self`.
@@ -399,7 +395,7 @@ impl LayerKey for ObjectKey {
                     object_id: self.object_id,
                     data: ObjectKeyData::Attribute(
                         *attr_id,
-                        AttributeKey::Extent(ExtentKey { range: 0..range.end + 1 }),
+                        AttributeKey::Extent(Extent(0..extent.end + 1)),
                     ),
                 })
             }
@@ -435,8 +431,7 @@ impl LayerKey for ObjectKey {
                 ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(left_key)),
                 ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(right_key)),
             ) if *left_attr_id == *right_attr_id => {
-                left_key.range.end > right_key.range.start
-                    && left_key.range.start < right_key.range.end
+                left_key.end > right_key.start && left_key.start < right_key.end
             }
             (a, b) => a == b,
         }
@@ -444,8 +439,8 @@ impl LayerKey for ObjectKey {
 }
 
 pub enum ObjectKeyFuzzyHashIterator {
-    ExtentKey(/* object_id */ u64, /* attribute_id */ u64, ExtentKeyPartitionIterator),
-    NotExtentKey(/* hash */ Option<u64>),
+    Extent(/* object_id */ u64, /* attribute_id */ u64, ExtentPartitionIterator),
+    NotExtent(/* hash */ Option<u64>),
 }
 
 impl Iterator for ObjectKeyFuzzyHashIterator {
@@ -453,11 +448,11 @@ impl Iterator for ObjectKeyFuzzyHashIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::ExtentKey(oid, attr_id, extent_keys) => extent_keys.next().map(|range| {
+            Self::Extent(oid, attr_id, extent_keys) => extent_keys.next().map(|range| {
                 let key = ObjectKey::extent(*oid, *attr_id, range);
                 crate::stable_hash::stable_hash(key)
             }),
-            Self::NotExtentKey(hash) => hash.take(),
+            Self::NotExtent(hash) => hash.take(),
         }
     }
 }
@@ -466,7 +461,7 @@ impl FuzzyHash for ObjectKey {
     fn fuzzy_hash(&self) -> impl Iterator<Item = u64> {
         match &self.data {
             ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent)) => {
-                ObjectKeyFuzzyHashIterator::ExtentKey(
+                ObjectKeyFuzzyHashIterator::Extent(
                     self.object_id,
                     *attr_id,
                     extent.fuzzy_hash_partition(),
@@ -474,7 +469,7 @@ impl FuzzyHash for ObjectKey {
             }
             _ => {
                 let hash = crate::stable_hash::stable_hash(self);
-                ObjectKeyFuzzyHashIterator::NotExtentKey(Some(hash))
+                ObjectKeyFuzzyHashIterator::NotExtent(Some(hash))
             }
         }
     }
@@ -1032,7 +1027,7 @@ impl ObjectItem {
 
 // If the given item describes an extent, unwraps it and returns the extent key/value.
 impl<'a> From<ItemRef<'a, ObjectKey, ObjectValue>>
-    for Option<(/*object-id*/ u64, /*attribute-id*/ u64, &'a ExtentKey, &'a ExtentValue)>
+    for Option<(/*object-id*/ u64, /*attribute-id*/ u64, &'a Extent, &'a ExtentValue)>
 {
     fn from(item: ItemRef<'a, ObjectKey, ObjectValue>) -> Self {
         match item {

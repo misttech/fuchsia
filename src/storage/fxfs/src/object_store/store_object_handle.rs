@@ -9,7 +9,7 @@ use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::MergerIterator;
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
-use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
+use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     AttributeKey, ExtendedAttributeValue, ObjectAttributes, ObjectItem, ObjectKey, ObjectKeyData,
@@ -20,7 +20,7 @@ use crate::object_store::transaction::{
     Transaction, lock_keys,
 };
 use crate::object_store::{
-    HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult, VOLUME_DATA_KEY_ID,
+    Extent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
@@ -437,7 +437,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         }
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
-        let key = ExtentKey { range };
+        let key = Extent(range);
         let lower_bound = ObjectKey::attribute(
             self.object_id(),
             attribute_id,
@@ -463,8 +463,8 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             }
             if let ExtentValue::Some { device_offset, .. } = value {
                 if let Some(overlap) = key.overlap(extent_key) {
-                    let range = device_offset + overlap.start - extent_key.range.start
-                        ..device_offset + overlap.end - extent_key.range.start;
+                    let range = device_offset + overlap.start - extent_key.start
+                        ..device_offset + overlap.end - extent_key.start;
                     ensure!(range.is_aligned(block_size), FxfsError::Inconsistent);
                     if trace {
                         info!(
@@ -1018,12 +1018,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 break;
             }
             ensure!(
-                extent_key.range.is_valid() && extent_key.range.is_aligned(block_size),
+                extent_key.is_valid() && extent_key.is_aligned(block_size),
                 FxfsError::Inconsistent
             );
-            if extent_key.range.start > offset {
+            if extent_key.start > offset {
                 // Zero everything up to the start of the extent.
-                let to_zero = min(extent_key.range.start - offset, buf.len() as u64) as usize;
+                let to_zero = min(extent_key.start - offset, buf.len() as u64) as usize;
                 buf.as_mut_slice()[..to_zero].fill(0);
                 buf = buf.subslice_mut(to_zero..);
                 if buf.is_empty() {
@@ -1033,10 +1033,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             }
 
             if let ExtentValue::Some { device_offset, key_id, mode } = extent_value {
-                let mut device_offset = device_offset + (offset - extent_key.range.start);
+                let mut device_offset = device_offset + (offset - extent_key.start);
                 let key_id = *key_id;
 
-                let to_copy = min(buf.len() - end_align, (extent_key.range.end - offset) as usize);
+                let to_copy = min(buf.len() - end_align, (extent_key.end - offset) as usize);
                 if to_copy > 0 {
                     if trace {
                         info!(
@@ -1044,7 +1044,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             oid = self.object_id(),
                             device_range:? = (device_offset..device_offset + to_copy as u64),
                             offset,
-                            range:? = extent_key.range,
+                            range:? = **extent_key,
                             block_size;
                             "R",
                         );
@@ -1052,9 +1052,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     let (mut head, tail) = buf.split_at_mut(to_copy);
                     let maybe_bitmap = match mode {
                         ExtentMode::OverwritePartial(bitmap) => {
-                            let mut read_bitmap = bitmap.clone().split_off(
-                                ((offset - extent_key.range.start) / block_size) as usize,
-                            );
+                            let mut read_bitmap = bitmap
+                                .clone()
+                                .split_off(((offset - extent_key.start) / block_size) as usize);
                             read_bitmap.truncate(to_copy / block_size as usize);
                             Some(read_bitmap)
                         }
@@ -1078,9 +1078,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
                 // Deal with end alignment by reading the existing contents into an alignment
                 // buffer.
-                if offset < extent_key.range.end && end_align > 0 {
+                if offset < extent_key.end && end_align > 0 {
                     if let ExtentMode::OverwritePartial(bitmap) = mode {
-                        let bitmap_offset = (offset - extent_key.range.start) / block_size;
+                        let bitmap_offset = (offset - extent_key.start) / block_size;
                         if !bitmap.get(bitmap_offset as usize).ok_or(FxfsError::Inconsistent)? {
                             // If this block isn't actually initialized, skip it.
                             break;
@@ -1102,7 +1102,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     buf = buf.subslice_mut(0..0);
                     break;
                 }
-            } else if extent_key.range.end >= offset + buf.len() as u64 {
+            } else if extent_key.end >= offset + buf.len() as u64 {
                 // Deleted extent covers remainder, so we're done.
                 break;
             }
@@ -1178,17 +1178,16 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     ..
                 }) if *object_id == self.object_id() && *attr_id == attribute_id => {
                     if let ExtentValue::Some { device_offset, key_id, mode } = extent_value {
-                        let offset = extent_key.range.start as usize;
+                        let offset = extent_key.start as usize;
                         buffer.as_mut_slice()[last_offset..offset].fill(0);
-                        let end = std::cmp::min(extent_key.range.end as usize, buffer.len());
+                        let end = std::cmp::min(extent_key.end as usize, buffer.len());
                         let maybe_bitmap = match mode {
                             ExtentMode::OverwritePartial(bitmap) => {
                                 // The caller has to adjust the bitmap if necessary, but we always
                                 // start from the beginning of any extent, so we only truncate.
                                 let mut read_bitmap = bitmap.clone();
                                 read_bitmap.truncate(
-                                    (end - extent_key.range.start as usize)
-                                        / self.block_size() as usize,
+                                    (end - extent_key.start as usize) / self.block_size() as usize,
                                 );
                                 Some(read_bitmap)
                             }
@@ -1196,7 +1195,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         };
                         self.read_and_decrypt(
                             *device_offset,
-                            extent_key.range.start,
+                            extent_key.start,
                             buffer.subslice_mut(offset..end as usize),
                             *key_id,
                         )
@@ -1530,7 +1529,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             .query(Query::FullRange(&ObjectKey::attribute(
                 self.object_id(),
                 attr_id,
-                AttributeKey::Extent(ExtentKey::search_key_from_offset(target_range.start)),
+                AttributeKey::Extent(Extent::search_key_from_offset(target_range.start)),
             )))
             .await?;
 
@@ -1541,10 +1540,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         ObjectKey {
                             object_id,
                             data:
-                                ObjectKeyData::Attribute(
-                                    attribute_id,
-                                    AttributeKey::Extent(ExtentKey { range }),
-                                ),
+                                ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                         },
                     value: ObjectValue::Extent(extent_value),
                     ..
@@ -1552,7 +1548,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     // If this extent ends before the target range starts (not possible on the
                     // first loop because of the query parameters but possible on further loops),
                     // advance until we find a the next one we care about.
-                    if range.end <= target_range.start {
+                    if extent.end <= target_range.start {
                         iter.advance().await?;
                         continue;
                     }
@@ -1562,7 +1558,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                 format!(
                                     "multi_overwrite failed: target_range ({}, {}) overlaps with \
                                 deleted extent found at ({}, {})",
-                                    target_range.start, target_range.end, range.start, range.end,
+                                    target_range.start, target_range.end, extent.start, extent.end,
                                 )
                             });
                         }
@@ -1570,12 +1566,12 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     };
                     // The ranges passed to this function should already by allocated, so
                     // extent records should exist for them.
-                    if range.start > target_range.start {
+                    if extent.start > target_range.start {
                         return Err(anyhow!(FxfsError::Inconsistent)).with_context(|| {
                             format!(
                                 "multi_overwrite failed: target range ({}, {}) starts before first \
                             extent found at ({}, {})",
-                                target_range.start, target_range.end, range.start, range.end,
+                                target_range.start, target_range.end, extent.start, extent.end,
                             )
                         });
                     }
@@ -1586,7 +1582,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                     "multi_overwrite failed: \
                             extent from ({}, {}) which overlaps target range ({}, {}) had the \
                             wrong extent mode",
-                                    range.start, range.end, target_range.start, target_range.end,
+                                    extent.start, extent.end, target_range.start, target_range.end,
                                 )
                             });
                         }
@@ -1596,10 +1592,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         ExtentMode::Overwrite => OverwriteBitmaps::None,
                     };
                     loop {
-                        let offset_within_extent = target_range.start - range.start;
+                        let offset_within_extent = target_range.start - extent.start;
                         let bitmap_offset = offset_within_extent / block_size;
                         let write_device_offset = *device_offset + offset_within_extent;
-                        let write_end = min(range.end, target_range.end);
+                        let write_end = min(extent.end, target_range.end);
                         let write_len = write_end - target_range.start;
                         let write_device_range =
                             write_device_offset..write_device_offset + write_len;
@@ -1650,7 +1646,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                 Some(next_range) => target_range = next_range.clone(),
                             }
                         }
-                        if range.end <= target_range.start {
+                        if extent.end <= target_range.start {
                             break;
                         }
                     }
@@ -1662,7 +1658,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                 ExtentMode::OverwritePartial(bitmap)
                             };
                             mutations.push(Mutation::merge_object(
-                                ObjectKey::extent(self.object_id(), attr_id, range.clone()),
+                                ObjectKey::extent(self.object_id(), attr_id, extent.clone().into()),
                                 ObjectValue::Extent(ExtentValue::new(*device_offset, mode, key_id)),
                             ))
                         }

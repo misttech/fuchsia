@@ -6,6 +6,7 @@ pub mod allocator;
 pub mod caching_object_handle;
 pub mod data_object_handle;
 pub mod directory;
+pub mod extent;
 mod extent_mapping_iterator;
 mod extent_record;
 mod flush;
@@ -76,9 +77,10 @@ use std::sync::{Arc, OnceLock, Weak};
 use storage_device::Device;
 use uuid::Uuid;
 
+pub use extent::Extent;
 pub use extent_record::{
-    BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey,
-    ExtentMode, ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID,
+    BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentMode,
+    ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID,
 };
 pub use object_record::{
     AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, FxfsKey,
@@ -1180,7 +1182,7 @@ impl ObjectStore {
                 .query(Query::FullRange(&ObjectKey::attribute(
                     obj_id,
                     DEFAULT_DATA_ATTRIBUTE_ID,
-                    AttributeKey::Extent(ExtentKey::search_key_from_offset(0)),
+                    AttributeKey::Extent(Extent::search_key_from_offset(0)),
                 )))
                 .await?;
             loop {
@@ -1190,10 +1192,7 @@ impl ObjectStore {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attribute_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                             },
                         value,
                         ..
@@ -1215,7 +1214,7 @@ impl ObjectStore {
                             | ObjectValue::Extent(ExtentValue::Some {
                                 mode: ExtentMode::Overwrite,
                                 ..
-                            }) => overwrite_ranges.push(range.clone()),
+                            }) => overwrite_ranges.push(extent.clone().into()),
                             _ => bail!(
                                 anyhow!(FxfsError::Inconsistent)
                                     .context("open_object: Expected extent")
@@ -1686,7 +1685,7 @@ impl ObjectStore {
             .query(Query::FullRange(&ObjectKey::from_extent(
                 object_id,
                 attribute_id,
-                ExtentKey::search_key_from_offset(aligned_offset),
+                Extent::search_key_from_offset(aligned_offset),
             )))
             .await?;
         let mut end = 0;
@@ -1709,16 +1708,16 @@ impl ObjectStore {
                     break;
                 }
                 if let (
-                    AttributeKey::Extent(ExtentKey { range }),
+                    AttributeKey::Extent(extent),
                     ObjectValue::Extent(ExtentValue::Some { device_offset, .. }),
                 ) = (attribute_key, item_ref.value)
                 {
-                    let start = std::cmp::max(range.start, aligned_offset);
-                    ensure!(start < range.end, FxfsError::Inconsistent);
+                    let start = std::cmp::max(extent.start, aligned_offset);
+                    ensure!(start < extent.end, FxfsError::Inconsistent);
                     let device_offset = device_offset
-                        .checked_add(start - range.start)
+                        .checked_add(start - extent.start)
                         .ok_or(FxfsError::Inconsistent)?;
-                    end = range.end;
+                    end = extent.end;
                     let len = end - start;
                     let device_range = device_offset..device_offset + len;
                     ensure!(device_range.is_aligned(block_size), FxfsError::Inconsistent);

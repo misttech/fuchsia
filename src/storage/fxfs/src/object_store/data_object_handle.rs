@@ -9,7 +9,7 @@ use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::{
     ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes, WriteObjectHandle,
 };
-use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
+use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     AttributeKey, DirType, FsverityMetadata, ObjectAttributes, ObjectItem, ObjectKey,
@@ -21,7 +21,7 @@ use crate::object_store::transaction::{
     Transaction, lock_keys,
 };
 use crate::object_store::{
-    DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, HandleOwner,
+    DEFAULT_DATA_ATTRIBUTE_ID, Extent, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, HandleOwner,
     RootDigest, StoreObjectHandle, TRANSACTION_MUTATION_THRESHOLD, TrimMode, TrimResult,
 };
 use crate::range::RangeExt;
@@ -391,7 +391,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     pub async fn check_unwritten_zero(&self, range: Range<u64>) -> Result<bool, Error> {
         let tree = &self.store().tree();
         let layer_set = tree.layer_set();
-        let key = ExtentKey { range };
+        let key = Extent(range);
         let lower_bound = ObjectKey::attribute(
             self.object_id(),
             self.attribute_id,
@@ -414,8 +414,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             if let ExtentValue::Some { mode, .. } = value {
                 if let Some(overlap) = key.overlap(extent_key) {
                     if let ExtentMode::OverwritePartial(bits) = mode {
-                        let starting_index =
-                            (overlap.start - extent_key.range.start) / self.block_size();
+                        let starting_index = (overlap.start - extent_key.start) / self.block_size();
                         for initialized in bits
                             .iter()
                             .skip(starting_index as usize)
@@ -658,7 +657,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             let offset_key = ObjectKey::attribute(
                 self.object_id(),
                 self.attribute_id(),
-                AttributeKey::Extent(ExtentKey::search_key_from_offset(new_range.start)),
+                AttributeKey::Extent(Extent::search_key_from_offset(new_range.start)),
             );
             let mut merger = layer_set.merger();
             let mut iter = merger.query(Query::FullRange(&offset_key)).await?;
@@ -682,13 +681,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     {
                         // If the start of this extent is beyond the end of the range we are
                         // allocating, we don't have any more work to do.
-                        if new_range.end <= extent_key.range.start {
+                        if new_range.end <= extent_key.start {
                             break;
                         }
                         // Add any prefix we might need to allocate.
-                        if new_range.start < extent_key.range.start {
-                            to_allocate.push(new_range.start..extent_key.range.start);
-                            new_range.start = extent_key.range.start;
+                        if new_range.start < extent_key.start {
+                            to_allocate.push(new_range.start..extent_key.start);
+                            new_range.start = extent_key.start;
                         }
                         let device_offset = match extent_value {
                             ExtentValue::None => {
@@ -702,8 +701,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             ExtentValue::Some { mode: ExtentMode::OverwritePartial(_), .. }
                             | ExtentValue::Some { mode: ExtentMode::Overwrite, .. } => {
                                 // If this extent is already in overwrite mode, we can skip it.
-                                if extent_key.range.end < new_range.end {
-                                    new_range.start = extent_key.range.end;
+                                if extent_key.end < new_range.end {
+                                    new_range.start = extent_key.end;
                                     iter.advance().await?;
                                     continue;
                                 } else {
@@ -715,11 +714,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         };
 
                         // Figure out how we have to break up the ranges.
-                        let device_offset =
-                            device_offset + (new_range.start - extent_key.range.start);
-                        if extent_key.range.end < new_range.end {
-                            to_switch.push((new_range.start..extent_key.range.end, device_offset));
-                            new_range.start = extent_key.range.end;
+                        let device_offset = device_offset + (new_range.start - extent_key.start);
+                        if extent_key.end < new_range.end {
+                            to_switch.push((new_range.start..extent_key.end, device_offset));
+                            new_range.start = extent_key.end;
                         } else {
                             to_switch.push((new_range.start..new_range.end, device_offset));
                             new_range.start = new_range.end;
@@ -856,7 +854,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let offset_key = ObjectKey::attribute(
             self.object_id(),
             self.attribute_id(),
-            AttributeKey::Extent(ExtentKey::search_key_from_offset(start_offset)),
+            AttributeKey::Extent(Extent::search_key_from_offset(start_offset)),
         );
         let mut merger = layer_set.merger();
         let mut iter = merger.query(Query::FullRange(&offset_key)).await?;
@@ -886,8 +884,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         }
                         break;
                     }
-                    ensure!(extent_key.range.is_aligned(block_size), FxfsError::Inconsistent);
-                    if extent_key.range.start > end {
+                    ensure!(extent_key.is_aligned(block_size), FxfsError::Inconsistent);
+                    if extent_key.start > end {
                         // If a previous extent has already been visited and we are tracking an
                         // allocated set, we are only interested in an extent where the range of the
                         // current extent follows immediately after the previous one.
@@ -895,7 +893,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             break;
                         } else {
                             // The gap between the previous `end` and this extent is not allocated
-                            end = extent_key.range.start;
+                            end = extent_key.start;
                             allocated = Some(false);
                             // Continue this iteration, except now the `end` is set to the end of
                             // the "previous" extent which is this gap between the start_offset
@@ -923,7 +921,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             allocated = Some(false);
                         }
                     }
-                    end = extent_key.range.end;
+                    end = extent_key.end;
                 }
                 // This occurs when there are no extents left
                 None => {
@@ -1021,7 +1019,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 .query(Query::FullRange(&ObjectKey::attribute(
                     self.object_id(),
                     self.attribute_id(),
-                    AttributeKey::Extent(ExtentKey::search_key_from_offset(offset)),
+                    AttributeKey::Extent(Extent::search_key_from_offset(offset)),
                 )))
                 .await?;
             let block_size = self.block_size();
@@ -1033,16 +1031,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attribute_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                             },
                         value: ObjectValue::Extent(ExtentValue::Some { .. }),
                         ..
                     }) if *object_id == self.object_id()
                         && *attribute_id == self.attribute_id()
-                        && range.end == offset =>
+                        && extent.end == offset =>
                     {
                         iter.advance().await?;
                         continue;
@@ -1052,16 +1047,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attribute_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                             },
                         value,
                         ..
                     }) if *object_id == self.object_id()
                         && *attribute_id == self.attribute_id()
-                        && range.start <= offset =>
+                        && extent.start <= offset =>
                     {
                         match value {
                             ObjectValue::Extent(ExtentValue::Some {
@@ -1070,11 +1062,12 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                                 ..
                             }) => {
                                 ensure!(
-                                    range.is_aligned(block_size) && device_offset % block_size == 0,
+                                    extent.is_aligned(block_size)
+                                        && device_offset % block_size == 0,
                                     FxfsError::Inconsistent
                                 );
-                                let offset_within_extent = offset - range.start;
-                                let remaining_length_of_extent = (range
+                                let offset_within_extent = offset - extent.start;
+                                let remaining_length_of_extent = (extent
                                     .end
                                     .checked_sub(offset)
                                     .ok_or(FxfsError::Inconsistent)?)
@@ -1092,8 +1085,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                                 bail!(
                                     "extent from ({},{}) which overlaps offset \
                                         {} has the wrong extent mode",
-                                    range.start,
-                                    range.end,
+                                    extent.start,
+                                    extent.end,
                                     offset
                                 )
                             }
@@ -1124,7 +1117,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                                         data:
                                             ObjectKeyData::Attribute(
                                                 attribute_id,
-                                                AttributeKey::Extent(ExtentKey { range }),
+                                                AttributeKey::Extent(extent),
                                             ),
                                     },
                                 ..
@@ -1132,9 +1125,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             {
                                 if *object_id == self.object_id()
                                     && *attribute_id == self.attribute_id()
-                                    && offset < range.start
+                                    && offset < extent.start
                                 {
-                                    let bytes_until_next_extent = range.start - offset;
+                                    let bytes_until_next_extent = extent.start - offset;
                                     bytes_to_allocate =
                                         min(bytes_to_allocate, bytes_until_next_extent);
                                 }
@@ -1325,7 +1318,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 .query(Query::FullRange(&ObjectKey::attribute(
                     self.object_id(),
                     self.attribute_id(),
-                    AttributeKey::Extent(ExtentKey::search_key_from_offset(aligned_old_size)),
+                    AttributeKey::Extent(Extent::search_key_from_offset(aligned_old_size)),
                 )))
                 .await?;
             if let Some(ItemRef {
@@ -1341,7 +1334,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             {
                 if *object_id == self.object_id() && *attribute_id == self.attribute_id() {
                     let device_offset = device_offset
-                        .checked_add(aligned_old_size - extent_key.range.start)
+                        .checked_add(aligned_old_size - extent_key.start)
                         .ok_or(FxfsError::Inconsistent)?;
                     ensure!(device_offset % block_size == 0, FxfsError::Inconsistent);
                     let mut buf = self.allocate_buffer(block_size as usize).await;
@@ -1395,7 +1388,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             .query(Query::FullRange(&ObjectKey::attribute(
                 self.object_id(),
                 self.attribute_id(),
-                AttributeKey::Extent(ExtentKey::search_key_from_offset(file_range.start)),
+                AttributeKey::Extent(Extent::search_key_from_offset(file_range.start)),
             )))
             .await?;
         let mut allocated = 0;
@@ -1409,31 +1402,28 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attribute_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                             },
                         value: ObjectValue::Extent(ExtentValue::Some { device_offset, .. }),
                         ..
                     }) if *object_id == self.object_id()
                         && *attribute_id == self.attribute_id()
-                        && range.start < file_range.end =>
+                        && extent.start < file_range.end =>
                     {
                         ensure!(
-                            range.is_valid()
-                                && range.is_aligned(block_size)
+                            extent.is_valid()
+                                && extent.is_aligned(block_size)
                                 && device_offset % block_size == 0,
                             FxfsError::Inconsistent
                         );
                         // If the start of the requested file_range overlaps with an existing extent...
-                        if range.start <= file_range.start {
+                        if extent.start <= file_range.start {
                             // Record the existing extent and move on.
                             let device_range = device_offset
-                                .checked_add(file_range.start - range.start)
+                                .checked_add(file_range.start - extent.start)
                                 .ok_or(FxfsError::Inconsistent)?
                                 ..device_offset
-                                    .checked_add(min(range.end, file_range.end) - range.start)
+                                    .checked_add(min(extent.end, file_range.end) - extent.start)
                                     .ok_or(FxfsError::Inconsistent)?;
                             file_range.start += device_range.end - device_range.start;
                             ranges.push(device_range);
@@ -1445,7 +1435,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         } else {
                             // There's nothing allocated between file_range.start and the beginning
                             // of this extent.
-                            break range.start;
+                            break extent.start;
                         }
                     }
                     // Case for deleted extents eclipsed by file_range.
@@ -1454,16 +1444,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attribute_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                             },
                         value: ObjectValue::Extent(ExtentValue::None),
                         ..
                     }) if *object_id == self.object_id()
                         && *attribute_id == self.attribute_id()
-                        && range.end < file_range.end =>
+                        && extent.end < file_range.end =>
                     {
                         iter.advance().await?;
                     }
@@ -1701,7 +1688,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             .query(Query::FullRange(&ObjectKey::attribute(
                 self.object_id(),
                 self.attribute_id(),
-                AttributeKey::Extent(ExtentKey::search_key_from_offset(0)),
+                AttributeKey::Extent(Extent::search_key_from_offset(0)),
             )))
             .await?;
         loop {
@@ -1711,16 +1698,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         ObjectKey {
                             object_id,
                             data:
-                                ObjectKeyData::Attribute(
-                                    attribute_id,
-                                    AttributeKey::Extent(ExtentKey { range }),
-                                ),
+                                ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                         },
                     value: ObjectValue::Extent(ExtentValue::Some { device_offset, .. }),
                     ..
                 }) if *object_id == self.object_id() && *attribute_id == self.attribute_id() => {
-                    let logical_offset = range.start;
-                    let device_range = *device_offset..*device_offset + range.length()?;
+                    let logical_offset = extent.start;
+                    let device_range = *device_offset..*device_offset + extent.length()?;
                     extents.push(FileExtent::new(logical_offset, device_range)?);
                 }
                 _ => break,
@@ -1756,10 +1740,7 @@ impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(
-                                        attr_id,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                    ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent)),
                             },
                         value: ObjectValue::Extent(ExtentValue::Some { mode, .. }),
                         ..
@@ -1767,7 +1748,7 @@ impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
                 ..
             }) if self.object_id() == *object_id && self.attribute_id() == *attr_id => match mode {
                 ExtentMode::Overwrite | ExtentMode::OverwritePartial(_) => {
-                    self.overwrite_ranges.apply_range(range.clone())
+                    self.overwrite_ranges.apply_range(extent.clone().into())
                 }
                 ExtentMode::Raw | ExtentMode::Cow(_) => (),
             },
@@ -1956,7 +1937,7 @@ mod tests {
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, ExtentKey,
+        AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, Extent,
         ExtentMode, ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, LockKey,
         NewChildStoreOptions, ObjectKeyData, ObjectStore, PosixAttributes, StoreOptions,
         TRANSACTION_MUTATION_THRESHOLD,
@@ -4189,7 +4170,7 @@ mod tests {
             .query(Query::FullRange(&ObjectKey::attribute(
                 obj.object_id(),
                 0,
-                AttributeKey::Extent(ExtentKey::search_key_from_offset(search_range.start)),
+                AttributeKey::Extent(Extent::search_key_from_offset(search_range.start)),
             )))
             .await
             .unwrap();
@@ -4200,19 +4181,16 @@ mod tests {
                         ObjectKey {
                             object_id,
                             data:
-                                ObjectKeyData::Attribute(
-                                    attribute_id,
-                                    AttributeKey::Extent(ExtentKey { range }),
-                                ),
+                                ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
                         },
                     value: ObjectValue::Extent(ExtentValue::Some { mode, .. }),
                     ..
                 }) if *object_id == obj.object_id() && *attribute_id == 0 => {
-                    if search_range.end <= range.start {
+                    if search_range.end <= extent.start {
                         break;
                     }
-                    let found_range = std::cmp::max(search_range.start, range.start)
-                        ..std::cmp::min(search_range.end, range.end);
+                    let found_range = std::cmp::max(search_range.start, extent.start)
+                        ..std::cmp::min(search_range.end, extent.end);
                     search_range.start = found_range.end;
                     modes.push((found_range, mode.clone()));
                     if search_range.start == search_range.end {

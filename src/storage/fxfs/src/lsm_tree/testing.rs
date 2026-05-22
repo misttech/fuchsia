@@ -17,7 +17,7 @@ use std::ops::Range;
 /// A test key that wraps a `Range<u64>`.
 ///
 /// This key is used across tests in `lsm_tree` to simulate range-based keys
-/// (like `ExtentKey` in production).
+/// (like `Extent` in production).
 ///
 /// Invariants:
 /// - `cmp_upper_bound` compares `end` first, then `start` (total ordering).

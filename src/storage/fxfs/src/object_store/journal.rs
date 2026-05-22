@@ -31,9 +31,7 @@ use crate::lsm_tree::types::Layer;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::data_object_handle::OverwriteOptions;
-use crate::object_store::extent_record::{
-    DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey, ExtentMode, ExtentValue,
-};
+use crate::object_store::extent_record::{DEFAULT_DATA_ATTRIBUTE_ID, ExtentMode, ExtentValue};
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
 use crate::object_store::journal::checksum_list::ChecksumList;
@@ -50,8 +48,8 @@ use crate::object_store::transaction::{
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation, lock_keys,
 };
 use crate::object_store::{
-    AssocObj, DataObjectHandle, HandleOptions, HandleOwner, INVALID_OBJECT_ID, Item, ItemRef,
-    NewChildStoreOptions, ObjectStore, ReservedId,
+    AssocObj, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID, Item,
+    ItemRef, NewChildStoreOptions, ObjectStore, ReservedId,
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down};
@@ -561,11 +559,7 @@ impl Journal {
                     Item {
                         key:
                             ObjectKey {
-                                data:
-                                    ObjectKeyData::Attribute(
-                                        _,
-                                        AttributeKey::Extent(ExtentKey { range }),
-                                    ),
+                                data: ObjectKeyData::Attribute(_, AttributeKey::Extent(extent)),
                                 ..
                             },
                         value: ObjectValue::Extent(ExtentValue::Some { device_offset, mode, .. }),
@@ -573,10 +567,10 @@ impl Journal {
                     },
                 ..
             }) => {
-                if range.is_empty() || !range.is_aligned(block_size) {
+                if extent.is_empty() || !extent.is_aligned(block_size) {
                     return false;
                 }
-                let len = range.length().unwrap();
+                let len = extent.length().unwrap();
                 if let ExtentMode::Cow(checksums) = mode {
                     if checksums.len() > 0 {
                         if len % checksums.len() as u64 != 0 {
@@ -681,7 +675,7 @@ impl Journal {
                 .seek(Bound::Included(&ObjectKey::attribute(
                     super_block.journal_object_id,
                     DEFAULT_DATA_ATTRIBUTE_ID,
-                    AttributeKey::Extent(ExtentKey::search_key_from_offset(round_down(
+                    AttributeKey::Extent(Extent::search_key_from_offset(round_down(
                         super_block.journal_checkpoint.file_offset,
                         BLOCK_SIZE,
                     ))),
@@ -694,14 +688,14 @@ impl Journal {
                         data:
                             ObjectKeyData::Attribute(
                                 DEFAULT_DATA_ATTRIBUTE_ID,
-                                AttributeKey::Extent(ExtentKey { range }),
+                                AttributeKey::Extent(extent),
                             ),
                         ..
                     },
                 ..
             }) = iter.get()
             {
-                range.start
+                extent.start
             } else {
                 0
             };
@@ -715,11 +709,11 @@ impl Journal {
                     Some((
                         object_id,
                         DEFAULT_DATA_ATTRIBUTE_ID,
-                        ExtentKey { range },
+                        extent,
                         ExtentValue::Some { device_offset, .. },
                     )) if object_id == super_block.journal_object_id => {
                         if let Some(end_offset) = handle.end_offset() {
-                            if range.start != end_offset {
+                            if extent.start != end_offset {
                                 bail!(anyhow!(FxfsError::Inconsistent).context(format!(
                                     "Unexpected journal extent {:?}, expected start: {}",
                                     item, end_offset
@@ -729,7 +723,7 @@ impl Journal {
                         handle.push_extent(
                             0, // We never discard extents from the root parent store.
                             *device_offset
-                                ..*device_offset + range.length().context("Invalid extent")?,
+                                ..*device_offset + extent.length().context("Invalid extent")?,
                         );
                         true
                     }
@@ -1130,9 +1124,7 @@ impl Journal {
                                                         data:
                                                             ObjectKeyData::Attribute(
                                                                 DEFAULT_DATA_ATTRIBUTE_ID,
-                                                                AttributeKey::Extent(ExtentKey {
-                                                                    range,
-                                                                }),
+                                                                AttributeKey::Extent(extent),
                                                             ),
                                                         ..
                                                     },
@@ -1153,12 +1145,12 @@ impl Journal {
                                             continue;
                                         }
                                         if let Some(end_offset) = handle.end_offset() {
-                                            if range.start != end_offset {
+                                            if extent.start != end_offset {
                                                 bail!(anyhow!(FxfsError::Inconsistent).context(
                                                     format!(
                                                         "Unexpected journal extent {:?} -> {}, \
                                                            expected start: {}",
-                                                        range, device_offset, end_offset,
+                                                        *extent, device_offset, end_offset,
                                                     )
                                                 ));
                                             }
@@ -1167,7 +1159,7 @@ impl Journal {
                                             checkpoint.file_offset,
                                             *device_offset
                                                 ..*device_offset
-                                                    + range.length().context("Invalid extent")?,
+                                                    + extent.length().context("Invalid extent")?,
                                         );
                                     }
                                 }
