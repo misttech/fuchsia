@@ -88,6 +88,15 @@ declare_args() {
                                         ]
                                       },
                                       {
+                                        bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
+                                            ninja = "rfcmeta"
+                                          },
+                                        ]
+                                      },
+                                      {
                                         bazel_label =
                                             "//tools/debug/covargs:covargs"
                                         copy_outputs = [
