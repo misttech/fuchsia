@@ -148,34 +148,32 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         //   received ACK.
         // Note: Here we use a similar approach as in appropriate byte counting
         // (RFC 3465) - We count how many bytes are now acked, then we use Eq. 1
-        // to calculate how many acked bytes are needed before we can increase
-        // our cwnd by 1 MSS. The increase rate is (target - cwnd)/cwnd segments
-        // per ACK which is the same as 1 segment per cwnd/(target - cwnd) ACKs.
-        // Because our cubic function is a monotonically increasing function,
-        // this method is slightly more aggressive - if we need N acks to
-        // increase our window by 1 MSS, then it would take the RFC method at
-        // least N acks to increase the same amount. This method is used in the
-        // original CUBIC paper[1], and it eliminates the need to use f32 for
-        // cwnd, which is a bit awkward especially because our unit is in bytes
-        // and it doesn't make much sense to have byte number not to be a whole
-        // number.
+        // to calculate how many acked bytes are needed to increase our cwnd
+        // by an even multiple of MSS. The increase rate is (target - cwnd)/cwnd
+        // segments per ACK. We can use the reciprocal of this rate to compute
+        // the number of ACKs per segment. Because our cubic function is a
+        // monotonically increasing function, this method is slightly more
+        // aggressive - if we need N acks to increase our window by 1 MSS, then
+        // it would take the RFC method at least N acks to increase the same
+        // amount. This method is used in the original CUBIC paper[1], and it
+        // eliminates the need to use f32 for cwnd, which is a bit awkward
+        // especially because our unit is in bytes and it doesn't make much
+        // sense to have byte number not to be a whole number.
         // [1]: (https://www.cs.princeton.edu/courses/archive/fall16/cos561/papers/Cubic08.pdf)
-
-        {
+        if target >= *cwnd {
+            let increase_rate = (target - *cwnd) as f32 / *cwnd as f32;
+            // The number of bytes to increase cwnd by.
+            let increase = (increase_rate * self.bytes_acked as f32) as u32;
+            // Limit the increase to ensure we don't exceed the cubic target.
+            let increase = increase.min(target - *cwnd);
+            // Round the increase down to the nearest whole SMSS.
             let mss = u32::from(*mss);
-            // `saturating_add` avoids overflow in `cwnd`. See https://fxbug.dev/327628809.
-            let increased_cwnd = cwnd.saturating_add(mss);
-            if target >= increased_cwnd {
-                // Ensure the divisor is at least `mss` in case `target` and `cwnd`
-                // are both u32::MAX to avoid divide-by-zero.
-                let divisor = (target - *cwnd).max(mss);
-                let to_subtract_from_bytes_acked = *cwnd / divisor * mss;
-                // And the # of acked bytes is at least the required amount of bytes for
-                // increasing 1 MSS.
-                if self.bytes_acked >= to_subtract_from_bytes_acked {
-                    self.bytes_acked -= to_subtract_from_bytes_acked;
-                    *cwnd = increased_cwnd;
-                }
+            let increase = (increase / mss) * mss;
+            if increase > 0 {
+                // `saturating_add` avoids overflow in `cwnd`. See https://fxbug.dev/327628809.
+                *cwnd = cwnd.saturating_add(increase);
+                let to_subtract_from_bytes_acked = (increase as f32 / increase_rate) as u32;
+                self.bytes_acked = self.bytes_acked.saturating_sub(to_subtract_from_bytes_acked);
             }
         }
 
@@ -275,17 +273,24 @@ mod tests {
     // congestion avoidance with the convex region which grows pretty fast, also
     // the theoretical estimation is an approximation already. The theoretical
     // value is included in the name for each case.
+    //
+    // NB: Skip the tests with a loss_rate_reciprocal of 100_000_000 as they
+    // take too long to run.
     #[test_case(Duration::from_millis(100), 100 => 11; "rtt=0.1 p=0.01 Wavg=12")]
     #[test_case(Duration::from_millis(100), 1_000 => 38; "rtt=0.1 p=0.001 Wavg=38")]
-    #[test_case(Duration::from_millis(100), 10_000 => 186; "rtt=0.1 p=0.0001 Wavg=187")]
-    #[test_case(Duration::from_millis(100), 100_000 => 1078; "rtt=0.1 p=0.00001 Wavg=1054")]
+    #[test_case(Duration::from_millis(100), 10_000 => 187; "rtt=0.1 p=0.0001 Wavg=187")]
+    #[test_case(Duration::from_millis(100), 100_000 => 1058; "rtt=0.1 p=0.00001 Wavg=1054")]
+    #[test_case(Duration::from_millis(100), 1_000_000 => 5939; "rtt=0.1 p=0.000001 Wavg=5926")]
+    #[test_case(Duration::from_millis(100), 10_000_000 => 33465; "rtt=0.1 p=0.0000001 Wavg=33325")]
     #[test_case(Duration::from_millis(10), 100 => 11; "rtt=0.01 p=0.01 Wavg=12")]
     #[test_case(Duration::from_millis(10), 1_000 => 37; "rtt=0.01 p=0.001 Wavg=38")]
     #[test_case(Duration::from_millis(10), 10_000 => 121; "rtt=0.01 p=0.0001 Wavg=120")]
-    #[test_case(Duration::from_millis(10), 100_000 => 384; "rtt=0.01 p=0.00001 Wavg=379")]
-    #[test_case(Duration::from_millis(10), 1_000_000 => 1276; "rtt=0.01 p=0.000001 Wavg=1200")]
+    #[test_case(Duration::from_millis(10), 100_000 => 386; "rtt=0.01 p=0.00001 Wavg=379")]
+    #[test_case(Duration::from_millis(10), 1_000_000 => 1262; "rtt=0.01 p=0.000001 Wavg=1200")]
+    #[test_case(Duration::from_millis(10), 10_000_000 => 5953; "rtt=0.01 p=0.0000001 Wavg=5926")]
     fn average_window_size(rtt: Duration, loss_rate_reciprocal: u32) -> u32 {
-        const ROUND_TRIPS: u32 = 100_000;
+        // Run the test long enough to experience 5 loss events.
+        let round_trips = loss_rate_reciprocal * 5;
 
         // The theoretical predictions do not consider fast convergence,
         // disable it.
@@ -298,26 +303,29 @@ mod tests {
 
         let mut clock = FakeInstantCtx::default();
 
-        let mut avg_pkts = 0.0f32;
+        let mut avg_pkts = 0.0f64;
         let mut ack_cnt = 0;
 
         // We simulate a deterministic loss model, i.e., for loss_rate p, we
         // drop one packet for every 1/p packets.
-        for _ in 0..ROUND_TRIPS {
+        for _ in 0..round_trips {
             let cwnd = params.rounded_cwnd().cwnd();
             if ack_cnt >= loss_rate_reciprocal {
                 ack_cnt -= loss_rate_reciprocal;
                 cubic.on_loss_detected(&mut params);
             } else {
                 ack_cnt += cwnd / u32::from(params.mss);
-                // We will get at least one ack for every two segments we send.
-                for _ in 0..u32::max(cwnd / u32::from(params.mss) / 2, 1) {
-                    let bytes_acked = 2 * u32::from(params.mss);
-                    cubic.on_ack_u32(&mut params, bytes_acked, clock.now(), rtt);
-                }
+                // On a true TCP connection, we'd get at least one ack for every
+                // two segments. However, for the purpose of our simulation, we
+                // pretend that a singular ACK arrives that ACKs all the sent
+                // bytes (i.e. the whole `cwnd`). This allows us to speed up the
+                // simulation, without changing the underlying math.
+                cubic.on_ack_u32(&mut params, cwnd, clock.now(), rtt);
             }
             clock.sleep(rtt);
-            avg_pkts += (cwnd / u32::from(params.mss)) as f32 / ROUND_TRIPS as f32;
+            // NB: Use f64, as f32 looses precision on the test cases with a
+            // large number of round trips.
+            avg_pkts += (cwnd as f64 / u32::from(params.mss) as f64) as f64 / round_trips as f64;
         }
         avg_pkts as u32
     }
