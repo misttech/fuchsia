@@ -113,42 +113,18 @@ impl<K: zx::InterruptKind> AmlSaradcDevice<K> {
             });
 
             // Set channel list to only channel zero
-            adc_regs.chan_list_mut().write({
-                let mut reg = ChanList::default();
-                reg.set_val(0x00000000);
-                reg
-            });
+            adc_regs.chan_list_mut().write(ChanList(0x00000000));
             // Disable averaging modes
-            adc_regs.avg_cntl_mut().write({
-                let mut reg = AvgCntl::default();
-                reg.set_val(0x00000000);
-                reg
-            });
+            adc_regs.avg_cntl_mut().write(AvgCntl(0x00000000));
             adc_regs.reg3_mut().write({
                 let mut reg = Reg3::default();
                 reg.set_val(0x9388000a);
                 reg
             });
-            adc_regs.delay_mut().write({
-                let mut reg = Delay::default();
-                reg.set_val(0x010a000a);
-                reg
-            });
-            adc_regs.aux_sw_mut().write({
-                let mut reg = AuxSw::default();
-                reg.set_val(0x03eb1a0c);
-                reg
-            });
-            adc_regs.chan_10_sw_mut().write({
-                let mut reg = Chan10Sw::default();
-                reg.set_val(0x008c000c);
-                reg
-            });
-            adc_regs.detect_idle_sw_mut().write({
-                let mut reg = DetectIdleSw::default();
-                reg.set_val(0x000c000c);
-                reg
-            });
+            adc_regs.delay_mut().write(Delay(0x010a000a));
+            adc_regs.aux_sw_mut().write(AuxSw(0x03eb1a0c));
+            adc_regs.chan_10_sw_mut().write(Chan10Sw(0x008c000c));
+            adc_regs.detect_idle_sw_mut().write(DetectIdleSw(0x000c000c));
 
             // Disable ring counter (not used on g12)
             adc_regs.reg3_mut().update(|reg| {
@@ -161,11 +137,7 @@ impl<K: zx::InterruptKind> AmlSaradcDevice<K> {
                 reg.set_rsv1(true);
             });
 
-            adc_regs.reg13_mut().write({
-                let mut reg = Reg13::default();
-                reg.set_val(0x00002000);
-                reg
-            });
+            adc_regs.reg13_mut().write(Reg13(0x00002000));
         }
 
         self.set_clock(CLK_SRC_OSCIN, 20);
@@ -184,17 +156,11 @@ impl<K: zx::InterruptKind> AmlSaradcDevice<K> {
 
         {
             let adc_regs = &mut self.adc_regs;
-            adc_regs.chan_list_mut().write({
-                let mut reg = ChanList::default();
-                reg.set_val(channel as u32);
-                reg
-            });
+            adc_regs.chan_list_mut().write(ChanList(channel as u32));
 
-            adc_regs.detect_idle_sw_mut().write({
-                let mut reg = DetectIdleSw::default();
-                reg.set_val(0x000c000c | ((channel as u32) << 23) | ((channel as u32) << 7));
-                reg
-            });
+            adc_regs.detect_idle_sw_mut().write(DetectIdleSw(
+                0x000c000c | ((channel as u32) << 23) | ((channel as u32) << 7),
+            ));
 
             adc_regs.reg0_mut().update(|reg| {
                 reg.set_sampling_enable(true);
@@ -210,7 +176,7 @@ impl<K: zx::InterruptKind> AmlSaradcDevice<K> {
         let mut interrupt = std::pin::pin!(fasync::OnInterrupt::new(irq_clone));
         let _ = interrupt.next().await;
 
-        let value = self.adc_regs.fifo_rd().read().val();
+        let value = self.adc_regs.fifo_rd().read().value();
         let result = (value >> 2) & 0x3ff;
 
         self.stop();

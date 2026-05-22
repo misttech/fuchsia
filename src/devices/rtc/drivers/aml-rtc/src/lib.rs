@@ -21,36 +21,32 @@ use std::sync::Arc;
 use zx::Status;
 
 register! {
-    RtcCtrl, u32, 0x00, RW, {
+    pub struct RtcCtrl(u32) @ 0x00, RW {
         pub bool, osc_sel, set_osc_sel: 8;
         pub bool, enable, set_enable: 12;
     }
 }
 
 register! {
-    RtcCounter, u32, 0x04, RW, {
-        pub val, set_val: 31, 0;
-    }
+    pub struct RtcCounter(u32) @ 0x04, RW;
 }
 
 register! {
-    OscinCtrl0, u32, 0x28, RW, {
+    pub struct OscinCtrl0(u32) @ 0x28, RW {
         pub freq_out_select, set_freq_out_select: 29, 28;
         pub bool, clk_in_gate_en, set_clk_in_gate_en: 31;
     }
 }
 
 register! {
-    OscinCtrl1, u32, 0x2C, RW, {
+    pub struct OscinCtrl1(u32) @ 0x2C, RW {
         pub clk_div_m0, set_clk_div_m0: 11, 0;
         pub clk_div_m1, set_clk_div_m1: 23, 12;
     }
 }
 
 register! {
-    RtcRealTime, u32, 0x34, RW, {
-        pub val, set_val: 31, 0;
-    }
+    pub struct RtcRealTime(u32) @ 0x34, RW;
 }
 
 register_block! {
@@ -69,7 +65,7 @@ struct Registers {
 
 impl Registers {
     fn get_rtc(&mut self) -> frtc::Time {
-        let raw_seconds = self.regs.real_time().read().val();
+        let raw_seconds = self.regs.real_time().read().value();
         seconds_to_rtc(raw_seconds as u64)
     }
 
@@ -77,8 +73,7 @@ impl Registers {
         if !is_rtc_valid(&rtc) {
             return Err(Status::OUT_OF_RANGE);
         }
-        let mut counter = RtcCounter(0);
-        counter.set_val(seconds_since_epoch(&rtc) as u32);
+        let counter = RtcCounter(seconds_since_epoch(&rtc) as u32);
         self.regs.counter_mut().write(counter);
         Ok(())
     }
