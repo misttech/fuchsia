@@ -17,22 +17,27 @@ use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use delivery_blob::compression::{CompressionAlgorithm, ThreadLocalDecompressor};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
-use fidl_fuchsia_mem::Buffer;
+use fidl_fuchsia_mem::Buffer as MemBuffer;
 use fuchsia_async::epoch::Epoch;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
 use futures::try_join;
+use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
+use fxfs::lock_keys;
 use fxfs::log::*;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle};
-use fxfs::object_store::{DataObjectHandle, ObjectDescriptor};
+use fxfs::object_store::transaction::LockKey;
+use fxfs::object_store::{
+    DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, ObjectDescriptor, StoreObjectHandle,
+};
 use fxfs::round::{round_down, round_up};
 use fxfs_macros::ToWeakNode;
 use std::num::NonZero;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use storage_device::buffer;
+use storage_device::buffer::{Buffer, BufferFuture, MutableBufferRef};
 use zx::Status;
 
 // When the top bit of the open count is set, it means the file has been deleted and when the count
@@ -43,25 +48,52 @@ const PURGED: usize = 1 << (usize::BITS - 1);
 /// Represents an immutable blob stored on Fxfs with associated an merkle tree.
 #[derive(ToWeakNode)]
 pub struct FxBlob {
-    handle: DataObjectHandle<FxVolume>,
+    handle: StoreObjectHandle<FxVolume>,
     vmo: zx::Vmo,
     open_count: AtomicUsize,
     merkle_root: Hash,
     merkle_verifier: ReadSizedMerkleVerifier,
     compression_info: Option<CompressionInfo>,
     uncompressed_size: u64, // always set.
+    stored_size: u64,
     pager_packet_receiver_registration: Arc<PagerPacketReceiverRegistration<Self>>,
     chunks_supplied: AtomicBitVec,
 }
 
+// Fuchsia can have many open blobs at once. The size of FxBlob is important.
+static_assertions::const_assert!(size_of::<FxBlob>() <= 192);
+
 impl FxBlob {
-    pub fn new(
-        handle: DataObjectHandle<FxVolume>,
+    pub async fn new(
+        handle: StoreObjectHandle<FxVolume>,
         merkle_root: Hash,
-        merkle_verifier: MerkleVerifier,
-        compression_info: Option<CompressionInfo>,
-        uncompressed_size: u64,
     ) -> Result<Arc<Self>, Error> {
+        let stored_size = handle
+            .store()
+            .get_attribute_size(handle.object_id(), DEFAULT_DATA_ATTRIBUTE_ID)
+            .await?;
+        let metadata = BlobMetadata::read_from(&handle).await?;
+        let (uncompressed_size, compression_info) = match &metadata.format {
+            BlobFormat::Uncompressed => (stored_size, None),
+            BlobFormat::ChunkedZstd { uncompressed_size, chunk_size, compressed_offsets } => (
+                *uncompressed_size,
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    compressed_offsets,
+                    CompressionAlgorithm::Zstd,
+                )?),
+            ),
+            BlobFormat::ChunkedLz4 { uncompressed_size, chunk_size, compressed_offsets } => (
+                *uncompressed_size,
+                Some(CompressionInfo::new(
+                    *chunk_size,
+                    compressed_offsets,
+                    CompressionAlgorithm::Lz4,
+                )?),
+            ),
+        };
+        let merkle_verifier = metadata.into_merkle_verifier(merkle_root)?;
+
         let min_chunk_size = min_chunk_size(&compression_info);
         let merkle_verifier =
             ReadSizedMerkleVerifier::new(merkle_verifier, min_chunk_size as usize)?;
@@ -82,6 +114,7 @@ impl FxBlob {
                 merkle_verifier,
                 compression_info,
                 uncompressed_size,
+                stored_size,
                 pager_packet_receiver_registration: Arc::new(pager_packet_receiver_registration),
                 chunks_supplied,
             }
@@ -103,15 +136,17 @@ impl FxBlob {
         // chunks supplied bits isn't important.
         let chunks_supplied = AtomicBitVec::new(self.uncompressed_size.div_ceil(min_chunk_size));
         let vmo = self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let stored_size = handle.get_size();
 
         let new_blob = Arc::new(Self {
-            handle,
+            handle: handle.into_store_object_handle(),
             vmo,
             open_count: AtomicUsize::new(0),
             merkle_root: self.merkle_root,
             merkle_verifier,
             compression_info,
             uncompressed_size: self.uncompressed_size,
+            stored_size,
             pager_packet_receiver_registration: self.pager_packet_receiver_registration.clone(),
             chunks_supplied,
         });
@@ -155,6 +190,23 @@ impl FxBlob {
                 .blob_resupplied_count()
                 .increment(supplied_count, Ordering::Relaxed);
         }
+    }
+
+    fn allocate_buffer(&self, size: u64) -> BufferFuture<'_> {
+        self.handle.store().device().allocate_buffer(size as usize)
+    }
+
+    async fn read_blocks(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<(), Error> {
+        let fs = self.handle.store().filesystem();
+        let guard = fs
+            .lock_manager()
+            .read_lock(lock_keys![LockKey::object_attribute(
+                self.handle.store().store_object_id(),
+                self.handle.object_id(),
+                DEFAULT_DATA_ATTRIBUTE_ID,
+            )])
+            .await;
+        self.handle.read_unchecked(DEFAULT_DATA_ATTRIBUTE_ID, offset, buf, &guard).await
     }
 }
 
@@ -275,61 +327,52 @@ impl PagerBacked for FxBlob {
         self.uncompressed_size
     }
 
-    async fn aligned_read(&self, range: Range<u64>) -> Result<buffer::Buffer<'_>, Error> {
+    async fn aligned_read(&self, range: Range<u64>) -> Result<Buffer<'_>, Error> {
+        // The vmo shouldn't have full pages beyond the end of the blob so we shouldn't be getting
+        // page faults for ranges beyond the end of the blob.
+        ensure!(range.start < self.uncompressed_size, FxfsError::InvalidArgs);
         self.record_page_fault_metric(&range);
 
-        let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
-        let read = match &self.compression_info {
-            None => self.handle.read(range.start, buffer.as_mut()).await?,
+        let mut buffer = self.allocate_buffer(range.end - range.start).await;
+        let unaligned_bytes =
+            (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
+        match &self.compression_info {
+            None => self.read_blocks(range.start, buffer.as_mut()).await?,
             Some(compression_info) => {
                 let compressed_offsets =
                     match compression_info.compressed_range_for_uncompressed_range(&range)? {
-                        (start, None) => start..self.handle.get_size(),
+                        (start, None) => start..self.stored_size,
                         (start, Some(end)) => start..end.get(),
                     };
                 let bs = self.handle.block_size();
                 let aligned = round_down(compressed_offsets.start, bs)
                     ..round_up(compressed_offsets.end, bs).unwrap();
-                let mut compressed_buf =
-                    self.handle.allocate_buffer((aligned.end - aligned.start) as usize).await;
+                let mut compressed_buf = self.allocate_buffer(aligned.end - aligned.start).await;
 
                 let mut decompression_errors = 0;
-                let len = (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
                 loop {
-                    let (read, _) = try_join!(
-                        self.handle.read(aligned.start, compressed_buf.as_mut()),
-                        async {
-                            buffer
-                                .allocator()
-                                .buffer_source()
-                                .commit_range(buffer.range())
-                                .map_err(|e| e.into())
-                        }
-                    )
+                    try_join!(self.read_blocks(aligned.start, compressed_buf.as_mut()), async {
+                        buffer
+                            .allocator()
+                            .buffer_source()
+                            .commit_range(buffer.range())
+                            .map_err(|e| e.into())
+                    })
                     .with_context(|| {
                         format!(
                             "Failed to read compressed range {:?}, len {}",
-                            aligned,
-                            self.handle.get_size()
+                            aligned, self.stored_size
                         )
                     })?;
                     let compressed_buf_range = (compressed_offsets.start - aligned.start) as usize
                         ..(compressed_offsets.end - aligned.start) as usize;
-                    ensure!(
-                        read >= compressed_buf_range.end - compressed_buf_range.start,
-                        anyhow!(FxfsError::Inconsistent).context(format!(
-                            "Unexpected EOF, read {}, but expected {}",
-                            read,
-                            compressed_buf_range.end - compressed_buf_range.start,
-                        ))
-                    );
 
                     let buf = buffer.as_mut_slice();
                     let decompression_result = {
-                        fxfs_trace::duration!("blob-decompress", "len" => len);
+                        fxfs_trace::duration!("blob-decompress", "len" => unaligned_bytes);
                         compression_info.decompress(
                             &compressed_buf.as_slice()[compressed_buf_range],
-                            &mut buf[..len],
+                            &mut buf[..unaligned_bytes],
                             range.start,
                         )
                     };
@@ -358,17 +401,17 @@ impl PagerBacked for FxBlob {
                 if decompression_errors > 0 {
                     info!("Read succeeded on second attempt");
                 }
-                len
             }
         };
         {
             // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
             // point we can delete this.
-            fxfs_trace::duration!("blob-verify", "len" => read);
-            self.merkle_verifier.verify(range.start as usize, &buffer.as_slice()[..read])?;
+            fxfs_trace::duration!("blob-verify", "len" => unaligned_bytes);
+            self.merkle_verifier
+                .verify(range.start as usize, &buffer.as_slice()[..unaligned_bytes])?;
         }
         // Zero the tail.
-        buffer.as_mut_slice()[read..].fill(0);
+        buffer.as_mut_slice()[unaligned_bytes..].fill(0);
         Ok(buffer)
     }
 }
@@ -578,7 +621,7 @@ async fn record_decompression_error_crash_report(
                     ]),
                     attachments: Some(vec![Attachment {
                         key: "fxfs_compressed_data".to_string(),
-                        value: Buffer { vmo, size },
+                        value: MemBuffer { vmo, size },
                     }]),
                     ..Default::default()
                 })

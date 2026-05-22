@@ -971,7 +971,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// This is because, just looking at the extents, we can't tell the difference between the file
     /// actually ending and there just being a section at the end with no data (since attributes
     /// are sparse).
-    pub(super) async fn read_unchecked(
+    pub async fn read_unchecked(
         &self,
         attribute_id: u64,
         mut offset: u64,

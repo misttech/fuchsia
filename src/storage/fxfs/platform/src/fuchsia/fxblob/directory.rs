@@ -7,12 +7,11 @@
 
 use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
-use crate::fuchsia::fxblob::blob::{CompressionInfo, FxBlob};
+use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
 use anyhow::{Context as _, Error, anyhow, ensure};
-use delivery_blob::compression::CompressionAlgorithm;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ServerEnd, create_request_stream};
 use fidl_fuchsia_fxfs::{
     BlobCreatorMarker, BlobCreatorRequest, BlobCreatorRequestStream, BlobReaderMarker,
@@ -21,11 +20,9 @@ use fidl_fuchsia_fxfs::{
 use fidl_fuchsia_io::{self as fio, FilesystemInfo, NodeMarker, WatchMask};
 use fuchsia_hash::Hash;
 use futures::TryStreamExt;
-use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
-use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
-use fxfs::object_store::{self, HandleOptions, ObjectDescriptor, ObjectStore};
+use fxfs::object_store::{self, HandleOptions, ObjectDescriptor, ObjectStore, StoreObjectHandle};
 use fxfs_macros::ToWeakNode;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::str::FromStr;
@@ -223,46 +220,14 @@ impl BlobDirectory {
                 Ok(blob as Arc<dyn FxNode>)
             }
             GetResult::Placeholder(placeholder) => {
-                let object =
-                    ObjectStore::open_object(volume, object_id, HandleOptions::default(), None)
-                        .await?;
-                let metadata = BlobMetadata::read_from(&object).await?;
-                let (uncompressed_size, compression_info) = match &metadata.format {
-                    BlobFormat::Uncompressed => (object.get_size(), None),
-                    BlobFormat::ChunkedZstd {
-                        uncompressed_size,
-                        chunk_size,
-                        compressed_offsets,
-                    } => (
-                        *uncompressed_size,
-                        Some(CompressionInfo::new(
-                            *chunk_size,
-                            compressed_offsets,
-                            CompressionAlgorithm::Zstd,
-                        )?),
-                    ),
-                    BlobFormat::ChunkedLz4 {
-                        uncompressed_size,
-                        chunk_size,
-                        compressed_offsets,
-                    } => (
-                        *uncompressed_size,
-                        Some(CompressionInfo::new(
-                            *chunk_size,
-                            compressed_offsets,
-                            CompressionAlgorithm::Lz4,
-                        )?),
-                    ),
-                };
-                let merkle_verifier = metadata.into_merkle_verifier(id.hash)?;
-
-                let node = FxBlob::new(
-                    object,
-                    id.hash,
-                    merkle_verifier,
-                    compression_info,
-                    uncompressed_size,
-                )? as Arc<dyn FxNode>;
+                let handle = StoreObjectHandle::new(
+                    volume.clone(),
+                    object_id,
+                    /*permanent_keys=*/ false,
+                    HandleOptions::default(),
+                    /*trace=*/ false,
+                );
+                let node = FxBlob::new(handle, id.hash).await? as Arc<dyn FxNode>;
                 placeholder.commit(&node);
                 Ok(node)
             }

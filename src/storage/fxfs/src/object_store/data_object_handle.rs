@@ -194,6 +194,11 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.attribute_id
     }
 
+    /// Consumes the `DataObjectHandle` and returns the `StoreObjectHandle` that it contained.
+    pub fn into_store_object_handle(self) -> StoreObjectHandle<S> {
+        self.handle
+    }
+
     pub fn overwrite_ranges(&self) -> &AllocatedRanges {
         &self.overwrite_ranges
     }

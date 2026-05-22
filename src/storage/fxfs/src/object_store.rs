@@ -2734,6 +2734,26 @@ impl ObjectStore {
             _ => unreachable!(),
         }
     }
+
+    /// Looks up the size of the attribute. Returns an error if either the object or attribute
+    /// doesn't exist.
+    pub async fn get_attribute_size(
+        &self,
+        object_id: u64,
+        attribute_id: u64,
+    ) -> Result<u64, Error> {
+        let item = self
+            .tree
+            .find(&ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute))
+            .await?
+            .ok_or(FxfsError::NotFound)?;
+        let size = match item.value {
+            ObjectValue::Attribute { size, .. } => size,
+            ObjectValue::VerifiedAttribute { size, .. } => size,
+            _ => bail!(FxfsError::Inconsistent),
+        };
+        Ok(size)
+    }
 }
 
 #[async_trait]

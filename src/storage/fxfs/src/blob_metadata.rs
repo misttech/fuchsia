@@ -9,7 +9,7 @@ use crate::object_handle::ObjectHandle;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::{
     BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DataObjectHandle,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOwner,
+    FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOwner, StoreObjectHandle,
 };
 use crate::serialized_types::{Versioned, VersionedLatest};
 use anyhow::{Context, Error};
@@ -33,7 +33,7 @@ impl BlobMetadata {
     /// Reads the blob metadata from an attribute on `blob_object`. If the attribute doesn't exist
     /// then it's assumed to be `BlobMetadata::empty()`.
     pub async fn read_from<S: HandleOwner>(
-        blob_object: &DataObjectHandle<S>,
+        blob_object: &StoreObjectHandle<S>,
     ) -> Result<Self, Error> {
         let store = blob_object.store();
         let layer_set = store.tree().layer_set();
