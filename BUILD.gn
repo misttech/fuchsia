@@ -2674,6 +2674,10 @@ group("root_targets") {
 
     # Allow test-building of the AIBs in Bazel.
     "//bundles/assembly/bazel",
+
+    # A manifest file that points to implicit inputs for all targets listed
+    # by ninja_implicit_inputs_root_labels.
+    "//build/ninja_implicit_inputs:manifest",
   ]
 
   if (sdk_cross_compile_host_tools) {

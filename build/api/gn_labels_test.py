@@ -7,12 +7,12 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, Path(__file__).parent)
+sys.path.insert(0, str(Path(__file__).parent))
 from gn_labels import GnLabelQualifier, qualify_gn_target_name, split_gn_label
 
 
 class GnLabelsTest(unittest.TestCase):
-    def test_split_gn_label(self):
+    def test_split_gn_label(self) -> None:
         _INVALID_CASES = [
             # Does not start with //
             "foo/bar",
@@ -49,7 +49,7 @@ class GnLabelsTest(unittest.TestCase):
                 f"When splitting [{label}]",
             )
 
-    def test_qualify_gn_target_name(self):
+    def test_qualify_gn_target_name(self) -> None:
         _INVALID_CASES = [
             # Does not start with //
             "foo/bar",
@@ -71,7 +71,7 @@ class GnLabelsTest(unittest.TestCase):
                 f"When qualifying [{label}]",
             )
 
-    def test_GnLabelQualifier_qualify_toolchain(self):
+    def test_GnLabelQualifier_qualify_toolchain(self) -> None:
         qualifier = GnLabelQualifier("y64", "aRm64")
 
         _TOOLCHAIN_TEST_CASES = {
@@ -94,7 +94,7 @@ class GnLabelsTest(unittest.TestCase):
                     expected, qualifier.qualify_toolchain(toolchain), msg=msg
                 )
 
-    def test_GnLabelQualifier_qualify_label(self):
+    def test_GnLabelQualifier_qualify_label(self) -> None:
         qualifier = GnLabelQualifier("y64", "aRm64")
 
         _LABEL_TEST_CASES = {
@@ -125,7 +125,7 @@ class GnLabelsTest(unittest.TestCase):
                     expected, qualifier.qualify_label(label), msg=msg
                 )
 
-    def test_GnLabelQualifier_label_to_build_args(self):
+    def test_GnLabelQualifier_label_to_build_args(self) -> None:
         qualifier = GnLabelQualifier("y64", "aRm64")
         qualifier.set_ninja_path_to_gn_label(lambda x: f"NINJA_PATH<{x}>")
 
@@ -152,7 +152,7 @@ class GnLabelsTest(unittest.TestCase):
                     expected, qualifier.label_to_build_args(label), msg=msg
                 )
 
-    def test_GnLabelQualifier_build_args_to_labels(self):
+    def test_GnLabelQualifier_build_args_to_labels(self) -> None:
         qualifier = GnLabelQualifier("y64", "aRm64")
         qualifier.set_ninja_path_to_gn_label(lambda x: f"NINJA_PATH<{x}>")
 

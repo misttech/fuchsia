@@ -4,8 +4,9 @@
 
 """Process GN labels for `fx build` and other tools."""
 
+import json
 import os
-from typing import Callable, List
+import typing as T
 
 # A dictionary of convenience Fuchsia toolchain aliases.
 # Keep these in sync with the rest of the Fuchsia build definitions.
@@ -17,7 +18,7 @@ _TOOLCHAIN_ALIASES = {
 }
 
 
-def split_gn_target(target: str) -> (str, str):
+def split_gn_target(target: str) -> tuple[str, str]:
     dir, colon, name = target.partition(":")
     if colon == ":":
         return (dir, name)
@@ -27,7 +28,7 @@ def split_gn_target(target: str) -> (str, str):
     return (target[:pos], target[pos + 1 :])
 
 
-def split_gn_label(label: str) -> (str, str):
+def split_gn_label(label: str) -> tuple[str, str]:
     """Split a label into a (target, toolchain) pair."""
     assert label.startswith("//"), f"GN Label must start with //: {label}"
     tc_pos = label.find("(", 2)
@@ -56,7 +57,7 @@ def qualify_gn_target_name(target: str) -> str:
 
 
 class GnLabelQualifier(object):
-    def __init__(self, host_cpu: str, target_cpu: str):
+    def __init__(self, host_cpu: str, target_cpu: str) -> None:
         self._host_cpu = host_cpu
         self._target_cpu = target_cpu
         alias_dict = {
@@ -68,9 +69,33 @@ class GnLabelQualifier(object):
             for alias, label in _TOOLCHAIN_ALIASES.items()
         }
         self._default_toolchain = self._aliases["default"]
-        self._ninja_path_to_gn_label: Callable[[str], str] = lambda x: x
+        self._ninja_path_to_gn_label: T.Callable[[str], str] = lambda x: x
 
-    def set_ninja_path_to_gn_label(self, func: Callable[[str], str]):
+    @staticmethod
+    def create_from_build_dir(build_dir: str) -> "GnLabelQualifier":
+        """Create new instance from the build directory content.
+
+        A convenience method that automatically detects the host CPU
+        and extracts the target CPU value from args.json.
+
+        Args:
+            build_dir: Path to the Ninja build directory (after `gn gen`).
+        Returns:
+            A new GnLabelQualifier instance configured for the host cpu
+            and the target cpu configured through `args.gn`.
+        """
+        host_cpu = os.uname().machine
+        if host_cpu == "x86_64":
+            host_cpu = "x64"
+        elif host_cpu.startswith(("armv8", "aarch64")):
+            host_cpu = "arm64"
+
+        with open(os.path.join(build_dir, "args.json")) as f:
+            target_cpu = json.load(f)["target_cpu"]
+
+        return GnLabelQualifier(host_cpu, target_cpu)
+
+    def set_ninja_path_to_gn_label(self, func: T.Callable[[str], str]) -> None:
         self._ninja_path_to_gn_label = func
 
     def qualify_toolchain(self, toolchain: str) -> str:
@@ -99,7 +124,7 @@ class GnLabelQualifier(object):
         else:
             return target
 
-    def label_to_build_args(self, label: str) -> List[str]:
+    def label_to_build_args(self, label: str) -> list[str]:
         target, toolchain = split_gn_label(label)
         target_dir, target_name = split_gn_target(target)
         if target_name == os.path.basename(target_dir):
@@ -117,7 +142,7 @@ class GnLabelQualifier(object):
 
         return [f"--toolchain={toolchain}", target]
 
-    def build_args_to_labels(self, args: List[str]) -> List[str]:
+    def build_args_to_labels(self, args: list[str]) -> list[str]:
         result = []
         cur_toolchain = ""
         for arg in args:
@@ -127,11 +152,9 @@ class GnLabelQualifier(object):
                 )
                 continue
             if arg.startswith("--"):
-                alias = arg[2:]
-                cur_toolchain = self._aliases.get(alias)
-                assert (
-                    cur_toolchain is not None
-                ), f"Invalid toolchain alias {arg}"
+                alias = self._aliases.get(arg[2:])
+                assert alias is not None, f"Invalid toolchain alias {arg}"
+                cur_toolchain = alias
                 if cur_toolchain == self._default_toolchain:
                     cur_toolchain = ""
                 continue

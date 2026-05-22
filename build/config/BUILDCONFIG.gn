@@ -7,6 +7,7 @@ import("//build/config/compilation_modes.gni")
 import("//build/config/export_bazel_host_tests.gni")
 import("//build/config/python_interpreter.gni")
 import("//build/icu/build_config.gni")
+import("//build/ninja_implicit_inputs/config.gni")
 import("//build/rust/build.gni")
 import("//build/rust/rust_auxiliary.gni")
 import("//build/toolchain/rbe.gni")
@@ -3331,6 +3332,100 @@ template("_fuchsia_shared_library") {
   }
 }
 
+# The following file extensions are recognized as headers by GN
+# See GetSourceFileType() function in src/gn/source_file.cc
+_gn_cxx_header_exts = [
+  "h",
+  "hh",
+  "hpp",
+  "hxx",
+  "inc",
+  "ipp",
+  "inl",
+  "h++",
+]
+
+# A wrapper for C++ target types that ensures that their metadata
+# includes a ninja_implicit_cxx_headers value that lists all headers
+# that are not written to the Ninja build plan.
+#
+# See comments in //build/ninja_implicit_inputs/BUILD.gn for more
+# details.
+#
+# This doesn't do anything if define_ninja_implicit_inputs is false.
+#
+# Arguments
+#    cxx_target_type: wrapped target type (e.g. "source_set")
+#
+#    All other arguments are passed to the wrapped target definition.
+#
+template("_common_cxx_target_wrapper") {
+  _target_type = invoker.cxx_target_type
+
+  if (define_ninja_implicit_inputs) {
+    _headers = []
+    if (defined(invoker.public)) {
+      _headers = invoker.public
+    }
+
+    if (defined(invoker.sources)) {
+      # Filter 'sources' for headers. Benchmarking shows that this does not
+      # slow down `gn gen` time significantly. Otherwise, an alternative would
+      # be to save the full value of 'sources', and filter the content later.
+      foreach(_source, invoker.sources) {
+        _ext = get_path_info(_source, "extension")
+        if (_gn_cxx_header_exts + [ _ext ] - [ _ext ] != _gn_cxx_header_exts) {
+          _headers += [ _source ]
+        }
+      }
+    }
+
+    # DEBUG: change the false to true below to enable.
+    if (false && _headers != []) {
+      _target_label = get_label_info(":${target_name}", "label_with_toolchain")
+      print("TARGET ${_target_label} HEADERS ${_headers}")
+    }
+
+    _metadata = {
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
+
+      # Used by //build/ninja_implicit_inputs:manifest
+      if (!defined(ninja_implicit_cxx_headers) && _headers != []) {
+        _target_label =
+            get_label_info(":${target_name}", "label_with_toolchain")
+
+        ninja_implicit_cxx_headers = [
+          {
+            gn_label = _target_label
+            files =
+                rebase_path(process_file_template(_headers, [ "{{source}}" ]),
+                            root_build_dir)
+          },
+        ]
+      } else {
+        not_needed([ "_headers" ])
+      }
+    }
+
+    target(_target_type, target_name) {
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "cxx_target_type",
+                               "metadata",
+                             ])
+      metadata = _metadata
+    }
+  } else {
+    # Just call the internal wrapper directly.
+    target(_target_type, target_name) {
+      forward_variables_from(invoker, "*", [ "cxx_target_type" ])
+    }
+  }
+}
+
 # This wraps the GN built-in shared_library() target and adds a few more features:
 #
 # - Redirecting from the current toolchain to its shared-library-compatible
@@ -3428,7 +3523,8 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       #
       template("shared_library") {
         _target_name = target_name
-        variant_target("shared_library") {
+        _common_cxx_target_wrapper("shared_library") {
+          cxx_target_type = "variant_target"
           forward_variables_from(invoker,
                                  "*",
                                  [
@@ -3496,7 +3592,8 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       #     !defined(invoker.crate_type),
       #     "Rust libraries should not be expanded in the -shared toolchain, see https://fxbug.dev/387208039")
       not_needed(invoker, [ "exclude_toolchain_tags" ])
-      _fuchsia_shared_library(target_name) {
+      _common_cxx_target_wrapper(target_name) {
+        cxx_target_type = "_fuchsia_shared_library"
         forward_variables_from(invoker, "*")
       }
     }
@@ -3530,7 +3627,8 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       }
     }
 
-    _shared_library_internal_wrapper(target_name) {
+    _common_cxx_target_wrapper(target_name) {
+      cxx_target_type = "_shared_library_internal_wrapper"
       deps = []
       forward_variables_from(invoker,
                              "*",
@@ -3576,7 +3674,8 @@ template("basic_executable") {
 
 # Likewise for a source_set() that needs to avoid source_deps.
 template("basic_source_set") {
-  _source_set_internal_wrapper(target_name) {
+  _common_cxx_target_wrapper(target_name) {
+    cxx_target_type = "_source_set_internal_wrapper"
     forward_variables_from(invoker, "*")
   }
 }
@@ -3637,7 +3736,6 @@ template("basic_source_set") {
 #
 template("executable") {
   _executable_name = target_name
-  variant_shared_redirection = false
 
   _is_rust_target = defined(invoker.crate_root)
   if (_is_rust_target) {
@@ -3665,7 +3763,9 @@ template("executable") {
     }
   }
 
-  variant_target("executable") {
+  _common_cxx_target_wrapper("executable") {
+    cxx_target_type = "variant_target"
+    variant_shared_redirection = false
     deps = []
     assert_no_deps = []
     target_name = _executable_name
@@ -3913,13 +4013,6 @@ _built_in_target_types_without_public_wrapper -= [ "executable" ]
 template("loadable_module") {
   _module_name = target_name
 
-  # NOTE: Allow PIC-friendly toolchains to use loadable_module().
-  #
-  # Avoid redirection for Rust shared libraries (dylibs and cdylibs).
-  # See https://fxbug.dev/387208039.
-  _is_rust_target = defined(invoker.crate_root)
-  variant_shared_redirection = !_is_rust_target && toolchain_variant.with_shared
-
   _is_rust_target = defined(invoker.crate_root)
   if (_is_rust_target) {
     generated_file(target_name + ".rust_compilation_deps") {
@@ -3946,7 +4039,16 @@ template("loadable_module") {
     }
   }
 
-  variant_target("loadable_module") {
+  _common_cxx_target_wrapper("loadable_module") {
+    cxx_target_type = "variant_target"
+
+    # NOTE: Allow PIC-friendly toolchains to use loadable_module().
+    #
+    # Avoid redirection for Rust shared libraries (dylibs and cdylibs).
+    # See https://fxbug.dev/387208039.
+    variant_shared_redirection =
+        !_is_rust_target && toolchain_variant.with_shared
+
     target_name = _module_name
 
     deps = []
@@ -4092,7 +4194,9 @@ template("component") {
     _component_mode = "_static_library_internal_wrapper"
   }
 
-  target(_component_mode, target_name) {
+  _common_cxx_target_wrapper(target_name) {
+    cxx_target_type = _component_mode
+
     # Explicitly forward applicable_licenses and visibility,
     # implicitly forward everything else.
     # See comment in template("shared_library") above for details.
@@ -4115,7 +4219,8 @@ set_defaults("component") {
 }
 
 template("source_set") {
-  _source_set_internal_wrapper(target_name) {
+  _common_cxx_target_wrapper(target_name) {
+    cxx_target_type = "_source_set_internal_wrapper"
     deps = []
     forward_variables_from(invoker,
                            "*",
@@ -4173,7 +4278,8 @@ template("static_library") {
     }
   }
 
-  _static_library_internal_wrapper(target_name) {
+  _common_cxx_target_wrapper(target_name) {
+    cxx_target_type = "_static_library_internal_wrapper"
     deps = []
     public_deps = []
     inputs = []
