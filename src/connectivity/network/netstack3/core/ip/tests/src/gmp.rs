@@ -50,6 +50,7 @@ fn test_igmpv2_enable_disable_integration() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -192,6 +193,7 @@ fn test_mldv1_enable_disable_integration() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

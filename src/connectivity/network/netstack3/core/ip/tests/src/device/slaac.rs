@@ -83,6 +83,7 @@ fn integration_remove_all_addresses_on_ipv6_disable() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -247,7 +248,10 @@ fn no_link_local_address_for_interfaces_with_no_link_layer_addressing() {
         .core_api()
         .device::<PureIpDevice>()
         .add_device_with_default_state(
-            PureIpDeviceCreationProperties { mtu: Mtu::new(u16::MAX.into()) },
+            PureIpDeviceCreationProperties {
+                tx_offload_spec: Default::default(),
+                mtu: Mtu::new(u16::MAX.into()),
+            },
             DEFAULT_INTERFACE_METRIC,
         )
         .into();

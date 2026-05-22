@@ -19,7 +19,7 @@ use net_types::UnicastAddr;
 use net_types::ip::{IpAddress, Ipv4Addr, Ipv6Addr};
 use netstack3_core::device::{EthernetDeviceId, EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtx};
-use netstack3_core::{NetworkSerializationContext, TimerId};
+use netstack3_core::{NetworkParsingContext, NetworkSerializationContext, TimerId};
 use packet::serialize::{Buf, Either, PacketBuilder, PacketConstraints, SerializeError};
 use packet::{FragmentedBuffer, NestableSerializer as _, Serializer};
 use packet_formats::ethernet::EthernetFrameBuilder;
@@ -369,9 +369,13 @@ fn dispatch(ctx: &mut FakeCtx, device_id: &EthernetDeviceId<FakeBindingsCtx>, ac
     use FuzzAction::*;
     match action {
         ReceiveFrame(ArbitraryFrame { frame_type: _, buf, description: _ }) => {
-            ctx.core_api()
-                .device::<EthernetLinkDevice>()
-                .receive_frame(RecvEthernetFrameMeta { device_id: device_id.clone() }, buf);
+            ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+                RecvEthernetFrameMeta {
+                    device_id: device_id.clone(),
+                    parsing_context: NetworkParsingContext::default(),
+                },
+                buf,
+            );
         }
         AdvanceTime(SmallDuration(duration)) => {
             let _: Vec<TimerId<_>> = ctx.trigger_timers_for(duration);

@@ -9,7 +9,9 @@ use ip_test_macro::ip_test;
 use net_types::ip::{AddrSubnet, IpAddress as _, IpVersion, Mtu};
 use net_types::{Witness, ZonedAddr};
 use netstack3_base::testutil::TestIpExt;
-use netstack3_base::{CounterContext, NetworkSerializationContext, ResourceCounterContext};
+use netstack3_base::{
+    CounterContext, NetworkParsingContext, NetworkSerializationContext, ResourceCounterContext,
+};
 use netstack3_core::sync::RemoveResourceResult;
 use netstack3_core::testutil::{
     CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx, PureIpDeviceAndIpVersion,
@@ -52,7 +54,7 @@ fn add_remove_pure_ip_device() {
     let mut ctx = FakeCtx::default();
     let mut device_api = ctx.core_api().device::<PureIpDevice>();
     let device = device_api.add_device_with_default_state(
-        PureIpDeviceCreationProperties { mtu: MTU },
+        PureIpDeviceCreationProperties { mtu: MTU, tx_offload_spec: Default::default() },
         DEFAULT_INTERFACE_METRIC,
     );
     assert_matches!(device_api.remove_device(device), RemoveResourceResult::Removed(_));
@@ -65,7 +67,7 @@ fn update_tx_queue_config() {
     let mut ctx = FakeCtx::default();
     let mut device_api = ctx.core_api().device::<PureIpDevice>();
     let device = device_api.add_device_with_default_state(
-        PureIpDeviceCreationProperties { mtu: MTU },
+        PureIpDeviceCreationProperties { mtu: MTU, tx_offload_spec: Default::default() },
         DEFAULT_INTERFACE_METRIC,
     );
     let mut tx_queue_api = ctx.core_api().transmit_queue::<PureIpDevice>();
@@ -76,7 +78,7 @@ fn update_tx_queue_config() {
 fn receive_frame<I: TestIpExt + IpExt>() {
     let mut ctx = FakeCtx::default();
     let base_device_id = ctx.core_api().device::<PureIpDevice>().add_device_with_default_state(
-        PureIpDeviceCreationProperties { mtu: MTU },
+        PureIpDeviceCreationProperties { mtu: MTU, tx_offload_spec: Default::default() },
         DEFAULT_INTERFACE_METRIC,
     );
     let device_id: DeviceId<FakeBindingsCtx> = base_device_id.clone().into();
@@ -115,7 +117,11 @@ fn receive_frame<I: TestIpExt + IpExt>() {
     let packet = default_ip_packet::<I>();
     let packet_len = packet.len();
     ctx.core_api().device::<PureIpDevice>().receive_frame(
-        PureIpDeviceReceiveFrameMetadata { device_id: base_device_id, ip_version: I::VERSION },
+        PureIpDeviceReceiveFrameMetadata {
+            device_id: base_device_id,
+            ip_version: I::VERSION,
+            parsing_context: NetworkParsingContext::default(),
+        },
         packet,
     );
     check_frame_counters::<I, _, _>(&ctx.core_ctx(), &device_id, 1);
@@ -135,7 +141,7 @@ fn receive_frame<I: TestIpExt + IpExt>() {
 fn send_frame<I: TestIpExt + IpExt>(tx_queue_config: TransmitQueueConfiguration) {
     let mut ctx = FakeCtx::default();
     let device = ctx.core_api().device::<PureIpDevice>().add_device_with_default_state(
-        PureIpDeviceCreationProperties { mtu: MTU },
+        PureIpDeviceCreationProperties { mtu: MTU, tx_offload_spec: Default::default() },
         DEFAULT_INTERFACE_METRIC,
     );
     ctx.test_api().enable_device(&device.clone().into());
@@ -223,7 +229,7 @@ fn available_to_socket_layer<I: TestIpExt + IpExt>() {
         .core_api()
         .device::<PureIpDevice>()
         .add_device_with_default_state(
-            PureIpDeviceCreationProperties { mtu: MTU },
+            PureIpDeviceCreationProperties { mtu: MTU, tx_offload_spec: Default::default() },
             DEFAULT_INTERFACE_METRIC,
         )
         .into();
@@ -250,7 +256,7 @@ fn get_set_mtu() {
 
     let mut ctx = FakeCtx::default();
     let device = ctx.core_api().device::<PureIpDevice>().add_device_with_default_state(
-        PureIpDeviceCreationProperties { mtu: MTU1 },
+        PureIpDeviceCreationProperties { mtu: MTU1, tx_offload_spec: Default::default() },
         DEFAULT_INTERFACE_METRIC,
     );
     assert_eq!(pure_ip::get_mtu(&mut ctx.core_ctx(), &device), MTU1);

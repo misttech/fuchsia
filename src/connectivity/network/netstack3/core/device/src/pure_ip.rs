@@ -59,6 +59,8 @@ pub enum PureIpDevice {}
 pub struct PureIpDeviceCreationProperties {
     /// The MTU of the device.
     pub mtu: Mtu,
+    /// The checksum offload capabilities of the device.
+    pub tx_offload_spec: netstack3_base::ChecksumOffloadSpec,
 }
 
 /// Metadata for IP packets held in the TX queue.
@@ -118,7 +120,7 @@ impl DeviceStateSpec for PureIpDevice {
     >(
         _bindings_ctx: &mut BC,
         _self_id: CC::WeakDeviceId,
-        PureIpDeviceCreationProperties { mtu }: Self::CreationProperties,
+        PureIpDeviceCreationProperties { mtu, tx_offload_spec: _ }: Self::CreationProperties,
         tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
     ) -> Self::State<BC>
     where
@@ -138,6 +140,8 @@ pub struct PureIpDeviceReceiveFrameMetadata<D> {
     pub device_id: D,
     /// The IP version of the received packet.
     pub ip_version: IpVersion,
+    /// The parsing context for the received packet.
+    pub parsing_context: NetworkParsingContext,
 }
 
 impl DeviceReceiveFrameSpec for PureIpDevice {
@@ -182,7 +186,7 @@ where
         bindings_ctx: &mut BC,
         buffer: B,
     ) {
-        let Self { device_id, ip_version } = self;
+        let Self { device_id, ip_version, parsing_context } = self;
 
         core_ctx.add_both_usize(&device_id, buffer.len(), |counters: &DeviceCounters| {
             &counters.recv_bytes
@@ -210,7 +214,7 @@ where
                         device_id,
                         None,
                         DeviceIpLayerMetadata::default(),
-                        NetworkParsingContext::default(),
+                        parsing_context,
                     ),
                     buffer,
                 )
@@ -225,7 +229,7 @@ where
                         device_id,
                         None,
                         DeviceIpLayerMetadata::default(),
-                        NetworkParsingContext::default(),
+                        parsing_context,
                     ),
                     buffer,
                 )

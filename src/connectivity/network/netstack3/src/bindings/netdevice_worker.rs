@@ -18,6 +18,7 @@ use log::{debug, error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{MulticastAddr, UnicastAddr};
+use netstack3_core::NetworkParsingContext;
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId,
     MaxEthernetFrameSize, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
@@ -246,6 +247,7 @@ impl NetdeviceWorker {
                 }
             };
             let buf = packet::Buf::new(rx_data, ..);
+            let parsing_context = NetworkParsingContext::default();
             match id {
                 NetdeviceId::Ethernet(id) => {
                     match frame_type {
@@ -261,9 +263,10 @@ impl NetdeviceWorker {
                             });
                         }
                     }
-                    ctx.api()
-                        .device::<EthernetLinkDevice>()
-                        .receive_frame(RecvEthernetFrameMeta { device_id: id.clone() }, buf)
+                    ctx.api().device::<EthernetLinkDevice>().receive_frame(
+                        RecvEthernetFrameMeta { device_id: id.clone(), parsing_context },
+                        buf,
+                    )
                 }
                 NetdeviceId::PureIp(id) => {
                     let ip_version = match frame_type {
@@ -281,7 +284,11 @@ impl NetdeviceWorker {
                         }
                     };
                     ctx.api().device::<PureIpDevice>().receive_frame(
-                        PureIpDeviceReceiveFrameMetadata { device_id: id.clone(), ip_version },
+                        PureIpDeviceReceiveFrameMetadata {
+                            device_id: id.clone(),
+                            ip_version,
+                            parsing_context,
+                        },
                         buf,
                     )
                 }
@@ -600,7 +607,11 @@ impl DeviceHandler {
                     };
                     let core_ethernet_id = ctx.api().device::<EthernetLinkDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
-                        EthernetCreationProperties { mac, max_frame_size },
+                        EthernetCreationProperties {
+                            mac,
+                            max_frame_size,
+                            tx_offload_spec: Default::default(),
+                        },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
                         tx_allocator,
@@ -626,7 +637,10 @@ impl DeviceHandler {
                     };
                     let core_pure_ip_id = ctx.api().device::<PureIpDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
-                        PureIpDeviceCreationProperties { mtu: max_frame_size },
+                        PureIpDeviceCreationProperties {
+                            mtu: max_frame_size,
+                            tx_offload_spec: Default::default(),
+                        },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
                         tx_allocator,

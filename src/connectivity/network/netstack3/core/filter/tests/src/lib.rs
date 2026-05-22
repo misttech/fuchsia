@@ -23,7 +23,8 @@ use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TestDualStackIpExt, TestIpExt, set_logger_for_test};
 use netstack3_base::{
-    CtxPair, Mark, MarkDomain, MarkMatcher, MarkMatchers, NetworkSerializationContext,
+    CtxPair, Mark, MarkDomain, MarkMatcher, MarkMatchers, NetworkParsingContext,
+    NetworkSerializationContext,
 };
 use netstack3_core::IpExt;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
@@ -139,17 +140,19 @@ fn crash<I: TestDualStackIpExt + IpExt>() {
     let thread_vars = (ctx.clone(), device.clone());
     let reply_packet_one = std::thread::spawn(move || {
         let (mut ctx, device_id) = thread_vars;
-        ctx.core_api()
-            .device::<EthernetLinkDevice>()
-            .receive_frame(RecvEthernetFrameMeta { device_id }, make_udp_reply_packet::<I>());
+        ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta { device_id, parsing_context: NetworkParsingContext::default() },
+            make_udp_reply_packet::<I>(),
+        );
     });
 
     let thread_vars = (ctx.clone(), device);
     let reply_packet_two = std::thread::spawn(move || {
         let (mut ctx, device_id) = thread_vars;
-        ctx.core_api()
-            .device::<EthernetLinkDevice>()
-            .receive_frame(RecvEthernetFrameMeta { device_id }, make_udp_reply_packet::<I>());
+        ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta { device_id, parsing_context: NetworkParsingContext::default() },
+            make_udp_reply_packet::<I>(),
+        );
     });
 
     reply_packet_one.join().unwrap();
@@ -249,9 +252,13 @@ fn tcp_accepted_mark<I: TestDualStackIpExt + IpExt>() {
                 .unwrap_b()
         };
 
-        ctx.core_api()
-            .device::<EthernetLinkDevice>()
-            .receive_frame(RecvEthernetFrameMeta { device_id: device_id.clone() }, syn_frame);
+        ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta {
+                device_id: device_id.clone(),
+                parsing_context: NetworkParsingContext::default(),
+            },
+            syn_frame,
+        );
 
         ctx.bindings_ctx.take_ethernet_frames()
     };
@@ -319,9 +326,13 @@ fn tcp_accepted_mark<I: TestDualStackIpExt + IpExt>() {
             .unwrap_b()
     };
 
-    ctx.core_api()
-        .device::<EthernetLinkDevice>()
-        .receive_frame(RecvEthernetFrameMeta { device_id: device_id.clone() }, ack_frame);
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: device_id.clone(),
+            parsing_context: NetworkParsingContext::default(),
+        },
+        ack_frame,
+    );
     drop(indexes_to_device_ids);
 
     let (accepted, _, _) = ctx.core_api().tcp::<I>().accept(&socket).unwrap();

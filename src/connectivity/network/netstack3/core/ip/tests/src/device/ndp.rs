@@ -320,7 +320,11 @@ fn test_dad_duplicate_address_detected_solicitation() {
         let mut ctx = FakeCtx::default();
         let device_id =
             ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
-                EthernetCreationProperties { mac, max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE },
+                EthernetCreationProperties {
+                    tx_offload_spec: Default::default(),
+                    mac,
+                    max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
+                },
                 DEFAULT_INTERFACE_METRIC,
             );
         (ctx, device_id)
@@ -531,6 +535,7 @@ fn test_dad_set_ipv6_address_when_ongoing() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac(),
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -576,6 +581,7 @@ fn test_dad_three_transmits_no_conflicts() {
     let mut ctx = FakeCtx::default();
     let eth_dev_id = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: local_mac(),
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },
@@ -734,6 +740,7 @@ fn test_dad_multiple_ips_simultaneously() {
     let mut ctx = FakeCtx::default();
     let eth_dev_id = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: local_mac(),
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },
@@ -809,6 +816,7 @@ fn test_dad_cancel_when_ip_removed() {
     let mut ctx = FakeCtx::default();
     let eth_dev_id = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: local_mac(),
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },
@@ -1226,6 +1234,7 @@ fn test_receiving_router_advertisement_mtu_option() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac(),
                 max_frame_size: MaxEthernetFrameSize::from_mtu(hw_mtu).unwrap(),
             },
@@ -1324,6 +1333,7 @@ fn test_host_send_router_solicitations() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: fake_config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1434,6 +1444,7 @@ fn test_host_send_router_solicitations() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: fake_config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1513,6 +1524,7 @@ fn test_set_ndp_config_dup_addr_detect_transmits() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: fake_config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1657,6 +1669,7 @@ fn test_router_stateless_address_autoconfiguration() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1766,6 +1779,7 @@ fn initialize_with_temporary_addresses_enabled()
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2105,6 +2119,7 @@ fn test_host_slaac_invalid_prefix_information() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2194,6 +2209,7 @@ fn test_host_slaac_address_deprecate_while_tentative() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2426,6 +2442,7 @@ fn test_host_stable_slaac_valid_lifetime_updates() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2621,6 +2638,7 @@ fn test_host_slaac_regenerates_address_on_dad_failure(slaac_type: SlaacType) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2745,6 +2763,7 @@ fn test_host_slaac_gives_up_after_dad_failures(slaac_type: SlaacType) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2843,6 +2862,7 @@ fn test_host_temporary_slaac_deprecate_before_regen() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -2998,6 +3018,7 @@ fn test_host_temporary_slaac_config_update_skips_regen() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -3326,6 +3347,7 @@ fn test_remove_stable_slaac_address() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

@@ -44,6 +44,7 @@ fn test_no_default_routes() {
     let _ethernet_device: EthernetDeviceId<_> =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: UnicastAddr::new(net_mac!("aa:bb:cc:dd:ee:ff")).expect("MAC is unicast"),
                 max_frame_size: MaxEthernetFrameSize::MIN,
             },
@@ -59,6 +60,7 @@ fn remove_ethernet_device_disables_timers() {
     let ethernet_device =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: UnicastAddr::new(net_mac!("aa:bb:cc:dd:ee:ff")).expect("MAC is unicast"),
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Mtu::new(1500)).unwrap(),
             },
@@ -108,6 +110,7 @@ fn add_ethernet(ctx: &mut FakeCtx) -> DeviceId<FakeBindingsCtx> {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: Ipv6::TEST_ADDRS.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -260,6 +263,7 @@ fn test_add_remove_ip_addresses<I: Ip + TestIpExt + IpExt>(
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

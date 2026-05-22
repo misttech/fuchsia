@@ -283,6 +283,8 @@ pub struct EthernetCreationProperties {
     // want to figure out how to configure devices which don't support IPv6,
     // and allow smaller frame sizes for those devices.
     pub max_frame_size: MaxEthernetFrameSize,
+    /// The checksum offload capabilities of the device.
+    pub tx_offload_spec: netstack3_base::ChecksumOffloadSpec,
 }
 
 /// Ethernet device state that can change at runtime.
@@ -493,6 +495,8 @@ where
 pub struct RecvEthernetFrameMeta<D> {
     /// The device a frame was received on.
     pub device_id: D,
+    /// The parsing context for the received frame.
+    pub parsing_context: NetworkParsingContext,
 }
 
 impl DeviceReceiveFrameSpec for EthernetLinkDevice {
@@ -517,7 +521,7 @@ where
         mut buffer: B,
     ) {
         trace_duration!("device::ethernet::receive_frame");
-        let Self { device_id } = self;
+        let Self { device_id, parsing_context } = self;
         trace!("ethernet::receive_frame: device_id = {:?}", device_id);
         core_ctx.increment_both(&device_id, |counters: &DeviceCounters| &counters.recv_frame);
         core_ctx.add_both_usize(&device_id, buffer.len(), |counters: &DeviceCounters| {
@@ -588,7 +592,7 @@ where
                         device_id,
                         Some(frame_dst),
                         DeviceIpLayerMetadata::default(),
-                        NetworkParsingContext::default(),
+                        parsing_context,
                     ),
                     buffer,
                 )
@@ -603,7 +607,7 @@ where
                         device_id,
                         Some(frame_dst),
                         DeviceIpLayerMetadata::default(),
-                        NetworkParsingContext::default(),
+                        parsing_context,
                     ),
                     buffer,
                 )
@@ -898,7 +902,7 @@ impl DeviceStateSpec for EthernetLinkDevice {
     >(
         bindings_ctx: &mut BC,
         self_id: CC::WeakDeviceId,
-        EthernetCreationProperties { mac, max_frame_size }: Self::CreationProperties,
+        EthernetCreationProperties { mac, max_frame_size, tx_offload_spec: _ }: Self::CreationProperties,
         tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
     ) -> Self::State<BC>
     where

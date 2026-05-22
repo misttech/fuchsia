@@ -8,7 +8,7 @@ use loom::sync::Arc;
 use net_declare::net_mac;
 use net_types::UnicastAddr;
 use net_types::ethernet::Mac;
-use netstack3_base::NetworkSerializationContext;
+use netstack3_base::{NetworkParsingContext, NetworkSerializationContext};
 use netstack3_core::CtxPair;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::device_socket::{Protocol, TargetDevice};
@@ -61,7 +61,10 @@ fn packet_socket_change_device_and_protocol_atomic() {
                 (dev_b, second_proto.get().into()),
             ] {
                 ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-                    RecvEthernetFrameMeta { device_id },
+                    RecvEthernetFrameMeta {
+                        device_id,
+                        parsing_context: NetworkParsingContext::default(),
+                    },
                     make_ethernet_frame(ethertype),
                 );
             }

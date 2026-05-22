@@ -65,6 +65,7 @@ fn enable_disable_ipv4() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -268,6 +269,7 @@ fn enable_disable_ipv6() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -603,6 +605,7 @@ fn forget_learned_network_params_on_disable_ipv6() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: Ipv6::TEST_ADDRS.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -642,6 +645,7 @@ fn add_ipv6_address_with_dad_disabled() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: Ipv6::TEST_ADDRS.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -699,6 +703,7 @@ fn enable_ipv6_dev_with_dad_disabled() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: Ipv6::TEST_ADDRS.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -772,6 +777,7 @@ fn add_ipv4_addr_with_dad(order: Ipv4DadTestOrder) {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1023,6 +1029,7 @@ fn notify_on_dad_failure_ipv4(case: Ipv4DadFailureTestCase, expect_conflict: boo
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1172,6 +1179,7 @@ fn ipv4_ignores_tentative_addresses(case: Ipv4TentativeAddrTestCase) {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1379,6 +1387,7 @@ fn ipv4_dad_conflict_with_dad_disabled() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1447,6 +1456,7 @@ fn notify_on_dad_failure_ipv6() {
     let ethernet_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1619,6 +1629,7 @@ fn update_ipv4_configuration_return() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1753,6 +1764,7 @@ fn update_ipv6_configuration_return() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv6::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1943,6 +1955,7 @@ fn configure_link_local_address_generation(enable_stable_addresses: bool) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(Ipv4::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -1993,6 +2006,7 @@ fn disallow_loopback_addrs_on_non_loopback_interface<I: IpExt + TestIpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: I::TEST_ADDRS.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

@@ -38,7 +38,8 @@ use netstack3_base::testutil::{
     FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext, set_logger_for_test,
 };
 use netstack3_base::{
-    CtxPair, DeviceIdContext, FrameDestination, InstantContext as _, NetworkSerializationContext,
+    CtxPair, DeviceIdContext, FrameDestination, InstantContext as _, NetworkParsingContext,
+    NetworkSerializationContext,
 };
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, RecvEthernetFrameMeta,
@@ -88,6 +89,7 @@ fn router_advertisement_with_source_link_layer_option_should_add_neighbor() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -168,6 +170,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -331,6 +334,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -345,7 +349,10 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
 
     let send_neighbor_confirmation = |ctx: &mut CtxPair<_, _>, solicited, mac| {
         ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-            RecvEthernetFrameMeta { device_id: eth_device_id.clone() },
+            RecvEthernetFrameMeta {
+                device_id: eth_device_id.clone(),
+                parsing_context: NetworkParsingContext::default(),
+            },
             incoming_neighbor_confirmation::<I>(mac, solicited),
         );
     };
@@ -436,6 +443,7 @@ fn ns_response(target_addr: Ipv6Addr, dad_transmits: Option<NonZeroU16>, expect_
     let link_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -558,6 +566,7 @@ fn ipv6_integration() {
     let eth_device_id =
         ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

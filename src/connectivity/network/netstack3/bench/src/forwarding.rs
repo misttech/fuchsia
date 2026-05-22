@@ -10,7 +10,7 @@
 use net_types::Witness as _;
 use net_types::ip::Ipv4;
 use netstack3_base::testutil::{Bencher, TEST_ADDRS_V4};
-use netstack3_base::{NetworkSerializationContext, bench};
+use netstack3_base::{NetworkParsingContext, NetworkSerializationContext, bench};
 use netstack3_core::StackStateBuilder;
 use netstack3_core::device::{DeviceId, EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::testutil::{CtxPairExt as _, FakeCtxBuilder};
@@ -79,7 +79,10 @@ fn bench_forward_minimum<B: Bencher>(b: &mut B, frame_size: usize) {
 
     b.iter(|| {
         B::black_box(ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-            B::black_box(RecvEthernetFrameMeta { device_id: eth_device.clone() }),
+            B::black_box(RecvEthernetFrameMeta {
+                device_id: eth_device.clone(),
+                parsing_context: NetworkParsingContext::default(),
+            }),
             B::black_box(Buf::new(&mut buf[..], range.clone())),
         ));
 

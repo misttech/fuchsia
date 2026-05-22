@@ -10,7 +10,9 @@ use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ip, IpAddr, IpAddress, IpVersion, Ipv4, Ipv6, Ipv6Addr};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness};
 use netstack3_base::testutil::{TEST_ADDRS_V4, TestIpExt, new_rng};
-use netstack3_base::{FrameDestination, IpAddressId as _, NetworkSerializationContext};
+use netstack3_base::{
+    FrameDestination, IpAddressId as _, NetworkParsingContext, NetworkSerializationContext,
+};
 use netstack3_core::IpExt;
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, RecvEthernetFrameMeta,
@@ -68,6 +70,7 @@ fn test_receive_ip_frame<I: TestIpExt + IpExt>(enable: bool) {
     let mut ctx = FakeCtx::default();
     let eth_device = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: config.local_mac,
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },
@@ -93,9 +96,13 @@ fn test_receive_ip_frame<I: TestIpExt + IpExt>(enable: bool) {
 
     let recv_len = bytes.len();
 
-    ctx.core_api()
-        .device::<EthernetLinkDevice>()
-        .receive_frame(RecvEthernetFrameMeta { device_id: eth_device }, Buf::new(bytes, ..));
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: eth_device,
+            parsing_context: NetworkParsingContext::default(),
+        },
+        Buf::new(bytes, ..),
+    );
 
     IpCounterExpectations::<I> {
         receive_ip_packet: expected_received,
@@ -119,6 +126,7 @@ fn test_send_frame() {
     let mut ctx = FakeCtx::default();
     let eth_device = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: TEST_ADDRS_V4.local_mac,
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },
@@ -152,6 +160,7 @@ fn initialize_once() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: TEST_ADDRS_V4.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -288,6 +297,7 @@ fn test_add_remove_ip_addresses<I: TestIpExt + IpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -396,6 +406,7 @@ fn test_multiple_ip_addresses<I: TestIpExt + IpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -464,6 +475,7 @@ fn test_ip_join_leave_multicast_addr_ref_count<I: TestIpExt + IpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -519,6 +531,7 @@ fn test_ip_leave_unjoined_multicast<I: TestIpExt + IpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -551,6 +564,7 @@ fn test_ipv6_duplicate_solicited_node_address() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -613,6 +627,7 @@ fn test_add_ip_addr_subnet_link_local() {
 
     let eth_device = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: config.local_mac,
             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
         },

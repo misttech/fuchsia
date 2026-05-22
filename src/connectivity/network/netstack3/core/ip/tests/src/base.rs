@@ -54,7 +54,8 @@ use netstack3_base::testutil::{
     set_logger_for_test,
 };
 use netstack3_base::{
-    FrameDestination, InstantContext as _, IpDeviceAddr, Marks, NetworkSerializationContext,
+    FrameDestination, InstantContext as _, IpDeviceAddr, Marks, NetworkParsingContext,
+    NetworkSerializationContext,
 };
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
@@ -1529,9 +1530,13 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
     // multicast group `multi_addr`.
 
     assert!(!ctx.test_api().is_in_ip_multicast(&device, multi_addr));
-    ctx.core_api()
-        .device::<EthernetLinkDevice>()
-        .receive_frame(RecvEthernetFrameMeta { device_id: eth_device.clone() }, buf.clone());
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: eth_device.clone(),
+            parsing_context: NetworkParsingContext::default(),
+        },
+        buf.clone(),
+    );
 
     IpCounterExpectations::<I> {
         dispatch_receive_ip_packet: 0,
@@ -1560,9 +1565,13 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
         ),
     }
     assert!(ctx.test_api().is_in_ip_multicast(&device, multi_addr));
-    ctx.core_api()
-        .device::<EthernetLinkDevice>()
-        .receive_frame(RecvEthernetFrameMeta { device_id: eth_device.clone() }, buf.clone());
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: eth_device.clone(),
+            parsing_context: NetworkParsingContext::default(),
+        },
+        buf.clone(),
+    );
 
     IpCounterExpectations::<I> {
         receive_ip_packet: 2,
@@ -1592,9 +1601,13 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
         ),
     }
     assert!(!ctx.test_api().is_in_ip_multicast(&device, multi_addr));
-    ctx.core_api()
-        .device::<EthernetLinkDevice>()
-        .receive_frame(RecvEthernetFrameMeta { device_id: eth_device.clone() }, buf);
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: eth_device.clone(),
+            parsing_context: NetworkParsingContext::default(),
+        },
+        buf,
+    );
     IpCounterExpectations::<I> {
         receive_ip_packet: 3,
         dropped: 2,
@@ -1619,6 +1632,7 @@ fn test_no_dispatch_non_ndp_packets_during_ndp_dad() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: config.local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },
@@ -1753,6 +1767,7 @@ fn test_drop_multicast_source<I: IpExt + TestIpExt>() {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: I::TEST_ADDRS.local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -2001,6 +2016,7 @@ fn test_receive_ip_packet_action() {
         let eth_device =
             ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
                 EthernetCreationProperties {
+                    tx_offload_spec: Default::default(),
                     mac: local_mac,
                     max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
                 },

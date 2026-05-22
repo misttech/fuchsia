@@ -1250,6 +1250,7 @@ impl FakeCtxBuilder {
                         EthernetCreationProperties {
                             mac: mac,
                             max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
+                            tx_offload_spec: Default::default(),
                         },
                         DEFAULT_INTERFACE_METRIC,
                     );
@@ -1319,9 +1320,10 @@ impl FakeNetworkSpec for FakeCtxNetworkSpec {
     type SendMeta = DispatchedFrame;
     type RecvMeta = EthernetDeviceId<FakeBindingsCtx>;
     fn handle_frame(ctx: &mut FakeCtx, device_id: Self::RecvMeta, data: Buf<Vec<u8>>) {
-        ctx.core_api()
-            .device::<EthernetLinkDevice>()
-            .receive_frame(RecvEthernetFrameMeta { device_id }, data)
+        ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta { device_id, parsing_context: NetworkParsingContext::default() },
+            data,
+        )
     }
     fn handle_timer(ctx: &mut FakeCtx, dispatch: Self::TimerId, timer: FakeTimerId) {
         ctx.core_api().handle_timer(dispatch, timer)

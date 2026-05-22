@@ -37,6 +37,7 @@ fn select_device_for_gateway<I: TestIpExt>(on_link_route: bool) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: I::TEST_ADDRS.local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -131,6 +132,7 @@ fn add_gateway_route<I: TestIpExt>(test_case: AddGatewayRouteTestCase) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: I::TEST_ADDRS.local_mac,
                 max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
             },
@@ -188,6 +190,7 @@ fn test_route_tracks_interface_metric<I: TestIpExt>() {
     let metric = RawMetric(9999);
     let device_id = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
         EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
             mac: I::TEST_ADDRS.local_mac,
             max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
         },
@@ -230,6 +233,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
             .device::<EthernetLinkDevice>()
             .add_device_with_default_state(
                 EthernetCreationProperties {
+                    tx_offload_spec: Default::default(),
                     mac: I::TEST_ADDRS.local_mac,
                     max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
                 },
@@ -383,6 +387,7 @@ fn route_resolution_with_marks<I: TestIpExt + netstack3_core::IpExt>() {
             .device::<EthernetLinkDevice>()
             .add_device_with_default_state(
                 EthernetCreationProperties {
+                    tx_offload_spec: Default::default(),
                     mac: I::TEST_ADDRS.local_mac,
                     max_frame_size: MaxEthernetFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
                 },

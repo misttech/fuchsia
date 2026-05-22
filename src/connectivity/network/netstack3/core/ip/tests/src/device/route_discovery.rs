@@ -51,6 +51,7 @@ fn setup() -> (FakeCtx, DeviceId<FakeBindingsCtx>, TestAddrs<Ipv6Addr>) {
         .device::<EthernetLinkDevice>()
         .add_device_with_default_state(
             EthernetCreationProperties {
+                tx_offload_spec: Default::default(),
                 mac: local_mac,
                 max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
             },

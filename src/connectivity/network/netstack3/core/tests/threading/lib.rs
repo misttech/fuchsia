@@ -15,7 +15,7 @@ use net_declare::{net_ip_v4, net_ip_v6, net_mac, net_subnet_v4, net_subnet_v6};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4, Ipv6, Subnet};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr};
-use netstack3_base::NetworkSerializationContext;
+use netstack3_base::{NetworkParsingContext, NetworkSerializationContext};
 use netstack3_core::CtxPair;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::routes::{AddableEntry, AddableMetric, RawMetric};
@@ -257,7 +257,10 @@ fn neighbor_resolution_and_send_queued_packets_atomic<I: TestIpExt>() {
         let resolve_neighbor = loom_spawn(move || {
             let (mut ctx, device_id) = thread_vars;
             ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-                RecvEthernetFrameMeta { device_id },
+                RecvEthernetFrameMeta {
+                    device_id,
+                    parsing_context: NetworkParsingContext::default(),
+                },
                 I::make_neighbor_confirmation(),
             );
         });
