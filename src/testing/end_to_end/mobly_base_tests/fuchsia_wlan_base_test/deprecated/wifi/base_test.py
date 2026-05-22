@@ -333,7 +333,7 @@ class WifiBaseTest(BaseTestClass):
                 )
 
     def download_logs(self) -> None:
-        """Downloads the DHCP and hostapad logs from the access_point.
+        """Downloads the DHCP and hostapd logs from the access_point.
 
         Using the current TestClassContext and TestCaseContext this method pulls
         the DHCP and hostapd logs and outputs them to the correct path.

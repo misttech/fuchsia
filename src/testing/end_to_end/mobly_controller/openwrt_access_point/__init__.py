@@ -527,18 +527,47 @@ class OpenWrtAP:
             AddrType.ipv6_public: ipv6_public_addresses,
         }
 
-    def download_logs(self, path: str) -> None:
+    def log_to_syslog(self, message: str) -> None:
+        """Log a message to syslog on the access point.
+
+        Args:
+            message: The message to log.
+        """
+        self.ssh.run(f'logger "{message}"')
+
+    def download_logs(self, path: str, start_marker: str | None = None) -> None:
         """Download all available logs from the OpenWRT AP.
 
         Args:
             path: Path to write the logs to.
+            start_marker: If provided, only logs after this marker will be saved.
         """
         timestamp = logger.normalize_log_line_timestamp(
             logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
         )
 
         logread_out = self.ssh.run("logread").stdout.decode("utf-8")
-        logread_path = os.path.join(path, f"openwrt_logread_{timestamp}.log")
+        hostname = self.ssh_settings.hostname.replace(".", "_")
+        logread_path = os.path.join(
+            path, f"openwrt_{hostname}_logread_{timestamp}.log"
+        )
+
+        if start_marker:
+            logs = logread_out.splitlines()
+            try:
+                marker_index = next(
+                    i for i, line in enumerate(logs) if start_marker in line
+                )
+                filtered_logs = "\n".join(logs[marker_index:])
+            except StopIteration:
+                _LOGGER.warning(
+                    "Test start marker '%s' not found in logread output.",
+                    start_marker,
+                )
+                filtered_logs = logread_out
+        else:
+            filtered_logs = logread_out
+
         with open(logread_path, "w") as f:
-            f.write(logread_out)
+            f.write(filtered_logs)
         _LOGGER.debug("Wrote OpenWRT logread to %s", logread_path)

@@ -34,6 +34,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         self.access_point: access_point.AccessPoint | None = None
         self.access_points: list[access_point.AccessPoint] = []
         self.openwrt_aps: list[OpenWrtAP] = []
+        self.test_start_marker: str | None = None
 
     async def setup_class(self) -> None:
         await super().setup_class()
@@ -56,6 +57,34 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             self.openwrt_ap = self.openwrt_aps[0]
         elif self.access_points:
             self.access_point = self.access_points[0]
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        import uuid
+
+        self.test_start_marker = (
+            f"MOBLY_TEST_START: {self.current_test_info.name}_{uuid.uuid4()}"
+        )
+        for openwrt_ap in self.openwrt_aps:
+            openwrt_ap.log_to_syslog(self.test_start_marker)
+
+    def _download_ap_logs(self, directory: str) -> None:
+        """Downloads the DHCP and hostapd logs from all access points."""
+        for access_point in self.access_points:
+            access_point.download_ap_logs(directory)
+        for openwrt_ap in self.openwrt_aps:
+            openwrt_ap.download_logs(directory, start_marker=None)
+
+    async def teardown_test(self) -> None:
+        for openwrt_ap in self.openwrt_aps:
+            openwrt_ap.download_logs(
+                self.test_case_path, start_marker=self.test_start_marker
+            )
+        await super().teardown_test()
+
+    async def teardown_class(self) -> None:
+        self._download_ap_logs(self.log_path)
+        await super().teardown_class()
 
     async def wait_for_interface(
         self, netstack: AsyncNetstack, port_class: PortClass

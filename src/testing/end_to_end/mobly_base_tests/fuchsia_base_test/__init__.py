@@ -324,7 +324,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                         directory=self.test_case_path
                     )
 
-    def _output_dir(self) -> pathlib.Path:
+    def output_dir(self) -> pathlib.Path:
         if hasattr(self, "test_case_path"):
             return pathlib.Path(self.test_case_path)
         elif hasattr(self, "log_path"):
@@ -335,7 +335,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             )
 
     def output_file_path(self, file_name: str) -> pathlib.Path:
-        return self._output_dir().joinpath(file_name)
+        return self.output_dir().joinpath(file_name)
 
     async def on_pass(self, record: TestResultRecord) -> None:
         pass
