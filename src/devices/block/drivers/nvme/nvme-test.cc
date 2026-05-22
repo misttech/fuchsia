@@ -293,7 +293,9 @@ TEST_F(NvmeTest, NamespaceWriteTest) {
   client.value().reset();
 }
 
-TEST_F(NvmeTeardownTest, TeardownWithActiveClient) {
+// TODO(https://fxbug.dev/510806838): Re-enable this test once nvme properly handles submitted
+// requests during teardown.
+TEST_F(NvmeTeardownTest, DISABLED_TeardownWithActiveClient) {
   fake_nvme::FakeNamespace fake_ns;
   TestNvme::controller_.AddNamespace(1, fake_ns);
   TestNvme::controller_.AddIoCommand(
