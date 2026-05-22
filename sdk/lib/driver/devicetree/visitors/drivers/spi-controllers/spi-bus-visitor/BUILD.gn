@@ -55,6 +55,7 @@ test("spi-bus-visitor-test-bin") {
 
 dtb("spi-dtb") {
   sources = [ "test/dts/spi.dts.S" ]
+  dtcflags = [ "-Wno-spi_bus_reg" ]
 }
 
 resource("spi-dtb-file") {

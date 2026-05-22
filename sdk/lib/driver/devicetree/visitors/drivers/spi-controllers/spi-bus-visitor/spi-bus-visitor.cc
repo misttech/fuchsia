@@ -104,6 +104,11 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
                                        fdf_devicetree::ChildNode& child) {
   auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
   if (reg.is_error()) {
+    // Ignore config child nodes.
+    if (child.name() == "fuchsia,config") {
+      return zx::ok();
+    }
+
     fdf::error("SPI child '{}' has no reg property: {}", child.name(), reg);
 
     return reg.take_error();

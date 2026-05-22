@@ -33,5 +33,10 @@
 			reg = <2>, <3>;
 			spi-max-frequency = <5000000>;
 		};
+
+		/* This child should be ignored by the visitor. */
+		fuchsia,config {
+			spi_property = <0>;
+		};
 	};
 };
