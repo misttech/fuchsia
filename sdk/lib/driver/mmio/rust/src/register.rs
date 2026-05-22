@@ -266,7 +266,7 @@ pub trait WritableIndexedRegister: IndexedRegister {
 ///
 /// ```rust
 /// register! {
-///     StatusReg, u32, 0x10, RW, {
+///     pub struct StatusReg(u32) @ 0x10, RW {
 ///         pub enabled, set_enabled: 0;
 ///         pub error, _: 1;
 ///         pub value, set_value: 15, 8;
@@ -274,10 +274,199 @@ pub trait WritableIndexedRegister: IndexedRegister {
 /// }
 /// ```
 ///
+/// Full-width register (no bitfields):
+///
+/// ```rust
+/// register! {
+///     pub struct ControlReg(u32) @ 0x14, RW;
+/// }
+/// ```
+///
 /// NOTE: If you use this macro, you must add a dependency on the bitfield crate. (At the time of
 /// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! register {
+    // New syntax: Read-Only with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RO { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Write-Only with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, WO { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::WritableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Write with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RW { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableRegister for $name {}
+        impl $crate::WritableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Only full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RO ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn value(&self) -> $val_type { self.0 }
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Write-Only full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, WO ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn set_value(&mut self, val: $val_type) { self.0 = val; }
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::WritableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Write full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RW ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn value(&self) -> $val_type { self.0 }
+            pub fn set_value(&mut self, val: $val_type) { self.0 = val; }
+        }
+
+        impl $crate::Register for $name {
+            type Value = $val_type;
+            const OFFSET: usize = $offset;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableRegister for $name {}
+        impl $crate::WritableRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // Backward compatibility: Read-Only
     ($name:ident, $val_type:ty, $offset:expr, RO, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -289,32 +478,22 @@ macro_rules! register {
         impl $crate::Register for $name {
             type Value = $val_type;
             const OFFSET: usize = $offset;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::ReadableRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::RegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::RegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
         }
     };
+
+    // Backward compatibility: Write-Only
     ($name:ident, $val_type:ty, $offset:expr, WO, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -326,32 +505,22 @@ macro_rules! register {
         impl $crate::Register for $name {
             type Value = $val_type;
             const OFFSET: usize = $offset;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::WritableRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::RegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::RegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
         }
     };
+
+    // Backward compatibility: Read-Write
     ($name:ident, $val_type:ty, $offset:expr, RW, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -363,31 +532,19 @@ macro_rules! register {
         impl $crate::Register for $name {
             type Value = $val_type;
             const OFFSET: usize = $offset;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::ReadableRegister for $name {}
         impl $crate::WritableRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::RegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::RegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::RegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::RegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::RegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
         }
     };
 }
@@ -403,9 +560,17 @@ macro_rules! register {
 ///
 /// ```rust
 /// indexed_register! {
-///     DataReg, u32, 0x100, 4, 16, RO, {
+///     pub struct DataReg(u32) @ 0x100, stride 4, count 16, RO {
 ///         pub value, _: 31, 0;
 ///     }
+/// }
+/// ```
+///
+/// Full-width indexed register:
+///
+/// ```rust
+/// indexed_register! {
+///     pub struct ValueReg(u32) @ 0x200, stride 4, count 8, RW;
 /// }
 /// ```
 ///
@@ -413,6 +578,199 @@ macro_rules! register {
 /// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! indexed_register {
+    // New syntax: Read-Only with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RO { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Write-Only with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, WO { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::WritableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Write with block
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RW { $($field_spec:tt)* }) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+            $($field_spec)*
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableIndexedRegister for $name {}
+        impl $crate::WritableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Only full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RO ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn value(&self) -> $val_type { self.0 }
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Write-Only full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, WO ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn set_value(&mut self, val: $val_type) { self.0 = val; }
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::WritableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // New syntax: Read-Write full-width
+    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RW ;) => {
+        ::bitfield::bitfield! {
+            $(#[$attr])*
+            #[derive(Copy, Clone, PartialEq, Eq, Default)]
+            pub struct $name($val_type);
+            impl Debug;
+        }
+
+        impl $name {
+            pub fn value(&self) -> $val_type { self.0 }
+            pub fn set_value(&mut self, val: $val_type) { self.0 = val; }
+        }
+
+        impl $crate::IndexedRegister for $name {
+            type Value = $val_type;
+            const BASE_OFFSET: usize = $base_offset;
+            const STRIDE: usize = $stride;
+            const COUNT: usize = $count;
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
+        }
+        impl $crate::ReadableIndexedRegister for $name {}
+        impl $crate::WritableIndexedRegister for $name {}
+
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
+            type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
+        }
+        impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
+            type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
+        }
+    };
+
+    // Backward compatibility: Read-Only
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, RO, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -426,32 +784,22 @@ macro_rules! indexed_register {
             const BASE_OFFSET: usize = $base_offset;
             const STRIDE: usize = $stride;
             const COUNT: usize = $count;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::ReadableIndexedRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::IndexedRegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::IndexedRegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
         }
     };
+
+    // Backward compatibility: Write-Only
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, WO, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -465,32 +813,22 @@ macro_rules! indexed_register {
             const BASE_OFFSET: usize = $base_offset;
             const STRIDE: usize = $stride;
             const COUNT: usize = $count;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::WritableIndexedRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::IndexedRegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::IndexedRegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
         }
     };
+
+    // Backward compatibility: Read-Write
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, RW, { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -504,31 +842,19 @@ macro_rules! indexed_register {
             const BASE_OFFSET: usize = $base_offset;
             const STRIDE: usize = $stride;
             const COUNT: usize = $count;
-
-            fn from_raw(value: Self::Value) -> Self {
-                $name(value)
-            }
-
-            fn to_raw(&self) -> Self::Value {
-                self.0
-            }
+            fn from_raw(value: Self::Value) -> Self { $name(value) }
+            fn to_raw(&self) -> Self::Value { self.0 }
         }
-
         impl $crate::ReadableIndexedRegister for $name {}
         impl $crate::WritableIndexedRegister for $name {}
 
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterReadAccess<M> for $name {
             type ReadProxy<'a> = $crate::IndexedRegisterProxy<'a, M, $name> where M: 'a;
-            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> {
-                $crate::IndexedRegisterProxy::new(mmio)
-            }
+            fn get_read_proxy<'a>(mmio: &'a M) -> Self::ReadProxy<'a> { $crate::IndexedRegisterProxy::new(mmio) }
         }
-
         impl<M: $crate::Mmio + ?Sized> $crate::RegisterWriteAccess<M> for $name {
             type WriteProxy<'a> = $crate::IndexedRegisterProxyMut<'a, M, $name> where M: 'a;
-            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> {
-                $crate::IndexedRegisterProxyMut::new(mmio)
-            }
+            fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
         }
     };
 }
@@ -772,5 +1098,69 @@ mod tests {
         assert_eq!(block.test_reg().read().field1(), 0x34);
         assert_eq!(block.ro_reg().read().field1(), 0xcd);
         assert_eq!(block.indexed().read(0).field1(), 0x11);
+    }
+
+    register! {
+        /// New syntax test register
+        pub struct NewSyntaxReg(u32) @ 4, RW {
+            pub field1, set_field1: 7, 0;
+        }
+    }
+
+    register! {
+        /// Full width test register
+        pub struct FullWidthReg(u32) @ 8, RW;
+    }
+
+    indexed_register! {
+        /// New syntax indexed register
+        pub struct NewSyntaxIndexedReg(u32) @ 12, stride 4, count 2, RW {
+            pub field1, set_field1: 7, 0;
+        }
+    }
+
+    #[test]
+    fn test_new_syntax() {
+        let mut mem = MaybeUninit::<[u32; 8]>::zeroed();
+        let mut mmio = Memory::borrow_uninit(&mut mem);
+
+        let mut reg = NewSyntaxReg::default();
+        reg.set_field1(0x55);
+        reg.write(&mut mmio);
+
+        let reg2 = NewSyntaxReg::read(&mmio);
+        assert_eq!(reg2.field1(), 0x55);
+    }
+
+    #[test]
+    fn test_full_width() {
+        let mut mem = MaybeUninit::<[u32; 8]>::zeroed();
+        let mut mmio = Memory::borrow_uninit(&mut mem);
+
+        let mut reg = FullWidthReg::default();
+        reg.set_value(0x12345678);
+        reg.write(&mut mmio);
+
+        let reg2 = FullWidthReg::read(&mmio);
+        assert_eq!(reg2.value(), 0x12345678);
+    }
+
+    #[test]
+    fn test_new_syntax_indexed() {
+        let mut mem = MaybeUninit::<[u32; 8]>::zeroed();
+        let mut mmio = Memory::borrow_uninit(&mut mem);
+
+        let mut reg = NewSyntaxIndexedReg::default();
+        reg.set_field1(0xaa);
+        reg.write_index(&mut mmio, 0);
+
+        reg.set_field1(0xbb);
+        reg.write_index(&mut mmio, 1);
+
+        let reg0 = NewSyntaxIndexedReg::read_index(&mmio, 0);
+        assert_eq!(reg0.field1(), 0xaa);
+
+        let reg1 = NewSyntaxIndexedReg::read_index(&mmio, 1);
+        assert_eq!(reg1.field1(), 0xbb);
     }
 }
