@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:214
+From //build/bazel/bazel_root_targets_list.gni:218
 
 ### bazel_upload_build_events
 
@@ -1011,7 +1011,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -1741,7 +1741,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -2182,6 +2182,13 @@ artifact. Schema is:
   bazel_name = "build.stamp"
   ninja_name = "bazel_toolchains_tests_build.stamp"
 }, {
+  bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
+  ninja = "ffx-efi_bazel_unversioned"
+}]
+  ninja_name = "ffx-efi_bazel_unversioned"
+}, {
   bazel_label = "//build/tools/json_validator:json_validator_valico"
   install_host_tool = true
 }, {
@@ -2196,8 +2203,6 @@ artifact. Schema is:
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
   ninja = "bazel2gn"
 }]
-}, {
-  bazel_label = "//tools/cargo-gnaw:cargo-gnaw-bin"
 }, {
   bazel_label = "//tools/pretty_serial"
   install_host_tool = true
@@ -4203,7 +4208,7 @@ see https://fxbug.dev/403545512
 
 **Current value (from the default):** `false`
 
-From //build/assembly/tools/assembly/BUILD.gn:15
+From //build/assembly/tools/assembly/BUILD.gn:16
 
 ### experimental_elf_page_size
 
@@ -4242,7 +4247,7 @@ If true, experimental memory optimization features like the
 
 **Current value (from the default):** `false`
 
-From //build/assembly/tools/assembly/BUILD.gn:19
+From //build/assembly/tools/assembly/BUILD.gn:20
 
 ### experimental_thread_sampler_enabled
 
