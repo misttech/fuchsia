@@ -103,6 +103,9 @@ tests = [
     label = "packet-capture"
   },
   {
+    label = "offloading"
+  },
+  {
     label = "multicast-forwarding"
     err_logs = true
     long = true

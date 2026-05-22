@@ -58,7 +58,14 @@ fn assert_udp_packets<'a>(
         assert_eq!(proto, packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp));
         let udp = packet_formats::udp::UdpPacket::parse(
             &mut body,
-            packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
+            packet_formats::udp::UdpParseArgs::with_context(
+                src_ip,
+                dst_ip,
+                // Transport-layer checksums aren't computed for packets sent over
+                // the loopback interface (which is the case for packets sent via
+                // `send_and_recv_udp`) so we skip validation here.
+                packet_formats::testutil::ForceSkipChecksumValidation(true),
+            ),
         )
         .expect("failed to parse UDP packet");
 
@@ -322,7 +329,14 @@ async fn packet_capture_rolling_discard_oldest_test(name: &str) {
             );
             let udp = packet_formats::udp::UdpPacket::parse(
                 &mut body,
-                packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
+                packet_formats::udp::UdpParseArgs::with_context(
+                    src_ip,
+                    dst_ip,
+                    // Transport-layer checksums aren't computed for packets
+                    // sent over the loopback interface so we skip validation
+                    // here.
+                    packet_formats::testutil::ForceSkipChecksumValidation(true),
+                ),
             )
             .expect("failed to parse UDP packet");
 

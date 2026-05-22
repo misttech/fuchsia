@@ -24,9 +24,9 @@ use crate::icmp::{IcmpIpExt, IcmpMessage, IcmpPacket, IcmpParseArgs, Icmpv6Packe
 use crate::ip::{DscpAndEcn, IpExt, Ipv4Proto};
 use crate::ipv4::{Ipv4FragmentType, Ipv4Header, Ipv4Packet};
 use crate::ipv6::{Ipv6Header, Ipv6Packet};
-use crate::tcp::TcpSegment;
 use crate::tcp::options::{TcpOptions, TcpOptionsBuilder};
-use crate::udp::UdpPacket;
+use crate::tcp::{TcpParseContext, TcpSegment};
+use crate::udp::{UdpPacket, UdpParseContext};
 
 #[cfg(test)]
 pub(crate) use crateonly::*;
@@ -343,11 +343,25 @@ pub fn overwrite_icmpv6_checksum(buf: &mut [u8], checksum: [u8; 2]) -> ParseResu
     Ok(message.overwrite_checksum(checksum))
 }
 
+/// A [`TcpParseContext`] and [`UdpParseContext`] that forces a specific
+/// checksum validation action to be used (or skipped).
+pub struct ForceSkipChecksumValidation(pub bool);
+impl UdpParseContext for ForceSkipChecksumValidation {
+    fn skip_checksum_verification(&mut self) -> bool {
+        self.0
+    }
+}
+impl TcpParseContext for ForceSkipChecksumValidation {
+    fn skip_checksum_verification(&mut self) -> bool {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod crateonly {
     use crate::TransportChecksumAction;
-    use crate::tcp::{TcpEnvelope, TcpParseContext, TcpSerializationContext};
-    use crate::udp::{UdpEnvelope, UdpParseContext, UdpSerializationContext};
+    use crate::tcp::{TcpEnvelope, TcpSerializationContext};
+    use crate::udp::{UdpEnvelope, UdpSerializationContext};
     use packet::SerializationContext;
     use std::sync::Once;
 
@@ -402,20 +416,6 @@ mod crateonly {
             ()
         }
         fn checksum_action(&mut self) -> TransportChecksumAction {
-            self.0
-        }
-    }
-
-    /// A [`TcpParseContext`] and [`UdpParseContext`] that forces a specific
-    /// checksum validation action to be used (or skipped).
-    pub(crate) struct ForceSkipChecksumValidation(pub bool);
-    impl UdpParseContext for ForceSkipChecksumValidation {
-        fn skip_checksum_verification(&mut self) -> bool {
-            self.0
-        }
-    }
-    impl TcpParseContext for ForceSkipChecksumValidation {
-        fn skip_checksum_verification(&mut self) -> bool {
             self.0
         }
     }

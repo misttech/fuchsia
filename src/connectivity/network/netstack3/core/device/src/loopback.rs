@@ -15,7 +15,7 @@ use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
-    AnyDevice, BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device,
+    AnyDevice, BroadcastIpExt, ChecksumOffloadSpec, ChecksumRxOffloading, CoreTimerContext, Device,
     DeviceIdAnyCompatContext, DeviceIdContext, FrameDestination, NetworkParsingContext,
     NetworkSerializer, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
     SendFrameErrorReason, SendableFrameMeta, StrongDeviceIdentifier, TimerContext,
@@ -99,7 +99,7 @@ impl DeviceStateSpec for LoopbackDevice {
             counters: Default::default(),
             mtu,
             rx_queue: Default::default(),
-            tx_queue: TransmitQueue::new(tx_allocator, ChecksumOffloadSpec::default()),
+            tx_queue: TransmitQueue::new(tx_allocator, ChecksumOffloadSpec::generic()),
         }
     }
 
@@ -321,7 +321,7 @@ where
                         target_device,
                         Some(frame_dest),
                         ip_layer_metadata,
-                        NetworkParsingContext::default(),
+                        NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded),
                     ),
                     buf,
                 );
@@ -336,7 +336,7 @@ where
                         target_device,
                         Some(frame_dest),
                         ip_layer_metadata,
-                        NetworkParsingContext::default(),
+                        NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded),
                     ),
                     buf,
                 );
