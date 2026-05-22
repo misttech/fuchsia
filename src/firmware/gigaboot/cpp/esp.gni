@@ -59,8 +59,9 @@ template("esp") {
                              "visibility",
                            ])
 
-    ffx_tool = "//src/developer/ffx/tools/efi:ffx-efi"
-    ffx_tool_output_name = "ffx-efi"
+    ffx_tool =
+        "//build/bazel/host:bazel_root_host_tools.ffx-efi_bazel_unversioned"
+    ffx_tool_output_name = "ffx-efi_bazel"
 
     outputs = [ output_file ]
     inputs = []
