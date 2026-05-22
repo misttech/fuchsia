@@ -34,6 +34,15 @@ rustc_library(
     with_host_unit_tests = True,
 )
 
+# Test target unit tests (built as host test here because of HOST_CONSTRAINTS)
+rustc_library(
+    name = "lib_with_target_test",
+    srcs = ["lib.rs"],
+    edition = "2024",
+    target_compatible_with = HOST_CONSTRAINTS,
+    with_unit_tests = True,
+)
+
 # A regular binary target, that does not compile any tests.
 rustc_binary(
     name = "bin",
@@ -65,6 +74,18 @@ rustc_binary(
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     with_host_unit_tests = True,
+    deps = [
+        ":lib",
+    ],
+)
+
+# Test target unit tests for binary (built as host test here because of HOST_CONSTRAINTS)
+rustc_binary(
+    name = "bin_with_target_test",
+    srcs = ["main.rs"],
+    edition = "2024",
+    target_compatible_with = HOST_CONSTRAINTS,
+    with_unit_tests = True,
     deps = [
         ":lib",
     ],
