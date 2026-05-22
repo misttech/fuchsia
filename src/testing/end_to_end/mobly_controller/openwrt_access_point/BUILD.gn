@@ -18,7 +18,6 @@ python_library("openwrt_access_point") {
     "lib/hostapd_options.py",
     "lib/profiles/actiontec.py",
     "lib/profiles/asus.py",
-    "lib/profiles/belkin.py",
     "lib/uci_bss_options.py",
     "lib/uci_options.py",
     "lib/uci_radio_options.py",
