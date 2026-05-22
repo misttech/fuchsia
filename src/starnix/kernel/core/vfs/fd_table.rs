@@ -6,6 +6,7 @@ use crate::security;
 use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
+use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
 use fuchsia_rcu::{RcuArc, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
@@ -127,15 +128,6 @@ impl EncodedEntry {
         !self.is_some()
     }
 
-    /// Returns the `FdFlags` for this entry, if any.
-    fn flags(&self) -> Option<FdFlags> {
-        let value = self.value.load(Ordering::Acquire);
-        if value == 0 {
-            return None;
-        }
-        Some(Self::decode_flags(value))
-    }
-
     /// Sets the `FdFlags` for this entry, preserving the `FileHandle`.
     fn set_flags(&self, flags: FdFlags) {
         loop {
@@ -150,11 +142,6 @@ impl EncodedEntry {
                 return;
             }
         }
-    }
-
-    /// Returns the `FileHandle` for this entry, if any.
-    fn file(&self) -> Option<FileHandle> {
-        self.to_entry().map(|entry| entry.file)
     }
 
     /// Sets the `FileHandle` for this entry, preserving the `FdFlags`.
@@ -177,20 +164,17 @@ impl EncodedEntry {
         }
     }
 
-    /// Returns the `FileHandle` and `FdFlags` for this entry, if any.
-    fn to_entry(&self) -> Option<FdTableEntry> {
+    /// Reads the entry, returning a guard that maintains a consistent view of it.
+    fn read<'a>(&self, scope: &'a RcuReadScope) -> Option<FdTableEntryGuard<'a>> {
         let value = self.value.load(Ordering::Acquire);
         if value == 0 {
             return None;
         }
-        let flags = Self::decode_flags(value);
         let ptr = Self::decode_ptr(value);
+        let flags = Self::decode_flags(value);
         // SAFETY: The pointer is valid because it was encoded in `self.value`.
-        let file = unsafe {
-            Arc::increment_strong_count(ptr);
-            Arc::from_raw(ptr)
-        };
-        Some(FdTableEntry { file, flags })
+        let file = unsafe { RcuPtrRef::new(scope, ptr) };
+        Some(FdTableEntryGuard { file, flags })
     }
 
     /// Sets the `FileHandle` and `FdFlags` for this entry.
@@ -226,7 +210,11 @@ impl EncodedEntry {
 
 impl Clone for EncodedEntry {
     fn clone(&self) -> Self {
-        if let Some(entry) = self.to_entry() { Self::new(entry) } else { Self::default() }
+        if let Some(guard) = self.read(&RcuReadScope::new()) {
+            Self::new(guard.to_entry())
+        } else {
+            Self::default()
+        }
     }
 }
 
@@ -249,6 +237,35 @@ struct FdTableEntry {
 
     /// The flags associated with the file handle.
     flags: FdFlags,
+}
+
+/// A guard for reading an `FdTableEntry`.
+///
+/// This provides memory-safe access to decoded `FdTableEntry` data, which is guarded by RCU.
+struct FdTableEntryGuard<'a> {
+    /// The pointer to the file handle.
+    file: RcuPtrRef<'a, FileReleaser>,
+
+    /// The flags associated with the file handle.
+    flags: FdFlags,
+}
+
+impl<'a> FdTableEntryGuard<'a> {
+    fn flags(&self) -> FdFlags {
+        self.flags
+    }
+
+    /// Acquire a strong reference to the file handle.
+    fn to_handle(&self) -> FileHandle {
+        // SAFETY: We can pass `self.file` to `rcu_ptr_to_arc` because it was obtained from
+        // `Arc::into_raw` via `EncodedEntry::encode` and `EncodedEntry::decode_ptr`.
+        unsafe { rcu_ptr_to_arc(self.file) }
+    }
+
+    /// Upgrade this guard to a full `FdTableEntry` independent of the guard lifetime.
+    fn to_entry(&self) -> FdTableEntry {
+        FdTableEntry { file: self.to_handle(), flags: self.flags }
+    }
 }
 
 /// A `FileHandle` that has been closed and is waiting to be flushed.
@@ -292,13 +309,19 @@ impl<'a> FdTableView<'a> {
     }
 
     /// Returns the `FileHandle` for a given `FdNumber`, if any.
-    fn get_file(&self, fd: FdNumber) -> Option<FileHandle> {
-        self.slice.get(fd.raw() as usize).and_then(|entry| entry.file())
+    fn get_file(&self, scope: &RcuReadScope, fd: FdNumber) -> Option<FileHandle> {
+        self.slice
+            .get(fd.raw() as usize)
+            .and_then(|entry| entry.read(scope))
+            .map(|guard| guard.to_handle())
     }
 
     /// Returns the `FdTableEntry` for a given `FdNumber`, if any.
-    fn get_entry(&self, fd: FdNumber) -> Option<FdTableEntry> {
-        self.slice.get(fd.raw() as usize).and_then(|entry| entry.to_entry())
+    fn get_entry(&self, scope: &RcuReadScope, fd: FdNumber) -> Option<FdTableEntry> {
+        self.slice
+            .get(fd.raw() as usize)
+            .and_then(|entry| entry.read(scope))
+            .map(|guard| guard.to_entry())
     }
 }
 
@@ -333,7 +356,7 @@ impl<'a> FdTableWriteGuard<'a> {
 
     /// Returns the `FileHandle` for a given `FdNumber`, if any.
     fn get_file(&self, scope: &RcuReadScope, fd: FdNumber) -> Option<FileHandle> {
-        self.store.read(scope).get_file(fd)
+        self.store.read(scope).get_file(scope, fd)
     }
 
     /// Inserts a new entry into the `FdTable`.
@@ -417,11 +440,11 @@ impl<'a> FdTableWriteGuard<'a> {
         let view = self.store.read(scope);
         for (index, encoded_entry) in view.slice.iter().enumerate() {
             let fd = FdNumber::from_raw(index as i32);
-            if let Some(flags) = encoded_entry.flags() {
-                let mut modified_flags = flags;
+            if let Some(guard) = encoded_entry.read(scope) {
+                let mut modified_flags = guard.flags();
                 if !predicate(fd, &mut modified_flags) {
                     encoded_entry.clear(id);
-                } else if modified_flags != flags {
+                } else if modified_flags != guard.flags() {
                     encoded_entry.set_flags(modified_flags);
                 }
             }
@@ -442,7 +465,8 @@ impl<'a> FdTableWriteGuard<'a> {
         let id = self.store.id();
         let view = self.store.read(scope);
         for encoded_entry in view.slice.iter() {
-            if let Some(file) = encoded_entry.file() {
+            if let Some(guard) = encoded_entry.read(scope) {
+                let file = guard.to_handle();
                 if let Some(replacement_file) = predicate(&file) {
                     encoded_entry.set_file(id, replacement_file);
                 }
@@ -714,7 +738,9 @@ impl FdTable {
     ) -> Result<(FileHandle, FdFlags), Errno> {
         let inner = self.inner.read();
         let view = inner.read(inner.scope());
-        view.get_entry(fd).map(|entry| (entry.file, entry.flags)).ok_or_else(|| errno!(EBADF))
+        view.get_entry(inner.scope(), fd)
+            .map(|entry| (entry.file, entry.flags))
+            .ok_or_else(|| errno!(EBADF))
     }
 
     /// Returns the file handle associated with the given file descriptor.
