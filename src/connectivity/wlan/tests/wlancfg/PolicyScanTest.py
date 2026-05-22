@@ -8,6 +8,7 @@
 import dataclasses
 import logging
 
+import fuchsia_wlan_base_test
 from antlion.controllers.ap_lib import (
     hostapd_ap_preset,
     hostapd_bss_settings,
@@ -15,9 +16,9 @@ from antlion.controllers.ap_lib import (
     hostapd_security,
 )
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
+    CountryCode,
     SecurityType,
 )
 from mobly import asserts, signals, test_runner
@@ -44,7 +45,7 @@ AP_SSID_LENGTH = 8
 AP_PASSPHRASE_LENGTH = 10
 
 
-class PolicyScanTest(base_test.WifiBaseTest):
+class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WLAN policy scan test class.
 
     This test exercises the scan functionality for the WLAN Policy API.
@@ -54,24 +55,20 @@ class PolicyScanTest(base_test.WifiBaseTest):
     * One Whirlwind Access Point
     """
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        await self.dut.wlan_policy.set_country_code(
+            CountryCode.UNITED_STATES_OF_AMERICA
+        )
         self.log = logging.getLogger()
 
-        if len(self.fuchsia_devices) < 1:
-            raise signals.TestFailure("No fuchsia devices found.")
-        for fd in self.fuchsia_devices:
-            fd.configure_wlan(association_mechanism="policy")
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        if not self.openwrt_aps and not self.access_points:
             raise signals.TestAbortClass(
                 "Requires at least one access point and one Fuchsia device"
             )
+
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
         # Generate network params.
         self.open_network_2g = NetworkInfo(
@@ -178,15 +175,13 @@ class PolicyScanTest(base_test.WifiBaseTest):
             self.wpa2_network_5g.ssid,
         ]
 
-    def setup_test(self) -> None:
-        super().setup_test()
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
 
-    def teardown_test(self) -> None:
-        self.download_logs()
-        super().teardown_test()
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
+        await super().teardown_test()
 
     def _assert_network_is_in_results(
         self, scan_results: list[str], ssid: str
@@ -205,104 +200,87 @@ class PolicyScanTest(base_test.WifiBaseTest):
             f'Network "{ssid}" was not found in scan results: {scan_results}',
         )
 
-    def test_basic_scan_request(self) -> None:
+    async def test_basic_scan_request(self) -> None:
         """Verify a scan returns all expected networks"""
-        for fd in self.fuchsia_devices:
-            scan_results = (
-                fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
-            )
-            if len(scan_results) == 0:
-                raise signals.TestFailure("Scan did not find any networks")
-            for ssid in self.all_ssids:
-                self._assert_network_is_in_results(scan_results, ssid)
+        scan_results = await self.dut.wlan_policy.scan_for_networks()
+        if len(scan_results) == 0:
+            raise signals.TestFailure("Scan did not find any networks")
+        for ssid in self.all_ssids:
+            self._assert_network_is_in_results(scan_results, ssid)
 
-    def test_scan_while_connected_open_network_2g(self) -> None:
+    async def test_scan_while_connected_open_network_2g(self) -> None:
         """Connect to an open 2g network and perform a scan"""
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.open_network_2g.ssid,
-                self.open_network_2g.security,
-                self.open_network_2g.password,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.open_network_2g.ssid,
-                self.open_network_2g.security,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.open_network_2g.ssid, ConnectionState.CONNECTED
-            )
+        await self.dut.wlan_policy.save_network(
+            self.open_network_2g.ssid,
+            self.open_network_2g.security,
+        )
+        await self.dut.wlan_policy.connect(
+            self.open_network_2g.ssid,
+            self.open_network_2g.security,
+        )
+        await self.dut.wlan_policy.wait_for_network_state(
+            self.open_network_2g.ssid, ConnectionState.CONNECTED
+        )
 
-            scan_results = (
-                fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
-            )
-            for ssid in self.all_ssids:
-                self._assert_network_is_in_results(scan_results, ssid)
+        scan_results = await self.dut.wlan_policy.scan_for_networks()
+        for ssid in self.all_ssids:
+            self._assert_network_is_in_results(scan_results, ssid)
 
-    def test_scan_while_connected_wpa2_network_2g(self) -> None:
+    async def test_scan_while_connected_wpa2_network_2g(self) -> None:
         """Connect to a WPA2 2g network and perform a scan"""
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.wpa2_network_2g.ssid,
-                self.wpa2_network_2g.security,
-                self.wpa2_network_2g.password,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.wpa2_network_2g.ssid,
-                self.wpa2_network_2g.security,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.wpa2_network_2g.ssid, ConnectionState.CONNECTED
-            )
+        await self.dut.wlan_policy.save_network(
+            self.wpa2_network_2g.ssid,
+            self.wpa2_network_2g.security,
+            self.wpa2_network_2g.password,
+        )
+        await self.dut.wlan_policy.connect(
+            self.wpa2_network_2g.ssid,
+            self.wpa2_network_2g.security,
+        )
+        await self.dut.wlan_policy.wait_for_network_state(
+            self.wpa2_network_2g.ssid, ConnectionState.CONNECTED
+        )
 
-            scan_results = (
-                fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
-            )
-            for ssid in self.all_ssids:
-                self._assert_network_is_in_results(scan_results, ssid)
+        scan_results = await self.dut.wlan_policy.scan_for_networks()
+        for ssid in self.all_ssids:
+            self._assert_network_is_in_results(scan_results, ssid)
 
-    def test_scan_while_connected_open_network_5g(self) -> None:
+    async def test_scan_while_connected_open_network_5g(self) -> None:
         """Connect to an open 5g network and perform a scan"""
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.open_network_5g.ssid,
-                self.open_network_5g.security,
-                self.open_network_5g.password,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.open_network_5g.ssid,
-                self.open_network_5g.security,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.open_network_5g.ssid, ConnectionState.CONNECTED
-            )
+        await self.dut.wlan_policy.save_network(
+            self.open_network_5g.ssid,
+            self.open_network_5g.security,
+        )
+        await self.dut.wlan_policy.connect(
+            self.open_network_5g.ssid,
+            self.open_network_5g.security,
+        )
+        await self.dut.wlan_policy.wait_for_network_state(
+            self.open_network_5g.ssid, ConnectionState.CONNECTED
+        )
 
-            scan_results = (
-                fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
-            )
-            for ssid in self.all_ssids:
-                self._assert_network_is_in_results(scan_results, ssid)
+        scan_results = await self.dut.wlan_policy.scan_for_networks()
+        for ssid in self.all_ssids:
+            self._assert_network_is_in_results(scan_results, ssid)
 
-    def test_scan_while_connected_wpa2_network_5g(self) -> None:
+    async def test_scan_while_connected_wpa2_network_5g(self) -> None:
         """Connect to a WPA2 5g network and perform a scan"""
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.wpa2_network_5g.ssid,
-                self.wpa2_network_5g.security,
-                self.wpa2_network_5g.password,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.wpa2_network_5g.ssid,
-                self.wpa2_network_5g.security,
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.wpa2_network_5g.ssid, ConnectionState.CONNECTED
-            )
+        await self.dut.wlan_policy.save_network(
+            self.wpa2_network_5g.ssid,
+            self.wpa2_network_5g.security,
+            self.wpa2_network_5g.password,
+        )
+        await self.dut.wlan_policy.connect(
+            self.wpa2_network_5g.ssid,
+            self.wpa2_network_5g.security,
+        )
+        await self.dut.wlan_policy.wait_for_network_state(
+            self.wpa2_network_5g.ssid, ConnectionState.CONNECTED
+        )
 
-            scan_results = (
-                fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
-            )
-            for ssid in self.all_ssids:
-                self._assert_network_is_in_results(scan_results, ssid)
+        scan_results = await self.dut.wlan_policy.scan_for_networks()
+        for ssid in self.all_ssids:
+            self._assert_network_is_in_results(scan_results, ssid)
 
 
 if __name__ == "__main__":
