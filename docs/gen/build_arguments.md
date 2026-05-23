@@ -89,7 +89,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:779
+From //build/config/BUILDCONFIG.gn:780
 
 ### allowed_test_device_types
 
@@ -1002,7 +1002,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1098,7 +1098,7 @@ This should never be set as a build argument.
 }
   riscv64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/riscv64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -4336,7 +4336,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:537
+From //build/config/BUILDCONFIG.gn:538
 
 ### fastboot_product
 
@@ -5030,7 +5030,7 @@ LINT.IfChange(in_default_toolchain)
 
 **Current value (from the default):** `true`
 
-From //build/config/BUILDCONFIG.gn:45
+From //build/config/BUILDCONFIG.gn:46
 
 ### include_account_in_fvm
 
@@ -5135,7 +5135,7 @@ and the analysis overhead turned off by default.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:29
+From //build/config/BUILDCONFIG.gn:30
 
 ### is_multi_product_build
 
@@ -5470,7 +5470,7 @@ Each element of the list is one variant, which is a scope defining:
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:285
+From //build/config/BUILDCONFIG.gn:286
 
 ### link_rbe_check
 
@@ -5735,6 +5735,15 @@ precommitted (which is not done by default).
 
 From //src/graphics/drivers/msd-arm-mali/src/BUILD.gn:23
 
+### msd_arm_mali_csf_firmware_label
+
+Label of the firmware target for msd-arm-mali-csf.
+If empty, no firmware is included in the driver package.
+
+**Current value (from the default):** `""`
+
+From //src/graphics/drivers/msd-arm-mali-csf/BUILD.gn:13
+
 ### netstack3_profile_rustc
 
 Adds compilation flags to emit rustc self-profiling when building netstack3
@@ -5744,6 +5753,18 @@ consumption to play nice with RBE.
 **Current value (from the default):** `false`
 
 From //src/connectivity/network/netstack3/BUILD.gn:9
+
+### ninja_implicit_inputs_root_labels
+
+A set of target labels that will be used to generate list of
+Ninja implicit inputs through GN metadata collection. These need
+to be exposed to guarantee the incremental correctness of Ninja
+subbuilds invoker from Bazel. For more details, read
+//build/ninja_implicit_inputs/README.md
+
+**Current value (from the default):** `["//:default"]`
+
+From //build/ninja_implicit_inputs/config.gni:11
 
 ### ninja_upload_build_events
 
@@ -6336,7 +6357,7 @@ Sets if we should output breakpad symbols for Fuchsia binaries.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:32
+From //build/config/BUILDCONFIG.gn:33
 
 ### output_gsym
 
@@ -6344,7 +6365,7 @@ Controls whether we should output GSYM files for Fuchsia binaries.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:35
+From //build/config/BUILDCONFIG.gn:36
 
 ### override_target_api_level
 
@@ -9117,7 +9138,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:769
+From //build/config/BUILDCONFIG.gn:770
 
 ### select_variant_canonical
 
@@ -9127,7 +9148,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:774
+From //build/config/BUILDCONFIG.gn:775
 
 ### select_variant_shortcuts
 
@@ -9204,7 +9225,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:544
+From //build/config/BUILDCONFIG.gn:545
 
 ### skip_buildtools_check
 
@@ -9589,7 +9610,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:953
+From //build/config/BUILDCONFIG.gn:954
 
 ### truncate_build_info_commit_date
 
@@ -10160,7 +10181,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:970
+From //build/config/BUILDCONFIG.gn:971
 
 ### zircon_tracelog
 
