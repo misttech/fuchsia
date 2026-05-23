@@ -29,8 +29,8 @@ namespace zircon_profile {
 enum class ProfileScope {
   None = 0,
   Bringup,
-  Board,
   Core,
+  Board,
   Product,
   Builtin,
 };

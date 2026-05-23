@@ -142,7 +142,7 @@ TEST(ProfileConfig, Parse) {
   {
     const auto iter = result->thread.find(*Role::Create("test.board.a"));
     ASSERT_TRUE(iter != result->thread.end());
-    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
+    EXPECT_EQ(iter->second.scope, ProfileScope::Board);
     EXPECT_EQ(iter->second.info.flags, ZX_PROFILE_INFO_FLAG_PRIORITY);
     EXPECT_EQ(iter->second.info.priority, 20);
   }
@@ -150,7 +150,7 @@ TEST(ProfileConfig, Parse) {
   {
     const auto iter = result->thread.find(*Role::Create("test.board.a:affinity"));
     ASSERT_TRUE(iter != result->thread.end());
-    EXPECT_EQ(iter->second.scope, ProfileScope::Board);
+    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
     EXPECT_EQ(iter->second.info.flags,
               ZX_PROFILE_INFO_FLAG_CPU_MASK | ZX_PROFILE_INFO_FLAG_PRIORITY);
     EXPECT_EQ(iter->second.info.priority, 11);
@@ -168,7 +168,7 @@ TEST(ProfileConfig, Parse) {
   {
     const auto iter = result->thread.find(*Role::Create("test.board.b:affinity"));
     ASSERT_TRUE(iter != result->thread.end());
-    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
+    EXPECT_EQ(iter->second.scope, ProfileScope::Board);
     EXPECT_EQ(iter->second.info.flags,
               ZX_PROFILE_INFO_FLAG_CPU_MASK | ZX_PROFILE_INFO_FLAG_PRIORITY);
     EXPECT_EQ(iter->second.info.priority, 6);
@@ -255,7 +255,7 @@ TEST(ProfileConfig, Parse) {
   {
     const auto iter = result->memory.find(*Role::Create("test.board.a"));
     ASSERT_TRUE(iter != result->memory.end());
-    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
+    EXPECT_EQ(iter->second.scope, ProfileScope::Board);
     EXPECT_EQ(iter->second.info.flags, ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY);
     EXPECT_EQ(iter->second.info.priority, 20);
   }
@@ -263,7 +263,7 @@ TEST(ProfileConfig, Parse) {
   {
     const auto iter = result->memory.find(*Role::Create("test.board.b"));
     ASSERT_TRUE(iter != result->memory.end());
-    EXPECT_EQ(iter->second.scope, ProfileScope::Board);
+    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
     EXPECT_EQ(iter->second.info.flags, ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY);
     EXPECT_EQ(iter->second.info.priority, 24);
   }
