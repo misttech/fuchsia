@@ -13,9 +13,9 @@ mod mutex;
 mod rwlock;
 
 #[cfg(target_os = "fuchsia")]
-use mutex::RawSyncMutex as RawMutex;
+pub use mutex::RawSyncMutex as RawMutex;
 #[cfg(not(target_os = "fuchsia"))]
-use parking_lot::RawMutex;
+pub use parking_lot::RawMutex;
 
 #[cfg(not(target_os = "fuchsia"))]
 use parking_lot::RawRwLock;
