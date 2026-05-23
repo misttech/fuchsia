@@ -10,10 +10,14 @@ import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 _logger: Optional[logging.Logger] = None
+_stream_handler: Optional[logging.StreamHandler[Any]] = None
+_file_handler: Optional[logging.FileHandler] = None
 _enable_status_updates: bool = False
+_console_log_level: int = logging.WARNING
 
 
 _EXCEPTION = logging.CRITICAL + 1
@@ -98,6 +102,16 @@ def add_args(
     )
 
 
+def _create_formatter(colors: bool = False) -> logging.Formatter:
+    """Creates a formatter for logging."""
+    fmt = "%(asctime)s - %(levelname)s: [%(filename)s:%(lineno)d] %(message)s"
+
+    if colors:
+        return ColoredFormatter(fmt)
+    else:
+        return logging.Formatter(fmt)
+
+
 def init_logger(
     log_level: int = logging.WARNING,
     colors: bool = False,
@@ -112,54 +126,91 @@ def init_logger(
         enable_status_updates: Whether to enable status updates.
     """
     global _logger
+    global _stream_handler
     global _enable_status_updates
+    global _console_log_level
     _enable_status_updates = enable_status_updates
+    _console_log_level = log_level
     logger = logging.getLogger("cog")
 
-    # Clear any existing handlers. This can happen if log() is called before
-    # init_logger(), which causes may cause duplicate output if we do not clear
+    # Clear any existing StreamHandler. This can happen if log() is called before
+    # init_logger(), which may cause duplicate output if we do not clear
     # the old logger handler.
-    logger.handlers.clear()
+    if _stream_handler is not None:
+        logger.removeHandler(_stream_handler)
 
-    logger.setLevel(log_level)
+    logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(log_level)
 
-    formatter: logging.Formatter
-    if colors:
-        formatter = ColoredFormatter(
-            "%(levelname)s: [%(filename)s:%(lineno)d] %(message)s"
-        )
-    else:
-        formatter = logging.Formatter(
-            "%(levelname)s: [%(filename)s:%(lineno)d] %(message)s"
-        )
+    formatter = _create_formatter(colors=colors)
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    _stream_handler = handler
     _logger = logger
+
+
+def setup_file_logging(workspace_root: Path) -> None:
+    """Enables writing logs to a file.
+
+    Args:
+        workspace_root: The root directory of the workspace.
+    """
+    global _logger
+    global _file_handler
+    if _logger is None:
+        init_logger()
+
+    assert _logger
+
+    # Check if file handler already exists to avoid duplicates
+    if _file_handler is not None:
+        return
+
+    try:
+        log_file = workspace_root / "workspace_setup.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_formatter = _create_formatter(colors=False)
+        file_handler.setFormatter(file_formatter)
+
+        _logger.addHandler(file_handler)
+        _file_handler = file_handler
+    except Exception as e:
+        _logger.warning(f"Failed to initialize file logging: {e}")
 
 
 def get_log_level() -> int:
     """Returns the current log level."""
-    if _logger is None:
-        return logging.WARNING
-    return _logger.level
+    return _console_log_level
 
 
 @contextlib.contextmanager
 def set_level(level: int) -> Iterator[None]:
     """Context manager to temporarily set the log level."""
+    global _console_log_level
     global _logger
+    global _stream_handler
     if _logger is None:
         init_logger(logging.WARNING)
 
     assert _logger
-    old_level = _logger.level
-    _logger.setLevel(level)
+    old_level = _console_log_level
+    _console_log_level = level
+
+    old_stream_level = None
+    if _stream_handler:
+        old_stream_level = _stream_handler.level
+        _stream_handler.setLevel(level)
+
     try:
         yield
     finally:
-        _logger.setLevel(old_level)
+        _console_log_level = old_level
+        if _stream_handler and old_stream_level is not None:
+            _stream_handler.setLevel(old_stream_level)
 
 
 def log(level: int, *args: Any, **kwargs: Any) -> None:

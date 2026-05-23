@@ -162,6 +162,7 @@ class Workspace:
         self.cartfs_mount_point = self.cartfs_instance.mount_point
         self._lock_file_handle: TextIO | None = None
         self._lock_count = 0
+        logger.setup_file_logging(self.workspace_root)
 
     @property
     def workspace_root(self) -> Path:
