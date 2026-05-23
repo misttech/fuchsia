@@ -13,6 +13,11 @@ if [[ $# -ne 3 ]]; then
   exit 2
 fi
 
+# If true, don't touch the output file when it would be unchanged.
+# TODO(https://fxbug.dev/515862756): Disable this for now; it may work around a
+# build system issue that has not yet been properly explained.
+readonly LAZY=false
+
 readonly RSPFILE="$1" # Name of link_output_rspfile() output.
 readonly OUTPUT="$2"  # .S (.inc) file to write.
 readonly DEPFILE="$3" # depfile to write.
@@ -33,7 +38,7 @@ echo > "$OUTPUT.new" "\
 .balign 1
 .asciz \"${BUILD_ID}\""
 
-if [[ -r "$OUTPUT" && "$(<"$OUTPUT.new")" = "$(<"$OUTPUT")" ]]; then
+if $LAZY && [[ -r "$OUTPUT" && "$(<"$OUTPUT.new")" = "$(<"$OUTPUT")" ]]; then
   # Leave $OUTPUT untouched since it would be identical and so does not
   # necessarily need to be recompiled.
   rm -f "$OUTPUT.new"
