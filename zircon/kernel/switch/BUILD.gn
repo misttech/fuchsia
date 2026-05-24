@@ -35,11 +35,6 @@ linker_config("standalone") {
 
 # These flags say that all function and variable references will be statically
 # resolved at link time, so PIC generation will never use GOT indirection.
-#
-# TODO(https://fxbug.dev/507570739): In Rust, this ought to be handled just by
-# how the declarations are structured and annotated.  We need to make sure we
-# know the right idioms for that and look into if there's anything we should do
-# here to enforce that they've been used rigorously.
 config("static-pic-link") {
   rustflags = [ "-Cdefault-linker-libraries=no" ]
   ldflags = [
@@ -56,6 +51,15 @@ config("static-pic-link") {
   if (is_gcc && current_os == "fuchsia") {
     cflags += [ "-fpie" ]
   }
+
+  rustflags += [
+    "-Zdefault-visibility=hidden",
+    "-Zdirect-access-external-data=yes",
+
+    # TODO(https://fxbug.dev/511265181): The Rust compiler has longstanding
+    # bugs wherein it breaks these invariants unless given this switch.
+    "-Ccodegen-units=1",
+  ]
 }
 
 # These flags say that we want complete DWARF CFI at every instruction in
