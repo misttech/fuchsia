@@ -5,6 +5,7 @@
 import("//build/config/clang/clang.gni")
 import("//build/config/compiler.gni")
 import("//build/config/zircon/levels.gni")
+import("//build/rust/build.gni")
 import("//build/toolchain/breakpad.gni")
 import("//build/toolchain/buildidtool.gni")
 import("//build/toolchain/ccache.gni")
@@ -12,6 +13,7 @@ import("//build/toolchain/concurrent_jobs.gni")
 import("//build/toolchain/default_tools.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/rbe_toolchain_vars.gni")
+import("//build/toolchain/rust_toolchain_vars.gni")
 import("//build/toolchain/zircon/clang.gni")
 import("//build/toolchain/zircon/gcc.gni")
 import("//build/zircon/build_args.gni")
@@ -78,7 +80,7 @@ import("//build/zircon/build_args.gni")
 #     - Type: string
 #     - Default: "" or "<tuple>-" prefix for $cpu and $os if "gcc" in tags
 #
-#   * cxx_rbe_enable, link_rbe_enable
+#   * cxx_rbe_enable, link_rbe_enable, rust_rbe_enable
 #     - Optional: If defined, override the global value of the same name.
 #     - Type: bool
 #
@@ -133,6 +135,11 @@ template("zircon_toolchain") {
     _link_rbe_enable = invoker.link_rbe_enable
   } else {
     _link_rbe_enable = link_rbe_enable
+  }
+  if (defined(invoker.rust_rbe_enable)) {
+    _rust_rbe_enable = invoker.rust_rbe_enable
+  } else {
+    _rust_rbe_enable = rust_rbe_enable
   }
   _restat_link = _link_rbe_enable
 
@@ -489,6 +496,12 @@ template("zircon_toolchain") {
         "{{libs}}",
         "{{solibs}}",
       ]
+
+      # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
+      # but nothing depends on the .pdb file, then it should be OK that
+      # Ninja thinks it's an additional output but it doesn't get created.
+      debug_outfile = "{{output_dir}}/{{target_output_name}}.pdb"
+      link_outputs = [ debug_outfile ]
     } else {
       link_inputs = [
         "-Wl,--start-group",
@@ -501,16 +514,8 @@ template("zircon_toolchain") {
       depsformat = "gcc"
       switches += [ "-Wl,--dependency-file=$depfile" ]
       mapfile = "${outfile}.map"
-      outputs += [ mapfile ]
+      link_outputs = [ mapfile ]
       linker_switches += [ "-Map=$mapfile" ]
-    }
-
-    if (is_pecoff) {
-      # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
-      # but nothing depends on the .pdb file, then it should be OK that
-      # Ninja thinks it's an additional output but it doesn't get created.
-      debug_outfile = "{{output_dir}}/{{target_output_name}}.pdb"
-      outputs += [ debug_outfile ]
     }
 
     post_strip_command = []
@@ -531,12 +536,12 @@ template("zircon_toolchain") {
         "-entry",
         "\".debug=$debug_outfile\"",
       ]
-      outputs += [ buildid_stampfile ]
+      link_outputs += [ buildid_stampfile ]
     }
 
     if (use_breakpad) {
       breakpad_outfile = "${outfile}.sym"
-      outputs += [ breakpad_outfile ]
+      link_outputs += [ breakpad_outfile ]
 
       assert(use_buildidtool)
 
@@ -584,7 +589,7 @@ template("zircon_toolchain") {
 
     if (use_gsym) {
       gsym_outfile = "${outfile}.gsym"
-      outputs += [ gsym_outfile ]
+      link_outputs += [ gsym_outfile ]
       post_strip_command += [
         "&&",
         gsymutil,
@@ -601,8 +606,91 @@ template("zircon_toolchain") {
 
   _exe_link_common = {
     forward_variables_from(_link_common, "*")
+    outputs += link_outputs
     if (is_pecoff) {
       default_output_extension = ".exe"
+    }
+  }
+
+  _rust_common = {
+    _exclude = [ "rspfile_content" ]
+    if (!rustc_use_response_files) {
+      _exclude += [ "rspfile" ]
+    }
+    forward_variables_from(_link_common, "*", _exclude)
+    depfile = "$outfile.d"
+
+    # Configure builds to be restat-friendly by preserving timestamps of
+    # unchanged outputs, for both local and remote builds.
+    restat = restat_rust
+    _launcher = []
+    if (restat_rust) {
+      if (_rust_rbe_enable) {
+        _launcher = restat_command_launcher.remote
+      } else {
+        _launcher = restat_command_launcher.local
+      }
+    }
+    command_launcher =
+        string_replace(string_join(" ", _launcher), "{{DEPFILE}}", depfile)
+
+    # Configure Rust remote builds.
+    if (_rust_rbe_enable) {
+      command_prefix = rbe_toolchain_vars.rust_command_prefix
+      forward_variables_from(rbe_toolchain_vars.rust_concurrent_jobs, "*")
+    } else {
+      command_prefix = []
+      forward_variables_from(concurrent_jobs.local, "*")
+    }
+
+    command_prefix += rust_toolchain_vars.rust_command_prefix
+    command_prefix += [
+      "{{rustflags}}",
+      "--emit=dep-info=$depfile",
+      "-Zdep-info-omit-d-target",
+      "--emit=link",
+      "-o",
+      unstripped_outfile,
+    ]
+
+    link_switches = []
+    foreach(arg, linker_switches) {
+      link_switches += [ "-Clink-arg=$arg" ]
+    }
+
+    # Even though rmeta is not always needed as an output, we always use
+    # emit=metadata to signal to the remote wrapper that rmetas should be used
+    # for dependency scanning, as opposed to complete rlibs.
+    rmeta = "$unstripped_outfile.rmeta"
+    outputs += [ rmeta ]
+    command_prefix += [ "--emit=metadata=$rmeta" ]
+
+    rust_inputs = [
+      "{{rustdeps}}",
+      "{{externs}}",
+    ]
+    if (rustc_use_response_files) {
+      rspfile_content = string_join(" ", rust_inputs)
+      command_prefix += [
+        "-Zshell-argfiles",
+        "@shell:$rspfile",
+      ]
+    } else {
+      command_prefix += rust_inputs
+    }
+
+    if (verify_depfile) {
+      post_strip_command += [
+        "&&",
+        rebase_path(python_exe_src, root_build_dir),
+        "-S",
+        rebase_path("//build/gn/verify_depfile.py", root_build_dir),
+        "-t",
+        "\"{{label}}\"",
+        "-d",
+        depfile,
+        "{{sources}}",
+      ]
     }
   }
 
@@ -712,6 +800,43 @@ template("zircon_toolchain") {
       description = "LINK {{output}}"
       forward_variables_from(_exe_link_common, "*")
       _command = [ ld ] + switches + [ "{{ldflags}}" ] + link_inputs +
+                 strip_command + post_strip_command
+      command = string_join(" ", _command)
+    }
+
+    tool("rust_bin") {
+      description = "RUST {{output}}"
+      forward_variables_from(_exe_link_common, "*")
+      forward_variables_from(_rust_common, "*")
+      _command =
+          command_prefix + link_switches + strip_command + post_strip_command
+      command = string_join(" ", _command)
+    }
+
+    tool("rust_rlib") {
+      description = "RUST(RLIB) {{output}}"
+      forward_variables_from(_rust_common, "*", [ "runtime_outputs" ])
+      output_prefix = "lib"
+      default_output_extension = ".rlib"
+      _command = command_prefix
+      command = string_join(" ", _command)
+    }
+
+    tool("rust_staticlib") {
+      description = "RUST(AR) {{output}}"
+      forward_variables_from(_rust_common, "*", [ "runtime_outputs" ])
+      output_prefix = "lib"
+      default_output_extension = ".a"
+      _command = command_prefix
+      command = string_join(" ", _command)
+    }
+
+    tool("rust_macro") {
+      description = "RUST(MACRO) {{output}}"
+      forward_variables_from(_rust_common, "*")
+      outputs += link_outputs
+      default_output_extension = ".so"
+      _command = command_prefix + [ "--extern=proc_macro" ] + link_switches +
                  strip_command + post_strip_command
       command = string_join(" ", _command)
     }

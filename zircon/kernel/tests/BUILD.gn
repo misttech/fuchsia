@@ -123,6 +123,7 @@ if (toolchain_environment == "kernel") {
     ]
     deps = [
       ":common",
+      "rust:kernel-tests",
       "//zircon/kernel/arch/$zircon_cpu:kernel-tests",
       "//zircon/kernel/dev:kernel-tests",
       "//zircon/kernel/hypervisor:kernel-tests",
