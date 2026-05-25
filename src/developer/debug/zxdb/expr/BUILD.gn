@@ -35,6 +35,8 @@ static_library("expr") {
     "expr_language.h",
     "expr_node.cc",
     "expr_node.h",
+    "expr_number_utils.cc",
+    "expr_number_utils.h",
     "expr_parser.cc",
     "expr_parser.h",
     "expr_token.h",

@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/console/commands/verb_attach.h"
 
+#include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/filter.h"
@@ -194,17 +195,6 @@ Examples
       Attaches to all processes under the job with koid 2037.
 )";
 
-std::string TrimToZirconMaxNameLength(std::string pattern) {
-  if (pattern.size() > kZirconMaxNameLength) {
-    Console::get()->Output(OutputBuffer(
-        Syntax::kWarning,
-        "The filter is trimmed to " + std::to_string(kZirconMaxNameLength) +
-            " characters because it's the maximum length for a process name in Zircon."));
-    pattern.resize(kZirconMaxNameLength);
-  }
-  return pattern;
-}
-
 void RunVerbAttach(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
   // Only process can be specified.
   if (Err err = cmd.ValidateNouns({Noun::kProcess}); err.has_error())
@@ -289,28 +279,18 @@ void RunVerbAttach(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
     filter->SetJobKoid(job_koid);
   }
 
-  if (cmd.HasSwitch(kSwitchExact)) {
-    filter->SetType(debug_ipc::Filter::Type::kProcessName);
-    pattern = TrimToZirconMaxNameLength(pattern);
-    filter->SetPattern(pattern);
-  } else if (debug::StringStartsWith(pattern, "fuchsia-pkg://") ||
-             debug::StringStartsWith(pattern, "fuchsia-boot://")) {
-    filter->SetType(debug_ipc::Filter::Type::kComponentUrl);
-    filter->SetPattern(pattern);
-  } else if (debug::StringStartsWith(pattern, "/")) {
-    filter->SetType(debug_ipc::Filter::Type::kComponentMoniker);
-    filter->SetPattern(pattern);
-  } else if (debug::StringContains(pattern, "/")) {
-    filter->SetType(debug_ipc::Filter::Type::kComponentMonikerSuffix);
-    filter->SetPattern(pattern);
-  } else if (debug::StringEndsWith(pattern, ".cm")) {
-    filter->SetType(debug_ipc::Filter::Type::kComponentName);
-    filter->SetPattern(pattern);
-  } else {
-    filter->SetType(debug_ipc::Filter::Type::kProcessNameSubstr);
-    pattern = TrimToZirconMaxNameLength(pattern);
-    filter->SetPattern(pattern);
+  std::string original_pattern = pattern;
+  auto type = debug_ipc::ResolveFilterType(pattern, {.exact = cmd.HasSwitch(kSwitchExact)});
+
+  if (pattern.size() < original_pattern.size()) {
+    Console::get()->Output(OutputBuffer(
+        Syntax::kWarning,
+        "The filter is trimmed to " + std::to_string(kZirconMaxNameLength) +
+            " characters because it's the maximum length for a process name in Zircon."));
   }
+
+  filter->SetType(type);
+  filter->SetPattern(pattern);
 
   console_context->SetActiveFilter(filter);
 

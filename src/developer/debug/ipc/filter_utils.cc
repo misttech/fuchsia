@@ -147,4 +147,38 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
   return pids_to_attach;
 }
 
+Filter::Type ResolveFilterType(std::string& pattern, const FilterResolutionOptions& options) {
+  constexpr size_t kMaxProcessNameLength = 31;
+
+  if (options.exact) {
+    if (pattern.size() > kMaxProcessNameLength) {
+      pattern.resize(kMaxProcessNameLength);
+    }
+    return Filter::Type::kProcessName;
+  }
+
+  if (debug::StringStartsWith(pattern, "fuchsia-pkg://") ||
+      debug::StringStartsWith(pattern, "fuchsia-boot://")) {
+    return Filter::Type::kComponentUrl;
+  }
+
+  if (debug::StringStartsWith(pattern, "/")) {
+    return Filter::Type::kComponentMoniker;
+  }
+
+  if (debug::StringContains(pattern, "/")) {
+    return Filter::Type::kComponentMonikerSuffix;
+  }
+
+  if (debug::StringEndsWith(pattern, ".cm")) {
+    return Filter::Type::kComponentName;
+  }
+
+  // Default is process name substring.
+  if (pattern.size() > kMaxProcessNameLength) {
+    pattern.resize(kMaxProcessNameLength);
+  }
+  return Filter::Type::kProcessNameSubstr;
+}
+
 }  // namespace debug_ipc

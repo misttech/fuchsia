@@ -17,6 +17,7 @@
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process_observer.h"
 #include "src/developer/debug/zxdb/client/session_observer.h"
+#include "src/developer/debug/zxdb/client/system_observer.h"
 #include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/console/console.h"
@@ -28,6 +29,7 @@ namespace zxdb {
 
 class Session;
 class Breakpoint;
+class Filter;
 
 class DebugAdapterServer;
 class DebugAdapterReader;
@@ -56,9 +58,10 @@ struct VariablesRecord {
 // library.
 // Note: All methods in this class need to be executed on main thread to avoid concurrency bugs.
 class DebugAdapterContext : public ThreadObserver,
-                            ProcessObserver,
-                            SessionObserver,
-                            BreakpointObserver {
+                            public ProcessObserver,
+                            public SessionObserver,
+                            public BreakpointObserver,
+                            public SystemObserver {
  public:
   using DestroyConnectionCallback = std::function<void()>;
 
@@ -96,6 +99,9 @@ class DebugAdapterContext : public ThreadObserver,
   // BreakpointObserver implementation:
   void OnBreakpointMatched(Breakpoint* breakpoint, bool user_requested) override;
 
+  // SystemObserver implementation:
+  void WillDestroyFilter(Filter* filter) override;
+
   Thread* GetThread(uint64_t koid);
 
   // Checks if thread is in stopped state; returns error if not stopped.
@@ -130,6 +136,10 @@ class DebugAdapterContext : public ThreadObserver,
   // Breakpoints added from console are not deleted.
   void DeleteBreakpointsForSource(const std::filesystem::path& source);
   void DeleteAllBreakpoints();
+
+  void StoreFilter(Filter* filter);
+  void DeleteAllFilters();
+  const std::vector<Filter*>& filters() const { return filters_; }
 
   // Deinitializes the `AsyncBacktraceSubscription` for testing purposes.
   //
@@ -182,6 +192,9 @@ class DebugAdapterContext : public ThreadObserver,
   // members, so `source_to_bp_` trades off a potential simplification for sake of correctness.
   // See https://fxbug.dev/377344509 and `FileLine::comp_dir()` documentation for more context.
   std::map<std::filesystem::path, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
+
+  // Stores all filters added by the debug adapter client.
+  std::vector<Filter*> filters_;
 
   // Monitors async-backtrace state changes and propagates via custom DAP events.
   std::optional<AsyncBacktraceSubscription> async_backtrace_subscription_;

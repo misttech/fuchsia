@@ -4,14 +4,18 @@
 
 #include "context.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
+#include "src/developer/debug/zxdb/client/filter.h"
 #include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/system.h"
+#include "src/developer/debug/zxdb/client/system_observer.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_attach.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
@@ -83,8 +87,10 @@ DebugAdapterContext::~DebugAdapterContext() {
     session()->thread_observers().RemoveObserver(this);
     session()->process_observers().RemoveObserver(this);
     session()->breakpoint_observers().RemoveObserver(this);
+    session()->system().RemoveObserver(this);
   }
   DeleteAllBreakpoints();
+  DeleteAllFilters();
   session()->RemoveObserver(this);
 }
 
@@ -225,6 +231,7 @@ void DebugAdapterContext::Init() {
   session()->thread_observers().AddObserver(this);
   session()->process_observers().AddObserver(this);
   session()->breakpoint_observers().AddObserver(this);
+  session()->system().AddObserver(this);
 
   async_backtrace_subscription_.emplace(session()->GetWeakPtr(), dap_);
 
@@ -583,6 +590,43 @@ void DebugAdapterContext::DeleteAllBreakpoints() {
   }
   breakpoint_to_id_.clear();
   source_to_bp_.clear();
+}
+
+void DebugAdapterContext::StoreFilter(Filter* filter) {
+  FX_DCHECK(filter);
+  if (std::find(filters_.begin(), filters_.end(), filter) == filters_.end()) {
+    filters_.push_back(filter);
+  }
+}
+
+// Deletes all filters created dynamically by this DAP connection context.
+//
+// We manage and clean up our own filters locally via `filters_` instead of calling the global
+// `session()->system().GetFilters()` because the debugger process and the core Session survive
+// DAP disconnections. Deleting all global filters on connection teardown would destructively
+// wipe out the developer's pre-configured startup filters loaded from `~/.fuchsia/debug/zxdbrc`
+// (e.g., `attach cobalt.cm`).
+void DebugAdapterContext::DeleteAllFilters() {
+  // Safeguard against null session during final context destruction
+  if (!session()) {
+    return;
+  }
+
+  // system().DeleteFilter calls WillDestroyFilter which will erase the iterator while we are
+  // iterating. Iterate through the copied filters instead.
+  auto filters_to_delete = filters_;
+  for (auto* filter : filters_to_delete) {
+    session()->system().DeleteFilter(filter);
+  }
+  filters_.clear();
+}
+
+void DebugAdapterContext::WillDestroyFilter(Filter* filter) {
+  // Remove the filter from our local tracking vector if it is destroyed externally.
+  auto it = std::find(filters_.begin(), filters_.end(), filter);
+  if (it != filters_.end()) {
+    filters_.erase(it);
+  }
 }
 
 }  // namespace zxdb

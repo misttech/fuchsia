@@ -18,6 +18,7 @@
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/expr/eval_callback.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
+#include "src/developer/debug/zxdb/expr/expr_number_utils.h"
 
 namespace zxdb {
 
@@ -57,11 +58,6 @@ Err AssertAllStoppedThreadsCommand(ConsoleContext* context, const Command& cmd,
 // the first index into the array of the string FOLLOWING the prefix. If there is no prefix, returns
 // 0. If there is only the prefix and nothing following the returned value will be s.size().
 size_t CheckHexPrefix(const std::string& s);
-
-[[nodiscard]] Err StringToInt(const std::string& s, int* out);
-[[nodiscard]] Err StringToInt64(const std::string& s, int64_t* out);
-[[nodiscard]] Err StringToUint32(const std::string& s, uint32_t* out);
-[[nodiscard]] Err StringToUint64(const std::string& s, uint64_t* out);
 
 // Reads an int64 from the given index of the command args. Returns an error if there are not enough
 // args, or if the value isn't an int64.

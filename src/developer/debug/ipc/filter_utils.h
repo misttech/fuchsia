@@ -17,6 +17,15 @@ namespace debug_ipc {
 bool FilterMatches(const Filter& filter, const std::string& process_name,
                    const std::vector<ComponentInfo>& components);
 
+struct FilterResolutionOptions {
+  bool exact = false;
+};
+
+// Resolves the filter type from the pattern.
+// If the resolved type is one of the process name types, and the pattern exceeds
+// Zircon's maximum name length (31 characters), it will be trimmed to 31 characters.
+Filter::Type ResolveFilterType(std::string& pattern, const FilterResolutionOptions& options = {});
+
 // Returns the filter from the given |filters| that has |id|.
 const Filter* GetFilterForId(const std::vector<const Filter*>& filters,
                              const Filter::Identifier& id);
