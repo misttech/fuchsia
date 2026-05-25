@@ -13,7 +13,9 @@ use fxfs::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles}
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::Extent;
 use fxfs::object_store::journal::CompactionYielder;
-use fxfs::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
+use fxfs::object_store::object_record::{
+    AttributeId, AttributeKey, ObjectKey, ObjectKeyData, ObjectValue,
+};
 use fxfs::testing::fake_object::{FakeObject, FakeObjectHandle};
 use fxfs::testing::writer::Writer;
 use std::sync::Arc;
@@ -99,7 +101,7 @@ fn create_extent_tree(depth: u64, size: u64) -> LSMTree<ObjectKey, ObjectValue> 
             let key = ObjectKey {
                 object_id: 1,
                 data: ObjectKeyData::Attribute(
-                    0,
+                    AttributeId::DATA,
                     AttributeKey::Extent(Extent(offset..offset + 1024)),
                 ),
             };
@@ -206,7 +208,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
                     let key = ObjectKey {
                         object_id: 1,
                         data: ObjectKeyData::Attribute(
-                            0,
+                            AttributeId::DATA,
                             AttributeKey::Extent(Extent(
                                 (size / 2 * 1024)..(size / 2 * 1024 + 1024),
                             )),

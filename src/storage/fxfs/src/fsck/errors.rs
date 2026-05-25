@@ -5,7 +5,7 @@
 use crate::log::*;
 use crate::lsm_tree::types::ItemRef;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
-use crate::object_store::{ObjectDescriptor, ProjectId};
+use crate::object_store::{AttributeId, ObjectDescriptor, ProjectId};
 use fxfs_crypto::WrappingKeyId;
 use std::ops::Range;
 
@@ -103,15 +103,15 @@ impl<V: std::fmt::Debug> From<&V> for Value {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FsckWarning {
-    ExtentForMissingAttribute(u64, u64, u64),
+    ExtentForMissingAttribute(u64, u64, AttributeId),
     ExtentForNonexistentObject(u64, u64),
     GraveyardRecordForAbsentObject(u64, u64),
     InvalidObjectIdInStore(u64, Key, Value),
     LimitForNonExistentStore(u64, u64),
-    OrphanedAttribute(u64, u64, u64),
+    OrphanedAttribute(u64, u64, AttributeId),
     OrphanedObject(u64, u64),
     OrphanedKeys(u64, u64),
-    OrphanedExtendedAttribute(u64, u64, u64),
+    OrphanedExtendedAttribute(u64, u64, AttributeId),
     OrphanedExtendedAttributeRecord(u64, u64),
     ProjectUsageInconsistent(u64, ProjectId, (i64, i64), (i64, i64)),
 }
@@ -232,7 +232,7 @@ pub enum FsckError {
     DuplicateKey(u64, u64, u64),
     EncryptedChildDirectoryNoWrappingKey(u64, u64),
     EncryptedDirectoryHasUnencryptedChild(u64, u64, u64),
-    ExtentExceedsLength(u64, u64, u64, u64, Value),
+    ExtentExceedsLength(u64, u64, AttributeId, u64, Value),
     ExtraAllocations(Vec<Allocation>),
     IncorrectMerkleTreeSize(u64, u64, u64, u64),
     LinkCycle(u64, u64),
@@ -242,27 +242,27 @@ pub enum FsckError {
     MisalignedAllocation(Allocation),
     MisalignedExtent(u64, u64, Range<u64>, u64),
     MissingAllocation(Allocation),
-    MissingAttributeForExtendedAttribute(u64, u64, u64),
+    MissingAttributeForExtendedAttribute(u64, u64, AttributeId),
     MissingDataAttribute(u64, u64),
     MissingEncryptionKeys(u64, u64),
     MissingKey(u64, u64, u64),
     MissingObjectInfo(u64, u64),
-    MissingOverwriteExtents(u64, u64, u64),
+    MissingOverwriteExtents(u64, u64, AttributeId),
     MultipleLinksToDirectory(u64, u64),
     NextObjectIdInUse(u64, u64),
     NonFileMarkedAsVerified(u64, u64),
     NonRootProjectIdMetadata(u64, u64, ProjectId),
     ObjectCountMismatch(u64, u64, u64),
     ObjectHasChildren(u64, u64),
-    OverwriteExtentFlagUnset(u64, u64, u64),
+    OverwriteExtentFlagUnset(u64, u64, AttributeId),
     ProjectOnGraveyard(u64, ProjectId, u64),
     ProjectUsedWithNoUsageTracking(u64, ProjectId, u64),
     RefCountMismatch(u64, u64, u64),
     RootObjectHasParent(u64, u64, u64),
     SubDirCountMismatch(u64, u64, u64, u64),
-    TombstonedAttributeDoesNotExist(u64, u64, u64),
+    TombstonedAttributeDoesNotExist(u64, u64, AttributeId),
     TombstonedObjectHasRecords(u64, u64),
-    TrimValueForGraveyardAttributeEntry(u64, u64, u64),
+    TrimValueForGraveyardAttributeEntry(u64, u64, AttributeId),
     UnencryptedDirectoryHasEncryptedChild(u64, u64, u64),
     UnexpectedJournalFileOffset(u64),
     UnexpectedObjectInGraveyard(u64),

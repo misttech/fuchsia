@@ -28,9 +28,7 @@ use fxfs::lock_keys;
 use fxfs::log::*;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::transaction::LockKey;
-use fxfs::object_store::{
-    DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, ObjectDescriptor, StoreObjectHandle,
-};
+use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreObjectHandle};
 use fxfs::round::{round_down, round_up};
 use fxfs_macros::ToWeakNode;
 use std::num::NonZero;
@@ -68,10 +66,8 @@ impl FxBlob {
         handle: StoreObjectHandle<FxVolume>,
         merkle_root: Hash,
     ) -> Result<Arc<Self>, Error> {
-        let stored_size = handle
-            .store()
-            .get_attribute_size(handle.object_id(), DEFAULT_DATA_ATTRIBUTE_ID)
-            .await?;
+        let stored_size =
+            handle.store().get_attribute_size(handle.object_id(), AttributeId::DATA).await?;
         let metadata = BlobMetadata::read_from(&handle).await?;
         let (uncompressed_size, compression_info) = match &metadata.format {
             BlobFormat::Uncompressed => (stored_size, None),
@@ -203,10 +199,10 @@ impl FxBlob {
             .read_lock(lock_keys![LockKey::object_attribute(
                 self.handle.store().store_object_id(),
                 self.handle.object_id(),
-                DEFAULT_DATA_ATTRIBUTE_ID,
+                AttributeId::DATA,
             )])
             .await;
-        self.handle.read_unchecked(DEFAULT_DATA_ATTRIBUTE_ID, offset, buf, &guard).await
+        self.handle.read_unchecked(AttributeId::DATA, offset, buf, &guard).await
     }
 }
 

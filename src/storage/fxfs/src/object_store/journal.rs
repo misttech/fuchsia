@@ -31,7 +31,7 @@ use crate::lsm_tree::types::Layer;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::data_object_handle::OverwriteOptions;
-use crate::object_store::extent_record::{DEFAULT_DATA_ATTRIBUTE_ID, ExtentMode, ExtentValue};
+use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
 use crate::object_store::journal::checksum_list::ChecksumList;
@@ -48,8 +48,8 @@ use crate::object_store::transaction::{
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation, lock_keys,
 };
 use crate::object_store::{
-    AssocObj, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID, Item,
-    ItemRef, NewChildStoreOptions, ObjectStore, ReservedId,
+    AssocObj, AttributeId, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID,
+    Item, ItemRef, NewChildStoreOptions, ObjectStore, ReservedId,
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down};
@@ -674,7 +674,7 @@ impl Journal {
             let mut iter = root_parent_layer
                 .seek(Bound::Included(&ObjectKey::attribute(
                     super_block.journal_object_id,
-                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeId::DATA,
                     AttributeKey::Extent(Extent::search_key_from_offset(round_down(
                         super_block.journal_checkpoint.file_offset,
                         BLOCK_SIZE,
@@ -686,10 +686,7 @@ impl Journal {
                 key:
                     ObjectKey {
                         data:
-                            ObjectKeyData::Attribute(
-                                DEFAULT_DATA_ATTRIBUTE_ID,
-                                AttributeKey::Extent(extent),
-                            ),
+                            ObjectKeyData::Attribute(AttributeId::DATA, AttributeKey::Extent(extent)),
                         ..
                     },
                 ..
@@ -708,7 +705,7 @@ impl Journal {
                 if !match item.into() {
                     Some((
                         object_id,
-                        DEFAULT_DATA_ATTRIBUTE_ID,
+                        AttributeId::DATA,
                         extent,
                         ExtentValue::Some { device_offset, .. },
                     )) if object_id == super_block.journal_object_id => {
@@ -1123,7 +1120,7 @@ impl Journal {
                                                         object_id,
                                                         data:
                                                             ObjectKeyData::Attribute(
-                                                                DEFAULT_DATA_ATTRIBUTE_ID,
+                                                                AttributeId::DATA,
                                                                 AttributeKey::Extent(extent),
                                                             ),
                                                         ..

@@ -14,7 +14,7 @@ use crate::object_store::object_record::{
     ObjectItemV46, ObjectItemV47, ObjectItemV49, ObjectItemV50, ObjectItemV55, ObjectKey,
     ObjectKeyData, ObjectValue, ProjectProperty,
 };
-use crate::object_store::{AttributeKey, ProjectId};
+use crate::object_store::{AttributeId, AttributeKey, ProjectId};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use anyhow::Error;
 use either::{Either, Left, Right};
@@ -499,7 +499,7 @@ pub enum LockKey {
     ObjectAttribute {
         store_object_id: u64,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     },
 
     /// Used to lock changes to a particular object (e.g. adding a child to a directory).
@@ -526,7 +526,11 @@ pub enum LockKey {
 }
 
 impl LockKey {
-    pub const fn object_attribute(store_object_id: u64, object_id: u64, attribute_id: u64) -> Self {
+    pub const fn object_attribute(
+        store_object_id: u64,
+        object_id: u64,
+        attribute_id: AttributeId,
+    ) -> Self {
         LockKey::ObjectAttribute { store_object_id, object_id, attribute_id }
     }
 
@@ -1698,7 +1702,7 @@ impl<'a> From<&'a LockManager> for LockManagerRef<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LockKey, LockKeys, LockManager, LockState, Mutation, Options};
+    use super::{AttributeId, LockKey, LockKeys, LockManager, LockState, Mutation, Options};
     use crate::filesystem::FxFilesystem;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
@@ -1738,7 +1742,7 @@ mod tests {
                 let _t = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
                     )
                     .await
@@ -1759,7 +1763,7 @@ mod tests {
                 let _t = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object_attribute(2, 2, 3)],
+                        lock_keys![LockKey::object_attribute(2, 2, AttributeId::TEST_ID)],
                         Options::default(),
                     )
                     .await
@@ -1776,7 +1780,7 @@ mod tests {
                 let _t = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
                     )
                     .await;
@@ -1799,7 +1803,7 @@ mod tests {
                 let t = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
                     )
                     .await
@@ -1814,7 +1818,7 @@ mod tests {
                 // Reads should not be blocked until the transaction is committed.
                 let _guard = fs
                     .lock_manager()
-                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, 3)])
+                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)])
                     .await;
                 // Tell the first future to continue.
                 send2.send(()).unwrap();
@@ -1838,7 +1842,7 @@ mod tests {
                 // Reads should not be blocked until the transaction is committed.
                 let _guard = fs
                     .lock_manager()
-                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, 3)])
+                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)])
                     .await;
                 // Tell the next future to continue and then wait.
                 send1.send(()).unwrap();
@@ -1853,7 +1857,7 @@ mod tests {
                 let t = fs
                     .clone()
                     .new_transaction(
-                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
                     )
                     .await

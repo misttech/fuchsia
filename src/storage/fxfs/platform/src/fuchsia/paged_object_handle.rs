@@ -18,7 +18,9 @@ use fxfs::object_store::allocator::{Allocator, Reservation, ReservationOwner};
 use fxfs::object_store::transaction::{
     LockKey, Options, TRANSACTION_METADATA_MAX_AMOUNT, Transaction, lock_keys,
 };
-use fxfs::object_store::{DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp};
+use fxfs::object_store::{
+    AttributeId, DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp,
+};
 use fxfs::range::RangeExt;
 use fxfs::round::round_up;
 use scopeguard::defer;
@@ -1560,11 +1562,11 @@ impl FlushBatch {
             }
             match self.mode {
                 BatchMode::Overwrite => handle
-                    .multi_overwrite(transaction, 0, &dirty_ranges, buffer.as_mut())
+                    .multi_overwrite(transaction, AttributeId::DATA, &dirty_ranges, buffer.as_mut())
                     .await
                     .context("multi_overwrite failed")?,
                 BatchMode::Cow => handle
-                    .multi_write(transaction, 0, &dirty_ranges, buffer.as_mut())
+                    .multi_write(transaction, AttributeId::DATA, &dirty_ranges, buffer.as_mut())
                     .await
                     .context("multi_write failed")?,
                 BatchMode::Zero => unreachable!("Handled above"),

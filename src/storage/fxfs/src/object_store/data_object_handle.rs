@@ -21,8 +21,8 @@ use crate::object_store::transaction::{
     Transaction, lock_keys,
 };
 use crate::object_store::{
-    DEFAULT_DATA_ATTRIBUTE_ID, Extent, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, HandleOwner,
-    RootDigest, StoreObjectHandle, TRANSACTION_MUTATION_THRESHOLD, TrimMode, TrimResult,
+    AttributeId, Extent, HandleOptions, HandleOwner, RootDigest, StoreObjectHandle,
+    TRANSACTION_MUTATION_THRESHOLD, TrimMode, TrimResult,
 };
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
@@ -59,7 +59,7 @@ pub const WRITE_ATTR_BATCH_SIZE: usize = 524_288;
 /// WriteObjectHandle.
 pub struct DataObjectHandle<S: HandleOwner> {
     handle: StoreObjectHandle<S>,
-    attribute_id: u64,
+    attribute_id: AttributeId,
     content_size: AtomicU64,
     fsverity_state: Mutex<FsverityState>,
     overwrite_ranges: AllocatedRanges,
@@ -174,7 +174,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         owner: Arc<S>,
         object_id: u64,
         permanent_keys: bool,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         size: u64,
         fsverity_state: FsverityState,
         options: HandleOptions,
@@ -190,7 +190,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         }
     }
 
-    pub fn attribute_id(&self) -> u64 {
+    pub fn attribute_id(&self) -> AttributeId {
         self.attribute_id
     }
 
@@ -259,7 +259,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let (metadata, hasher) = match descriptor {
             FsverityMetadata::Internal(root_digest, salt) => {
                 let merkle_tree = self
-                    .read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID)
+                    .read_attr(AttributeId::FSVERITY_MERKLE)
                     .await?
                     .ok_or_else(|| anyhow!(FxfsError::Inconsistent))?;
                 let metadata = FsverityStateInner { root_digest, salt, merkle_tree };
@@ -275,7 +275,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     expected_length
                         == self
                             .handle
-                            .read(FSVERITY_MERKLE_ATTRIBUTE_ID, verity_range.start, buffer.as_mut())
+                            .read(AttributeId::FSVERITY_MERKLE, verity_range.start, buffer.as_mut())
                             .await?,
                     FxfsError::Inconsistent
                 );
@@ -539,7 +539,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// Reads the data attribute and computes a merkle tree from the data. The values of the
     /// parameters required to build the merkle tree are supplied by `descriptor` (i.e. salt,
     /// hash_algorithm, etc.) Writes the leaf nodes of the merkle tree to an attribute with id
-    /// `FSVERITY_MERKLE_ATTRIBUTE_ID`. Updates the root_hash of the `descriptor` according to the
+    /// `AttributeId::FSVERITY_MERKLE`. Updates the root_hash of the `descriptor` according to the
     /// computed merkle tree and then replaces the ObjectValue of the data attribute with
     /// ObjectValue::VerifiedAttribute, which stores the `descriptor` inline.
     #[trace]
@@ -553,7 +553,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             .find(&ObjectKey::graveyard_attribute_entry(
                 self.store().graveyard_directory_object_id(),
                 self.object_id(),
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
             ))
             .await?
             .is_some()
@@ -597,7 +597,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.handle
             .write_new_attr_in_batches(
                 &mut transaction,
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
                 &merkle_tree,
                 WRITE_ATTR_BATCH_SIZE,
             )
@@ -606,7 +606,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             self.store().remove_attribute_from_graveyard(
                 &mut transaction,
                 self.object_id(),
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
             );
         };
         let descriptor_decoded =
@@ -620,11 +620,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         transaction.add_with_object(
             self.store().store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::attribute(
-                    self.object_id(),
-                    DEFAULT_DATA_ATTRIBUTE_ID,
-                    AttributeKey::Attribute,
-                ),
+                ObjectKey::attribute(self.object_id(), AttributeId::DATA, AttributeKey::Attribute),
                 ObjectValue::verified_attribute(
                     self.get_size(),
                     FsverityMetadata::F2fs(0..merkle_tree.len() as u64),
@@ -975,7 +971,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     pub async fn multi_write<'a>(
         &'a self,
         transaction: &mut Transaction<'a>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         ranges: &[Range<u64>],
         buf: MutableBufferRef<'_>,
     ) -> Result<(), Error> {
@@ -1542,12 +1538,12 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     }
 
     /// Reads an entire attribute.
-    pub async fn read_attr(&self, attribute_id: u64) -> Result<Option<Box<[u8]>>, Error> {
+    pub async fn read_attr(&self, attribute_id: AttributeId) -> Result<Option<Box<[u8]>>, Error> {
         self.handle.read_attr(attribute_id).await
     }
 
     /// Writes an entire attribute.  This *always* uses the volume data key.
-    pub async fn write_attr(&self, attribute_id: u64, data: &[u8]) -> Result<(), Error> {
+    pub async fn write_attr(&self, attribute_id: AttributeId, data: &[u8]) -> Result<(), Error> {
         // Must be different attribute otherwise cached size gets out of date.
         assert_ne!(attribute_id, self.attribute_id());
         let store = self.store();
@@ -1942,10 +1938,9 @@ mod tests {
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, Extent,
-        ExtentMode, ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, LockKey,
-        NewChildStoreOptions, ObjectKeyData, ObjectStore, PosixAttributes, StoreOptions,
-        TRANSACTION_MUTATION_THRESHOLD,
+        AttributeId, AttributeKey, DataObjectHandle, DirType, Directory, Extent, ExtentMode,
+        ExtentValue, HandleOptions, LockKey, NewChildStoreOptions, ObjectKeyData, ObjectStore,
+        PosixAttributes, StoreOptions, TRANSACTION_MUTATION_THRESHOLD,
     };
     use crate::range::RangeExt;
     use crate::round::{round_down, round_up};
@@ -2095,7 +2090,10 @@ mod tests {
         let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(
-            handle.read(0, (offset - align) as u64, buf.as_mut()).await.expect("read failed"),
+            handle
+                .read(AttributeId::DATA, (offset - align) as u64, buf.as_mut())
+                .await
+                .expect("read failed"),
             align + len
         );
         assert_eq!(&buf.as_slice()[align..align + len], &vec![0u8; len]);
@@ -2116,11 +2114,11 @@ mod tests {
             .read_lock(lock_keys![LockKey::object_attribute(
                 object.store().store_object_id,
                 object.object_id(),
-                0,
+                AttributeId::DATA,
             )])
             .await;
         object
-            .read_unchecked(0, (offset - align) as u64, buf.as_mut(), &guard)
+            .read_unchecked(AttributeId::DATA, (offset - align) as u64, buf.as_mut(), &guard)
             .await
             .expect("read failed");
         assert_eq!(&buf.as_slice()[align..], &vec![0u8; len + 1]);
@@ -2915,7 +2913,7 @@ mod tests {
                     ObjectKey::graveyard_attribute_entry(
                         root_store.graveyard_directory_object_id(),
                         handle.object_id(),
-                        FSVERITY_MERKLE_ATTRIBUTE_ID,
+                        AttributeId::FSVERITY_MERKLE,
                     ),
                     ObjectValue::Some,
                 ),
@@ -2926,7 +2924,7 @@ mod tests {
             handle
                 .write_new_attr_in_batches(
                     &mut transaction,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     &vec![0; 2 * WRITE_ATTR_BATCH_SIZE],
                     WRITE_ATTR_BATCH_SIZE,
                 )
@@ -2973,7 +2971,7 @@ mod tests {
         assert!(
             FsVerityDescriptor::from_bytes(
                 &handle
-                    .read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID)
+                    .read_attr(AttributeId::FSVERITY_MERKLE)
                     .await
                     .expect("read_attr failed")
                     .expect("No attr found"),
@@ -3080,7 +3078,7 @@ mod tests {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeId::DATA,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::verified_attribute(
@@ -3094,7 +3092,7 @@ mod tests {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::attribute(fs.block_size() * 2, false),
@@ -3117,7 +3115,7 @@ mod tests {
             object
                 .multi_write(
                     &mut transaction,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     &[fs.block_size()..(fs.block_size() * 2)],
                     buf.as_mut(),
                 )
@@ -3182,13 +3180,13 @@ mod tests {
 
             // Corrupt the merkle tree before closing.
             let mut merkle = object
-                .read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID)
+                .read_attr(AttributeId::FSVERITY_MERKLE)
                 .await
                 .unwrap()
                 .expect("Reading merkle tree");
             merkle[0] = merkle[0].wrapping_add(1);
             object
-                .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &*merkle)
+                .write_attr(AttributeId::FSVERITY_MERKLE, &*merkle)
                 .await
                 .expect("Overwriting merkle");
 
@@ -3978,12 +3976,15 @@ mod tests {
     async fn test_read_write_attr() {
         let (_fs, object) = test_filesystem_and_object().await;
         let data = [0xffu8; 16_384];
-        object.write_attr(20, &data).await.expect("write_attr failed");
-        let rdata =
-            object.read_attr(20).await.expect("read_attr failed").expect("no attribute data found");
+        object.write_attr(AttributeId(20), &data).await.expect("write_attr failed");
+        let rdata = object
+            .read_attr(AttributeId(20))
+            .await
+            .expect("read_attr failed")
+            .expect("no attribute data found");
         assert_eq!(&data[..], &rdata[..]);
 
-        assert_eq!(object.read_attr(21).await.expect("read_attr failed"), None);
+        assert_eq!(object.read_attr(AttributeId(21)).await.expect("read_attr failed"), None);
     }
 
     #[fuchsia::test(threads = 10)]
@@ -4174,7 +4175,7 @@ mod tests {
         let mut iter = merger
             .query(Query::FullRange(&ObjectKey::attribute(
                 obj.object_id(),
-                0,
+                AttributeId::DATA,
                 AttributeKey::Extent(Extent::search_key_from_offset(search_range.start)),
             )))
             .await
@@ -4186,11 +4187,14 @@ mod tests {
                         ObjectKey {
                             object_id,
                             data:
-                                ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
+                                ObjectKeyData::Attribute(
+                                    AttributeId::DATA,
+                                    AttributeKey::Extent(extent),
+                                ),
                         },
                     value: ObjectValue::Extent(ExtentValue::Some { mode, .. }),
                     ..
-                }) if *object_id == obj.object_id() && *attribute_id == 0 => {
+                }) if *object_id == obj.object_id() => {
                     if search_range.end <= extent.start {
                         break;
                     }
@@ -4443,7 +4447,12 @@ mod tests {
 
                 let mut transaction = object.new_transaction().await.unwrap();
                 object
-                    .multi_overwrite(&mut transaction, 0, &overwrite, write_buf.as_mut())
+                    .multi_overwrite(
+                        &mut transaction,
+                        AttributeId::DATA,
+                        &overwrite,
+                        write_buf.as_mut(),
+                    )
                     .await
                     .unwrap_or_else(|_| panic!("multi_overwrite error on case {}", i));
                 // Double check the emitted checksums. We should have one u64 checksum for every
@@ -4498,7 +4507,7 @@ mod tests {
         object
             .multi_overwrite(
                 &mut transaction,
-                0,
+                AttributeId::DATA,
                 &[2 * block_size..4 * block_size],
                 write_buf.as_mut(),
             )
@@ -4520,7 +4529,7 @@ mod tests {
         object
             .multi_overwrite(
                 &mut transaction,
-                0,
+                AttributeId::DATA,
                 &[3 * block_size..5 * block_size, 6 * block_size..7 * block_size],
                 write_buf.as_mut(),
             )
@@ -4542,7 +4551,7 @@ mod tests {
         object
             .multi_overwrite(
                 &mut transaction,
-                0,
+                AttributeId::DATA,
                 &[
                     0..2 * block_size,
                     5 * block_size..6 * block_size,
@@ -4592,7 +4601,7 @@ mod tests {
         object
             .multi_overwrite(
                 &mut transaction,
-                DEFAULT_DATA_ATTRIBUTE_ID,
+                AttributeId::DATA,
                 &vec![(block_size * 5)..(block_size * 6)],
                 buffer.as_mut(),
             )

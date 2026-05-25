@@ -19,10 +19,10 @@ use crate::object_store::directory::{
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
-    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EncryptionKeys, ExtentValue,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions,
-    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
-    ObjectValue, ProjectId, RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    AttributeId, AttributeKey, ChildValue, DirType, EncryptionKeys, ExtentValue, FsverityMetadata,
+    HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId, RootDigest, StoreInfo,
+    StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use crate::round::round_down;
 use crate::serialized_types::VersionedLatest;
@@ -448,7 +448,7 @@ async fn test_misaligned_extent_in_child_store() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, 0, 1..fs.block_size()),
+                ObjectKey::extent(555, AttributeId::TEST_ID, 1..fs.block_size()),
                 ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -496,7 +496,7 @@ async fn test_malformed_extent_in_child_store() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, 0, fs.block_size()..0),
+                ObjectKey::extent(555, AttributeId::TEST_ID, fs.block_size()..0),
                 ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -884,8 +884,14 @@ async fn test_misordered_layer_file() {
             &fs,
             store.as_ref(),
             vec![
-                Item::new(ObjectKey::extent(5, 0, 10..20), ObjectValue::deleted_extent()),
-                Item::new(ObjectKey::extent(1, 0, 0..5), ObjectValue::deleted_extent()),
+                Item::new(
+                    ObjectKey::extent(5, AttributeId::TEST_ID, 10..20),
+                    ObjectValue::deleted_extent(),
+                ),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..5),
+                    ObjectValue::deleted_extent(),
+                ),
             ],
         )
         .await;
@@ -923,9 +929,18 @@ async fn test_overlapping_keys_in_layer_file() {
             &fs,
             store.as_ref(),
             vec![
-                Item::new(ObjectKey::extent(1, 0, 0..20), ObjectValue::deleted_extent()),
-                Item::new(ObjectKey::extent(1, 0, 10..30), ObjectValue::deleted_extent()),
-                Item::new(ObjectKey::extent(1, 0, 15..40), ObjectValue::deleted_extent()),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..20),
+                    ObjectValue::deleted_extent(),
+                ),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 10..30),
+                    ObjectValue::deleted_extent(),
+                ),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 15..40),
+                    ObjectValue::deleted_extent(),
+                ),
             ],
         )
         .await;
@@ -952,9 +967,18 @@ async fn test_overlapping_keys_in_root_store_layer_file() {
             &fs,
             &fs.root_store(),
             vec![
-                Item::new(ObjectKey::extent(1, 0, 0..20), ObjectValue::deleted_extent()),
-                Item::new(ObjectKey::extent(1, 0, 10..30), ObjectValue::deleted_extent()),
-                Item::new(ObjectKey::extent(1, 0, 15..40), ObjectValue::deleted_extent()),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..20),
+                    ObjectValue::deleted_extent(),
+                ),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 10..30),
+                    ObjectValue::deleted_extent(),
+                ),
+                Item::new(
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 15..40),
+                    ObjectValue::deleted_extent(),
+                ),
             ],
         )
         .await;
@@ -1303,7 +1327,7 @@ async fn test_non_file_marked_as_verified() {
                     },
                 ),
                 Item::new(
-                    ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectKey::attribute(10, AttributeId::DATA, AttributeKey::Attribute),
                     ObjectValue::verified_attribute(
                         0,
                         FsverityMetadata::Internal(RootDigest::Sha256([0; 32]), vec![]),
@@ -1346,7 +1370,7 @@ async fn test_verified_file_merkle_attribute_missing() {
                     },
                 ),
                 Item::new(
-                    ObjectKey::attribute(10, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                    ObjectKey::attribute(10, AttributeId::DATA, AttributeKey::Attribute),
                     ObjectValue::verified_attribute(
                         0,
                         FsverityMetadata::Internal(RootDigest::Sha256([0; 32]), vec![]),
@@ -1437,7 +1461,7 @@ async fn test_orphaned_large_extended_attribute_record() {
             store.as_ref(),
             vec![Item::new(
                 ObjectKey::extended_attribute(10, b"foo".to_vec()),
-                ObjectValue::extended_attribute(64),
+                ObjectValue::extended_attribute(AttributeId::XATTR_RANGE_START),
             )],
         )
         .await;
@@ -1480,7 +1504,7 @@ async fn test_large_extended_attribute_nonexistent_attribute() {
             store.as_ref(),
             vec![Item::new(
                 ObjectKey::extended_attribute(store.root_directory_object_id(), b"foo".to_vec()),
-                ObjectValue::extended_attribute(64),
+                ObjectValue::extended_attribute(AttributeId::XATTR_RANGE_START),
             )],
         )
         .await;
@@ -1522,7 +1546,11 @@ async fn test_orphaned_extended_attribute() {
             &fs,
             store.as_ref(),
             vec![Item::new(
-                ObjectKey::attribute(store.root_directory_object_id(), 64, AttributeKey::Attribute),
+                ObjectKey::attribute(
+                    store.root_directory_object_id(),
+                    AttributeId::XATTR_RANGE_START,
+                    AttributeKey::Attribute,
+                ),
                 ObjectValue::attribute(100, false),
             )],
         )
@@ -1565,7 +1593,7 @@ async fn test_orphaned_attribute() {
             &fs,
             store.as_ref(),
             vec![Item::new(
-                ObjectKey::attribute(10, 1, AttributeKey::Attribute),
+                ObjectKey::attribute(10, AttributeId::TEST_ID, AttributeKey::Attribute),
                 ObjectValue::attribute(100, false),
             )],
         )
@@ -1610,7 +1638,7 @@ async fn test_records_for_tombstoned_object() {
             vec![
                 Item::new(ObjectKey::object(10), ObjectValue::None),
                 Item::new(
-                    ObjectKey::attribute(10, 1, AttributeKey::Attribute),
+                    ObjectKey::attribute(10, AttributeId::TEST_ID, AttributeKey::Attribute),
                     ObjectValue::attribute(100, false),
                 ),
             ],
@@ -1662,14 +1690,14 @@ async fn test_invalid_value_graveyard_attribute_entry() {
                     },
                 ),
                 Item::new(
-                    ObjectKey::attribute(10, 1, AttributeKey::Attribute),
+                    ObjectKey::attribute(10, AttributeId::TEST_ID, AttributeKey::Attribute),
                     ObjectValue::attribute(100, false),
                 ),
                 Item::new(
                     ObjectKey::graveyard_attribute_entry(
                         store.graveyard_directory_object_id(),
                         10,
-                        1,
+                        AttributeId::TEST_ID,
                     ),
                     ObjectValue::Trim,
                 ),
@@ -1687,7 +1715,11 @@ async fn test_invalid_value_graveyard_attribute_entry() {
         test.errors()[..],
         [
             FsckIssue::Error(FsckError::MissingEncryptionKeys(..)),
-            FsckIssue::Error(FsckError::TrimValueForGraveyardAttributeEntry(.., 10, 1,)),
+            FsckIssue::Error(FsckError::TrimValueForGraveyardAttributeEntry(
+                ..,
+                10,
+                AttributeId::TEST_ID,
+            )),
             ..
         ]
     );
@@ -1729,7 +1761,7 @@ async fn test_tombstoned_attribute_does_not_exist() {
                     ObjectKey::graveyard_attribute_entry(
                         store.graveyard_directory_object_id(),
                         10,
-                        1,
+                        AttributeId::TEST_ID,
                     ),
                     ObjectValue::Some,
                 ),
@@ -1745,7 +1777,14 @@ async fn test_tombstoned_attribute_does_not_exist() {
         .expect_err("Fsck should fail");
     assert_matches!(
         test.errors()[..],
-        [FsckIssue::Error(FsckError::TombstonedAttributeDoesNotExist(.., 10, 1)), ..]
+        [
+            FsckIssue::Error(FsckError::TombstonedAttributeDoesNotExist(
+                ..,
+                10,
+                AttributeId::TEST_ID
+            )),
+            ..
+        ]
     );
 }
 
@@ -1952,7 +1991,7 @@ async fn test_incorrect_merkle_tree_size_empty_file() {
             .tree()
             .find(&ObjectKey::attribute(
                 object.object_id(),
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
                 AttributeKey::Attribute,
             ))
             .await
@@ -1969,7 +2008,7 @@ async fn test_incorrect_merkle_tree_size_empty_file() {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::attribute(0, false),
@@ -2041,7 +2080,7 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
             .tree()
             .find(&ObjectKey::attribute(
                 object.object_id(),
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
                 AttributeKey::Attribute,
             ))
             .await
@@ -2058,7 +2097,7 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::attribute(2 * <Sha256 as Hasher>::Digest::DIGEST_LEN as u64, false),
@@ -2132,7 +2171,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
             .tree()
             .find(&ObjectKey::attribute(
                 object.object_id(),
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::FSVERITY_MERKLE,
                 AttributeKey::Attribute,
             ))
             .await
@@ -2149,7 +2188,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::attribute(block_size + 1, false),
@@ -2286,14 +2325,14 @@ async fn test_spurious_extents() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, 0, 0..4096),
+                ObjectKey::extent(555, AttributeId::TEST_ID, 0..4096),
                 ObjectValue::Extent(ExtentValue::new_raw(SPURIOUS_OFFSET, VOLUME_DATA_KEY_ID)),
             ),
         );
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(store.root_directory_object_id(), 0, 0..4096),
+                ObjectKey::extent(store.root_directory_object_id(), AttributeId::TEST_ID, 0..4096),
                 ObjectValue::Extent(ExtentValue::new_raw(SPURIOUS_OFFSET, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -3238,7 +3277,11 @@ async fn test_directory_missing_encryption_key_for_large_extended_attribute() {
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::attribute(handle.object_id(), 10, AttributeKey::Attribute),
+                ObjectKey::attribute(
+                    handle.object_id(),
+                    AttributeId::XATTR_RANGE_START,
+                    AttributeKey::Attribute,
+                ),
                 ObjectValue::attribute(300, false),
             ),
         );
@@ -3246,7 +3289,7 @@ async fn test_directory_missing_encryption_key_for_large_extended_attribute() {
             store.store_object_id(),
             Mutation::replace_or_insert_object(
                 ObjectKey::extended_attribute(handle.object_id(), b"foo".to_vec()),
-                ObjectValue::extended_attribute(10),
+                ObjectValue::extended_attribute(AttributeId::XATTR_RANGE_START),
             ),
         );
         transaction.commit().await.expect("commit failed");
@@ -4190,7 +4233,11 @@ async fn test_missing_overwrite_extents() {
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::attribute(file.object_id(), 0, AttributeKey::Attribute),
+                ObjectKey::attribute(
+                    file.object_id(),
+                    AttributeId::TEST_ID,
+                    AttributeKey::Attribute,
+                ),
                 ObjectValue::attribute(0, true),
             ),
         );
@@ -4241,7 +4288,7 @@ async fn test_overwrite_extent_flag_not_set() {
         transaction.add(
             store.store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::attribute(file.object_id(), 0, AttributeKey::Attribute),
+                ObjectKey::attribute(file.object_id(), AttributeId::DATA, AttributeKey::Attribute),
                 ObjectValue::attribute(fs.block_size(), false),
             ),
         );
@@ -4384,7 +4431,11 @@ async fn test_invalid_bloom_filter_for_volume() {
             for i in 0..item_count as u64 {
                 // The range per item needs to be disjoint to avoid them being merged.
                 items.push(Item::new(
-                    ObjectKey::extent(100000, 0, (2 * i * 512)..(2 * i + 1) * 512),
+                    ObjectKey::extent(
+                        100000,
+                        AttributeId::TEST_ID,
+                        (2 * i * 512)..(2 * i + 1) * 512,
+                    ),
                     ObjectValue::deleted_extent(),
                 ));
             }

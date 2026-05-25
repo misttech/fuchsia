@@ -263,9 +263,8 @@ impl ExtentValueExt for ObjectValue {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    use crate::object_store::ObjectDescriptor;
+    use crate::object_store::{AttributeId, ObjectDescriptor};
 
     /// Simple test iterator that yields records from a slice of object key/value pairs.
     #[derive(Debug, Default)]
@@ -330,15 +329,16 @@ mod tests {
     ///
     #[fuchsia::test]
     async fn test_extent_mapper_split() {
-        let inner_objects = [(ObjectKey::extent(1, 1, 0..100), ObjectValue::extent(0, 0))];
+        let inner_objects =
+            [(ObjectKey::extent(1, AttributeId::TEST_ID, 0..100), ObjectValue::extent(0, 0))];
         let backing_extents = [
             FileExtent::new(/*logical_offset*/ 0, /*device_range*/ 1000..1050).unwrap(),
             FileExtent::new(/*logical_offset*/ 50, /*device_range*/ 2000..2050).unwrap(),
         ];
         let expected_objects = [
             // Object 1 should be split since it's backed by a non-contiguous physical range.
-            (ObjectKey::extent(1, 1, 0..50), ObjectValue::extent(1000, 0)),
-            (ObjectKey::extent(1, 1, 50..100), ObjectValue::extent(2000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 0..50), ObjectValue::extent(1000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 50..100), ObjectValue::extent(2000, 0)),
         ];
 
         validate_extent_mapping(&inner_objects, &backing_extents, &expected_objects).await;
@@ -363,10 +363,10 @@ mod tests {
     #[fuchsia::test]
     async fn test_extent_mapper_preserves_existing_fragments() {
         let inner_objects = [
-            (ObjectKey::extent(1, 1, 0..100), ObjectValue::extent(0, 0)),
-            (ObjectKey::extent(2, 1, 0..50), ObjectValue::extent(100, 0)),
-            (ObjectKey::extent(2, 1, 50..100), ObjectValue::extent(150, 0)),
-            (ObjectKey::extent(2, 1, 100..150), ObjectValue::extent(200, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 0..100), ObjectValue::extent(0, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 0..50), ObjectValue::extent(100, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 50..100), ObjectValue::extent(150, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 100..150), ObjectValue::extent(200, 0)),
         ];
 
         let backing_extents = [
@@ -380,15 +380,15 @@ mod tests {
 
         let expected_objects = [
             // Object 1 should be split since it's backed by a non-contiguous physical range.
-            (ObjectKey::extent(1, 1, 0..50), ObjectValue::extent(1000, 0)),
-            (ObjectKey::extent(1, 1, 50..100), ObjectValue::extent(2000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 0..50), ObjectValue::extent(1000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 50..100), ObjectValue::extent(2000, 0)),
             // Object 2 is covered by the remaining range starting from 3000. We don't handle
             // defragmentation at this point, so although both the logical and physical ranges
             // backing this object are contiguous, we still emit three extent records. These should
             // be merged upon the next compaction for us.
-            (ObjectKey::extent(2, 1, 0..50), ObjectValue::extent(3000, 0)),
-            (ObjectKey::extent(2, 1, 50..100), ObjectValue::extent(3050, 0)),
-            (ObjectKey::extent(2, 1, 100..150), ObjectValue::extent(3100, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 0..50), ObjectValue::extent(3000, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 50..100), ObjectValue::extent(3050, 0)),
+            (ObjectKey::extent(2, AttributeId::TEST_ID, 100..150), ObjectValue::extent(3100, 0)),
         ];
 
         validate_extent_mapping(&inner_objects, &backing_extents, &expected_objects).await;
@@ -397,14 +397,15 @@ mod tests {
     /// Verifies that we correctly map extents if they aren't physically laid out in order.
     #[fuchsia::test]
     async fn test_extent_mapper_out_of_order() {
-        let inner_objects = [(ObjectKey::extent(1, 1, 0..100), ObjectValue::extent(0, 0))];
+        let inner_objects =
+            [(ObjectKey::extent(1, AttributeId::TEST_ID, 0..100), ObjectValue::extent(0, 0))];
         let backing_extents = [
             FileExtent::new(/*logical_offset*/ 0, /*device_range*/ 2000..2050).unwrap(),
             FileExtent::new(/*logical_offset*/ 50, /*device_range*/ 1000..1050).unwrap(),
         ];
         let expected_objects = [
-            (ObjectKey::extent(1, 1, 0..50), ObjectValue::extent(2000, 0)),
-            (ObjectKey::extent(1, 1, 50..100), ObjectValue::extent(1000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 0..50), ObjectValue::extent(2000, 0)),
+            (ObjectKey::extent(1, AttributeId::TEST_ID, 50..100), ObjectValue::extent(1000, 0)),
         ];
 
         validate_extent_mapping(&inner_objects, &backing_extents, &expected_objects).await;
@@ -456,7 +457,8 @@ mod tests {
     /// The iterator should check that there are enough backing extents to emit a split record.
     #[fuchsia::test]
     async fn test_extent_mapper_backing_extents_too_small() {
-        let inner_objects = [(ObjectKey::extent(1, 1, 0..100), ObjectValue::extent(0, 0))];
+        let inner_objects =
+            [(ObjectKey::extent(1, AttributeId::TEST_ID, 0..100), ObjectValue::extent(0, 0))];
         let backing_extents =
             [FileExtent::new(/*logical_offset*/ 0, /*device_range*/ 1000..1050).unwrap()];
         let e = ExtentMappingIterator::new(

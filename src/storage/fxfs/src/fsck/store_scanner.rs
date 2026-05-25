@@ -12,11 +12,10 @@ use crate::object_store::directory::decrypt_filename;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
-    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EXTENDED_ATTRIBUTE_RANGE_END,
-    EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, Extent, ExtentMode, ExtentValue,
-    FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes,
-    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
-    ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
+    AttributeId, AttributeKey, ChildValue, DirType, ExtendedAttributeValue, Extent, ExtentMode,
+    ExtentValue, FSCRYPT_KEY_ID, FsverityMetadata, ObjectAttributes, ObjectDescriptor, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId, ProjectProperty, RootDigest,
+    VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
@@ -33,7 +32,7 @@ use std::sync::Arc;
 struct ScannedAttribute {
     // ID of the attribute. Most commonly zero, which is the attribute value regular data is stored
     // in, but others are used for extended attributes and merkle trees.
-    attribute_id: u64,
+    attribute_id: AttributeId,
     // The logical size of this attribute according to its metadata.
     size: u64,
     // The attribute metadata claims to have at least one extents with an Overwrite or
@@ -49,7 +48,7 @@ struct ScannedAttribute {
 struct ScannedAttributes {
     attributes: Vec<ScannedAttribute>,
     // A list of attributes that have been tombstoned.
-    tombstoned_attributes: Vec<u64>,
+    tombstoned_attributes: Vec<AttributeId>,
     // The object's allocated size, according to its metadata.
     stored_allocated_size: u64,
     // The allocated size of the object (computed by summing up the extents for the file).
@@ -57,7 +56,7 @@ struct ScannedAttributes {
     // The object is in the graveyard which means extents beyond the end of the file are allowed.
     in_graveyard: bool,
     // Any extended attributes which point at an fxfs attribute for this object.
-    extended_attributes: Vec<u64>,
+    extended_attributes: Vec<AttributeId>,
 }
 
 // The verified status of a file.
@@ -878,7 +877,7 @@ impl<'a> ScannedStore<'a> {
     fn process_extent(
         &mut self,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         range: &Range<u64>,
         device_offset: u64,
         bs: u64,
@@ -970,7 +969,7 @@ impl<'a> ScannedStore<'a> {
     fn handle_graveyard_entry(
         &mut self,
         object_id: u64,
-        attribute_id: Option<u64>,
+        attribute_id: Option<AttributeId>,
         tombstone: bool,
     ) -> Result<(), Error> {
         match self.objects.get_mut(&object_id) {
@@ -1204,13 +1203,13 @@ fn validate_attributes(
 
     if is_file {
         let data_attribute =
-            attributes.iter().find(|attribute| attribute.attribute_id == DEFAULT_DATA_ATTRIBUTE_ID);
+            attributes.iter().find(|attribute| attribute.attribute_id == AttributeId::DATA);
         match data_attribute {
             None => fsck.error(FsckError::MissingDataAttribute(store_id, object_id))?,
             Some(data_attribute) => {
                 let merkle_attribute = attributes
                     .iter()
-                    .find(|attribute| attribute.attribute_id == FSVERITY_MERKLE_ATTRIBUTE_ID);
+                    .find(|attribute| attribute.attribute_id == AttributeId::FSVERITY_MERKLE);
 
                 // Note a merkle attribute can exist for a non-verified file in the case that the
                 // power cut while we were writing the merkle attribute across multiple txns. In
@@ -1296,9 +1295,7 @@ fn validate_attributes(
     }
 
     for attribute in attributes {
-        if attribute.attribute_id >= EXTENDED_ATTRIBUTE_RANGE_START
-            && attribute.attribute_id < EXTENDED_ATTRIBUTE_RANGE_END
-        {
+        if attribute.attribute_id.is_xattr() {
             // For all the attributes in the extended attribute range, make sure there is an
             // extended attribute record for them.
             if extended_attributes

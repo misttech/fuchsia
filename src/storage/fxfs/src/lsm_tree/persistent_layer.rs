@@ -961,6 +961,7 @@ mod tests {
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
     use crate::lsm_tree::types::{Existence, Item, ItemRef, Layer, LayerWriter, OrdUpperBound};
     use crate::object_handle::WriteBytes;
+    use crate::object_store::AttributeId;
     use crate::object_store::object_record::ObjectKey;
     use crate::round::round_up;
     use crate::serialized_types::{LATEST_VERSION, Version};
@@ -1275,7 +1276,11 @@ mod tests {
         let mut items = Vec::new();
         for i in 0..count {
             items.push(Item::new(
-                ObjectKey::extent(object_id, 1, base_offset + i..base_offset + i + 1),
+                ObjectKey::extent(
+                    object_id,
+                    AttributeId::TEST_ID,
+                    base_offset + i..base_offset + i + 1,
+                ),
                 object_id,
             ));
         }
@@ -1321,17 +1326,17 @@ mod tests {
                 let count = ITEMS_PER_PHASE * 3;
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset..base_extent_offset + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count - 1)..base_extent_offset + count,
                 ));
                 object_id = next_object_id;
@@ -1355,17 +1360,17 @@ mod tests {
                 let count = ITEMS_PER_PHASE * 3;
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset..base_extent_offset + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count - 1)..base_extent_offset + count,
                 ));
                 object_id = next_object_id;
@@ -1389,17 +1394,17 @@ mod tests {
                 let count = ITEMS_PER_PHASE * 3;
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset..base_extent_offset + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
-                    1,
+                    AttributeId::TEST_ID,
                     base_extent_offset + (count - 1)..base_extent_offset + count,
                 ));
             }

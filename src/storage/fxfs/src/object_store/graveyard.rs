@@ -7,12 +7,12 @@ use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
-use crate::object_store::ObjectStore;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{Mutation, Options, Transaction};
+use crate::object_store::{AttributeId, ObjectStore};
 use anyhow::{Context, Error, anyhow, bail};
 use fuchsia_async::{self as fasync};
 use fuchsia_sync::Mutex;
@@ -44,7 +44,7 @@ pub struct Graveyard {
 enum Message {
     // Tombstone the object identified by <store-id>, <object-id>, Option<attribute-id>. If
     // <attribute-id> is Some, tombstone just the attribute instead of the entire object.
-    Tombstone(u64, u64, Option<u64>),
+    Tombstone(u64, u64, Option<AttributeId>),
 
     // Trims the identified object.
     Trim(u64, u64),
@@ -207,7 +207,12 @@ impl Graveyard {
     }
 
     /// Queues an object's attribute for tombstoning.
-    pub fn queue_tombstone_attribute(&self, store_id: u64, object_id: u64, attribute_id: u64) {
+    pub fn queue_tombstone_attribute(
+        &self,
+        store_id: u64,
+        object_id: u64,
+        attribute_id: AttributeId,
+    ) {
         let _ = self.channel.unbounded_send(Message::Tombstone(
             store_id,
             object_id,
@@ -257,7 +262,7 @@ impl Graveyard {
         &self,
         store_id: u64,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     ) -> Result<(), Error> {
         let store = self
             .object_manager
@@ -336,7 +341,7 @@ pub struct GraveyardIterator<'a, 'b> {
 #[derive(Debug, PartialEq)]
 pub struct GraveyardEntryInfo {
     object_id: u64,
-    attribute_id: Option<u64>,
+    attribute_id: Option<AttributeId>,
     value: ObjectValue,
 }
 
@@ -345,7 +350,7 @@ impl GraveyardEntryInfo {
         self.object_id
     }
 
-    pub fn attribute_id(&self) -> Option<u64> {
+    pub fn attribute_id(&self) -> Option<AttributeId> {
         self.attribute_id
     }
 
@@ -422,7 +427,7 @@ mod tests {
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::object_record::ObjectValue;
     use crate::object_store::transaction::{Options, lock_keys};
-    use crate::object_store::{FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, Mutation, ObjectKey};
+    use crate::object_store::{AttributeId, HandleOptions, Mutation, ObjectKey};
     use assert_matches::assert_matches;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -636,9 +641,9 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         handle
-            .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &[0; 8192])
+            .write_attr(AttributeId::TEST_ID, &[0; 8192])
             .await
-            .expect("failed to write merkle attribute");
+            .expect("failed to write attribute");
         let object_id = handle.object_id();
         let mut transaction = handle.new_transaction().await.expect("new_transaction failed");
         transaction.add(
@@ -647,7 +652,7 @@ mod tests {
                 ObjectKey::graveyard_attribute_entry(
                     root_store.graveyard_directory_object_id(),
                     object_id,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::TEST_ID,
                 ),
                 ObjectValue::Some,
             ),
@@ -677,10 +682,7 @@ mod tests {
                 .await
                 .expect("failed to open object");
 
-        assert_eq!(
-            handle.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await.expect("read_attr failed"),
-            None
-        );
+        assert_eq!(handle.read_attr(AttributeId::TEST_ID).await.expect("read_attr failed"), None);
         fsck(fs.clone()).await.expect("fsck failed");
     }
 
@@ -705,16 +707,12 @@ mod tests {
         .expect("failed to create object");
         transaction.commit().await.expect("commit failed");
 
+        const ATTR_1: AttributeId = AttributeId::TEST_ID;
+        const ATTR_2: AttributeId = AttributeId::TEST_ID.next();
         // With both of these it will test that both their graveyard entries got cleaned up in
         // trim_or_tombstone() via two different paths.
-        handle
-            .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &[0; 8192])
-            .await
-            .expect("failed to write merkle attribute");
-        handle
-            .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID + 1, &[0; 8192])
-            .await
-            .expect("failed to write merkle attribute");
+        handle.write_attr(ATTR_1, &[0; 8192]).await.expect("failed to write attribute");
+        handle.write_attr(ATTR_2, &[0; 8192]).await.expect("failed to write attribute");
         let object_id = handle.object_id();
         let mut transaction = handle.new_transaction().await.expect("new_transaction failed");
         transaction.add(
@@ -723,7 +721,7 @@ mod tests {
                 ObjectKey::graveyard_attribute_entry(
                     root_store.graveyard_directory_object_id(),
                     object_id,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    ATTR_1,
                 ),
                 ObjectValue::Some,
             ),
@@ -734,7 +732,7 @@ mod tests {
                 ObjectKey::graveyard_attribute_entry(
                     root_store.graveyard_directory_object_id(),
                     object_id,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID + 1,
+                    ATTR_2,
                 ),
                 ObjectValue::Some,
             ),
@@ -806,7 +804,7 @@ mod tests {
                     ObjectKey::graveyard_attribute_entry(
                         root_store.graveyard_directory_object_id(),
                         handle.object_id(),
-                        FSVERITY_MERKLE_ATTRIBUTE_ID,
+                        AttributeId::TEST_ID,
                     ),
                     ObjectValue::Some,
                 ),
@@ -817,15 +815,15 @@ mod tests {
             handle
                 .write_new_attr_in_batches(
                     &mut transaction,
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::TEST_ID,
                     &vec![0; 3 * WRITE_ATTR_BATCH_SIZE],
                     WRITE_ATTR_BATCH_SIZE,
                 )
                 .await
-                .expect("failed to write merkle attribute");
+                .expect("failed to write attribute");
 
             handle.object_id()
-            // Drop the transaction to simulate interrupting the merkle tree creation as well as to
+            // Drop the transaction to simulate interrupting the attribute creation as well as to
             // release the transaction locks.
         };
 
@@ -852,10 +850,7 @@ mod tests {
                 .await
                 .expect("failed to open object");
 
-        assert_eq!(
-            handle.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await.expect("read_attr failed"),
-            None
-        );
+        assert_eq!(handle.read_attr(AttributeId::TEST_ID).await.expect("read_attr failed"), None);
         fsck(fs.clone()).await.expect("fsck failed");
     }
 }

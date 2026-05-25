@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty};
+use super::object_record::{
+    AttributeId, AttributeKey, ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
+};
 use super::{Extent, ExtentValue};
 use crate::log::*;
 use crate::lsm_tree::merge::ItemOp::{Discard, Keep, Replace};
@@ -11,7 +13,7 @@ use crate::lsm_tree::types::Item;
 
 fn merge_extents(
     object_id: u64,
-    attribute_id: u64,
+    attribute_id: AttributeId,
     left: &MergeLayerIterator<'_, ObjectKey, ObjectValue>,
     right: &MergeLayerIterator<'_, ObjectKey, ObjectValue>,
     left_key: &Extent,
@@ -114,7 +116,7 @@ fn merge_extents(
 // Assumes that the two extents to be merged are on adjacent layers (i.e. layers N, N+1).
 fn merge_deleted_extents(
     object_id: u64,
-    attribute_id: u64,
+    attribute_id: AttributeId,
     left_key: &Extent,
     right_key: &Extent,
 ) -> MergeResult<ObjectKey, ObjectValue> {
@@ -258,7 +260,7 @@ mod tests {
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::{ProjectId, VOLUME_DATA_KEY_ID};
+    use crate::object_store::{AttributeId, ProjectId, VOLUME_DATA_KEY_ID};
     use anyhow::Error;
 
     async fn test_merge<K: MergeableKey, V: Value + PartialEq>(
@@ -287,7 +289,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_non_overlapping() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -317,7 +319,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_rewrite_right() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -355,7 +357,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_rewrite_left() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -409,7 +411,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_rewrite_middle() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -473,7 +475,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_rewrite_eclipses() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -505,7 +507,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_delete_left() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -540,7 +542,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_delete_right() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -575,7 +577,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_delete_middle() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -616,7 +618,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_extents_delete_eclipses() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -648,7 +650,7 @@ mod tests {
         // New layer:       [----]
         // Merged:     [--------------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -686,7 +688,7 @@ mod tests {
         // New layer:  [----]    [----]
         // Merged:     [--------------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -721,7 +723,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_deleted_extents_overlapping_newest_on_right() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -750,7 +752,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_deleted_extents_overlapping_newest_on_left() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -781,7 +783,7 @@ mod tests {
         // New layer:       [----]
         // Merged:     [--------------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -814,7 +816,7 @@ mod tests {
         // New layer:  [--------------]
         // Merged:     [--------------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -849,7 +851,7 @@ mod tests {
         // Layer 2:        [XXXXXXXX]
         //  Merged:  [XXXXX|--------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -895,7 +897,7 @@ mod tests {
         // Layer 1:           [XXXXX]
         //  Merged:  [XXXXX|--------]
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -935,7 +937,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_deleted_extent_into_overwrites_extents() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -979,7 +981,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_deleted_extent_into_merges_with_other_deletions() -> Result<(), Error> {
         let object_id = 0;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
 
         tree.insert(Item::new(
@@ -1012,11 +1014,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_size_records() {
         let left = &[Item::new(
-            ObjectKey::attribute(1, 0, AttributeKey::Attribute),
+            ObjectKey::attribute(1, AttributeId::TEST_ID, AttributeKey::Attribute),
             ObjectValue::attribute(5, false),
         )];
         let right = &[Item::new(
-            ObjectKey::attribute(1, 0, AttributeKey::Attribute),
+            ObjectKey::attribute(1, AttributeId::TEST_ID, AttributeKey::Attribute),
             ObjectValue::attribute(10, false),
         )];
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
@@ -1026,22 +1028,22 @@ mod tests {
     #[fuchsia::test]
     async fn test_different_attributes_not_merged() {
         let left = Item::new(
-            ObjectKey::attribute(1, 0, AttributeKey::Attribute),
+            ObjectKey::attribute(1, AttributeId::TEST_ID, AttributeKey::Attribute),
             ObjectValue::attribute(5, false),
         );
         let right = Item::new(
-            ObjectKey::attribute(1, 1, AttributeKey::Attribute),
+            ObjectKey::attribute(1, AttributeId::TEST_ID.next(), AttributeKey::Attribute),
             ObjectValue::attribute(10, false),
         );
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
         test_merge(&tree, &[left.clone()], &[right.clone()], &[left, right]).await;
 
         let left = Item::new(
-            ObjectKey::extent(1, 0, 0..100),
+            ObjectKey::extent(1, AttributeId::TEST_ID, 0..100),
             ObjectValue::Extent(ExtentValue::new_raw(0, VOLUME_DATA_KEY_ID)),
         );
         let right = Item::new(
-            ObjectKey::extent(1, 1, 0..100),
+            ObjectKey::extent(1, AttributeId::TEST_ID.next(), 0..100),
             ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
         );
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
@@ -1083,7 +1085,7 @@ mod tests {
                     ),
                 ),
                 Item::new(
-                    ObjectKey::attribute(1, 0, AttributeKey::Attribute),
+                    ObjectKey::attribute(1, AttributeId::TEST_ID, AttributeKey::Attribute),
                     ObjectValue::attribute(100, false),
                 ),
                 other_object.clone(),
@@ -1098,7 +1100,7 @@ mod tests {
         use crate::lsm_tree::cache::NullCache;
         use crate::object_store::VOLUME_DATA_KEY_ID;
         let object_id = 1;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let base = Item::new(
             ObjectKey::extent(object_id, attr_id, 50..100),
             ObjectValue::Extent(ExtentValue::new_raw(0, VOLUME_DATA_KEY_ID)),
@@ -1149,7 +1151,7 @@ mod tests {
         };
 
         let object_id = 1;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
 
         let top_options = vec![49..50, 50..51, 51..52, 98..99, 99..100, 100..101];
 
@@ -1283,7 +1285,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_next_key_behavior() -> Result<(), Error> {
         let object_id = 1;
-        let attr_id = 0;
+        let attr_id = AttributeId::TEST_ID;
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
 
         // Layer 1 (older)

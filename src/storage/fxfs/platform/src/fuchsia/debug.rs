@@ -15,8 +15,8 @@ use fxfs::lsm_tree::Query;
 use fxfs::lsm_tree::types::LayerIterator;
 use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::{
-    AttributeKey, DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectKey, ObjectKeyData,
-    ObjectStore,
+    AttributeId, AttributeKey, DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectKey,
+    ObjectKeyData, ObjectStore,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
@@ -513,7 +513,7 @@ impl Directory for ObjectDirectory {
             match data.key {
                 ObjectKey {
                     object_id,
-                    data: ObjectKeyData::Attribute(0, AttributeKey::Attribute),
+                    data: ObjectKeyData::Attribute(AttributeId::DATA, AttributeKey::Attribute),
                 } => {
                     sink = match sink.append(
                         &vfs::directory::entry::EntryInfo::new(*object_id, fio::DirentType::File),

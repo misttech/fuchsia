@@ -90,7 +90,7 @@ pub enum ObjectKeyDataV54 {
     /// Encryption keys for an object.
     Keys,
     /// An attribute associated with an object.  It has a 64-bit ID.
-    Attribute(u64, AttributeKeyV32),
+    Attribute(AttributeId, AttributeKeyV32),
     /// A child of a directory.
     Child { name: String },
     /// A graveyard entry for an entire object.
@@ -106,7 +106,7 @@ pub enum ObjectKeyDataV54 {
         name: Vec<u8>,
     },
     /// A graveyard entry for an attribute.
-    GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
+    GraveyardAttributeEntry { object_id: u64, attribute_id: AttributeId },
     /// A child of an encrypted directory.  We store the filename in its encrypted form.  hash_code
     /// is the hash of the casefolded human-readable name if a directory is also casefolded.  In
     /// some legacy cases, this is also used in non-casefolded cases, and in some of those cases the
@@ -222,12 +222,12 @@ impl ObjectKey {
     }
 
     /// Creates an ObjectKey for an attribute.
-    pub fn attribute(object_id: u64, attribute_id: u64, key: AttributeKey) -> Self {
+    pub fn attribute(object_id: u64, attribute_id: AttributeId, key: AttributeKey) -> Self {
         Self { object_id, data: ObjectKeyData::Attribute(attribute_id, key) }
     }
 
     /// Creates an ObjectKey for an extent.
-    pub fn extent(object_id: u64, attribute_id: u64, range: std::ops::Range<u64>) -> Self {
+    pub fn extent(object_id: u64, attribute_id: AttributeId, range: std::ops::Range<u64>) -> Self {
         Self {
             object_id,
             data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(Extent(range))),
@@ -235,7 +235,7 @@ impl ObjectKey {
     }
 
     /// Creates an ObjectKey from an extent.
-    pub fn from_extent(object_id: u64, attribute_id: u64, extent: Extent) -> Self {
+    pub fn from_extent(object_id: u64, attribute_id: AttributeId, extent: Extent) -> Self {
         Self {
             object_id,
             data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
@@ -297,7 +297,7 @@ impl ObjectKey {
     pub fn graveyard_attribute_entry(
         graveyard_object_id: u64,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     ) -> Self {
         Self {
             object_id: graveyard_object_id,
@@ -439,7 +439,7 @@ impl LayerKey for ObjectKey {
 }
 
 pub enum ObjectKeyFuzzyHashIterator {
-    Extent(/* object_id */ u64, /* attribute_id */ u64, ExtentPartitionIterator),
+    Extent(/* object_id */ u64, AttributeId, ExtentPartitionIterator),
     NotExtent(/* hash */ Option<u64>),
 }
 
@@ -741,7 +741,7 @@ pub enum ExtendedAttributeValueV32 {
     Inline(#[serde(with = "crate::zerocopy_serialization")] Vec<u8>),
     /// The extended attribute value is stored as an attribute with extents. The attribute id
     /// should be chosen to be within the range of 64-512.
-    AttributeId(u64),
+    AttributeId(AttributeId),
 }
 
 /// Id and descriptor for a child entry.
@@ -994,7 +994,7 @@ impl ObjectValue {
     pub fn inline_extended_attribute(value: impl Into<Vec<u8>>) -> ObjectValue {
         ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value.into()))
     }
-    pub fn extended_attribute(attribute_id: u64) -> ObjectValue {
+    pub fn extended_attribute(attribute_id: AttributeId) -> ObjectValue {
         ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(attribute_id))
     }
 }
@@ -1027,7 +1027,7 @@ impl ObjectItem {
 
 // If the given item describes an extent, unwraps it and returns the extent key/value.
 impl<'a> From<ItemRef<'a, ObjectKey, ObjectValue>>
-    for Option<(/*object-id*/ u64, /*attribute-id*/ u64, &'a Extent, &'a ExtentValue)>
+    for Option<(/*object-id*/ u64, AttributeId, &'a Extent, &'a ExtentValue)>
 {
     fn from(item: ItemRef<'a, ObjectKey, ObjectValue>) -> Self {
         match item {
@@ -1052,9 +1052,88 @@ impl<'a> From<ItemRef<'a, ObjectKey, ObjectValue>>
 pub type FxfsKey = FxfsKeyV49;
 pub type FxfsKeyV49 = fxfs_crypto::FxfsKey;
 
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Serialize,
+    Deserialize,
+    Hash,
+    SerializeKey,
+    TypeFingerprint,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+#[repr(transparent)]
+pub struct AttributeId(pub u64);
+
+impl AttributeId {
+    /// The common case for extents which cover the data payload of an object.
+    pub const DATA: Self = Self(0);
+
+    /// Contains a serialized and versioned `BlobMetadata` struct. Use [`BlobMetadata::read_from`]
+    /// and [`BlobMetadata::write_to`] to access this attribute.
+    pub const BLOB_METADATA: Self = Self(3);
+
+    /// Contains a serialized `BlobMetadataUnversioned` struct. This attribute may still exist on
+    /// blobs but should no longer be written. Use `AttributeId::BLOB_METADATA` instead.
+    pub const BLOB_MERKLE: Self = Self(1);
+
+    /// For fsverity files in Fxfs, we store the merkle tree of the verified file at a well-known
+    /// attribute.
+    pub const FSVERITY_MERKLE: Self = Self(2);
+
+    /// The range of fxfs attribute IDs which are reserved for extended attribute values. Whenever a
+    /// new attribute is needed, the first unused ID will be chosen from this range. It's
+    /// technically safe to change these values, but it has potential consequences - they are only
+    /// used during ID selection, so any existing extended attributes keep their IDs, which means
+    /// any past or present selected range here could potentially have used attributes unless they
+    /// are explicitly migrated, which isn't currently done.
+    pub const XATTR_RANGE_START: Self = Self(64);
+    pub const XATTR_RANGE_END: Self = Self(512);
+
+    /// A semantic alias for the `0` attribute ID, indicating that it is being used as a starting
+    /// point to iterate over all attributes rather than specifically looking up the primary data
+    /// attribute [`AttributeId::DATA`].
+    pub const SORTED_START: Self = Self(0);
+
+    /// An attribute ID to use in tests when no particular ID is necessary.
+    #[cfg(test)]
+    pub const TEST_ID: Self = Self(u64::MAX - 1000);
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Returns the current id + 1.
+    pub const fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+
+    /// Returns true if the attribute ID is within the range of extended attributes.
+    pub const fn is_xattr(self) -> bool {
+        self.0 >= Self::XATTR_RANGE_START.0 && self.0 < Self::XATTR_RANGE_END.0
+    }
+}
+
+impl log::kv::ToValue for AttributeId {
+    fn to_value(&self) -> log::kv::Value<'_> {
+        log::kv::Value::from(self.0)
+    }
+}
+
+impl std::fmt::Display for AttributeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ObjectKey, ObjectKeyV54, TimestampV49};
+    use super::{AttributeId, ObjectKey, ObjectKeyV54, TimestampV49};
     use crate::lsm_tree::types::{FuzzyHash as _, LayerKey};
     use std::ops::Add;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -1073,7 +1152,9 @@ mod tests {
             &[11885326717398844384]
         );
         assert_eq!(
-            &ObjectKeyV54::extent(1, 0, 0..2 * 1024 * 1024).fuzzy_hash().collect::<Vec<_>>()[..],
+            &ObjectKeyV54::extent(1, AttributeId::DATA, 0..2 * 1024 * 1024)
+                .fuzzy_hash()
+                .collect::<Vec<_>>()[..],
             &[11090579907097549012, 2814892992701560424]
         );
     }
@@ -1081,51 +1162,56 @@ mod tests {
     #[test]
     fn test_next_key() {
         assert_eq!(
-            ObjectKey::extent(1, 0, 25..100).next_key().unwrap(),
-            ObjectKey::extent(1, 0, 0..101)
+            ObjectKey::extent(1, AttributeId::TEST_ID, 25..100).next_key().unwrap(),
+            ObjectKey::extent(1, AttributeId::TEST_ID, 0..101)
         );
         assert_eq!(ObjectKey::object(100).next_key(), None);
     }
 
     #[test]
     fn test_range_key() {
+        const ATTR_ID: AttributeId = AttributeId::TEST_ID;
         // Make sure we disallow using extent keys with point queries. Other object keys should
         // still be allowed with point queries.
-        assert!(ObjectKey::extent(1, 0, 0..2 * 1024 * 1024).is_range_key());
+        assert!(ObjectKey::extent(1, ATTR_ID, 0..2 * 1024 * 1024).is_range_key());
         assert!(!ObjectKey::object(100).is_range_key());
 
         assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::object(1)), true);
         assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::object(2)), false);
-        assert_eq!(ObjectKey::extent(1, 0, 0..100).overlaps(&ObjectKey::object(1)), false);
-        assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::extent(1, 0, 0..100)), false);
+        assert_eq!(ObjectKey::extent(1, ATTR_ID, 0..100).overlaps(&ObjectKey::object(1)), false);
+        assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::extent(1, ATTR_ID, 0..100)), false);
         assert_eq!(
-            ObjectKey::extent(1, 0, 0..100).overlaps(&ObjectKey::extent(2, 0, 0..100)),
+            ObjectKey::extent(1, ATTR_ID, 0..100).overlaps(&ObjectKey::extent(2, ATTR_ID, 0..100)),
             false
         );
         assert_eq!(
-            ObjectKey::extent(1, 0, 0..100).overlaps(&ObjectKey::extent(1, 1, 0..100)),
+            ObjectKey::extent(1, ATTR_ID, 0..100).overlaps(&ObjectKey::extent(
+                1,
+                ATTR_ID.next(),
+                0..100
+            )),
             false
         );
         assert_eq!(
-            ObjectKey::extent(1, 0, 0..100).overlaps(&ObjectKey::extent(1, 0, 0..100)),
+            ObjectKey::extent(1, ATTR_ID, 0..100).overlaps(&ObjectKey::extent(1, ATTR_ID, 0..100)),
             true
         );
 
         assert_eq!(
-            ObjectKey::extent(1, 0, 0..50).overlaps(&ObjectKey::extent(1, 0, 49..100)),
+            ObjectKey::extent(1, ATTR_ID, 0..50).overlaps(&ObjectKey::extent(1, ATTR_ID, 49..100)),
             true
         );
         assert_eq!(
-            ObjectKey::extent(1, 0, 49..100).overlaps(&ObjectKey::extent(1, 0, 0..50)),
+            ObjectKey::extent(1, ATTR_ID, 49..100).overlaps(&ObjectKey::extent(1, ATTR_ID, 0..50)),
             true
         );
 
         assert_eq!(
-            ObjectKey::extent(1, 0, 0..50).overlaps(&ObjectKey::extent(1, 0, 50..100)),
+            ObjectKey::extent(1, ATTR_ID, 0..50).overlaps(&ObjectKey::extent(1, ATTR_ID, 50..100)),
             false
         );
         assert_eq!(
-            ObjectKey::extent(1, 0, 50..100).overlaps(&ObjectKey::extent(1, 0, 0..50)),
+            ObjectKey::extent(1, ATTR_ID, 50..100).overlaps(&ObjectKey::extent(1, ATTR_ID, 0..50)),
             false
         );
     }

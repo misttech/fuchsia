@@ -257,9 +257,9 @@ impl SerializeKey for std::num::NonZeroU64 {
 mod tests {
     use super::*;
     use crate::lsm_tree::types::OrdUpperBound;
-    use crate::object_store::Extent;
     use crate::object_store::allocator::AllocatorKey;
     use crate::object_store::object_record::{ObjectKey, ObjectKeyData};
+    use crate::object_store::{AttributeId, Extent};
 
     #[test]
     fn test_object_key_order_matches_cmp_upper_bound() {
@@ -287,13 +287,13 @@ mod tests {
         keys.push(ObjectKey { object_id: 1, data: ObjectKeyData::Child { name: "a".repeat(300) } });
 
         // Extent edge cases
-        keys.push(ObjectKey::extent(1, 0, 100 * 512..200 * 512));
-        keys.push(ObjectKey::extent(1, 0, 100 * 512..150 * 512));
-        keys.push(ObjectKey::extent(1, 0, 50 * 512..150 * 512));
-        keys.push(ObjectKey::extent(1, 0, 150 * 512..200 * 512));
-        keys.push(ObjectKey::extent(2, 0, 100 * 512..200 * 512));
-        keys.push(ObjectKey::extent(1, 0, 0..100 * 512));
-        keys.push(ObjectKey::extent(1, 0, 50 * 512..100 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 100 * 512..200 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 100 * 512..150 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 50 * 512..150 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 150 * 512..200 * 512));
+        keys.push(ObjectKey::extent(2, AttributeId::TEST_ID, 100 * 512..200 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 0..100 * 512));
+        keys.push(ObjectKey::extent(1, AttributeId::TEST_ID, 50 * 512..100 * 512));
 
         // Compare all pairs. We compare against `cmp_upper_bound` which is now a total order
         // for ranges (comparing end then start), matching serialization order.

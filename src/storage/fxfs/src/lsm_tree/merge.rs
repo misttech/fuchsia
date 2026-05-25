@@ -776,7 +776,7 @@ mod tests {
         OrdLowerBound, OrdUpperBound, SortByU64,
     };
     use crate::lsm_tree::{self, Query, Value};
-    use crate::object_store::{self, ObjectKey, ObjectValue, VOLUME_DATA_KEY_ID};
+    use crate::object_store::{self, AttributeId, ObjectKey, ObjectValue, VOLUME_DATA_KEY_ID};
     use crate::serialized_types::{
         LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
@@ -1839,27 +1839,30 @@ mod tests {
         // NB: This test uses ObjectKey so that we don't have to reimplement the complex merging
         // logic for range-like keys.
         let layer_0_items = vec![Item::new(
-            ObjectKey::extent(0, 0, 0..2048),
+            ObjectKey::extent(0, AttributeId::TEST_ID, 0..2048),
             ObjectValue::extent(0, VOLUME_DATA_KEY_ID),
         )];
         let layer_1_items = vec![
             Item::new(
-                ObjectKey::extent(0, 0, 1024..4096),
+                ObjectKey::extent(0, AttributeId::TEST_ID, 1024..4096),
                 ObjectValue::extent(32768, VOLUME_DATA_KEY_ID),
             ),
             Item::new(
-                ObjectKey::extent(0, 0, 16384..17408),
+                ObjectKey::extent(0, AttributeId::TEST_ID, 16384..17408),
                 ObjectValue::extent(65536, VOLUME_DATA_KEY_ID),
             ),
         ];
         let items = [
-            Item::new(ObjectKey::extent(0, 0, 0..2048), ObjectValue::extent(0, VOLUME_DATA_KEY_ID)),
             Item::new(
-                ObjectKey::extent(0, 0, 2048..4096),
+                ObjectKey::extent(0, AttributeId::TEST_ID, 0..2048),
+                ObjectValue::extent(0, VOLUME_DATA_KEY_ID),
+            ),
+            Item::new(
+                ObjectKey::extent(0, AttributeId::TEST_ID, 2048..4096),
                 ObjectValue::extent(33792, VOLUME_DATA_KEY_ID),
             ),
             Item::new(
-                ObjectKey::extent(0, 0, 16384..17408),
+                ObjectKey::extent(0, AttributeId::TEST_ID, 16384..17408),
                 ObjectValue::extent(65536, VOLUME_DATA_KEY_ID),
             ),
         ];
@@ -1871,7 +1874,11 @@ mod tests {
         {
             // Range contains just keys in layer 1
             let mut iter = merger
-                .query(Query::LimitedRange(&ObjectKey::extent(0, 0, 16384..16386)))
+                .query(Query::LimitedRange(&ObjectKey::extent(
+                    0,
+                    AttributeId::TEST_ID,
+                    16384..16386,
+                )))
                 .await
                 .expect("seek failed");
             let ItemRef { key, value, .. } = iter.get().expect("missing item");
@@ -1883,7 +1890,7 @@ mod tests {
         {
             // Range contains keys in layer 0 and 1
             let mut iter = merger
-                .query(Query::LimitedRange(&ObjectKey::extent(0, 0, 0..4096)))
+                .query(Query::LimitedRange(&ObjectKey::extent(0, AttributeId::TEST_ID, 0..4096)))
                 .await
                 .expect("seek failed");
             let ItemRef { key, value, .. } = iter.get().expect("missing item");
@@ -1898,7 +1905,11 @@ mod tests {
         {
             // Range contains no keys
             let mut iter = merger
-                .query(Query::LimitedRange(&ObjectKey::extent(0, 0, 8192..12288)))
+                .query(Query::LimitedRange(&ObjectKey::extent(
+                    0,
+                    AttributeId::TEST_ID,
+                    8192..12288,
+                )))
                 .await
                 .expect("seek failed");
             let ItemRef { key, .. } = iter.get().expect("missing item");

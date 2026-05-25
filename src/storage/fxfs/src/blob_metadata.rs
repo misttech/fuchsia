@@ -7,10 +7,7 @@ use crate::lsm_tree::Query;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
-use crate::object_store::{
-    BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DataObjectHandle,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOwner, StoreObjectHandle,
-};
+use crate::object_store::{AttributeId, DataObjectHandle, HandleOwner, StoreObjectHandle};
 use crate::serialized_types::{Versioned, VersionedLatest};
 use anyhow::{Context, Error};
 use fprint::TypeFingerprint;
@@ -39,14 +36,16 @@ impl BlobMetadata {
         let layer_set = store.tree().layer_set();
         let mut merger = layer_set.merger();
         // A blob should never have both attributes and also should never have the fs-verity
-        // attribute which is ordered between them. Querying for `BLOB_MERKLE_ATTRIBUTE_ID` will
+        // attribute which is ordered between them. Querying for `AttributeId::BLOB_MERKLE` will
         // have the iterator point to that attribute if it exists. If it doesn't exist then the
-        // iterator will point the next item which will be the `BLOB_METADATA_ATTRIBUTE_ID`
+        // iterator will point the next item which will be the `AttributeId::BLOB_METADATA`
         // attribute if it exists.
-        static_assertions::const_assert!(BLOB_MERKLE_ATTRIBUTE_ID < BLOB_METADATA_ATTRIBUTE_ID);
+        static_assertions::const_assert!(
+            AttributeId::BLOB_MERKLE.raw() < AttributeId::BLOB_METADATA.raw()
+        );
         let key = ObjectKey::attribute(
             blob_object.object_id(),
-            BLOB_MERKLE_ATTRIBUTE_ID,
+            AttributeId::BLOB_MERKLE,
             AttributeKey::Attribute,
         );
         let iter = merger.query(Query::FullRange(&key)).await?;
@@ -56,7 +55,7 @@ impl BlobMetadata {
                     ObjectKey {
                         object_id,
                         data:
-                            ObjectKeyData::Attribute(BLOB_MERKLE_ATTRIBUTE_ID, AttributeKey::Attribute),
+                            ObjectKeyData::Attribute(AttributeId::BLOB_MERKLE, AttributeKey::Attribute),
                     },
                 value,
                 ..
@@ -75,7 +74,7 @@ impl BlobMetadata {
                         object_id,
                         data:
                             ObjectKeyData::Attribute(
-                                BLOB_METADATA_ATTRIBUTE_ID,
+                                AttributeId::BLOB_METADATA,
                                 AttributeKey::Attribute,
                             ),
                     },
@@ -94,7 +93,7 @@ impl BlobMetadata {
                         object_id,
                         data:
                             ObjectKeyData::Attribute(
-                                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                                AttributeId::FSVERITY_MERKLE,
                                 AttributeKey::Attribute,
                             ),
                     },
@@ -102,9 +101,9 @@ impl BlobMetadata {
             }) if *object_id == blob_object.object_id() => {
                 // Blobs should not have the fs-verity attribute. This is explicitly checked because
                 // the fs-verity attribute is ordered between the 2 blob metadata attributes.
-                // `BLOB_MERKLE_ATTRIBUTE_ID` was queried for with the expectation of finding either
+                // `AttributeId::BLOB_MERKLE` was queried for with the expectation of finding either
                 // blob attribute. Finding the fs-verity attribute could be hiding the
-                // `BLOB_METADATA_ATTRIBUTE_ID` attribute.
+                // `AttributeId::BLOB_METADATA` attribute.
                 Err(FxfsError::Inconsistent.into())
             }
             // Neither attribute exists.
@@ -112,7 +111,7 @@ impl BlobMetadata {
         }
     }
 
-    /// Writes the metadata to the `BLOB_METADATA_ATTRIBUTE_ID` attribute on `blob_object`. If the
+    /// Writes the metadata to the `AttributeId::BLOB_METADATA` attribute on `blob_object`. If the
     /// metadata is equal to `BlobMetadata::empty()` then the attribute isn't written.
     pub async fn write_to<S: HandleOwner>(
         &self,
@@ -125,7 +124,7 @@ impl BlobMetadata {
         let mut buf = Vec::new();
         self.serialize_with_version(&mut buf)?;
         blob_object
-            .write_attr(BLOB_METADATA_ATTRIBUTE_ID, &buf)
+            .write_attr(AttributeId::BLOB_METADATA, &buf)
             .await
             .context("Failed to write blob metadata attribute.")
     }
@@ -251,8 +250,7 @@ mod tests {
     use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
     use crate::object_store::transaction::{LockKey, Options, lock_keys};
     use crate::object_store::{
-        BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DataObjectHandle, Directory,
-        FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, ObjectStore,
+        AttributeId, DataObjectHandle, Directory, HandleOptions, ObjectStore,
     };
     use assert_matches::assert_matches;
     use fuchsia_merkle::MerkleRootBuilder;
@@ -349,7 +347,7 @@ mod tests {
 
         BlobMetadata::empty().write_to(&object).await.expect("failed to write attribute");
         let result = object
-            .read_attr(BLOB_METADATA_ATTRIBUTE_ID)
+            .read_attr(AttributeId::BLOB_METADATA)
             .await
             .expect("reading the attribute failed");
         assert_eq!(result, None);
@@ -362,7 +360,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_empty_object().await;
 
         object
-            .write_attr(BLOB_METADATA_ATTRIBUTE_ID, b"garbage")
+            .write_attr(AttributeId::BLOB_METADATA, b"garbage")
             .await
             .expect("failed to write attribute");
         BlobMetadata::read_from(&object).await.expect_err("reading the metadata should fail");
@@ -383,7 +381,7 @@ mod tests {
         let mut buf = Vec::new();
         bincode::serialize_into(&mut buf, &unversioned_metadata)
             .expect("failed to serialize metadata");
-        object.write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &buf).await.expect("failed to write attribute");
+        object.write_attr(AttributeId::BLOB_MERKLE, &buf).await.expect("failed to write attribute");
         let metadata = BlobMetadata::read_from(&object).await.expect("failed to read attribute");
         assert_eq!(metadata, BlobMetadata::from(unversioned_metadata));
 
@@ -395,7 +393,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_empty_object().await;
 
         object
-            .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, b"garbage")
+            .write_attr(AttributeId::BLOB_MERKLE, b"garbage")
             .await
             .expect("failed to write attribute");
         BlobMetadata::read_from(&object).await.expect_err("reading the metadata should fail");
@@ -413,7 +411,7 @@ mod tests {
         };
         metadata.write_to(&object).await.expect("failed to write attribute");
         object
-            .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, b"fs-verify")
+            .write_attr(AttributeId::FSVERITY_MERKLE, b"fs-verify")
             .await
             .expect("failed to write fs-verity attribute");
         BlobMetadata::read_from(&object).await.expect_err("fs-verity should have been found");

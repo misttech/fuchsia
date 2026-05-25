@@ -20,7 +20,8 @@ use crate::object_store::transaction::{
     Transaction, lock_keys,
 };
 use crate::object_store::{
-    Extent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult, VOLUME_DATA_KEY_ID,
+    AttributeId, Extent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult,
+    VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
@@ -54,14 +55,6 @@ pub const MAX_INLINE_XATTR_SIZE: usize = 256;
 /// 64kB, which we rely on for correctness when deleting attributes, so ensure it's always
 /// enforced.
 pub const MAX_XATTR_VALUE_SIZE: usize = 64000;
-/// The range of fxfs attribute ids which are reserved for extended attribute values. Whenever a
-/// new attribute is needed, the first unused id will be chosen from this range. It's technically
-/// safe to change these values, but it has potential consequences - they are only used during id
-/// selection, so any existing extended attributes keep their ids, which means any past or present
-/// selected range here could potentially have used attributes unless they are explicitly migrated,
-/// which isn't currently done.
-pub const EXTENDED_ATTRIBUTE_RANGE_START: u64 = 64;
-pub const EXTENDED_ATTRIBUTE_RANGE_END: u64 = 512;
 
 /// Zeroes blocks in 'buffer' based on `bitmap`, one bit per block from start of buffer.
 fn apply_bitmap_zeroing(
@@ -389,7 +382,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
     pub async fn new_transaction_with_options<'b>(
         &self,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         options: Options<'b>,
     ) -> Result<Transaction<'b>, Error> {
         Ok(self
@@ -409,7 +402,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             .await?)
     }
 
-    pub async fn new_transaction<'b>(&self, attribute_id: u64) -> Result<Transaction<'b>, Error> {
+    pub async fn new_transaction<'b>(
+        &self,
+        attribute_id: AttributeId,
+    ) -> Result<Transaction<'b>, Error> {
         self.new_transaction_with_options(attribute_id, self.default_transaction_options()).await
     }
 
@@ -426,7 +422,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     async fn deallocate_old_extents(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         range: Range<u64>,
     ) -> Result<u64, Error> {
         let block_size = self.block_size();
@@ -637,7 +633,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn zero(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         range: Range<u64>,
     ) -> Result<(), Error> {
         let deallocated =
@@ -659,7 +655,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     // the data from `buf`.
     pub async fn align_buffer(
         &self,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         offset: u64,
         buf: BufferRef<'_>,
     ) -> Result<(std::ops::Range<u64>, Buffer<'_>), Error> {
@@ -705,7 +701,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn shrink(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         size: u64,
     ) -> Result<NeedsTrim, Error> {
         let store = self.store();
@@ -931,7 +927,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
     pub async fn read(
         &self,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         offset: u64,
         mut buf: MutableBufferRef<'_>,
     ) -> Result<usize, Error> {
@@ -973,7 +969,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// are sparse).
     pub async fn read_unchecked(
         &self,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         mut offset: u64,
         mut buf: MutableBufferRef<'_>,
         _guard: &ReadGuard<'_>,
@@ -1115,7 +1111,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     }
 
     /// Reads an entire attribute.
-    pub async fn read_attr(&self, attribute_id: u64) -> Result<Option<Box<[u8]>>, Error> {
+    pub async fn read_attr(&self, attribute_id: AttributeId) -> Result<Option<Box<[u8]>>, Error> {
         let store = self.store();
         let tree = &store.tree;
         let layer_set = tree.layer_set();
@@ -1229,7 +1225,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// happens to be the case).
     pub async fn write_at(
         &self,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         offset: u64,
         buf: MutableBufferRef<'_>,
         key_id: Option<u64>,
@@ -1271,7 +1267,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn raw_multi_write(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         key_id: Option<u64>,
         ranges: &[Range<u64>],
         buf: MutableBufferRef<'_>,
@@ -1288,7 +1284,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     async fn multi_write_internal(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         key_id: Option<u64>,
         ranges: &[Range<u64>],
         mut buf: MutableBufferRef<'_>,
@@ -1467,7 +1463,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn multi_write(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         key_id: Option<u64>,
         ranges: &[Range<u64>],
         buf: MutableBufferRef<'_>,
@@ -1487,7 +1483,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn multi_overwrite<'a>(
         &'a self,
         transaction: &mut Transaction<'a>,
-        attr_id: u64,
+        attr_id: AttributeId,
         ranges: &[Range<u64>],
         mut buf: MutableBufferRef<'_>,
     ) -> Result<(), Error> {
@@ -1702,7 +1698,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn write_new_attr_in_batches<'a>(
         &'a self,
         transaction: &mut Transaction<'a>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         data: &[u8],
         batch_size: usize,
     ) -> Result<(), Error> {
@@ -1761,7 +1757,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     pub async fn write_attr(
         &self,
         transaction: &mut Transaction<'_>,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         data: &[u8],
     ) -> Result<NeedsTrim, Error> {
         let rounded_len = round_up(data.len() as u64, self.block_size()).unwrap();
@@ -1974,7 +1970,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             // attribute records specifically, instead of the extended attribute records, because
             // even if the extended attribute record is removed the attribute may not be fully
             // trimmed yet.
-            let mut attribute_id = EXTENDED_ATTRIBUTE_RANGE_START;
+            let mut attribute_id = AttributeId::XATTR_RANGE_START;
             let layer_set = tree.layer_set();
             let mut merger = layer_set.merger();
             let key = ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Attribute);
@@ -1999,8 +1995,8 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             break;
                         } else if attribute_id == *attr_id {
                             // This attribute id is in use, try the next one.
-                            attribute_id += 1;
-                            if attribute_id == EXTENDED_ATTRIBUTE_RANGE_END {
+                            attribute_id = attribute_id.next();
+                            if attribute_id == AttributeId::XATTR_RANGE_END {
                                 bail!(FxfsError::NoSpace);
                             }
                         }
@@ -2140,8 +2136,8 @@ mod tests {
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::{
-        AttributeKey, DataObjectHandle, Directory, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions,
-        LockKey, ObjectKey, ObjectStore, ObjectValue, SetExtendedAttributeMode, StoreObjectHandle,
+        AttributeId, AttributeKey, DataObjectHandle, Directory, HandleOptions, LockKey, ObjectKey,
+        ObjectStore, ObjectValue, SetExtendedAttributeMode, StoreObjectHandle,
     };
     use bit_vec::BitVec;
     use fuchsia_async as fasync;
@@ -2405,7 +2401,7 @@ mod tests {
         // knowledge of how the attribute id is chosen.
         assert_eq!(
             object
-                .read_attr(64)
+                .read_attr(AttributeId::XATTR_RANGE_START)
                 .await
                 .expect("read_attr failed")
                 .expect("read_attr returned none")
@@ -2579,7 +2575,13 @@ mod tests {
         );
 
         // With a small attribute, we don't expect it to write to an fxfs attribute.
-        assert!(object.read_attr(64).await.expect("read_attr failed").is_none());
+        assert!(
+            object
+                .read_attr(AttributeId::XATTR_RANGE_START)
+                .await
+                .expect("read_attr failed")
+                .is_none()
+        );
 
         crate::fsck::fsck(fs.clone()).await.unwrap();
 
@@ -2600,7 +2602,7 @@ mod tests {
         // attribute.
         assert_eq!(
             object
-                .read_attr(64)
+                .read_attr(AttributeId::XATTR_RANGE_START)
                 .await
                 .expect("read_attr failed")
                 .expect("read_attr returned none")
@@ -2627,7 +2629,7 @@ mod tests {
         // attribute, because we don't downgrade to inline once we've allocated one.
         assert_eq!(
             object
-                .read_attr(64)
+                .read_attr(AttributeId::XATTR_RANGE_START)
                 .await
                 .expect("read_attr failed")
                 .expect("read_attr returned none")
@@ -2711,8 +2713,7 @@ mod tests {
     async fn large_extended_attribute_max_number() {
         let (fs, object) = test_filesystem_and_empty_object().await;
 
-        let max_xattrs =
-            super::EXTENDED_ATTRIBUTE_RANGE_END - super::EXTENDED_ATTRIBUTE_RANGE_START;
+        let max_xattrs = AttributeId::XATTR_RANGE_END.raw() - AttributeId::XATTR_RANGE_START.raw();
         for i in 0..max_xattrs {
             let test_attr = TestAttr::new(format!("{}", i).as_bytes(), vec![0x3; 300]);
             object
@@ -2787,7 +2788,7 @@ mod tests {
 
         let block_size = fs.block_size();
         let buf_size = block_size * 2;
-        let attribute_id = 10;
+        let attribute_id = AttributeId::TEST_ID;
 
         let mut transaction = (*object).new_transaction(attribute_id).await.unwrap();
         let mut buffer = object.allocate_buffer(buf_size as usize).await;
@@ -2831,12 +2832,11 @@ mod tests {
     async fn write_new_attr_in_batches_multiple_txns() {
         let (fs, object) = test_filesystem_and_empty_object().await;
         let merkle_tree = vec![1; 3 * WRITE_ATTR_BATCH_SIZE];
-        let mut transaction =
-            (*object).new_transaction(FSVERITY_MERKLE_ATTRIBUTE_ID).await.unwrap();
+        let mut transaction = (*object).new_transaction(AttributeId::TEST_ID).await.unwrap();
         object
             .write_new_attr_in_batches(
                 &mut transaction,
-                FSVERITY_MERKLE_ATTRIBUTE_ID,
+                AttributeId::TEST_ID,
                 &merkle_tree,
                 WRITE_ATTR_BATCH_SIZE,
             )
@@ -2849,14 +2849,14 @@ mod tests {
                 ObjectKey::graveyard_attribute_entry(
                     object.store().graveyard_directory_object_id(),
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::TEST_ID,
                 ),
                 ObjectValue::None,
             ),
         );
         transaction.commit().await.unwrap();
         assert_eq!(
-            object.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await.expect("read_attr failed"),
+            object.read_attr(AttributeId::TEST_ID).await.expect("read_attr failed"),
             Some(merkle_tree.into())
         );
 

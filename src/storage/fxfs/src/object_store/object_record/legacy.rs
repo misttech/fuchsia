@@ -33,7 +33,7 @@ impl From<ObjectKeyDataV43> for ObjectKeyDataV54 {
 pub enum ObjectKeyDataV43 {
     Object,
     Keys,
-    Attribute(u64, AttributeKeyV32),
+    Attribute(AttributeId, AttributeKeyV32),
     Child {
         name: String,
     },
@@ -50,7 +50,7 @@ pub enum ObjectKeyDataV43 {
     },
     GraveyardAttributeEntry {
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     },
     EncryptedCasefoldChild(EncryptedCasefoldChild),
     CasefoldChild {
@@ -94,12 +94,12 @@ impl From<ObjectKeyDataV40> for ObjectKeyDataV43 {
 pub enum ObjectKeyDataV40 {
     Object,
     Keys,
-    Attribute(u64, AttributeKeyV32),
+    Attribute(AttributeId, AttributeKeyV32),
     Child { name: String },
     GraveyardEntry { object_id: u64 },
     Project { project_id: ProjectId, property: ProjectPropertyV32 },
     ExtendedAttribute { name: Vec<u8> },
-    GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
+    GraveyardAttributeEntry { object_id: u64, attribute_id: AttributeId },
     EncryptedChild { name: Vec<u8> },
     CasefoldChild { name: CasefoldString },
 }

@@ -13,10 +13,10 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, ExtentValue,
-    FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions,
-    NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore,
-    ObjectValue, PosixAttributes, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    AttributeId, AttributeKey, DataObjectHandle, DirType, Directory, ExtentValue, FSCRYPT_KEY_ID,
+    FsverityMetadata, HandleOptions, NewChildStoreOptions, ObjectAttributes, ObjectDescriptor,
+    ObjectKey, ObjectKind, ObjectStore, ObjectValue, PosixAttributes, StoreOptions, Timestamp,
+    VOLUME_DATA_KEY_ID,
 };
 use fxfs_crypto::{Crypt, EncryptionKey, WrappingKeyId};
 use std::collections::HashSet;
@@ -388,9 +388,9 @@ pub async fn migrate(
                                 } else {
                                     bail!("Extent past end of file");
                                 }
-                                FSVERITY_MERKLE_ATTRIBUTE_ID
+                                AttributeId::FSVERITY_MERKLE
                             } else {
-                                DEFAULT_DATA_ATTRIBUTE_ID
+                                AttributeId::DATA
                             };
                             dir.store().mark_allocated(
                                 &mut transaction,
@@ -417,7 +417,7 @@ pub async fn migrate(
                                     Mutation::insert_object(
                                         ObjectKey::attribute(
                                             object_id,
-                                            FSVERITY_MERKLE_ATTRIBUTE_ID,
+                                            AttributeId::FSVERITY_MERKLE,
                                             AttributeKey::Attribute,
                                         ),
                                         ObjectValue::attribute(verity_descriptor_range.end, false),
@@ -471,7 +471,7 @@ pub async fn migrate(
                         Mutation::insert_object(
                             ObjectKey::attribute(
                                 object_id,
-                                DEFAULT_DATA_ATTRIBUTE_ID,
+                                AttributeId::DATA,
                                 AttributeKey::Attribute,
                             ),
                             if verity_descriptor_range.is_some() && inode.context.is_some() {
@@ -914,7 +914,7 @@ pub async fn deep_copy_files(
             object
                 .raw_multi_write(
                     &mut transaction,
-                    0,
+                    AttributeId::DATA,
                     Some(VOLUME_DATA_KEY_ID),
                     &[0..FXFS_BLOCK_SIZE as u64],
                     buffer.as_mut(),
@@ -986,7 +986,7 @@ pub async fn deep_copy_files(
                     object
                         .raw_multi_write(
                             &mut transaction,
-                            DEFAULT_DATA_ATTRIBUTE_ID,
+                            AttributeId::DATA,
                             Some(VOLUME_DATA_KEY_ID),
                             &[current_block_offset as u64 * FXFS_BLOCK_SIZE as u64
                                 ..(current_block_offset + chunk_len) as u64

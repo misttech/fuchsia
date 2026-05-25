@@ -1867,8 +1867,8 @@ mod tests {
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKind, ObjectStore,
-        SetExtendedAttributeMode, StoreObjectHandle, StoreOptions,
+        AttributeId, HandleOptions, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKind,
+        ObjectStore, SetExtendedAttributeMode, StoreObjectHandle, StoreOptions,
     };
     use anyhow::Error;
     use assert_matches::assert_matches;
@@ -3554,7 +3554,7 @@ mod tests {
                 .expect("new transaction failed");
             let _ = directory
                 .handle
-                .write_attr(&mut transaction, 1, b"bar")
+                .write_attr(&mut transaction, AttributeId::TEST_ID, b"bar")
                 .await
                 .expect("write_attr failed");
             transaction.commit().await.expect("commit failed");
@@ -3581,7 +3581,14 @@ mod tests {
             .await
             .expect("open failed");
             let mut buffer = directory.handle.allocate_buffer(10).await;
-            assert_eq!(directory.handle.read(1, 0, buffer.as_mut()).await.expect("read failed"), 3);
+            assert_eq!(
+                directory
+                    .handle
+                    .read(AttributeId::TEST_ID, 0, buffer.as_mut())
+                    .await
+                    .expect("read failed"),
+                3
+            );
             assert_eq!(&buffer.as_slice()[..3], b"bar");
         }
 

@@ -29,10 +29,7 @@ pub use data_object_handle::{
 };
 pub use directory::Directory;
 pub use object_record::{ChildValue, DirType, ObjectDescriptor, PosixAttributes, Timestamp};
-pub use store_object_handle::{
-    EXTENDED_ATTRIBUTE_RANGE_END, EXTENDED_ATTRIBUTE_RANGE_START, SetExtendedAttributeMode,
-    StoreObjectHandle,
-};
+pub use store_object_handle::{SetExtendedAttributeMode, StoreObjectHandle};
 
 use crate::errors::FxfsError;
 use crate::filesystem::{
@@ -78,14 +75,11 @@ use storage_device::Device;
 use uuid::Uuid;
 
 pub use extent::Extent;
-pub use extent_record::{
-    BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentMode,
-    ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID,
-};
+pub use extent_record::{ExtentMode, ExtentValue};
 pub use object_record::{
-    AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, FxfsKey,
-    FxfsKeyV40, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
-    ProjectProperty, RootDigest,
+    AttributeId, AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue,
+    FsverityMetadata, FxfsKey, FxfsKeyV40, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData,
+    ObjectKind, ObjectValue, ProjectProperty, RootDigest,
 };
 pub use project_id::{ProjectId, ProjectIdExt};
 pub use transaction::Mutation;
@@ -1108,11 +1102,7 @@ impl ObjectStore {
     async fn get_file_size(&self, object_id: u64) -> Result<u64, Error> {
         let item = self
             .tree
-            .find(&ObjectKey::attribute(
-                object_id,
-                DEFAULT_DATA_ATTRIBUTE_ID,
-                AttributeKey::Attribute,
-            ))
+            .find(&ObjectKey::attribute(object_id, AttributeId::DATA, AttributeKey::Attribute))
             .await?
             .ok_or(FxfsError::NotFound)?;
         if let ObjectValue::Attribute { size, .. } = item.value {
@@ -1155,7 +1145,7 @@ impl ObjectStore {
         let mut overwrite_ranges = Vec::new();
         let item = store
             .tree
-            .find(&ObjectKey::attribute(obj_id, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute))
+            .find(&ObjectKey::attribute(obj_id, AttributeId::DATA, AttributeKey::Attribute))
             .await?
             .ok_or(FxfsError::NotFound)?;
 
@@ -1181,7 +1171,7 @@ impl ObjectStore {
             let mut iter = merger
                 .query(Query::FullRange(&ObjectKey::attribute(
                     obj_id,
-                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeId::DATA,
                     AttributeKey::Extent(Extent::search_key_from_offset(0)),
                 )))
                 .await?;
@@ -1192,11 +1182,14 @@ impl ObjectStore {
                             ObjectKey {
                                 object_id,
                                 data:
-                                    ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(extent)),
+                                    ObjectKeyData::Attribute(
+                                        AttributeId::DATA,
+                                        AttributeKey::Extent(extent),
+                                    ),
                             },
                         value,
                         ..
-                    }) if *object_id == obj_id && *attribute_id == DEFAULT_DATA_ATTRIBUTE_ID => {
+                    }) if *object_id == obj_id => {
                         match value {
                             ObjectValue::Extent(ExtentValue::None)
                             | ObjectValue::Extent(ExtentValue::Some {
@@ -1248,7 +1241,7 @@ impl ObjectStore {
             owner.clone(),
             obj_id,
             permanent,
-            DEFAULT_DATA_ATTRIBUTE_ID,
+            AttributeId::DATA,
             size,
             FsverityState::None,
             options,
@@ -1318,7 +1311,7 @@ impl ObjectStore {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::attribute(object_id, DEFAULT_DATA_ATTRIBUTE_ID, AttributeKey::Attribute),
+                ObjectKey::attribute(object_id, AttributeId::DATA, AttributeKey::Attribute),
                 // This is a new object so nothing has pre-allocated overwrite extents yet.
                 ObjectValue::attribute(0, false),
             ),
@@ -1327,7 +1320,7 @@ impl ObjectStore {
             owner.clone(),
             object_id,
             permanent_keys,
-            DEFAULT_DATA_ATTRIBUTE_ID,
+            AttributeId::DATA,
             0,
             FsverityState::None,
             options,
@@ -1490,7 +1483,7 @@ impl ObjectStore {
         _truncate_guard: &TruncateGuard<'_>,
     ) -> Result<(), Error> {
         let fs = self.filesystem();
-        let mut next_attribute = Some(0);
+        let mut next_attribute = Some(AttributeId::SORTED_START);
         while let Some(attribute_id) = next_attribute.take() {
             let mut transaction = fs
                 .clone()
@@ -1533,7 +1526,7 @@ impl ObjectStore {
                     }
                     // The last attribute was not the default attribute, it may have been added to
                     // the graveyard alongside the object.
-                    if for_tombstone && attribute_id != DEFAULT_DATA_ATTRIBUTE_ID {
+                    if for_tombstone && attribute_id != AttributeId::DATA {
                         self.remove_attribute_from_graveyard(
                             &mut transaction,
                             object_id,
@@ -1544,7 +1537,7 @@ impl ObjectStore {
                 TrimResult::Done(id) => {
                     // Moved to the next attribute. This one is finished and it may have been
                     // added to the graveyard alongside the object.
-                    if for_tombstone && attribute_id != DEFAULT_DATA_ATTRIBUTE_ID {
+                    if for_tombstone && attribute_id != AttributeId::DATA {
                         self.remove_attribute_from_graveyard(
                             &mut transaction,
                             object_id,
@@ -1566,7 +1559,7 @@ impl ObjectStore {
     pub async fn tombstone_attribute(
         &self,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         txn_options: Options<'_>,
     ) -> Result<(), Error> {
         // Ensure that we don't double-delete things, it should still exist and be in the graveyard.
@@ -1626,7 +1619,7 @@ impl ObjectStore {
         &self,
         transaction: &mut Transaction<'_>,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
         mode: TrimMode,
     ) -> Result<TrimResult, Error> {
         let layer_set = self.tree.layer_set();
@@ -1671,7 +1664,7 @@ impl ObjectStore {
                         // At time of writing, we should always see a size record or None here, but
                         // asserting here would be brittle so just skip to the the next attribute
                         // instead.
-                        return Ok(TrimResult::Done(Some(attribute_id + 1)));
+                        return Ok(TrimResult::Done(Some(attribute_id.next())));
                     }
                 } else {
                     // End of the tree.
@@ -2510,7 +2503,7 @@ impl ObjectStore {
         &self,
         transaction: &mut Transaction<'_>,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     ) {
         transaction.add(
             self.store_object_id,
@@ -2740,7 +2733,7 @@ impl ObjectStore {
     pub async fn get_attribute_size(
         &self,
         object_id: u64,
-        attribute_id: u64,
+        attribute_id: AttributeId,
     ) -> Result<u64, Error> {
         let item = self
             .tree
@@ -3022,7 +3015,7 @@ pub enum TrimResult {
 
     /// We finished this attribute.  Returns the ID of the next attribute for the same object if
     /// there is one.
-    Done(Option<u64>),
+    Done(Option<AttributeId>),
 }
 
 /// Loads store info.
@@ -3054,10 +3047,9 @@ async fn load_store_info_from_handle(
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions,
-        LastObjectId, LastObjectIdInfo, LockKey, MAX_STORE_INFO_SERIALIZED_SIZE, Mutation,
-        NO_OWNER, NewChildStoreOptions, OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo,
-        StoreOptions, StoreOwner,
+        AttributeId, FsverityMetadata, HandleOptions, LastObjectId, LastObjectIdInfo, LockKey,
+        MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NO_OWNER, NewChildStoreOptions,
+        OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo, StoreOptions, StoreOwner,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem};
@@ -3083,7 +3075,6 @@ mod tests {
         Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsKey, UnwrappedKey, WrappedKeyBytes,
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
-
     use std::sync::Arc;
     use std::time::Duration;
     use storage_device::DeviceHolder;
@@ -3117,7 +3108,7 @@ mod tests {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeId::DATA,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::verified_attribute(
@@ -3132,7 +3123,7 @@ mod tests {
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     object.object_id(),
-                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeId::FSVERITY_MERKLE,
                     AttributeKey::Attribute,
                 ),
                 ObjectValue::attribute(0, false),

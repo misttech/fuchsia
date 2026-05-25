@@ -137,7 +137,7 @@ impl ObjectCache<ObjectKey, ObjectValue> for TreeCache {
 
 #[cfg(test)]
 mod tests {
-    use super::super::object_record::{ObjectKey, ObjectValue, Timestamp};
+    use super::super::object_record::{AttributeId, ObjectKey, ObjectValue, Timestamp};
     use super::{ITEM_LIMIT, TreeCache};
     use crate::lsm_tree::cache::{ObjectCache, ObjectCacheResult};
     use crate::object_store::EncryptionKey;
@@ -230,7 +230,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_no_caching_for_filtered_item() {
         let cache = TreeCache::new();
-        let key = ObjectKey::extent(1, 1, 1..2);
+        let key = ObjectKey::extent(1, AttributeId::TEST_ID, 1..2);
 
         assert!(matches!(cache.lookup_or_reserve(&key), ObjectCacheResult::NoCache));
     }

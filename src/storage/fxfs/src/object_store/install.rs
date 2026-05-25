@@ -23,7 +23,7 @@ use crate::object_store::transaction::{AssocObj, LockKey, Mutation, Options, loc
 use crate::object_store::tree::reservation_amount_from_layer_size;
 use crate::object_store::volume::{RootVolume, root_volume};
 use crate::object_store::{
-    DataObjectHandle, DirectWriter, Directory, FileExtent, HandleOptions, HandleOwner,
+    AttributeId, DataObjectHandle, DirectWriter, Directory, FileExtent, HandleOptions, HandleOwner,
     LastObjectId, LastObjectIdInfo, ObjectHandle, ObjectStore, ReadObjectHandle as _, ReservedId,
     StoreInfo, StoreOptions, merge,
 };
@@ -325,7 +325,7 @@ async fn create_metadata_ownership_layer(
     // offset should be equal to the size of the backing file.
     let mut size = extents.last().unwrap().logical_range().end;
     layer.insert(Item {
-        key: ObjectKey::extent(object_id.get(), 0, 0..size),
+        key: ObjectKey::extent(object_id.get(), AttributeId::DATA, 0..size),
         value: ObjectValue::Extent(ExtentValue::Some {
             device_offset: 0, // Will be remapped below
             mode: ExtentMode::Raw,
@@ -354,7 +354,7 @@ async fn create_metadata_ownership_layer(
                 let item = Item {
                     key: ObjectKey::extent(
                         object_id.get(),
-                        0,
+                        AttributeId::DATA,
                         *device_offset..*device_offset + len,
                     ),
                     value: ObjectValue::Extent(ExtentValue::None),
@@ -383,7 +383,7 @@ async fn create_metadata_ownership_layer(
     })?;
 
     layer.insert(Item {
-        key: ObjectKey::attribute(object_id, 0, AttributeKey::Attribute),
+        key: ObjectKey::attribute(object_id, AttributeId::DATA, AttributeKey::Attribute),
         value: ObjectValue::Attribute { size, has_overwrite_extents: false },
     })?;
 
