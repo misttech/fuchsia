@@ -98,7 +98,9 @@ impl std::hash::Hash for CasefoldString {
     where
         H: std::hash::Hasher,
     {
-        for ch in casefold(self.0.chars()) {
+        let normalized_chars =
+            nfd::nfd(casefold(self.0.chars()).filter(|x| !lookup::default_ignorable(*x)));
+        for ch in normalized_chars {
             ch.hash(state);
         }
     }
@@ -153,5 +155,20 @@ mod test {
         assert_eq!("CasefoldString(\"Hello There\")", format!("{:?}", a));
         // Displays the same as String.
         assert_eq!(format!("{}", "Hello There".to_owned()), format!("{}", a));
+    }
+
+    #[test]
+    fn test_casefold_hash_equality() {
+        use std::hash::{Hash, Hasher};
+        fn get_hash<T: Hash>(t: &T) -> u64 {
+            let mut s = std::collections::hash_map::DefaultHasher::new();
+            t.hash(&mut s);
+            s.finish()
+        }
+        // hello and hello with soft hyphen (ignorable) should be equal and have identical hashes
+        let a = CasefoldString::new("hello\u{00AD}".to_owned());
+        let b = CasefoldString::new("hello".to_owned());
+        assert_eq!(a, b);
+        assert_eq!(get_hash(&a), get_hash(&b));
     }
 }

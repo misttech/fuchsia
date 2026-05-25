@@ -217,7 +217,7 @@ use std::ops::Range;
     // and likely to cache well.
     {
         let mut planes: Vec<Vec<CCCEntry>> = Vec::new();
-        for _ in 0..16 {
+        for _ in 0..18 {
             planes.push(Vec::new());
         }
         for (start, end, ccc) in ucd_parsers::derived_combining_class(ucd_zip).unwrap() {

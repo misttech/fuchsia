@@ -152,8 +152,10 @@ mod test {
     #[test]
     fn test_high_char() {
         // This is the maximum unicode codepoint.
-        assert_eq!(decomposition('\u{10FFFF}'), None);
-        assert_eq!(casefold('\u{10FFFF}'), None);
-        assert_eq!(default_ignorable('\u{10FFFF}'), false);
+        assert_eq!(decomposition('\u{10ffff}'), None);
+        assert_eq!(casefold('\u{10ffff}'), None);
+        assert_eq!(default_ignorable('\u{10ffff}'), false);
+        // ensure ccc doesn't panic if called with high char (top-most plane)
+        let _ = ccc('\u{10ffff}');
     }
 }
