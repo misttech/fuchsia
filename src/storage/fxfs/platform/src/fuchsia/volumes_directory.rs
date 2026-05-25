@@ -18,7 +18,9 @@ use fidl_fuchsia_fs_startup::{
     CheckOptions, CreateOptions, MountOptions, VolumeRequest, VolumeRequestStream,
 };
 use fidl_fuchsia_fxfs::{FileBackedVolumeProviderMarker, ProjectIdMarker};
+use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectTree, FsInspectVolume};
+use fuchsia_async as fasync;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
@@ -37,7 +39,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::directory::helper::DirectlyMutable;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 const MEBIBYTE: u64 = 1024 * 1024;
 
 struct ProfileState {
@@ -71,7 +72,8 @@ pub struct VolumesDirectory {
 
     // A callback to invoke when a volume is added.  When the volume is removed, this is called
     // again with `None` as the second parameter.
-    on_volume_added: OnceLock<Box<dyn Fn(&str, Option<Arc<FxVolume>>) + Send + Sync>>,
+    on_volume_added:
+        OnceLock<Box<dyn Fn(&str, Option<(Arc<FxVolume>, Arc<ObjectStore>)>) + Send + Sync>>,
 
     /// The cache configuration to use under different memory pressure levels.
     memory_pressure_config: MemoryPressureConfig,
@@ -212,7 +214,18 @@ impl MountedVolumesGuard<'_> {
             )
         }
         if let Some(callback) = self.volumes_directory.on_volume_added.get() {
-            callback(name, Some(volume.volume().clone()));
+            callback(
+                name,
+                Some((
+                    volume.volume().clone(),
+                    self.volumes_directory
+                        .root_volume
+                        .volume_directory()
+                        .store()
+                        .filesystem()
+                        .root_store(),
+                )),
+            );
         }
     }
 
@@ -955,9 +968,12 @@ impl VolumesDirectory {
     }
 
     /// Sets a callback which is invoked when a volume is added.  When the volume is removed, this
-    /// is called again with `None` as the second parameter.
-    /// Note that this can only be set once per VolumesDirectory; repeated calls will panic.
-    pub fn set_on_mount_callback<F: Fn(&str, Option<Arc<FxVolume>>) + Send + Sync + 'static>(
+    /// is called again with `None` as the second parameter. The root store is included along with
+    /// volume so the volume's layers can be accessed. Note that this can only be set once per
+    /// VolumesDirectory; repeated calls will panic.
+    pub fn set_on_mount_callback<
+        F: Fn(&str, Option<(Arc<FxVolume>, Arc<ObjectStore>)>) + Send + Sync + 'static,
+    >(
         &self,
         callback: F,
     ) {
@@ -1079,6 +1095,8 @@ mod tests {
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use futures::{TryStreamExt, join};
@@ -1100,7 +1118,6 @@ mod tests {
     use storage_device::fake_device::FakeDevice;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
     async fn write_image_to_file(image: DeviceHolder, file: fio::FileProxy) {
         file.resize(image.size()).await.unwrap().expect("resize failed");
         let vmo = TempClonable::new(

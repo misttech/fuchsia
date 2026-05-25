@@ -5,9 +5,8 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("pseudo_fs") {
+common_pseudo_fs_args = {
   edition = "2024"
-  with_unit_tests = true
   sources = [
     "src/lazy_pseudo_directory.rs",
     "src/lib.rs",
@@ -16,7 +15,6 @@ rustc_library("pseudo_fs") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",
     "//src/lib/fuchsia-sync",
-    "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:futures",
   ]
   test_deps = [
@@ -25,11 +23,24 @@ rustc_library("pseudo_fs") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
   ]
+}
+
+rustc_library("pseudo_fs") {
+  forward_variables_from(common_pseudo_fs_args, "*")
+  with_unit_tests = true
+  deps += [ "//src/storage/lib/vfs/rust:vfs" ]
   visibility = [
     ":*",
     "//src/storage/fshost:*",
     "//src/sys/lib/elf_runner:*",
   ]
+}
+
+rustc_library("pseudo_fs_static") {
+  name = "pseudo_fs"
+  forward_variables_from(common_pseudo_fs_args, "*")
+  deps += [ "//src/storage/lib/vfs/rust:vfs_static" ]
+  visibility = [ "//src/storage/fxfs/*" ]
 }
 
 fuchsia_unittest_package("pseudo_fs_tests") {

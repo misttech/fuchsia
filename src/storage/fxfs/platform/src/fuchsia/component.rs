@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fuchsia::debug::{FxfsDebug, handle_debug_request};
+use crate::fuchsia::debug::{create_debug_directory, handle_debug_request};
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::memory_pressure::MemoryPressureMonitor;
 use crate::fuchsia::power::FuchsiaPowerManager;
@@ -114,7 +114,6 @@ struct RunningState {
     // FsInspectTree can reference `fs` as a Weak<dyn FsInspect>`.
     fs: Arc<InspectedFxFilesystem>,
     volumes: Arc<VolumesDirectory>,
-    _debug: Arc<FxfsDebug>,
     _inspect_tree: Arc<FsInspectTree>,
 }
 
@@ -345,8 +344,8 @@ impl Component {
             /* overwrite: */ true,
         )?;
 
-        let debug = FxfsDebug::new(&**fs, &volumes)?;
-        self.export_dir.add_entry_may_overwrite("debug", debug.root(), true)?;
+        let debug = create_debug_directory(&**fs, &volumes);
+        self.export_dir.add_entry_may_overwrite("debug", debug, true)?;
 
         fs.allocator().track_statistics(&metrics::detail(), "allocator");
         fs.journal().track_statistics(&metrics::detail(), "journal");
@@ -365,12 +364,7 @@ impl Component {
             volumes.record_or_replay_profile(None, ".boot".to_owned(), profile_time).await.unwrap();
         }
 
-        *state = State::Running(RunningState {
-            fs,
-            volumes,
-            _debug: debug,
-            _inspect_tree: inspect_tree,
-        });
+        *state = State::Running(RunningState { fs, volumes, _inspect_tree: inspect_tree });
 
         Ok(())
     }

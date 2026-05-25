@@ -150,6 +150,7 @@ if (is_fuchsia) {
     visibility = [
       ":*",
       "//src/storage/fxfs/*",
+      "//src/storage/lib/pseudo_fs/*",
     ]
     configs += [ "//build/config/rust:bootfs" ]
   }

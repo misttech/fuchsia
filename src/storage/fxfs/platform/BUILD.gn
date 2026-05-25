@@ -84,6 +84,7 @@ template("fxfs_platform_library") {
       "//src/storage/lib/block_client/rust",
       "//src/storage/lib/delivery_blob",
       "//src/storage/lib/fs_inspect",
+      "//src/storage/lib/pseudo_fs:pseudo_fs_static",
       "//src/storage/lib/storage_device",
       "//src/storage/lib/vfs/rust:vfs_static",
       "//src/sys/pkg/lib/fuchsia-hash",
