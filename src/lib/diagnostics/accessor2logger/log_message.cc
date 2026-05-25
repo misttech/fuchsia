@@ -83,7 +83,7 @@ inline fpromise::result<fuchsia::logger::LogMessage, std::string> JsonToLogMessa
     return fpromise::error("Expected metadata and payload objects");
   }
   auto root = payload->value.FindMember("root");
-  if (!root->value.IsObject()) {
+  if (root == payload->value.MemberEnd() || !root->value.IsObject()) {
     return fpromise::error("Expected payload.root to be an object if present");
   }
 
@@ -121,14 +121,15 @@ inline fpromise::result<fuchsia::logger::LogMessage, std::string> JsonToLogMessa
   // Flatten payloads containing a "root" node.
   // TODO(https://fxbug.dev/42141910): Remove this when "root" is omitted from logs.
   if (payload->value.MemberCount() == 1 && payload->value.HasMember("root")) {
-    payload = payload->value.FindMember("root");
-    if (!payload->value.IsObject()) {
+    auto root_member = payload->value.FindMember("root");
+    if (root_member == payload->value.MemberEnd() || !root_member->value.IsObject()) {
       return fpromise::error("Expected payload.root to be an object if present");
     }
-    payload = payload->value.FindMember("message");
-    if (!payload->value.IsObject()) {
+    auto msg_member = root_member->value.FindMember("message");
+    if (msg_member == root_member->value.MemberEnd() || !msg_member->value.IsObject()) {
       return fpromise::error("Expected payload.root.message to be an object if present");
     }
+    payload = msg_member;
   }
 
   std::string msg;

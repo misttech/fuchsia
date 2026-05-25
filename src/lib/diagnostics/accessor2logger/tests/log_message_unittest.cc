@@ -865,4 +865,50 @@ TEST(LogMessage, DroppedLogs) {
   RunValidationCases(std::move(cases));
 }
 
+TEST(LogMessage, MissingRootMemberOutOfBoundsRead) {
+  constexpr char kSampleJson[] = R"JSON([
+    {
+      "metadata": {
+        "timestamp": 1000,
+        "severity": "INFO"
+      },
+      "payload": {
+        "not_root": {}
+      }
+    }
+  ])JSON";
+
+  FormattedContent content;
+  ASSERT_TRUE(fsl::VmoFromString(kSampleJson, &content.json()));
+  auto results = ConvertFormattedContentToLogMessages(std::move(content));
+  ASSERT_TRUE(results.is_ok());
+  ASSERT_EQ(1u, results.value().size());
+  ASSERT_TRUE(results.value()[0].is_error());
+  EXPECT_EQ("Expected payload.root to be an object if present", results.value()[0].error());
+}
+
+TEST(LogMessage, MissingMessageMemberOutOfBoundsRead) {
+  constexpr char kSampleJson[] = R"JSON([
+    {
+      "metadata": {
+        "timestamp": 1000,
+        "severity": "INFO"
+      },
+      "payload": {
+        "root": {
+          "not_message": {}
+        }
+      }
+    }
+  ])JSON";
+
+  FormattedContent content;
+  ASSERT_TRUE(fsl::VmoFromString(kSampleJson, &content.json()));
+  auto results = ConvertFormattedContentToLogMessages(std::move(content));
+  ASSERT_TRUE(results.is_ok());
+  ASSERT_EQ(1u, results.value().size());
+  ASSERT_TRUE(results.value()[0].is_error());
+  EXPECT_EQ("Expected payload.root.message to be an object if present", results.value()[0].error());
+}
+
 }  // namespace
