@@ -4,6 +4,7 @@
 
 use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::fxblob::blob::FxBlob;
+use crate::fuchsia::node::OpenedNode;
 use crate::fuchsia::testing::{TestFixture, TestFixtureOptions};
 use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
@@ -48,6 +49,7 @@ pub trait BlobFixture {
         allow_existing: bool,
     ) -> Result<BlobWriterProxy, CreateBlobError>;
     async fn get_blob(&self, hash: Hash) -> Result<Arc<FxBlob>, Error>;
+    async fn get_opened_blob(&self, hash: Hash) -> Result<OpenedNode<FxBlob>, Error>;
     /// Returns `true` if we could lookup the blob, or `false` if we get [`FxfsError::NotFound`].
     /// Panics otherwise.
     async fn blob_exists(&self, hash: Hash) -> bool;
@@ -94,6 +96,11 @@ impl BlobFixture for TestFixture {
     }
 
     async fn get_blob(&self, hash: Hash) -> Result<Arc<FxBlob>, Error> {
+        // Downgrade from OpenedNode<FxBlob> to Arc<FxBlob>
+        self.get_opened_blob(hash).await.map(|blob| (*blob).clone())
+    }
+
+    async fn get_opened_blob(&self, hash: Hash) -> Result<OpenedNode<FxBlob>, Error> {
         self.volume()
             .root()
             .clone()
@@ -103,7 +110,6 @@ impl BlobFixture for TestFixture {
             .open_blob(&(hash.into()))
             .await?
             .ok_or_else(|| FxfsError::NotFound.into())
-            .map(|blob| (*blob).clone()) // Downgrade from OpenedNode<FxBlob> to Arc<FxBlob>
     }
 
     async fn create_blob(

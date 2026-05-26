@@ -380,11 +380,17 @@ impl<N: FxNode + ?Sized> OpenedNode<N> {
     pub fn is<T: 'static>(&self) -> bool {
         self.0.as_ref().type_id() == TypeId::of::<T>()
     }
+
+    /// Makes another OpenedNode, increasing the open count on the node.
+    pub fn dup(&self) -> Self {
+        self.0.open_count_add_one();
+        OpenedNode(self.0.clone())
+    }
 }
 
 impl<N: FxNode + ?Sized> Drop for OpenedNode<N> {
     fn drop(&mut self) {
-        self.0.clone().open_count_sub_one();
+        self.clone().open_count_sub_one();
     }
 }
 
