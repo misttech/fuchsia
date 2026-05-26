@@ -5667,6 +5667,9 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
           return lookup_fn(offset, page_or_marker->Page()->paddr());
         },
         current_page_offset, end_page_offset);
+    if (status != ZX_OK) {
+      return status;
+    }
 
     // Check if we've processed the whole range.
     if (current_page_offset == end_page_offset) {
@@ -5696,7 +5699,7 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
                            page_or_marker->Page()->paddr());
         },
         content.owner_offset, content.owner_offset + owner_length);
-    if (status != ZX_OK || status != ZX_ERR_NEXT) {
+    if (status != ZX_OK) {
       return status;
     }
 

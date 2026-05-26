@@ -5173,6 +5173,99 @@ static bool vmo_always_pinned_with_no_pages_test() {
   END_TEST;
 }
 
+// Verify that LookupReadableLocked works for a simple VMO with all pages committed.
+static bool vmo_lookup_readable_simple_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t page_count = 4;
+  constexpr size_t alloc_size = kPageSize * page_count;
+
+  // Create a VMO.
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, alloc_size, &vmo);
+  ASSERT_OK(status);
+  ASSERT_TRUE(vmo);
+
+  // Commit the whole VMO.
+  status = vmo->CommitRange(0, alloc_size);
+  ASSERT_OK(status);
+
+  // Lookup readable on the VMO should find all 4 pages.
+  size_t pages_seen = 0;
+  auto lookup_fn = [&pages_seen](uint64_t offset, paddr_t pa) {
+    pages_seen++;
+    return ZX_ERR_NEXT;
+  };
+
+  VmCowPages* vmo_cow = vmo->DebugGetCowPages().get();
+  {
+    Guard<CriticalMutex> guard{vmo_cow->lock()};
+    status = vmo_cow->LookupReadableLocked(VmCowRange(0, alloc_size), lookup_fn);
+  }
+  EXPECT_OK(status);
+  EXPECT_EQ(page_count, pages_seen);
+
+  END_TEST;
+}
+
+// Verify that LookupReadableLocked works when a parent VMO lookup segment is
+// immediately followed by a page committed locally in the clone VMO (which splits
+// the parent lookup). This is a regression test for https://fxbug.dev/513654391.
+static bool vmo_lookup_readable_clone_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t page_count = 4;
+  constexpr size_t alloc_size = kPageSize * page_count;
+
+  // Create a parent VMO.
+  fbl::RefPtr<VmObjectPaged> parent;
+  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, alloc_size, &parent);
+  ASSERT_OK(status);
+  ASSERT_TRUE(parent);
+
+  parent->set_user_id(42u);
+
+  // Commit the whole parent VMO.
+  status = parent->CommitRange(0, alloc_size);
+  ASSERT_OK(status);
+
+  // Create a COW clone of the parent.
+  fbl::RefPtr<VmObject> clone_no_paged;
+  status = parent->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, alloc_size, false,
+                               &clone_no_paged);
+  ASSERT_OK(status);
+  ASSERT_TRUE(clone_no_paged);
+
+  clone_no_paged->set_user_id(43u);
+  VmObjectPaged* clone = DownCastVmObject<VmObjectPaged>(clone_no_paged.get());
+  ASSERT_NONNULL(clone);
+
+  // Commit page 1 in the clone to split the parent lookup.
+  status = clone->CommitRange(kPageSize, kPageSize);
+  ASSERT_OK(status);
+
+  // Lookup readable on the clone VMO should find all 4 pages.
+  size_t pages_seen = 0;
+  auto lookup_fn = [&pages_seen](uint64_t offset, paddr_t pa) {
+    pages_seen++;
+    return ZX_ERR_NEXT;
+  };
+
+  VmCowPages* clone_cow = clone->DebugGetCowPages().get();
+  {
+    Guard<CriticalMutex> guard{clone_cow->lock()};
+    status = clone_cow->LookupReadableLocked(VmCowRange(0, alloc_size), lookup_fn);
+  }
+  EXPECT_OK(status);
+  EXPECT_EQ(page_count, pages_seen);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5249,6 +5342,8 @@ VM_UNITTEST(vmo_apply_unmap_to_child_with_kernel_mapping_test)
 VM_UNITTEST(vmo_compress_to_marker_pager_test)
 VM_UNITTEST(vmo_compress_to_marker_anon_test)
 VM_UNITTEST(vmo_always_pinned_with_no_pages_test)
+VM_UNITTEST(vmo_lookup_readable_simple_test)
+VM_UNITTEST(vmo_lookup_readable_clone_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace
