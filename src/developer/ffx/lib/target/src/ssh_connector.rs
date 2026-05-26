@@ -203,7 +203,10 @@ impl SshConnector {
             Err(e) => {
                 if e.kind() == ErrorKind::UnexpectedEof {
                     let mut lines = stderr.lines();
-                    if let Ok(Some(line)) = lines.next_line().await {
+                    // Read all lines of stderr since SSH can output warning messages first
+                    // (e.g., "Warning: Permanently added ...") on standard error when connecting,
+                    // which would otherwise mask the target's "fdomain_runner: not found" error.
+                    while let Ok(Some(line)) = lines.next_line().await {
                         if line.contains("fdomain_runner: not found") {
                             return Err(FDomainConnectionError::NotSupported);
                         }
