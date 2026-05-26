@@ -70,36 +70,63 @@ def _gn_format(ctx):
     Args:
         ctx: A ctx instance.
     """
-    gn_files = ctx.scm.affected_files(glob = ["*.gn", "*.gni"])
-    if not gn_files:
+    affected_files = ctx.scm.affected_files(glob = ["*.gn", "*.gni"])
+    if not affected_files:
         return
 
     gn = "%s/prebuilt/third_party/gn/%s/gn" % (get_fuchsia_dir(ctx), cipd_platform_name(ctx))
 
     result = os_exec(
         ctx,
-        [gn, "format", "--dry-run"] + list(gn_files),
+        [gn, "format", "--dry-run"] + list(affected_files),
         ok_retcodes = [0, 1, 2],
     ).wait()
 
-    if result.retcode in [0, 2]:
-        unformatted_files = result.stdout.splitlines()
-        for f in unformatted_files:
-            formatted_contents = os_exec(
-                ctx,
-                [gn, "format", "--stdin"],
-                stdin = ctx.io.read_file(f),
-            ).wait().stdout
-            ctx.emit.finding(
-                level = "error",
-                message = FORMATTER_MSG,
-                filepath = f,
-                replacements = [formatted_contents],
-            )
+    lines = result.stdout.splitlines()
+    files_to_format = []
+    has_errors = False
+    for line in lines:
+        if not line.strip():
+            continue
+        if line in affected_files:
+            files_to_format.append(line)
+        else:
+            has_errors = True
 
-        # If gn format --dry-run command fails, we can't filter a list of unformatted files, so we iterate over all the files
-    elif result.retcode == 1:
-        for f in gn_files:
+    for f in files_to_format:
+        formatted_contents = os_exec(
+            ctx,
+            [gn, "format", "--stdin"],
+            stdin = ctx.io.read_file(f),
+        ).wait().stdout
+        ctx.emit.finding(
+            level = "error",
+            message = FORMATTER_MSG,
+            filepath = f,
+            replacements = [formatted_contents],
+        )
+
+    # `gn format --dry-run` has three output cases:
+    # 1. Prints nothing if the file has the correct formatting.
+    # 2. Prints the name of the file if it needs formatting changes.
+    # 3. Prints a raw parser error (e.g., 'ERROR at :1:1: ...') to stdout if it fails to parse,
+    #    but crucially does NOT print the filename of the broken file.
+    #
+    # Because of Case 3, we cannot tell from the batch output which file is broken.
+    # To identify the broken file(s), we manually track which files successfully parsed but
+    # need formatting (Case 2, stored in `files_to_format`).
+    #
+    # If we detected any parser errors (indicated by `has_errors`), we fall back to running
+    # `gn format --stdin` one-by-one on all remaining files (Case 1 and Case 3, excluding
+    # `files_to_format`). This allows us to capture the exact parser error and associate it
+    # with the correct filename.
+    #
+    # The optimization here is that if `has_errors` is False, we can completely skip this
+    # fallback check for all the Case 1 files that are already correctly formatted.
+    if has_errors:
+        files_to_check_for_errors = [f for f in affected_files if f not in files_to_format]
+        errors = []
+        for f in files_to_check_for_errors:
             res = os_exec(
                 ctx,
                 [gn, "format", "--stdin"],
@@ -107,8 +134,9 @@ def _gn_format(ctx):
                 ok_retcodes = [0, 1, 2],
             ).wait()
             if res.retcode == 1:
-                finding = res.stdout
-                fail("{}: {}".format(f, finding))
+                errors.append("{}:\n  {}".format(f, res.stdout))
+        if errors:
+            fail("\n" + "\n\n".join(errors))
 
 def register_all_checks():
     """Register all checks that should run.
