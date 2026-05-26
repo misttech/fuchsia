@@ -26,7 +26,7 @@ use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_mac, net_subnet_v4};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, Ipv4};
-use netemul::{DEFAULT_MTU, DhcpClient, InterfaceConfig};
+use netemul::{DEFAULT_MTU, DhcpClient, InterfaceConfig, RealmUdpSocket as _};
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::realms::{
     DhcpClientVersion, KnownServiceProvider, Netstack, NetstackAndDhcpClient, NetstackVersion,
@@ -1217,6 +1217,29 @@ async fn acquire_ephemeral_dhcp_server_after_restart<
     acquire_dhcp_server_after_restart::<SERVER, CLIENT>(&format!("{}_{}", name, mode), mode).await
 }
 
+/// Polls until the DHCP server port is available.
+///
+/// Panics if the port is not available after 5 * 500ms.
+async fn wait_for_dhcp_server_port(realm: &netemul::TestRealm<'_>) {
+    for i in 0..=5 {
+        match std::net::UdpSocket::bind_in_realm(
+            realm,
+            std::net::SocketAddr::new(
+                std::net::Ipv4Addr::UNSPECIFIED.into(),
+                dhcpv4::protocol::SERVER_PORT.get(),
+            ),
+        )
+        .await
+        {
+            Ok(_) => return,
+            Err(_) if i < 5 => {
+                fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(500)).await;
+            }
+            Err(e) => panic!("failed to bind to DHCP server port: {:?}", e),
+        }
+    }
+}
+
 async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAndDhcpClient>(
     name: &str,
     mode: PersistenceMode,
@@ -1311,11 +1334,16 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
             .expect("failed to stop dhcpd");
     }
 
-    // Restart the server in an attempt to force the server's persistent storage into an
-    // inconsistent state whereby the addresses leased to clients do not agree with the contents of
-    // the server's address pool. If the server is in ephemeral mode, it will fail at the call to
-    // start_serving() since it will not have retained its parameters.
+    // Restart the server in an attempt to force the server's persistent storage
+    // into an inconsistent state whereby the addresses leased to clients do not
+    // agree with the contents of the server's address pool. If the server is in
+    // ephemeral mode, it will fail at the call to start_serving() since it will
+    // not have retained its parameters.
     {
+        // stop_serving() does not synchronously stop the server so we wait for
+        // the DHCP server socket to close before attempting to restart the
+        // server to avoid flakes.
+        wait_for_dhcp_server_port(&server_realm).await;
         let dhcp_server = server_realm
             .connect_to_protocol::<fidl_fuchsia_net_dhcp::Server_Marker>()
             .expect("failed to connect to DHCP server");
@@ -1346,12 +1374,17 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
             .expect("failed to stop dhcpd");
     }
 
-    // Restart the server again in order to load the inconsistent state into the server's runtime
-    // representation. Call clear_leases() to trigger a panic resulting from inconsistent state,
-    // provided that the issue motivating this test is unfixed/regressed. If the server is in
-    // ephemeral mode, it will fail at the call to start_serving() since it will not have retained
+    // Restart the server again in order to load the inconsistent state into the
+    // server's runtime representation. Call clear_leases() to trigger a panic
+    // resulting from inconsistent state, provided that the issue motivating
+    // this test is unfixed/regressed. If the server is in ephemeral mode, it
+    // will fail at the call to start_serving() since it will not have retained
     // its parameters.
     {
+        // stop_serving() does not synchronously stop the server so we wait for
+        // the DHCP server socket to close before attempting to restart the
+        // server to avoid flakes.
+        wait_for_dhcp_server_port(&server_realm).await;
         let dhcp_server = server_realm
             .connect_to_protocol::<fidl_fuchsia_net_dhcp::Server_Marker>()
             .expect("failed to connect to DHCP server");
