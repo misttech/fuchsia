@@ -4,5 +4,8 @@
 
 group("drivers") {
   testonly = true
-  deps = [ "devicetree:drivers" ]
+  deps = [
+    "devicetree:drivers",
+    "serve-fidl:drivers",
+  ]
 }
