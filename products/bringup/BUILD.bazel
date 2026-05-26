@@ -5,7 +5,6 @@
 load("@fuchsia_build_info//:args.bzl", "build_info_version")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
-    "BUILD_TYPES",
     "fuchsia_product",
     "fuchsia_product_bundle",
     "fuchsia_product_configuration",
@@ -18,32 +17,18 @@ load(
     "//build/bazel/rules/packages:prebuilt_package.bzl",
     "prebuilt_package",
 )
+load(
+    ":platform_config.bzl",
+    "PLATFORM_CONFIG_BASE_JSON",
+    "PLATFORM_CONFIG_WITH_TEST_JSON",
+)
 
 package(default_visibility = ["//visibility:public"])
-
-_PLATFORM_CONFIG_BASE_JSON = {
-    "feature_set_level": "bootstrap",
-    "build_type": BUILD_TYPES.ENG,
-    "kernel": {
-        "oom": {
-            "behavior": "job_kill",
-        },
-        "scheduler_enable_new_wakeup_accounting": True,
-    },
-    "development_support": {
-        "include_netsvc": True,
-    },
-    "storage": {
-        "filesystems": {
-            "image_mode": "no_image",
-        },
-    },
-}
 
 fuchsia_product_configuration(
     name = "product_config",
     product_config_json = {
-        "platform": _PLATFORM_CONFIG_BASE_JSON,
+        "platform": PLATFORM_CONFIG_BASE_JSON,
     },
     version = build_info_version,
 )
@@ -52,14 +37,7 @@ internal_product_configuration(
     name = "product_config_with_tests",
     bootfs_files_package = ":bootfs_test_files_package",
     product_config_json = {
-        "platform": _PLATFORM_CONFIG_BASE_JSON | {
-            "development_support": {
-                "include_bootstrap_testing_framework": True,
-            },
-            "power": {
-                "enable_non_hermetic_testing": True,
-            },
-        },
+        "platform": PLATFORM_CONFIG_WITH_TEST_JSON,
     },
     version = build_info_version,
 )
