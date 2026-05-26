@@ -73,6 +73,12 @@ register! {
     }
 }
 
+register! {
+    RxSampleDly, u32, 0xf0, RW, {
+        pub rsd, set_rsd: 7, 0;
+    }
+}
+
 register_block! {
     pub struct DwSpiRegsBlock<M> {
         pub ctrlr0: CtrlR0,
@@ -83,5 +89,6 @@ register_block! {
         pub sr: Sr,
         pub imr: Imr,
         pub dr0: Dr0,
+        pub rx_sample_dly: RxSampleDly,
     }
 }

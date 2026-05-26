@@ -27,10 +27,16 @@ use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
 use pdev::{PdevExt, PlatformDevice};
+use serde::Deserialize;
 use zx::Status;
 mod registers;
 
 const FIFO_SIZE: usize = 256;
+
+#[derive(Deserialize, Debug, PartialEq)]
+struct DwSpiConfig {
+    dw_spi_rx_sample_delay_ns: u64,
+}
 
 enum SpiImplRequest {
     TransmitVector {
@@ -60,10 +66,77 @@ struct SpiImplServer {
 }
 
 impl DwSpiDevice {
+    fn set_baud_rate(
+        &mut self,
+        parent_clock_hz: u64,
+        max_bus_clock_hz: u64,
+        rx_sample_delay_ns: u64,
+    ) -> Result<(), Status> {
+        let divider = {
+            // Round the divider up to avoid overclocking.
+            let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
+                error!(
+                    "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+                );
+                return Err(Status::INVALID_ARGS);
+            };
+
+            let divider = numerator / max_bus_clock_hz;
+            if divider >= 0xffff {
+                error!(
+                    "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+                );
+                return Err(Status::INVALID_ARGS);
+            }
+
+            // The divider must be even.
+            if divider % 2 == 0 { divider } else { divider + 1 }
+        };
+
+        self.mmio.baudr_mut().write({
+            let mut baudr = registers::Baudr::from_raw(0);
+            baudr.set_sckdv(divider as u32);
+            baudr
+        });
+
+        // Convert the RX delay from nanoseconds to parent clock cycles.
+        let rx_sample_delay_clocks = {
+            const NS_PER_S: u64 = 1_000_000_000;
+
+            let Some(numerator) = rx_sample_delay_ns.checked_mul(parent_clock_hz) else {
+                error!(
+                    "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
+                );
+                return Err(Status::INVALID_ARGS);
+            };
+
+            let delay_clocks = numerator / NS_PER_S;
+            // Verify that the clock count fits in the register, and that the conversion from
+            // nanoseconds to clock cycles did not result in rounding.
+            if delay_clocks > 0xff || (delay_clocks * NS_PER_S) != numerator {
+                error!(
+                    "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
+                );
+                return Err(Status::INVALID_ARGS);
+            }
+
+            delay_clocks as u32
+        };
+
+        self.mmio.rx_sample_dly_mut().write({
+            let mut rx_sample_dly = registers::RxSampleDly::from_raw(0);
+            rx_sample_dly.set_rsd(rx_sample_delay_clocks);
+            rx_sample_dly
+        });
+
+        Ok(())
+    }
+
     fn init_registers(
         &mut self,
         parent_clock_hz: u64,
         max_bus_clock_hz: u64,
+        rx_sample_delay_ns: u64,
     ) -> Result<(), Status> {
         self.mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
 
@@ -77,32 +150,7 @@ impl DwSpiDevice {
         });
 
         if max_bus_clock_hz > 0 {
-            let divider = {
-                // Round the divider up to avoid overclocking.
-                let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
-                    error!(
-                        "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-                    );
-                    return Err(Status::INVALID_ARGS);
-                };
-
-                let divider = numerator / max_bus_clock_hz;
-                if divider >= 0xffff {
-                    error!(
-                        "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-                    );
-                    return Err(Status::INVALID_ARGS);
-                }
-
-                // The divider must be even.
-                if divider % 2 == 0 { divider } else { divider + 1 }
-            };
-
-            self.mmio.baudr_mut().write({
-                let mut baudr = registers::Baudr::from_raw(0);
-                baudr.set_sckdv(divider as u32);
-                baudr
-            });
+            self.set_baud_rate(parent_clock_hz, max_bus_clock_hz, rx_sample_delay_ns)?;
         } else {
             warn!("Max bus clock rate reported to be zero, skipping baud rate initialization");
         }
@@ -499,7 +547,19 @@ impl Driver for DwSpiDriver {
         }
 
         let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
-        device.init_registers(parent_clock_hz, max_bus_clock_hz)?;
+        let config: DwSpiConfig = pdev
+            .get_deserialized_metadata()
+            .await
+            .inspect_err(|e| {
+                info!("dw-spi config was not provided ({:?})", e);
+            })
+            .unwrap_or(DwSpiConfig { dw_spi_rx_sample_delay_ns: 0 });
+
+        device.init_registers(
+            parent_clock_hz,
+            max_bus_clock_hz,
+            config.dw_spi_rx_sample_delay_ns,
+        )?;
 
         let node = context.take_node()?;
         node.add_child(node_args.build()).await?;

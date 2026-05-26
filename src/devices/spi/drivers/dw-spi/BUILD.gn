@@ -58,8 +58,10 @@ fuchsia_rust_driver("dw-spi-driver") {
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:serde",
   ]
   test_deps = [
+    "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/lib/driver/fake-clock/rust",
     "//sdk/lib/driver/fake-gpio/rust",

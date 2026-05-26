@@ -11,6 +11,7 @@ use fake_reset::FakeReset;
 use fdf_component::testing::harness::TestHarness;
 use fdf_fidl;
 use fidl::Serializable;
+use fidl_fuchsia_driver_metadata as fmetadata;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next_fuchsia_hardware_platform_device as fdevice;
 use fidl_next_fuchsia_hardware_spiimpl as fspiimpl;
@@ -24,6 +25,15 @@ async fn test_init() {
     let scope = fasync::Scope::new_with_name("test");
 
     let pdev = FakePDev::new();
+
+    let entries = vec![fmetadata::DictionaryEntry {
+        key: "dw_spi_rx_sample_delay_ns".to_string(),
+        value: fmetadata::DictionaryValue::Int64(25),
+    }];
+    let dict = fmetadata::Dictionary { entries: Some(entries), ..Default::default() };
+    let serialized_config = fidl::persist(&dict).expect("Failed to serialize config");
+    pdev.add_metadata("fuchsia.driver.metadata.Dictionary", serialized_config);
+
     let metadata = fspi_businfo::SpiBusMetadata {
         channels: Some(vec![fspi_businfo::SpiChannel {
             cs: Some(0),
@@ -92,6 +102,9 @@ async fn test_init() {
 
     let baudr = read_u32(0x14);
     assert_eq!(baudr, 10);
+
+    let rx_sample_dly = read_u32(0xf0);
+    assert_eq!(rx_sample_dly, 5);
 }
 
 #[fuchsia::test]
