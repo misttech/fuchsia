@@ -569,8 +569,8 @@ impl FxVolume {
     ) {
         let this = self.clone();
         let callback = move || {
-            mark_dirty();
             let prev = this.pager_dirty_byte_count.fetch_add(byte_count, Ordering::Relaxed);
+            mark_dirty();
             fxfs_trace::counter!("dirty-bytes", 0, this.name => prev.saturating_add(byte_count));
         };
         if let Some(parent) = self.parent.upgrade() {
