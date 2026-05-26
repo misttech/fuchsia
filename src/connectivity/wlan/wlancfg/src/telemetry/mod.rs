@@ -4743,7 +4743,6 @@ mod tests {
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{random_bss_description, random_fidl_bss_description};
 
-    const STEP_INCREMENT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
     const IFACE_ID: u16 = 1;
 
     // Macro rule for testing Inspect data tree. When we query for Inspect data, the LazyNode
@@ -10641,25 +10640,47 @@ mod tests {
         }
 
         /// Advance executor by `duration`.
-        /// This function repeatedly advances the executor by 1 second, triggering
-        /// any expired timers and running the test_fut, until `duration` is reached.
+        /// This function dynamically jumps fake time to the next scheduled timer's deadline
+        /// (or target time if no intermediate timers exist), triggering expired timers and
+        /// running the test_fut, until `duration` is reached.
         fn advance_by(
             &mut self,
             duration: zx::MonotonicDuration,
             mut test_fut: Pin<&mut impl Future<Output = ()>>,
         ) {
-            assert_eq!(
-                duration.into_nanos() % STEP_INCREMENT.into_nanos(),
-                0,
-                "duration {duration:?} is not divisible by STEP_INCREMENT",
-            );
-            const_assert_eq!(
-                TELEMETRY_QUERY_INTERVAL.into_nanos() % STEP_INCREMENT.into_nanos(),
-                0
-            );
+            let target_time = self.exec.now() + duration;
 
-            for _i in 0..(duration.into_nanos() / STEP_INCREMENT.into_nanos()) {
-                self.exec.set_fake_time(fasync::MonotonicInstant::after(STEP_INCREMENT));
+            // When using large time jumps, we must poll the executor once at the current virtual
+            // time BEFORE advancing the clock. Otherwise, any pending events in channels (which
+            // were sent just before this call) will not be processed until AFTER the clock has
+            // jumped. The service would then timestamp these events at the post-jump virtual time,
+            // incorrectly shifting them into the future and breaking duration-based assertions.
+            // This poll flushes those pending events at their correct virtual arrival time and
+            // registers any new timers they might schedule.
+            assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
+            if let Some(telemetry_svc_stream) = &mut self.telemetry_svc_stream
+                && !telemetry_svc_stream.is_terminated()
+            {
+                respond_iface_counter_stats_req(
+                    &mut self.exec,
+                    telemetry_svc_stream,
+                    &self.iface_stats_resp,
+                );
+            }
+            self.drain_cobalt_events(&mut test_fut);
+            assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
+
+            while self.exec.now() < target_time {
+                let next_timer = fasync::TestExecutor::next_timer();
+                let next_wake = match next_timer {
+                    Some(time) if time <= target_time => time,
+                    _ => target_time,
+                };
+
+                if next_wake > self.exec.now() {
+                    self.exec.set_fake_time(next_wake);
+                }
+
                 let _ = self.exec.wake_expired_timers();
                 assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
 
