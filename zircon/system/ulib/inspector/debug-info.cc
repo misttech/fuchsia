@@ -4,6 +4,7 @@
 
 #include <inttypes.h>
 #include <lib/zx/process.h>
+#include <lib/zx/suspend_token.h>
 #include <lib/zx/thread.h>
 #include <string.h>
 #include <zircon/assert.h>
@@ -426,6 +427,39 @@ __EXPORT void inspector_print_debug_info(FILE* out, zx_handle_t process_handle,
   inspector_print_debug_info_impl(out, process_handle, thread_handle, false,
                                   /*only_modules_in_stack=*/true);
   fprintf(out, "{{{reset:end}}}\n");
+}
+
+__EXPORT void inspector_print_debug_info_for_thread(FILE* out, zx_handle_t process_handle,
+                                                    zx_koid_t thread_koid) {
+  zx::unowned<zx::process> process(process_handle);
+  zx::thread thread;
+  zx_status_t status = process->get_child(thread_koid, ZX_RIGHT_SAME_RIGHTS, &thread);
+  if (status != ZX_OK) {
+    fprintf(out, "crashsvc: failed to get thread handle for koid %lu: %s\n", thread_koid,
+            zx_status_get_string(status));
+    return;
+  }
+
+  // Suspend the thread to be able to read its registers.
+  zx::suspend_token suspend_token;
+  status = thread.suspend(&suspend_token);
+  if (status != ZX_OK) {
+    fprintf(out, "crashsvc: failed to suspend thread for koid %lu: %s\n", thread_koid,
+            zx_status_get_string(status));
+    return;
+  }
+
+  // Wait for the thread to be suspended.
+  zx_signals_t observed;
+  status = thread.wait_one(ZX_THREAD_SUSPENDED, zx::deadline_after(zx::sec(1)), &observed);
+  if (status != ZX_OK) {
+    fprintf(out,
+            "crashsvc: timed out waiting for thread suspension for koid %lu: %s. Trying to print "
+            "anyway.\n",
+            thread_koid, zx_status_get_string(status));
+  }
+
+  inspector_print_debug_info(out, process_handle, thread.get());
 }
 
 // The approach of |inspector_print_debug_info_for_all_threads| is to suspend the process, obtain

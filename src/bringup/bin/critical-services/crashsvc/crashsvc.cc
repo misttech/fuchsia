@@ -83,10 +83,13 @@ void HandOffException(async_dispatcher_t* dispatcher, zx::exception exception,
     LogError("failed to get general registers", info, status);
   }
 
-  // If this is a backtrace request, we print all the the threads and then return.
+  // If this is a backtrace request, we print the requested thread(s) and then return.
   if (ResumeIfBacktraceRequest(thread, exception, info, &regs)) {
     if (is_backtrace_request_current_thread(&regs)) {
       inspector_print_debug_info(stdout, process.get(), thread.get());
+    } else if (is_backtrace_request_specific_thread(&regs)) {
+      inspector_print_debug_info_for_thread(stdout, process.get(),
+                                            get_backtrace_request_koid(&regs));
     } else {
       inspector_print_debug_info_for_all_threads(stdout, process.get());
     }

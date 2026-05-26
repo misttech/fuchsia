@@ -67,6 +67,56 @@ TEST(BacktraceRequest, RequestAndResume) {
   thread.join();
 }
 
+TEST(BacktraceRequest, RequestAndResumeSpecificThread) {
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx::channel exception_channel;
+  std::thread thread([&] {
+    ASSERT_OK(zx::thread::self()->create_exception_channel(0, &exception_channel));
+
+    zx_info_handle_basic_t basic_info;
+    ASSERT_OK(zx::thread::self()->get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info),
+                                           nullptr, nullptr));
+    uint64_t my_koid = basic_info.koid;
+
+    ASSERT_OK(event.signal(0, kChannelReadySignal));
+
+    backtrace_request_thread(my_koid);
+    ASSERT_OK(event.signal(0, kBacktraceReturnedSignal));
+  });
+
+  ASSERT_OK(event.wait_one(kChannelReadySignal, zx::time::infinite(), nullptr));
+
+  zx_exception_info_t info;
+  zx::exception exception;
+  zx::thread exception_thread;
+  zx_thread_state_general_regs_t regs;
+  ASSERT_OK(exception_channel.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+  ASSERT_OK(exception_channel.read(0, &info, exception.reset_and_get_address(), sizeof(info), 1,
+                                   nullptr, nullptr));
+  ASSERT_OK(exception.get_thread(&exception_thread));
+  ASSERT_OK(exception_thread.read_state(ZX_THREAD_STATE_GENERAL_REGS, &regs, sizeof(regs)));
+
+  ASSERT_TRUE(is_backtrace_request(info.type, &regs));
+  ASSERT_TRUE(is_backtrace_request_specific_thread(&regs));
+
+  zx_info_handle_basic_t basic_info;
+  ASSERT_OK(exception_thread.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info),
+                                      nullptr, nullptr));
+
+  ASSERT_EQ(get_backtrace_request_koid(&regs), basic_info.koid);
+
+  ASSERT_OK(cleanup_backtrace_request(exception_thread.get(), &regs));
+
+  uint32_t handled = ZX_EXCEPTION_STATE_HANDLED;
+  ASSERT_OK(exception.set_property(ZX_PROP_EXCEPTION_STATE, &handled, sizeof(handled)));
+  exception.reset();
+
+  ASSERT_OK(event.wait_one(kBacktraceReturnedSignal, zx::time::infinite(), nullptr));
+  thread.join();
+}
+
 TEST(BacktraceRequest, RequestAndResumeManyThreads) {
   // We only care that at least one thread triggers it before creating the main thread.
   constexpr zx_signals_t kWaitThreadReady = ZX_USER_SIGNAL_2;

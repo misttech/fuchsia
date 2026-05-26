@@ -67,6 +67,9 @@ void inspector_print_memory(FILE* f, zx_handle_t process, zx_vaddr_t addr, size_
 // Does NOT close the handles nor resume the thread.
 void inspector_print_debug_info(FILE* out, zx_handle_t process, zx_handle_t thread);
 
+// Prints to |out| the debug info for a specific thread in the process given by KOID.
+void inspector_print_debug_info_for_thread(FILE* out, zx_handle_t process, zx_koid_t thread_koid);
+
 // Prints to |out| the debug info for all the threads in the process (registers, bottom of user
 // stack, dso list, backtrace, etc.).
 //

@@ -23,7 +23,8 @@ uint64_t get_swbreak_argument(const zx_thread_state_general_regs_t* regs) {
 bool have_swbreak_magic(const zx_thread_state_general_regs_t* regs) {
   uint64_t arg = get_swbreak_argument(regs);
   return arg == BACKTRACE_REQUEST_MAGIC_ALL_THREADS ||
-         arg == BACKTRACE_REQUEST_MAGIC_CURRENT_THREAD;
+         arg == BACKTRACE_REQUEST_MAGIC_CURRENT_THREAD ||
+         arg == BACKTRACE_REQUEST_MAGIC_SPECIFIC_THREAD;
 }
 
 }  // namespace
@@ -35,6 +36,20 @@ bool is_backtrace_request(zx_excp_type_t excp_type, const zx_thread_state_genera
 
 bool is_backtrace_request_current_thread(const zx_thread_state_general_regs_t* regs) {
   return get_swbreak_argument(regs) == BACKTRACE_REQUEST_MAGIC_CURRENT_THREAD;
+}
+
+bool is_backtrace_request_specific_thread(const zx_thread_state_general_regs_t* regs) {
+  return get_swbreak_argument(regs) == BACKTRACE_REQUEST_MAGIC_SPECIFIC_THREAD;
+}
+
+uint64_t get_backtrace_request_koid(const zx_thread_state_general_regs_t* regs) {
+#if defined(__x86_64__)
+  return regs->rbx;
+#elif defined(__aarch64__)
+  return regs->r[1];
+#elif defined(__riscv)
+  return regs->a1;
+#endif
 }
 
 zx_status_t cleanup_backtrace_request(zx_handle_t thread, zx_thread_state_general_regs_t* regs) {

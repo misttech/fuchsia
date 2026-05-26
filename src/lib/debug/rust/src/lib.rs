@@ -13,6 +13,11 @@ pub fn backtrace_request_current_thread() {
     unsafe { ext::backtrace_request_current_thread_for_rust() };
 }
 
+#[inline]
+pub fn backtrace_request_thread(koid: u64) {
+    unsafe { ext::backtrace_request_thread_for_rust(koid) };
+}
+
 pub fn is_debugger_attached() -> bool {
     unsafe { ext::is_debugger_attached_for_rust() }
 }
@@ -25,6 +30,7 @@ mod ext {
     unsafe extern "C" {
         pub(crate) fn backtrace_request_all_threads_for_rust();
         pub(crate) fn backtrace_request_current_thread_for_rust();
+        pub(crate) fn backtrace_request_thread_for_rust(koid: u64);
         pub(crate) fn is_debugger_attached_for_rust() -> bool;
         pub(crate) fn wait_for_debugger_for_rust(seconds: u32);
     }

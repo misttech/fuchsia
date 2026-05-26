@@ -12,6 +12,7 @@
 // that we are just requesting a backtrace and we should resume the thread.
 #define BACKTRACE_REQUEST_MAGIC_ALL_THREADS ((uint64_t)0xee726573756d65ee)
 #define BACKTRACE_REQUEST_MAGIC_CURRENT_THREAD ((uint64_t)0xee726573756d65ef)
+#define BACKTRACE_REQUEST_MAGIC_SPECIFIC_THREAD ((uint64_t)0xee726573756d65f0)
 
 __ALWAYS_INLINE static inline void software_break(uint64_t magic) {
   // We set a software breakpoint to trigger the exception handling in
@@ -52,6 +53,38 @@ __ALWAYS_INLINE static inline void backtrace_request_all_threads(void) {
 // Requests a backtrace only for the current thread.
 __ALWAYS_INLINE static inline void backtrace_request_current_thread(void) {
   software_break(BACKTRACE_REQUEST_MAGIC_CURRENT_THREAD);
+}
+
+__ALWAYS_INLINE static inline void software_break_koid(uint64_t magic, uint64_t koid) {
+#ifdef __x86_64__
+  __asm__ volatile("int3" : : "a"(magic), "b"(koid));
+#endif
+#ifdef __aarch64__
+  __asm__ volatile(
+      "mov x0, %0\n\t"
+      "mov x1, %1\n\t"
+      "brk 0"
+      :
+      : "r"(magic), "r"(koid)
+      : "x0", "x1");
+#endif
+#ifdef __riscv
+  __asm__ volatile(
+      ".option push\n"
+      ".option arch, +c\n"
+      "mv a0, %0\n"
+      "mv a1, %1\n"
+      "c.ebreak\n"
+      ".option pop"
+      :
+      : "r"(magic), "r"(koid)
+      : "a0", "a1");
+#endif
+}
+
+// Requests a backtrace for a specific thread by KOID.
+__ALWAYS_INLINE static inline void backtrace_request_thread(uint64_t koid) {
+  software_break_koid(BACKTRACE_REQUEST_MAGIC_SPECIFIC_THREAD, koid);
 }
 
 #endif  // SRC_LIB_DEBUG_BACKTRACE_REQUEST_H_
