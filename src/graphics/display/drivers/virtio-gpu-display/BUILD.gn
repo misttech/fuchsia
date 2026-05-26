@@ -149,11 +149,13 @@ fuchsia_rust_driver("driver-rust") {
     "rust/src/driver.rs",
     "rust/src/lib.rs",
     "rust/src/resources.rs",
+    "rust/src/virtio-gpu-abi.rs",
   ]
   deps = [
     ":virtio-gpu-display-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust_next",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
@@ -161,7 +163,9 @@ fuchsia_rust_driver("driver-rust") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
+    "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [ "//src/lib/fuchsia" ]
 }
