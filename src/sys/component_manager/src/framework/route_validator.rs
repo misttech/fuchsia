@@ -13,7 +13,7 @@ use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_sys2 as fsys;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt};
-use log::warn;
+use log::{error, warn};
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{Capability, Dictionary, WeakInstanceToken};
@@ -106,31 +106,22 @@ async fn route(
         .map_err(|_| fsys::RouteValidatorError::InstanceNotResolved)?
         .sandbox
         .clone();
-    let reports = validate_sandbox(&sandbox, component_instance_token, &scope.moniker).await;
+    let mut reports = validate_sandbox(&sandbox, component_instance_token, &scope.moniker).await;
 
     if targets.is_empty() {
         return Ok(reports);
     }
-    let mut filtered_reports = vec![];
-    for report in reports {
-        for target in targets.iter() {
-            if target.decl_type != fsys::DeclType::Any && report.decl_type != Some(target.decl_type)
-            {
-                continue;
-            }
-            if report.capability.is_none() {
-                continue;
-            }
-            if !report.capability.as_ref().unwrap().contains(&target.name) {
-                continue;
-            }
-            // This is a matching decl type and the capability name includes the name of the
-            // filter, so we have a match!
-            filtered_reports.push(report);
-            break;
-        }
-    }
-    Ok(filtered_reports)
+
+    reports.retain(|report| {
+        targets.iter().any(|target| {
+            let type_match = target.decl_type == fsys::DeclType::Any
+                || report.decl_type == Some(target.decl_type);
+            let name_match =
+                report.capability.as_ref().map_or(false, |cap| cap.contains(&target.name));
+            type_match && name_match
+        })
+    });
+    Ok(reports)
 }
 
 async fn validate_sandbox(
@@ -138,23 +129,26 @@ async fn validate_sandbox(
     component_instance_token: WeakInstanceToken,
     scope: &Moniker,
 ) -> Vec<fsys::RouteReport> {
-    let mut reports = vec![];
-    let mut program_input_reports = validate_dictionary(
+    let mut reports = Vec::new();
+
+    reports = validate_dictionary(
         RelativePath::dot(),
         sandbox.program_input.namespace(),
         component_instance_token.clone(),
         fsys::DeclType::Use,
+        reports,
     )
     .await;
-    program_input_reports.append(
-        &mut validate_dictionary(
-            RelativePath::dot(),
-            sandbox.program_input.numbered_handles(),
-            component_instance_token.clone(),
-            fsys::DeclType::Use,
-        )
-        .await,
-    );
+
+    reports = validate_dictionary(
+        RelativePath::dot(),
+        sandbox.program_input.numbered_handles(),
+        component_instance_token.clone(),
+        fsys::DeclType::Use,
+        reports,
+    )
+    .await;
+
     if let Some(runner_router) = sandbox.program_input.runner() {
         let result = runner_router
             .route_debug(RouteRequest::default(), component_instance_token.clone())
@@ -165,17 +159,18 @@ async fn validate_sandbox(
             ..Default::default()
         };
         fill_in_report_with_route_result(&mut report, result);
-        program_input_reports.push(report);
+        reports.push(report);
     }
-    let mut component_output_reports = validate_dictionary(
+
+    reports = validate_dictionary(
         RelativePath::dot(),
         sandbox.component_output.capabilities(),
         component_instance_token,
         fsys::DeclType::Expose,
+        reports,
     )
     .await;
-    reports.append(&mut program_input_reports);
-    reports.append(&mut component_output_reports);
+
     for report in reports.iter_mut() {
         if let Some(report_moniker) = report.source_moniker.as_mut() {
             // The monikers listed in the reports should be restricted to the scope of the
@@ -193,9 +188,10 @@ async fn validate_sandbox(
                     }
                 }
                 Err(e) => {
-                    panic!(
+                    error!(
                         "we generated a report with an invalid moniker: {report_moniker:?} {e:?}"
                     );
+                    *report_moniker = "<invalid moniker>".to_string();
                 }
             }
         }
@@ -226,7 +222,9 @@ fn fill_in_report_with_route_result(
                 _ => None,
             };
             report.service_instances = service_instances;
-            report.source_moniker = Some(format!("{}", source.source_moniker()));
+
+            report.source_moniker = Some(source.source_moniker().to_string());
+
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             {
                 report.build_time_capability_type = source.type_name().map(|t| t.to_string());
@@ -247,14 +245,15 @@ fn validate_dictionary(
     dictionary: Dictionary,
     component_instance_token: WeakInstanceToken,
     decl_type: fsys::DeclType,
+    mut reports: Vec<fsys::RouteReport>,
 ) -> BoxFuture<'static, Vec<fsys::RouteReport>> {
     async move {
-        let mut reports = vec![];
         for (name, capability) in dictionary.enumerate() {
             let mut capability_path = path.clone();
             assert!(capability_path.push(name));
+
             let mut report = fsys::RouteReport {
-                capability: Some(format!("{}", capability_path)),
+                capability: Some(capability_path.to_string()),
                 decl_type: Some(decl_type.clone()),
                 ..Default::default()
             };
@@ -264,14 +263,14 @@ fn validate_dictionary(
                     reports.push(report);
                 }
                 Capability::Dictionary(child_dictionary) => {
-                    let mut sub_reports = validate_dictionary(
+                    reports = validate_dictionary(
                         capability_path,
                         child_dictionary,
                         component_instance_token.clone(),
                         decl_type.clone(),
+                        reports,
                     )
                     .await;
-                    reports.append(&mut sub_reports);
                 }
                 Capability::ConnectorRouter(router) => {
                     let result = router
@@ -304,25 +303,29 @@ fn validate_dictionary(
                         .route(RouteRequest::default(), component_instance_token.clone())
                         .await
                     {
-                        let entries = routed_dictionary
-                            .snapshot_keys_as_strings()
-                            .into_iter()
-                            .map(|k| fsys::DictionaryEntry { name: Some(k), ..Default::default() })
-                            .collect::<Vec<_>>();
+                        let keys = routed_dictionary.snapshot_keys_as_strings();
+                        let mut entries = Vec::with_capacity(keys.len());
+                        for k in keys {
+                            entries.push(fsys::DictionaryEntry {
+                                name: Some(k),
+                                ..Default::default()
+                            });
+                        }
+
                         report.dictionary_entries = Some(entries);
 
-                        let mut sub_reports = validate_dictionary(
+                        reports = validate_dictionary(
                             capability_path,
                             routed_dictionary,
                             component_instance_token.clone(),
                             decl_type.clone(),
+                            reports,
                         )
                         .await;
-                        reports.append(&mut sub_reports);
                     }
                     reports.push(report);
                 }
-                other_value => panic!("unexpected capability type: {other_value:?}"),
+                other_value => warn!("unexpected capability type: {other_value:?}"),
             }
         }
         reports
