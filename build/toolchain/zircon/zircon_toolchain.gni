@@ -854,6 +854,8 @@ template("zircon_toolchain") {
       _solink_common = {
         forward_variables_from(_link_common, "*")
 
+        outputs += link_outputs
+
         link_command = [ ld ] + switches
 
         if (use_gcc && tc.tool_prefix == "${tc_cpu}-elf-") {
