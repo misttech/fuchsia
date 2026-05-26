@@ -34,7 +34,7 @@ from mobly.asserts import (
     assert_true,
     fail,
 )
-from openwrt_access_point import OpenWrtAP, StationStatus
+from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -559,14 +559,16 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 sta_status_dict = self.test_kit.access_point.get_sta_status(
                     client_mac
                 )
-                sta_status = next(
-                    (
+                try:
+                    sta_status = next(
                         s.status
                         for s in sta_status_dict.values()
                         if s.band == origin_band
-                    ),
-                    StationStatus(auth=False, assoc=False, authorized=False),
-                )
+                    )
+                except StopIteration:
+                    raise signals.TestError(
+                        f"DUT is not in status list for the {test_params.origin_band} band: {sta_status_dict}"
+                    )
                 if not sta_status.auth:
                     raise signals.TestError(
                         f"DUT is not authenticated on the {test_params.origin_band} band"
@@ -669,18 +671,16 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                                         client_mac
                                     )
                                 )
-                                status = next(
-                                    (
+                                try:
+                                    status = next(
                                         s.status
                                         for s in sta_status_dict.values()
                                         if s.band == target_band
-                                    ),
-                                    StationStatus(
-                                        auth=False,
-                                        assoc=False,
-                                        authorized=False,
-                                    ),
-                                )
+                                    )
+                                except StopIteration:
+                                    raise signals.TestError(
+                                        f"DUT is not in status list for the {test_params.target_band} band: {sta_status_dict}"
+                                    )
                                 assert_true(
                                     status.auth,
                                     f"DUT is not authenticated on the {test_params.target_band} band",
