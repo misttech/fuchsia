@@ -23,7 +23,10 @@ if (is_host) {
       "driver/local.py",
       "driver_factory.py",
     ]
-    library_deps = [ "//third_party/mobly:mobly_no_testonly" ]
+    library_deps = [
+      "//src/testing/end_to_end/libs",
+      "//third_party/mobly:mobly_no_testonly",
+    ]
   }
 
   # Mobly Driver Python binary definition.

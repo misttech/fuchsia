@@ -10,8 +10,9 @@ import subprocess
 from dataclasses import dataclass
 from datetime import timedelta
 from tempfile import NamedTemporaryFile
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
+from libs.exception_utils import unroll_and_raise
 from mobly_driver.api import api_infra
 from mobly_driver.driver import base
 
@@ -258,20 +259,23 @@ def run(
         raise ValueError("|cleanup_period| must be None if |timeout| is None.")
     _LOGGER.info(f"Running [{driver.__class__.__name__}]")
     try:
-        return_code = _execute_test(
-            python_path=python_path,
-            test_path=test_path,
-            driver=driver,
-            timeout=timeout,
-            cleanup_period=cleanup_period,
-            test_cases=test_cases,
-            verbose=verbose,
-            hermetic=hermetic,
-            list_mobly_tests=list_mobly_tests,
-        )
-        if return_code != 0:
-            # TODO(https://fxbug.dev/42070748) - differentiate between legitimate
-            # test failures vs unexpected crashes.
-            raise MoblyTestFailureException(return_code)
-    finally:
-        driver.teardown()
+        try:
+            return_code = _execute_test(
+                python_path=python_path,
+                test_path=test_path,
+                driver=driver,
+                timeout=timeout,
+                cleanup_period=cleanup_period,
+                test_cases=test_cases,
+                verbose=verbose,
+                hermetic=hermetic,
+                list_mobly_tests=list_mobly_tests,
+            )
+            if return_code != 0:
+                # TODO(https://fxbug.dev/42070748) - differentiate between legitimate
+                # test failures vs unexpected crashes.
+                raise MoblyTestFailureException(return_code)
+        finally:
+            driver.teardown()
+    except BaseException as e:
+        unroll_and_raise(e)

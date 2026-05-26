@@ -8,6 +8,7 @@ if (is_host) {
   python_host_test("init_test") {
     main_source = "init_test.py"
     libraries = [
+      "//src/testing/end_to_end/libs:libs",
       "//src/testing/end_to_end/mobly_driver",
       "//third_party/parameterized",
     ]
@@ -16,6 +17,7 @@ if (is_host) {
   python_host_test("driver_factory_test") {
     main_source = "driver_factory_test.py"
     libraries = [
+      "//src/testing/end_to_end/libs:libs",
       "//src/testing/end_to_end/mobly_driver",
       "//third_party/parameterized",
     ]
