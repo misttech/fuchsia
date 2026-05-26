@@ -51,8 +51,11 @@ scope.
 ## Listen to an Interrupt
 
 * Use `fuchsia_async::OnInterrupt` to create a stream from the interrupt handle.
-* Process the stream in a spawned task.
-* Acknowledge the interrupt using `interrupt_stream.ack()` after handling.
+* Process the stream in a local task (using `Task::local`). This is preferred in
+  drivers to avoid `Send` constraints on non-thread-safe state like MMIO
+  regions.
+* Acknowledge the interrupt using the inner `zx::Interrupt` handle (accessible
+  via `AsRef`) after handling.
 
 ## Implement an Interrupt Handler
 
@@ -60,7 +63,7 @@ scope.
 use fdf_component::{Driver, DriverContext};
 use fuchsia_async::{OnInterrupt, Task};
 use futures::StreamExt;
-use zx::Interrupt;
+use zx::{Interrupt, Status};
 
 pub struct MyDriver {
   interrupt_handler: Task<()>,
@@ -69,13 +72,16 @@ pub struct MyDriver {
 impl Driver for MyDriver {
     async fn start(context: DriverContext) -> Result<Self, Status> {
         let interrupt: Interrupt = todo!();
-        let interrupt_stream = OnInterrupt::new(interrupt);
-        let interrupt_handler = Task::spawn(async move {
-          while let Some(Ok(_time)) = interrupt_stream.next().await {
+        // Use Box::pin because OnInterrupt is not Unpin.
+        let mut interrupt_stream = Box::pin(OnInterrupt::new(interrupt));
+        // Use Task::local as driver hosts typically run on a single-threaded executor.
+        let interrupt_handler = Task::local(async move {
+          while let Some(Ok(_time)) = interrupt_stream.as_mut().next().await {
             if let Err(e) = Self::handle_interrupt() {
                 log::error!("Failed to handle interrupt: {e:?}");
             }
-            if let Err(e) = interrupt_stream.ack() {
+            // Access inner Interrupt via AsRef trait.
+            if let Err(e) = std::pin::Pin::get_ref(interrupt_stream.as_ref()).as_ref().ack() {
                 log::error!("Failed to ack interrupt: {e:?}");
             }
           }
@@ -92,9 +98,10 @@ impl Driver for MyDriver {
 
 ## Common Pitfalls
 
-* **Forgetting to acknowledge the interrupt**: Failing to call
-  `interrupt_stream.ack()` will prevent the interrupt from triggering again.
-  Ensure you call this after processing each event.
+* **Forgetting to acknowledge the interrupt**: Failing to acknowledge the
+  underlying interrupt handle (by accessing the inner `Interrupt` handle via
+  `AsRef` and calling `.ack()`) will prevent the interrupt from triggering
+  again. Ensure you call this after processing each event.
 * **Task cancellation**: The interrupt stream handler runs in a spawned task. If
   the `Task` handle is dropped, the task is canceled and the driver will stop
   receiving interrupts. Ensure the `Task` is stored in your driver struct to
@@ -102,6 +109,8 @@ impl Driver for MyDriver {
 
 ## Further Reading
 
+* [Interrupt Handling Example (Rust)](/examples/drivers/interrupt_handling/rust)
+  - Example driver demonstrating interrupt handling in Rust.
 * [Handle Interrupts in a
   Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md)
   - Comprehensive Fuchsia developer guide covering implementation and testing in

@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/components.gni")
+import("//build/drivers.gni")
+
+driver_bind_rules("bind") {
+  rules = "meta/interrupt_handling_driver_rust.bind"
+  bind_output = "interrupt_handling_driver_rust.bindbc"
+  deps = [ "//src/devices/bind/fuchsia.gpio" ]
+}
+
+fuchsia_rust_driver("driver") {
+  edition = "2024"
+  output_name = "interrupt_handling_driver_rust"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/runtime/rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_driver_component("component") {
+  component_name = "interrupt_handling_driver_rust"
+  manifest = "meta/interrupt_handling_driver_rust.cml"
+  deps = [
+    ":bind",
+    ":driver",
+  ]
+}
+
+fuchsia_driver_package("package") {
+  package_name = "interrupt_handling_driver_rust"
+  driver_components = [ ":component" ]
+}
