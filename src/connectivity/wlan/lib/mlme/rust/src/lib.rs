@@ -138,7 +138,6 @@ pub trait MlmeImpl {
         scan_id: u64,
     ) -> impl Future<Output = ()>;
     fn handle_timeout(&mut self, event: Self::TimerEvent) -> impl Future<Output = ()>;
-    fn access_device(&mut self) -> &mut Self::Device;
 }
 
 pub struct MinstrelTimer {
@@ -438,9 +437,7 @@ pub mod test_utils {
     use ieee80211::{MacAddr, MacAddrBytes};
     use wlan_common::channel;
 
-    pub struct FakeMlme {
-        device: FakeDevice,
-    }
+    pub struct FakeMlme {}
 
     impl MlmeImpl for FakeMlme {
         type Config = ();
@@ -449,10 +446,10 @@ pub mod test_utils {
 
         async fn new(
             _config: Self::Config,
-            device: Self::Device,
+            _device: Self::Device,
             _scheduler: wlan_common::timer::Timer<Self::TimerEvent>,
         ) -> Result<Self, Error> {
-            Ok(Self { device })
+            Ok(Self {})
         }
 
         async fn handle_mlme_request(
@@ -485,10 +482,6 @@ pub mod test_utils {
 
         async fn handle_timeout(&mut self, _event: Self::TimerEvent) {
             unimplemented!()
-        }
-
-        fn access_device(&mut self) -> &mut Self::Device {
-            &mut self.device
         }
     }
 

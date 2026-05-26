@@ -167,9 +167,6 @@ impl<D: DeviceOps> crate::MlmeImpl for Ap<D> {
     async fn handle_timeout(&mut self, event: TimedEvent) {
         Self::handle_timed_event(self, event).await
     }
-    fn access_device(&mut self) -> &mut Self::Device {
-        &mut self.ctx.device
-    }
 }
 
 impl<D> Ap<D> {

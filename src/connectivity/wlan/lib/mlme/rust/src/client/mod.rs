@@ -281,9 +281,6 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
                 Some(bound.sta.state.take().unwrap().on_timed_event(&mut bound, event).await);
         }
     }
-    fn access_device(&mut self) -> &mut Self::Device {
-        &mut self.ctx.device
-    }
 }
 
 impl<D> ClientMlme<D> {
