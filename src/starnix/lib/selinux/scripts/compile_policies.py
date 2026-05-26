@@ -109,6 +109,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/io_uring_policy.conf",
+        ],
+        "io_uring_policy",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/ioctl_policy.conf",
         ],
         "ioctl_policy",

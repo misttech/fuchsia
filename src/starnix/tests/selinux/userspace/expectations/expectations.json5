@@ -65,6 +65,11 @@
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
 
+                // TODO: https://fxbug.dev/505326546 - Implement the uring_sqpoll hook once
+                // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
+                "IoUringTest.IoUringSqpollAllowed",
+                "IoUringTest.IoUringSqpollDenied",
+
                 // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
                 "BpfMapCreateTestSuite/BpfMapCreateTest.Create/0",

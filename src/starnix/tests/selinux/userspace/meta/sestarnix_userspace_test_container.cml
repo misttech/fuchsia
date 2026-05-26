@@ -7,6 +7,7 @@
         runner: "starnix",
         features: [
             "container",
+            "io_uring",
             "rootfs_rw",
             "selinux",
             "selinux_test_suite",

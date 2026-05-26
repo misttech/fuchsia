@@ -2297,6 +2297,12 @@
             ]
         },
         {
+            "name": "IoUringTest.IoUringSqpollDenied",
+            "audit_expectations": [
+                "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
             "name": "XattrTest.CannotSetSelinuxToSameWithoutRelabelFrom",
             "audit_expectations": [
                 "avc:  denied  { relabelfrom } for name=\"proc_test_file_Iy1xYt\" dev=\"tmpfs\" ino=10 scontext=test_u:test_r:test_xattr_relabel_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0"
