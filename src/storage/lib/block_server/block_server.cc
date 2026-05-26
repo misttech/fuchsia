@@ -20,12 +20,12 @@ BlockServer::BlockServer(const PartitionInfo& info, Interface* interface)
                      .start_thread =
                          [](void* context, const void* arg) {
                            reinterpret_cast<BlockServer*>(context)->interface_->StartThread(
-                               Thread(arg));
+                               std::unique_ptr<Thread>(new Thread(arg)));
                          },
                      .on_new_session =
                          [](void* context, const internal::Session* session) {
                            reinterpret_cast<BlockServer*>(context)->interface_->OnNewSession(
-                               std::make_unique<Session>(session));
+                               std::unique_ptr<Session>(new Session(session)));
                          },
                      .on_requests =
                          [](void* context, Request* requests, uintptr_t request_count) {
@@ -128,11 +128,18 @@ zx_status_t CheckIoRange(const Request& request, uint64_t total_block_count) {
   return ZX_OK;
 }
 
-void DriverInterface::StartThread(Thread thread) {
+void DriverInterface::StartThread(std::unique_ptr<Thread> thread) {
+  // We retain a weak reference to `thread` to pass into the task which runs the thread, and keep
+  // the strong reference in the dispatcher itself (to be invoked when the dispatcher shutdown
+  // completes, in its shutdown callback).
+  // The weak reference cannot outlive the strong reference because the task is running on the very
+  // dispatcher which holds the strong reference.
+  Thread* thread_ptr = thread.get();
+
   // Create a new dispatcher to run `thread` on.
-  zx::result new_dispatcher =
-      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                          "Block Server", ThreadDispatcherShutdownHandler());
+  zx::result new_dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server",
+      ThreadDispatcherShutdownHandler(std::move(thread)));
   if (new_dispatcher.is_error()) {
     logger().log(fdf::LogSeverity::ERROR, "Failed to create dispatcher for block server thread: {}",
                  new_dispatcher);
@@ -144,15 +151,10 @@ void DriverInterface::StartThread(Thread thread) {
   // The dispatcher is *always* destroyed via the shutdown handler.
   fdf_dispatcher_t* dispatcher = new_dispatcher->release();
 
-  const zx_status_t status =
-      async::PostTask(async_dispatcher, [active_thread = std::move(thread), dispatcher]() mutable {
-        {
-          // *NOTE*: Separate scope ensures `thread` is destroyed before we shutdown `dispatcher`.
-          Thread thread = std::move(active_thread);
-          thread.Run();
-        }
-        fdf_dispatcher_shutdown_async(dispatcher);
-      });
+  const zx_status_t status = async::PostTask(async_dispatcher, [thread_ptr, dispatcher]() mutable {
+    thread_ptr->Run();
+    fdf_dispatcher_shutdown_async(dispatcher);
+  });
 
   // Make sure we destroy the dispatcher if we fail to post the task.
   if (status != ZX_OK) {
@@ -197,8 +199,13 @@ void DriverInterface::OnNewSession(std::unique_ptr<Session> session) {
   }
 }
 
-DriverInterface::ShutdownHandler DriverInterface::ThreadDispatcherShutdownHandler() const {
-  return [this](fdf_dispatcher_t* dispatcher) mutable { OnDispatcherShutdown(dispatcher); };
+DriverInterface::ShutdownHandler DriverInterface::ThreadDispatcherShutdownHandler(
+    std::unique_ptr<Thread> thread) const {
+  return [this, thread = std::move(thread)](fdf_dispatcher_t* dispatcher) mutable {
+    // Destroy the dispatcher *before* dropping the thread.
+    OnDispatcherShutdown(dispatcher);
+    thread = nullptr;
+  };
 }
 
 DriverInterface::ShutdownHandler DriverInterface::SessionDispatcherShutdownHandler(

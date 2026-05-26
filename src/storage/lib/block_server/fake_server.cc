@@ -25,8 +25,8 @@ class FakeServer::FakeInterface : public Interface {
   FakeInterface(const FakeInterface&) = delete;
   FakeInterface& operator=(const FakeInterface&) = delete;
 
-  void StartThread(Thread thread) override {
-    std::thread([thread = std::move(thread)]() mutable { thread.Run(); }).detach();
+  void StartThread(std::unique_ptr<Thread> thread) override {
+    std::thread([thread = std::move(thread)]() mutable { thread->Run(); }).detach();
   }
   void OnNewSession(std::unique_ptr<Session> session) override {
     std::thread([session = std::move(session)]() mutable { session->Run(); }).detach();

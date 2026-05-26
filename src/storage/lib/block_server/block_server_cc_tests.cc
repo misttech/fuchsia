@@ -63,10 +63,10 @@ class TestInterface : public Interface {
   // on a dedicated background thread.
   void SetHook(RequestHook hook) { hook_ = std::move(hook); }
 
-  void StartThread(Thread thread) override {
+  void StartThread(std::unique_ptr<Thread> thread) override {
     std::thread([this, thread = std::move(thread)]() mutable {
       ++threads_running_;
-      thread.Run();
+      thread->Run();
 
       // Deliberately add a delay to increase the chances of catching regressions where the server
       // does not wait for the thread to terminate.
@@ -1105,6 +1105,61 @@ TEST(BlockServer, DriverInterfaceParallelSessions) {
 
   runtime.RunUntil(
       [&] { return dispatcher_shutdown_count->load() == (kNumThreads * kIterations) + 1; });
+}
+
+class ThreadLifetimeTestInterface : public DriverInterface {
+ public:
+  void OnRequests(std::span<Request> requests) final {}
+
+  void set_on_shutdown(fit::callback<void()> cb) { on_shutdown_ = std::move(cb); }
+
+ protected:
+  void OnDispatcherShutdown(fdf_dispatcher_t* dispatcher) const override {
+    if (on_shutdown_) {
+      on_shutdown_();
+    }
+    fdf_dispatcher_destroy(dispatcher);
+  }
+
+ private:
+  mutable fit::callback<void()> on_shutdown_;
+};
+
+TEST(BlockServer, ThreadLifetimeOutlivesDispatcherShutdown) {
+  fdf_testing::DriverRuntime runtime;
+  ThreadLifetimeTestInterface test_interface;
+
+  std::atomic<bool> dispatcher_shutdown_ran = false;
+  std::atomic<bool> thread_released_after_shutdown = false;
+
+  test_interface.set_on_shutdown([&] { dispatcher_shutdown_ran = true; });
+
+  {
+    block_server::BlockServer server(
+        PartitionInfo{
+            .start_block = 0,
+            .block_count = kBlocks,
+            .block_size = kBlockSize,
+            .type_guid = {1, 2, 3, 4},
+            .instance_guid = {5, 6, 7, 8},
+            .name = "partition",
+        },
+        &test_interface);
+
+    auto [block_client, server_end] = fidl::Endpoints<fblock::Block>::Create();
+    server.Serve(std::move(server_end));
+
+    server.DestroyAsync([&] {
+      if (dispatcher_shutdown_ran) {
+        thread_released_after_shutdown = true;
+      }
+    });
+
+    runtime.RunUntil([&] { return thread_released_after_shutdown.load(); });
+  }
+
+  EXPECT_TRUE(dispatcher_shutdown_ran);
+  EXPECT_TRUE(thread_released_after_shutdown);
 }
 
 }  // namespace

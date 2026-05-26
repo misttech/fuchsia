@@ -28,9 +28,6 @@ using PartitionInfo = internal::PartitionInfo;
 // Represents a session.  New sessions appear via `OnNewSession`.
 class Session {
  public:
-  // public for make_unique
-  explicit Session(const internal::Session* session) : session_(session) {}
-
   Session(Session&& other) : session_(other.session_) { other.session_ = nullptr; }
   Session& operator=(Session&& other);
 
@@ -44,6 +41,7 @@ class Session {
  private:
   friend class BlockServer;
 
+  explicit Session(const internal::Session* session) : session_(session) {}
   const internal::Session* session_;
 };
 
@@ -76,7 +74,7 @@ class Interface {
   virtual ~Interface() {}
   // Called to start the thread that processes all FIDL requests.  The implementation must start a
   // thread and then call `Thread::Run`.
-  virtual void StartThread(Thread) = 0;
+  virtual void StartThread(std::unique_ptr<Thread>) = 0;
 
   // Called when a new session is started.  The implementation must start a thread and then call
   // `Session::Run`.  The callback takes ownership of `Session`.
@@ -103,7 +101,7 @@ class DriverInterface : public Interface {
  public:
   DriverInterface() = default;
 
-  void StartThread(Thread thread) final;
+  void StartThread(std::unique_ptr<Thread> thread) final;
   void OnNewSession(std::unique_ptr<Session> session) final;
   void Log(std::string_view msg) const final { logger().log(fdf::LogSeverity::INFO, "{}", msg); }
 
@@ -126,7 +124,7 @@ class DriverInterface : public Interface {
  private:
   using ShutdownHandler = fdf::Dispatcher::ShutdownHandler;
 
-  ShutdownHandler ThreadDispatcherShutdownHandler() const;
+  ShutdownHandler ThreadDispatcherShutdownHandler(std::unique_ptr<Thread> thread) const;
   ShutdownHandler SessionDispatcherShutdownHandler(std::unique_ptr<Session> session) const;
 };
 
