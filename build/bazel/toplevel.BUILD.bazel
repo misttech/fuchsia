@@ -37,8 +37,9 @@ exports_files(
     # Used by //build/bazel/toolchains/python:
     _python_prebuilt_files +
 
-    # vbmeta key and metadata.
+    # vbmeta tools, keys and metadata.
     [
+        "third_party/android/platform/external/avb/avbtool.py",
         "third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem",
         "third_party/android/platform/external/avb/test/data/atx_metadata.bin",
 
