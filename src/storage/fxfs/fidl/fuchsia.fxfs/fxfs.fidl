@@ -297,7 +297,14 @@ closed protocol Debug {
     /// Begins recording a profile for a named volume for up to the given duration in seconds. If a
     /// profile already exists under the given name then it will begin replaying it as well. Fails
     /// if the volume isn't mounted or there is active profile recording or replay on the volume.
-    strict RecordReplayProfile(struct {
+    /// Page faults for objects that do not get opened by a caller during the recording period will
+    /// will be filtered out of the profile.
+    ///
+    /// This "record-while-replaying" strategy is meant to support boot-profiling in an environment
+    /// where we don't explicitly know when the system has updated. By recording during replay and
+    /// filtering objects without open events, Fxfs drops dead/replaced objects to refresh the
+    /// profile.
+    strict RecordAndReplayProfile(struct {
         volume fuchsia.io.Name:optional;
         profile fuchsia.io.Name;
         duration_secs uint32;

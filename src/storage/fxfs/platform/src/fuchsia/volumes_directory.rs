@@ -158,7 +158,7 @@ impl MountedVolumesGuard<'_> {
         {
             if let Err(e) = volume
                 .volume()
-                .record_or_replay_profile(new_profile_state(as_blob), profile_name)
+                .record_and_replay_profile(new_profile_state(as_blob), profile_name)
                 .await
             {
                 error!(
@@ -442,9 +442,9 @@ impl VolumesDirectory {
     }
 
     /// Record a named profile for a number of seconds, fails if there is an in flight recording or
-    /// replay. The given volume must be unloacked, if no volume is given then all volumes will be
+    /// replay. The given volume must be unlocked, if no volume is given then all volumes will be
     /// affected and all volumes mounted during the process will also be affected.
-    pub async fn record_or_replay_profile(
+    pub async fn record_and_replay_profile(
         self: &Arc<Self>,
         volume_name: Option<String>,
         profile_name: String,
@@ -475,7 +475,7 @@ impl VolumesDirectory {
                         volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
                     if let Err(error) = volume
                         .volume()
-                        .record_or_replay_profile(new_profile_state(is_blob), &profile_name)
+                        .record_and_replay_profile(new_profile_state(is_blob), &profile_name)
                         .await
                     {
                         error!(
@@ -497,7 +497,7 @@ impl VolumesDirectory {
                     // Just log the errors, don't stop half-way.
                     if let Err(error) = volume
                         .volume()
-                        .record_or_replay_profile(new_profile_state(is_blob), &profile_name)
+                        .record_and_replay_profile(new_profile_state(is_blob), &profile_name)
                         .await
                     {
                         error!(
@@ -2279,7 +2279,7 @@ mod tests {
             // test. If it does wait this long then it should trigger test timeouts.
             volumes_directory
                 .clone()
-                .record_or_replay_profile(None, RECORDING_NAME.to_owned(), 600)
+                .record_and_replay_profile(None, RECORDING_NAME.to_owned(), 600)
                 .await
                 .expect("Recording");
 
@@ -2376,7 +2376,7 @@ mod tests {
         // Run the recording with no time at all and ensure that it still shuts down properly.
         volumes_directory
             .clone()
-            .record_or_replay_profile(None, "foo".to_owned(), 0)
+            .record_and_replay_profile(None, "foo".to_owned(), 0)
             .await
             .expect("Recording");
 
@@ -2411,7 +2411,7 @@ mod tests {
 
         volumes_directory
             .clone()
-            .record_or_replay_profile(None, "foo".to_owned(), 600)
+            .record_and_replay_profile(None, "foo".to_owned(), 600)
             .await
             .expect("Recording");
 
@@ -2462,7 +2462,7 @@ mod tests {
             // Start recording for volume that doesn't exist.
             assert_eq!(
                 volumes_directory
-                    .record_or_replay_profile(
+                    .record_and_replay_profile(
                         Some(TEST_VOLUME.to_owned()),
                         TEST_RECORDING.to_owned(),
                         1
@@ -2489,7 +2489,7 @@ mod tests {
             // Start recording for volume that is not mounted.
             assert_eq!(
                 volumes_directory
-                    .record_or_replay_profile(
+                    .record_and_replay_profile(
                         Some(TEST_VOLUME.to_owned()),
                         TEST_RECORDING.to_owned(),
                         1
@@ -2505,7 +2505,7 @@ mod tests {
                 .await
                 .expect("Remount volume");
             volumes_directory
-                .record_or_replay_profile(
+                .record_and_replay_profile(
                     Some(TEST_VOLUME.to_owned()),
                     TEST_RECORDING.to_owned(),
                     1,

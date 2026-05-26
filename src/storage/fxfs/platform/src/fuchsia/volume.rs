@@ -286,7 +286,7 @@ impl FxVolume {
     /// Starts recording a profile for the volume under the name given, and if a profile exists
     /// under that same name it is replayed and will be replaced after by the new recording if it
     /// is cleanly shutdown and finalized.
-    pub async fn record_or_replay_profile(
+    pub async fn record_and_replay_profile(
         self: &Arc<Self>,
         mut state: Box<dyn ProfileState>,
         name: &str,
@@ -2506,7 +2506,7 @@ mod tests {
             fixture
                 .volume()
                 .volume()
-                .record_or_replay_profile(new_profile_state(true), "foo")
+                .record_and_replay_profile(new_profile_state(true), "foo")
                 .await
                 .expect("Recording");
 
@@ -2535,7 +2535,7 @@ mod tests {
                 fixture
                     .volume()
                     .volume()
-                    .record_or_replay_profile(new_profile_state(true), "foo")
+                    .record_and_replay_profile(new_profile_state(true), "foo")
                     .await
                     .expect("Replaying");
 
@@ -2668,7 +2668,7 @@ mod tests {
             fixture
                 .volume()
                 .volume()
-                .record_or_replay_profile(new_profile_state(false), "foo")
+                .record_and_replay_profile(new_profile_state(false), "foo")
                 .await
                 .expect("Recording");
 
@@ -2738,7 +2738,7 @@ mod tests {
                 fixture
                     .volume()
                     .volume()
-                    .record_or_replay_profile(new_profile_state(false), "foo")
+                    .record_and_replay_profile(new_profile_state(false), "foo")
                     .await
                     .expect("Replaying");
 
@@ -2839,7 +2839,7 @@ mod tests {
             {
                 let volume = fixture.volume().volume();
                 volume
-                    .record_or_replay_profile(new_profile_state(true), "foo")
+                    .record_and_replay_profile(new_profile_state(true), "foo")
                     .await
                     .expect("Recording");
 
@@ -2878,7 +2878,7 @@ mod tests {
             let volume = fixture.volume().volume();
 
             volume
-                .record_or_replay_profile(new_profile_state(true), "foo")
+                .record_and_replay_profile(new_profile_state(true), "foo")
                 .await
                 .expect("Replaying");
 
@@ -2930,7 +2930,7 @@ mod tests {
             fixture
                 .volume()
                 .volume()
-                .record_or_replay_profile(new_profile_state(true), "foo")
+                .record_and_replay_profile(new_profile_state(true), "foo")
                 .await
                 .expect("Replaying");
 

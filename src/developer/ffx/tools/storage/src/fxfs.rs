@@ -22,7 +22,7 @@ pub struct CompactSubCommand {}
     name = "delete_profile",
     example = "ffx storage fxfs delete_profile",
     description = "Deletes a profile from a named unlocked volume. Fails during active profile \
-        record or replay."
+        record and/or replay."
 )]
 pub struct DeleteProfileSubCommand {
     #[argh(positional)]
@@ -34,14 +34,14 @@ pub struct DeleteProfileSubCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
-    name = "record_replay_profile",
-    example = "ffx storage fxfs record_replay_profile --volume data startup 60 ",
+    name = "record_and_replay_profile",
+    example = "ffx storage fxfs record_and_replay_profile --volume data startup 60 ",
     description = "Starts recording a for a named unlocked volume to run for a limited number of \
-        time. If a profile exists on the volume with the given name, then it will begin replaying \
-        it. If no volume is given, then all unlocked volumes are activated for recording and \
-        replay. Fails during active profile record or replay."
+        time. If a profile exists on the volume with the given name, then it will also begin \
+        replaying it. If no volume is given, then all unlocked volumes are activated for recording \
+        and replay. Fails during active profile recording and/or replay."
 )]
-pub struct RecordReplayProfileSubCommand {
+pub struct RecordAndReplayProfileSubCommand {
     #[argh(positional)]
     profile: String,
     #[argh(positional)]
@@ -56,7 +56,7 @@ pub struct RecordReplayProfileSubCommand {
     subcommand,
     name = "stop_profile",
     example = "ffx storage fxfs stop_profile",
-    description = "Blocks while stopping all profile recording and replay activity."
+    description = "Blocks while stopping all profile recording and/or replay activity."
 )]
 pub struct StopProfileSubCommand {}
 
@@ -65,7 +65,7 @@ pub struct StopProfileSubCommand {}
 pub enum FxfsSubCommand {
     Compact(CompactSubCommand),
     DeleteProfile(DeleteProfileSubCommand),
-    RecordReplayProfile(RecordReplayProfileSubCommand),
+    RecordAndReplayProfile(RecordAndReplayProfileSubCommand),
     StopProfile(StopProfileSubCommand),
 }
 
@@ -96,9 +96,9 @@ pub async fn handle_cmd(
                 .map_err(|e| Error::User(e.into()))?
                 .map_err(|e| Error::ExitWithCode(e))?;
         }
-        FxfsSubCommand::RecordReplayProfile(args) => {
+        FxfsSubCommand::RecordAndReplayProfile(args) => {
             fxfs_proxy
-                .record_replay_profile(
+                .record_and_replay_profile(
                     args.volume.as_ref().map(|s| s.as_str()),
                     &args.profile,
                     args.duration_secs,
