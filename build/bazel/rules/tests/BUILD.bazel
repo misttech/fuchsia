@@ -57,6 +57,7 @@ filegroup(
         ":build_only_tests_in_host_configuration",
 
         # Fuchsia tests that do not require defining the Clang API level as "PLATFORM".
+        "//build/bazel/bazel_idk/tests:analysis_tests",
         "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
     ],
     # This target is only intended to be built in Fuchsia configurations.
@@ -82,6 +83,8 @@ filegroup(
     name = "targets_to_build_in_host_configuration",
     testonly = True,
     srcs = [
+        "//build/bazel/bazel_idk/tests:targets_to_build_in_host_configurations",
+
         # Host tools not in the IDK
         "//tools/cargo-gnaw:cargo-gnaw-bin",
         "//tools/fidl/fidlgen_rust",

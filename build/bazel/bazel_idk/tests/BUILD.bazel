@@ -26,6 +26,7 @@ load(
     "//build/bazel/bazel_idk/private:idk_transitions.bzl",
     "build_in_all_idk_api_level_and_cpu_combinations",
 )
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
 load("//build/bazel/rules/tests:rules.bzl", "build_for_host")
 load(":analysis_tests.bzl", "analysis_test_suite")
@@ -1011,9 +1012,6 @@ filegroup(
 
         # Build some of the targets on the host toolchain.
         ":build_only_tests_in_host_configuration",
-
-        # Analysis tests.
-        ":analysis_tests",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
@@ -1023,13 +1021,10 @@ filegroup(
     ],
 )
 
-build_for_host(
-    name = "build_only_tests_in_host_configuration",
+filegroup(
+    name = "targets_to_build_in_host_configurations",
     testonly = True,
-    stamp = "build_only_tests_in_host_configuration.stamp",
-    # This target transitions to the host config ("exec") to build the test targets.
-    target_compatible_with = ["@platforms//os:fuchsia"],
-    deps = [
+    srcs = [
         # Verify that a target using `select()` statements for `hdrs`,
         # `hdrs_for_internal_use`, and `srcs` can be built on the host toolchain.
         ":test_executable_using_platform_dependent_source_library",
@@ -1054,6 +1049,17 @@ build_for_host(
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
     ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
+)
+
+build_for_host(
+    name = "build_only_tests_in_host_configuration",
+    testonly = True,
+    stamp = "build_only_tests_in_host_configuration.stamp",
+    # This target transitions to the host config ("exec") to build the test targets.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":targets_to_build_in_host_configurations"],
 )
 
 # A filegroup of IDK atom targets to build for each CPU and API level combination.
@@ -1158,4 +1164,5 @@ filegroup(
 # cause Bazel to fail.
 analysis_test_suite(
     name = "analysis_tests",
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
 )

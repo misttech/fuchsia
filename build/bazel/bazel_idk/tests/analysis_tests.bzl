@@ -21,11 +21,14 @@ failure_test = analysistest.make(
     },
 )
 
-def analysis_test_suite(name):
+def analysis_test_suite(
+        name,
+        visibility = None):
     """Defines analysis tests for the IDK macros.
 
     Args:
         name: Name of the test suite.
+        visibility: Visibility of the test suite.
     """
 
     # For these specific test atoms, `testonly` is False to bypass the allowlist
@@ -85,4 +88,5 @@ def analysis_test_suite(name):
             ":not_in_allowlist_failure_test",
             ":no_allowlist_failure_test",
         ],
+        visibility = visibility,
     )
