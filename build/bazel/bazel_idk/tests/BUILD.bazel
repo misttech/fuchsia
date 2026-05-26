@@ -796,14 +796,6 @@ idk_molecule(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_submolecule_idk",
-        "//sdk/lib/fidl/cpp:cpp_idk",
-        "//sdk/lib/magma_common:magma_common_idk",
-        "//sdk/lib/media/cpp:no_converters_idk",
-        "//sdk/lib/memory_barriers:memory_barriers_idk",
-        "//sdk/lib/stdcompat:stdcompat_idk",
-        "//sdk/lib/utf-utils:utf-utils_idk",
-        "//zircon/system/ulib/sync:sync-cpp_idk",
-        "//zircon/system/ulib/sync:sync_idk",
     ],
 )
 
@@ -815,6 +807,9 @@ idk_molecule(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_data_atom_idk",
+
+        # Test FIDL using real libraries because there are no test libraries
+        # like there are for C++ libraries.
         # Tests compatibility testing with different expectations per API level.
         # As of F30+, this library has elements added at 28, 29, and NEXT.
         "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
@@ -958,6 +953,10 @@ filegroup(
         ":test_molecule_idk",
         ":main_platform_build_test_molecule_idk",
 
+        # Depend directly on the underlying source libraries since they are not
+        # dependencies of the atoms.
+        ":all_underlying_source_libraries",
+
         # Linking executables verifies that all deps are properly specified and
         # that FIDL bindings were generated correctly.
         ":all_test_executables",
@@ -980,25 +979,8 @@ filegroup(
         ":verify_test_static_library_atom_info",
         ":verify_platform_dependent_source_library_atom_info",
 
-        # Depend directly on the underlying source libraries since they are not
-        # dependencies of the atoms.
-        ":all_underlying_source_libraries",
-        "//sdk/lib/async:async-cpp",
-        "//sdk/lib/fidl",
-        "//sdk/lib/fidl/cpp",
-        "//sdk/lib/fidl/cpp/wire",
-        "//sdk/lib/fidl_base",
-        "//sdk/lib/magma_common",
-        "//sdk/lib/media/cpp:no_converters",
-        "//sdk/lib/memory_barriers",
-        "//sdk/lib/stdcompat",
-        "//sdk/lib/utf-utils",
-        "//src/zircon/lib/zircon",
-        "//zircon/system/ulib/sync:sync-cpp",
-        "//zircon/system/ulib/zx",
-
-        # Exercise FIDL.
-        # TODO(https://fxbug.dev/428285014): Remove these once we are building them elsewhere.
+        # Exercise various FIDL library cases.
+        # FIDL libraries with the same library name in the same package.
         "//examples/fidl/fuchsia.examples.docs",
         "//examples/fidl/fuchsia.examples.docs:versioning",
         # Bindings for a library with dependencies.
@@ -1026,10 +1008,6 @@ filegroup(
         "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
         # TODO(https://fxbug.dev/454452299): Uncomment once Rust bindings are implemented.
         # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
-
-        # Non-IDK targets.
-        # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
-        "//zircon/system/ulib/zircon-internal",
 
         # Build some of the targets on the host toolchain.
         ":build_only_tests_in_host_configuration",
@@ -1088,15 +1066,12 @@ idk_molecule(
     allowed_in_configurations = "fuchsia",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
+        # TODO(https://fxbug.dev/505380228): Remove these targets once
+        # ":test_molecule_idk" is moved to this main list.
         ":platform_dependent_source_library_idk",
         ":test-source-library_idk",
         ":test_source_set_zx_idk",
         ":tests_idk",
-        "//sdk/lib/magma_common:magma_common_idk",
-        "//sdk/lib/media/cpp:no_converters_idk",
-        "//sdk/lib/memory_barriers:memory_barriers_idk",
-        "//sdk/lib/stdcompat:stdcompat_idk",
-        "//sdk/lib/utf-utils:utf-utils_idk",
     ] + select({
         # TODO(https://fxbug.dev/505380228): Merge these targets into the main
         # list once sysroots are available for all CPU architectures.
@@ -1105,10 +1080,6 @@ idk_molecule(
             # golden IFS files are populated when creating new API levels.
             ":test-shared-library_idk",
             ":test_shared_library_zx_idk",
-
-            # A shared library that exercises use of the API level-specific
-            # golden IFS files.
-            "//sdk/lib/async-default:async-default_idk",
 
             # Depends on the IDK atom targets.
             ":test_molecule_idk",
@@ -1137,9 +1108,6 @@ filegroup(
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
         ":all_underlying_source_libraries",
-        "//sdk/lib/magma_common",
-        "//sdk/lib/memory_barriers",
-        "//sdk/lib/stdcompat",
 
         # Exercise FIDL.
         # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
@@ -1158,11 +1126,6 @@ filegroup(
             # Linking executables verifies that all deps are properly specified
             # and that FIDL bindings were generated correctly.
             ":all_test_executables",
-
-            # Depend directly on the underlying source libraries since they are
-            # not dependencies of the atoms.
-            "//sdk/lib/media/cpp:no_converters",
-            "//sdk/lib/utf-utils",
         ],
         "//conditions:default": [],
     }),
