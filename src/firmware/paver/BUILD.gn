@@ -189,6 +189,7 @@ source_set("iris") {
   public_deps = [
     ":gpt",
     ":paver-core",
+    "//sdk/fidl/fuchsia.hardware.ufs:fuchsia.hardware.ufs_cpp",
     "//src/lib/uuid",
     "//zircon/system/ulib/hwreg",
   ]

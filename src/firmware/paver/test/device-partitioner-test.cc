@@ -9,9 +9,12 @@
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
+#include <fidl/fuchsia.hardware.ufs/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.partitions/cpp/wire.h>
+#include <fidl/fuchsia.sysinfo/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/common_types.h>
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
 #include <fidl/fuchsia.system.state/cpp/markers.h>
@@ -400,6 +403,107 @@ class FakeSvc {
  private:
   FakeSystemStateTransition fake_system_shutdown_state_;
   fidl::ClientEnd<fuchsia_io::Directory> root_;
+};
+
+class FakeUfs : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
+ public:
+  void ReadAttribute(ReadAttributeRequestView request,
+                     ReadAttributeCompleter::Sync& completer) override {
+    if (request->attr.type() == fuchsia_hardware_ufs::wire::AttributeType::kBootLunEn) {
+      completer.ReplySuccess(boot_lun_en_);
+    } else {
+      completer.ReplyError(fuchsia_hardware_ufs::wire::QueryErrorCode::kGeneralFailure);
+    }
+  }
+
+  void WriteAttribute(WriteAttributeRequestView request,
+                      WriteAttributeCompleter::Sync& completer) override {
+    if (request->attr.type() == fuchsia_hardware_ufs::wire::AttributeType::kBootLunEn) {
+      boot_lun_en_ = request->value;
+      completer.ReplySuccess();
+    } else {
+      completer.ReplyError(fuchsia_hardware_ufs::wire::QueryErrorCode::kGeneralFailure);
+    }
+  }
+
+  void ReadDescriptor(ReadDescriptorRequestView request,
+                      ReadDescriptorCompleter::Sync& completer) override {}
+  void WriteDescriptor(WriteDescriptorRequestView request,
+                       WriteDescriptorCompleter::Sync& completer) override {}
+  void ReadFlag(ReadFlagRequestView request, ReadFlagCompleter::Sync& completer) override {}
+  void SetFlag(SetFlagRequestView request, SetFlagCompleter::Sync& completer) override {}
+  void ClearFlag(ClearFlagRequestView request, ClearFlagCompleter::Sync& completer) override {}
+  void ToggleFlag(ToggleFlagRequestView request, ToggleFlagCompleter::Sync& completer) override {}
+  void SendUicCommand(SendUicCommandRequestView request,
+                      SendUicCommandCompleter::Sync& completer) override {}
+  void Request(RequestRequestView request, RequestCompleter::Sync& completer) override {}
+  void ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync& completer) override {}
+  void WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync& completer) override {
+  }
+
+  uint32_t boot_lun_en_ = 1;
+};
+
+class FakeUfsSvc {
+ public:
+  explicit FakeUfsSvc(async_dispatcher_t* dispatcher,
+                      fidl::ClientEnd<fuchsia_io::Directory> realm_root)
+      : realm_root_(std::move(realm_root)) {
+    zx::result server_end = fidl::CreateEndpoints(&root_);
+    ASSERT_OK(server_end);
+    async::PostTask(dispatcher, [dispatcher, &fake_ufs = fake_ufs_,
+                                 raw_realm_root = realm_root_.handle()->get(),
+                                 server_end = std::move(server_end.value())]() mutable {
+      component::OutgoingDirectory outgoing{dispatcher};
+      ASSERT_OK(outgoing.AddUnmanagedProtocol<fuchsia_sysinfo::SysInfo>(
+          [raw_realm_root](fidl::ServerEnd<fuchsia_sysinfo::SysInfo> server) {
+            EXPECT_OK(fdio_service_connect_at(raw_realm_root, "fuchsia.sysinfo.SysInfo",
+                                              server.TakeChannel().release()));
+          }));
+
+      ASSERT_OK(outgoing.AddUnmanagedProtocol<fuchsia_storage_partitions::PartitionsManager>(
+          [raw_realm_root](fidl::ServerEnd<fuchsia_storage_partitions::PartitionsManager> server) {
+            EXPECT_OK(fdio_service_connect_at(raw_realm_root,
+                                              "fuchsia.storage.partitions.PartitionsManager",
+                                              server.TakeChannel().release()));
+          }));
+
+      zx::result partitions_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+      ASSERT_OK(partitions_endpoints);
+      ASSERT_EQ(fdio_open3_at(raw_realm_root, "fuchsia.storage.partitions.PartitionService",
+                              static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                              partitions_endpoints->server.TakeChannel().release()),
+                ZX_OK);
+      ASSERT_OK(outgoing.AddDirectoryAt(std::move(partitions_endpoints->client), "svc",
+                                        "fuchsia.storage.partitions.PartitionService"));
+
+      fuchsia_hardware_ufs::Service::InstanceHandler handler({
+          .device =
+              [&fake_ufs, dispatcher](fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server) {
+                fidl::BindServer(dispatcher, std::move(server), &fake_ufs);
+              },
+      });
+      ASSERT_OK(outgoing.AddService<fuchsia_hardware_ufs::Service>(std::move(handler)));
+
+      ASSERT_OK(outgoing.Serve(std::move(server_end)));
+
+      // Stash the outgoing directory on the dispatcher so that the dtor runs on the dispatcher
+      // thread.
+      async::PostDelayedTask(
+          dispatcher, [outgoing = std::move(outgoing)]() {}, zx::duration::infinite());
+    });
+  }
+
+  FakeUfs& fake_ufs() { return fake_ufs_; }
+
+  zx::result<fidl::ClientEnd<fuchsia_io::Directory>> svc() {
+    return component::OpenDirectoryAt(root_, component::OutgoingDirectory::kServiceDirectory);
+  }
+
+ private:
+  FakeUfs fake_ufs_;
+  fidl::ClientEnd<fuchsia_io::Directory> root_;
+  fidl::ClientEnd<fuchsia_io::Directory> realm_root_;
 };
 
 class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
@@ -1093,10 +1197,24 @@ class IrisPartitionerTests : public GptDevicePartitionerTests {
  protected:
   IrisPartitionerTests() : GptDevicePartitionerTests("iris") {}
 
+  void SetUp() override {
+    GptDevicePartitionerTests::SetUp();
+    EXPECT_OK(loop_.StartThread("iris-devicepartitioner-tests-loop"));
+    fake_ufs_svc_ = std::make_unique<FakeUfsSvc>(loop_.dispatcher(), RealmExposedDir());
+  }
+
+  void TearDown() override {
+    loop_.Shutdown();
+    GptDevicePartitionerTests::TearDown();
+  }
+
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
       BlockDevice* gpt = nullptr) {
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root = RealmExposedDir();
+    zx::result svc_root = fake_ufs_svc_->svc();
+    if (svc_root.is_error()) {
+      return svc_root.take_error();
+    }
     zx::result devices = CreateBlockDevices();
     if (devices.is_error()) {
       return devices.take_error();
@@ -1106,7 +1224,7 @@ class IrisPartitionerTests : public GptDevicePartitionerTests {
         .system_partition_names = {"super"},
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::IrisPartitioner::Initialize(std::move(*devices), std::move(svc_root),
+    return paver::IrisPartitioner::Initialize(std::move(*devices), std::move(*svc_root),
                                               paver_config);
   }
 
@@ -1136,6 +1254,8 @@ class IrisPartitionerTests : public GptDevicePartitionerTests {
   }
 
   std::shared_ptr<paver::Context> context_ = std::make_shared<paver::Context>();
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
+  std::unique_ptr<FakeUfsSvc> fake_ufs_svc_;
 };
 
 TEST_F(IrisPartitionerTests, InitializeWithoutGptFails) {
@@ -1307,6 +1427,7 @@ TEST_F(IrisPartitionerTests, IrisAbrClientMarkSlotActive) {
 
   ASSERT_OK(abr_client->MarkSlotActive(kAbrSlotIndexB));
   ASSERT_OK(abr_client->Flush());
+  EXPECT_EQ(fake_ufs_svc_->fake_ufs().boot_lun_en_, 2u);
 
   std::vector<uint8_t> read_buffer(block_size_, 0);
   ASSERT_NO_FATAL_FAILURE(ReadBlocks(gpt_dev.get(), 0x10400, 1, read_buffer.data()));

@@ -78,6 +78,12 @@
             to: "#paver",
         },
         {
+            service: "fuchsia.hardware.ufs.Service",
+            from: "#boot-drivers",
+            to: "#paver",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.fshost.MergeSuperAndUserdata",
             from: "parent",
             to: "#paver",

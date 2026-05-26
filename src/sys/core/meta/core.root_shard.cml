@@ -418,6 +418,7 @@
                 "fuchsia.hardware.temperature.Service",
                 "fuchsia.hardware.thermal.Service",
                 "fuchsia.hardware.trippoint.Service",
+                "fuchsia.hardware.ufs.Service",
                 "fuchsia.hardware.usb.device.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
                 "fuchsia.hardware.usb.policy.Service",

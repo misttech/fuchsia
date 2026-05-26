@@ -4,6 +4,8 @@
 
 #include "src/firmware/paver/iris.h"
 
+#include <dirent.h>
+#include <fidl/fuchsia.hardware.ufs/cpp/wire.h>
 #include <fidl/fuchsia.storage.partitions/cpp/wire_types.h>
 #include <lib/abr/abr.h>
 #include <lib/component/incoming/cpp/clone.h>
@@ -38,6 +40,148 @@ namespace paver {
 const std::set<std::string> kSupportedBoards{
     "iris",
 };
+
+namespace {
+
+zx::result<fidl::ClientEnd<fuchsia_hardware_ufs::Ufs>> OpenUfsService(
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
+  if (!svc_root) {
+    ERROR("Svc root is not valid\n");
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  if (endpoints.is_error()) {
+    return endpoints.take_error();
+  }
+  auto [client, server] = std::move(*endpoints);
+  if (zx_status_t status = fdio_open3_at(svc_root.handle()->get(), "fuchsia.hardware.ufs.Service",
+                                         static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                                         server.TakeChannel().release());
+      status != ZX_OK) {
+    ERROR("Failed to open fuchsia.hardware.ufs.Service: %s\n", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  fbl::unique_fd ufs_svc_dir;
+  if (zx_status_t status =
+          fdio_fd_create(client.TakeChannel().release(), ufs_svc_dir.reset_and_get_address());
+      status != ZX_OK) {
+    ERROR("Failed to create fd for ufs service directory: %s\n", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  DIR* dir = fdopendir(ufs_svc_dir.duplicate().release());
+  if (dir == nullptr) {
+    ERROR("Cannot inspect ufs service directory: %s\n", strerror(errno));
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  const auto closer = fit::defer([dir]() { closedir(dir); });
+
+  zx::result<fidl::ClientEnd<fuchsia_hardware_ufs::Ufs>> ufs_client = zx::error(ZX_ERR_NOT_FOUND);
+  size_t instance_count = 0;
+  struct dirent* de;
+  while ((de = readdir(dir)) != nullptr) {
+    if (std::string_view{de->d_name} == "." || std::string_view{de->d_name} == "..") {
+      continue;
+    }
+    instance_count++;
+    if (instance_count > 1) {
+      ERROR("Expected single UFS service instance but found multiple\n");
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    std::string filename(de->d_name, strnlen(de->d_name, sizeof(de->d_name)));
+    fbl::unique_fd instance_fd;
+    if (zx_status_t status =
+            fdio_open3_fd_at(ufs_svc_dir.get(), filename.c_str(),
+                             static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                             instance_fd.reset_and_get_address());
+        status != ZX_OK) {
+      ERROR("Failed to open ufs service instance %s: %s\n", filename.c_str(),
+            zx_status_get_string(status));
+      return zx::error(status);
+    }
+
+    fdio_cpp::UnownedFdioCaller caller(instance_fd);
+    zx::result ufs_endpoints = fidl::CreateEndpoints<fuchsia_hardware_ufs::Ufs>();
+    if (ufs_endpoints.is_error()) {
+      ERROR("Failed to create endpoints for ufs service instance %s: %s\n", filename.c_str(),
+            ufs_endpoints.status_string());
+      return ufs_endpoints.take_error();
+    }
+    if (zx_status_t status = fdio_service_connect_at(caller.borrow_channel(), "device",
+                                                     ufs_endpoints->server.TakeChannel().release());
+        status == ZX_OK) {
+      LOG("Successfully connected to UFS service instance %s\n", filename.c_str());
+      ufs_client = zx::ok(std::move(ufs_endpoints->client));
+    }
+  }
+
+  if (ufs_client.is_error()) {
+    ERROR("Failed to find and connect to Ufs service instance\n");
+    return ufs_client.take_error();
+  }
+
+  LOG("Successfully opened connection to fuchsia.hardware.ufs.Ufs\n");
+
+  // Perform a read of the BOOT_LUN_EN attribute and log the active boot slot it specifies.
+  fidl::Arena arena;
+  auto id = fuchsia_hardware_ufs::wire::Identifier::Builder(arena).index(0).selector(0).Build();
+  auto attr = fuchsia_hardware_ufs::wire::Attribute::Builder(arena)
+                  .type(fuchsia_hardware_ufs::wire::AttributeType::kBootLunEn)
+                  .identifier(id)
+                  .Build();
+  const fidl::WireResult result = fidl::WireCall(ufs_client.value())->ReadAttribute(attr);
+  if (!result.ok()) {
+    ERROR("Failed to read BOOT_LUN_EN attribute (FIDL error): %s\n", result.status_string());
+  } else if (result.value().is_error()) {
+    ERROR("Failed to read BOOT_LUN_EN attribute (Query error code): %d\n",
+          static_cast<uint32_t>(result.value().error_value()));
+  } else {
+    uint32_t boot_lun = result.value().value()->value;
+    const char* boot_slot = (boot_lun == 2) ? "SLOT_B" : "SLOT_A";
+    LOG("BOOT_LUN_EN active slot: %s\n", boot_slot);
+  }
+
+  return ufs_client;
+}
+
+zx::result<> SetActiveSlotInUfs(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+                                AbrSlotIndex slot_index) {
+  if (slot_index != kAbrSlotIndexA && slot_index != kAbrSlotIndexB) {
+    ERROR("Unsupported AbrSlotIndex for UFS boot slot\n");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  zx::result ufs_client = OpenUfsService(svc_root);
+  if (ufs_client.is_error()) {
+    ERROR("Failed to open Ufs service for setting active slot\n");
+    return ufs_client.take_error();
+  }
+
+  fidl::Arena arena;
+  auto id = fuchsia_hardware_ufs::wire::Identifier::Builder(arena).index(0).selector(0).Build();
+  auto attr = fuchsia_hardware_ufs::wire::Attribute::Builder(arena)
+                  .type(fuchsia_hardware_ufs::wire::AttributeType::kBootLunEn)
+                  .identifier(id)
+                  .Build();
+  uint32_t val = (slot_index == kAbrSlotIndexB) ? 2 : 1;
+  const fidl::WireResult result = fidl::WireCall(ufs_client.value())->WriteAttribute(attr, val);
+  if (!result.ok()) {
+    ERROR("Failed to write bBootLunEn attribute (FIDL error): %s\n", result.status_string());
+    return zx::error(result.status());
+  }
+  if (result.value().is_error()) {
+    ERROR("Failed to write bBootLunEn attribute (Query error code): %d\n",
+          static_cast<uint32_t>(result.value().error_value()));
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
+  LOG("Successfully set active slot in UFS bBootLunEn attribute\n");
+  return zx::ok();
+}
+
+}  // namespace
 
 zx::result<std::unique_ptr<DevicePartitioner>> IrisPartitioner::Initialize(
     const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
@@ -194,19 +338,24 @@ using uuid::Uuid;
 class IrisAbrClient : public abr::Client {
  public:
   static zx::result<std::unique_ptr<abr::Client>> Create(
-      std::unique_ptr<paver::PartitionClient> partition) {
+      std::unique_ptr<paver::PartitionClient> partition,
+      fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
     zx::vmo vmo;
     if (auto status = zx::make_result(zx::vmo::create(kIrisDevinfoSize, 0, &vmo));
         status.is_error()) {
       ERROR("Failed to create vmo\n");
       return status.take_error();
     }
-    return zx::ok(new IrisAbrClient(std::move(partition), std::move(vmo)));
+    return zx::ok(new IrisAbrClient(std::move(partition), std::move(vmo), std::move(svc_root)));
   }
 
  private:
-  IrisAbrClient(std::unique_ptr<paver::PartitionClient> partition, zx::vmo vmo)
-      : Client(/*custom = */ true), partition_(std::move(partition)), vmo_(std::move(vmo)) {}
+  IrisAbrClient(std::unique_ptr<paver::PartitionClient> partition, zx::vmo vmo,
+                fidl::ClientEnd<fuchsia_io::Directory> svc_root)
+      : Client(/*custom = */ true),
+        partition_(std::move(partition)),
+        vmo_(std::move(vmo)),
+        svc_root_(std::move(svc_root)) {}
 
   zx::result<> Read(uint8_t* buffer, size_t size) override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -268,6 +417,13 @@ class IrisAbrClient : public abr::Client {
     ab_data.slots[0] = ToIris(*a, a_active, ab_data.slots[0]);
     ab_data.slots[1] = ToIris(*b, b_active, ab_data.slots[1]);
 
+    if (auto status =
+            SetActiveSlotInUfs(svc_root_.borrow(), b_active ? kAbrSlotIndexB : kAbrSlotIndexA);
+        status.is_error()) {
+      ERROR("Failed to set active slot in UFS attributes\n");
+      return status.take_error();
+    }
+
     // Not supported on Iris
     (void)one_shot_recovery;
 
@@ -317,6 +473,7 @@ class IrisAbrClient : public abr::Client {
 
   std::unique_ptr<paver::PartitionClient> partition_;
   zx::vmo vmo_;
+  fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
 };
 
 }  // namespace
@@ -328,7 +485,7 @@ zx::result<std::unique_ptr<abr::Client>> IrisPartitioner::CreateAbrClient() cons
     return partition.take_error();
   }
 
-  return IrisAbrClient::Create(std::move(partition.value()));
+  return IrisAbrClient::Create(std::move(partition.value()), component::MaybeClone(SvcRoot()));
 }
 
 }  // namespace paver

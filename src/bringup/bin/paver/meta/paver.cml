@@ -65,6 +65,10 @@
         },
         { service: "fuchsia.hardware.skipblock.Service" },
         {
+            service: "fuchsia.hardware.ufs.Service",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.fshost.MergeSuperAndUserdata",
             key: "merge_super_and_userdata",
             type: "bool",
