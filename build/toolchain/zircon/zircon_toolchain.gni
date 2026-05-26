@@ -661,7 +661,7 @@ template("zircon_toolchain") {
     # Even though rmeta is not always needed as an output, we always use
     # emit=metadata to signal to the remote wrapper that rmetas should be used
     # for dependency scanning, as opposed to complete rlibs.
-    rmeta = "$unstripped_outfile.rmeta"
+    rmeta = "{{output_dir}}/{{target_output_name}}.rmeta"
     outputs += [ rmeta ]
     command_prefix += [ "--emit=metadata=$rmeta" ]
 
