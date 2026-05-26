@@ -105,7 +105,6 @@ pub struct ClientMlme<D> {
     scanner: Scanner,
     channel_state: ChannelState,
 }
-
 impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
     type Config = ClientConfig;
     type Device = D;
@@ -121,7 +120,79 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
         &mut self,
         req: wlan_sme::MlmeRequest,
     ) -> Result<(), anyhow::Error> {
-        ClientMlme::<D>::handle_mlme_request(self, req).await.map_err(From::from)
+        match req {
+            wlan_sme::MlmeRequest::Scan(req) => {
+                self.on_sme_scan(req).await;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::Connect(req) => {
+                self.on_sme_connect(req).await?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::GetIfaceStats(responder) => {
+                self.on_sme_get_iface_stats(responder)?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::GetIfaceHistogramStats(responder) => {
+                self.on_sme_get_iface_histogram_stats(responder)?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::QueryDeviceInfo(responder) => {
+                self.on_sme_query_device_info(responder).await?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::QueryMacSublayerSupport(responder) => {
+                self.on_sme_query_mac_sublayer_support(responder).await?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::QuerySecuritySupport(responder) => {
+                self.on_sme_query_security_support(responder).await?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::QuerySpectrumManagementSupport(responder) => {
+                self.on_sme_query_spectrum_management_support(responder).await?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::ListMinstrelPeers(responder) => {
+                self.on_sme_list_minstrel_peers(responder)?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::GetMinstrelStats(req, responder) => {
+                self.on_sme_get_minstrel_stats(responder, &req.peer_addr.into())?;
+                Ok(())
+            }
+            req if self.sta.is_some() => {
+                let sta = self.sta.as_mut().unwrap();
+                sta.bind(&mut self.ctx, &mut self.scanner, &mut self.channel_state)
+                    .handle_mlme_request(req)
+                    .await;
+                Ok(())
+            }
+            unhandled_request => {
+                if let wlan_sme::MlmeRequest::Reconnect(req) = &unhandled_request {
+                    self.ctx.device.send_mlme_event(fidl_mlme::MlmeEvent::ConnectConf {
+                        resp: fidl_mlme::ConnectConfirm {
+                            peer_sta_address: req.peer_sta_address,
+                            result_code: fidl_ieee80211::StatusCode::DeniedNoAssociationExists,
+                            association_id: 0,
+                            association_ies: vec![],
+                        },
+                    })?;
+                }
+
+                Err(Error::Status(
+                    format!(
+                        "Failed to handle {} MLME request: request is unhandled in the current state. \
+                         Connection context exists: {}, Main channel: {:?}, Scanning: {}.",
+                        unhandled_request.name(),
+                        self.sta.is_some(),
+                        self.channel_state.get_main_channel(),
+                        self.scanner.is_scanning(),
+                    ),
+                    zx::Status::BAD_STATE,
+                ).into())
+            }
+        }
     }
     async fn handle_mac_frame_rx(
         &mut self,
@@ -284,58 +355,6 @@ impl<D: DeviceOps> ClientMlme<D> {
             }
         } else {
             wtrace::async_end_wlansoftmac_rx(async_id, "no bound client");
-        }
-    }
-
-    pub async fn handle_mlme_request(&mut self, req: wlan_sme::MlmeRequest) -> Result<(), Error> {
-        use wlan_sme::MlmeRequest as Req;
-        match req {
-            // Handle non station specific MLME messages first (Join, Scan, etc.)
-            Req::Scan(req) => Ok(self.on_sme_scan(req).await),
-            Req::Connect(req) => self.on_sme_connect(req).await,
-            Req::GetIfaceStats(responder) => self.on_sme_get_iface_stats(responder),
-            Req::GetIfaceHistogramStats(responder) => {
-                self.on_sme_get_iface_histogram_stats(responder)
-            }
-            Req::QueryDeviceInfo(responder) => self.on_sme_query_device_info(responder).await,
-            Req::QueryMacSublayerSupport(responder) => {
-                self.on_sme_query_mac_sublayer_support(responder).await
-            }
-            Req::QuerySecuritySupport(responder) => {
-                self.on_sme_query_security_support(responder).await
-            }
-            Req::QuerySpectrumManagementSupport(responder) => {
-                self.on_sme_query_spectrum_management_support(responder).await
-            }
-            Req::ListMinstrelPeers(responder) => self.on_sme_list_minstrel_peers(responder),
-            Req::GetMinstrelStats(req, responder) => {
-                self.on_sme_get_minstrel_stats(responder, &req.peer_addr.into())
-            }
-            other_message => match &mut self.sta {
-                None => {
-                    if let Req::Reconnect(req) = other_message {
-                        self.ctx.device.send_mlme_event(fidl_mlme::MlmeEvent::ConnectConf {
-                            resp: fidl_mlme::ConnectConfirm {
-                                peer_sta_address: req.peer_sta_address,
-                                result_code: fidl_ieee80211::StatusCode::DeniedNoAssociationExists,
-                                association_id: 0,
-                                association_ies: vec![],
-                            },
-                        })?;
-                    }
-                    Err(Error::Status(
-                        format!(
-                            "Failed to handle {} MLME request when this ClientMlme has no sta.",
-                            other_message.name()
-                        ),
-                        zx::Status::BAD_STATE,
-                    ))
-                }
-                Some(sta) => Ok(sta
-                    .bind(&mut self.ctx, &mut self.scanner, &mut self.channel_state)
-                    .handle_mlme_request(other_message)
-                    .await),
-            },
         }
     }
 
@@ -1278,6 +1297,7 @@ fn write_block_ack_hdr<B: Append>(
 mod tests {
     use super::state::DEFAULT_AUTO_DEAUTH_TIMEOUT_BEACON_COUNT;
     use super::*;
+    use crate::MlmeImpl;
     use crate::block_ack::{
         self, ADDBA_REQ_FRAME_LEN, ADDBA_RESP_FRAME_LEN, BlockAckState, Closed,
     };
@@ -3123,7 +3143,9 @@ mod tests {
 
         let reconnect_req = fidl_mlme::ReconnectRequest { peer_sta_address: [1, 2, 3, 4, 5, 6] };
         let result = me.handle_mlme_request(wlan_sme::MlmeRequest::Reconnect(reconnect_req)).await;
-        assert_matches!(result, Err(Error::Status(_, zx::Status::BAD_STATE)));
+        let err = result.unwrap_err();
+        let mlme_err = err.downcast_ref::<Error>().expect("expected Mlme Error");
+        assert_matches!(mlme_err, Error::Status(_, zx::Status::BAD_STATE));
 
         // Verify a connect confirm message was sent
         let msg = m
