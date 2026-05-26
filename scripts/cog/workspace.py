@@ -629,6 +629,7 @@ class Workspace:
         jiri_manifest.parent.mkdir(parents=True, exist_ok=True)
         if not jiri_manifest.exists() or jiri_manifest.read_text() != content:
             jiri_manifest.write_text(content)
+        logger.log_debug(f"Wrote jiri manifest to {jiri_manifest}")
 
     def _write_jiri_config(self) -> None:
         """Initializes the jiri config."""
@@ -801,7 +802,10 @@ class Workspace:
         )
 
         backup_dir = None
-        if self.cartfs_fuchsia_dir.exists():
+        # For a newly created workspace, we would expect the fuchsia directory
+        # exist but not setup yet. In this case the .git support is not there
+        # yet so we skip resetting.
+        if (self.cartfs_fuchsia_dir / ".git").exists():
             try:
                 subprocess.run(
                     ["git", "reset", "--hard"],
@@ -830,7 +834,7 @@ class Workspace:
                 except Exception as e:
                     logger.log_warn(f"Failed to fix .git/HEAD in backup: {e}")
 
-        if not self.cartfs_fuchsia_dir.exists():
+        if not (self.cartfs_fuchsia_dir / ".git").exists():
             # We fetch fuchsia repository from the last 4 days because git hook will
             # refer to commit from yesterday to generate integration_daily_commit_hash.
             integration_commit_timestamp = int(
@@ -1045,6 +1049,7 @@ class Workspace:
             "build/info/create_jiri_hook_files.sh",
             "tools/build/scripts/generate_prebuilt_versions.sh",
             "tools/build/scripts/extract_protobuf_py3_wheel.sh",
+            "tools/build/scripts/extract_pydantic_core_wheel.sh",
         ]
 
         for hook in hooks:
