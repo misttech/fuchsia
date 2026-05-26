@@ -162,14 +162,14 @@ class OtRadioDevice : public DeviceType {
   };
 
   std::atomic<uint32_t> inbound_allowance_ = 0;
-  uint32_t outbound_allowance_ = kOutboundAllowanceInit;
+  std::atomic<uint32_t> outbound_allowance_ = kOutboundAllowanceInit;
   uint64_t inbound_cnt_ = 0;
   uint64_t outbound_cnt_ = 0;
   std::optional<fidl::ServerBindingRef<fuchsia_lowpan_spinel::Device>> fidl_binding_;
   std::unique_ptr<LowpanSpinelDeviceFidlImpl> fidl_impl_obj_ = 0;
   ot_radio_power_status_e power_status_ = OT_SPINEL_DEVICE_OFF;
-  bool inbound_frame_available_ = false;
-  zx::time hard_reset_end_ = zx::time(0);
+  std::atomic<bool> inbound_frame_available_ = false;
+  std::atomic<zx_time_t> hard_reset_end_ = 0;
   std::unique_ptr<std::vector<bool>> pending_tid_;
 };
 

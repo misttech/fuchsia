@@ -119,7 +119,7 @@ void OtRadioDevice::LowpanSpinelDeviceFidlImpl::SendFrame(SendFrameRequestView r
   [[maybe_unused]] auto data_count = request->data.size();
   TRACE_DURATION(kOtRadioTraceCategory, __func__, "ot_radio_obj_.power_status_",
                  ot_radio_obj_.power_status_, "request->data.count()", data_count,
-                 "ot_radio_obj_.outbound_allowance", ot_radio_obj_.outbound_allowance_,
+                 "ot_radio_obj_.outbound_allowance", ot_radio_obj_.outbound_allowance_.load(),
                  "ot_radio_obj_.outbound_cnt", ot_radio_obj_.outbound_cnt_);
   if (ot_radio_obj_.power_status_ == OT_SPINEL_DEVICE_OFF) {
     // TODO(https://fxbug.dev/42176667): Consider handling errors instead of ignoring them.
@@ -507,7 +507,7 @@ zx_status_t OtRadioDevice::Reset() {
 
 uint32_t OtRadioDevice::GetTimeoutMs() {
   uint32_t timeout = spinel_framer_->GetTimeoutMs();
-  if (!(IsHardResetting() && !inbound_frame_available_)) {
+  if (!(IsHardResetting() && !inbound_frame_available_.load())) {
     return timeout;
   }
   // If reset is in progress and inbound frame is not available
@@ -524,25 +524,25 @@ void OtRadioDevice::HandleResetRetry() {
 }
 
 void OtRadioDevice::BeginResetRetryTimer() {
-  hard_reset_end_ = zx::clock::get_monotonic() + kRcpHardResetRetryWaitTime;
+  hard_reset_end_.store((zx::clock::get_monotonic() + kRcpHardResetRetryWaitTime).get());
 }
 
-bool OtRadioDevice::IsHardResetting() { return hard_reset_end_ != zx::time(0); }
+bool OtRadioDevice::IsHardResetting() { return hard_reset_end_.load() != 0; }
 
 bool OtRadioDevice::ShouldRetryReset() {
   if (!IsHardResetting()) {
     return false;
   }
-  if (inbound_frame_available_) {
+  if (inbound_frame_available_.load()) {
     zxlogf(INFO, "ot-radio: rcp back online");
-    hard_reset_end_ = zx::time(0);
+    hard_reset_end_.store(0);
     // TODO(https://fxbug.dev/42176667): Consider handling errors instead of ignoring them.
     (void)fidl::WireSendEvent(*fidl_binding_)->OnReadyForSendFrames(kOutboundAllowanceInit);
-    outbound_allowance_ = kOutboundAllowanceInit;
+    outbound_allowance_.store(kOutboundAllowanceInit);
     return false;
   }
-  zx::time cur_time_us = zx::clock::get_monotonic();
-  if (hard_reset_end_ > cur_time_us) {
+  zx_time_t cur_time_us = zx::clock::get_monotonic().get();
+  if (hard_reset_end_.load() > cur_time_us) {
     zxlogf(DEBUG, "ot-radio: waiting for rcp to back online");
     return false;
   }
