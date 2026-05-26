@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -4181,7 +4181,7 @@ From //zircon/vdso/vdso.gni:9
 
 Propagate bandwidth and enable run queue promotion for threads making channel calls.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //zircon/kernel/params.gni:123
 
@@ -9330,11 +9330,10 @@ From //src/starnix/modules/kgsl/BUILD.gn:12
 
 Whether to use lockdep to detect cycles in the lock acquisition graph.
 Enabled by default in balanced and debug modes.
-TODO(https://fxbug.dev/515377211): Re-enable once fixed
 
 **Current value (from the default):** `false`
 
-From //src/starnix/lib/starnix_sync/build/args.gni:9
+From //src/starnix/lib/starnix_sync/build/args.gni:8
 
 ### sysmem_contiguous_guard_page_count
 
