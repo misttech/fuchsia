@@ -12,6 +12,7 @@ use std::marker::PhantomData;
 #[cfg(feature = "detect_lock_dep_cycles")]
 mod tracking {
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     /// Represents a lock held by the current thread.
     struct HeldLock {
@@ -177,41 +178,50 @@ mod tracking {
 
     /// A token that represents a lock level being held for lockdep purposes.
     /// This does not actually hold a lock, but updates the lockdep state as if it did.
+    #[derive(Clone)]
     pub struct LockLevelToken {
-        pub(crate) target_value: usize,
+        inner: Rc<InternalLockLevelToken>,
+    }
+
+    struct InternalLockLevelToken {
+        target_value: usize,
     }
 
     impl LockLevelToken {
-        pub fn new(lock_id: usize, name: &'static str) -> Self {
+        pub(super) fn new(lock_id: usize, name: &'static str) -> Self {
             let subclass = get_subclass(lock_id);
             assert!(subclass < 16, "subclass must be between 0 and 15");
             let target_value = lock_id | (subclass as usize & 0xF);
             check_and_push_lock(target_value, name);
-            Self { target_value }
+            Self { inner: Rc::new(InternalLockLevelToken { target_value }) }
+        }
+
+        fn target_value(&self) -> usize {
+            self.inner.target_value
         }
     }
 
     /// Tracking information for dynamic locks.
     pub struct DynamicLockTracking {
-        pub(crate) lock_id: usize,
-        pub(crate) name: &'static str,
+        lock_id: usize,
+        name: &'static str,
     }
 
     impl DynamicLockTracking {
-        pub const fn new(lock_id: usize, name: &'static str) -> Self {
+        pub(super) const fn new(lock_id: usize, name: &'static str) -> Self {
             Self { lock_id, name }
         }
 
-        pub fn lock_id(&self) -> usize {
+        pub(super) fn lock_id(&self) -> usize {
             self.lock_id
         }
 
-        pub fn name(&self) -> &'static str {
+        pub(super) fn name(&self) -> &'static str {
             self.name
         }
     }
 
-    impl Drop for LockLevelToken {
+    impl Drop for InternalLockLevelToken {
         fn drop(&mut self) {
             pop_lock(self.target_value);
         }
@@ -224,7 +234,7 @@ mod tracking {
     }
 
     impl SubclassToken {
-        pub fn new() -> Self {
+        pub(super) fn new() -> Self {
             let encoded_value = enable_subclass_for_maximal();
             Self { encoded_value }
         }
@@ -235,17 +245,45 @@ mod tracking {
             disable_subclass(self.encoded_value);
         }
     }
+
+    #[derive(Default)]
+    pub struct LockDepContext {
+        token: Option<LockLevelToken>,
+    }
+
+    pub(super) fn lock_with_context<'a, T>(
+        mutex: &'a crate::DynamicLockDepMutex<T>,
+        context: &mut LockDepContext,
+    ) -> crate::LockDepGuard<'a, T> {
+        match &mut context.token {
+            token @ None => {
+                let guard = mutex.lock();
+                *token = Some(guard.token.clone());
+                guard
+            }
+            Some(token) => {
+                assert_eq!(
+                    mutex.tracking.lock_id(),
+                    token.target_value() & !0xF,
+                    "LockDep: Cannot mix different lock levels in ordered_lock_vec"
+                );
+                let inner = mutex.inner.lock();
+                crate::LockDepGuard { inner, token: token.clone() }
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
 mod tracking {
     /// A token that represents a lock level being held for lockdep purposes.
     /// This does not actually hold a lock, but updates the lockdep state as if it did.
+    #[derive(Clone)]
     pub struct LockLevelToken {}
 
     impl LockLevelToken {
         #[inline(always)]
-        pub fn new(_lock_id: usize, _name: &'static str) -> Self {
+        pub(super) fn new(_lock_id: usize, _name: &'static str) -> Self {
             Self {}
         }
     }
@@ -254,15 +292,15 @@ mod tracking {
     pub struct DynamicLockTracking {}
 
     impl DynamicLockTracking {
-        pub const fn new(_lock_id: usize, _name: &'static str) -> Self {
+        pub(super) const fn new(_lock_id: usize, _name: &'static str) -> Self {
             Self {}
         }
 
-        pub fn lock_id(&self) -> usize {
+        pub(super) fn lock_id(&self) -> usize {
             0
         }
 
-        pub fn name(&self) -> &'static str {
+        pub(super) fn name(&self) -> &'static str {
             ""
         }
     }
@@ -271,16 +309,25 @@ mod tracking {
 
     impl SubclassToken {
         #[inline(always)]
-        pub fn new() -> Self {
+        pub(super) fn new() -> Self {
             Self {}
         }
+    }
+
+    pub type LockDepContext = ();
+
+    pub(super) fn lock_with_context<'a, T>(
+        mutex: &'a crate::DynamicLockDepMutex<T>,
+        _context: &mut LockDepContext,
+    ) -> crate::LockDepGuard<'a, T> {
+        mutex.lock()
     }
 }
 
 /// A Mutex that dynamically enforces lock ordering at runtime, without using types for levels.
 pub struct DynamicLockDepMutex<T> {
-    pub(crate) inner: fuchsia_sync::Mutex<T>,
-    pub(crate) tracking: tracking::DynamicLockTracking,
+    inner: fuchsia_sync::Mutex<T>,
+    tracking: tracking::DynamicLockTracking,
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for DynamicLockDepMutex<T> {
@@ -322,26 +369,21 @@ impl<T> MutexLike for DynamicLockDepMutex<T> {
         = LockDepGuard<'a, T>
     where
         T: 'a;
-    type Context = usize;
+    type Context = tracking::LockDepContext;
 
     #[inline(always)]
     fn context() -> Self::Context {
-        0
+        Default::default()
     }
 
     #[inline(always)]
-    fn lock(&self, level: &mut Self::Context) -> Self::Guard<'_> {
-        let _token;
-        if *level > 0 {
-            _token = allow_subclass();
-        }
-        *level += 1;
-        return self.lock();
+    fn lock(&self, context: &mut Self::Context) -> Self::Guard<'_> {
+        tracking::lock_with_context(self, context)
     }
 }
 
 pub struct LockDepGuard<'a, T> {
-    pub(crate) inner: MutexGuard<'a, T>,
+    inner: MutexGuard<'a, T>,
     token: tracking::LockLevelToken,
 }
 
@@ -426,7 +468,7 @@ impl<T: Default, L: crate::LockLevel> Default for LockDepMutex<T, L> {
 }
 
 pub struct MappedLockDepGuard<'a, T: ?Sized> {
-    pub(crate) inner: MappedMutexGuard<'a, T>,
+    inner: MappedMutexGuard<'a, T>,
     _token: tracking::LockLevelToken,
 }
 
@@ -457,8 +499,8 @@ impl<'a, T> LockDepGuard<'a, T> {
 
 /// An RwLock that dynamically enforces lock ordering at runtime, without using types for levels.
 pub struct DynamicLockDepRwLock<T> {
-    pub(crate) inner: fuchsia_sync::RwLock<T>,
-    pub(crate) tracking: tracking::DynamicLockTracking,
+    inner: fuchsia_sync::RwLock<T>,
+    tracking: tracking::DynamicLockTracking,
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for DynamicLockDepRwLock<T> {
@@ -502,7 +544,7 @@ impl<T> DynamicLockDepRwLock<T> {
 }
 
 pub struct LockDepReadGuard<'a, T> {
-    pub(crate) inner: RwLockReadGuard<'a, T>,
+    inner: RwLockReadGuard<'a, T>,
     token: tracking::LockLevelToken,
 }
 
@@ -514,7 +556,7 @@ impl<'a, T> std::ops::Deref for LockDepReadGuard<'a, T> {
 }
 
 pub struct LockDepWriteGuard<'a, T> {
-    pub(crate) inner: RwLockWriteGuard<'a, T>,
+    inner: RwLockWriteGuard<'a, T>,
     token: tracking::LockLevelToken,
 }
 
@@ -585,7 +627,7 @@ impl<T, L: crate::LockLevel> From<T> for LockDepRwLock<T, L> {
 }
 
 pub struct MappedLockDepReadGuard<'a, T: ?Sized> {
-    pub(crate) inner: MappedRwLockReadGuard<'a, T>,
+    inner: MappedRwLockReadGuard<'a, T>,
     _token: tracking::LockLevelToken,
 }
 
@@ -598,7 +640,7 @@ impl<'a, T: ?Sized> std::ops::Deref for MappedLockDepReadGuard<'a, T> {
 }
 
 pub struct MappedLockDepWriteGuard<'a, T: ?Sized> {
-    pub(crate) inner: MappedRwLockWriteGuard<'a, T>,
+    inner: MappedRwLockWriteGuard<'a, T>,
     _token: tracking::LockLevelToken,
 }
 
@@ -884,6 +926,19 @@ mod tests {
             assert_eq!(*guards[0], 2);
             assert_eq!(*guards[1], 1);
             assert_eq!(*guards[2], 0);
+        }
+    }
+
+    #[test]
+    fn test_ordered_lock_vec_many_locks() {
+        tracking::clear_state();
+        let locks: Vec<LockDepMutex<i32, LevelA>> = (0..20).map(|i| LockDepMutex::new(i)).collect();
+        let lock_refs: Vec<&LockDepMutex<i32, LevelA>> = locks.iter().collect();
+
+        let guards = ordered_lock_vec(&lock_refs);
+        assert_eq!(guards.len(), 20);
+        for i in 0..20 {
+            assert_eq!(*guards[i], i as i32);
         }
     }
 

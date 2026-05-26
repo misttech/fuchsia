@@ -5,6 +5,5 @@
 declare_args() {
   # Whether to use lockdep to detect cycles in the lock acquisition graph.
   # Enabled by default in balanced and debug modes.
-  # TODO(https://fxbug.dev/515377211): Re-enable once fixed
-  starnix_sync_detect_lock_dep_cycles = false && compilation_mode != "release"
+  starnix_sync_detect_lock_dep_cycles = compilation_mode != "release"
 }
