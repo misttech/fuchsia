@@ -10,6 +10,8 @@ use fake_powerdomain::FakePowerDomain;
 use fake_reset::FakeReset;
 use fdf_component::testing::harness::TestHarness;
 use fdf_fidl;
+use fidl::Serializable;
+use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next_fuchsia_hardware_platform_device as fdevice;
 use fidl_next_fuchsia_hardware_spiimpl as fspiimpl;
 use fuchsia_async as fasync;
@@ -22,6 +24,17 @@ async fn test_init() {
     let scope = fasync::Scope::new_with_name("test");
 
     let pdev = FakePDev::new();
+    let metadata = fspi_businfo::SpiBusMetadata {
+        channels: Some(vec![fspi_businfo::SpiChannel {
+            cs: Some(0),
+            max_frequency_hz: Some(20_000_000),
+            ..Default::default()
+        }]),
+        bus_id: Some(0),
+        ..Default::default()
+    };
+    let serialized_metadata = fidl::persist(&metadata).expect("Failed to serialize metadata");
+    pdev.add_metadata(fspi_businfo::SpiBusMetadata::SERIALIZABLE_NAME, serialized_metadata);
 
     let vmo = Vmo::create(0x100).expect("Failed to create VMO");
     vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
@@ -41,6 +54,7 @@ async fn test_init() {
     let powerdomain = FakePowerDomain::new();
 
     let clock_bus = FakeClock::new();
+    clock_bus.set_rate(200_000_000);
     let clock_regs = FakeClock::new();
 
     let mut reset = FakeReset::new();
@@ -77,7 +91,7 @@ async fn test_init() {
     assert_eq!(ssi_enr, 1);
 
     let baudr = read_u32(0x14);
-    assert_eq!(baudr, 500);
+    assert_eq!(baudr, 10);
 }
 
 #[fuchsia::test]

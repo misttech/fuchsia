@@ -8,6 +8,7 @@ use fdf_component::{
 use fdf_metadata::MetadataServer;
 use fidl::Serializable;
 
+use fidl_fuchsia_hardware_platform_device as fpdev;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_clock as fclock;
@@ -59,7 +60,11 @@ struct SpiImplServer {
 }
 
 impl DwSpiDevice {
-    fn init_registers(&mut self) {
+    fn init_registers(
+        &mut self,
+        parent_clock_hz: u64,
+        max_bus_clock_hz: u64,
+    ) -> Result<(), Status> {
         self.mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
 
         self.mmio.ctrlr0_mut().write({
@@ -71,13 +76,36 @@ impl DwSpiDevice {
             ctrlr0
         });
 
-        // TODO(511200585): Determine the clock divider based on the core clock and requested bus
-        // clock frequencies. For now it is hardcoded to a low frequency just to get things working.
-        self.mmio.baudr_mut().write({
-            let mut baudr = registers::Baudr::from_raw(0);
-            baudr.set_sckdv(500);
-            baudr
-        });
+        if max_bus_clock_hz > 0 {
+            let divider = {
+                // Round the divider up to avoid overclocking.
+                let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
+                    error!(
+                        "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+                    );
+                    return Err(Status::INVALID_ARGS);
+                };
+
+                let divider = numerator / max_bus_clock_hz;
+                if divider >= 0xffff {
+                    error!(
+                        "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+                    );
+                    return Err(Status::INVALID_ARGS);
+                }
+
+                // The divider must be even.
+                if divider % 2 == 0 { divider } else { divider + 1 }
+            };
+
+            self.mmio.baudr_mut().write({
+                let mut baudr = registers::Baudr::from_raw(0);
+                baudr.set_sckdv(divider as u32);
+                baudr
+            });
+        } else {
+            warn!("Max bus clock rate reported to be zero, skipping baud rate initialization");
+        }
 
         // Mask all interrupts initially in IMR
         self.mmio.imr_mut().write(registers::Imr::from_raw(0));
@@ -88,6 +116,8 @@ impl DwSpiDevice {
             ssi_enr.set_ssi_en(true);
             ssi_enr
         });
+
+        Ok(())
     }
 
     async fn exchange_pio(
@@ -334,6 +364,27 @@ struct DwSpiDriver {
 
 driver_register!(DwSpiDriver);
 
+fn fidl_result_to_result<T>(
+    result: Result<fidl_next::FlexibleResult<T, i32>, fidl_next::Error<Status>>,
+) -> Result<T, Status> {
+    match result {
+        Ok(fidl_next::FlexibleResult::Ok(response)) => Ok(response),
+        Ok(fidl_next::FlexibleResult::Err(e)) => Err(Status::from_raw(e)),
+        _ => Err(Status::INTERNAL),
+    }
+}
+
+impl DwSpiDriver {
+    async fn get_max_bus_clock(pdev: &fpdev::DeviceProxy) -> u64 {
+        if let Ok(metadata) = pdev.get_typed_metadata::<fspi_businfo::SpiBusMetadata>().await {
+            let channels = metadata.channels.unwrap_or(vec![]);
+            channels.into_iter().filter_map(|c| c.max_frequency_hz).min().unwrap_or(0) as u64
+        } else {
+            0
+        }
+    }
+}
+
 impl Driver for DwSpiDriver {
     const NAME: &str = "dw-spi";
 
@@ -345,7 +396,7 @@ impl Driver for DwSpiDriver {
         let powerdomain_service: fdf_component::ServiceInstance<fpowerdomain::Service> =
             context.incoming.service().instance("power-domain").connect_next()?;
         let (powerdomain_client, powerdomain_server) = fidl_next::fuchsia::create_channel();
-        powerdomain_service.domain(powerdomain_server).map_err(|_| Status::INTERNAL)?;
+        powerdomain_service.domain(powerdomain_server)?;
         let powerdomain = powerdomain_client.spawn();
 
         powerdomain.enable().await.inspect_err(|e| {
@@ -353,16 +404,34 @@ impl Driver for DwSpiDriver {
         })?;
         info!("Power domain enabled successfully");
 
-        const CLOCK_NAMES: [&str; 2] = ["clock-bus", "clock-registers"];
-        for name in CLOCK_NAMES {
+        let parent_clock_hz = {
             let clock_service: fdf_component::ServiceInstance<fclock::Service> =
-                context.incoming.service().instance(name).connect_next()?;
+                context.incoming.service().instance("clock-bus").connect_next()?;
             let (clock_client, clock_server) = fidl_next::fuchsia::create_channel();
             clock_service.clock(clock_server)?;
             let clock = clock_client.spawn();
 
             clock.enable().await.inspect_err(|e| {
-                error!("Failed to enable clock: {:?}", e);
+                error!("Failed to enable bus clock: {:?}", e);
+            })?;
+
+            fidl_result_to_result(clock.get_rate().await)
+                .inspect_err(|e| {
+                    error!("Failed to get bus clock rate: {:?}", e);
+                })
+                .unwrap_or(fidl_next_fuchsia_hardware_clock::ClockGetRateResponse { hz: 0 })
+                .hz
+        };
+
+        {
+            let clock_service: fdf_component::ServiceInstance<fclock::Service> =
+                context.incoming.service().instance("clock-registers").connect_next()?;
+            let (clock_client, clock_server) = fidl_next::fuchsia::create_channel();
+            clock_service.clock(clock_server)?;
+            let clock = clock_client.spawn();
+
+            clock.enable().await.inspect_err(|e| {
+                error!("Failed to enable registers clock: {:?}", e);
             })?;
         }
 
@@ -395,7 +464,6 @@ impl Driver for DwSpiDriver {
         };
 
         let mut device = DwSpiDevice { mmio, cs_gpio };
-        device.init_registers();
 
         let mut outgoing = ServiceFs::new();
 
@@ -429,6 +497,9 @@ impl Driver for DwSpiDriver {
                 }
             }
         }
+
+        let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
+        device.init_registers(parent_clock_hz, max_bus_clock_hz)?;
 
         let node = context.take_node()?;
         node.add_child(node_args.build()).await?;
