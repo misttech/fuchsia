@@ -534,7 +534,7 @@
              path="third_party/openssh-portable"
              remote="https://fuchsia.googlesource.com/third_party/openssh-portable"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="98bc21f54e29f207d9a12b44724aef586497b51f"/>
+             revision="4e07fc889194fdbc2d58de4a2c58ba9588b204ef"/>
     <project name="third_party/openthread"
              path="third_party/openthread"
              remote="https://fuchsia.googlesource.com/third_party/openthread"
