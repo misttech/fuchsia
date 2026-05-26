@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_async::{Task, Timer};
+use fuchsia_async::{Task, TimeoutExt, Timer, unblock};
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
@@ -17,6 +17,11 @@ const FASTBOOT_USB_INTERFACE_PROTOCOL: u8 = 0x03;
 
 // Vendor ID
 const USB_DEV_VENDOR: u16 = 0x18d1;
+
+/// The maximum time allowed for scanning a single USB device's serial number
+/// and interface descriptors. If a device does not respond within this time,
+/// it is considered unresponsive and skipped to prevent blocking the discovery loop.
+const SCAN_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Error, Debug)]
 pub enum UsbDiscoveryError {
@@ -238,33 +243,68 @@ async fn find_serial_numbers() -> Vec<String> {
     let Ok(devices) = enumerate_devices() else {
         return serials;
     };
-    for device in devices {
-        if let Some(serial) = device.serial() {
-            let valid = match device.scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
-                device_is_fastboot(&device, usb_device, interface)
-            }) {
-                Ok(_) => true,
-                // This error is encountered when all scanning options for this device have been
-                // exhausted, meaning we've not been able to identify it.
-                Err(usb_rs::Error::InterfaceNotFound) => {
-                    log::debug!(device = device.debug_name().as_str(); "No intefaces found from scan");
-                    false
+
+    // Iterate through all detected USB devices and initiate concurrent scans.
+    // Since `device.serial()` and `device.scan_interfaces()` involve synchronous
+    // I/O that can block if a device is hung, we run each scan on a blocking
+    // thread pool and enforce a timeout limit per device.
+    let futures: Vec<_> = devices
+        .into_iter()
+        .map(|device| {
+            let debug_name = device.debug_name();
+            async move {
+                // Spawn the blocking USB I/O operations on a helper thread.
+                let check_fut = unblock(move || {
+                    // Retrieve the serial number (lazily loaded from sysfs on first call).
+                    let serial = device.serial()?;
+                    // Scan the interfaces to determine if this is a fastboot match.
+                    let valid = match device.scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
+                        device_is_fastboot(&device, usb_device, interface)
+                    }) {
+                        Ok(_) => true,
+                        Err(usb_rs::Error::InterfaceNotFound) => {
+                            log::debug!(device = device.debug_name().as_str(); "No interfaces found from scan");
+                            false
+                        }
+                        Err(e) => {
+                            log::warn!(device = device.debug_name().as_str(), error:? = e;
+                                           "Error scanning USB device");
+                            false
+                        }
+                    };
+                    if valid {
+                        Some(serial)
+                    } else {
+                        None
+                    }
+                });
+
+                // Enforce the scan timeout on this device check.
+                match check_fut.on_timeout(SCAN_TIMEOUT, || {
+                    log::warn!(device = debug_name.as_str(); "Timeout scanning USB device");
+                    None
+                }).await {
+                    Some(serial) => {
+                        log::info!(device = debug_name.as_str(); "Fastboot usb device with serial {:?} found", serial);
+                        Some(serial)
+                    }
+                    None => {
+                        log::debug!(device = debug_name.as_str(); "Non-Fastboot usb device or error/timeout");
+                        None
+                    }
                 }
-                Err(e) => {
-                    log::warn!(device = device.debug_name().as_str(), error:? = e;
-                                   "Error scanning USB device");
-                    false
-                }
-            };
-            if valid {
-                log::info!(device = device.debug_name().as_str(); "Fastboot usb device with serial {:?} found", device.serial());
-                serials.push(serial);
-            } else {
-                log::debug!(device = device.debug_name().as_str(); "Non-Fastboot usb device with serial {:?} found", device.serial());
             }
+        })
+        .collect();
+
+    // Wait for all concurrent scan results to complete or time out.
+    let results = futures::future::join_all(futures).await;
+    for res in results {
+        if let Some(serial) = res {
+            serials.push(serial);
         }
-        fuchsia_async::yield_now().await;
     }
+
     log::debug!("Serials found: {:?}", serials);
     return serials;
 }

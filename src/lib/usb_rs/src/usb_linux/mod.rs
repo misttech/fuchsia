@@ -36,7 +36,7 @@ static SYSFS_DEVICES_DIR: &str = "/sys/bus/usb/devices";
 #[derive(Debug)]
 pub struct DeviceHandleInner {
     pub(crate) hdl: String,
-    pub(crate) serial: Option<String>,
+    pub(crate) serial: std::sync::OnceLock<Option<String>>,
 }
 
 /// Represents a USB device with its major and minor numbers.
@@ -105,15 +105,17 @@ where
 
 impl DeviceHandleInner {
     pub(crate) fn new(hdl: String) -> DeviceHandleInner {
-        let devid = DeviceId::from_path(&hdl).ok();
-        let serial = match devid {
-            None => None,
-            Some(id) => match find_sysfs_path(&id) {
-                None => None,
-                Some(sysfs_path) => get_serial_from_sysfs(&sysfs_path),
-            },
-        };
-        DeviceHandleInner { hdl, serial }
+        DeviceHandleInner { hdl, serial: std::sync::OnceLock::new() }
+    }
+
+    pub fn serial(&self) -> Option<String> {
+        self.serial
+            .get_or_init(|| {
+                let devid = DeviceId::from_path(&self.hdl).ok()?;
+                let sysfs_path = find_sysfs_path(&devid)?;
+                get_serial_from_sysfs(&sysfs_path)
+            })
+            .clone()
     }
 
     pub fn debug_name(&self) -> String {

@@ -31,7 +31,7 @@ impl DeviceHandle {
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Self {
         DeviceHandle(usb_plat::DeviceHandleInner {
             hdl: path.as_ref().to_string_lossy().into_owned(),
-            serial: None,
+            serial: std::sync::OnceLock::new(),
         })
     }
 }
@@ -44,7 +44,7 @@ impl DeviceHandle {
 
     /// The serial number for the device (if any)
     pub fn serial(&self) -> Option<String> {
-        self.0.serial.clone()
+        self.0.serial()
     }
 
     /// Given a path to a USB device, scan each interface available on the device. Each interface's
