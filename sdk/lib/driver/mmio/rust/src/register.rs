@@ -286,6 +286,23 @@ pub trait WritableIndexedRegister: IndexedRegister {
 /// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! register {
+    // Multiple definitions support
+    (
+        $(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, $mode:ident { $($field_spec:tt)* }
+        $($tail:tt)+
+    ) => {
+        $crate::register! { $(#[$attr])* pub struct $name($val_type) @ $offset, $mode { $($field_spec)* } }
+        $crate::register! { $($tail)+ }
+    };
+
+    (
+        $(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, $mode:ident ;
+        $($tail:tt)+
+    ) => {
+        $crate::register! { $(#[$attr])* pub struct $name($val_type) @ $offset, $mode ; }
+        $crate::register! { $($tail)+ }
+    };
+
     // New syntax: Read-Only with block
     ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RO { $($field_spec:tt)* }) => {
         ::bitfield::bitfield! {
@@ -1117,6 +1134,31 @@ mod tests {
         pub struct NewSyntaxIndexedReg(u32) @ 12, stride 4, count 2, RW {
             pub field1, set_field1: 7, 0;
         }
+    }
+
+    register! {
+        pub struct MultiReg1(u32) @ 0x20, RW;
+        pub struct MultiReg2(u32) @ 0x24, RO {
+            pub field1, _: 7, 0;
+        }
+    }
+
+    #[test]
+    fn test_multi_register() {
+        let mut mem = MaybeUninit::<[u32; 12]>::zeroed();
+        let mut mmio = Memory::borrow_uninit(&mut mem);
+
+        let mut reg1 = MultiReg1::default();
+        reg1.set_value(0x12345678);
+        reg1.write(&mut mmio);
+
+        mmio.store32(0x24, 0xabcd);
+
+        let reg1_read = MultiReg1::read(&mmio);
+        assert_eq!(reg1_read.value(), 0x12345678);
+
+        let reg2_read = MultiReg2::read(&mmio);
+        assert_eq!(reg2_read.field1(), 0xcd);
     }
 
     #[test]
