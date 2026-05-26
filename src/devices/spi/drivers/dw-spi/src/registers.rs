@@ -5,7 +5,7 @@
 use mmio::{register, register_block};
 
 register! {
-    CtrlR0, u32, 0x00, RW, {
+    pub struct CtrlR0(u32) @ 0x00, RW {
         pub spi_frf, set_spi_frf: 22, 21;
         pub dfs_32, set_dfs_32: 20, 16;
         pub cfs, set_cfs: 15, 12;
@@ -17,35 +17,25 @@ register! {
         pub frf, set_frf: 5, 4;
         pub dfs, set_dfs: 3, 0;
     }
-}
 
-register! {
-    CtrlR1, u32, 0x04, RW, {
+    pub struct CtrlR1(u32) @ 0x04, RW {
         pub ndf, set_ndf: 15, 0;
     }
-}
 
-register! {
-    SsiEnr, u32, 0x08, RW, {
+    pub struct SsiEnr(u32) @ 0x08, RW {
         pub ssi_en, set_ssi_en: 0;
     }
-}
 
-register! {
-    Ser, u32, 0x10, RW, {
+    pub struct Ser(u32) @ 0x10, RW {
         // Bits are target select lines, up to 16.
         pub ser, set_ser: 15, 0;
     }
-}
 
-register! {
-    Baudr, u32, 0x14, RW, {
+    pub struct Baudr(u32) @ 0x14, RW {
         pub sckdv, set_sckdv: 15, 0;
     }
-}
 
-register! {
-    Sr, u32, 0x28, RO, {
+    pub struct Sr(u32) @ 0x28, RO {
         pub dcol, _: 6;
         pub txe, _: 5;
         pub rff, _: 4;
@@ -54,10 +44,8 @@ register! {
         pub tfnf, _: 1;
         pub busy, _: 0;
     }
-}
 
-register! {
-    Imr, u32, 0x2c, RW, {
+    pub struct Imr(u32) @ 0x2c, RW {
         pub mstim, set_mstim: 5;
         pub rxfim, set_rxfim: 4;
         pub rxoim, set_rxoim: 3;
@@ -65,10 +53,8 @@ register! {
         pub txoim, set_txoim: 1;
         pub txeim, set_txeim: 0;
     }
-}
 
-register! {
-    Dr0, u32, 0x60, RW, {
+    pub struct Dr0(u32) @ 0x60, RW {
         pub dr, set_dr: 7, 0;
     }
 }

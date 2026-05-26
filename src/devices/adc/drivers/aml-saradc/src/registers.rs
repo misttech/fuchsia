@@ -13,44 +13,26 @@ register! {
         pub bool, sampling_start, set_sampling_start: 2;
         pub bool, sampling_enable, set_sampling_enable: 0;
     }
-}
 
-register! {
     pub struct ChanList(u32) @ 0x01 << 2, RW;
-}
 
-register! {
     pub struct AvgCntl(u32) @ 0x02 << 2, RW;
-}
 
-register! {
     pub struct Reg3(u32) @ 0x03 << 2, RW {
         pub val, set_val: 31, 0;
         pub bool, adc_en, set_adc_en: 21;
     }
-}
 
-register! {
     pub struct Delay(u32) @ 0x04 << 2, RW;
-}
 
-register! {
     pub struct FifoRd(u32) @ 0x06 << 2, RO;
-}
 
-register! {
     pub struct AuxSw(u32) @ 0x07 << 2, RW;
-}
 
-register! {
     pub struct Chan10Sw(u32) @ 0x08 << 2, RW;
-}
 
-register! {
     pub struct DetectIdleSw(u32) @ 0x09 << 2, RW;
-}
 
-register! {
     pub struct Reg11(u32) @ 0x0b << 2, RW {
         pub val, set_val: 31, 0;
         pub bool, ts_vbg_en, set_ts_vbg_en: 13;
@@ -58,10 +40,15 @@ register! {
         pub bool, rsv5, set_rsv5: 5;
         pub bool, rsv1, set_rsv1: 1;
     }
-}
 
-register! {
     pub struct Reg13(u32) @ 0x0d << 2, RW;
+
+    pub struct AoSarClk(u32) @ 0x24 << 2, RW {
+        pub val, set_val: 31, 0;
+        pub bool, clk_ena, set_clk_ena: 8;
+        pub clk_src, set_clk_src: 10, 9;
+        pub clk_div, set_clk_div: 7, 0;
+    }
 }
 
 register_block! {
@@ -77,15 +64,6 @@ register_block! {
         pub detect_idle_sw: DetectIdleSw,
         pub reg11: Reg11,
         pub reg13: Reg13,
-    }
-}
-
-register! {
-    pub struct AoSarClk(u32) @ 0x24 << 2, RW {
-        pub val, set_val: 31, 0;
-        pub bool, clk_ena, set_clk_ena: 8;
-        pub clk_src, set_clk_src: 10, 9;
-        pub clk_div, set_clk_div: 7, 0;
     }
 }
 

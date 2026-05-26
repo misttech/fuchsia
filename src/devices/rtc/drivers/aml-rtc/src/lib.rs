@@ -25,27 +25,19 @@ register! {
         pub bool, osc_sel, set_osc_sel: 8;
         pub bool, enable, set_enable: 12;
     }
-}
 
-register! {
     pub struct RtcCounter(u32) @ 0x04, RW;
-}
 
-register! {
     pub struct OscinCtrl0(u32) @ 0x28, RW {
         pub freq_out_select, set_freq_out_select: 29, 28;
         pub bool, clk_in_gate_en, set_clk_in_gate_en: 31;
     }
-}
 
-register! {
     pub struct OscinCtrl1(u32) @ 0x2C, RW {
         pub clk_div_m0, set_clk_div_m0: 11, 0;
         pub clk_div_m1, set_clk_div_m1: 23, 12;
     }
-}
 
-register! {
     pub struct RtcRealTime(u32) @ 0x34, RW;
 }
 
