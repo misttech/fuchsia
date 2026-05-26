@@ -81,13 +81,13 @@ int BadHandleTestMain(int argc, char** argv) {
 
 namespace {
 
-void LaunchTestCase(const char* test_case, zx_info_process_t* proc_info) {
+void LaunchTestCase(const char* test_case, zx_info_process_t* proc_info,
+                    uint32_t bad_handle_action = ZX_POL_ACTION_ALLOW_EXCEPTION) {
   // Set up a subjob and subprocess in order to set BAD_HANDLE policy.
   zx::job job;
   ASSERT_OK(zx::job::create(*zx::job::default_job(), 0u, &job));
-  zx_policy_basic_v2_t policy[] = {{.condition = ZX_POL_BAD_HANDLE,
-                                    .action = ZX_POL_ACTION_ALLOW_EXCEPTION,
-                                    .flags = ZX_POL_OVERRIDE_DENY}};
+  zx_policy_basic_v2_t policy[] = {
+      {.condition = ZX_POL_BAD_HANDLE, .action = bad_handle_action, .flags = ZX_POL_OVERRIDE_DENY}};
   ASSERT_OK(job.set_policy(ZX_JOB_POL_RELATIVE, ZX_JOB_POL_BASIC_V2, policy,
                            static_cast<uint32_t>(std::size(policy))));
 
@@ -108,8 +108,8 @@ void LaunchTestCase(const char* test_case, zx_info_process_t* proc_info) {
   ASSERT_OK(proc.get_info(ZX_INFO_PROCESS, proc_info, sizeof(*proc_info), nullptr, nullptr));
 }
 
-// This is a test for https://fxbug.dev/42117901 where we accidentally enforced the BAD_HANDLE policy in a case
-// where the futex value mismatched expectations.
+// This is a test for https://fxbug.dev/42117901 where we accidentally enforced the BAD_HANDLE
+// policy in a case where the futex value mismatched expectations.
 TEST(BadHandleTest, WaitBadHandleWithMismatchedValueDoesNotExit) {
   zx_info_process_t proc_info;
   ASSERT_NO_FATAL_FAILURE(LaunchTestCase("no_match_wait", &proc_info));
@@ -136,6 +136,14 @@ TEST(BadHandleTest, RequeueBadHandleWithMatchedValueExits) {
   ASSERT_NO_FATAL_FAILURE(LaunchTestCase("match_requeue", &proc_info));
   // We should see an exception kill due to the policy violation
   ASSERT_EQ(proc_info.return_code, ZX_TASK_RETCODE_EXCEPTION_KILL);
+}
+
+// This is a regression test for https://fxbug.dev/511571339
+TEST(BadHandleTest, WaitBadHandleWithMatchedValueIsKilled) {
+  zx_info_process_t proc_info;
+  ASSERT_NO_FATAL_FAILURE(LaunchTestCase("match_wait", &proc_info, ZX_POL_ACTION_KILL));
+  // We should see an exception kill due to the policy violation
+  ASSERT_EQ(proc_info.return_code, ZX_TASK_RETCODE_POLICY_KILL);
 }
 
 }  // namespace
