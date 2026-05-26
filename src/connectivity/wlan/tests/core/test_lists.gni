@@ -34,6 +34,7 @@ core_tests_for_general_cq_no_shield_box = [
 # reboot test here, but only for wpa2, not for every single security type).
 core_tests_for_wlan_cq = [
   "//src/connectivity/wlan/tests/core:connect_to_ap_test",
+  "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
   "//src/connectivity/wlan/tests/core:sar_setting_test",
 
   # Though this test is defined in honeydew, it exercises wlan core
@@ -44,7 +45,5 @@ core_tests_for_wlan_cq = [
 # number of passing runs (either here in FYI or via `fx test-remote`). Tests in
 # FYI don't cause any alerting if they break, so having the test here doesn't
 # provide much of a safety net. Consider moving it to one of the CQ groups above.
-core_tests_for_fyi = [
-  "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
-  "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
-]
+core_tests_for_fyi =
+    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
