@@ -1419,6 +1419,12 @@ async fn join_leave_nduseropt_multicast_group(name: &str) {
         .await
         .expect("failed to join network");
 
+    // Wait to see an RS from the interface to confirm IPv6 is enabled.
+    //
+    // TODO(https://fxbug.dev/516793493): remove this after updating
+    // `join_network_with` to wait until both IPv4 and IPv6 are enabled.
+    netstack_testing_common::ndp::wait_for_router_solicitation(&fake_ep).await;
+
     let builder = rdnss_option_builder();
     let len = packet::records::RecordBuilder::serialized_len(&builder);
     let mut want_body = vec![0u8; len];
