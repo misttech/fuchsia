@@ -31,7 +31,6 @@ rustc_library("starnix_container") {
     "//src/lib/assembly/config_schema",
     "//src/lib/depfile",
     "//src/lib/fuchsia-url",
-    "//src/starnix/lib/linux_uapi",
     "//src/storage/ext4/lib/ext4_extract",
     "//src/storage/ext4/lib/metadata",
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
@@ -42,7 +41,6 @@ rustc_library("starnix_container") {
     "//third_party/rust_crates:flate2",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:static_assertions",
   ]
 
   test_deps = [

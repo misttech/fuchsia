@@ -6,7 +6,6 @@ use assembly_config_schema::product_settings::{StarnixFileOperation, StarnixFile
 use ext4_extract::remote_bundle;
 use ext4_extract::remote_bundle::Owner;
 use ext4_metadata::{ExtendedAttributes, ROOT_INODE_NUM};
-use static_assertions::const_assert;
 use std::collections::HashMap;
 use std::io::Result;
 
@@ -14,8 +13,7 @@ use camino::Utf8PathBuf;
 
 /// Read-only by everyone because `remote_bundle`s are never writeable and we don't put anything
 /// executable in HAL metadata.
-const FILE_MODE: u16 = 0o0444 + linux_uapi::S_IFREG as u16;
-const_assert!(linux_uapi::S_IFREG < 2_u32.pow(16)); // catch overflow
+const FILE_MODE: u16 = 0o0444 + crate::S_IFREG;
 
 /// Default mode for new files created via overrides (regular file, rw-r--r--).
 const DEFAULT_NEW_FILE_MODE: u16 = 0o100000 | 0o644;
@@ -24,8 +22,7 @@ const DEFAULT_NEW_FILE_MODE: u16 = 0o100000 | 0o644;
 const DEFAULT_NEW_DIR_MODE: u16 = 0o040000 | 0o755;
 
 /// Read-only and enterable by everyone because `remote_bundle`s are never writeable.
-pub const DIRECTORY_MODE: u16 = 0o0555 + linux_uapi::S_IFDIR as u16;
-const_assert!(linux_uapi::S_IFDIR < 2_u32.pow(16)); // catch overflow
+pub const DIRECTORY_MODE: u16 = 0o0555 + crate::S_IFDIR;
 
 type GetExtendedAttributesFn = fn(path: &[&str]) -> ExtendedAttributes;
 
