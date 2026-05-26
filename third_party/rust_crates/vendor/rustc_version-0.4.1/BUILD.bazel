@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.4.1",
     deps = [
-        "//third_party/rust_crates/vendor/semver-1.0.26:semver",
+        "//third_party/rust_crates/forks/semver-1.0.28:semver",
     ],
 )

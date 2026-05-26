@@ -10,12 +10,13 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
-rust-version = "1.31"
+edition = "2021"
+rust-version = "1.68"
 name = "semver"
-version = "1.0.26"
+version = "1.0.28"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
-build = "build.rs"
+build = false
+exclude = ["build.rs"]
 autolib = false
 autobins = false
 autoexamples = false
@@ -33,19 +34,22 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/semver"
 
 [package.metadata.docs.rs]
+features = ["serde"]
+targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = [
     "--generate-link-to-definition",
+    "--generate-macro-expansion",
     "--extern-html-root-url=core=https://doc.rust-lang.org",
     "--extern-html-root-url=alloc=https://doc.rust-lang.org",
     "--extern-html-root-url=std=https://doc.rust-lang.org",
 ]
-targets = ["x86_64-unknown-linux-gnu"]
 
 [package.metadata.playground]
 features = ["serde"]
 
 [features]
 default = ["std"]
+serde = ["dep:serde"]
 std = []
 
 [lib]
@@ -71,8 +75,15 @@ path = "tests/test_version_req.rs"
 [[bench]]
 name = "parse"
 path = "benches/parse.rs"
+harness = false
 
 [dependencies.serde]
-version = "1.0.194"
+version = "1.0.220"
 optional = true
+default-features = false
+package = "serde_core"
+
+
+[target."cfg(not(miri))".dev-dependencies.criterion]
+version = "0.8"
 default-features = false

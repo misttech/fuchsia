@@ -525,7 +525,7 @@ _NORMAL_DEPENDENCIES = {
             "quote": Label("//third_party/rust_crates/vendor/quote-1.0.45:quote"),
             "rustfix": Label("//third_party/rust_crates/vendor/rustfix-0.9.5:rustfix"),
             "rustls-native-certs": Label("//third_party/rust_crates/vendor/rustls-native-certs-0.6.3:rustls_native_certs"),
-            "semver": Label("//third_party/rust_crates/vendor/semver-1.0.26:semver"),
+            "semver": Label("//third_party/rust_crates/vendor/semver-1.0.28:semver"),
             "serde_yaml": Label("//third_party/rust_crates/vendor/serde_yaml-0.9.14:serde_yaml"),
             "serial_test": Label("//third_party/rust_crates/vendor/serial_test-0.8.0:serial_test"),
             "shared_child": Label("//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child"),

@@ -2545,14 +2545,14 @@ alias(
 )
 
 alias(
-    name = "semver-1.0.26",
-    actual = "//third_party/rust_crates/vendor/semver-1.0.26:semver",
+    name = "semver-1.0.28",
+    actual = "//third_party/rust_crates/forks/semver-1.0.28:semver",
     tags = ["manual"],
 )
 
 alias(
     name = "semver",
-    actual = "//third_party/rust_crates/vendor/semver-1.0.26:semver",
+    actual = "//third_party/rust_crates/forks/semver-1.0.28:semver",
     tags = ["manual"],
 )
 

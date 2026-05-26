@@ -336,7 +336,7 @@ pulldown-cmark = { version = "0.9.3", features = ["serde"] }
 quote = "1.0.45"
 rustfix = "0.9.5"
 rustls-native-certs = "0.6.3"
-semver = "1.0.26"
+semver = "1.0.28"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
@@ -443,6 +443,7 @@ rapidhash = { path = "forks/rapidhash-1.4.0" }
 ring = { path = "forks/ring-0.17.8" }
 rustyline = { path = "forks/rustyline" }
 security-framework = { path = "forks/security-framework" }
+semver = { path = "forks/semver-1.0.28" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
 trust-dns-proto = { path = "forks/trust-dns-proto-0.22.0" }
@@ -1039,7 +1040,7 @@ visibility = [
 ]
 testonly = true
 
-[gn.package.semver."1.0.26"]
+[gn.package.semver."1.0.28"]
 rustflags = []
 
 [gn.package.serde."1.0.228"]
