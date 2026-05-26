@@ -11,6 +11,7 @@
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
+#include <lib/fdio/watcher.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fzl/owned-vmo-mapper.h>
@@ -501,8 +502,52 @@ void WearSimulator::ReduceBlobfsBy(size_t* space) {
   }
 }
 
+struct WatchContext {
+  std::string expected_instance;
+  bool saw_existing = false;
+};
+
+zx_status_t WaitForRemoval(int dirfd, int event, const char* filename, void* cookie) {
+  auto* ctx = static_cast<WatchContext*>(cookie);
+  if (event == WATCH_EVENT_ADD_FILE && ctx->expected_instance == filename) {
+    ctx->saw_existing = true;
+  } else if (event == WATCH_EVENT_REMOVE_FILE && ctx->expected_instance == filename) {
+    return ZX_ERR_STOP;
+  } else if (event == WATCH_EVENT_WAITING && !ctx->saw_existing) {
+    // We finished scanning existing files and we didn't see our instance.
+    // It must have been removed before we started watching.
+    return ZX_ERR_STOP;
+  }
+  return ZX_OK;
+}
+
 zx::result<RemountResult> WearSimulator::RemountFtl() {
+  std::string old_device_name;
+  if (mount_) {
+    auto ram_nand = mount_->ramnand.ram_nand();
+    if (ram_nand && ram_nand->filename()) {
+      old_device_name = ram_nand->filename();
+    }
+  }
+
   mount_.reset();
+
+  // TODO(https://fxbug.dev/516817318): Remove this workaround after fixing the ramnandctl API.
+  if (!old_device_name.empty()) {
+    std::string parent_dir = "/dev/sys/platform/ram-nand/nand-ctl";
+    fbl::unique_fd dir_fd(open(parent_dir.c_str(), O_RDONLY | O_DIRECTORY));
+    if (dir_fd.is_valid()) {
+      WatchContext ctx = {.expected_instance = old_device_name};
+      zx_status_t status =
+          fdio_watch_directory(dir_fd.get(), WaitForRemoval, zx_deadline_after(ZX_SEC(10)), &ctx);
+      if (status != ZX_ERR_STOP) {
+        FX_LOGS(ERROR) << "Failed or timed out waiting for old ram-nand to disappear: "
+                       << zx_status_get_string(status);
+      }
+    } else {
+      FX_LOGS(ERROR) << "Failed to open nand-ctl directory: " << errno;
+    }
+  }
 
   auto snapshot = Snapshot();
   if (snapshot.is_error()) {
@@ -537,7 +582,7 @@ void WearSimulator::Reboot() {
   ASSERT_TRUE(vmo_.is_valid()) << "No image vmo to snapshot";
   ASSERT_TRUE(wear_vmo_.is_valid()) << "No wear info to snapshot";
   auto remount_res = RemountFtl();
-  ASSERT_TRUE(remount_res.is_ok());
+  ASSERT_EQ(remount_res.status_value(), ZX_OK);
   RamDevice ramnand = std::move(remount_res->ramnand);
   auto& fvm = ramnand.fvm_partition()->fvm().fs();
 
