@@ -327,7 +327,7 @@
              path="third_party/markupsafe"
              remote="https://fuchsia.googlesource.com/third_party/markupsafe"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="3854b120e06d91a02304ed3b8e540a900f53e389"/>
+             revision="e2977858f9fbad61d2d3c3f2c998c95963d3b39b"/>
     <project name="third_party/github.com/ARMmbed/mbedtls"
              path="third_party/github.com/ARMmbed/mbedtls"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ARMmbed/mbedtls"
