@@ -62,7 +62,7 @@ async fn main() -> Result<(), Error> {
     };
     let format = match cmd.encoding {
         log_utils::LogEncoding::Json => fidl_fuchsia_diagnostics::Format::Json,
-        log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::Fxt,
+        log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::LegacyFxt,
     };
     proxy
         .stream_diagnostics(

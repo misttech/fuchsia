@@ -303,7 +303,7 @@ impl LogIterator {
         let stream_parameters = fdiagnostics::StreamParameters {
             stream_mode: Some(mode),
             data_type: Some(fdiagnostics::DataType::Logs),
-            format: Some(fdiagnostics::Format::Fxt),
+            format: Some(fdiagnostics::Format::LegacyFxt),
             client_selector_configuration: Some(
                 fdiagnostics::ClientSelectorConfiguration::SelectAll(true),
             ),

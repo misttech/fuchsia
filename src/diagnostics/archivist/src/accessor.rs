@@ -155,7 +155,7 @@ impl ArchiveAccessorServer {
         default_batch_timeout_seconds: BatchRetrievalTimeout,
     ) -> Result<(), AccessorError> {
         let format = params.format.ok_or(AccessorError::MissingFormat)?;
-        if !matches!(format, Format::Json | Format::Cbor | Format::Fxt) {
+        if !matches!(format, Format::Json | Format::Cbor | Format::LegacyFxt) {
             return Err(AccessorError::UnsupportedFormat);
         }
         let mode = params.stream_mode.ok_or(AccessorError::MissingMode)?;
@@ -248,7 +248,7 @@ impl ArchiveAccessorServer {
                     _ => return Err(AccessorError::InvalidSelectors("unrecognized selectors")),
                 };
                 match format {
-                    Format::Fxt => {
+                    Format::LegacyFxt => {
                         let cursor = log_repo.logs_cursor_raw(mode, selectors);
                         BatchIterator::new_serving_fxt(
                             cursor,
@@ -1166,7 +1166,7 @@ mod tests {
                     &StreamParameters {
                         data_type: Some(DataType::Logs),
                         stream_mode: Some(StreamMode::SnapshotThenSubscribe),
-                        format: Some(Format::Fxt),
+                        format: Some(Format::LegacyFxt),
                         client_selector_configuration: Some(
                             ClientSelectorConfiguration::SelectAll(true)
                         ),

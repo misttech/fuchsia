@@ -104,7 +104,7 @@ fn main() {
         bench_write_read_log(b, Format::Json);
     })
     .with_function("LoggingE2E/WriteReadLog/Fxt", move |b| {
-        bench_write_read_log(b, Format::Fxt);
+        bench_write_read_log(b, Format::LegacyFxt);
     });
 
     c.bench("fuchsia.archivist", bench);

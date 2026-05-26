@@ -448,7 +448,7 @@ impl ArchiveReader<Logs> {
             Some(f) => f,
             None => {
                 #[cfg(fuchsia_api_level_at_least = "HEAD")]
-                let ret = Format::Fxt;
+                let ret = Format::LegacyFxt;
                 #[cfg(fuchsia_api_level_less_than = "HEAD")]
                 let ret = Format::Json;
                 ret
