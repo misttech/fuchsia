@@ -88,6 +88,7 @@ rustc_binary("wlanix_bin") {
     "src/nl80211/constants.rs",
     "src/nl80211/mod.rs",
     "src/nl80211/nested.rs",
+    "src/scheduled_scans.rs",
     "src/security/mod.rs",
     "src/security/wep.rs",
   ]

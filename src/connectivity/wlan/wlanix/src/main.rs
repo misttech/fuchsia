@@ -24,6 +24,7 @@ use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use fuchsia_trace_provider as trace_provider;
+use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
@@ -39,6 +40,7 @@ mod bss_scorer;
 mod default_drop;
 mod ifaces;
 mod nl80211;
+mod scheduled_scans;
 
 mod security;
 
@@ -48,6 +50,7 @@ use nl80211::{
     Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211FrequencyAttr,
     Nl80211SchedScanMatchAttr, Nl80211SchedScanPlanAttr,
 };
+use scheduled_scans::ScheduledScanController;
 use wlan_power_manager::{DevicePowerManager, PowerManager};
 
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
@@ -569,8 +572,6 @@ struct WifiState {
     callback: Option<fidl_wlanix::WifiEventCallbackProxy>,
     scan_multicast_proxy: Option<fidl_wlanix::Nl80211MulticastProxy>,
     mlme_multicast_proxy: Option<fidl_wlanix::Nl80211MulticastProxy>,
-    // TODO(498247761): Remove this once we have true PNO scans.
-    is_charging: Option<bool>,
 }
 
 async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
@@ -863,7 +864,8 @@ fn send_disconnect_event<C: ClientIface>(
     iface.on_disconnect(source);
 }
 
-async fn handle_client_connect_transactions<C: ClientIface, P: PowerManager>(
+#[allow(clippy::too_many_arguments)]
+async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerManager>(
     mut ctx: ConnectionContext,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     wifi_state: Arc<Mutex<WifiState>>,
@@ -1170,6 +1172,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                 let credential = state.credential.clone();
                 (state.ssid.clone(), credential, state.bssid)
             };
+
             let (result, status_code, connected_bssid, connection_ctx) = match ssid {
                 Some(ssid) => match iface.connect_to_network(&ssid[..], credential, bssid).await {
                     Ok(ConnectResult::Success(connected)) => {
@@ -1570,6 +1573,7 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_supplicant_sta_iface<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     reqs: fidl_wlanix::SupplicantStaIfaceRequestStream,
@@ -1777,11 +1781,12 @@ impl MessageResponder for Nl80211MessageResponder {
 
 async fn handle_nl80211_message<I: IfaceManager>(
     netlink_message: fidl_wlanix::Nl80211Message,
-    responder: WithDefaultDrop<impl MessageResponder + DefaultDrop>,
+    responder: WithDefaultDrop<impl MessageResponder + DefaultDrop + Send + 'static>,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: &Arc<ScheduledScanController>,
 ) -> Result<(), Error> {
     let payload = match netlink_message {
         fidl_wlanix::Nl80211Message::Message(m) => m.payload,
@@ -2042,7 +2047,6 @@ async fn handle_nl80211_message<I: IfaceManager>(
         }
         Nl80211Cmd::StartSchedScan => {
             info!("Nl80211Cmd::StartSchedScan");
-
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
                     let mut request = fidl_common::ScheduledScanRequest::default();
@@ -2189,6 +2193,9 @@ async fn handle_nl80211_message<I: IfaceManager>(
                                         });
                                 }
                             }
+                            Nl80211Attr::IfaceIndex(_) => {
+                                // Already parsed via get_client_iface_and_id()
+                            }
                             _ => {
                                 warn!("Unhandled SchedScanAttr: {:?}", attr);
                             }
@@ -2214,42 +2221,22 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         return Ok(());
                     }
 
-                    responder
-                        .take()
-                        .send(Ok(vec![build_nl80211_ack()]))
-                        .context("Failed to ack StartSchedScan")?;
-
-                    let initial_charging = state.lock().is_charging.unwrap_or(false);
-                    match client_iface.start_sched_scan(request, initial_charging).await {
-                        Ok(results) => {
-                            if !results.is_empty() {
-                                info!("PNO scan loop completed with results");
-                                if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
-                                    let _ = proxy.message(
-                                        fidl_wlanix::Nl80211MulticastMessageRequest {
-                                            message: Some(build_nl80211_message(
-                                                Nl80211Cmd::SchedScanResults,
-                                                vec![Nl80211Attr::IfaceIndex(iface_id)],
-                                            )),
-                                            ..Default::default()
-                                        },
-                                    );
-                                }
-                            }
+                    match scheduled_scan_controller
+                        .on_start_sched_scan(request.clone(), iface_id, client_iface.clone())
+                        .await
+                    {
+                        Ok(_) => {
+                            responder
+                                .take()
+                                .send(Ok(vec![build_nl80211_ack()]))
+                                .context("Failed to ack StartSchedScan")?;
                         }
                         Err(e) => {
-                            error!("Failed to run scheduled scan task: {:?}", e);
-                            telemetry_sender.send(TelemetryEvent::PnoScanFailure);
-                            if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
-                                let _ =
-                                    proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
-                                        message: Some(build_nl80211_message(
-                                            Nl80211Cmd::SchedScanStopped,
-                                            vec![Nl80211Attr::IfaceIndex(iface_id)],
-                                        )),
-                                        ..Default::default()
-                                    });
-                            }
+                            warn!("Error starting scheduled scan: {}", e);
+                            responder
+                                .take()
+                                .send(Err(zx::sys::ZX_ERR_INTERNAL))
+                                .context("Failed to ack StartSchedScan")?;
                         }
                     }
                 }
@@ -2265,22 +2252,14 @@ async fn handle_nl80211_message<I: IfaceManager>(
         Nl80211Cmd::StopSchedScan => {
             info!("Nl80211Cmd::StopSchedScan");
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
-                Ok((client_iface, _)) => match client_iface.stop_sched_scan().await {
-                    Ok(()) => {
-                        info!("Stopped scheduled scan successfully");
-                        responder
-                            .take()
-                            .send(Ok(vec![build_nl80211_ack()]))
-                            .context("Failed to ack StopSchedScan")?;
-                    }
-                    Err(e) => {
-                        error!("Failed to stop scheduled scan: {:?}", e);
-                        responder
-                            .take()
-                            .send(Ok(vec![build_nl80211_err(zx::Status::BAD_STATE)]))
-                            .context("Failed to ack StopSchedScan")?;
-                    }
-                },
+                Ok((_, iface_id)) => {
+                    scheduled_scan_controller.on_stop_sched_scan(iface_id).await;
+                    info!("Stopped scheduled scan successfully for iface {}", iface_id);
+                    responder
+                        .take()
+                        .send(Ok(vec![build_nl80211_ack()]))
+                        .context("Failed to ack StopSchedScan")?;
+                }
                 Err(e) => {
                     responder
                         .take()
@@ -2474,6 +2453,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: &Arc<ScheduledScanController>,
 ) {
     match req {
         fidl_wlanix::Nl80211Request::MessageV2 { message, responder } => {
@@ -2484,6 +2464,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
+                scheduled_scan_controller,
             )
             .await
             {
@@ -2498,6 +2479,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
+                scheduled_scan_controller,
             )
             .await
             {
@@ -2527,6 +2509,7 @@ async fn serve_nl80211<I: IfaceManager>(
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) {
     reqs.for_each_concurrent(None, async |req| match req {
         Ok(req) => {
@@ -2536,6 +2519,7 @@ async fn serve_nl80211<I: IfaceManager>(
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
                 Arc::clone(&log_throttler),
+                &scheduled_scan_controller,
             )
             .await;
         }
@@ -2760,6 +2744,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WlanixRequest::GetWifi { payload, .. } => {
@@ -2801,6 +2786,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&iface_manager),
                     telemetry_sender,
                     Arc::clone(&log_throttler),
+                    Arc::clone(&scheduled_scan_controller),
                 )
                 .await;
             }
@@ -2826,6 +2812,7 @@ async fn serve_wlanix<I: IfaceManager, P: PowerManager>(
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
@@ -2837,6 +2824,7 @@ async fn serve_wlanix<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                     Arc::clone(&log_throttler),
+                    Arc::clone(&scheduled_scan_controller),
                 )
                 .await
                 {
@@ -2857,6 +2845,7 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
     let _inspect_server_task = inspect_runtime::publish(
@@ -2871,6 +2860,7 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
             Arc::clone(&power_manager),
             telemetry_sender.clone(),
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         )
     });
     fs.take_and_serve_directory_handle()?;
@@ -2878,10 +2868,10 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
     Ok(())
 }
 
-async fn report_battery_updates<I: IfaceManager>(
+async fn report_battery_updates(
     state: Arc<Mutex<WifiState>>,
-    iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) {
     match client::connect_to_protocol::<fidl_fuchsia_power_battery::BatteryManagerMarker>() {
         Ok(proxy) => {
@@ -2890,8 +2880,8 @@ async fn report_battery_updates<I: IfaceManager>(
             if let Err(e) = report_battery_updates_helper(
                 proxy,
                 Arc::clone(&state),
-                Arc::clone(&iface_manager),
                 telemetry_sender,
+                scheduled_scan_controller,
             )
             .await
             {
@@ -2910,21 +2900,21 @@ fn is_charging(charge_info: &fidl_fuchsia_power_battery::BatteryInfo) -> bool {
             && charge_info.charge_source != Some(fidl_fuchsia_power_battery::ChargeSource::None))
 }
 
-async fn report_battery_updates_helper<I: IfaceManager>(
+async fn report_battery_updates_helper(
     proxy: fidl_fuchsia_power_battery::BatteryManagerProxy,
-    state: Arc<Mutex<WifiState>>,
-    iface_manager: Arc<I>,
+    _state: Arc<Mutex<WifiState>>,
     telemetry_sender: TelemetrySender,
+    scheduled_scan_controller: Arc<ScheduledScanController>,
 ) -> Result<(), Error> {
     let (battery_watcher_client_end, mut battery_watcher_stream) =
         fidl::endpoints::create_request_stream();
     proxy.watch(battery_watcher_client_end)?;
 
-    // Send initial charge status to telemetry
+    // Send initial charge status to telemetry and scheduled scan controller
     let info = proxy.get_battery_info().await?;
     match info.charge_status {
         Some(charge_status) => {
-            state.lock().is_charging = Some(is_charging(&info));
+            scheduled_scan_controller.set_charging_state(is_charging(&info));
             telemetry_sender.send(TelemetryEvent::BatteryChargeStatus(charge_status));
         }
         None => warn!("Battery info not sent to telemetry because it doesn't have charge_status"),
@@ -2938,20 +2928,7 @@ async fn report_battery_updates_helper<I: IfaceManager>(
                 responder,
                 ..
             } => {
-                let is_charging = is_charging(&info);
-                // Set the new charging status and get the old one, or false if it was never set
-                let was_charging = state.lock().is_charging.replace(is_charging).unwrap_or(false);
-
-                // If the charging status has changed, update the charging status of all interfaces
-                if was_charging != is_charging {
-                    let ifaces = iface_manager.list_ifaces();
-                    for iface_id in ifaces {
-                        if let Ok(client_iface) = iface_manager.get_client_iface(iface_id).await {
-                            let _ = client_iface.set_charging_status(is_charging);
-                        }
-                    }
-                }
-
+                scheduled_scan_controller.set_charging_state(is_charging(&info));
                 if let Some(charge_status) = info.charge_status {
                     telemetry_sender.send(TelemetryEvent::BatteryChargeStatus(charge_status));
                 }
@@ -2995,6 +2972,42 @@ async fn serve_phy_events(
         }
     }
     bail!("phy event stream terminated");
+}
+
+async fn handle_scheduled_scan_events(
+    state: Arc<Mutex<WifiState>>,
+    mut receiver: mpsc::UnboundedReceiver<scheduled_scans::ScheduledScanEvent>,
+) {
+    use scheduled_scans::ScheduledScanEvent;
+    while let Some(event) = receiver.next().await {
+        match event {
+            ScheduledScanEvent::ResultsAvailable { iface_id } => {
+                let proxy = state.lock().scan_multicast_proxy.clone();
+                if let Some(proxy) = &proxy {
+                    let _ = proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
+                        message: Some(build_nl80211_message(
+                            Nl80211Cmd::SchedScanResults,
+                            vec![Nl80211Attr::IfaceIndex(iface_id)],
+                        )),
+                        ..Default::default()
+                    });
+                }
+            }
+            ScheduledScanEvent::Stopped { iface_id } => {
+                let proxy = state.lock().scan_multicast_proxy.clone();
+                if let Some(proxy) = &proxy {
+                    let _ = proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
+                        message: Some(build_nl80211_message(
+                            Nl80211Cmd::SchedScanStopped,
+                            vec![Nl80211Attr::IfaceIndex(iface_id)],
+                        )),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+    info!("Scheduled scan event stream terminated");
 }
 
 #[fasync::run_singlethreaded]
@@ -3050,21 +3063,26 @@ async fn main() {
     );
 
     let wifi_state = Arc::new(Mutex::new(WifiState::default()));
+    let (event_sender, event_receiver) = mpsc::unbounded::<scheduled_scans::ScheduledScanEvent>();
+    let scheduled_scan_controller =
+        Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
 
     let res = futures::try_join!(
         serve_telemetry_fut,
         report_battery_updates(
             Arc::clone(&wifi_state),
-            Arc::clone(&iface_manager),
-            telemetry_sender.clone()
+            telemetry_sender.clone(),
+            Arc::clone(&scheduled_scan_controller),
         )
         .map(Ok),
+        handle_scheduled_scan_events(Arc::clone(&wifi_state), event_receiver).map(|()| Ok(())),
         serve_fidl(
             Arc::clone(&wifi_state),
             Arc::clone(&iface_manager),
             Arc::new(power_manager),
             telemetry_sender,
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         ),
         serve_phy_events(phy_events_proxy, wifi_state)
     );
@@ -3077,12 +3095,15 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::ifaces::test_utils::{
         ClientIfaceCall, FAKE_IFACE_RESPONSE, IfaceManagerCall, TestIfaceManager,
     };
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
+    use fidl::endpoints::{
+        ControlHandle, Proxy, create_proxy, create_proxy_and_stream, create_request_stream,
+    };
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use fidl_fuchsia_wlan_internal as fidl_internal;
     use futures::Future;
@@ -3091,6 +3112,7 @@ mod tests {
     use ieee80211::Ssid;
     use netlink_packet_utils::nla::NlasIterator;
     use netlink_packet_utils::parsers::parse_u32;
+    use scheduled_scans::ScheduledScanState;
     use std::collections::HashSet;
     use std::pin::{Pin, pin};
     use test_case::test_case;
@@ -3490,16 +3512,23 @@ mod tests {
 
         let iface_manager = Arc::new(TestIfaceManager::new().mock_create_client_iface_failure());
         let power_manager = Arc::new(TestPowerManager::new());
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let (telemetry_sender_raw, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager,
-            TelemetrySender::new(telemetry_sender),
+            telemetry_sender,
             Arc::clone(&log_throttler),
+            scheduled_scan_controller,
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -3580,16 +3609,23 @@ mod tests {
             TestIfaceManager::new().mock_create_client_iface_failure().mock_reset_phy_failure(),
         );
         let power_manager = Arc::new(TestPowerManager::new());
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let (telemetry_sender_raw, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager,
-            TelemetrySender::new(telemetry_sender),
+            telemetry_sender,
             Arc::clone(&log_throttler),
+            scheduled_scan_controller,
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -4042,17 +4078,24 @@ mod tests {
 
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(iface_manager);
-        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let (telemetry_sender_raw, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let power_manager = Arc::new(TestPowerManager::new());
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager.clone(),
-            TelemetrySender::new(telemetry_sender),
+            telemetry_sender,
             Arc::clone(&log_throttler),
+            scheduled_scan_controller,
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -4986,9 +5029,34 @@ mod tests {
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         iface_manager: Arc<TestIfaceManager>,
         power_manager: Arc<TestPowerManager>,
+        scheduled_scan_controller: Arc<ScheduledScanController>,
+        _event_receiver: mpsc::UnboundedReceiver<scheduled_scans::ScheduledScanEvent>,
+        battery_manager_stream: fidl_fuchsia_power_battery::BatteryManagerRequestStream,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
+    }
+
+    impl SupplicantTestHelper {
+        fn get_battery_watcher(&mut self) -> fidl_fuchsia_power_battery::BatteryInfoWatcherProxy {
+            let mut next_fut = self.battery_manager_stream.next();
+            let watcher = assert_matches!(
+                self.exec.run_until_stalled(&mut next_fut),
+                Poll::Ready(Some(Ok(fidl_fuchsia_power_battery::BatteryManagerRequest::Watch { watcher, .. }))) => watcher.into_proxy()
+            );
+
+            // Respond to the daemon's startup GetBatteryInfo query to unblock the watcher loop
+            let mut next_fut = self.battery_manager_stream.next();
+            let responder = assert_matches!(
+                self.exec.run_until_stalled(&mut next_fut),
+                Poll::Ready(Some(Ok(fidl_fuchsia_power_battery::BatteryManagerRequest::GetBatteryInfo { responder, .. }))) => responder
+            );
+            responder
+                .send(&fidl_fuchsia_power_battery::BatteryInfo::default())
+                .expect("Failed to respond to GetBatteryInfo");
+
+            watcher
+        }
     }
 
     fn setup_supplicant_test() -> (SupplicantTestHelper, Pin<Box<impl Future<Output = ()>>>) {
@@ -5044,18 +5112,38 @@ mod tests {
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
         let power_manager = Arc::new(TestPowerManager::new());
-        let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let (telemetry_sender_raw, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
+        let (event_sender, event_receiver) = mpsc::unbounded();
+        let scheduled_scan_controller =
+            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+
+        let (battery_manager_proxy, battery_manager_stream) =
+            create_proxy_and_stream::<fidl_fuchsia_power_battery::BatteryManagerMarker>();
+
         let test_fut = serve_wlanix(
             wlanix_stream,
-            wifi_state,
+            Arc::clone(&wifi_state),
             Arc::clone(&iface_manager),
             power_manager.clone(),
-            TelemetrySender::new(telemetry_sender),
+            telemetry_sender.clone(),
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         );
-        let mut test_fut = Box::pin(test_fut);
+        let battery_loop_fut = report_battery_updates_helper(
+            battery_manager_proxy,
+            Arc::clone(&wifi_state),
+            telemetry_sender.clone(),
+            Arc::clone(&scheduled_scan_controller),
+        );
+        let combined_fut = async move {
+            let serve_fut = std::pin::pin!(test_fut);
+            let battery_fut = std::pin::pin!(battery_loop_fut);
+            futures::future::select(serve_fut, battery_fut).await;
+        };
+        let mut test_fut = Box::pin(combined_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let test_helper = SupplicantTestHelper {
@@ -5068,6 +5156,9 @@ mod tests {
             telemetry_receiver,
             iface_manager,
             power_manager,
+            scheduled_scan_controller,
+            _event_receiver: event_receiver,
+            battery_manager_stream,
             exec,
         };
         (test_helper, test_fut)
@@ -5106,6 +5197,8 @@ mod tests {
         nl80211_fut: Pin<Box<dyn Future<Output = ()>>>,
         nl80211_proxy: fidl_wlanix::Nl80211Proxy,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
+        state: Arc<Mutex<WifiState>>,
+        scheduled_scan_controller: Arc<ScheduledScanController>,
     }
 
     fn setup_nl80211_test(exec: &mut fasync::TestExecutor) -> Nl80211TestValues {
@@ -5122,17 +5215,33 @@ mod tests {
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (event_sender, event_receiver) = mpsc::unbounded();
+        let scheduled_scan_controller =
+            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
         let nl80211_fut = serve_nl80211(
             stream,
-            state,
+            Arc::clone(&state),
             Arc::new(iface_manager),
             telemetry_sender,
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         );
-        let mut nl80211_fut = Box::pin(nl80211_fut);
+        let event_loop_fut = handle_scheduled_scan_events(Arc::clone(&state), event_receiver);
+        let combined_fut = async move {
+            let nl80211_fut = std::pin::pin!(nl80211_fut);
+            let event_loop_fut = std::pin::pin!(event_loop_fut);
+            futures::future::select(nl80211_fut, event_loop_fut).await;
+        };
+        let mut nl80211_fut = Box::pin(combined_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
-        Nl80211TestValues { nl80211_fut, nl80211_proxy: proxy, telemetry_receiver }
+        Nl80211TestValues {
+            nl80211_fut,
+            nl80211_proxy: proxy,
+            telemetry_receiver,
+            state,
+            scheduled_scan_controller,
+        }
     }
 
     #[fuchsia::test]
@@ -5141,16 +5250,23 @@ mod tests {
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::WlanixMarker>();
         let state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new());
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let (telemetry_sender_raw, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender_raw);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let wlanix_fut = serve_wlanix(
             stream,
             state,
             iface_manager,
             Arc::new(TestPowerManager::new()),
-            TelemetrySender::new(telemetry_sender),
+            telemetry_sender,
             Arc::clone(&log_throttler),
+            scheduled_scan_controller,
         );
         let mut wlanix_fut = pin!(wlanix_fut);
         let (nl_proxy, nl_server) = create_proxy::<fidl_wlanix::Nl80211Marker>();
@@ -5538,45 +5654,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn start_sched_scan_failure() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let iface_manager = TestIfaceManager::new_with_client();
-        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
-        // Mock failure
-        *client_iface.start_sched_scan_success.lock() = false;
-
-        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
-
-        let start_sched_scan_message = build_nl80211_message(
-            Nl80211Cmd::StartSchedScan,
-            vec![
-                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
-                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
-                Nl80211Attr::SchedScanInterval(40),
-            ],
-        );
-        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
-        let mut start_scan_fut = std::pin::pin!(start_scan_fut);
-        assert_matches!(
-            exec.run_until_stalled(&mut test_values.nl80211_fut),
-            std::task::Poll::Pending
-        );
-
-        let responses = deserialize(assert_matches!(
-            exec.run_until_stalled(&mut start_scan_fut),
-            std::task::Poll::Ready(Ok(Ok(r))) => r));
-        assert_eq!(responses.len(), 1);
-        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
-
-        // Verify telemetry event
-        assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::PnoScanFailure))
-        );
-    }
-
-    #[fuchsia::test]
     fn stop_sched_scan() {
         let mut exec = fasync::TestExecutor::new();
         let iface_manager = TestIfaceManager::new_with_client();
@@ -5598,8 +5675,250 @@ mod tests {
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
         let calls = client_iface.calls.lock();
-        assert_eq!(calls.len(), 1);
-        assert_matches!(&calls[0], ClientIfaceCall::StopSchedScan);
+        assert!(calls.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_start_sched_scan_fallback_to_software_scheduled_scan() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+
+        // Make start_sched_scan fail with NOT_SUPPORTED
+        *client_iface.fail_start_sched_scan.lock() = true;
+
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        // Set charging to true to trigger the loop
+        test_values.scheduled_scan_controller.set_charging_state(true);
+
+        let attrs = vec![
+            Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+            Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+            Nl80211Attr::SchedScanInterval(40),
+        ];
+        let start_sched_scan_message = build_nl80211_message(Nl80211Cmd::StartSchedScan, attrs);
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        assert_matches!(exec.run_until_stalled(&mut start_scan_fut), Poll::Ready(Ok(Ok(_))));
+
+        // Verify that state transitioned to SoftwareScansActive
+        assert_matches!(
+            test_values.scheduled_scan_controller.states.lock().get(&1),
+            Some(ScheduledScanState::SoftwareScansActive { .. })
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_stop_sched_scan_clears_software_scheduled_scan() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let iface = iface_manager.client_iface.lock().clone().unwrap();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        // Setup pending request and task
+        {
+            let mut s = test_values.scheduled_scan_controller.states.lock();
+            s.insert(
+                1,
+                ScheduledScanState::SoftwareScansActive {
+                    request: fidl_common::ScheduledScanRequest::default(),
+                    iface: Arc::clone(&iface) as Arc<dyn ClientIface>,
+                    task: fasync::Task::spawn(async {}),
+                },
+            );
+        }
+
+        let attrs =
+            vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())];
+        let stop_sched_scan_message = build_nl80211_message(Nl80211Cmd::StopSchedScan, attrs);
+        let stop_scan_fut = test_values.nl80211_proxy.message_v2(&stop_sched_scan_message);
+        let mut stop_scan_fut = pin!(stop_scan_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        assert_matches!(exec.run_until_stalled(&mut stop_scan_fut), Poll::Ready(Ok(Ok(_))));
+
+        // Verify that state transitioned to empty map
+        assert!(test_values.scheduled_scan_controller.states.lock().is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_start_sched_scan_spawns_task() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanInterval(40),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut start_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
+
+        assert_matches!(
+            test_values.scheduled_scan_controller.states.lock().get(&1),
+            Some(ScheduledScanState::FirmwareScansActive { .. })
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_stop_sched_scan_clears_state() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        // Start it first
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanInterval(40),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        let _ = exec.run_until_stalled(&mut start_scan_fut);
+
+        // Stop it
+        let stop_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StopSchedScan,
+            vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
+        );
+        let stop_scan_fut = test_values.nl80211_proxy.message_v2(&stop_sched_scan_message);
+        let mut stop_scan_fut = pin!(stop_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut stop_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
+
+        assert!(test_values.scheduled_scan_controller.states.lock().is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_on_scheduled_scan_stopped() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        // Setup multicast channel
+        let (proxy, mut stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        test_values.state.lock().scan_multicast_proxy = Some(proxy);
+
+        // Start it
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanInterval(40),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        let _ = exec.run_until_stalled(&mut start_scan_fut);
+
+        // Get control handle
+        let control_handle = client_iface.pno_transaction_handle.lock().take().unwrap();
+
+        // Send Epitaph instead of event
+        control_handle.shutdown_with_epitaph(zx::Status::OK);
+
+        // Run executor to let task process it
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        // Verify state cleaned up
+        assert!(test_values.scheduled_scan_controller.states.lock().is_empty());
+
+        // Verify multicast message sent
+        let mut stream_fut = stream.next();
+        let event =
+            assert_matches!(exec.run_until_stalled(&mut stream_fut), Poll::Ready(Some(Ok(e))) => e);
+        match event {
+            fidl_wlanix::Nl80211MulticastRequest::Message { payload, .. } => {
+                let msg = payload.message.as_ref().unwrap();
+                let genl_msg = expect_nl80211_message(msg);
+                assert_eq!(genl_msg.header.cmd, Nl80211Cmd::SchedScanStopped as u8);
+            }
+            _ => panic!("unexpected event"),
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_on_scheduled_scan_results() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        // Setup multicast channel
+        let (proxy, mut stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        test_values.state.lock().scan_multicast_proxy = Some(proxy);
+
+        // Start it
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanInterval(40),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        let _ = exec.run_until_stalled(&mut start_scan_fut);
+
+        // Get control handle
+        let control_handle = client_iface.pno_transaction_handle.lock().take().unwrap();
+
+        // Create a fake VMO with scan results
+        let results = vec![ifaces::test_utils::fake_scan_result()];
+        let vmo = wlan_common::scan::write_vmo(results).unwrap();
+
+        // Send event
+        control_handle.send_on_scheduled_scan_matches_available(vmo).unwrap();
+
+        // Run executor to let task process it
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        // Verify cache updated
+        let calls = client_iface.calls.lock();
+        assert!(calls.iter().any(|c| matches!(c, ClientIfaceCall::UpdateLastScanResults(_))));
+
+        // Verify multicast message sent
+        let mut stream_fut = stream.next();
+        let event =
+            assert_matches!(exec.run_until_stalled(&mut stream_fut), Poll::Ready(Some(Ok(e))) => e);
+        match event {
+            fidl_wlanix::Nl80211MulticastRequest::Message { payload, .. } => {
+                let msg = payload.message.as_ref().unwrap();
+                let genl_msg = expect_nl80211_message(msg);
+                assert_eq!(genl_msg.header.cmd, Nl80211Cmd::SchedScanResults as u8);
+            }
+            _ => panic!("unexpected event"),
+        }
     }
 
     #[fuchsia::test]
@@ -5618,18 +5937,24 @@ mod tests {
 
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let nl80211_fut = serve_nl80211(
             stream,
             Arc::clone(&state),
             Arc::clone(&iface_manager),
             telemetry_sender,
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         );
         let mut nl80211_fut = Box::pin(nl80211_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
         // Not charging, scheduled scans should be rejected.
-        state.lock().is_charging = Some(false);
+        scheduled_scan_controller.set_charging_state(false);
 
         let start_sched_scan_message = build_nl80211_message(
             Nl80211Cmd::StartSchedScan,
@@ -5660,7 +5985,7 @@ mod tests {
         );
 
         // Case 2: is_charging is true
-        state.lock().is_charging = Some(true);
+        scheduled_scan_controller.set_charging_state(true);
         let start_sched_scan_message = build_nl80211_message(
             Nl80211Cmd::StartSchedScan,
             vec![
@@ -5692,7 +6017,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_start_sched_scan_sends_results() {
+    fn test_start_sched_scan_sends_results_workaround() {
         use futures::TryStreamExt;
         use ieee80211::Ssid;
         use wlan_common::fake_fidl_bss_description;
@@ -5702,6 +6027,9 @@ mod tests {
         let state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
         let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+
+        // Make start_sched_scan fail with NOT_SUPPORTED to trigger workaround
+        *client_iface.fail_start_sched_scan.lock() = true;
 
         // Populate scan results in the mock
         let scan_result = fidl_sme::ScanResult {
@@ -5729,28 +6057,42 @@ mod tests {
 
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (event_sender, event_receiver) = mpsc::unbounded();
+        let scheduled_scan_controller =
+            Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
         let nl80211_fut = serve_nl80211(
             stream,
             Arc::clone(&state),
             Arc::clone(&iface_manager),
             telemetry_sender,
             Arc::clone(&log_throttler),
+            Arc::clone(&scheduled_scan_controller),
         );
-        let mut nl80211_fut = Box::pin(nl80211_fut);
+        let event_loop_fut = handle_scheduled_scan_events(Arc::clone(&state), event_receiver);
+        let combined_fut = async move {
+            let nl80211_fut = std::pin::pin!(nl80211_fut);
+            let event_loop_fut = std::pin::pin!(event_loop_fut);
+            futures::future::select(nl80211_fut, event_loop_fut).await;
+        };
+        let mut nl80211_fut = Box::pin(combined_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
         // Set charging to true so scan starts
-        state.lock().is_charging = Some(true);
+        scheduled_scan_controller.set_charging_state(true);
 
-        let start_sched_scan_message = build_nl80211_message(
-            Nl80211Cmd::StartSchedScan,
-            vec![
-                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
-                Nl80211Attr::SchedScanInterval(10000),
-            ],
-        );
+        let mut attrs = Vec::new();
+        attrs.push(Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()));
+        attrs.push(Nl80211Attr::SchedScanInterval(10000));
+
+        // Add match set for TestMatchSSID
+        let match_sets = vec![vec![Nl80211SchedScanMatchAttr::Ssid(b"TestMatchSSID".to_vec())]];
+        attrs.push(Nl80211Attr::SchedScanMatch(match_sets));
+
+        let start_sched_scan_message = build_nl80211_message(Nl80211Cmd::StartSchedScan, attrs);
         let start_sched_scan_fut = proxy.message_v2(&start_sched_scan_message);
         let mut start_sched_scan_fut = pin!(start_sched_scan_fut);
+
+        // Poll nl80211_fut to process message and spawn software PNO loop
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
         // Verify that the sched scan command was acked.
@@ -5760,7 +6102,7 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
-        // Progress the future running the sched scan.
+        // Progress the future running the software PNO loop (it triggers scan immediately)
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
         // Check if we received the multicast message
@@ -5775,6 +6117,42 @@ mod tests {
         );
         let genl_msg = expect_nl80211_message(mcast_payload.message.as_ref().unwrap());
         assert_eq!(genl_msg.payload.cmd, Nl80211Cmd::SchedScanResults);
+    }
+
+    // This test verifies the software scheduled scan workaround behavior when battery info changes.
+    // TODO(b/498247761): Remove once firmware scheduled scans are supported.
+    #[fuchsia::test]
+    fn test_software_scheduled_scan_report_battery_updates() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+        let watcher = test_helper.get_battery_watcher();
+
+        let info = fidl_fuchsia_power_battery::BatteryInfo {
+            charge_status: Some(fidl_fuchsia_power_battery::ChargeStatus::Charging),
+            ..Default::default()
+        };
+
+        // Run battery updates stream and verify state updated to charging
+        let send_fut = watcher.on_change_battery_info(&info, None);
+        let mut send_fut = std::pin::pin!(send_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut send_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut send_fut), Poll::Ready(Ok(())));
+
+        assert!(test_helper.scheduled_scan_controller.is_charging());
+
+        // Test transitioning to not charging
+        let info_not_charging = fidl_fuchsia_power_battery::BatteryInfo {
+            charge_status: Some(fidl_fuchsia_power_battery::ChargeStatus::Discharging),
+            ..Default::default()
+        };
+
+        let send_fut = watcher.on_change_battery_info(&info_not_charging, None);
+        let mut send_fut = std::pin::pin!(send_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut send_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut send_fut), Poll::Ready(Ok(())));
+
+        assert!(!test_helper.scheduled_scan_controller.is_charging());
     }
 
     #[fuchsia::test]
@@ -6080,12 +6458,18 @@ mod tests {
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let log_throttler =
             Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         let nl80211_fut = serve_nl80211(
             stream,
             state,
             iface_manager,
             telemetry_sender,
             Arc::clone(&log_throttler),
+            scheduled_scan_controller,
         );
         let mut nl80211_fut = pin!(nl80211_fut);
 
@@ -6731,14 +7115,19 @@ mod tests {
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new());
+        let (scheduled_scan_event_sender, _) = mpsc::unbounded();
+        let scheduled_scan_controller = Arc::new(ScheduledScanController::new(
+            telemetry_sender.clone(),
+            scheduled_scan_event_sender,
+        ));
         // Instantiate a mapped test client interface to catch StopSchedScan calls from the loop
         let _ = exec.run_singlethreaded(iface_manager.create_client_iface(0));
 
         let test_fut = report_battery_updates_helper(
             battery_manager_proxy,
             Arc::clone(&wifi_state),
-            Arc::clone(&iface_manager),
             telemetry_sender,
+            scheduled_scan_controller,
         );
         let mut test_fut = pin!(test_fut);
         assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -6794,12 +7183,7 @@ mod tests {
             )))
         );
 
-        // Verify that set_charging_status(false) was called on the interface manager
         let client_calls = iface_manager.get_iface_call_history();
-        assert_matches!(
-            &client_calls.lock().last().unwrap(),
-            ifaces::test_utils::ClientIfaceCall::SetChargingStatus(false)
-        );
 
         // Transition back to charging and verify that stop_sched_scan is NOT called again
         let battery_info = fidl_fuchsia_power_battery::BatteryInfo {
