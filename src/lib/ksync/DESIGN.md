@@ -1,11 +1,11 @@
 # KMutex: Technical Design Document
 
 This document covers the technical architecture, safety invariants, and macro
-code generation details of the `kmutex` crate.
+code generation details of the `ksync` crate.
 
 ## 1. Technical Architecture
 
-`kmutex` implements a **token-based synchronization pattern** (also known as
+`ksync` implements a **token-based synchronization pattern** (also known as
 the "Ghost Token" pattern). Instead of encapsulating the protected data inside
 the mutex struct itself (like `std::sync::Mutex<T>`), it separates the lock
 state (`KMutex`) from the actual data storage (`KCell`).
@@ -97,15 +97,15 @@ pub struct MyStructMuClass;
 
 // 2. Struct fields rewritten to KMutex<Class> and KCell<T, Class>
 pub struct MyStruct {
-    pub mu: ::kmutex::KMutex<MyStructMuClass>,
-    pub data1: ::kmutex::KCell<u32, MyStructMuClass>,
-    data2: ::kmutex::KCell<i32, MyStructMuClass>,
+    pub mu: ::ksync::KMutex<MyStructMuClass>,
+    pub data1: ::ksync::KCell<u32, MyStructMuClass>,
+    data2: ::ksync::KCell<i32, MyStructMuClass>,
 }
 
 // 3. Custom Guard generated with safe target accessors and lifetime bindings
 pub struct MyStructMuGuard<'a> {
     parent: &'a MyStruct,
-    inner: ::kmutex::KMutexGuard<'a, MyStructMuClass>,
+    inner: ::ksync::KMutexGuard<'a, MyStructMuClass>,
 }
 
 impl<'a> MyStructMuGuard<'a> {

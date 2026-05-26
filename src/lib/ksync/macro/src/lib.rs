@@ -145,7 +145,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     let class_ident = &mutex_field.class_ident;
 
                     field.ty = syn::parse2(quote! {
-                        ::kmutex::KCell<#original_ty, #class_ident>
+                        ::ksync::KCell<#original_ty, #class_ident>
                     })
                     .unwrap();
                 } else {
@@ -272,7 +272,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             // Guard Struct
             #struct_vis struct #guard_ident #guard_impl_generics #where_clause {
                 parent: &'a #struct_ident #ty_generics,
-                inner: ::kmutex::KMutexGuard<'a, #class_ident>,
+                inner: ::ksync::KMutexGuard<'a, #class_ident>,
             }
 
             impl #guard_impl_generics #guard_ident #guard_ty_generics #where_clause {

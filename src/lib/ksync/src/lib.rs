@@ -4,9 +4,9 @@
 
 #![no_std]
 
-extern crate self as kmutex;
+extern crate self as ksync;
 
-pub use kmutex_macro::guarded;
+pub use ksync_macro::guarded;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;

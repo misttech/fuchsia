@@ -1,6 +1,6 @@
-# kmutex
+# ksync
 
-`kmutex` is a Rust crate providing a token-based lock API, designed for
+`ksync` is a Rust crate providing a token-based lock API, designed for
 low-level, `no_std` environments like the Zircon kernel.
 
 ## Purpose
@@ -39,7 +39,7 @@ generate a marker lock class behind the scenes, named
 named `mu` in `ImageCache`).
 
 ```rust
-use kmutex::{guarded, KMutex};
+use ksync::{guarded, KMutex};
 
 #[derive(Default)]
 #[guarded]
@@ -95,7 +95,7 @@ distinct, unique lock class for each mutex field by default (utilizing the
 special syntax:
 
 ```rust
-use kmutex::{guarded, KMutex};
+use ksync::{guarded, KMutex};
 
 #[derive(Default)]
 #[guarded]
