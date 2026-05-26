@@ -146,6 +146,11 @@ static zx_status_t brcmf_btcoex_params_read(struct brcmf_if* ifp, uint32_t addr,
 static void brcmf_btcoex_boost_wifi(struct brcmf_btcoex_info* btci, bool trump_sco) {
   struct brcmf_if* ifp = brcmf_get_ifp(btci->cfg->pub, 0);
 
+  if (ifp == nullptr) {
+    BRCMF_ERR("Primary interface not found for btcoex boost");
+    return;
+  }
+
   if (trump_sco && !btci->saved_regs_part2) {
     /* this should reduce eSCO agressive
      * retransmit w/o breaking it
@@ -229,6 +234,10 @@ static bool brcmf_btcoex_is_sco_active(struct brcmf_if* ifp) {
  * btcmf_btcoex_save_part1() - save first step parameters.
  */
 static void btcmf_btcoex_save_part1(struct brcmf_btcoex_info* btci) {
+  if (btci->vif == nullptr) {
+    BRCMF_ERR("vif is null, cannot save part1");
+    return;
+  }
   struct brcmf_if* ifp = btci->vif->ifp;
 
   if (!btci->saved_regs_part1) {
@@ -248,6 +257,10 @@ static void btcmf_btcoex_save_part1(struct brcmf_btcoex_info* btci) {
 static void brcmf_btcoex_restore_part1(struct brcmf_btcoex_info* btci) {
   struct brcmf_if* ifp;
 
+  if (btci->vif == nullptr) {
+    BRCMF_ERR("vif is null, cannot restore part1");
+    return;
+  }
   if (btci->saved_regs_part1) {
     btci->saved_regs_part1 = false;
     ifp = btci->vif->ifp;
@@ -335,7 +348,9 @@ idle:
   btci->bt_state = BRCMF_BT_DHCP_IDLE;
   btci->timer_on = false;
   brcmf_btcoex_boost_wifi(btci, false);
-  cfg80211_crit_proto_stopped(&btci->vif->wdev);
+  if (btci->vif != nullptr) {
+    cfg80211_crit_proto_stopped(&btci->vif->wdev);
+  }
   brcmf_btcoex_restore_part1(btci);
   btci->vif = nullptr;
 }
@@ -441,9 +456,18 @@ static void brcmf_btcoex_dhcp_end(struct brcmf_btcoex_info* btci) {
  */
 zx_status_t brcmf_btcoex_set_mode(struct brcmf_cfg80211_vif* vif, enum brcmf_btcoex_mode mode,
                                   uint16_t duration) {
+  if (vif == nullptr) {
+    BRCMF_ERR("vif is null");
+    return ZX_ERR_INVALID_ARGS;
+  }
   struct brcmf_cfg80211_info* cfg = vif->ifp->drvr->config;
   struct brcmf_btcoex_info* btci = cfg->btcoex;
   struct brcmf_if* ifp = brcmf_get_ifp(cfg->pub, 0);
+
+  if (ifp == nullptr) {
+    BRCMF_ERR("Primary interface not found for btcoex");
+    return ZX_ERR_BAD_STATE;
+  }
 
   if (btci == nullptr) {
     BRCMF_ERR("Cannot set btcoex mode to %d, btcoex info is null", mode);

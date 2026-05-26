@@ -1492,6 +1492,10 @@ static zx_status_t brcmf_bss_reset(brcmf_if* ifp) {
 static void brcmf_link_down(struct brcmf_cfg80211_vif* vif,
                             fuchsia_wlan_ieee80211::ReasonCode reason_code, uint16_t event_code,
                             const uint8_t event_addr[ETH_ALEN]) {
+  if (vif == nullptr) {
+    BRCMF_ERR("vif is null, ignoring link down");
+    return;
+  }
   struct brcmf_cfg80211_info* cfg = vif->ifp->drvr->config;
   zx_status_t err = ZX_OK;
 
@@ -8189,7 +8193,15 @@ zx_status_t brcmf_cfg80211_wait_vif_event(struct brcmf_cfg80211_info* cfg, zx_du
 }
 
 zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wireless_dev* wdev) {
+  if (wdev == nullptr) {
+    BRCMF_ERR("wdev is null");
+    return ZX_ERR_INVALID_ARGS;
+  }
   struct net_device* ndev = wdev->netdev;
+  if (ndev == nullptr) {
+    BRCMF_ERR("ndev is null");
+    return ZX_ERR_INVALID_ARGS;
+  }
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_profile* prof = ndev_to_prof(ndev);
 
@@ -8228,8 +8240,10 @@ zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wir
       // Make sure the signal reporter does not access the interface after it has been destroyed.
       cfg->signal_report_work.Cancel();
       // Disconnect the client in an attempt to exit gracefully.
-      brcmf_link_down(ifp->vif, fuchsia_wlan_ieee80211::ReasonCode::kUnspecifiedReason, false,
-                      prof->bssid);
+      if (ifp->vif != nullptr) {
+        brcmf_link_down(ifp->vif, fuchsia_wlan_ieee80211::ReasonCode::kUnspecifiedReason, false,
+                        prof->bssid);
+      }
       // The default client iface 0 is always assumed to exist by the driver, and is never
       // explicitly deleted.
       ndev->sme_channel.reset();
