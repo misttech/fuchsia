@@ -133,11 +133,19 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfsh
     ufshci_dispatcher_ = *std::move(dispatcher);
   }
 
-  async::PostTask(ufshci_dispatcher_.async_dispatcher(),
-                  [this, server_end = std::move(endpoints->server)]() mutable {
-                    fidl::BindServer(ufshci_dispatcher_.async_dispatcher(), std::move(server_end),
-                                     this);
-                  });
+  // Wait for bind completion, because calls to ufs_phy_ depends on the UFSHCI server working.
+  libsync::Completion bind_completion;
+  zx_status_t status = async::PostTask(
+      ufshci_dispatcher_.async_dispatcher(),
+      [this, server_end = std::move(endpoints->server), &bind_completion]() mutable {
+        fidl::BindServer(ufshci_dispatcher_.async_dispatcher(), std::move(server_end), this);
+        bind_completion.Signal();
+      });
+  if (status != ZX_OK) {
+    fdf::error("Failed to post bind task: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  bind_completion.Wait();
 
   return zx::ok(std::move(endpoints->client));
 }
