@@ -1510,10 +1510,7 @@ mod tests {
             selected_bss: fake_bss_description!(Open, bssid: BSSID.to_array()),
             connect_failure_timeout: 10,
             auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
-            sae_password: vec![],
-            wep_key: None,
             security_ie: vec![],
-            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1523,8 +1520,6 @@ mod tests {
             selected_bss: fake_bss_description!(Wpa2, bssid: BSSID.to_array()),
             connect_failure_timeout: 10,
             auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
-            sae_password: vec![],
-            wep_key: None,
             security_ie: vec![
                 0x30, 0x14, //  ID and len
                 1, 0, //  version
@@ -1535,7 +1530,6 @@ mod tests {
                 0x00, 0x0f, 0xac, 0x02, //  akm suite list
                 0xa8, 0x04, //  rsn capabilities
             ],
-            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1638,10 +1632,7 @@ mod tests {
             connect_failure_timeout: 10,
             // use an unsupported AuthenticationType
             auth_type: fidl_mlme::AuthenticationTypes::SharedKey,
-            sae_password: vec![],
-            wep_key: None,
             security_ie: vec![],
-            owe_public_key: None,
         };
         let mut sta = Client::new(connect_req, *IFACE_MAC, fake_client_capabilities());
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
