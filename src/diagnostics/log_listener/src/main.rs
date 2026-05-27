@@ -62,7 +62,7 @@ async fn main() -> Result<(), Error> {
     };
     let format = match cmd.encoding {
         log_utils::LogEncoding::Json => fidl_fuchsia_diagnostics::Format::Json,
-        log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::LegacyFxt,
+        log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::Fxt,
     };
     proxy
         .stream_diagnostics(
@@ -73,7 +73,6 @@ async fn main() -> Result<(), Error> {
                 client_selector_configuration: Some(
                     fidl_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
                 ),
-                subscribe_to_manifest: Some(matches!(cmd.encoding, log_utils::LogEncoding::Fxt)),
                 ..Default::default()
             },
             sender,

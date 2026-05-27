@@ -22,4 +22,9 @@ type Format = strict enum {
     /// for logs.
     @available(added=HEAD)
     LEGACY_FXT = 4;
+    /// Dump read results per the Diagnostics FXT
+    /// Schema specifications. This is only supported
+    /// for logs.
+    @available(added=HEAD)
+    FXT = 5;
 };

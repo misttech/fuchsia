@@ -155,7 +155,7 @@ impl ArchiveAccessorServer {
         default_batch_timeout_seconds: BatchRetrievalTimeout,
     ) -> Result<(), AccessorError> {
         let format = params.format.ok_or(AccessorError::MissingFormat)?;
-        if !matches!(format, Format::Json | Format::Cbor | Format::LegacyFxt) {
+        if !matches!(format, Format::Json | Format::Cbor | Format::LegacyFxt | Format::Fxt) {
             return Err(AccessorError::UnsupportedFormat);
         }
         let mode = params.stream_mode.ok_or(AccessorError::MissingMode)?;
@@ -257,6 +257,22 @@ impl ArchiveAccessorServer {
                             stats,
                             trace_id,
                             performance_config,
+                            false,
+                        )?
+                        .run()
+                        .await?;
+                        Ok(())
+                    }
+                    Format::Fxt => {
+                        let cursor = log_repo.logs_cursor_raw(mode, selectors);
+                        BatchIterator::new_serving_fxt(
+                            cursor,
+                            requests,
+                            mode,
+                            stats,
+                            trace_id,
+                            performance_config,
+                            true,
                         )?
                         .run()
                         .await?;
@@ -664,6 +680,7 @@ where
         stats: Arc<BatchIteratorConnectionStats>,
         parent_trace_id: ftrace::Id,
         performance_config: PerformanceConfig,
+        fxt_v2: bool,
     ) -> Result<Self, AccessorError> {
         let data = FxtPacketSerializer::new(
             Arc::clone(&stats),
@@ -671,7 +688,7 @@ where
                 .aggregated_content_limit_bytes
                 .unwrap_or(FORMATTED_CONTENT_CHUNK_SIZE_TARGET),
             cursor,
-            performance_config.subscribe_to_manifest,
+            fxt_v2,
         );
         Self::new_inner(
             new_batcher(data, Arc::clone(&stats), mode),
@@ -785,7 +802,6 @@ pub struct PerformanceConfig {
     pub batch_timeout_sec: i64,
     pub aggregated_content_limit_bytes: Option<u64>,
     pub maximum_concurrent_snapshots_per_reader: u64,
-    pub subscribe_to_manifest: bool,
 }
 
 impl PerformanceConfig {
@@ -831,13 +847,10 @@ impl PerformanceConfig {
             _ => None,
         };
 
-        let subscribe_to_manifest = params.subscribe_to_manifest.unwrap_or(false);
-
         Ok(PerformanceConfig {
             batch_timeout_sec: batch_timeout.seconds(),
             aggregated_content_limit_bytes,
             maximum_concurrent_snapshots_per_reader,
-            subscribe_to_manifest,
         })
     }
 }
@@ -1166,11 +1179,10 @@ mod tests {
                     &StreamParameters {
                         data_type: Some(DataType::Logs),
                         stream_mode: Some(StreamMode::SnapshotThenSubscribe),
-                        format: Some(Format::LegacyFxt),
+                        format: Some(Format::Fxt),
                         client_selector_configuration: Some(
                             ClientSelectorConfiguration::SelectAll(true)
                         ),
-                        subscribe_to_manifest: Some(true),
                         ..Default::default()
                     },
                     server_end

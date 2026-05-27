@@ -221,7 +221,7 @@ impl SerializedVmo {
             Format::Cbor => ciborium::into_writer(source, &mut buffer)
                 .map_err(|err| AccessorError::CborSerialization(err.into()))?,
             Format::Text => unreachable!("We'll never get Text"),
-            Format::LegacyFxt => unreachable!("We'll never get FXT"),
+            Format::Fxt | Format::LegacyFxt => unreachable!("We'll never get FXT"),
         }
         let vmo = zx::Vmo::create(buffer.len() as u64).unwrap();
         let _ = vmo.set_name(&SERIALIZED_DATA_VMO_NAME);
@@ -251,7 +251,7 @@ impl From<SerializedVmo> for FormattedContent {
                     .expect("set_content_size always returns Ok");
                 FormattedContent::Cbor(content.vmo)
             }
-            Format::LegacyFxt => {
+            Format::Fxt | Format::LegacyFxt => {
                 content
                     .vmo
                     .set_content_size(&content.size)
