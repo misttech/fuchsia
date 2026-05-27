@@ -232,6 +232,12 @@ impl From<&TargetInfoQuery> for String {
     }
 }
 
+impl std::fmt::Display for TargetInfoQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
+    }
+}
+
 impl From<TargetAddr> for TargetInfoQuery {
     fn from(t: TargetAddr) -> Self {
         match t {

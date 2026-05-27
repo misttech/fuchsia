@@ -5,7 +5,7 @@
 use analytics::add_custom_event;
 use anyhow::Result;
 use async_trait::async_trait;
-use errors::{ffx_bail, ffx_bail_with_code};
+
 use ffx_config::EnvironmentContext;
 use ffx_list_args::ListCommand;
 use ffx_target::{TargetInfo, TargetInfoQuery};
@@ -16,6 +16,58 @@ use futures::TryStreamExt;
 use target_behavior::{ConnectionBehavior, target_interface};
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use target_holders::daemon_protocol;
+use thiserror::Error;
+
+#[derive(thiserror::Error, Debug)]
+pub enum ShowTargetsError {
+    #[error("Device {0} not found.")]
+    DeviceNotFound(String),
+
+    #[error("Invalid arguments, you must allow at least one address type")]
+    NoAddressTypes,
+
+    #[error("Writer error: {0}")]
+    Writer(#[from] std::io::Error),
+
+    #[error("FFX Writer error: {0}")]
+    FfxWriter(#[from] ffx_writer::Error),
+
+    #[error("Formatter error: {0}")]
+    Formatter(#[from] target_formatter::FormatterError),
+}
+
+#[derive(Error, Debug)]
+pub enum ListError {
+    #[error("Query parse error: {0}")]
+    QueryParse(String),
+
+    #[error("Target collection FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("Target formatter error: {0}")]
+    Formatter(#[from] target_formatter::FormatterError),
+
+    #[error("Failed to get default target specifier: {0}")]
+    GetDefaultTargetSpecifier(#[source] anyhow::Error),
+
+    #[error("Could not get direct connector for {0}")]
+    NoDirectConnector(ffx_target::TargetInfoQuery),
+
+    #[error("Failed to resolve target address: {0}")]
+    TargetResolution(#[from] target_behavior::TargetResolutionError),
+
+    #[error("Failed to get target info: {0}")]
+    GetTargetInfo(#[source] anyhow::Error),
+
+    #[error("Failed to list targets: {0}")]
+    ListTargets(#[from] ffx_target::FfxTargetCrateError),
+
+    #[error(transparent)]
+    ShowTargets(#[from] ShowTargetsError),
+
+    #[error("FHO error: {0}")]
+    Fho(#[from] fho::Error),
+}
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -33,15 +85,29 @@ fho::embedded_plugin!(ListTool);
 #[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<Vec<JsonTarget>>;
-    async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+        self.main_impl(writer).await.map_err(|e| match e {
+            ListError::ShowTargets(e @ ShowTargetsError::DeviceNotFound(_)) => fho::Error::from(
+                anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 2)),
+            ),
+            ListError::ShowTargets(e @ ShowTargetsError::NoAddressTypes) => fho::Error::from(
+                anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 1)),
+            ),
+            other => fho::Error::from(anyhow::Error::from(other)),
+        })
+    }
+}
+
+impl ListTool {
+    async fn main_impl(self, mut writer: <Self as FfxMain>::Writer) -> Result<(), ListError> {
         // XXX Shouldn't check `is_strict()`. Eventually we'll _always_ do local discovery,
         // at which point this check goes away.
         let direct_mode = self.context.is_strict()
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context);
 
-        let list_query =
-            TargetInfoQuery::try_from(self.cmd.nodename.clone()).map_err(|e| anyhow::anyhow!(e))?;
+        let list_query = TargetInfoQuery::try_from(self.cmd.nodename.clone())
+            .map_err(|e| ListError::QueryParse(e.to_string()))?;
 
         let mut infos = if direct_mode {
             self.list_targets_direct(list_query).await?
@@ -50,8 +116,10 @@ impl FfxMain for ListTool {
             fidl_infos.into_iter().map(TargetInfo::from).collect()
         };
 
-        let spec = ffx_target::get_target_specifier(&self.context)?;
-        let default_query = TargetInfoQuery::try_from(spec).map_err(|e| anyhow::anyhow!(e))?;
+        let spec = ffx_target::get_target_specifier(&self.context)
+            .map_err(ListError::GetDefaultTargetSpecifier)?;
+        let default_query =
+            TargetInfoQuery::try_from(spec).map_err(|e| ListError::QueryParse(e.to_string()))?;
 
         for ti in infos.iter_mut() {
             ti.is_default = (!matches!(default_query, TargetInfoQuery::First)
@@ -60,13 +128,14 @@ impl FfxMain for ListTool {
         }
 
         emit_device_stats_event(infos.len(), &self.cmd.nodename).await;
-        show_targets(self.cmd, infos, &mut writer).await?;
+        show_targets(self.cmd, infos, &mut writer).await.map_err(ListError::ShowTargets)?;
         Ok(())
     }
-}
 
-impl ListTool {
-    async fn list_targets_direct(&self, query: TargetInfoQuery) -> Result<Vec<TargetInfo>> {
+    async fn list_targets_direct(
+        &self,
+        query: TargetInfoQuery,
+    ) -> Result<Vec<TargetInfo>, ListError> {
         let connect_to_rcs =
             !self.cmd.no_probe && !matches!(self.cmd.format, ffx_list_args::Format::Addresses);
         Ok(match query.get_target_addr() {
@@ -85,9 +154,14 @@ impl ListTool {
                 let target_env = target_interface(&self.fho_env);
                 let behavior = target_env.init_connection_behavior(&context).await?;
                 let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
-                    ffx_bail!("Could not get direct connector for {}", String::from(query));
+                    return Err(ListError::NoDirectConnector(query));
                 };
-                vec![connector.resolution().await?.get_target_info(addr, &context).await?]
+                let resolution = connector.resolution().await?;
+                let target_info = resolution
+                    .get_target_info(addr, &context)
+                    .await
+                    .map_err(ListError::GetTargetInfo)?;
+                vec![target_info]
             }
             _ => {
                 ffx_target::list_targets(
@@ -107,7 +181,7 @@ async fn show_targets(
     cmd: ListCommand,
     mut infos: Vec<TargetInfo>,
     writer: &mut VerifiedMachineWriter<Vec<JsonTarget>>,
-) -> Result<()> {
+) -> Result<(), ShowTargetsError> {
     // Provide stable output. Use "unstable" since we don't care about the original ordering.
     infos.sort_unstable_by(|a, b| a.nodename.cmp(&b.nodename));
     match infos.len() {
@@ -117,7 +191,7 @@ async fn show_targets(
             // have richer behavior dependent upon whether the user has a controlling
             // terminal, which would require passing in more and richer IO delegates.
             if let Some(n) = cmd.nodename {
-                ffx_bail_with_code!(2, "Device {} not found.", n);
+                return Err(ShowTargetsError::DeviceNotFound(n));
             } else {
                 if !writer.is_machine() {
                     writeln!(writer.stderr(), "No devices found.")?;
@@ -129,11 +203,11 @@ async fn show_targets(
         _ => {
             let address_types = cmd.address_types();
             if address_types.is_empty() {
-                ffx_bail!("Invalid arguments, you must allow at least one address type")
+                return Err(ShowTargetsError::NoAddressTypes);
             }
             if writer.is_machine() {
                 let res = target_formatter::filter_targets_by_address_types(infos, address_types);
-                let formatter = JsonTargetFormatter::try_from(res)?;
+                let formatter = JsonTargetFormatter::from(res);
                 writer.machine(&formatter.targets)?;
             } else {
                 let formatter =
@@ -148,19 +222,21 @@ async fn show_targets(
 async fn list_targets(
     tc_proxy: ffx::TargetCollectionProxy,
     cmd: &ListCommand,
-) -> Result<Vec<ffx::TargetInfo>> {
+) -> Result<Vec<ffx::TargetInfo>, ListError> {
     let (reader, server) = fidl::endpoints::create_endpoints::<ffx::TargetCollectionReaderMarker>();
 
-    tc_proxy.list_targets(
-        &ffx::TargetQuery { string_matcher: cmd.nodename.clone(), ..Default::default() },
-        reader,
-    )?;
+    tc_proxy
+        .list_targets(
+            &ffx::TargetQuery { string_matcher: cmd.nodename.clone(), ..Default::default() },
+            reader,
+        )
+        .map_err(ListError::Fidl)?;
     let mut res = Vec::new();
     let mut stream = server.into_stream();
-    while let Ok(Some(ffx::TargetCollectionReaderRequest::Next { entry, responder })) =
-        stream.try_next().await
+    while let Some(ffx::TargetCollectionReaderRequest::Next { entry, responder }) =
+        stream.try_next().await.map_err(ListError::Fidl)?
     {
-        responder.send()?;
+        responder.send().map_err(ListError::Fidl)?;
         if entry.len() > 0 {
             res.extend(entry);
         } else {
@@ -272,7 +348,11 @@ mod test {
         })
     }
 
-    async fn try_run_list_test(num_tests: usize, cmd: ListCommand, vsock: bool) -> Result<String> {
+    async fn try_run_list_test(
+        num_tests: usize,
+        cmd: ListCommand,
+        vsock: bool,
+    ) -> Result<String, ListError> {
         let proxy = setup_fake_target_collection_server(num_tests, vsock);
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -407,17 +487,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_with_one_device_and_not_matching_nodename() -> Result<()> {
-        let output = try_run_list_test(1, tab_list_cmd(Some("blarg".to_string())), false).await;
-        assert!(output.is_err());
+        let res = try_run_list_test(1, tab_list_cmd(Some("blarg".to_string())), false).await;
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            ListError::ShowTargets(ShowTargetsError::DeviceNotFound(ref name)) if name == "blarg"
+        ));
         Ok(())
     }
 
     #[fuchsia::test]
     async fn test_list_with_multiple_devices_and_not_matching_nodename() -> Result<()> {
         let num_tests = 25;
-        let output =
+        let res =
             try_run_list_test(num_tests, tab_list_cmd(Some("blarg".to_string())), false).await;
-        assert!(output.is_err());
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            ListError::ShowTargets(ShowTargetsError::DeviceNotFound(ref name)) if name == "blarg"
+        ));
         Ok(())
     }
 
@@ -442,8 +530,12 @@ mod test {
             allow_addrs: AddressTypes::IP,
             ..Default::default()
         };
-        let output = try_run_list_test(num_tests, cmd_none, false).await;
-        assert!(output.is_err());
+        let res = try_run_list_test(num_tests, cmd_none, false).await;
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            ListError::ShowTargets(ShowTargetsError::NoAddressTypes)
+        ));
         Ok(())
     }
 

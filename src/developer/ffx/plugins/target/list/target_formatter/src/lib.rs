@@ -3,8 +3,25 @@
 // found in the LICENSE file.
 
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Error, Result, bail};
 use ffx_list_args::{AddressTypes, Format};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum FormatterError {
+    #[error("Target must contain an address")]
+    EmptyAddresses,
+
+    #[error("Target must contain a serial number")]
+    MissingSerialNumber,
+
+    #[error("Invalid interface ID: {0}")]
+    InvalidInterfaceId(#[from] netext::InvalidInterfaceIdError),
+
+    #[error("JSON serialization error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub type Result<T, E = FormatterError> = std::result::Result<T, E>;
 use ffx_target::TargetInfo;
 use ffx_target::info::{RemoteControlState, TargetState};
 use netext::ScopedSocketAddr;
@@ -117,29 +134,30 @@ pub trait TargetFormatter {
 }
 
 impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatter> {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(tup: (Format, AddressTypes, Vec<TargetInfo>)) -> Result<Self> {
         let (format, address_types, targets) = tup;
         let targets = filter_targets_by_address_types(targets, address_types);
         Ok(match format {
-            Format::Tabular => Box::new(TabularTargetFormatter::try_from(targets)?),
+            Format::Tabular => Box::new(TabularTargetFormatter::from(targets)),
             Format::Simple => Box::new(SimpleTargetFormatter::try_from(targets)?),
             Format::Addresses => Box::new(AddressesTargetFormatter::try_from(targets)?),
             Format::AddressesWithLexicalScope => {
                 Box::new(AddressesWithLexicalScopeTargetFormatter::try_from(targets)?)
             }
             Format::Serials => Box::new(SerialsTargetFormatter::try_from(targets)?),
-            Format::NameOnly => Box::new(NameOnlyTargetFormatter::try_from(targets)?),
-            Format::Json => Box::new(JsonTargetFormatter::try_from(targets)?),
+            Format::NameOnly => Box::new(NameOnlyTargetFormatter::from(targets)),
+            Format::Json => Box::new(JsonTargetFormatter::from(targets)),
         })
     }
 }
 
+#[derive(Debug)]
 pub struct AddressesTarget(TargetAddr);
 
 impl TryFrom<TargetInfo> for AddressesTarget {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(t: TargetInfo) -> Result<Self> {
         // Prefer Usb or Vsock connections
@@ -151,7 +169,7 @@ impl TryFrom<TargetInfo> for AddressesTarget {
             return Ok(Self(*addr));
         }
         if t.addresses.is_empty() {
-            bail!("must contain an address");
+            return Err(FormatterError::EmptyAddresses);
         }
         Ok(Self(t.addresses[0]))
     }
@@ -162,7 +180,7 @@ pub struct AddressesTargetFormatter {
 }
 
 impl TryFrom<Vec<TargetInfo>> for AddressesTargetFormatter {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         // TODO(b/496914261): Re evaluate silently swallowing errors
@@ -182,7 +200,7 @@ pub struct AddressesWithLexicalScopeTargetFormatter {
 }
 
 impl TryFrom<Vec<TargetInfo>> for AddressesWithLexicalScopeTargetFormatter {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         // TODO(b/496914261): Re evaluate silently swallowing errors
@@ -197,14 +215,15 @@ impl TargetFormatter for AddressesWithLexicalScopeTargetFormatter {
     }
 }
 
+#[derive(Debug)]
 pub struct SerialsTarget(String);
 
 impl TryFrom<TargetInfo> for SerialsTarget {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(t: TargetInfo) -> Result<Self> {
         let Some(serial) = t.serial_number else {
-            bail!("must contain a serial number");
+            return Err(FormatterError::MissingSerialNumber);
         };
         Ok(Self(serial))
     }
@@ -215,7 +234,7 @@ pub struct SerialsTargetFormatter {
 }
 
 impl TryFrom<Vec<TargetInfo>> for SerialsTargetFormatter {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         let targets = targets.into_iter().flat_map(SerialsTarget::try_from).collect::<Vec<_>>();
@@ -242,18 +261,16 @@ pub struct NameOnlyTargetFormatter {
     targets: Vec<NameOnlyTarget>,
 }
 
-impl TryFrom<Vec<TargetInfo>> for NameOnlyTargetFormatter {
-    type Error = Error;
-
-    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
+impl From<Vec<TargetInfo>> for NameOnlyTargetFormatter {
+    fn from(targets: Vec<TargetInfo>) -> Self {
         let use_index = has_multiple_unknown_targets(&targets);
         let targets = targets
             .into_iter()
             .enumerate()
             .map(|(i, t)| (if use_index { Some(i) } else { None }, t))
-            .flat_map(NameOnlyTarget::try_from)
+            .map(NameOnlyTarget::from)
             .collect::<Vec<_>>();
-        Ok(Self { targets })
+        Self { targets }
     }
 }
 
@@ -263,6 +280,7 @@ impl TargetFormatter for NameOnlyTargetFormatter {
     }
 }
 
+#[derive(Debug)]
 pub struct SimpleTarget(String, TargetAddr);
 
 pub struct SimpleTargetFormatter {
@@ -270,7 +288,7 @@ pub struct SimpleTargetFormatter {
 }
 
 impl TryFrom<Vec<TargetInfo>> for SimpleTargetFormatter {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         let targets = targets.into_iter().flat_map(SimpleTarget::try_from).collect::<Vec<_>>();
@@ -285,7 +303,7 @@ impl TargetFormatter for SimpleTargetFormatter {
 }
 
 impl TryFrom<TargetInfo> for SimpleTarget {
-    type Error = Error;
+    type Error = FormatterError;
 
     fn try_from(t: TargetInfo) -> Result<Self> {
         let nodename = t.nodename.clone().unwrap_or_else(|| "".to_string());
@@ -306,7 +324,7 @@ impl From<Vec<TargetInfo>> for JsonTargetFormatter {
             .into_iter()
             .enumerate()
             .map(|(i, t)| (if use_index { Some(i) } else { None }, t))
-            .flat_map(JsonTarget::try_from)
+            .map(JsonTarget::from)
             .collect::<Vec<_>>();
         Self { targets }
     }
@@ -1394,5 +1412,38 @@ mod test {
         let formatter = JsonTargetFormatter::from(vec![t]);
         let json_target = &formatter.targets[0];
         assert!(json_target.is_default);
+    }
+
+    #[test]
+    fn test_addresses_target_try_from_empty_addresses() {
+        let mut t = make_valid_target();
+        t.addresses = vec![];
+        let err = AddressesTarget::try_from(t).unwrap_err();
+        assert!(matches!(err, FormatterError::EmptyAddresses));
+    }
+
+    #[test]
+    fn test_serials_target_try_from_missing_serial() {
+        let mut t = make_valid_target();
+        t.serial_number = None;
+        let err = SerialsTarget::try_from(t).unwrap_err();
+        assert!(matches!(err, FormatterError::MissingSerialNumber));
+    }
+
+    #[test]
+    fn test_simple_target_try_from_empty_addresses() {
+        let mut t = make_valid_target();
+        t.addresses = vec![];
+        let err = SimpleTarget::try_from(t).unwrap_err();
+        assert!(matches!(err, FormatterError::EmptyAddresses));
+    }
+
+    #[test]
+    fn test_port_str_scoped_invalid_interface() {
+        // Use an absurdly high scope ID that shouldn't map to a real interface.
+        let addr = TargetAddr::new(std_ip!("fe80::1"), 999999, 8080);
+        let res = port_str_scoped(addr);
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), FormatterError::InvalidInterfaceId(_)));
     }
 }
