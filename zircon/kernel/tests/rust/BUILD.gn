@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/rust/rustc_staticlib.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("kernel-tests") {
@@ -18,11 +18,9 @@ source_set("kernel-tests") {
   }
 }
 
-rustc_staticlib("trivial_tests") {
+kernel_rust_crate("trivial_tests") {
   testonly = true
   visibility = [ ":*" ]
-
-  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "test_macro" ]
 }

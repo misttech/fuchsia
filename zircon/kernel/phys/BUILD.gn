@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/linker_config.gni")
 import("//build/config/zircon/standard.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/info/info.gni")
@@ -150,9 +151,9 @@ if (toolchain_environment == "kernel.phys" ||
     defines = [ "LK_DEBUGLEVEL=2" ]
   }
 
-  config("load-pic") {
+  linker_config("load-pic") {
     # ZBI executables can be loaded anywhere, so they are linked at 0.
-    ldflags = [ "-Wl,-defsym,PHYS_LOAD_ADDRESS=0" ]
+    linker_flags = [ "-defsym=PHYS_LOAD_ADDRESS=0" ]
   }
 
   static_library("symbolize") {
@@ -943,21 +944,21 @@ kernel_elf_interp("physload.interp") {
   deps = [ ":physload" ]
 }
 
-config("phys-elf-module.config") {
+linker_config("phys-elf-module.config") {
   # When `-fsanitize=cfi` is enabled, this ensures that the ELF modules loaded
   # by physload (i.e. physboot) or physboot (i.e. the kernel proper) export the
   # cross-DSO checking entrypoint.  When that instrumentation is not enabled,
   # this will have no effect, so it doesn't need to be conditionalized.
-  ldflags = [ "-Wl,--export-dynamic-symbol=__cfi_check" ]
+  linker_flags = [ "--export-dynamic-symbol=__cfi_check" ]
 
   # The GNU linkers don't do page-aligned segments by default like LLD,
   # so a linker script is required.
   if (is_gcc) {
-    ldflags += [ "-Wl,-z,relro" ]
+    linker_flags += [ "-zrelro" ]
     if (toolchain_environment != "kernel") {
       # The kernel has its own linker script, so don't pass two -T switches.
       inputs = [ "phys-elf-module.ld" ]
-      ldflags += [ "-Wl,-T," + rebase_path(inputs[0], root_build_dir) ]
+      linker_flags += [ "-T" + rebase_path(inputs[0], root_build_dir) ]
     }
   }
 }
@@ -999,9 +1000,9 @@ if (is_kernel) {
     data_deps = [ ":physload" ]
   }
 
-  config("physload.module.config") {
+  linker_config("physload.module.config") {
     visibility = [ ":*" ]
-    ldflags = [ "-Wl,-e,PhysLoadHandoff" ]
+    linker_flags = [ "--entry=PhysLoadHandoff" ]
     configs = [ ":phys-elf-module.config" ]
   }
 
@@ -1073,12 +1074,12 @@ if (is_kernel) {
     deps = [ ":physboot.interp" ]
   }
 
-  config("physboot.kernel.config") {
+  linker_config("physboot.kernel.config") {
     visibility = [ ":*" ]
-    ldflags = [
+    linker_flags = [
       # The <phys/zircon-abi-spec.h> data structure is used in lieu of the
       # entry point.  physboot will actually jump to *kZirconAbiSpec.entry.
-      "-Wl,-e,kZirconAbiSpec",
+      "--entry=kZirconAbiSpec",
     ]
     configs = [ ":phys-elf-module.config" ]
   }

@@ -35,10 +35,3 @@ pub extern "C" fn fetch_add_var_exported_to_rust(x: i32) -> i32 {
         old
     }
 }
-
-use core::panic::PanicInfo;
-
-#[panic_handler]
-fn panic(_info: &PanicInfo<'_>) -> ! {
-    loop {}
-}
