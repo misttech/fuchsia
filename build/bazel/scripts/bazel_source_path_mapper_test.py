@@ -119,6 +119,17 @@ class BazelSourcePathMapperTest(unittest.TestCase):
         install_base_file = "/path/to/prebuilt/third_party/bazel/some_file"
         self.assertEqual(self.mapper.resolve_path(install_base_file), "")
 
+    def test_install_base_ignored_cached(self) -> None:
+        # Test Jiri cached prebuilt bazel
+        cached_install_base_file = "/path/to/fuchsia/.jiri_root/prebuilts/5db62ba47e93dba9fbb45195c7208820fc2b301073dc579d23c8ab1c5f4cdc96/install_base/some_file"
+        self.assertEqual(self.mapper.resolve_path(cached_install_base_file), "")
+
+        # Test fx-worktree shared cache bazel
+        worktree_install_base_file = "/path/to/home/.fuchsia/worktrees/shared-prebuilts/merged/prebuilt_third_party_bazel_linux-x64/5db62ba47e93dba9fbb45195c7208820fc2b301073dc579d23c8ab1c5f4cdc96/install_base/some_file"
+        self.assertEqual(
+            self.mapper.resolve_path(worktree_install_base_file), ""
+        )
+
     def test_resolve_relative_generated_file(self) -> None:
         self.assertEqual(self.mapper.resolve_path(".bazelrc"), "")
         self.assertEqual(

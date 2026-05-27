@@ -118,7 +118,7 @@ class BazelSourcePathMapper:
         # Use realpath() to resolve symlink chains if needed.
         path = os.path.realpath(path)
 
-        if "prebuilt/third_party/bazel/" in path:
+        if "prebuilt/third_party/bazel/" in path or "/install_base/" in path:
             # Assume a Bazel install_base file, must be ignored.
             return ""
 
