@@ -3,21 +3,25 @@
 // found in the LICENSE file.
 
 use fdf_component::{
-    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceInstance, ServiceOffer,
+    driver_register,
 };
 use fdf_metadata::MetadataServer;
 use fidl::Serializable;
 
+use anyhow::Context;
 use fidl_fuchsia_hardware_platform_device as fpdev;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
-use fidl_next::{Request, Responder, ServerEnd};
+use fidl_next::{Request, Responder, ServerEnd, fuchsia};
 use fidl_next_fuchsia_hardware_clock as fclock;
+use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
 use fidl_next_fuchsia_hardware_reset as freset;
 use fidl_next_fuchsia_hardware_spiimpl::{
     self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
 };
+use fspi_businfo::SpiBusMetadata;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
@@ -28,8 +32,10 @@ use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
 use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
+use std::time::Duration;
 use zx::Status;
 mod registers;
+use registers::DwSpiRegsBlock;
 
 const FIFO_SIZE: usize = 256;
 
@@ -57,7 +63,7 @@ enum SpiImplRequest {
 }
 
 struct DwSpiDevice {
-    mmio: registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>,
+    mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
     cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
 }
 
@@ -72,26 +78,24 @@ impl DwSpiDevice {
         max_bus_clock_hz: u64,
         rx_sample_delay_ns: u64,
     ) -> Result<(), Status> {
-        let divider = {
-            // Round the divider up to avoid overclocking.
-            let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
-                error!(
-                    "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-                );
-                return Err(Status::INVALID_ARGS);
-            };
-
-            let divider = numerator / max_bus_clock_hz;
-            if divider >= 0xffff {
-                error!(
-                    "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-                );
-                return Err(Status::INVALID_ARGS);
-            }
-
-            // The divider must be even.
-            if divider % 2 == 0 { divider } else { divider + 1 }
+        // Round the divider up to avoid overclocking.
+        let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
+            error!(
+                "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+            );
+            return Err(Status::INVALID_ARGS);
         };
+
+        let divider = numerator / max_bus_clock_hz;
+        if divider >= 0xffff {
+            error!(
+                "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
+            );
+            return Err(Status::INVALID_ARGS);
+        }
+
+        // The divider must be even.
+        let divider = if divider % 2 == 0 { divider } else { divider + 1 };
 
         self.mmio.baudr_mut().write({
             let mut baudr = registers::Baudr::from_raw(0);
@@ -100,32 +104,27 @@ impl DwSpiDevice {
         });
 
         // Convert the RX delay from nanoseconds to parent clock cycles.
-        let rx_sample_delay_clocks = {
-            const NS_PER_S: u64 = 1_000_000_000;
-
-            let Some(numerator) = rx_sample_delay_ns.checked_mul(parent_clock_hz) else {
-                error!(
-                    "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
-                );
-                return Err(Status::INVALID_ARGS);
-            };
-
-            let delay_clocks = numerator / NS_PER_S;
-            // Verify that the clock count fits in the register, and that the conversion from
-            // nanoseconds to clock cycles did not result in rounding.
-            if delay_clocks > 0xff || (delay_clocks * NS_PER_S) != numerator {
-                error!(
-                    "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
-                );
-                return Err(Status::INVALID_ARGS);
-            }
-
-            delay_clocks as u32
+        let Some(numerator) = rx_sample_delay_ns.checked_mul(parent_clock_hz) else {
+            error!(
+                "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
+            );
+            return Err(Status::INVALID_ARGS);
         };
+
+        let rx_sample_delay = Duration::from_nanos(numerator);
+        let rx_sample_delay_clocks = rx_sample_delay.as_secs();
+        // Verify that the clock count fits in the register, and that the conversion from
+        // nanoseconds to clock cycles did not result in rounding.
+        if rx_sample_delay_clocks > 0xff || rx_sample_delay.subsec_nanos() != 0 {
+            error!(
+                "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
+            );
+            return Err(Status::INVALID_ARGS);
+        }
 
         self.mmio.rx_sample_dly_mut().write({
             let mut rx_sample_dly = registers::RxSampleDly::from_raw(0);
-            rx_sample_dly.set_rsd(rx_sample_delay_clocks);
+            rx_sample_dly.set_rsd(rx_sample_delay_clocks as u32);
             rx_sample_dly
         });
 
@@ -190,7 +189,7 @@ impl DwSpiDevice {
         if let Some(cs_gpio) = &self.cs_gpio {
             cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputLow).wire().await.map_err(
                 |e| {
-                    error!("Failed to assert CS: {:?}", e);
+                    error!("Failed to assert CS: {e}");
                     Status::IO
                 },
             )?;
@@ -247,7 +246,7 @@ impl DwSpiDevice {
         if let Some(cs_gpio) = &self.cs_gpio {
             cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputHigh).wire().await.map_err(
                 |e| {
-                    error!("Failed to deassert CS: {:?}", e);
+                    error!("Failed to deassert CS: {e}");
                     Status::IO
                 },
             )?;
@@ -412,19 +411,9 @@ struct DwSpiDriver {
 
 driver_register!(DwSpiDriver);
 
-fn fidl_result_to_result<T>(
-    result: Result<fidl_next::FlexibleResult<T, i32>, fidl_next::Error<Status>>,
-) -> Result<T, Status> {
-    match result {
-        Ok(fidl_next::FlexibleResult::Ok(response)) => Ok(response),
-        Ok(fidl_next::FlexibleResult::Err(e)) => Err(Status::from_raw(e)),
-        _ => Err(Status::INTERNAL),
-    }
-}
-
 impl DwSpiDriver {
     async fn get_max_bus_clock(pdev: &fpdev::DeviceProxy) -> u64 {
-        if let Ok(metadata) = pdev.get_typed_metadata::<fspi_businfo::SpiBusMetadata>().await {
+        if let Ok(metadata) = pdev.get_typed_metadata::<SpiBusMetadata>().await {
             let channels = metadata.channels.unwrap_or(vec![]);
             channels.into_iter().filter_map(|c| c.max_frequency_hz).min().unwrap_or(0) as u64
         } else {
@@ -437,87 +426,89 @@ impl Driver for DwSpiDriver {
     const NAME: &str = "dw-spi";
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
-        info!("Starting dw-spi driver");
-
-        let pdev = context.connect_to_pdev()?;
-
-        let powerdomain_service: fdf_component::ServiceInstance<fpowerdomain::Service> =
+        let powerdomain_service: ServiceInstance<fpowerdomain::Service> =
             context.incoming.service().instance("power-domain").connect_next()?;
-        let (powerdomain_client, powerdomain_server) = fidl_next::fuchsia::create_channel();
+        let (powerdomain_client, powerdomain_server) = fuchsia::create_channel();
         powerdomain_service.domain(powerdomain_server)?;
         let powerdomain = powerdomain_client.spawn();
 
-        powerdomain.enable().await.inspect_err(|e| {
-            error!("Failed to enable power domain: {:?}", e);
-        })?;
-        info!("Power domain enabled successfully");
+        powerdomain.enable().await.context("Failed to enable power domain")?;
 
-        let parent_clock_hz = {
-            let clock_service: fdf_component::ServiceInstance<fclock::Service> =
-                context.incoming.service().instance("clock-bus").connect_next()?;
-            let (clock_client, clock_server) = fidl_next::fuchsia::create_channel();
-            clock_service.clock(clock_server)?;
-            let clock = clock_client.spawn();
+        let clock_service: ServiceInstance<fclock::Service> =
+            context.incoming.service().instance("clock-bus").connect_next()?;
+        let (clock_client, clock_server) = fuchsia::create_channel();
+        clock_service.clock(clock_server)?;
+        let clock = clock_client.spawn();
 
-            clock.enable().await.inspect_err(|e| {
-                error!("Failed to enable bus clock: {:?}", e);
-            })?;
+        clock.enable().await.context("Failed to enable bus clock")?;
 
-            fidl_result_to_result(clock.get_rate().await)
-                .inspect_err(|e| {
-                    error!("Failed to get bus clock rate: {:?}", e);
-                })
-                .unwrap_or(fidl_next_fuchsia_hardware_clock::ClockGetRateResponse { hz: 0 })
-                .hz
+        let parent_clock_hz = match clock.get_rate().await {
+            Ok(fidl_next::FlexibleResult::Ok(response)) => Ok(response),
+            Ok(fidl_next::FlexibleResult::Err(e)) => Err(Status::from_raw(e)),
+            _ => Err(Status::INTERNAL),
         };
+        let parent_clock_hz = parent_clock_hz
+            .inspect_err(|e| {
+                error!("Failed to get bus clock rate: {e}");
+            })
+            .unwrap_or(ClockGetRateResponse { hz: 0 })
+            .hz;
 
-        {
-            let clock_service: fdf_component::ServiceInstance<fclock::Service> =
-                context.incoming.service().instance("clock-registers").connect_next()?;
-            let (clock_client, clock_server) = fidl_next::fuchsia::create_channel();
-            clock_service.clock(clock_server)?;
-            let clock = clock_client.spawn();
+        let clock_service: ServiceInstance<fclock::Service> =
+            context.incoming.service().instance("clock-registers").connect_next()?;
+        let (clock_client, clock_server) = fuchsia::create_channel();
+        clock_service.clock(clock_server)?;
+        let clock = clock_client.spawn();
 
-            clock.enable().await.inspect_err(|e| {
-                error!("Failed to enable registers clock: {:?}", e);
-            })?;
-        }
+        clock.enable().await.context("Failed to enable registers clock")?;
 
-        let reset_service: fdf_component::ServiceInstance<freset::Service> =
+        let reset_service: ServiceInstance<freset::Service> =
             context.incoming.service().instance("reset").connect_next()?;
-        let (reset_client, reset_server) = fidl_next::fuchsia::create_channel();
+        let (reset_client, reset_server) = fuchsia::create_channel();
         reset_service.reset(reset_server)?;
         let reset = reset_client.spawn();
 
-        reset.toggle().await.inspect_err(|e| {
-            error!("Failed to toggle reset: {:?}", e);
-        })?;
+        reset.toggle().await.context("Failed to toggle reset")?;
 
-        let mmio = registers::DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
+        let pdev = context.connect_to_pdev()?;
+        let mmio = DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
 
-        let cs_gpio = {
-            let cs_gpio_service: fdf_component::ServiceInstance<fgpio::Service> =
-                context.incoming.service().instance("gpio-cs-0").connect_next()?;
-            let (cs_gpio_client, cs_gpio_server) = fidl_next::fuchsia::create_channel();
-            cs_gpio_service.device(cs_gpio_server)?;
+        let cs_gpio_service: ServiceInstance<fgpio::Service> =
+            context.incoming.service().instance("gpio-cs-0").connect_next()?;
+        let (cs_gpio_client, cs_gpio_server) = fuchsia::create_channel();
+        cs_gpio_service.device(cs_gpio_server)?;
 
-            let cs_gpio = cs_gpio_client.spawn();
+        let cs_gpio = cs_gpio_client.spawn();
 
-            // The chip select GPIO is optional. Make a call on it do determine whether or not it
-            // has been provided to us.
-            match cs_gpio.release_interrupt().await {
-                Ok(_) => Some(cs_gpio),
-                _ => None,
-            }
+        // The chip select GPIO is optional. Make a call on it do determine whether or not it
+        // has been provided to us.
+        let cs_gpio = match cs_gpio.release_interrupt().await {
+            Ok(_) => Some(cs_gpio),
+            _ => None,
         };
 
         let mut device = DwSpiDevice { mmio, cs_gpio };
+
+        let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
+        let config: DwSpiConfig = pdev
+            .get_deserialized_metadata()
+            .await
+            .inspect_err(|e| {
+                info!("dw-spi config was not provided ({e})");
+            })
+            .unwrap_or(DwSpiConfig { dw_spi_rx_sample_delay_ns: 0 });
+
+        device.init_registers(
+            parent_clock_hz,
+            max_bus_clock_hz,
+            config.dw_spi_rx_sample_delay_ns,
+        )?;
 
         let mut outgoing = ServiceFs::new();
 
         let scope = fasync::Scope::new_with_name(Self::NAME);
 
-        let (spi_req_tx, mut spi_req_rx) = mpsc::unbounded::<SpiImplRequest>();
+        let (spi_req_tx, mut spi_req_rx) = mpsc::unbounded();
 
         let offer = ServiceOffer::<fidl_next_fuchsia_hardware_spiimpl::Service>::new_next()
             .add_default_named_next(
@@ -529,37 +520,22 @@ impl Driver for DwSpiDriver {
 
         let mut node_args = NodeBuilder::new(Self::NAME).add_offer(offer);
 
-        let businfo_server = MetadataServer::new(fspi_businfo::SpiBusMetadata::SERIALIZABLE_NAME)
-            .forward_from_pdev(&pdev)
-            .await;
+        let businfo_server =
+            MetadataServer::new(SpiBusMetadata::SERIALIZABLE_NAME).forward_from_pdev(&pdev).await;
         match businfo_server {
             Ok(ref server) => {
                 if let Some(offer) = server.serve(&mut outgoing, scope.to_handle(), "default") {
                     node_args = node_args.add_offer(offer);
                 }
             }
+            // Metadata must either be provided or not provided; other results are considered fatal
+            // errors.
+            Err(e) if e == Status::NOT_FOUND => {}
             Err(e) => {
-                if e != Status::NOT_FOUND {
-                    error!("Failed to forward SPI bus metadata: {e}");
-                    return Err(e.into());
-                }
+                error!("Failed to forward SPI bus metadata: {e}");
+                return Err(e.into());
             }
         }
-
-        let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
-        let config: DwSpiConfig = pdev
-            .get_deserialized_metadata()
-            .await
-            .inspect_err(|e| {
-                info!("dw-spi config was not provided ({:?})", e);
-            })
-            .unwrap_or(DwSpiConfig { dw_spi_rx_sample_delay_ns: 0 });
-
-        device.init_registers(
-            parent_clock_hz,
-            max_bus_clock_hz,
-            config.dw_spi_rx_sample_delay_ns,
-        )?;
 
         let node = context.take_node()?;
         node.add_child(node_args.build()).await?;
@@ -582,5 +558,4 @@ impl Driver for DwSpiDriver {
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
