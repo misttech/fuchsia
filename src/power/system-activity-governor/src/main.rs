@@ -194,6 +194,7 @@ async fn main() -> Result<()> {
     fuchsia_inspect::component::health().set_starting_up();
 
     let config = Config::take_from_startup_handle();
+    let config = std::rc::Rc::new(config);
     inspector.root().record_child("config", |config_node| config.record_inspect(config_node));
 
     // Set up the SystemActivityGovernor.
@@ -247,12 +248,9 @@ async fn main() -> Result<()> {
     let is_shutting_down = register_terminal_state_watcher(is_shutting_down_node).await;
     let is_shutting_down_sag = is_shutting_down.clone();
 
-    let use_suspender = config.use_suspender;
-    let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
-    let reboot_on_stalled_suspend_blocker = config.reboot_on_stalled_suspend_blocker;
     let front_end_clone = front_end.clone();
     let inspector_clone = inspector.clone();
-    let max_active_wake_leases_to_log = config.max_active_wake_leases_to_log as usize;
+    let config_clone = config.clone();
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
         let front_end = front_end_clone.clone();
         let topology = topology2.clone();
@@ -261,12 +259,11 @@ async fn main() -> Result<()> {
         let crash_reporter = crash_reporter.clone();
         let boost_proxy = boost_proxy.clone();
         let inspect_root = inspector_clone.root().clone_weak();
-        let use_suspender = use_suspender;
-        let reboot_on_stalled_suspend_blocker = reboot_on_stalled_suspend_blocker;
+        let config = config_clone.clone();
         async move {
             log::info!("Creating activity governor server...");
 
-            let admin_proxy = if reboot_on_stalled_suspend_blocker {
+            let admin_proxy = if config.reboot_on_stalled_suspend_blocker {
                 match connect_to_protocol::<fstatecontrol::AdminMarker>() {
                     Ok(p) => Some(p),
                     Err(e) => {
@@ -287,12 +284,9 @@ async fn main() -> Result<()> {
                     execution_state_dependencies,
                     is_shutting_down,
                     crash_reporter,
-                    MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
                     boost_proxy,
-                    use_suspender,
-                    max_active_wake_leases_to_log,
                     admin_proxy,
-                    reboot_on_stalled_suspend_blocker,
+                    &config,
                 )
                 .await
         }

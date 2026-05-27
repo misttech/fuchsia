@@ -17,6 +17,7 @@ use fuchsia_async as fasync;
 use fuchsia_inspect::Node as INode;
 use futures::future::FutureExt;
 use futures::{StreamExt, pin_mut, select_biased};
+use sag_config::Config;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -174,12 +175,9 @@ impl ActivityGovernorRequestFrontend {
         execution_state_dependencies: Vec<fbroker::LevelDependency>,
         is_shutting_down: Rc<Cell<bool>>,
         crash_reporter: ffeedback::CrashReporterProxy,
-        stuck_warning_timeout: fasync::MonotonicDuration,
         boost_proxy: fcpumanager::BoostProxy,
-        use_suspender: bool,
-        max_active_wake_leases_to_log: usize,
         admin_proxy: Option<fidl_fuchsia_hardware_power_statecontrol::AdminProxy>,
-        reboot_on_stalled_suspend_blocker: bool,
+        config: &Config,
     ) -> Result<()> {
         log::info!("Creating activity governor server from frontend...");
         let sag = SystemActivityGovernor::new(
@@ -190,12 +188,9 @@ impl ActivityGovernorRequestFrontend {
             execution_state_dependencies,
             is_shutting_down,
             crash_reporter,
-            stuck_warning_timeout,
             boost_proxy,
-            use_suspender,
-            max_active_wake_leases_to_log,
             admin_proxy,
-            reboot_on_stalled_suspend_blocker,
+            config,
         )
         .await?;
 

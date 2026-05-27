@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "//src/power/system-activity-governor/meta/config-suspend-resume-stuck-warning-timeout.cml" ],
+    include: [ "//src/power/system-activity-governor/meta/config-suspend-failures.cml" ],
     capabilities: [
         {
             config: "fuchsia.power.UseSuspender",

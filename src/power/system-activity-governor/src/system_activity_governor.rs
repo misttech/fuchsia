@@ -31,6 +31,7 @@ use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
 use power_broker_client::PowerElementContext;
+use sag_config::Config;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -59,6 +60,7 @@ const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
 const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
     fasync::MonotonicDuration::from_seconds(10);
 const NO_SUSPEND_CRASH_SIGNATURE: &str = "fuchsia-no-suspend-in-5-application-activity-cycles";
+const SUSPEND_LOOP_SIGNATURE: &str = "fuchsia-sag-suspend-callback-loop-detected";
 
 type NotifyFn = Box<dyn Fn(&fsuspend::SuspendStats, fsuspend::StatsWatchResponder) -> bool>;
 type StatsHangingGet = HangingGet<fsuspend::SuspendStats, fsuspend::StatsWatchResponder, NotifyFn>;
@@ -388,7 +390,7 @@ impl LeaseManager {
 
         if let Some(detector) = &loop_detector {
             match detector.on_lease_taken() {
-                LeaseTakenAction::ShouldReport => {
+                ReportAction::ShouldReport => {
                     log::info!(
                         "No-suspend loop detected for client '{}'; filing crash report",
                         name
@@ -404,7 +406,7 @@ impl LeaseManager {
                         log::warn!("Failed to send crash report to channel: {:?}", e);
                     }
                 }
-                LeaseTakenAction::DoNotReport => {}
+                ReportAction::DoNotReport => {}
             }
         }
 
@@ -646,7 +648,7 @@ impl SuspendBlockerIdGenerator {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum LeaseTakenAction {
+enum ReportAction {
     ShouldReport,
     DoNotReport,
 }
@@ -666,15 +668,15 @@ impl NoSuspendDetector {
         Self { active_count: std::cell::Cell::new(0), cycle_count: std::cell::Cell::new(0) }
     }
 
-    fn on_lease_taken(&self) -> LeaseTakenAction {
-        let mut action = LeaseTakenAction::DoNotReport;
+    fn on_lease_taken(&self) -> ReportAction {
+        let mut action = ReportAction::DoNotReport;
         let active = self.active_count.get();
         if active == 0 {
             let cycles = self.cycle_count.get() + 1;
             self.cycle_count.set(cycles);
 
             if cycles == Self::CYCLE_THRESHOLD {
-                action = LeaseTakenAction::ShouldReport;
+                action = ReportAction::ShouldReport;
             }
         }
         self.active_count.set(active + 1);
@@ -693,6 +695,44 @@ impl NoSuspendDetector {
             log::debug!("Resetting cycle count for loop detector");
             self.cycle_count.set(0);
         }
+    }
+}
+
+/// Detects situations where the system repeatedly runs suspend and resume
+/// callbacks in a loop without suspension handled.
+struct SuspendLoopDetector {
+    count: std::cell::Cell<u32>,
+    max_attempts: u32,
+}
+
+impl SuspendLoopDetector {
+    fn new(max_attempts: u32) -> Self {
+        Self { count: std::cell::Cell::new(0), max_attempts }
+    }
+
+    fn on_suspend_attempt(&self) {
+        if self.max_attempts == 0 {
+            return;
+        }
+        let count = self.count.get() + 1;
+        self.count.set(count);
+    }
+
+    fn should_report(&self) -> ReportAction {
+        if self.max_attempts == 0 {
+            return ReportAction::DoNotReport;
+        }
+        let count = self.count.get();
+
+        if count == self.max_attempts {
+            ReportAction::ShouldReport
+        } else {
+            ReportAction::DoNotReport
+        }
+    }
+
+    fn reset(&self) {
+        self.count.set(0);
     }
 }
 
@@ -767,6 +807,7 @@ pub struct SystemActivityGovernor {
     stuck_warning_timeout: fasync::MonotonicDuration,
     report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
     loop_detector: Option<std::rc::Rc<NoSuspendDetector>>,
+    suspend_loop_detector: std::rc::Rc<SuspendLoopDetector>,
     reboot_on_stalled_suspend_blocker: bool,
 }
 
@@ -779,12 +820,9 @@ impl SystemActivityGovernor {
         execution_state_dependencies: Vec<fbroker::LevelDependency>,
         is_shutting_down: Rc<Cell<bool>>,
         crash_reporter: ffeedback::CrashReporterProxy,
-        stuck_warning_timeout: fasync::MonotonicDuration,
         boost_proxy: fcpumanager::BoostProxy,
-        use_suspender: bool,
-        max_active_wake_leases_to_log: usize,
         admin_proxy: Option<fstatecontrol::AdminProxy>,
-        reboot_on_stalled_suspend_blocker: bool,
+        config: &Config,
     ) -> Result<Rc<Self>> {
         let (report_sender, mut report_receiver) =
             futures::channel::mpsc::unbounded::<CrashReportMessage>();
@@ -890,7 +928,7 @@ impl SystemActivityGovernor {
             application_activity.assertive_dependency_token().expect("token not registered"),
             cpu_manager.suspend_block_manager().await,
             before_suspend_notifier.clone(),
-            max_active_wake_leases_to_log,
+            config.max_active_wake_leases_to_log as usize,
             report_sender.clone(),
         );
 
@@ -976,8 +1014,13 @@ impl SystemActivityGovernor {
         let suspend_blockers_node =
             inspect_root.create_lazy_child_with_thread_local("suspend_blockers", callback);
 
-        let loop_detector =
-            if use_suspender { Some(std::rc::Rc::new(NoSuspendDetector::new())) } else { None };
+        let loop_detector = if config.use_suspender {
+            Some(std::rc::Rc::new(NoSuspendDetector::new()))
+        } else {
+            None
+        };
+        let suspend_loop_detector =
+            std::rc::Rc::new(SuspendLoopDetector::new(config.suspend_loop_max_attempts));
 
         Ok(Rc::new(Self {
             execution_state,
@@ -989,7 +1032,7 @@ impl SystemActivityGovernor {
             cpu_manager,
             boot_control,
             element_power_level_names,
-            reboot_on_stalled_suspend_blocker,
+            reboot_on_stalled_suspend_blocker: config.reboot_on_stalled_suspend_blocker,
             es_activation_after_resume_signal: Rc::new(RefCell::new(async_lock::OnceCell::new())),
             resume_control_lease: Rc::new(RefCell::new(None)),
             boost_token: Rc::new(RefCell::new(None)),
@@ -1003,9 +1046,12 @@ impl SystemActivityGovernor {
             suspend_blocker_id_generator: Rc::new(SuspendBlockerIdGenerator::default()),
             _suspend_blockers_node: suspend_blockers_node,
             before_suspend_notifier,
-            stuck_warning_timeout,
+            stuck_warning_timeout: fasync::MonotonicDuration::from_seconds(
+                config.suspend_resume_stuck_warning_timeout.into(),
+            ),
             report_sender,
             loop_detector,
+            suspend_loop_detector,
         }))
     }
 
@@ -1700,6 +1746,7 @@ impl SuspendResumeListener for SystemActivityGovernor {
                 detector.on_suspend_success();
             }
         }
+        self.suspend_loop_detector.reset();
         // Reset Execution State activation signal at each resume transition.
         let _ = self.es_activation_after_resume_signal.borrow_mut().take();
 
@@ -1750,6 +1797,8 @@ impl SuspendResumeListener for SystemActivityGovernor {
         fuchsia_trace::duration!("power", "system-activity-governor:suspend_callbacks");
         log::debug!("notify_on_suspend");
 
+        self.suspend_loop_detector.on_suspend_attempt();
+
         let boost_fut = async {
             log::info!("Calling Boost protocol");
             match self.boost_proxy.boost().await {
@@ -1785,6 +1834,20 @@ impl SuspendResumeListener for SystemActivityGovernor {
         self.update_suspend_blockers(false).await;
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseEnded);
         log::debug!("update_suspend_blockers(false) done");
+
+        if self.suspend_loop_detector.should_report() == ReportAction::ShouldReport {
+            log::warn!("Suspend loop detected; filing crash report");
+            let report = ffeedback::CrashReport {
+                program_name: Some("system".to_string()),
+                crash_signature: Some(SUSPEND_LOOP_SIGNATURE.to_string()),
+                is_fatal: Some(false),
+                ..Default::default()
+            };
+            let message = CrashReportMessage { report, reboot_reason: None };
+            if let Err(e) = self.report_sender.unbounded_send(message) {
+                log::warn!("Failed to send crash report to channel: {:?}", e);
+            }
+        }
     }
 }
 
@@ -1826,5 +1889,65 @@ fn generate_element_power_level_names(
                 .collect(),
         ),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_suspend_loop_detector() {
+        // Create an executor so that fasync types (like MonotonicDuration) can be used
+        // in this synchronous test without panicking ("Fuchsia Executor must be created first").
+        let _executor = fasync::TestExecutor::new();
+        let detector = SuspendLoopDetector::new(3);
+
+        // First attempt
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::DoNotReport);
+
+        // Second attempt
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::DoNotReport);
+
+        // Third attempt (triggers)
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::ShouldReport);
+
+        // Fourth attempt (should not trigger because count != max_attempts)
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::DoNotReport);
+
+        // Reset when handled
+        detector.reset();
+
+        // Should not trigger now on first attempt after reset
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::DoNotReport);
+    }
+
+    #[fuchsia::test]
+    fn test_suspend_loop_detector_files_once_after_reset() {
+        let detector = SuspendLoopDetector::new(3);
+
+        // First sequence
+        detector.on_suspend_attempt();
+        detector.on_suspend_attempt();
+        detector.on_suspend_attempt(); // count=3
+        assert_eq!(detector.should_report(), ReportAction::ShouldReport);
+
+        // Fourth attempt (should not trigger)
+        detector.on_suspend_attempt();
+        assert_eq!(detector.should_report(), ReportAction::DoNotReport);
+
+        // Reset
+        detector.reset();
+
+        // Second sequence (should trigger again after reset)
+        detector.on_suspend_attempt();
+        detector.on_suspend_attempt();
+        detector.on_suspend_attempt(); // count=3
+        assert_eq!(detector.should_report(), ReportAction::ShouldReport);
     }
 }

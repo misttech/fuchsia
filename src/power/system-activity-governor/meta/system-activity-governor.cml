@@ -30,6 +30,11 @@
             type: "uint32",
             value: 6144,
         },
+        {
+            config: "fuchsia.power.SuspendLoopMaxAttempts",
+            type: "uint32",
+            value: 10,
+        },
         { service: "fuchsia.power.broker.ElementInfoProviderService" },
     ],
     use: [
@@ -101,6 +106,14 @@
             type: "bool",
             availability: "optional",
             default: true,
+        },
+        {
+            config: "fuchsia.power.SuspendLoopMaxAttempts",
+
+            // The maximum number of suspend attempts before filing a crash report.
+            from: "self",
+            key: "suspend_loop_max_attempts",
+            type: "uint32",
         },
         {
             config: "fuchsia.power.MaxActiveWakeLeasesToLog",

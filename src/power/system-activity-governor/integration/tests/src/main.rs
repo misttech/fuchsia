@@ -291,6 +291,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -426,6 +427,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -516,6 +518,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -591,6 +594,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -676,6 +680,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -751,6 +756,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -836,6 +842,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1069,6 +1076,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1187,6 +1195,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1262,6 +1271,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1321,6 +1331,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1641,6 +1652,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_wak
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -1727,6 +1739,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -1928,6 +1941,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2068,6 +2082,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2492,6 +2507,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2554,6 +2570,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2595,6 +2612,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2641,6 +2659,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2725,6 +2744,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2764,6 +2784,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -2810,6 +2831,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -3404,6 +3426,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3505,6 +3528,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3942,6 +3966,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
+                suspend_loop_max_attempts: 10u64,
             },
         }
     );
@@ -4722,6 +4747,218 @@ async fn test_activity_governor_limits_wake_leases_node() -> Result<()> {
             )
         });
     }
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_suspend_loop_files_report() -> Result<()> {
+    let max_attempts = 10;
+    let (realm, _activity_governor_moniker) =
+        create_realm_ext(ftest::RealmOptions { use_suspender: Some(true), ..Default::default() })
+            .await?;
+
+    // Connect to the Fake Suspender and the Crash Querier
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    // Clear initial crash reporter state
+    let _ = querier.watch_file().await?;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let blocker_name = "saboteur".to_string();
+    let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
+    activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(blocker_client_end),
+            name: Some(blocker_name.clone()),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (before_suspend_tx, mut before_suspend_rx) = mpsc::channel(1);
+    let (mut reply_tx, reply_rx) = mpsc::channel(1);
+    let (mut drop_lease_tx, drop_lease_rx) = mpsc::channel(1);
+
+    let activity_governor_clone = activity_governor.clone();
+    fasync::Task::local(async move {
+        let activity_governor = activity_governor_clone;
+        let mut before_suspend_tx = before_suspend_tx;
+        let mut reply_rx = reply_rx;
+        let mut drop_lease_rx = drop_lease_rx;
+
+        while let Some(Ok(req)) = blocker_stream.next().await {
+            match req {
+                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
+                    // Take a wake lease to block suspend after this callback
+                    let lease_token =
+                        activity_governor.acquire_wake_lease("saboteur_wake_lease").await.unwrap();
+
+                    // Signal that we took the lease
+                    before_suspend_tx.try_send(()).unwrap();
+
+                    // Wait for permission to reply
+                    reply_rx.next().await.unwrap();
+                    responder.send().unwrap();
+
+                    // Wait for permission to drop lease
+                    drop_lease_rx.next().await.unwrap();
+                    drop(lease_token);
+                }
+                fsystem::SuspendBlockerRequest::AfterResume { responder, .. } => {
+                    responder.send().unwrap();
+                }
+                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
+                    panic!("Unexpected method: {}", ordinal);
+                }
+            }
+        }
+    })
+    .detach();
+
+    // Trigger "boot complete" so SAG is allowed to suspend
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    boot_control.set_boot_complete().await.expect("SetBootComplete failed");
+
+    // Drive the loop 'max_attempts' times using the Saboteur
+    for i in 0..max_attempts {
+        // Wait for SAG to reach BeforeSuspend
+        before_suspend_rx.next().await.unwrap();
+
+        // Tell handler to reply to BeforeSuspend
+        reply_tx.try_send(()).unwrap();
+
+        // Wait for SAG to fail suspend (it returns NotAllowed and doesn't call fake suspender)
+        // We expect await_suspend to time out!
+        let await_res = suspend_device
+            .await_suspend()
+            .on_timeout(fasync::MonotonicDuration::from_millis(500).after_now(), || {
+                Ok(Err(zx::Status::TIMED_OUT.into_raw())) // Return error on timeout
+            })
+            .await;
+
+        assert!(await_res.is_err() || await_res.as_ref().unwrap().is_err());
+
+        // Tell handler to drop the lease so SAG can try again
+        drop_lease_tx.try_send(()).unwrap();
+
+        log::info!("Completed cycle {}/{}", i + 1, max_attempts);
+    }
+
+    // Verify the crash report was filed
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(60).after_now(), || {
+            panic!("Timeout waiting for crash report. Loop detector failed?");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 1);
+
+    log::info!("First report verified. Starting second loop to verify rate limit.");
+
+    // Run another cycle of 'max_attempts' failures.
+    for i in 0..max_attempts {
+        // Wait for SAG to reach BeforeSuspend
+        before_suspend_rx.next().await.unwrap();
+
+        // Tell handler to reply to BeforeSuspend
+        reply_tx.try_send(()).unwrap();
+
+        // Wait for SAG to fail suspend
+        let await_res = suspend_device
+            .await_suspend()
+            .on_timeout(fasync::MonotonicDuration::from_millis(500).after_now(), || {
+                Ok(Err(zx::Status::TIMED_OUT.into_raw()))
+            })
+            .await;
+
+        assert!(await_res.is_err() || await_res.as_ref().unwrap().is_err());
+
+        // Tell handler to drop the lease
+        drop_lease_tx.try_send(()).unwrap();
+
+        log::info!("Completed second loop cycle {}/{}", i + 1, max_attempts);
+    }
+
+    // Verify that NO crash report was filed because of rate limit.
+    // watch_file should block, so we expect a timeout!
+    let watch_result = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(1).after_now(), || {
+            Ok(0) // Return 0 on timeout to indicate no report filed!
+        })
+        .await;
+
+    assert_eq!(watch_result.unwrap(), 0);
+    log::info!("Rate limiting verified successfully (no second report).");
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_suspend_success_no_report() -> Result<()> {
+    let max_attempts = 10;
+    let (realm, _activity_governor_moniker) =
+        create_realm_ext(ftest::RealmOptions { use_suspender: Some(true), ..Default::default() })
+            .await?;
+
+    // Connect to the Fake Suspender and the Crash Querier
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    // Clear initial crash reporter state
+    let _ = querier.watch_file().await?;
+
+    // Trigger "boot complete" so SAG is allowed to suspend
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    boot_control.set_boot_complete().await.expect("SetBootComplete failed");
+
+    // Drive the loop 'max_attempts' times
+    for i in 0..max_attempts {
+        // Expect success on await_suspend!
+        let res = suspend_device.await_suspend().await.unwrap().unwrap();
+        assert_eq!(0, res.state_index.unwrap());
+
+        // Complete the suspend cycle by calling Resume
+        suspend_device
+            .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+                suspend_duration: Some(1000),
+                suspend_overhead: Some(100),
+                reason: Some(fhsuspend::WakeReason {
+                    wake_vectors: Some(vec![]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+            .unwrap();
+
+        log::info!("Completed success cycle {}/{}", i + 1, max_attempts);
+    }
+
+    // Verify that NO crash report was filed.
+    let watch_result = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(1).after_now(), || {
+            Ok(0) // Return 0 on timeout to indicate no report filed!
+        })
+        .await;
+
+    assert_eq!(watch_result.unwrap(), 0);
+    log::info!("Verified NO report filed after successes.");
 
     Ok(())
 }
