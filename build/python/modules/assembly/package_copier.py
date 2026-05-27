@@ -36,12 +36,6 @@ class PackageManifestParsingException(Exception):
     ...
 
 
-class PackageCopyingException(Exception):
-    """To be raised when there is an exception copying a package."""
-
-    ...
-
-
 class PackageCopier:
     """Class for managing the copying of packages into a directory with a shared, combined, blobstore.
 

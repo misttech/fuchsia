@@ -32,10 +32,6 @@ class FileEntry:
     source: FilePath
     destination: FilePath
 
-    def get_destination(self) -> str:
-        """Destination accessor method"""
-        return str(self.destination)
-
     def __hash__(self) -> int:
         return hash((self.destination, self.source))
 

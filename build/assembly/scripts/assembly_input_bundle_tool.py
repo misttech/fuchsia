@@ -7,7 +7,6 @@ import argparse
 import json
 import logging
 import os
-import subprocess
 import sys
 from typing import Any, TextIO
 
@@ -339,99 +338,6 @@ def _read_json_file(pkg_list_file: TextIO) -> list[dict[str, Any]]:
         raise
 
 
-def generate_package_creation_manifest(args: argparse.Namespace) -> int:
-    """Generate a package creation manifest for an Assembly Input Bundle (AIB)
-
-    Each AIB has a contents manifest that was created with it.  This file lists
-    all of the files in the AIB, and their path within the build dir::
-
-      AIB/path/to/file_1=outdir/path/to/AIB/path/to/file_1
-      AIB/path/to/file_2=outdir/path/to/AIB/path/to/file_2
-
-    This format locates all the files in the AIB, relative to the
-    root_build_dir, and then gives their destination path within the AIB package
-    and archive.
-
-    To generate the package the AIB, a creation manifest is required (also in
-    FINI format).  This is the same file, with the addition of the path to the
-    package metadata file::
-
-      meta/package=path/to/metadata/file
-
-    This fn generates the package metadata file, and then generates the creation
-    manifest file by appending the path to the metadata file to the entries in
-    the AIB contents manifest.
-    """
-    meta_package_content = {"name": args.name, "version": "0"}
-    with open(args.meta_package, "w") as meta_package:
-        json.dump(meta_package_content, meta_package)
-    contents_manifest = args.contents_manifest.read()
-    with open(args.output, "w") as output:
-        output.write(contents_manifest)
-        output.write("meta/package={}".format(args.meta_package))
-
-    return 0
-
-
-def generate_archive(args: argparse.Namespace) -> int:
-    """Generate an archive of an Assembly Input Bundle (AIB)
-
-    Each AIB has a contents manifest that was created with it.  This file lists
-    all of the files in the AIB, and their path within the build dir::
-
-      AIB/path/to/file_1=outdir/path/to/AIB/path/to/file_1
-      AIB/path/to/file_2=outdir/path/to/AIB/path/to/file_2
-
-    This format locates all the files in the AIB, relative to the
-    root_build_dir, and then gives their destination path within the AIB package
-    and archive.
-
-    To generate the archive of the AIB, a creation manifest is required (also in
-    FINI format).  This is the same file, with the addition of the path to the
-    package meta.far.
-
-      meta.far=path/to/meta.far
-
-    This fn generates the creation manifest, appending the package meta.far to
-    the contents manifest, and then calling the tarmaker tool to build the
-    archive itself, using the generated creation manifest.
-    """
-    deps: set[str] = set()
-    # Read the AIB's contents manifest, all of these files will be added to the
-    # creation manifest for the archive.
-    contents_manifest = args.contents_manifest.readlines()
-    deps.add(args.contents_manifest.name)
-    with open(args.creation_manifest, "w") as creation_manifest:
-        if args.meta_far:
-            # Add the AIB's package meta.far to the creation manifest if one was
-            # provided.
-            creation_manifest.write("meta.far={}\n".format(args.meta_far))
-
-        # Add all files from the AIB's contents manifest.
-        for line in contents_manifest:
-            # Split out the lines so that a depfile for the action can be made
-            # from the contents_manifest's source paths.
-            src = line.split("=", 1)[1]
-            deps.add(src.strip())
-            creation_manifest.write(line)
-
-    # Build the archive itself.
-    cmd_args = [
-        args.tarmaker,
-        "-manifest",
-        args.creation_manifest,
-        "-output",
-        args.output,
-    ]
-    subprocess.run(cmd_args, check=True)
-
-    if args.depfile:
-        with open(args.depfile, "w") as depfile:
-            DepFile.from_deps(args.output, deps).write_to(depfile)
-
-    return 0
-
-
 def find_blob_in_manifests(
     blob_to_find: str, bundle_dir: str, manifests_to_search: list[FilePath]
 ) -> list[tuple[FilePath, FilePath]]:
@@ -614,45 +520,6 @@ def main() -> int:
     )
 
     bundle_creation_parser.set_defaults(handler=create_bundle)
-
-    ###
-    #
-    # 'assembly_input_bundle_tool generate-package-creation-manifest' subcommand
-    #  parser
-    #
-    package_creation_manifest_parser = sub_parsers.add_parser(
-        "generate-package-creation-manifest",
-        help="(build tool) Generate the creation manifest for the package that contains an Assembly Input Bundle.",
-    )
-    package_creation_manifest_parser.add_argument(
-        "--contents-manifest", type=argparse.FileType("r"), required=True
-    )
-    package_creation_manifest_parser.add_argument("--name", required=True)
-    package_creation_manifest_parser.add_argument(
-        "--meta-package", required=True
-    )
-    package_creation_manifest_parser.add_argument("--output", required=True)
-    package_creation_manifest_parser.set_defaults(
-        handler=generate_package_creation_manifest
-    )
-
-    ###
-    #
-    # 'assembly_input_bundle_tool generate-archive' subcommand parser
-    #
-    archive_creation_parser = sub_parsers.add_parser(
-        "generate-archive",
-        help="(build tool) Generate the tarmaker creation manifest for the tgz that contains an Assembly Input Bundle.",
-    )
-    archive_creation_parser.add_argument("--tarmaker", required=True)
-    archive_creation_parser.add_argument(
-        "--contents-manifest", type=argparse.FileType("r"), required=True
-    )
-    archive_creation_parser.add_argument("--meta-far")
-    archive_creation_parser.add_argument("--creation-manifest", required=True)
-    archive_creation_parser.add_argument("--output", required=True)
-    archive_creation_parser.add_argument("--depfile")
-    archive_creation_parser.set_defaults(handler=generate_archive)
 
     args: argparse.Namespace = parser.parse_args()
 

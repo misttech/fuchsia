@@ -14,7 +14,6 @@ python_library("assembly") {
     "image_assembly_config.py",
     "package_copier.py",
     "package_manifest.py",
-    "utils.py",
   ]
 
   library_deps = [
