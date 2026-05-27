@@ -143,6 +143,7 @@ _starnix_core_sources = [
   "task/net.rs",
   "task/pid_table.rs",
   "task/process_group.rs",
+  "task/run_state.rs",
   "task/scheduler/manager.rs",
   "task/scheduler/mod.rs",
   "task/scheduler/role_overrides.rs",

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::signals::RunState;
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, RunState};
 use crate::vfs::{EpollEventHandler, FdNumber};
 use bitflags::bitflags;
 use futures::stream::AbortHandle;

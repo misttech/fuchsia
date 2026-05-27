@@ -13,8 +13,7 @@ use fidl_fuchsia_net_tun as fnet_tun;
 use fuchsia_async as fasync;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::security;
-use starnix_core::signals::RunState;
-use starnix_core::task::{CurrentTask, WaiterRef};
+use starnix_core::task::{CurrentTask, RunState, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, call_fidl_and_await_close, default_ioctl,

@@ -7,12 +7,13 @@ use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
-use crate::signals::{RunState, SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
+use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
-    ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
-    SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState, ThreadState, Waiter,
+    ExitStatus, RobustListHeadPtr, RunState, SeccompFilter, SeccompFilterContainer,
+    SeccompNotifierHandle, SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState,
+    ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,

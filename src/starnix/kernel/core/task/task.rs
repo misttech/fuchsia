@@ -7,8 +7,9 @@ use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{
     AtomicStopState, PtraceEvent, PtraceEventData, PtraceState, PtraceStatus, StopState,
 };
-use crate::signals::{KernelSignal, RunState, SignalDetail, SignalInfo, SignalState};
+use crate::signals::{KernelSignal, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
+use crate::task::run_state::RunState;
 use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
@@ -195,6 +196,9 @@ pub struct TaskMutableState {
     /// signal sending and delivery.
     signals: SignalState,
 
+    /// The current run state of the task.
+    pub run_state: RunState,
+
     /// Internal signals that have a higher priority than a regular signal.
     ///
     /// Storing in a separate queue outside of `SignalState` ensures the internal signals will
@@ -366,16 +370,16 @@ impl TaskMutableState {
 
     /// Returns true if the task's current `RunState` is blocked.
     pub fn is_blocked(&self) -> bool {
-        self.signals.run_state.is_blocked()
+        self.run_state.is_blocked()
     }
 
     /// Sets the task's `RunState` to `run_state`.
     pub fn set_run_state(&mut self, run_state: RunState) {
-        self.signals.run_state = run_state;
+        self.run_state = run_state;
     }
 
     pub fn run_state(&self) -> RunState {
-        self.signals.run_state.clone()
+        self.run_state.clone()
     }
 
     pub fn on_signal_stack(&self, stack_pointer_register: u64) -> bool {
@@ -1144,6 +1148,7 @@ impl Task {
                 mutable_state: RwLock::new(TaskMutableState {
                     clear_child_tid: UserRef::default(),
                     signals: SignalState::with_mask(signal_mask),
+                    run_state: RunState::default(),
                     kernel_signals,
                     exit_status: None,
                     scheduler_state,
@@ -1412,7 +1417,7 @@ impl Task {
             return;
         };
 
-        self.read().signals.run_state.wake();
+        self.read().run_state.wake();
         if let Some(thread) = live.thread.read().as_ref() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,
@@ -1488,7 +1493,7 @@ impl Task {
         let status = self.read();
         if status.exit_status.is_some() {
             TaskStateCode::Zombie
-        } else if status.signals.run_state.is_blocked() {
+        } else if status.run_state.is_blocked() {
             let stop_state = self.load_stopped();
             if stop_state.ptrace_only() && stop_state.is_stopped() {
                 TaskStateCode::TracingStop
