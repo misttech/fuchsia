@@ -22,6 +22,8 @@ toc:
     path: /docs/reference/kernel_objects/fifo.md
   - title: "Stream"
     path: /docs/reference/kernel_objects/stream.md
+  - title: "IOBuffer"
+    path: /docs/reference/kernel_objects/io_buffer.md
 - title: "Tasks"
   section:
   - title: "Process"

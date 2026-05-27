@@ -27,6 +27,7 @@ Zircon actively manages the following resources:
 + [Socket](/docs/reference/kernel_objects/socket.md)
 + [FIFO](/docs/reference/kernel_objects/fifo.md)
 + [Stream](/docs/reference/kernel_objects/stream.md)
++ [IOBuffer](/docs/reference/kernel_objects/io_buffer.md)
 
 ### Tasks
 
@@ -126,6 +127,7 @@ Currently, the kernel defines the following object types as "peered" objects.
 [Socket](/docs/reference/kernel_objects/socket.md)        | `ZX_SOCKET_PEER_CLOSED`
 [FIFO](/docs/reference/kernel_objects/fifo.md)            | `ZX_FIFO_PEER_CLOSED`
 [Event Pair](/docs/reference/kernel_objects/eventpair.md) | `ZX_EVENTPAIR_PEER_CLOSED`
+[IOBuffer](/docs/reference/kernel_objects/io_buffer.md)  | `ZX_IOB_PEER_CLOSED`
 
 All peered objects are created in pairs, which are internally linked to each
 other in a peer relationship.  When the active handle count of a peered object
