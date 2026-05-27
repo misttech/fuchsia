@@ -88,11 +88,6 @@ int32_t write_l2cap(const uint8_t *data, uintptr_t len);
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t set_connectability(bool connectable);
 
-/// Connect to an LE peer with the given identifier.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t connect_le(uint64_t peer_id);
-
 /// Publish a local GATT service with one characteristic. GATT requests to the service are logged.
 ///
 /// Returns ZX_STATUS_INVALID_ARGS if UUID or `characteristic_properties` are invalid (check logs).

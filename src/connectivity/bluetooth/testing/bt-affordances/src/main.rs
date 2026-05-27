@@ -407,6 +407,18 @@ async fn handle_single_central_request(
                 }
             }
         }
+        CentralControllerRequest::ConnectPeripheral { payload, responder } => {
+            let id = selector_to_peer_id!("ConnectPeripheral", payload, responder);
+            match worker.connect_le(id).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("ConnectPeripheral encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
         CentralControllerRequest::_UnknownMethod { ordinal, .. } => {
             error!("CentralControllerRequest: unknown method received with ordinal {ordinal}");
         }

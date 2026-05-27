@@ -143,20 +143,6 @@ pub extern "C" fn set_connectability(connectable: bool) -> i32 {
     zx::Status::OK.into_raw()
 }
 
-/// Connect to an LE peer with the given identifier.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn connect_le(peer_id: u64) -> i32 {
-    let peer_id = PeerId { value: peer_id };
-
-    if let Err(err) = block_on(STATE.worker.connect_le(peer_id)) {
-        eprintln!("connect_le encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 // Copied from SL4F `GattServerFacade`.
 fn permissions_from_raw(properties: u16, permissions: u16) -> AttributePermissions {
     bitfield! {

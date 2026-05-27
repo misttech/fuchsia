@@ -156,8 +156,14 @@ Status HostService::ConnectLE(::grpc::ServerContext* context,
     return Status(StatusCode::NOT_FOUND, "Could not find peer.");
   }
 
-  if (connect_le(peer_id) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  fuchsia_bluetooth_affordances::PeerSelector selector;
+  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
+
+  auto result = central_controller_client_->ConnectPeripheral(selector);
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.CentralController/ConnectPeripheral error: " +
+                      result.error_value().FormatDescription());
   }
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
   return {/*OK*/};

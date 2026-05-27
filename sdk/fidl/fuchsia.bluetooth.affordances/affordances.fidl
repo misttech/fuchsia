@@ -169,4 +169,9 @@ open protocol CentralController {
         /// Required. The listener to receive scan results.
         1: listener client_end:ScanResultListener;
     }) -> () error Error;
+
+    /// Connect to an LE peer.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible ConnectPeripheral(PeerSelector) -> () error Error;
 };
