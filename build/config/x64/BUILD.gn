@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/custom_target_config.gni")
+
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on x86-64.
 config("x64") {
@@ -27,13 +29,17 @@ config("mitigate_skylake_jcc") {
   # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
 }
 
-# Mitigate Straight Line Speculation (CVE-2021-26341, fxrev.dev/661362) by inserting
-# INT3/fences after certain control transfer instructions. The INT3s are never
-# executed; they just confine speculative execution to valid paths in those cases.
-config("harden_sls") {
+# Mitigate Straight Line Speculation (CVE-2021-26341, fxrev.dev/661362) by
+# inserting INT3/fences after certain control transfer instructions. The INT3s
+# are never executed; they just confine speculative execution to valid paths in
+# those cases.
+custom_target_config("harden_sls") {
   defines = [ "HARDEN_SLS" ]
-  cflags = [ "-mharden-sls=all" ]
-  rustflags = [ "-Ctarget-feature=+harden-sls-ijmp,+harden-sls-ret" ]
+  common_flags = [ "-mharden-sls=all" ]
+  rust_target_features = [
+    "+harden-sls-ijmp",
+    "+harden-sls-ret",
+  ]
 }
 
 # Optimize for Intel Haswell

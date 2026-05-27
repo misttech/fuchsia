@@ -108,7 +108,7 @@ template("kernel_executable") {
 
     install_name = "vmzircon"
 
-    configs += [ "//zircon/kernel/switch:kernel.config" ]
+    configs += [ "//zircon/kernel/switch:kernel_executable.config" ]
     deps = _kernel_deps
 
     validations = [ ":$validate_symbols_target" ]
@@ -143,9 +143,6 @@ template("kernel_executable") {
       # provides the Ninja file dependency.
       inputs += [ extern_crate_flags_file ]
       rustflags = [ "@" + rebase_path(extern_crate_flags_file, root_build_dir) ]
-
-      # TODO(https://fxbug.dev/507570739): rustc always wants Scrt1.o
-      lib_dirs = [ "//zircon/kernel/bin/stub-startfiles" ]
     }
   }
 

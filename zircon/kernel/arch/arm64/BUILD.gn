@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/custom_target_config.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
@@ -13,42 +14,56 @@ if (toolchain_environment == "kernel.phys" ||
   # These set the ABI contract between C++ and assembly code.
   # This is kept consistent between the kernel proper and phys
   # so (pure PIC) code should be callable from the kernel proper.
-  config("abi") {
-    configs = [
+  custom_target_config("abi") {
+    custom_target_configs = [
       ":integer-register-abi",
       ":percpu-abi",
       ":thread-pointer-abi",
+
+      # Don't use the outline atomics since we don't have the helper functions.
+      # TODO(mcgrathr): use code-patching to define the outcalls for the kernel
+      "//build/config/arm64:no-outline-atomics",
     ]
   }
 
   # Don't use any FP / vector registers in kernel code.  They usually still
   # hold the user-mode values while running in kernel mode.
-  config("integer-register-abi") {
-    cflags = [ "-mgeneral-regs-only" ]
-    asmflags = cflags
-    ldflags = cflags
-
-    rustflags = [ "-Ctarget-feature=-neon,-sve,-sve2" ]
+  custom_target_config("integer-register-abi") {
+    common_flags = [ "-mgeneral-regs-only" ]
+    rust_target_features = [
+      "-neon",
+      "-sve",
+      "-sve2",
+    ]
+    if (toolchain_environment == "kernel") {
+      rust_target_edits = [
+        {
+          key = "abi"
+          action = "set"
+          value = "softfloat"
+        },
+        {
+          key = "rustc-abi"
+          action = "set"
+          value = "softfloat"
+        },
+      ]
+    }
   }
 
   # Reserve a register (x20) to be called percpu_ptr in <lib/arch/asm.h>.
   # The compiler must never touch it except via our inline assembly.
-  config("percpu-abi") {
-    cflags = [ "-ffixed-x20" ]
-    asmflags = cflags
-    ldflags = cflags
-
-    rustflags = [ "-Ctarget-feature=+reserve-x20" ]
+  custom_target_config("percpu-abi") {
+    common_flags = [ "-ffixed-x20" ]
+    rust_target_features = [ "+reserve-x20" ]
   }
 
   # Use the right thread-pointer ABI for the kernel (TPIDR_EL1).  This affects
   # `__builtin_thread_pointer()`; would affect ELF TLS if it were used; and
   # affects the ABI implicitly used by stack-protector.
-  config("thread-pointer-abi") {
-    cflags = [ "-mtp=el1" ]
-    asmflags = cflags
-    ldflags = cflags
-    rustflags = [ "-Ctarget-feature=+tpidr-el1" ]
+  custom_target_config("thread-pointer-abi") {
+    common_flags = [ "-mtp=el1" ]
+    rust_target_features = [ "+tpidr-el1" ]
   }
 
   # This is used pervasively throughout the kernel on arm64.
@@ -62,10 +77,6 @@ if (toolchain_environment == "kernel.phys" ||
       # <arch/current_thread.h> has #include <lib/arch/intrin.h>.
       "//zircon/kernel/lib/arch/arm64:headers.config",
     ]
-
-    # Don't use the outline atomics since we don't have the helper functions.
-    # TODO(mcgrathr): use code-patching to define the outcalls for the kernel
-    configs += [ "//build/config/arm64:no-outline-atomics" ]
   }
 
   source_set("arm64") {

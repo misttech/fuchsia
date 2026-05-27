@@ -1,0 +1,135 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/rust/config.gni")
+import("//build/toolchain/toolchain_environment.gni")
+
+assert(toolchain_environment == "kernel",
+       "This file should not be reached by deps in $current_toolchain")
+
+# Where the Rust library sources are found in the toolchain package.
+rustc_library_dir = "$rustc_prefix/lib/rustlib/src/rust/library"
+
+# Where the rlib files go to be found in the custom Rust target sysroot.
+# This is derived from the --sysroot and --target switches passed to rustc by
+# the //zircon/kernel/switch:rust-target config().
+rust_sysroot_dir = root_gen_dir  # Passed as --sysroot.
+rust_sysroot_rlib_dir =  # Derived given that --sysroot and --target=kernel.
+    "$rust_sysroot_dir/lib/rustlib/kernel/lib"
+
+# These very special crates are built very specially.
+rust_sysroot_crates = [
+  {
+    name = "compiler_builtins"
+
+    # This is actually an empty crate with just a local stub source file.
+    crate_root = "src/lib.rs"
+    rust_sources = [ crate_root ]
+  },
+  {
+    name = "core"
+
+    # This needs all the sources from the toolchain package directory, but
+    # there is no ready list of all the names other than the crate_root file.
+    # The .rust_sources file will just list the whole directory, which is good
+    # enough for the RBE wrapper to make all the files available.
+    rust_sources = [ "$rustc_library_dir/$name/src" ]
+    crate_root = "${rust_sources[0]}/lib.rs"
+
+    # The core crate could well depend on compiler_builtins, but won't
+    # necessarily.  If it's directly in deps then rustc can complain if the
+    # compiler never produces a reference to it.  But if it's not present in
+    # the sysroot at all, rustc will complain about that instead.  So this just
+    # ensures an ordering dependency to have it in place before rustc looks.
+    data_deps = [ ":compiler_builtins.sysroot" ]
+  },
+]
+
+# This is reached from deps injected into every normal Rust compilation target.
+# It only provides ordering deps that ensure the sysroot contents are in place.
+group("rust") {
+  visibility = [ "//zircon/kernel/switch:*" ]
+
+  deps = []
+  foreach(crate, rust_sysroot_crates) {
+    # This ensures the crate is built and copied into the sysroot.
+    deps += [ ":${crate.name}.sysroot" ]
+  }
+}
+
+# This avoids the //build/rust template layers for these very special cases.
+# As this is only upstream code, none of the analysis targets or other extra
+# support those templates provide is useful here.  The implicit deps injected
+# by just the rust_library() wrapper template layer from BUILDCONFIG.gn, into
+# every other Rust target lead back here; using basic_rust_library() avoids
+# the circularity.  Note basic_rust_library() has no set_defaults() configs!
+foreach(crate, rust_sysroot_crates) {
+  basic_rust_library(crate.name) {
+    deps = []
+    forward_variables_from(crate,
+                           "*",
+                           [
+                             "name",
+                             "rust_sources",
+                           ])
+
+    visibility = [ ":*" ]
+
+    rustenv = [ "RUSTC_BOOTSTRAP=$target_name" ]
+    rustflags = [ "--edition=2024" ]
+    configs =
+        default_common_binary_configs - [ "//build/config/rust:no_features" ]
+
+    # The config("rust-target") confers an inputs list for the file dependency
+    # on the target.json file.  Normal Rust targets all get implicit deps that
+    # propagate to the generating action via public_deps.  Without that, it
+    # must appears in the direct deps list here to match the implied inputs.
+    deps += [ "//zircon/kernel/switch:rust-custom-target" ]
+
+    # The RBE wrapper will look for these generated files, so generate them.
+    deps += [
+      ":$target_name.rust_compilation_deps",
+      ":$target_name.rust_sources",
+    ]
+  }
+
+  # The rust_library() target could set output_dir = rust_sysroot_rlib_dir
+  # rather than copying the rlib file.  But the toolchain definition always
+  # emits the adjacent .rmeta file for build system reasons, and rustc sees any
+  # .rmeta file in the rlib directory as superseding a corresponding .rlib file
+  # and complains that these crates are not proper rlibs.  So they are built in
+  # place in $target_out_dir, and then copied to $rust_sysroot_rlib_dir.
+  copy("${crate.name}.sysroot") {
+    deps = [ ":${crate.name}" ]
+    sources = [ "$target_out_dir/lib${crate.name}.rlib" ]
+    outputs = [ "$rust_sysroot_rlib_dir/{{source_file_part}}" ]
+    metadata = {
+      # This rolls up into the .rust_compilation_deps generated_file() of each
+      # Rust target to ensure all the sysroot files are RBE remote inputs.
+      rust_compilation_deps =
+          rebase_path(process_file_template(sources, outputs), root_build_dir)
+    }
+  }
+
+  generated_file("${crate.name}.rust_compilation_deps") {
+    visibility = [ ":*" ]
+    outputs = [ "$target_gen_dir/$target_name" ]
+    data_keys = [ "rust_compilation_deps" ]
+    walk_keys = [ "rust_compilation_deps_barrier" ]
+    forward_variables_from(crate,
+                           [
+                             "data_deps",
+                             "deps",
+                             "public_deps",
+                           ])
+  }
+
+  generated_file("${crate.name}.rust_sources") {
+    visibility = [ ":*" ]
+    outputs = [ "$target_gen_dir/$target_name" ]
+    contents = rebase_path(crate.rust_sources, root_build_dir)
+  }
+}

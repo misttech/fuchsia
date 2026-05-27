@@ -4,7 +4,10 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/clang/clang_prefix.gni")
+import("//build/config/custom_target_config.gni")
 import("//build/config/linker_config.gni")
+import("//build/rust/config.gni")
 import("//build/toolchain/variant.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
@@ -22,21 +25,35 @@ declare_args() {
 }
 
 # For any standalone static binary.
-linker_config("standalone") {
-  cflags = [ "-ffreestanding" ]
+custom_target_config("standalone") {
+  custom_target_configs = [ ":static-pic-link" ]
+
+  if (toolchain_environment == "kernel") {
+    rust_target_edits = [
+      {
+        key = "linker"
+        action = "set"
+        value = "$rebased_clang_prefix/lld"
+      },
+      {
+        key = "pre-link-objects"
+        action = "unset"
+      },
+    ]
+  }
+
+  common_flags = [ "-ffreestanding" ]
 
   configs = [
     "//build/config:no_exceptions",
-    ":static-pic-link",
-    ":kernel-heap-alignment",
     ":debug-only-unwind-tables",
+    ":kernel-heap-alignment",
   ]
 }
 
 # These flags say that all function and variable references will be statically
 # resolved at link time, so PIC generation will never use GOT indirection.
-config("static-pic-link") {
-  rustflags = [ "-Cdefault-linker-libraries=no" ]
+custom_target_config("static-pic-link") {
   ldflags = [
     "-nostdlib",
     "-static",
@@ -49,17 +66,39 @@ config("static-pic-link") {
   ]
 
   if (is_gcc && current_os == "fuchsia") {
-    cflags += [ "-fpie" ]
+    common_flags = [ "-fpie" ]
   }
 
-  rustflags += [
-    "-Zdefault-visibility=hidden",
-    "-Zdirect-access-external-data=yes",
+  rustflags = []
+  if (toolchain_environment == "kernel") {
+    rust_target_edits = [
+      {
+        key = "no-default-libraries"
+        action = "set"
+        value = true
+      },
+      {
+        key = "direct-access-external-data"
+        action = "set"
+        value = true
+      },
+      {
+        key = "default-visibility"
+        action = "set"
+        value = "hidden"
+      },
+    ]
+  } else {
+    rustflags += [
+      "-Cdefault-linker-libraries=no",
+      "-Zdefault-visibility=hidden",
+      "-Zdirect-access-external-data=yes",
+    ]
+  }
 
-    # TODO(https://fxbug.dev/511265181): The Rust compiler has longstanding
-    # bugs wherein it breaks these invariants unless given this switch.
-    "-Ccodegen-units=1",
-  ]
+  # TODO(https://fxbug.dev/511265181): The Rust compiler has longstanding
+  # bugs wherein it breaks these invariants unless given this switch.
+  rustflags += [ "-Ccodegen-units=1" ]
 }
 
 # These flags say that we want complete DWARF CFI at every instruction in
@@ -110,275 +149,358 @@ config("headers") {
   configs = [ "//zircon/kernel/lib/libc:headers.after" ]
 }
 
-if (is_kernel) {
-  # These are needed both in kernel sources (pervasively) and in the linker
-  # scripts.
-  kernel_defines = [ "SMP_MAX_CPUS=$smp_max_cpus" ]
+# These are needed both in kernel sources (pervasively) and in the linker
+# scripts.
+kernel_defines = [ "SMP_MAX_CPUS=$smp_max_cpus" ]
 
-  config("instrumented-stack-size") {
-    # Note: Using this extra variable to capture whether the stack size should
-    # be increased or not, is due to GN's limitation on treating unevaluated parts
-    # of an expression as unused (e.g. a || b, would flag `b` as unused if `a` is true).
-    increase_stack_size = false
+config("instrumented-stack-size") {
+  # Note: Using this extra variable to capture whether the stack size should
+  # be increased or not, is due to GN's limitation on treating unevaluated parts
+  # of an expression as unused (e.g. a || b, would flag `b` as unused if `a` is true).
+  increase_stack_size = false
 
-    # Lockdep enabled.
-    if (enable_lock_dep || enable_lock_dep_metadata_only ||
-        scheduler_lock_spin_tracing_enabled || lock_name_tracing_enabled) {
-      increase_stack_size = true
-    }
-
-    # Variant considered instrumentation.
-    if (toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
-        toolchain_variant.tags) {
-      increase_stack_size = true
-    }
-    if (increase_stack_size) {
-      defines = [ "CUSTOM_DEFAULT_STACK_SIZE=16384" ]
-    }
+  # Lockdep enabled.
+  if (enable_lock_dep || enable_lock_dep_metadata_only ||
+      scheduler_lock_spin_tracing_enabled || lock_name_tracing_enabled) {
+    increase_stack_size = true
   }
 
-  # This is the top config for all kernel code.
-  variant("kernel_config") {
-    configs = [
-      ":jtrace_config",
-      ":lock_dep",
-      ":scheduler",
-      ":standalone",
-      ":persistent_ram_config",
-      ":kernel_memory_profiler",
-      ":warnings",
-      "//zircon/kernel/arch/$zircon_cpu:abi",
-      "//zircon/kernel/arch/$zircon_cpu:kernel",
-      "//build/config:no-finite-loops",
-      "//build/config:zero-call-used-regs",
+  # Variant considered instrumentation.
+  if (toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
+      toolchain_variant.tags) {
+    increase_stack_size = true
+  }
+  if (increase_stack_size) {
+    defines = [ "CUSTOM_DEFAULT_STACK_SIZE=16384" ]
+  }
+}
 
-      # include/lib/counters.h and kernel.ld depend on -fdata-sections.
-      "//build/config/zircon:data_sections",
+# This is the "top" custom_target_config().  Its $custom_target_configs must
+# reach all other custom_target_config()s that could be reached in any way as
+# normal config()s in this toolchain.
+custom_target_config("abi") {
+  visibility = [ ":*" ]
+  custom_target_configs = [
+    "//zircon/kernel/arch/$zircon_cpu:abi",
+    ":standalone",
+  ]
+}
 
-      # Provides checks for maximum supported kernel sizes.
-      ":kernel_image_max_size",
+# This is the top config for all kernel code.
+variant("kernel_config") {
+  configs = [ ":abi" ]
+  if (enable_rust_in_zircon) {
+    # The :abi configs tree doesn't do all the work for Rust.  Instead, they
+    # contribute to the rules for creating the custom target JSON file.
+    configs += [ ":rust-target" ]
+  }
 
-      # Overrides default stack size for instrumented builds.
-      ":instrumented-stack-size",
-    ]
+  configs += [
+    ":jtrace_config",
+    ":lock_dep",
+    ":scheduler",
+    ":persistent_ram_config",
+    ":kernel_memory_profiler",
+    ":warnings",
+    "//zircon/kernel/arch/$zircon_cpu:kernel",
+    "//build/config:no-finite-loops",
+    "//build/config:zero-call-used-regs",
 
-    # TODO(https://fxbug.dev/42101573): This dependency is conditional because when built
-    # with GCC the kernel uses function scoped statics requiring dynamic
-    # initialization. Once https://fxbug.dev/42101573 is fixed, this dependency can be
-    # removed.
-    if (is_gcc) {
-      # Don't emit extra code making static initializers thread-safe.
-      configs += [ "//build/config/zircon:no_threadsafe_statics" ]
-    }
+    # include/lib/counters.h and kernel.ld depend on -fdata-sections.
+    "//build/config/zircon:data_sections",
 
-    # Always enable frame pointers in the kernel so there are panic
-    # backtraces and such.
-    # TODO(mcgrathr): Consider either removing this so there's a
-    # no-frame-pointers option, or removing the kernel's support for
-    # !WITH_FRAME_POINTERS if it will never be used.
-    configs += [ "//build/config:frame_pointers" ]
+    # Provides checks for maximum supported kernel sizes.
+    ":kernel_image_max_size",
 
-    defines = kernel_defines + kernel_extra_defines
+    # Overrides default stack size for instrumented builds.
+    ":instrumented-stack-size",
+  ]
+
+  # TODO(https://fxbug.dev/42101573): This dependency is conditional because when built
+  # with GCC the kernel uses function scoped statics requiring dynamic
+  # initialization. Once https://fxbug.dev/42101573 is fixed, this dependency can be
+  # removed.
+  if (is_gcc) {
+    # Don't emit extra code making static initializers thread-safe.
+    configs += [ "//build/config/zircon:no_threadsafe_statics" ]
+  }
+
+  # Always enable frame pointers in the kernel so there are panic
+  # backtraces and such.
+  # TODO(mcgrathr): Consider either removing this so there's a
+  # no-frame-pointers option, or removing the kernel's support for
+  # !WITH_FRAME_POINTERS if it will never be used.
+  configs += [ "//build/config:frame_pointers" ]
+
+  defines = kernel_defines + kernel_extra_defines
+  defines += [
+    "_KERNEL",
+    "LK",
+    "ZIRCON_TOOLCHAIN",
+    "DEBUG_PRINT_LEVEL=$kernel_debug_print_level",
+    "VM_TRACING_LEVEL=$vm_tracing_level",
+    "FUTEX_BLOCK_TRACING_ENABLED=$futex_block_tracing_enabled",
+    "LOCK_NAME_TRACING_ENABLED=$lock_name_tracing_enabled",
+    "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
+    "EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED=$experimental_channel_call_propagation_enabled",
+    "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
+    "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
+    "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
+  ]
+
+  if (kernel_no_userabi) {
+    defines += [ "KERNEL_NO_USERABI" ]
+  }
+
+  cflags = [ "-fpie" ]
+}
+
+# Each switchset is expected to include one of these.
+foreach(level,
+        [
+          0,
+          1,
+          2,
+        ]) {
+  variant("lk_debug_level_${level}") {
+    defines = [ "LK_DEBUGLEVEL=$level" ]
+  }
+}
+
+config("warnings") {
+  cflags = [
+    "-Wformat=2",
+    "-Wmissing-declarations",
+    "-Wvla",
+  ]
+
+  # GCC supports `-Wformat-signedness` but Clang currently does not.
+  if (is_gcc) {
+    cflags += [ "-Wformat-signedness" ]
+  }
+
+  # TODO(https://fxbug.dev/42159114): Eventually enable -Wshadow for GCC.  It's currently
+  # disabled because GCC is more aggressive than Clang.
+  if (!is_gcc) {
+    cflags += [ "-Wshadow" ]
+  }
+
+  cflags_c = [ "-Wmissing-prototypes" ]
+}
+
+config("lock_dep") {
+  visibility = [ ":*" ]
+  defines = []
+  if (enable_lock_dep) {
     defines += [
-      "_KERNEL",
-      "LK",
-      "ZIRCON_TOOLCHAIN",
-      "DEBUG_PRINT_LEVEL=$kernel_debug_print_level",
-      "VM_TRACING_LEVEL=$vm_tracing_level",
-      "FUTEX_BLOCK_TRACING_ENABLED=$futex_block_tracing_enabled",
-      "LOCK_NAME_TRACING_ENABLED=$lock_name_tracing_enabled",
-      "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
-      "EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED=$experimental_channel_call_propagation_enabled",
-      "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
-      "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
-      "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
+      "WITH_LOCK_DEP=1",
+      "LOCK_DEP_ENABLED_FEATURE_LEVEL=2",
     ]
-
-    if (kernel_no_userabi) {
-      defines += [ "KERNEL_NO_USERABI" ]
-    }
-
-    cflags = [ "-fpie" ]
-  }
-
-  # Each switchset is expected to include one of these.
-  foreach(level,
-          [
-            0,
-            1,
-            2,
-          ]) {
-    variant("lk_debug_level_${level}") {
-      defines = [ "LK_DEBUGLEVEL=$level" ]
-    }
-  }
-
-  config("warnings") {
-    cflags = [
-      "-Wformat=2",
-      "-Wmissing-declarations",
-      "-Wvla",
-    ]
-
-    # GCC supports `-Wformat-signedness` but Clang currently does not.
-    if (is_gcc) {
-      cflags += [ "-Wformat-signedness" ]
-    }
-
-    # TODO(https://fxbug.dev/42159114): Eventually enable -Wshadow for GCC.  It's currently
-    # disabled because GCC is more aggressive than Clang.
-    if (!is_gcc) {
-      cflags += [ "-Wshadow" ]
-    }
-
-    cflags_c = [ "-Wmissing-prototypes" ]
-  }
-
-  config("lock_dep") {
-    visibility = [ ":*" ]
-    defines = []
-    if (enable_lock_dep) {
-      defines += [
-        "WITH_LOCK_DEP=1",
-        "LOCK_DEP_ENABLED_FEATURE_LEVEL=2",
-      ]
-    } else if (enable_lock_dep_metadata_only ||
-               scheduler_lock_spin_tracing_enabled ||
-               lock_name_tracing_enabled) {
-      defines += [
-        "WITH_LOCK_DEP=1",
-        "LOCK_DEP_ENABLED_FEATURE_LEVEL=1",
-      ]
-    }
-    if (enable_lock_dep_tests) {
-      defines += [ "WITH_LOCK_DEP_TESTS=1" ]
-    }
-  }
-
-  config("scheduler") {
-    visibility = [ ":*" ]
-    defines = [
-      "SCHEDULER_TRACING_LEVEL=$scheduler_tracing_level",
-      "SCHEDULER_QUEUE_TRACING_ENABLED=$scheduler_queue_tracing_enabled",
-      "SCHEDULER_EXTRA_INVARIANT_VALIDATION=$scheduler_extra_invariant_validation",
-      "SCHEDULER_LOCK_SPIN_TRACING_COMPRESSED=$scheduler_lock_spin_tracing_compressed",
-      "SCHEDULER_LOCK_SPIN_TRACING_ENABLED=$scheduler_lock_spin_tracing_enabled",
-      "WAIT_QUEUE_DEPTH_TRACING_ENABLED=$wait_queue_depth_tracing_enabled",
+  } else if (enable_lock_dep_metadata_only ||
+             scheduler_lock_spin_tracing_enabled || lock_name_tracing_enabled) {
+    defines += [
+      "WITH_LOCK_DEP=1",
+      "LOCK_DEP_ENABLED_FEATURE_LEVEL=1",
     ]
   }
-
-  config("persistent_ram_config") {
-    visibility = [ ":*" ]
-    defines = [ "PERSISTENT_RAM_ALLOCATION_GRANULARITY=$persistent_ram_allocation_granularity" ]
+  if (enable_lock_dep_tests) {
+    defines += [ "WITH_LOCK_DEP_TESTS=1" ]
   }
+}
 
-  # In architectures where it is necessary, determined the number of boot pages to be preallocated
-  # from BSS to map the kernel in the higher address space for enabling the MMU when booting.
-  # See `start.S` of the relevant architectures for more information.
-  config("kernel_image_max_size") {
-    if (target_cpu == "arm64" || target_cpu == "riscv64") {
-      if (toolchain_variant.tags + [ "coverage" ] - [ "coverage" ] !=
-          toolchain_variant.tags) {
-        # 25 MB upperbound for coverage builds.
-        kernel_image_max_size = 26214400
-      } else {
-        # 14 MB upperbound for non coverage builds.
-        kernel_image_max_size = 14680064
-      }
-    } else if (target_cpu == "x64") {
-      # x64 hard coded to support up to 64 MB.
-      kernel_image_max_size = 67108864
-    }
+config("scheduler") {
+  visibility = [ ":*" ]
+  defines = [
+    "SCHEDULER_TRACING_LEVEL=$scheduler_tracing_level",
+    "SCHEDULER_QUEUE_TRACING_ENABLED=$scheduler_queue_tracing_enabled",
+    "SCHEDULER_EXTRA_INVARIANT_VALIDATION=$scheduler_extra_invariant_validation",
+    "SCHEDULER_LOCK_SPIN_TRACING_COMPRESSED=$scheduler_lock_spin_tracing_compressed",
+    "SCHEDULER_LOCK_SPIN_TRACING_ENABLED=$scheduler_lock_spin_tracing_enabled",
+    "WAIT_QUEUE_DEPTH_TRACING_ENABLED=$wait_queue_depth_tracing_enabled",
+  ]
+}
 
-    visibility = [
-      ":*",
-      "//zircon/kernel/phys:*",
-    ]
-    defines = [ "KERNEL_IMAGE_MAX_SIZE=$kernel_image_max_size" ]
-  }
+config("persistent_ram_config") {
+  visibility = [ ":*" ]
+  defines = [ "PERSISTENT_RAM_ALLOCATION_GRANULARITY=$persistent_ram_allocation_granularity" ]
+}
 
-  config("kernel_memory_profiler") {
-    visibility = [ ":*" ]
-    defines = [ "KERNEL_MEMORY_PROFILER=$kernel_memory_profiler" ]
-  }
-
-  config("jtrace_config") {
-    visibility = [ ":*" ]
-
-    if (jtrace_enabled == false) {
-      defines = [ "JTRACE_TARGET_BUFFER_SIZE=0" ]
+# In architectures where it is necessary, determined the number of boot pages to be preallocated
+# from BSS to map the kernel in the higher address space for enabling the MMU when booting.
+# See `start.S` of the relevant architectures for more information.
+config("kernel_image_max_size") {
+  if (target_cpu == "arm64" || target_cpu == "riscv64") {
+    if (toolchain_variant.tags + [ "coverage" ] - [ "coverage" ] !=
+        toolchain_variant.tags) {
+      # 25 MB upperbound for coverage builds.
+      kernel_image_max_size = 26214400
     } else {
-      if (jtrace_target_buffer_size == "auto") {
-        if (jtrace_enabled == "persistent") {
-          jtrace_target_buffer_size = 4096
-        } else {
-          jtrace_target_buffer_size = 32768
-        }
-      }
-
-      if (jtrace_use_large_entries == "auto") {
-        if (jtrace_enabled == "persistent") {
-          jtrace_use_large_entries = false
-        } else {
-          jtrace_use_large_entries = true
-        }
-      }
-
-      defines = [
-        "JTRACE_TARGET_BUFFER_SIZE=$jtrace_target_buffer_size",
-        "JTRACE_LAST_ENTRY_STORAGE=$jtrace_last_entry_storage",
-        "JTRACE_USE_LARGE_ENTRIES=$jtrace_use_large_entries",
-        "JTRACE_USE_MONO_TIMESTAMPS=$jtrace_use_mono_timestamps",
-      ]
-
-      if (jtrace_enabled == "persistent") {
-        defines += [ "JTRACE_IS_PERSISTENT=true" ]
-      } else {
-        defines += [ "JTRACE_IS_PERSISTENT=false" ]
-      }
+      # 14 MB upperbound for non coverage builds.
+      kernel_image_max_size = 14680064
     }
+  } else if (target_cpu == "x64") {
+    # x64 hard coded to support up to 64 MB.
+    kernel_image_max_size = 67108864
   }
 
-  # See kernel.ld where KERNEL_GOT_TOLERANCE is used.
-  if (current_cpu == "arm64" && is_gcc) {
-    # Each slot is 8 bytes.  The first two special slots are always there if
-    # .got is there at all, per psABI.  GNU (BFD) ld seems to emit two more
-    # unused slots with no associated relocs to explain their existence.
-    got_tolerance = 32
+  visibility = [
+    ":*",
+    "//zircon/kernel/phys:*",
+  ]
+  defines = [ "KERNEL_IMAGE_MAX_SIZE=$kernel_image_max_size" ]
+}
+
+config("kernel_memory_profiler") {
+  visibility = [ ":*" ]
+  defines = [ "KERNEL_MEMORY_PROFILER=$kernel_memory_profiler" ]
+}
+
+config("jtrace_config") {
+  visibility = [ ":*" ]
+
+  if (jtrace_enabled == false) {
+    defines = [ "JTRACE_TARGET_BUFFER_SIZE=0" ]
   } else {
-    got_tolerance = 0
-  }
-
-  linker_config("kernel.config") {
-    visibility = [ "//zircon/kernel/bin/*" ]
-
-    inputs = [ "//zircon/kernel/kernel.ld" ]
-    linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
-
-    # TODO(https://fxbug.dev/379891035): There is still kASan-related start.S
-    # bootstrap logic for x86 not yet moved into physboot.
-    if (current_cpu != "x64") {
-      # PhysbootHandoff is the entrypoint symbol.
-      linker_flags += [ "--defsym=PhysbootHandoff=lk_main" ]
+    if (jtrace_target_buffer_size == "auto") {
+      if (jtrace_enabled == "persistent") {
+        jtrace_target_buffer_size = 4096
+      } else {
+        jtrace_target_buffer_size = 32768
+      }
     }
 
-    assignments = kernel_defines + [
-                    "KERNEL_GOT_TOLERANCE=$got_tolerance",
-
-                    # This symbol is used by gdb python to know the base of the
-                    # kernel module
-                    #
-                    # TODO(https://fxbug.dev/42164859): This is now identically
-                    # zero; investigate its need.
-                    "KERNEL_BASE_ADDRESS=0",
-                  ]
-    foreach(assignment, assignments) {
-      linker_flags += [ "-defsym=$assignment" ]
+    if (jtrace_use_large_entries == "auto") {
+      if (jtrace_enabled == "persistent") {
+        jtrace_use_large_entries = false
+      } else {
+        jtrace_use_large_entries = true
+      }
     }
 
-    configs = [
-      "//build/config/zircon:static-pie-compile",
-      "//build/config/zircon:static-pie-link",
+    defines = [
+      "JTRACE_TARGET_BUFFER_SIZE=$jtrace_target_buffer_size",
+      "JTRACE_LAST_ENTRY_STORAGE=$jtrace_last_entry_storage",
+      "JTRACE_USE_LARGE_ENTRIES=$jtrace_use_large_entries",
+      "JTRACE_USE_MONO_TIMESTAMPS=$jtrace_use_mono_timestamps",
     ]
+
+    if (jtrace_enabled == "persistent") {
+      defines += [ "JTRACE_IS_PERSISTENT=true" ]
+    } else {
+      defines += [ "JTRACE_IS_PERSISTENT=false" ]
+    }
   }
+}
+
+# See kernel.ld where KERNEL_GOT_TOLERANCE is used.
+if (current_cpu == "arm64" && is_gcc) {
+  # Each slot is 8 bytes.  The first two special slots are always there if
+  # .got is there at all, per psABI.  GNU (BFD) ld seems to emit two more
+  # unused slots with no associated relocs to explain their existence.
+  got_tolerance = 32
+} else {
+  got_tolerance = 0
+}
+
+# This is implicitly added last to configs in kernel_executable().
+linker_config("kernel_executable.config") {
+  visibility = [ "//zircon/kernel/bin/*" ]
+
+  inputs = [ "//zircon/kernel/kernel.ld" ]
+  linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
+
+  # TODO(https://fxbug.dev/379891035): There is still kASan-related start.S
+  # bootstrap logic for x86 not yet moved into physboot.
+  if (current_cpu != "x64") {
+    # PhysbootHandoff is the entrypoint symbol.
+    linker_flags += [ "--defsym=PhysbootHandoff=lk_main" ]
+  }
+
+  assignments = kernel_defines + [
+                  "KERNEL_GOT_TOLERANCE=$got_tolerance",
+
+                  # This symbol is used by gdb python to know the base of the
+                  # kernel module
+                  #
+                  # TODO(https://fxbug.dev/42164859): This is now identically
+                  # zero; investigate its need.
+                  "KERNEL_BASE_ADDRESS=0",
+                ]
+  foreach(assignment, assignments) {
+    linker_flags += [ "-defsym=$assignment" ]
+  }
+
+  configs = [
+    "//build/config/zircon:static-pie-compile",
+    "//build/config/zircon:static-pie-link",
+  ]
+}
+
+# Collect the edit steps defined by each custom_target_config().
+generated_file("rust-target-edits") {
+  visibility = [ ":rust-custom-target" ]
+  outputs = [ "$root_gen_dir/rust-target-edits.json" ]
+  output_conversion = "json"
+  data_keys = [ "kernel_rust_target_edits" ]
+  deps = [ ":rust-target-edits.prologue" ]
+
+  # That must be first in the list!  Append the real deps separately.
+  deps += [ ":abi.rust-target-edits" ]
+}
+
+group("rust-target-edits.prologue") {
+  visibility = [ ":rust-target-edits" ]
+  metadata = {
+    # This winds up first in the collected list.  It's just the plain
+    # --target string.  Later elements are scopes to drive edits to that
+    # target's default JSON spec.
+    kernel_rust_target_edits = [ rust_target ]
+  }
+}
+
+rustlib_dir = "$root_gen_dir/lib/rustlib/kernel"
+
+# Generate the full target spec from the base target and the edits.
+action("rust-custom-target") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/lib/rust:*",
+  ]
+
+  script = "rust-custom-target.py"
+
+  inputs = [ "$rustc_prefix/bin/rustc" ]
+  args = [ "--rustc=" + rebase_path(inputs[0], root_build_dir) ]
+
+  deps = [ ":rust-target-edits" ]
+  sources = get_target_outputs(deps[0])
+  args += [ "--edits=" + rebase_path(sources[0], root_build_dir) ]
+
+  outputs = [ "$rustlib_dir/target.json" ]
+  args += [ "--output=" + rebase_path(outputs[0], root_build_dir) ]
+}
+
+# Apply the custom target.  This confers the Ninja file dependency on the
+# JSON file.  The toolchain machinery in kernel_switchset() has to ensure
+# that there are deps on :rust-target.deps to get it built the first time.
+config("rust-target") {
+  visibility = [ ":*" ]
+  inputs = get_target_outputs(":rust-custom-target")
+  rustflags = [
+    "-Zunstable-options",
+    "--sysroot=" + rebase_path(root_gen_dir, root_build_dir),
+    "--target=kernel",
+  ]
+}
+
+group("rust-target.deps") {
+  # This needs to be in public_deps so that it counts among "direct" deps for
+  # all the Rust compilation targets that have its outputs in their inputs via
+  # config("rust-target").
+  public_deps = [ ":rust-custom-target" ]
+
+  # This is just an ordering dep to get the custom target sysroot rlibs built.
+  # The rlib files aren't directly known to GN / Ninja as inputs, but will be
+  # picked up from rustc's depfile to take care of incremental rebuilds.
+  deps = [ "//zircon/kernel/lib/rust" ]
 }

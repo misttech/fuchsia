@@ -16,6 +16,13 @@
 #     - Type: list(string)
 #     - Default: []
 #
+#   * rust_linker_flags
+#     - Optional: Flags for the underlying linker, but only for Rust links.
+#     These are added only to $rustflags, but with the appropriate syntax for
+#     the Rust compiler driver.
+#     - Type: list(string)
+#     - Default: []
+#
 # See config() for other parameters.
 #
 template("linker_config") {
@@ -31,8 +38,9 @@ template("linker_config") {
                            "*",
                            [
                              "linker_flags",
-                             "visibility",
+                             "rust_linker_flags",
                              "testonly",
+                             "visibility",
                            ])
     if (defined(invoker.linker_flags) && invoker.linker_flags != []) {
       joined_flags = "-Wl," + string_join(",", invoker.linker_flags)
@@ -47,6 +55,16 @@ template("linker_config") {
         }
       } else {
         rustflags += [ "-Clink-arg=$joined_flags" ]
+      }
+    }
+    if (defined(invoker.rust_linker_flags)) {
+      if (is_fuchsia) {
+        foreach(arg, invoker.rust_linker_flags) {
+          rustflags += [ "-Clink-arg=$arg" ]
+        }
+      } else {
+        rustflags +=
+            [ "-Clink-arg=-Wl," + string_join(",", invoker.rust_linker_flags) ]
       }
     }
   }

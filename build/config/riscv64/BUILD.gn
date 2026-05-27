@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/custom_target_config.gni")
 import("//build/config/linker_config.gni")
 import("riscv64.gni")
 
@@ -10,7 +11,7 @@ import("riscv64.gni")
 riscv64_abi_config("abi") {
 }
 
-config("riscv64") {
+custom_target_config("riscv64") {
   # TODO(https://fxbug.dev/42076645): Clang should do this everywhere for Fuchsia
   # targets. When it does, put this under `if (is_gcc)`.
   #
@@ -25,14 +26,13 @@ config("riscv64") {
   if (!toolchain_variant.is_pic_default) {
     cflags = [ "-msmall-data-limit=0" ]
   }
-  configs = [ ":abi" ]
+  if (toolchain_environment != "kernel") {
+    custom_target_configs = [ ":abi" ]
+  }
 
   rustflags = [
     # TODO(https://fxbug.dev/360955800): remove the SCS option once the rustc driver can set it by default for Fuchsia targets
     "-Zsanitizer=shadow-call-stack",
-
-    # TODO(https://fxbug.dev/501183733) remove once rustc's frontend does this automatically
-    "-Ctarget-feature=+v",
   ]
 }
 

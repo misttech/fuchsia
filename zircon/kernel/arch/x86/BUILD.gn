@@ -4,22 +4,25 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/custom_target_config.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
 # These set the ABI contract between C++ and assembly code.
 # This is kept consistent between the kernel proper and phys
 # so (pure PIC) code should be callable from the kernel proper.
-config("abi") {
-  configs = [
+custom_target_config("abi") {
+  custom_target_configs = [
     ":integer-register-abi",
     ":thread-pointer-abi",
     ":stack-pointer-abi",
+  ]
 
-    # These are not part of the ABI contract per se, but they're part of the
-    # "expected resilience of generated code" contract that should be uniform
-    # across all the privileged code.
-    "//build/config/x64:harden_sls",
+  # These are not part of the ABI contract per se, but they're part of the
+  # "expected resilience of generated code" contract that should be uniform
+  # across all the privileged code.
+  custom_target_configs += [ "//build/config/x64:harden_sls" ]
+  configs = [
     ":retpoline",
     ":skylake_jcc",
   ]
@@ -27,9 +30,18 @@ config("abi") {
 
 # Don't use any FP / vector registers in kernel code.  They usually still
 # hold the user-mode values while running in kernel mode.
-config("integer-register-abi") {
+custom_target_config("integer-register-abi") {
   cflags = [ "-msoft-float" ]
-  rust_target_features = []
+  rust_target_features = [ "+soft-float" ]
+  if (toolchain_environment == "kernel") {
+    rust_target_edits = [
+      {
+        key = "rustc-abi"
+        action = "set"
+        value = "softfloat"
+      },
+    ]
+  }
 
   disabled_features = [
     "mmx",
@@ -59,21 +71,27 @@ config("integer-register-abi") {
   # None of these actually matter in ldflags even for LTO, and the Clang driver
   # complains about some as unused at link time.
   asmflags = cflags
-
-  rustflags = [ "-Ctarget-feature=" + string_join(",", rust_target_features) ]
 }
 
 # Use the right thread-pointer ABI for the kernel (%gs.base, not %fs.base).
 # This affects `__builtin_thread_pointer()`; would affect ELF TLS if it were
 # used; and affects the ABI implicitly used by stack-protector and safe-stack.
-config("thread-pointer-abi") {
+custom_target_config("thread-pointer-abi") {
   # Clang needs -mcmodel=kernel to tell it to use the right safe-stack ABI for
   # the kernel.  It doesn't have any other effects that matter when using -fPIE
   # as we do; it's not useful to us at all in GCC and doesn't exist for x86-32.
   if (toolchain_environment != "kernel.phys32" && !is_gcc) {
-    cflags = [ "-mcmodel=kernel" ]
-    asmflags = cflags
-    ldflags = cflags
+    common_flags = [ "-mcmodel=kernel" ]
+  }
+  if (toolchain_environment == "kernel") {
+    rust_target_edits = [
+      {
+        key = "code-model"
+        action = "set"
+        value = "kernel"
+      },
+    ]
+  } else {
     rustflags = [ "-Ccode-model=kernel" ]
   }
 }
@@ -81,11 +99,19 @@ config("thread-pointer-abi") {
 # This tells the compiler not to use any space below the current stack pointer,
 # because in supervisor mode an exception frame could be pushed there by
 # hardware at any time.
-config("stack-pointer-abi") {
-  rustflags = [ "-Cno-redzone" ]
-  cflags = [ "-mno-red-zone" ]
-  asmflags = cflags
-  ldflags = cflags
+custom_target_config("stack-pointer-abi") {
+  common_flags = [ "-mno-red-zone" ]
+  if (toolchain_environment == "kernel") {
+    rust_target_edits = [
+      {
+        key = "disable-redzone"
+        action = "set"
+        value = true
+      },
+    ]
+  } else {
+    rustflags = [ "-Cno-redzone" ]
+  }
 }
 
 config("retpoline") {

@@ -699,10 +699,10 @@ template("zircon_toolchain") {
   toolchain(target_name) {
     propagates_configs = true
 
-    deps = []
-    forward_variables_from(invoker, [ "deps" ])
-
-    deps += buildidtool_toolchain_deps
+    deps = buildidtool_toolchain_deps
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
 
     # Every toolchain needs the standard stamp and copy tools.
     tool("stamp") {

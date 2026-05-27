@@ -57,6 +57,8 @@ linker_config("compiler") {
 
   if (linker != "") {
     ldflags += [ "-fuse-ld=$linker" ]
+  } else {
+    rustflags = [ "-Clinker=$rebased_clang_prefix/lld" ]
   }
 
   if (defined(zircon_toolchain.version_string) &&

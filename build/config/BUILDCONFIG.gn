@@ -3683,6 +3683,13 @@ template("basic_source_set") {
   }
 }
 
+# Likewise for a rust_library() that needs to avoid source_deps.
+template("basic_rust_library") {
+  _rust_library_internal_wrapper(target_name) {
+    forward_variables_from(invoker, "*")
+  }
+}
+
 # This wraps the built-in GN executable() template, adding a few more features:
 #
 # - Perform variant-based toolchain selection using variant_target(). See its
@@ -4382,6 +4389,8 @@ template("rust_library") {
   }
 
   _rust_library_internal_wrapper(target_name) {
+    deps = []
+    inputs = []
     forward_variables_from(invoker,
                            "*",
                            [
@@ -4399,17 +4408,14 @@ template("rust_library") {
                              "visibility",
                            ])
 
-    if (!defined(deps)) {
-      deps = []
-    }
     deps += [
       ":${target_name}.rust_compilation_deps",
       ":${target_name}.rust_sources",
     ]
 
-    if (!defined(inputs)) {
-      inputs = []
-    }
+    # This is implicitly added to every kind of target that can have `sources`.
+    deps += toolchain_variant.source_deps
+
     inputs += restat_rust_wrapper_inputs
 
     output_dir = _searchdir_path

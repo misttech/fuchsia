@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/custom_target_config.gni")
+import("//build/toolchain/toolchain_environment.gni")
+
 declare_args() {
   # Whether to enable the use of RISC-V vector instructions.
   riscv64_enable_vector = true
@@ -219,7 +222,7 @@ fuchsia_riscv_abi = "lp64d"
 #     - Default: []
 #
 template("riscv64_abi_config") {
-  config(target_name) {
+  custom_target_config(target_name) {
     forward_variables_from(invoker, [ "visibility" ])
 
     _extra_features =
@@ -284,19 +287,51 @@ template("riscv64_abi_config") {
       _mabi = fuchsia_riscv_abi
     }
 
-    cflags = [
+    common_flags = [
       "-march=$_march",
       "-mabi=$_mabi",
     ]
 
-    ldflags = cflags
-    asmflags = cflags
+    rust_target_features = []
+    foreach(feature, _letters + _features) {
+      if (feature == "g") {  # Rust wants G exploded out, but eliding I.
+        rust_target_features += [
+          "+m",
+          "+a",
+          "+f",
+          "+d",
+          "+zicsr",
+        ]
+      } else {
+        rust_target_features += [ "+$feature" ]
+      }
+    }
 
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-    if (is_kernel) {
-      # TODO(https://fxbug.dev/501183733): See TODO in ./BUILD.gn's
-      # config("riscv64") that can be removed when rustflags is set here.
-      rustflags = [ "--rust-is-too-dangerous-until-we-plumb-march+mabi" ]
+    if (toolchain_environment == "kernel") {
+      rust_target_edits = [
+        {
+          key = "llvm-abiname"
+          action = "set"
+          value = _mabi
+        },
+      ]
+    } else {
+      # When not using the custom target, these are implicit in the base set
+      # anyway but rustc complains about them being "unstable" when they are
+      # enabled explicitly, so just don't mention them.
+      _implicit_features = [
+        "+f",
+        "+d",
+        "+zfhmin",
+      ]
+      if (is_fuchsia) {
+        _implicit_features += [ "+v" ]
+      }
+      rust_target_features += _implicit_features
+      rust_target_features -= _implicit_features
+
+      rustflags = [ "-Cllvm-args=--target-abi=$_mabi" ]
+      rust_linker_flags = [ "--mllvm=--target-abi=$_mabi" ]
     }
   }
 }
