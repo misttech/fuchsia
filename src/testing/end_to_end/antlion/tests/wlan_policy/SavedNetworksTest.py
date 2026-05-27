@@ -11,7 +11,6 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyControllerError,
 )
@@ -56,7 +55,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
     remove through the ClientController API of WLAN policy.
 
     Test Bed Requirement:
-    * One or more Fuchsia devices
+    * One Fuchsia device
     * One Access Point
     """
 
@@ -71,29 +70,24 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         # Keep track of whether we have started an access point in a test
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
-        for fd in self.fuchsia_devices:
-            fd.configure_wlan(association_mechanism="policy")
+        self.fuchsia_device = self.fuchsia_devices[0]
+        self.fuchsia_device.configure_wlan(association_mechanism="policy")
 
     def setup_test(self) -> None:
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
         if self.access_point:
             self.access_point.stop_all_aps()
 
     def teardown_class(self) -> None:
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
         if self.access_point:
             self.access_point.stop_all_aps()
 
-    def _has_saved_network(
-        self, fd: FuchsiaDevice, network: NetworkConfig
-    ) -> bool:
+    def _has_saved_network(self, network: NetworkConfig) -> bool:
         """Verify that the network is present in saved networks.
 
         Args:
-            fd: Fuchsia device to run on.
             network: Network to check for.
 
         Returns:
@@ -101,7 +95,9 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         """
         networks: list[
             NetworkConfig
-        ] = fd.honeydew_fd.wlan_policy_deprecated_sync.get_saved_networks()
+        ] = (
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.get_saved_networks()
+        )
         if network in networks:
             return True
         else:
@@ -170,24 +166,23 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(8),
         )
 
-        for fd in self.fuchsia_devices:
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                    test_network.ssid,
-                    test_network.security_type,
-                    test_network.credential_value,
-                )
-                asserts.fail("Unexpectedly succeeded to save network")
-            except HoneydewWlanError:
-                networks = (
-                    fd.honeydew_fd.wlan_policy_deprecated_sync.get_saved_networks()
-                )
-                if test_network in networks:
-                    asserts.fail("Got an unexpected saved network")
-                # Successfully failed to save network.
-                return
+        try:
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+                test_network.ssid,
+                test_network.security_type,
+                test_network.credential_value,
+            )
+            asserts.fail("Unexpectedly succeeded to save network")
+        except HoneydewWlanError:
+            networks = (
+                self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.get_saved_networks()
+            )
+            if test_network in networks:
+                asserts.fail("Got an unexpected saved network")
+            # Successfully failed to save network.
+            return
 
-            asserts.fail("Failed to get error saving bad network")
+        asserts.fail("Failed to get error saving bad network")
 
     def test_open_network(self) -> None:
         """Save an open network and verify presence."""
@@ -198,14 +193,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             CREDENTIAL_VALUE_NONE,
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_network_with_psk(self) -> None:
         """Save a network with a PSK and verify presence.
@@ -220,14 +214,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_hex_str(PSK_LEN).lower(),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_wep_network(self) -> None:
         """Save a wep network and verify presence."""
@@ -238,14 +231,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(13),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_wpa2_network(self) -> None:
         """Save a wpa2 network and verify presence."""
@@ -256,14 +248,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(15),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_wpa_network(self) -> None:
         """Save a wpa network and verify presence."""
@@ -274,14 +265,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(9),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_wpa3_network(self) -> None:
         """Save a wpa3 network and verify presence."""
@@ -292,14 +282,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(15),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
     def test_save_network_persists(self) -> None:
         """Save a network and verify after reboot network is present."""
@@ -310,20 +299,19 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             rand_ascii_str(10),
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
 
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network not present")
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network not present")
 
-            fd.reboot()
+        self.fuchsia_device.reboot()
 
-            if not self._has_saved_network(fd, test_network):
-                asserts.fail("Saved network did not persist through reboot")
+        if not self._has_saved_network(test_network):
+            asserts.fail("Saved network did not persist through reboot")
 
     def test_same_ssid_diff_security(self) -> None:
         """Save two networks with the same ssids but different security types.
@@ -345,24 +333,23 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             CREDENTIAL_VALUE_NONE,
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network_wpa2.ssid,
-                test_network_wpa2.security_type,
-                test_network_wpa2.credential_value,
-            )
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network_wpa2.ssid,
+            test_network_wpa2.security_type,
+            test_network_wpa2.credential_value,
+        )
 
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network_open.ssid,
-                test_network_open.security_type,
-                test_network_open.credential_value,
-            )
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network_open.ssid,
+            test_network_open.security_type,
+            test_network_open.credential_value,
+        )
 
-            if not (
-                self._has_saved_network(fd, test_network_wpa2)
-                and self._has_saved_network(fd, test_network_open)
-            ):
-                asserts.fail("Both saved networks not present")
+        if not (
+            self._has_saved_network(test_network_wpa2)
+            and self._has_saved_network(test_network_open)
+        ):
+            asserts.fail("Both saved networks not present")
 
     def test_remove_disconnects(self) -> None:
         """Connect to network, remove it while still connected, and verify disconnect.
@@ -381,33 +368,32 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             test_network.ssid, SecurityWpa2(), test_network.credential_value
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-            # Make sure client connections are enabled
-            fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
-                WlanClientState.CONNECTIONS_ENABLED
-            )
-            # Save and verify we connect to network
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        # Make sure client connections are enabled
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
+            WlanClientState.CONNECTIONS_ENABLED
+        )
+        # Save and verify we connect to network
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
 
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                test_network.ssid, ConnectionState.CONNECTED
-            )
-            # Remove network and verify we disconnect
-            fd.honeydew_fd.wlan_policy_deprecated_sync.remove_network(
-                test_network.ssid,
-                test_network.security_type,
-                test_network.credential_value,
-            )
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-            except WlanPolicyControllerError as e:
-                raise signals.TestFailure("Failed to remove network") from e
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
+            test_network.ssid, ConnectionState.CONNECTED
+        )
+        # Remove network and verify we disconnect
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.remove_network(
+            test_network.ssid,
+            test_network.security_type,
+            test_network.credential_value,
+        )
+        try:
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        except WlanPolicyControllerError as e:
+            raise signals.TestFailure("Failed to remove network") from e
 
     def test_auto_connect_open(self) -> None:
         """Save an open network and verify it auto connects.
@@ -426,26 +412,25 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             test_network.ssid, SecurityOpen(), test_network.credential_value
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-            # Make sure client connections are enabled
-            fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        # Make sure client connections are enabled
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
 
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
-                WlanClientState.CONNECTIONS_ENABLED
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
+            WlanClientState.CONNECTIONS_ENABLED
+        )
+        # Save the network and make sure that we see the device auto connect to it.
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid, test_network.security_type
+        )
+        try:
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
+                test_network.ssid, ConnectionState.CONNECTED
             )
-            # Save the network and make sure that we see the device auto connect to it.
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid, test_network.security_type
-            )
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                    test_network.ssid, ConnectionState.CONNECTED
-                )
-            except HoneydewWlanError as e:
-                raise signals.TestFailure(
-                    "network is not in connected state"
-                ) from e
+        except HoneydewWlanError as e:
+            raise signals.TestFailure(
+                "network is not in connected state"
+            ) from e
 
     def test_auto_connect_wpa3(self) -> None:
         """Save an wpa3 network and verify it auto connects.
@@ -464,27 +449,26 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             test_network.ssid, SecurityWpa3(), test_network.credential_value
         )
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-            # Make sure client connections are enabled
-            fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
-                WlanClientState.CONNECTIONS_ENABLED
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
+        # Make sure client connections are enabled
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
+            WlanClientState.CONNECTIONS_ENABLED
+        )
+        # Save the network and make sure that we see the device auto connect to it.
+        self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.save_network(
+            test_network.ssid,
+            SecurityType.WPA3,
+            test_network.credential_value,
+        )
+        try:
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
+                test_network.ssid, ConnectionState.CONNECTED
             )
-            # Save the network and make sure that we see the device auto connect to it.
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                test_network.ssid,
-                SecurityType.WPA3,
-                test_network.credential_value,
-            )
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                    test_network.ssid, ConnectionState.CONNECTED
-                )
-            except HoneydewWlanError as e:
-                raise signals.TestFailure(
-                    "network is not in connected state"
-                ) from e
+        except HoneydewWlanError as e:
+            raise signals.TestFailure(
+                "network is not in connected state"
+            ) from e
 
 
 if __name__ == "__main__":
