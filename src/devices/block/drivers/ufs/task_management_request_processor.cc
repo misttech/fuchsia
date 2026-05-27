@@ -142,6 +142,9 @@ zx::result<> TaskManagementRequestProcessor::FillDescriptorAndSendRequest(
   // Copy the UTP task management request UPIU to the descriptor.
   memcpy(descriptor->GetRequestData(), request.GetData(), sizeof(TaskManagementRequestUpiuData));
 
+  zx_cache_flush(descriptor, sizeof(TaskManagementRequestDescriptor),
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+
   if (zx::result<> result = controller_.Notify(NotifyEvent::kSetupTaskManagementRequestList, slot);
       result.is_error()) {
     return result.take_error();

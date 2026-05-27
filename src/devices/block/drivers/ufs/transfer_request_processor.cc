@@ -256,6 +256,8 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
 
   memcpy(request_list_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
   memset(request_list_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0, response_length);
+  zx_cache_flush(request_list_.GetDescriptorBuffer(slot), kUtpCommandDescriptorSize,
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
   auto response = request_list_.GetDescriptorBuffer(slot, response_offset);
 
   if (zx::result<> result =
@@ -453,6 +455,9 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
   descriptor->set_response_upiu_length(response_length / kDwordSize);
   descriptor->set_prdt_offset(prdt_offset / kDwordSize);
   descriptor->set_prdt_length(prdt_entry_count);
+
+  zx_cache_flush(descriptor, sizeof(TransferRequestDescriptor),
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 
   TRACE_DURATION("ufs", "RingRequestDoorbell", "slot", slot);
   if (zx::result<> result = controller_.Notify(NotifyEvent::kSetupTransferRequestList, slot);
