@@ -6,6 +6,7 @@
 
 # Checks how out of date our third-party rust deps are
 
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -49,6 +50,23 @@ def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
     ]
 
 
+def process_crate(
+    crate: str, version: str
+) -> Tuple[datetime, int, str, str, Tuple[str, datetime]] | None:
+    versions = fetch_crate_versions(crate)
+    try:
+        versions = versions[
+            : next((i for i, (v, _) in enumerate(versions) if v == version)) + 1
+        ]
+    except StopIteration:
+        return None
+    if not versions:
+        return None
+    current = versions[-1][1]
+    newest = versions[0][1]
+    return (newest - current, len(versions), crate, version, versions[0])
+
+
 if __name__ == "__main__":
     cargo_process = subprocess.run(
         ["cargo", "metadata", "--manifest-path", manifest],
@@ -59,20 +77,22 @@ if __name__ == "__main__":
     crates = {p["name"]: p["version"] for p in metadata["packages"]}
     updates = []
 
-    for crate, version in list(crates.items()):
-        versions = fetch_crate_versions(crate)
-        try:
-            versions = versions[
-                : next((i for i, (v, _) in enumerate(versions) if v == version))
-                + 1
-            ]
-        except StopIteration:
-            continue
-        current = versions[-1][1]
-        newest = versions[0][1]
-        updates.append(
-            (newest - current, len(versions), crate, version, versions[0])
-        )
+    # Limit workers to avoid overwhelming crates.io and hitting rate limits.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+        future_to_crate = {
+            executor.submit(process_crate, crate, version): crate
+            for crate, version in crates.items()
+        }
+        for future in concurrent.futures.as_completed(future_to_crate):
+            crate = future_to_crate[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    updates.append(result)
+            except Exception as exc:
+                print(
+                    f"Warning: processing {crate} generated an exception: {exc}"
+                )
 
     updates.sort()
     for age, releases, crate, version, newest in updates:
