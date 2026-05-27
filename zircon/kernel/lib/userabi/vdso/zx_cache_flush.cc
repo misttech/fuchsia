@@ -101,6 +101,8 @@ __EXPORT zx_status_t _zx_cache_flush(const void* addr, size_t len, uint32_t opti
       // Invalidate instruction cache (ic) to point of unification (ivau).
       __asm__ volatile("ic ivau, %0" ::"r"(p));
     });
+    // Ensure completion of the invalidations.
+    __asm__ volatile("dsb sy" : : : "memory");
     // Synchronize the icache flush to before future instruction fetches.
     __asm__ volatile("isb sy");
   }

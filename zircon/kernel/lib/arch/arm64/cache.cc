@@ -50,6 +50,7 @@ void GlobalCacheConsistencyContext::SyncRange(uintptr_t vaddr, size_t size) {
     for (uintptr_t line = aligned_addr; line < end_addr; line += icache_line_size) {
       __asm__ volatile("ic ivau, %0" ::"r"(line) : "memory");
     }
+    __dsb(ARM_MB_ISH);
     __isb(ARM_MB_SY);
   } else if (ctr.dic()) {
     // If CTR_EL0.DIC is set then we do not need to flush any icache, however we still
