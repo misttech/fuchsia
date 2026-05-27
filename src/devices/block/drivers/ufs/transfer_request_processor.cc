@@ -336,6 +336,14 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
 
     IoCommand *io_cmd = request_slot.io_cmd;
     if (io_cmd) {
+      // Unpin data buffer before signalling request completion to the upper layer. This is
+      // necessary because the filesystem is allowed to transfer pages directly out of this buffer.
+      if (request_slot.pmt.is_valid()) {
+        if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
+          fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
+          request_result = zx::error(status);
+        }
+      }
       io_cmd->data_vmo.reset();
       io_cmd->device_op.Complete(request_result.status_value());
     }
