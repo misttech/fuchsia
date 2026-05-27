@@ -85,11 +85,6 @@
             to: "#ui",
         },
         {
-            protocol: [ "fuchsia.stash.Store" ],
-            from: "#stash",
-            to: "#ui",
-        },
-        {
             protocol: [
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
