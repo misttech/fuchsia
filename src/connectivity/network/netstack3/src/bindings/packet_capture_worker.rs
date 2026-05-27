@@ -41,10 +41,10 @@ pub(crate) async fn serve_packet_capture_rolling(
     mut ctx: Ctx,
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
     id: SocketId<BindingsCtx>,
-    interface_name: String,
-    link_type: LinkType,
+    pcap_headers: Vec<u8>,
 ) -> Result<(), fidl::Error> {
     let mut id = Some(id);
+    let mut pcap_headers = Some(pcap_headers);
     while let Some(req) = rs.try_next().await? {
         match req {
             fnet_debug::RollingPacketCaptureRequest::Detach { .. } => {
@@ -60,7 +60,7 @@ pub(crate) async fn serve_packet_capture_rolling(
             fnet_debug::RollingPacketCaptureRequest::StopAndDownload { channel, .. } => {
                 // TODO(https://fxbug.dev/485274945): Support repeated calls to
                 // StopAndDownload.
-                let Some(id) = id.take() else {
+                let (Some(id), Some(pcap_headers)) = (id.take(), pcap_headers.take()) else {
                     return channel.close_with_epitaph(zx::Status::BAD_STATE);
                 };
                 let weak = id.downgrade();
@@ -72,11 +72,7 @@ pub(crate) async fn serve_packet_capture_rolling(
                     .into_future()
                     .await;
                 let ring_buffer = socket_state.into_rolling_pcap_buffer();
-                let file = std::sync::Arc::new(PcapFile::new(
-                    ring_buffer,
-                    interface_name.clone(),
-                    link_type,
-                ));
+                let file = std::sync::Arc::new(PcapFile::new(ring_buffer, pcap_headers));
                 let scope = vfs::execution_scope::ExecutionScope::new();
                 let mut object_request = vfs::object_request::ObjectRequest::new(
                     fio::PERM_READABLE,
@@ -244,8 +240,11 @@ pub(crate) fn handle_start_rolling(
     let request_stream = rolling_server.into_stream();
     let ctx_clone = ctx.clone();
     let device_name = device_id.device_name().clone();
+    let mut pcap_headers = Vec::new();
+    pcap::write_prelude(&mut pcap_headers, link_type, &device_name)
+        .expect("failed to write pcap prelude");
     fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
-        serve_packet_capture_rolling(guard, ctx_clone, rs, id, device_name, link_type)
+        serve_packet_capture_rolling(guard, ctx_clone, rs, id, pcap_headers)
     });
     Ok(rolling_client)
 }
@@ -280,12 +279,7 @@ struct PcapFile {
 }
 
 impl PcapFile {
-    fn new(ring_buffer: RingBuffer, interface_name: String, link_type: LinkType) -> Self {
-        let mut headers = Vec::new();
-        // Write pcap prelude (SHB and IDB).
-        pcap::write_prelude(&mut headers, link_type, &interface_name)
-            .expect("failed to write pcap prelude");
-
+    fn new(ring_buffer: RingBuffer, headers: Vec<u8>) -> Self {
         Self { headers, ring_buffer }
     }
 }
