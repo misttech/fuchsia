@@ -377,6 +377,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.starnix.gralloc:verify_bazel2gn",
   "//sdk/fidl/fuchsia.starnix.psi:verify_bazel2gn",
   "//sdk/fidl/fuchsia.starnix.runner:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.stash:verify_bazel2gn",
   "//sdk/fidl/fuchsia.storage.blobfs:verify_bazel2gn",
   "//sdk/fidl/fuchsia.storage.block:verify_bazel2gn",
   "//sdk/fidl/fuchsia.storage.ftl:verify_bazel2gn",
