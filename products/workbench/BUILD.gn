@@ -33,7 +33,7 @@ if (current_cpu == "x64") {
   bazel_product_bundle("workbench_eng.x64") {
     testonly = true
     product_bundle_name = target_name
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = "//products/workbench:product_bundle_eng.x64"
     bazel_product_image_target = "//products/workbench:assembly_eng.x64"
     bazel_product_config_target = ":assembly_config_eng"
@@ -51,7 +51,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("workbench_eng.arm64") {
     testonly = true
     product_bundle_name = target_name
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target =
         "//products/workbench:product_bundle_eng.arm64"
     bazel_product_image_target = "//products/workbench:assembly_eng.arm64"
@@ -68,7 +68,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("workbench_eng.vim3") {
     testonly = true
     product_bundle_name = target_name
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = "//products/workbench:product_bundle_eng.vim3"
     bazel_product_image_target = "//products/workbench:assembly_eng.vim3"
     bazel_recovery_image_target = "//products/zedboot:vim3_recovery"

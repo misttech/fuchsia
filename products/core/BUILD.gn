@@ -34,7 +34,7 @@ if (current_cpu == "x64") {
   bazel_product_bundle("product_bundle.x64") {
     testonly = true
     product_bundle_name = "core.x64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle.x64"
     bazel_product_image_target = ":image.x64"
     bazel_product_config_target = ":product_config"
@@ -47,7 +47,7 @@ if (current_cpu == "x64") {
   bazel_product_bundle("product_bundle.x64_reduced_perf_variation") {
     testonly = true
     product_bundle_name = "core.x64-reduced-perf-variation"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle.x64_reduced_perf_variation"
     bazel_product_image_target = ":image.x64_reduced_perf_variation"
     bazel_recovery_image_target =
@@ -60,7 +60,7 @@ if (current_cpu == "x64") {
   bazel_product_bundle("product_bundle_f2fs.x64") {
     testonly = true
     product_bundle_name = "core_with_f2fs.x64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle_f2fs.x64"
     bazel_product_image_target = ":image_f2fs.x64"
     bazel_product_config_target = ":product_config_f2fs"
@@ -74,7 +74,7 @@ if (current_cpu == "x64") {
   bazel_product_bundle("product_bundle_minfs.x64") {
     testonly = true
     product_bundle_name = "core_with_minfs.x64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle_minfs.x64"
     bazel_product_image_target = ":image_minfs.x64"
     bazel_product_config_target = ":product_config_minfs"
@@ -92,7 +92,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle.arm64") {
     testonly = true
     product_bundle_name = "core.arm64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle.arm64"
     bazel_product_image_target = ":image.arm64"
     bazel_product_config_target = ":product_config"
@@ -106,7 +106,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle.qemu-arm64") {
     testonly = true
     product_bundle_name = "core.qemu-arm64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle.qemu-arm64"
     bazel_product_image_target = ":image.qemu-arm64"
     bazel_product_config_target = ":product_config"
@@ -121,7 +121,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle.vim3") {
     testonly = true
     product_bundle_name = "core.vim3"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle.vim3"
     bazel_product_image_target = ":image.vim3"
     bazel_product_config_target = ":product_config"
@@ -134,7 +134,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle_f2fs.arm64") {
     testonly = true
     product_bundle_name = "core_with_f2fs.arm64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle_f2fs.arm64"
     bazel_product_image_target = ":image_f2fs.arm64"
     bazel_product_config_target = ":product_config_f2fs"
@@ -149,7 +149,7 @@ if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle_minfs.arm64") {
     testonly = true
     product_bundle_name = "core_with_minfs.arm64"
-    allow_eng_platform_bundle_use = true
+
     bazel_product_bundle_target = ":product_bundle_minfs.arm64"
     bazel_product_image_target = ":image_minfs.arm64"
     bazel_product_config_target = ":product_config_minfs"

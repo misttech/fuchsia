@@ -40,7 +40,6 @@ template("bazel_test_product_bundle") {
     # each other and the default image metadata for a build.
     generate_image_metadata = false
 
-    allow_eng_platform_bundle_use = true
     bazel_product_bundle_target = invoker.bazel_target
 
     # The fuchsia_test_product_bundle Bazel macro creates a fuchsia_product

@@ -58,16 +58,6 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #     `product_assembly_configuration` target. This is required if
 #      legacy_bundle_only=false.
 #
-#   use_bringup_platform_bundles_only (optional; default=false)
-#     [boolean] If true, only the 'bootstrap' and 'embeddable' are set as
-#     dependencies and inputs for the assembly, to reduce the amount of
-#     the platform that's built on bringup builds.
-#
-#   allow_eng_platform_bundle_use (optional; default=true)
-#     [boolean] If true, allow the 'eng' platform bundles to be used by the
-#     assembled system.  (this is only a check made by GN, assembly itself may
-#     still access them)
-#
 #   enable_example_aib (optional; default=false)
 #     [boolean] If true, allow the use of the example / testing AIB by this
 #     assembly.  This is only for use by tests of assembly.
