@@ -1073,7 +1073,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/riscv64-unknown-fuchsia/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -5249,7 +5249,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:21
+From //zircon/kernel/switch/BUILD.gn:24
 
 ### kernel_no_userabi
 
@@ -8665,7 +8665,7 @@ Whether to enable the use of RISC-V vector instructions.
 
 **Current value (from the default):** `true`
 
-From //build/config/riscv64/riscv64.gni:7
+From //build/config/riscv64/riscv64.gni:10
 
 ### rust_cap_lints
 
