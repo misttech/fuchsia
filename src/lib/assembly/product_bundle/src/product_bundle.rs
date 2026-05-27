@@ -627,31 +627,34 @@ impl ProductBundle {
 
         Ok(())
     }
+
+    /// Get the FileSystemRepository specifications from this product bundle.
+    pub fn get_repositories(&self) -> Result<Vec<FileSystemRepository>, GetRepositoriesError> {
+        let ProductBundle::V2(pb) = self;
+        let mut repos = Vec::<FileSystemRepository>::new();
+        for repo in &pb.repositories {
+            let repo_builder = FileSystemRepository::builder(
+                repo.metadata_path.canonicalize_utf8().map_err(|e| {
+                    GetRepositoriesError::Canonicalize(repo.metadata_path.clone(), e)
+                })?,
+                repo.blobs_path
+                    .canonicalize_utf8()
+                    .map_err(|e| GetRepositoriesError::Canonicalize(repo.blobs_path.clone(), e))?,
+            )
+            .alias(repo.name.clone())
+            .delivery_blob_type(repo.delivery_blob_type.try_into()?);
+            repos.push(repo_builder.build());
+        }
+        Ok(repos)
+    }
 }
 
 /// Construct a Vec<FileSystemRepository> from product bundle.
 pub fn get_repositories(
     product_bundle_dir: Utf8PathBuf,
 ) -> Result<Vec<FileSystemRepository>, GetRepositoriesError> {
-    let pb = match ProductBundle::try_load_from(&product_bundle_dir)? {
-        ProductBundle::V2(pb) => pb,
-    };
-
-    let mut repos = Vec::<FileSystemRepository>::new();
-    for repo in pb.repositories {
-        let repo_builder = FileSystemRepository::builder(
-            repo.metadata_path
-                .canonicalize_utf8()
-                .map_err(|e| GetRepositoriesError::Canonicalize(repo.metadata_path.clone(), e))?,
-            repo.blobs_path
-                .canonicalize_utf8()
-                .map_err(|e| GetRepositoriesError::Canonicalize(repo.blobs_path.clone(), e))?,
-        )
-        .alias(repo.name)
-        .delivery_blob_type(repo.delivery_blob_type.try_into()?);
-        repos.push(repo_builder.build());
-    }
-    Ok(repos)
+    let pb = ProductBundle::try_load_from(&product_bundle_dir)?;
+    pb.get_repositories()
 }
 
 #[cfg(test)]

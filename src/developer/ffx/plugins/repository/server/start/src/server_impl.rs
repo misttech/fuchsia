@@ -364,15 +364,57 @@ pub async fn serve_impl(
     let connect_timeout = std::time::Duration::from_secs(connect_timeout);
     let repo_manager: Arc<RepositoryManager> = RepositoryManager::new();
 
+    // Keep the temp dir alive so that the extracted blobs are not deleted
+    // while the repository is being served.
+    #[allow(clippy::collection_is_never_read)]
+    let mut _extracted_temp_dir: Option<tempfile::TempDir> = None;
+
     let repo_path = match (cmd.repo_path.clone(), cmd.product_bundle.clone()) {
         (Some(_), Some(_)) => {
             return_user_error!("Cannot specify both --repo-path and --product-bundle");
         }
         (None, Some(product_bundle)) => {
-            let repositories = product_bundle::get_repositories(product_bundle.clone())
-                .with_context(|| {
+            let pb = product_bundle::ProductBundle::try_load_from(&product_bundle)
+                .with_context(|| format!("loading product bundle from {product_bundle}"))?;
+
+            let repositories = if pb.supports_extract_blobs(product_bundle::Slot::A) {
+                let temp_dir =
+                    tempfile::tempdir().context("creating temp directory for extracting blobs")?;
+                let temp_path = Utf8Path::from_path(temp_dir.path())
+                    .ok_or_else(|| anyhow::anyhow!("temp path is not valid UTF-8"))?;
+
+                let product_bundle::ProductBundle::V2(ref pb_v2) = pb;
+                let delivery_blob_type = pb_v2.repositories.first().map(|r| r.delivery_blob_type);
+
+                pb.extract_blobs(product_bundle::Slot::A, &temp_path, delivery_blob_type)
+                    .with_context(|| {
+                        format!("extracting blobs from product bundle {product_bundle}")
+                    })?;
+
+                let mut repos = vec![];
+                for repo in &pb_v2.repositories {
+                    let repo_builder = fuchsia_repo::repository::FileSystemRepository::builder(
+                        repo.metadata_path.canonicalize_utf8().with_context(|| {
+                            format!("canonicalizing metadata path {}", repo.metadata_path)
+                        })?,
+                        temp_path.to_path_buf(),
+                    )
+                    .alias(repo.name.clone())
+                    .delivery_blob_type(
+                        repo.delivery_blob_type
+                            .try_into()
+                            .context("converting delivery blob type")?,
+                    );
+                    repos.push(repo_builder.build());
+                }
+                _extracted_temp_dir = Some(temp_dir);
+                repos
+            } else {
+                pb.get_repositories().with_context(|| {
                     format!("getting repositories from product bundle {product_bundle}")
-                })?;
+                })?
+            };
+
             for repository in repositories {
                 let repo_name = format!(
                     "{repo_base_name}.{first_alias}",
