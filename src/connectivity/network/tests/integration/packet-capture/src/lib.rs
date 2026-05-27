@@ -362,3 +362,92 @@ async fn packet_capture_rolling_discard_oldest_test(name: &str) {
     let want = (start..u8::try_from(packet_count).unwrap()).collect::<Vec<_>>();
     assert_eq!(identifier_bytes, want);
 }
+
+// Tests that the rolling packet capture quota is enforced (only one active capture at a time).
+#[netstack_test]
+async fn rolling_packet_capture_quota_test(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_debug::PacketCaptureProviderMarker>()
+        .expect("connect to PacketCaptureProvider");
+
+    let fnet_interfaces_ext::Properties { id: loopback_id, .. } = realm
+        .loopback_properties()
+        .await
+        .expect("failed to get loopback properties")
+        .expect("loopback not found");
+
+    let create_common_params = || fnet_debug::CommonPacketCaptureParams {
+        interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![loopback_id.get()])),
+        ..Default::default()
+    };
+
+    let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+
+    // First call should succeed.
+    let _rolling_client1 = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error 1")
+        .expect("start_rolling error 1");
+
+    // Second call should fail with QUOTA_EXCEEDED.
+    let res2 = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error 2");
+
+    assert_eq!(res2, Err(fnet_debug::PacketCaptureStartError::QuotaExceeded));
+
+    // TODO(https://fxbug.dev/485274945): Verify that a third call succeeds after
+    // stopping the first capture. This logic should be added when discard is
+    // implemented.
+}
+
+// Tests that the quota is not leaked if a request fails with an error (e.g. invalid buffer size).
+#[netstack_test]
+async fn rolling_packet_capture_quota_leak_test(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_debug::PacketCaptureProviderMarker>()
+        .expect("connect to PacketCaptureProvider");
+
+    let fnet_interfaces_ext::Properties { id: loopback_id, .. } = realm
+        .loopback_properties()
+        .await
+        .expect("failed to get loopback properties")
+        .expect("loopback not found");
+
+    let create_common_params = || fnet_debug::CommonPacketCaptureParams {
+        interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![loopback_id.get()])),
+        ..Default::default()
+    };
+
+    // Call with invalid buffer size.
+    let invalid_rolling_params = fnet_debug::RollingPacketCaptureParams {
+        capture_size: Some(fnet_debug::MIN_BUFFER_SIZE / 2),
+        ..Default::default()
+    };
+
+    let res1 = provider
+        .start_rolling(create_common_params(), &invalid_rolling_params)
+        .await
+        .expect("start_rolling FIDL error 1");
+
+    assert_eq!(res1, Err(fnet_debug::PacketCaptureStartError::InvalidBufferSize));
+
+    // Second call with valid parameters should succeed.
+    let rolling_params = fnet_debug::RollingPacketCaptureParams::default();
+    let res2 = provider
+        .start_rolling(create_common_params(), &rolling_params)
+        .await
+        .expect("start_rolling FIDL error 2");
+
+    if let Err(e) = res2 {
+        panic!("second call to start_rolling should have succeeded, got {e:?}");
+    }
+}

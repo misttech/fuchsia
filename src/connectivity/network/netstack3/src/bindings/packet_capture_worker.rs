@@ -4,6 +4,7 @@
 
 //! A Netstack3 worker to serve fuchsia.net.debug.PacketCaptureProvider API
 //! requests.
+use std::sync::atomic::Ordering;
 
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net_debug as fnet_debug;
@@ -24,7 +25,19 @@ use crate::bindings::{BindingId, BindingsCtx, Ctx};
 use netstack3_core::device::DeviceId;
 use netstack3_core::device_socket::{Protocol, SocketId, TargetDevice};
 
+#[derive(Default)]
+pub(crate) struct PacketCaptureState {
+    active_rolling_captures: std::sync::atomic::AtomicBool,
+}
+
+pub(crate) type QuotaGuard = scopeguard::ScopeGuard<Ctx, fn(Ctx)>;
+
+fn release_quota(ctx: Ctx) {
+    ctx.bindings_ctx().packet_captures.active_rolling_captures.store(false, Ordering::Release);
+}
+
 pub(crate) async fn serve_packet_capture_rolling(
+    _guard: QuotaGuard,
     mut ctx: Ctx,
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
     id: SocketId<BindingsCtx>,
@@ -105,6 +118,19 @@ pub(crate) fn handle_start_rolling(
         __source_breaking: _,
     } = common_params;
     let fnet_debug::RollingPacketCaptureParams { capture_size, __source_breaking: _ } = params;
+    if let Err::<_, bool>(_) =
+        ctx.bindings_ctx().packet_captures.active_rolling_captures.compare_exchange(
+            false, /* current */
+            true,  /* new */
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        )
+    {
+        return Err(fnet_debug::PacketCaptureStartError::QuotaExceeded);
+    }
+
+    let guard = scopeguard::guard(ctx.clone(), release_quota as fn(Ctx));
+
     let capture_size = match capture_size {
         None | Some(0) => fnet_debug::DEFAULT_BUFFER_SIZE,
         Some(capture_size) => {
@@ -219,7 +245,7 @@ pub(crate) fn handle_start_rolling(
     let ctx_clone = ctx.clone();
     let device_name = device_id.device_name().clone();
     fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
-        serve_packet_capture_rolling(ctx_clone, rs, id, device_name, link_type)
+        serve_packet_capture_rolling(guard, ctx_clone, rs, id, device_name, link_type)
     });
     Ok(rolling_client)
 }
