@@ -70,13 +70,26 @@ impl From<crate::Handle> for Handle {
             let mut table = HANDLE_CLIENT_ASSOC.write();
             let new_len = std::cmp::max(table.len() * 2, HANDLE_CLIENT_ASSOC_START_SIZE);
 
-            let new = std::iter::repeat_with(|| HandleAssoc {
+            let mut new_vec = Vec::with_capacity(new_len);
+            for entry in table.iter() {
+                // SAFETY: We are holding a write lock on `HANDLE_CLIENT_ASSOC`,
+                // ensuring exclusive access to the table. The `hid` field is
+                // written once when the client pointer is successfully
+                // aclaimed, and by the time we are resizing, any `hid` values
+                // associated with a non-null client pointer are stable.
+                let hid = unsafe { *entry.hid.get() };
+                let client_ptr = entry.client.load(Ordering::Relaxed);
+                new_vec.push(HandleAssoc {
+                    hid: UnsafeCell::new(hid),
+                    client: AtomicPtr::new(client_ptr),
+                });
+            }
+            new_vec.resize_with(new_len, || HandleAssoc {
                 hid: UnsafeCell::new(0),
                 client: AtomicPtr::new(std::ptr::null_mut()),
-            })
-            .take(new_len)
-            .collect::<Box<[_]>>();
+            });
 
+            let new = new_vec.into_boxed_slice();
             let new = Box::leak(new);
             let old = std::mem::replace(&mut *table, new);
 
@@ -154,6 +167,9 @@ impl Handle {
                 (hid, ptr)
             };
 
+            // The pointer should never be null here, as a non-null client was
+            // stored when the Handle was created.
+            assert!(!ptr.is_null(), "Attempted to take an invalid or already taken handle slot");
             let client = std::sync::Weak::from_raw(ptr);
 
             crate::Handle { id, client }
