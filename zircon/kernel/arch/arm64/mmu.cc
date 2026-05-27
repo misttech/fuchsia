@@ -39,6 +39,7 @@
 #include <ktl/span.h>
 #include <lk/init.h>
 #include <phys/handoff.h>
+#include <platform/timer.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -510,7 +511,20 @@ class ArmArchVmAspace::ConsistencyManager {
       // Any page tables in the to_free_ list have been disconnected from tt_virt_ and are no longer
       // discoverable. Synchronize to ensure any previous readers have finished before freeing the
       // pages.
+
+      // TODO(https://fxbug.dev/502004224): We should remove/revisit this logging when we have a
+      // better understanding of the referenced issue.
+      const zx_instant_mono_t start = current_mono_time();
+
       aspace_.rcu_.Synchronize();
+
+      const zx_duration_mono_t duration = current_mono_time() - start;
+      if (duration > ZX_SEC(1)) {
+        dprintf(ALWAYS,
+                "[MMU_STALL_WARN] Aspace %p: rcu_.Synchronize() took %ld ms (spinning too long!)\n",
+                &aspace_, duration / ZX_MSEC(1));
+      }
+
       CacheFreePages(&to_free_);
     }
   }
