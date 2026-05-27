@@ -5,6 +5,7 @@
 use crate::product_bundle::{ProductBundle, ProductBundleWriteError};
 use crate::v2::{ProductBundleV2, Repository};
 
+use anyhow::Context as _;
 use assembled_system::{AssembledSystem, BlobfsContents, Image, PackagesMetadata};
 use assembly_container::AssemblyContainer;
 use assembly_partitions_config::{PartitionImageMapper, PartitionsConfig, Slot as PartitionSlot};
@@ -483,7 +484,8 @@ async fn write_repositories(
     let keys_path = out_dir.join("keys");
 
     let repo_keys = RepoKeys::from_dir(tuf_keys.as_std_path())
-        .map_err(|e| ProductBundleBuildError::WriteRepositories(anyhow::Error::new(e)))?;
+        .context("reading TUF keys")
+        .map_err(ProductBundleBuildError::WriteRepositories)?;
 
     // Main slot.
     let repo =
@@ -743,7 +745,8 @@ fn write_virtual_devices(
     let manifest_file = File::create(&manifest_path)
         .map_err(|e| ProductBundleBuildError::CreateDir(manifest_path.clone(), e))?;
     serde_json::to_writer(manifest_file, &manifest)
-        .map_err(|e| ProductBundleBuildError::WriteVirtualDevices(anyhow::Error::new(e)))?;
+        .context("writing virtual device manifest")
+        .map_err(ProductBundleBuildError::WriteVirtualDevices)?;
 
     Ok(manifest_path)
 }

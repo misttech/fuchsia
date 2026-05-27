@@ -5,73 +5,76 @@
 import("//src/developer/ffx/build/ffx_plugin.gni")
 import("//src/developer/ffx/build/ffx_tool.gni")
 
-ffx_plugin("ffx_product") {
-  sdk_category = "partner"
-  version = "0.1.0"
-  edition = "2024"
-  config_data = [ "data/config.json" ]
+if (is_host) {
+  ffx_plugin("ffx_product") {
+    sdk_category = "partner"
+    version = "0.1.0"
+    edition = "2024"
+    config_data = [ "data/config.json" ]
 
-  plugin_deps = [
-    "create_old:ffx_product_create_old",
-    "download:ffx_product_download",
-    "get_artifacts:ffx_product_get_artifacts",
-    "get_image_path:ffx_product_get_image_path",
-    "get_repository:ffx_product_get_repository",
-    "get_version:ffx_product_get_version",
-    "list:ffx_product_list",
-    "lookup:ffx_product_lookup",
-    "show:ffx_product_show",
-  ]
+    plugin_deps = [
+      "create_old:ffx_product_create_old",
+      "download:ffx_product_download",
+      "extract_blobs:ffx_product_extract_blobs",
+      "get_artifacts:ffx_product_get_artifacts",
+      "get_image_path:ffx_product_get_image_path",
+      "get_repository:ffx_product_get_repository",
+      "get_version:ffx_product_get_version",
+      "list:ffx_product_list",
+      "lookup:ffx_product_lookup",
+      "show:ffx_product_show",
+    ]
 
-  args_sources = [ "src/args.rs" ]
-  args_deps = [
-    "//src/developer/ffx/core:lib",
-    "//third_party/rust_crates:argh",
-  ]
-}
+    args_sources = [ "src/args.rs" ]
+    args_deps = [
+      "//src/developer/ffx/core:lib",
+      "//third_party/rust_crates:argh",
+    ]
+  }
 
-# When used in the build, this separate subtool version is used to avoid
-# its build steps depending on all of ffx. In order to use it with ffx_action,
-# you need to tell it to use the versioned executable target as follows:
-#
-#   ffx_tool =
-#       "//src/developer/ffx/plugins/product:ffx_product_tool"
-#   ffx_tool_output_name = "ffx-product"
-ffx_tool("ffx_product_tool") {
-  edition = "2024"
-  output_name = "ffx-product"
-  deps = [
-    ":ffx_product_suite",
-    "//src/lib/fuchsia-async",
-  ]
-  sources = [ "src/main.rs" ]
+  # When used in the build, this separate subtool version is used to avoid
+  # its build steps depending on all of ffx. In order to use it with ffx_action,
+  # you need to tell it to use the versioned executable target as follows:
+  #
+  #   ffx_tool =
+  #       "//src/developer/ffx/plugins/product:ffx_product_tool"
+  #   ffx_tool_output_name = "ffx-product"
+  ffx_tool("ffx_product_tool") {
+    edition = "2024"
+    output_name = "ffx-product"
+    deps = [
+      ":ffx_product_suite",
+      "//src/lib/fuchsia-async",
+    ]
+    sources = [ "src/main.rs" ]
 
-  sdk_target_name = "sdk"
-  sdk_category = "partner"
+    sdk_target_name = "sdk"
+    sdk_category = "partner"
 
-  # Avoid instrumenting this target as it has a large negative impact on performance.
-  exclude_toolchain_tags = [
-    "asan",
-    "coverage",
-    "profile",
-  ]
-}
+    # Avoid instrumenting this target as it has a large negative impact on performance.
+    exclude_toolchain_tags = [
+      "asan",
+      "coverage",
+      "profile",
+    ]
+  }
 
-group("product") {
-  public_deps = [
-    ":ffx_product_tool",
-    ":ffx_product_tool_host_tool",
-  ]
-}
+  group("product") {
+    public_deps = [
+      ":ffx_product_tool",
+      ":ffx_product_tool_host_tool",
+    ]
+  }
 
-group("bin") {
-  public_deps = [ ":ffx_product_tool_versioned" ]
+  group("bin") {
+    public_deps = [ ":ffx_product_tool_versioned" ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":ffx_product_tests($host_toolchain)",
-    "common:tests",
+    "common:tests($host_toolchain)",
   ]
 }

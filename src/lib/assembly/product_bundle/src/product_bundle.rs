@@ -6,13 +6,15 @@
 
 use crate::v2::{CanonicalizeError, Canonicalizer, ProductBundleV2, RelativizeError, Type};
 
+use anyhow::{Context as _, Result, anyhow};
 use assembled_system::Image;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_repo::repository::FileSystemRepository;
+use rayon::prelude::*;
 use sdk_metadata::{VirtualDevice, VirtualDeviceManifest, VirtualDeviceV1};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::ops::Deref;
 use std::process::Command;
 use zip::read::ZipArchive;
@@ -91,6 +93,10 @@ pub enum ProductBundleExtractError {
     /// Extraction tool failed with status.
     #[error("Extraction tool failed with status {0}.\nstdout: {1}\nstderr: {2}")]
     ToolFailed(std::process::ExitStatus, String, String),
+
+    /// Failed to extract or process blobs.
+    #[error("Failed to extract or process blobs: {0}")]
+    ExtractionError(#[source] anyhow::Error),
 }
 
 /// Errors that can occur when operating on virtual devices in a product bundle.
@@ -443,13 +449,22 @@ impl ProductBundle {
         tools.iter().any(|p| p.file_name() == Some("fxfs_pbtool"))
     }
 
-    /// Extract blobs from a system's fxfs image targeting the specified slot.
+    /// Extract all blobs for the specified slot, sourcing them from the system's
+    /// Fxfs image and copying some from the product bundle's repositories.
     pub fn extract_blobs(
         &self,
         slot: assembly_partitions_config::Slot,
         out_dir: impl AsRef<Utf8Path>,
+        delivery_blob_type: Option<u32>,
     ) -> Result<(), ProductBundleExtractError> {
         let ProductBundle::V2(pb) = self;
+        let parsed_delivery_blob_type = match delivery_blob_type {
+            Some(t) => Some(
+                delivery_blob::DeliveryBlobType::try_from(t)
+                    .map_err(|e| ProductBundleExtractError::ExtractionError(anyhow!(e)))?,
+            ),
+            None => None,
+        };
 
         let (system, platform_tools) = match slot {
             assembly_partitions_config::Slot::A => (&pb.system_a, &pb.platform_tools_a),
@@ -457,35 +472,157 @@ impl ProductBundle {
             assembly_partitions_config::Slot::R => (&pb.system_r, &pb.platform_tools_r),
         };
 
-        let system = system.as_ref().ok_or(ProductBundleExtractError::SystemNotFound)?;
-        let image_path = system
-            .iter()
-            .find_map(|image| match image {
+        let out_dir_ref = out_dir.as_ref();
+        let target_dir = match delivery_blob_type {
+            Some(t) => out_dir_ref.join(t.to_string()),
+            None => out_dir_ref.to_path_buf(),
+        };
+
+        std::fs::create_dir_all(&target_dir)
+            .with_context(|| format!("Failed to create directory {target_dir}"))
+            .map_err(ProductBundleExtractError::ExtractionError)?;
+
+        let system_ref = system.as_ref();
+        let image_path = system_ref.and_then(|s| {
+            s.iter().find_map(|image| match image {
                 Image::Fxfs(path) | Image::FxfsSparse { path, .. } => Some(path),
                 _ => None,
             })
-            .ok_or(ProductBundleExtractError::FxfsImageNotFound)?;
+        });
+        let tool = platform_tools.iter().find(|p| p.file_name() == Some("fxfs_pbtool"));
 
-        let tool = platform_tools
-            .iter()
-            .find(|p| p.file_name() == Some("fxfs_pbtool"))
-            .ok_or(ProductBundleExtractError::ToolNotFound)?;
+        let mut extracted_any_from_fxfs = false;
 
-        let output = Command::new(tool)
-            .arg("extract")
-            .arg("--image")
-            .arg(image_path)
-            .arg("--out")
-            .arg(out_dir.as_ref())
-            .output()
-            .map_err(ProductBundleExtractError::RunTool)?;
+        // Try extracting from Fxfs image if supported
+        if let (Some(image_path), Some(tool)) = (image_path, tool) {
+            // Extract raw blobs from Fxfs image directly to target_dir
+            let output = Command::new(tool)
+                .arg("extract")
+                .arg("--image")
+                .arg(image_path)
+                .arg("--out")
+                .arg(&target_dir)
+                .output()
+                .map_err(ProductBundleExtractError::RunTool)?;
 
-        if !output.status.success() {
-            return Err(ProductBundleExtractError::ToolFailed(
-                output.status,
-                String::from_utf8_lossy(&output.stdout).to_string(),
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ));
+            if !output.status.success() {
+                return Err(ProductBundleExtractError::ToolFailed(
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).to_string(),
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ));
+            }
+
+            extracted_any_from_fxfs = true;
+
+            if let Some(t) = parsed_delivery_blob_type {
+                // Process extracted raw blobs (compress them in-place)
+                let entries = std::fs::read_dir(&target_dir)
+                    .context("Failed to read target dir")
+                    .map_err(ProductBundleExtractError::ExtractionError)?
+                    .collect::<Result<Vec<_>, std::io::Error>>()
+                    .context("Failed to collect target dir entries")
+                    .map_err(ProductBundleExtractError::ExtractionError)?;
+
+                // Compress the extracted raw blobs to delivery blobs in-place concurrently.
+                entries.par_iter().try_for_each(|entry| {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let file_name = path.file_name().ok_or_else(|| {
+                            ProductBundleExtractError::ExtractionError(anyhow!(
+                                "No file name for entry in target dir"
+                            ))
+                        })?;
+                        let hash_str = file_name.to_string_lossy().to_string();
+                        if <fuchsia_merkle::Hash as std::str::FromStr>::from_str(&hash_str).is_err()
+                        {
+                            return Ok(());
+                        }
+
+                        let raw_bytes = std::fs::read(&path)
+                            .with_context(|| format!("Failed to read file {path:?}"))
+                            .map_err(ProductBundleExtractError::ExtractionError)?;
+                        let mut file = std::fs::File::create(&path)
+                            .with_context(|| format!("Failed to create file {path:?}"))
+                            .map_err(ProductBundleExtractError::ExtractionError)?;
+                        delivery_blob::generate_to(t, &raw_bytes, &mut file)
+                            .with_context(|| format!("Failed to write delivery blob to {path:?}"))
+                            .map_err(ProductBundleExtractError::ExtractionError)?;
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+
+        // Process remaining repository blobs that were NOT in the Fxfs image
+        // In some cases (e.g. the scrutiny tool), update package blobs must be decompressed.
+        let mut copied_any = false;
+        if let Some(repo) = pb.repositories.first() {
+            let dir = repo.blobs_path.join(repo.delivery_blob_type.to_string());
+            if dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() {
+                            let file_name = path.file_name().ok_or_else(|| {
+                                ProductBundleExtractError::ExtractionError(anyhow!(
+                                    "No file name for repository blob entry"
+                                ))
+                            })?;
+                            let hash_str = file_name.to_string_lossy().to_string();
+
+                            let dest_path = target_dir.join(&hash_str);
+                            if dest_path.exists() {
+                                continue;
+                            }
+
+                            let file_bytes = std::fs::read(&path)
+                                .with_context(|| format!("Failed to read file {path:?}"))
+                                .map_err(ProductBundleExtractError::ExtractionError)?;
+                            let mut file = std::fs::File::create(&dest_path)
+                                .with_context(|| format!("Failed to create file {dest_path}"))
+                                .map_err(ProductBundleExtractError::ExtractionError)?;
+                            match parsed_delivery_blob_type {
+                                Some(t) if u32::from(t) == repo.delivery_blob_type => {
+                                    file.write_all(&file_bytes)
+                                        .with_context(|| {
+                                            format!("Failed to write file {dest_path}")
+                                        })
+                                        .map_err(ProductBundleExtractError::ExtractionError)?;
+                                }
+                                Some(t) => {
+                                    let decompressed = delivery_blob::decompress(&file_bytes)
+                                        .context("Failed to decompress blob")
+                                        .map_err(ProductBundleExtractError::ExtractionError)?;
+                                    delivery_blob::generate_to(t, &decompressed, &mut file)
+                                        .context("Failed to generate delivery blob")
+                                        .map_err(ProductBundleExtractError::ExtractionError)?;
+                                }
+                                None => {
+                                    delivery_blob::decompress_to(&file_bytes, &mut file)
+                                        .context("Failed to decompress blob")
+                                        .map_err(ProductBundleExtractError::ExtractionError)?;
+                                }
+                            }
+                            copied_any = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no blobs were extracted from Fxfs, and no blobs were copied from
+        // repositories, return error
+        if !extracted_any_from_fxfs && !copied_any {
+            if system_ref.is_some() {
+                if image_path.is_none() {
+                    return Err(ProductBundleExtractError::FxfsImageNotFound);
+                }
+                if tool.is_none() {
+                    return Err(ProductBundleExtractError::ToolNotFound);
+                }
+            }
+            return Err(ProductBundleExtractError::SystemNotFound);
         }
 
         Ok(())
@@ -1072,7 +1209,7 @@ mod tests {
 
         // Extract blobs and verify that the blob from the base package is present.
         let extracted_dir = Utf8PathBuf::from_path_buf(tmp.path().join("extracted")).unwrap();
-        pb.extract_blobs(assembly_partitions_config::Slot::A, &extracted_dir)
+        pb.extract_blobs(assembly_partitions_config::Slot::A, &extracted_dir, None)
             .expect("extract_blobs failed");
         let reader = fs::read_dir(&extracted_dir).unwrap();
         let mut found = false;
@@ -1117,6 +1254,7 @@ mod tests {
         let result = pb.extract_blobs(
             assembly_partitions_config::Slot::A,
             Utf8Path::from_path(&product_bundle_dir).unwrap(),
+            None,
         );
 
         assert!(result.is_err());
@@ -1150,6 +1288,7 @@ mod tests {
         let result = pb.extract_blobs(
             assembly_partitions_config::Slot::A,
             Utf8Path::from_path(&product_bundle_dir).unwrap(),
+            None,
         );
 
         assert!(result.is_err());

@@ -13,7 +13,6 @@ if (is_host) {
     deps = [
       "//src/lib/assembly/partitions_config",
       "//src/lib/assembly/product_bundle",
-      "//src/lib/assembly/util",
       "//src/lib/fuchsia-sync",
       "//src/lib/fuchsia-url",
       "//src/security/lib/scrutiny/utils",
