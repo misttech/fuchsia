@@ -6,7 +6,6 @@
     program: {
         binary: "driver/dw-spi.so",
         bind: "meta/bind/dw-spi-bind.bindbc",
-        colocate: "true",
     },
     capabilities: [
         { service: "fuchsia.hardware.spiimpl.Service" },
