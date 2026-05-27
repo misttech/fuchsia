@@ -56,8 +56,10 @@ const int example_group_fd = -1;
 const long example_flags = 0;
 perf_event_attr example_attr = {0, 0, 0, {}, 0, 0, 0};
 const int32_t from_nanos = 1000000000;
-const int sample_duration = 10000;  // 10 ms
-const int poll_duration = 250000;   // 250 ms
+// TODO(https://fxbug.dev/512482672): Don't use smaller duration,
+// otherwise there might not be enough sample time.
+const int sample_duration = 1000;  // 1000 ms
+const int poll_duration = 250000;  // 250 ms
 const int read_retries = 5;
 
 // Returns an example perf_event_attr where none of the values matter
@@ -663,6 +665,9 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
 
       if (retries > 0) {
         printf("Retried reading sample data %u times\n", retries);
+        // It's ok that we retried. However, if we retried several times and still didn't get
+        // samples, something went wrong (e.g. profiler didn't start or stop correctly).
+        EXPECT_TRUE(retries <= read_retries && read_samples);
       }
       EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
       return sample_id;
@@ -738,7 +743,8 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
-    int num_pages = 2;
+    // TODO(https://fxbug.dev/513339352): choose more reasonable num_pages.
+    int num_pages = 256;
     size_t data_size = num_pages * getpagesize();
     // Ring buffer size, defined to be 1 + 2^n pages per the docs.
     size_t buffer_size = getpagesize() + data_size;
@@ -774,15 +780,14 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     EXPECT_EQ(metadata->data_size, data_size);
 
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_ENABLE), -1);
-    printf("This is an event - start sampling for %u us \n", sample_duration);
+    // We are profiling the Starnix Kernel's job (not the test container's job).
+    // We must make syscalls (e.g. getpid()) to generate activity inside the kernel job,
+    // otherwise we will not get any samples.
     auto start = std::chrono::steady_clock::now();
-    auto duration = std::chrono::microseconds(sample_duration);
-    int x = 0;
+    auto duration = std::chrono::milliseconds(sample_duration);
     while (std::chrono::steady_clock::now() - start < duration) {
-      x++;
-      asm volatile("" : : "g"(x) : "memory");
+      syscall(__NR_getpid);
     }
-
     // End sampling.
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_DISABLE), -1);
     // As mentioned in the docs, closing the file descriptor does not invalidate
@@ -869,7 +874,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         EXPECT_GE(record_details->tid, (uint64_t)1);
         EXPECT_EQ(record_details->id, record_details->sample_id);
         EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
-        // On average we are getting ~100 samples for 25 ms hardcoded sample duration.
+        // We expect some nesting of at least 1, to maybe 200, for getpid().
         EXPECT_GE(record_details->nr, (uint64_t)1);
         EXPECT_LT(record_details->nr, (uint64_t)200);
 
@@ -893,10 +898,11 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         curr_pointer += header->size;
       }
 
-      EXPECT_TRUE(read_samples);
       EXPECT_EQ(curr_pointer, data_head.load(std::memory_order_relaxed));
       // Update data_tail to indicate we've consumed the records.
       data_tail.store(curr_pointer, std::memory_order_release);
+
+      EXPECT_TRUE(read_samples);
       if (read_samples) {
         EXPECT_GT(curr_pointer, (uint64_t)0);
         EXPECT_GT(data_head.load(std::memory_order_relaxed), (uint64_t)0);
@@ -904,7 +910,11 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     }
     if (retries > 0) {
       printf("Retried reading sample data %u times\n", retries);
+      // It's ok that we retried. However, if we retried several times and still didn't get
+      // samples, something went wrong (e.g. profiler didn't start or stop correctly).
+      EXPECT_TRUE(retries <= read_retries && read_samples);
     }
+    EXPECT_GT(data_head.load(std::memory_order_acquire), (uint64_t)0);
     EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
   }
 }
@@ -922,7 +932,9 @@ TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
     EXPECT_NE(fd, -1);
 
-    size_t buffer_size = getpagesize() + (2 * getpagesize());
+    // TODO(https://fxbug.dev/513339352): choose more reasonable num_pages.
+    int num_pages = 256;
+    size_t buffer_size = getpagesize() + (num_pages * getpagesize());
     void* address = mmap(nullptr, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     EXPECT_NE(address, MAP_FAILED);
 
@@ -936,17 +948,15 @@ TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
     // User sets invalid data_tail without issue.
     data_tail.store(1, std::memory_order_release);
 
-    // Start sampling and trigger an event.
+    // Start sampling.
     EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
-    printf("This is an event - start sampling for %u us \n", sample_duration);
+    // We are profiling the Starnix Kernel's job (not the test container's job).
+    // We must make syscalls (e.g. getpid()) to generate activity inside the kernel job,
+    // otherwise we will not get any samples.
     auto start = std::chrono::steady_clock::now();
-    auto duration = std::chrono::microseconds(sample_duration);
-    int x = 0;
+    auto duration = std::chrono::milliseconds(sample_duration);
     while (std::chrono::steady_clock::now() - start < duration) {
-      x++;
-      // Prevent the compiler from optimizing away this loop by pretending 'x'
-      // is used by assembly and that memory might be modified.
-      asm volatile("" : : "g"(x) : "memory");
+      syscall(__NR_getpid);
     }
     EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
 

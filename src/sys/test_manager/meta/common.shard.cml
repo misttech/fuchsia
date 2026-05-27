@@ -237,6 +237,15 @@
             ],
         },
         {
+            protocol: [ "fuchsia.cpu.profiler.Session" ],
+            from: "parent",
+            to: [
+                "#system-tests",
+                "#tests",
+            ],
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.component.Introspector" ],
             from: "parent",
             to: [

@@ -6,6 +6,7 @@ use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use anyhow::Context;
 use fidl_fuchsia_cpu_profiler as profiler;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_runtime;
 use futures::StreamExt;
 use futures::channel::mpsc as future_mpsc;
 use regex_lite::Regex;
@@ -37,7 +38,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
-    error, from_status_like_fdio, perf_event_attr, perf_event_header,
+    errno, error, from_status_like_fdio, perf_event_attr, perf_event_header,
     perf_event_mmap_page__bindgen_ty_1, perf_event_read_format_PERF_FORMAT_GROUP,
     perf_event_read_format_PERF_FORMAT_ID, perf_event_read_format_PERF_FORMAT_LOST,
     perf_event_read_format_PERF_FORMAT_TOTAL_TIME_ENABLED,
@@ -653,9 +654,15 @@ async fn set_up_profiler(
         ..Default::default()
     };
 
+    track_stub!(
+        TODO("https://fxbug.dev/398914921"),
+        "[perf_event_open] allow for profiling system-wide not during tests"
+    );
+    let job = fuchsia_runtime::job_default();
+    let koid = job.koid().map_err(|e| errno!(EINVAL, e.to_string()))?;
     let tasks = vec![
-        // Should return ~300 samples for 100 millis.
-        profiler::Task::SystemWide(profiler::SystemWide {}),
+        // Should return ~1300 samples for 1000 millis.
+        profiler::Task::Job(koid.raw_koid()),
     ];
     let targets = profiler::TargetConfig::Tasks(tasks);
     let config = profiler::Config {

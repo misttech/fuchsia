@@ -30,6 +30,7 @@
             protocol: [ "fuchsia.test.manager.SuiteRunner" ],
             from: "#test_manager",
             to: "#profiler",
+            dependency: "weak", // Prevent circular dependency.
             source_availability: "unknown",
         },
         {
@@ -41,6 +42,22 @@
             storage: [ "cache" ],
             from: "self",
             to: "#profiler",
+        },
+
+        // Needed for managing syscall tests.
+        {
+            protocol: [ "fuchsia.cpu.profiler.Session" ],
+            from: "#profiler",
+            to: "#test_manager",
+            availability: "optional",
+        },
+
+        // Needed for running syscall tests in correct environment.
+        {
+            protocol: [ "fuchsia.cpu.profiler.Session" ],
+            from: "#profiler",
+            to: "#testing",
+            availability: "optional",
         },
     ],
     expose: [

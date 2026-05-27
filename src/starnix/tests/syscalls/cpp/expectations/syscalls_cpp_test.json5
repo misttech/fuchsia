@@ -52,10 +52,6 @@
 
                 // TODO(https://fxbug.dev/493895527): Hangs; Fix and re-enable.
                 "PerfEventOpenTest.SampleIdIsValid",
-
-                // TODO(https://fxbug.dev/513562621): Deflake and re-enable.
-                "PerfEventOpenTest.MmapFirstRecordPageIsValid",
-                "PerfEventOpenTest.InvalidDataTailIgnoredByKernel",
             ],
         },
         {

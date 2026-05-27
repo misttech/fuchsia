@@ -53,10 +53,6 @@
             url: "utc-handle-vendor#meta/default.cm",
         },
         {
-            name: "profiler",
-            url: "profiler#meta/profiler.cm",
-        },
-        {
             name: "cobalt",
             url: "fake_cobalt#meta/fake_cobalt.cm",
         },
@@ -91,18 +87,13 @@
             from: "parent",
             to: [ "#kernel" ],
         },
-        {
-            protocol: [
-                "fuchsia.kernel.RootJob",
-                "fuchsia.kernel.SamplingResource",
-            ],
-            from: "parent",
-            to: [ "#profiler" ],
-        },
+
+        // Get profiler from parent (#testing, whose parent is /core).
         {
             protocol: [ "fuchsia.cpu.profiler.Session" ],
-            from: "#profiler",
+            from: "parent",
             to: [ "#kernel" ],
+            availability: "optional",
         },
         {
             protocol: [ "fuchsia.starnix.runner.Manager" ],
@@ -228,11 +219,6 @@
             service: "fuchsia.hardware.hrtimer.Service",
             from: "#fake-hrtimer",
             to: [ "#timekeeper" ],
-        },
-        {
-            event_stream: [ "debug_started" ],
-            from: "parent",
-            to: "#profiler",
         },
         {
             // Provides a fake UTC clock handle to programs that need to manipulate
