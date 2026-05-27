@@ -22,6 +22,7 @@ import (
 
 var (
 	gnBin          = flag.String("gn_bin", "", "Path to the GN binary.")
+	buildifierBin  = flag.String("buildifier_bin", "", "Path to the buildifier binary. If provided, formats the input BUILD.bazel file before parsing.")
 	bazelInputPath = flag.String("bazel_input_path", "", "Path to read the BUILD.bazel file from.")
 	gnOutputPath   = flag.String("gn_output_path", "", "Path to output the converted GN targets to.")
 	checkOnly      = flag.Bool("check_only", false, "When true, compare generated GN content with the input GN file without writing to it")
@@ -81,8 +82,21 @@ func main() {
 		log.Fatalf("--gn_bin is required, see --help")
 	}
 
+	if *buildifierBin == "" {
+		log.Fatalf("--buildifier_bin is required, see --help")
+	}
+
 	if *diffOutputPath != "" && !*checkOnly {
 		log.Fatalf("--diff_output_path is set to %s, but --check_only is not set", *diffOutputPath)
+	}
+
+	// Format the input BUILD.bazel file first to ensure consistent output.
+	//
+	// For example, buildifier can reorder attributes of targets in BUILD.bazel,
+	// resulting in different BUILD.gn outputs since `gn format` doesn't care
+	// about field order.
+	if err := formatBazelFileInPlace(*buildifierBin, *bazelInputPath); err != nil {
+		log.Fatalf("Failed to format input Bazel file %s with buildifier: %v", *bazelInputPath, err)
 	}
 
 	bazelIn, err := bazel2gn.Parse(*bazelInputPath)
@@ -206,4 +220,14 @@ func gnFormatted(ctx context.Context, gnBin string, original string) (string, er
 		return "", fmt.Errorf("`gn format` error: %v\nCombinedOutput:\n%s", err, string(out))
 	}
 	return string(out), nil
+}
+
+// formatBazelFileInPlace formats the given Bazel file using `buildifier -mode=fix` in-place.
+func formatBazelFileInPlace(buildifierBin string, path string) error {
+	cmd := exec.Command(buildifierBin, "-mode=fix", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("`buildifier` error: %v\nCombinedOutput:\n%s", err, string(out))
+	}
+	return nil
 }

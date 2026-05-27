@@ -20,8 +20,11 @@ template("verify_bazel2gn") {
   compiled_action(target_name) {
     testonly = true
     _gn_bin = "//prebuilt/third_party/gn/${host_platform}/gn"
+    _buildifier_bin =
+        "//prebuilt/third_party/buildifier/${host_platform}/buildifier"
     inputs = [
       _gn_bin,
+      _buildifier_bin,
       "BUILD.bazel",
       "BUILD.gn",
     ]
@@ -35,6 +38,8 @@ template("verify_bazel2gn") {
       rebase_path("BUILD.gn", root_build_dir),
       "--gn_bin",
       rebase_path(_gn_bin, root_build_dir),
+      "--buildifier_bin",
+      rebase_path(_buildifier_bin, root_build_dir),
       "--diff_output_path",
       rebase_path(outputs[0], root_build_dir),
       "--check_only",
