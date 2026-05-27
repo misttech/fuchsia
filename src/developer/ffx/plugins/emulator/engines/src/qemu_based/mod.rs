@@ -58,7 +58,6 @@ pub(crate) fn check_screenshot_preconditions(engine: &dyn EmulatorEngine, absolu
         engine.engine_state()
     );
     let config = engine.emu_config();
-    assert!(!config.runtime.headless, "Screenshots are not supported in headless mode.");
     assert!(
         config.device.screen.width > 0 && config.device.screen.height > 0,
         "The emulator virtual display has an invalid resolution ({}x{}).",
@@ -2226,11 +2225,12 @@ mod tests {
     }
 
     #[fuchsia::test]
-    #[should_panic(expected = "Screenshots are not supported in headless mode")]
-    fn test_check_screenshot_preconditions_no_display() {
-        const NON_EXISTENT_PATH: &str = "/tmp/nonexistent.png";
+    fn test_check_screenshot_preconditions_headless() {
+        const ABSOLUTE_PATH: &str = "/tmp/test.png";
         let mut config = EmulatorConfiguration::default();
         config.runtime.headless = true;
+        config.device.screen.width = 100;
+        config.device.screen.height = 100;
         let mut data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Running);
         // Set the emulator PID to a fake ID so that `get_engine_state()` returns Running.
         let fake_emulator_pid = std::process::id();
@@ -2238,7 +2238,7 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let engine =
             crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
-        check_screenshot_preconditions(&engine, Path::new(NON_EXISTENT_PATH));
+        check_screenshot_preconditions(&engine, Path::new(ABSOLUTE_PATH));
     }
 
     #[fuchsia::test]

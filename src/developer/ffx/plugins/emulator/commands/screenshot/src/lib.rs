@@ -84,12 +84,6 @@ impl ScreenshotTool {
         }
 
         let config = engine.emu_config();
-        if config.runtime.headless {
-            return Err(user_error!(
-                "Screenshots are not supported in headless mode. \
-                Please run the emulator with a virtual display enabled."
-            ));
-        }
         if config.device.screen.width == 0 || config.device.screen.height == 0 {
             return Err(user_error!(
                 "The emulator virtual display has an invalid resolution ({}x{}). \
@@ -196,18 +190,23 @@ mod tests {
     #[fuchsia::test]
     async fn test_validate_preconditions_headless() {
         const TEST_OUT_PATH: &str = "test.png";
-        const NON_EXISTENT_PATH: &str = "nonexistent.png";
         let env = ffx_config::test_init().unwrap();
-        let tool = ScreenshotTool {
-            cmd: ScreenshotCommand { name: None, output: PathBuf::from(TEST_OUT_PATH) },
-            context: env.context.clone(),
-        };
+        let temp = tempdir().unwrap();
+        let file_path = temp.path().join(TEST_OUT_PATH);
+
         let mut config = EmulatorConfiguration::default();
         config.runtime.headless = true;
+        config.device.screen.width = 800;
+        config.device.screen.height = 600;
         let engine = StubEngine { state: EngineState::Running, config };
-        let res = tool.validate_preconditions(&engine, Path::new(NON_EXISTENT_PATH));
-        assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("headless mode"));
+
+        let tool = ScreenshotTool {
+            cmd: ScreenshotCommand { name: None, output: file_path.clone() },
+            context: env.context.clone(),
+        };
+
+        let res = tool.validate_preconditions(&engine, &file_path);
+        assert!(res.is_ok(), "Expected OK for headless with valid resolution, got {:?}", res.err());
     }
 
     #[fuchsia::test]

@@ -205,11 +205,19 @@
                 "virtio-net-pci,vectors=8,netdev=net0,mac={{runtime.mac_address}}",
             {{/if}}
         {{/if}}
-        {{#if runtime.headless}}
-            "-nographic",
+        {{#if (eq runtime.engine_type "qemu")}}
+            {{! QEMU uses '-display none' in headless mode to keep the virtual GPU active,
+                as QMP 'screendump' requires an initialized display device for screenshots. }}
+            "-device", "virtio-gpu-pci,xres={{device.screen.width}},yres={{device.screen.height}}",
+            {{#if runtime.headless}}
+                "-display", "none",
+            {{/if}}
         {{else}}
-            {{#if (eq runtime.engine_type "qemu")}}
-                "-device", "virtio-gpu-pci",
+            {{! FEMU (AEMU) uses '-nographic' to disable the default QEMU GUI, while its
+                own '-no-window' option handles the headless state and screenshotting
+                mechanism via the Android console. }}
+            {{#if runtime.headless}}
+                "-nographic",
             {{/if}}
         {{/if}}
           {{#if (eq device.cpu.architecture "riscv64")}}
@@ -302,10 +310,11 @@
         "{{host.gpu}}",
         {{#if runtime.headless}}
             "-no-window",
-        {{else}}
-            "-window-size",
-            "{{device.screen.width}}x{{device.screen.height}}",
         {{/if}}
+        {{! FEMU defaults to 1280x720 for non-AVD launches. Override this to
+            match the device configuration. }}
+        "-window-size",
+        "{{device.screen.width}}x{{device.screen.height}}",
         {{#if (eq runtime.log_level "verbose")}}
             "-verbose",
         {{/if}}
