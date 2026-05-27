@@ -9,28 +9,6 @@ using fuchsia.bluetooth.sys as sys;
 using fuchsia.bluetooth.le as le;
 
 // TODO(b/415341030): Evaluate consolidating fuchsia.bluetooth.*.test protocols here.
-
-type Error = strict enum {
-    /// Operation failed (check logs).
-    INTERNAL = 1;
-    /// Operation timed out.
-    TIMEOUT = 2;
-    /// One or more required parameters are not set.
-    MISSING_PARAMETERS = 3;
-};
-
-/// Defines how to find a peer to perform an operation on. At least one field must be present.
-type PeerSelector = table {
-    /// The ID of the peer to act on.
-    1: id bt.PeerId;
-};
-
-/// Defines how to find a host to perform an operation on. At least one field must be present.
-type HostSelector = table {
-    /// The ID of the host to act on.
-    1: id bt.HostId;
-};
-
 @discoverable
 open protocol PeerController {
     /// Get a list of discovered peers.
@@ -170,4 +148,25 @@ open protocol PeripheralController {
         /// The ID of the peer that connected.
         1: peer_id bt.PeerId;
     }) error Error;
+};
+
+/// Protocol implemented by the client to receive scan results.
+open protocol ScanResultListener {
+    /// Called by the server when peers are discovered.
+    flexible OnPeersDiscovered(table {
+        1: peers vector<ScannedPeer>:MAX;
+    }) -> ();
+};
+
+@discoverable
+open protocol CentralController {
+    /// Start an LE scan. Results will be streamed to the provided listener.
+    /// Returns immediately once the scan is initiated.
+    ///
+    /// * error Returns `MISSING_PARAMETERS` if the listener is missing.
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible StartScan(resource table {
+        /// Required. The listener to receive scan results.
+        1: listener client_end:ScanResultListener;
+    }) -> () error Error;
 };

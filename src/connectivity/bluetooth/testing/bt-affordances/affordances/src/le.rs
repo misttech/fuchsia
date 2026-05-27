@@ -3,69 +3,103 @@
 // found in the LICENSE file.
 
 use crate::proxies::Proxies;
-use crate::sys;
 use anyhow::anyhow;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth::PeerId;
+use fidl_fuchsia_bluetooth_affordances::ScannedPeer;
+
 use fidl_fuchsia_bluetooth_le::{
     AdvertisedPeripheralMarker, AdvertisedPeripheralRequest, AdvertisingParameters,
     ConnectionMarker, ConnectionOptions,
 };
-use fidl_fuchsia_bluetooth_sys::Peer;
 use fuchsia_async::{Task, TimeoutExt};
-use fuchsia_sync::Mutex;
-use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt, select};
-use std::sync::Arc;
 
-// Send peer update of those for which the address is known and return the list of those for
-// which the address is not known.
-pub(crate) fn send_peer_update(
-    peer_cache: Arc<Mutex<Vec<Peer>>>,
-    sender: &mpsc::UnboundedSender<
-        Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-    >,
-    updated: Vec<fidl_fuchsia_bluetooth_le::Peer>,
-) -> Result<Vec<fidl_fuchsia_bluetooth_le::Peer>, anyhow::Error> {
-    let mut send_list = vec![];
-    let mut missing_addr = vec![];
+fn lookup_peer_addr(
+    lookup_proxy: &fidl_fuchsia_bluetooth_sys::AddressLookupProxy,
+    peer: fidl_fuchsia_bluetooth_le::Peer,
+) -> impl std::future::Future<
+    Output = (
+        fidl_fuchsia_bluetooth_le::Peer,
+        Result<
+            Result<fidl_fuchsia_bluetooth::Address, fidl_fuchsia_bluetooth_sys::LookupError>,
+            fidl::Error,
+        >,
+    ),
+> {
+    let lookup_proxy = lookup_proxy.clone();
+    let id = peer.id.unwrap();
+    async move {
+        let res = lookup_proxy
+            .lookup(&fidl_fuchsia_bluetooth_sys::AddressLookupLookupRequest {
+                peer_id: Some(id),
+                ..Default::default()
+            })
+            .await;
+        (peer, res)
+    }
+}
 
-    for peer in updated {
-        match peer_cache
-            .lock()
-            .iter()
-            .find(|&cached_peer| cached_peer.id.unwrap() == peer.id.unwrap())
-        {
-            Some(cached_peer) => send_list.push((peer, Some(cached_peer.address.unwrap()))),
-            None => missing_addr.push(peer),
+async fn scan_result_watcher(
+    scan_client: fidl_fuchsia_bluetooth_le::ScanResultWatcherProxy,
+    lookup_proxy: fidl_fuchsia_bluetooth_sys::AddressLookupProxy,
+    sender: futures::channel::mpsc::UnboundedSender<Vec<ScannedPeer>>,
+    _discovery_token: fidl_fuchsia_bluetooth_sys::ProcedureTokenProxy,
+) {
+    let mut scan_result_watcher_stream = HangingGetStream::new(
+        scan_client,
+        fidl_fuchsia_bluetooth_le::ScanResultWatcherProxy::watch,
+    );
+
+    while let Some(scan_result) = scan_result_watcher_stream.next().await {
+        let Ok(updated) = scan_result else {
+            let err = scan_result.unwrap_err();
+            eprintln!("LE scan encountered error: {err}");
+            return;
         };
-    }
 
-    if let Err(err) = sender.unbounded_send(send_list) {
-        sender.close_channel();
-        return Err(anyhow!("LE scan stream closed with status: {err}"));
-    }
+        let lookup_futures = updated.into_iter().map(|peer| lookup_peer_addr(&lookup_proxy, peer));
+        let resolved = futures::future::join_all(lookup_futures).await;
 
-    Ok(missing_addr)
+        let send_list: Vec<ScannedPeer> = resolved
+            .into_iter()
+            .filter_map(|(peer, res)| match res {
+                Ok(Ok(addr)) => Some(ScannedPeer {
+                    peer: Some(peer),
+                    address: Some(addr),
+                    ..Default::default()
+                }),
+                Ok(Err(e)) => {
+                    eprintln!("Address lookup failed for {:?}: {:?}", peer.id, e);
+                    None
+                }
+                Err(e) => {
+                    eprintln!("FIDL error during address lookup: {:?}", e);
+                    None
+                }
+            })
+            .collect();
+
+        if send_list.is_empty() {
+            continue;
+        }
+        if let Err(e) = sender.unbounded_send(send_list) {
+            eprintln!("Error sending results to channel: {:?}", e);
+            return;
+        }
+    }
 }
 
 pub(crate) async fn start_le_scan(
     proxies: &mut Proxies,
-    peer_cache: Arc<Mutex<Vec<Peer>>>,
-) -> Result<
-    mpsc::UnboundedReceiver<
-        Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-    >,
-    anyhow::Error,
-> {
-    // Enable Discovery as well to ascertain dual mode peers.
-    let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
+    sender: futures::channel::mpsc::UnboundedSender<Vec<ScannedPeer>>,
+) -> Result<(), anyhow::Error> {
+    // Enable Discovery as well to find dual mode peers.
+    let (discovery_token, discovery_session_server) = fidl::endpoints::create_proxy();
     if let Err(err) = proxies.access_proxy.start_discovery(discovery_session_server).await? {
         return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
     }
-
-    let (sender, receiver) = mpsc::unbounded();
 
     let (scan_client, scan_server) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_le::ScanResultWatcherMarker>();
@@ -74,78 +108,23 @@ pub(crate) async fn start_le_scan(
         filters: Some(vec![fidl_fuchsia_bluetooth_le::Filter { ..Default::default() }]),
         ..Default::default()
     };
-    proxies.central_proxy.scan(&options, scan_server).await?;
-    let mut scan_result_watcher_stream = HangingGetStream::new(
+    let scan_fut = proxies.central_proxy.scan(&options, scan_server);
+    let watcher_fut = scan_result_watcher(
         scan_client,
-        fidl_fuchsia_bluetooth_le::ScanResultWatcherProxy::watch,
+        proxies.address_lookup_proxy.clone(),
+        sender,
+        discovery_token,
     );
-    let mut peers_waiting_for_addr: Vec<fidl_fuchsia_bluetooth_le::Peer> = vec![];
 
     *proxies.le_scan_task.lock() = Some(Task::spawn(async move {
-        // Connect new Access proxy to avoid MultipleObservers error.
-        let access_proxy = fuchsia_component::client::connect_to_protocol::<
-            fidl_fuchsia_bluetooth_sys::AccessMarker,
-        >()
-        .expect("Failed to connect fuchsia.bluetooth.sys/Access");
-        let mut peer_watcher_stream = HangingGetStream::new_with_fn_ptr(
-            access_proxy,
-            fidl_fuchsia_bluetooth_sys::AccessProxy::watch_peers,
-        );
-        loop {
-            select! {
-                scan_result = scan_result_watcher_stream.select_next_some() => {
-                    match scan_result {
-                        Ok(updated) => {
-                            match send_peer_update(peer_cache.clone(), &sender, updated) {
-                                Ok(waiting) => peers_waiting_for_addr = waiting,
-                                Err(err) => {
-                                    eprintln!("{err}");
-                                    return;
-                                }
-                            }
-                        }
-
-                        Err(err) => {
-                            eprintln!("LE scan encountered error: {err}");
-                            sender.close_channel();
-                            return;
-                        }
-                    }
-                }
-
-                peer_result = peer_watcher_stream.select_next_some() => {
-                    match peer_result {
-                        Ok((updated, removed)) => {
-                            sys::update_peer_cache(peer_cache.clone(), updated, removed);
-
-                            match send_peer_update(
-                                peer_cache.clone(),
-                                &sender,
-                                peers_waiting_for_addr,
-                            ) {
-                                Ok(still_waiting) => peers_waiting_for_addr = still_waiting,
-                                Err(err) => {
-                                    eprintln!("{err}");
-                                    return;
-                                }
-                            }
-                        }
-
-                        Err(err) => {
-                            eprintln!("PeerWatcher stream returned error: {err}");
-                            sender.close_channel();
-                            return;
-                        }
-                    }
-                }
-            }
-        }
+        futures::pin_mut!(scan_fut, watcher_fut);
+        let _ = futures::future::select(scan_fut, watcher_fut).await;
     }));
 
-    Ok(receiver)
+    Ok(())
 }
 
-pub(crate) fn stop_le_scan(proxies: &Proxies) -> bool {
+pub(crate) fn stop_scan(proxies: &Proxies) -> bool {
     proxies.le_scan_task.lock().take().is_some()
 }
 

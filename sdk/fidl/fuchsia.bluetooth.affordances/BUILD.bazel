@@ -8,6 +8,7 @@ fidl_library(
     name = "fuchsia.bluetooth.affordances",
     srcs = [
         "affordances.fidl",
+        "types.fidl",
     ],
     api_area = "Bluetooth",
     visibility = ["//visibility:public"],

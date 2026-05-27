@@ -12,8 +12,10 @@
     offer: [
         {
             protocol: [
+                "fuchsia.bluetooth.le.Central",
                 "fuchsia.bluetooth.le.PrivilegedPeripheral",
                 "fuchsia.bluetooth.sys.Access",
+                "fuchsia.bluetooth.sys.AddressLookup",
                 "fuchsia.bluetooth.sys.HostWatcher",
             ],
             from: "#bluetooth-core",

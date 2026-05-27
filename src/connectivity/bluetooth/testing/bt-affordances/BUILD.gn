@@ -15,12 +15,9 @@ rustc_staticlib("affordances-c") {
   deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
     "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
-    "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
     "//sdk/rust/zx",
     "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/connectivity/bluetooth/testing/bt-affordances/affordances",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:futures",
@@ -40,7 +37,9 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",
     "//src/connectivity/bluetooth/testing/bt-affordances/affordances",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

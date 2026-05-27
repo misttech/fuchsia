@@ -15,6 +15,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.bluetooth.affordances.CentralController",
                 "fuchsia.bluetooth.affordances.HostController",
                 "fuchsia.bluetooth.affordances.PeerController",
                 "fuchsia.bluetooth.affordances.PeripheralController",

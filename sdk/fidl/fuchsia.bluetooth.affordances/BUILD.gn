@@ -34,7 +34,10 @@ if (is_host) {
 }
 
 fidl("fuchsia.bluetooth.affordances") {
-  sources = [ "affordances.fidl" ]
+  sources = [
+    "affordances.fidl",
+    "types.fidl",
+  ]
   sdk_area = "Bluetooth"
   visibility = [ "*" ]
   public_deps = [

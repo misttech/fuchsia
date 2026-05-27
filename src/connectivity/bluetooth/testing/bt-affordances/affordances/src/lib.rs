@@ -29,7 +29,8 @@ mod sys;
 
 use proxies::Proxies;
 
-// TODO(b/414848887): Pass more descriptive errors.
+// TODO(https://fxbug.dev/414848887): Return fidl_fuchsia_bluetooth_affordances::Error instead of
+// anyhow::Error.
 enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
@@ -54,16 +55,12 @@ enum Request {
     SetLocalName(String, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDeviceClass(DeviceClass, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
-        oneshot::Sender<
-            Result<
-                mpsc::UnboundedReceiver<
-                    Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-                >,
-                anyhow::Error,
-            >,
+        futures::channel::mpsc::UnboundedSender<
+            Vec<fidl_fuchsia_bluetooth_affordances::ScannedPeer>,
         >,
+        oneshot::Sender<Result<(), anyhow::Error>>,
     ),
-    StopLeScan(oneshot::Sender<bool>),
+    StopLeScan(oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectLe(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     AdvertisePeripheral(
         Box<AdvertisingParameters>,
@@ -234,13 +231,16 @@ impl WorkThread {
                 Request::SetDeviceClass(device_class, result_sender) => {
                     result_sender.send(sys::set_device_class(&proxies, device_class)).unwrap();
                 }
-                Request::StartLeScan(result_sender) => {
-                    result_sender
-                        .send(le::start_le_scan(&mut proxies, peer_cache.clone()).await)
-                        .unwrap();
+                Request::StartLeScan(sender, result_sender) => {
+                    result_sender.send(le::start_le_scan(&mut proxies, sender).await).unwrap();
                 }
                 Request::StopLeScan(result_sender) => {
-                    result_sender.send(le::stop_le_scan(&proxies)).unwrap();
+                    let stopped = le::stop_scan(&proxies);
+                    if stopped {
+                        result_sender.send(Ok(())).unwrap();
+                    } else {
+                        result_sender.send(Err(anyhow!("No scan ongoing"))).unwrap();
+                    }
                 }
                 Request::ConnectLe(peer_id, result_sender) => {
                     result_sender.send(le::connect_le(&mut proxies, &peer_id).await).unwrap();
@@ -492,37 +492,23 @@ impl WorkThread {
         receiver.await?
     }
 
-    // Scan for all nearby LE peripherals and broadcasters. Returns the receiving end of an
-    // mpsc::channel through which LE peer updates are written. Dropping the receiver closes the
-    // channel, which stops the scan when the next update is received.
-    //
-    // Calling this while a scan is ongoing drops and overwrites the existing scan.
+    // Scan for nearby LE peripherals and broadcasters.
     pub async fn start_le_scan(
         &self,
-    ) -> Result<
-        mpsc::UnboundedReceiver<
-            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        sender: futures::channel::mpsc::UnboundedSender<
+            Vec<fidl_fuchsia_bluetooth_affordances::ScannedPeer>,
         >,
-        anyhow::Error,
-    > {
-        let (sender, receiver) = oneshot::channel::<
-            Result<
-                mpsc::UnboundedReceiver<
-                    Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-                >,
-                anyhow::Error,
-            >,
-        >();
-        self.sender.clone().unbounded_send(Request::StartLeScan(sender))?;
+    ) -> Result<(), anyhow::Error> {
+        let (oneshot_sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::StartLeScan(sender, oneshot_sender))?;
         receiver.await?
     }
 
-    // Stop an ongoing LE scan. Returns false if no scan is ongoing. If an ongoing scan is stopped,
-    // the mpsc::channel exposed to the client closes (i.e. `receiver.next()` returns None).
-    pub async fn stop_le_scan(&self) -> bool {
-        let (sender, receiver) = oneshot::channel::<bool>();
-        self.sender.clone().unbounded_send(Request::StopLeScan(sender)).unwrap();
-        receiver.await.unwrap()
+    // Stop an ongoing LE scan. Returns an error if no scan is ongoing.
+    pub async fn stop_le_scan(&self) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::StopLeScan(sender))?;
+        receiver.await?
     }
 
     // Connect an LE peer and store the connection.

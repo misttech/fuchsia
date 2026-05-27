@@ -69,37 +69,7 @@ class HostService : public pandora::Host::Service {
                                        ::google::protobuf::Empty* response) override;
 
  private:
-  static void LeScanCb(void* context, const LePeer* peer) {
-    HostService* svc = static_cast<HostService*>(context);
-    std::lock_guard lock(svc->m_scan_rsp_writer_);
-    if (svc->scan_rsp_writer_) {
-      pandora::ScanningResponse scan_rsp;
-
-      // Convert peer address from little-endian to big-endian, as expected by Pandora.
-      uint8_t big_endian_addr[6];
-      std::ranges::copy(peer->address, big_endian_addr);
-      std::ranges::reverse(big_endian_addr);
-
-      if (peer->address_type == static_cast<uint8_t>(fuchsia_bluetooth::AddressType::kPublic)) {
-        scan_rsp.set_public_(big_endian_addr, 6);
-      } else if (peer->address_type ==
-                 static_cast<uint8_t>(fuchsia_bluetooth::AddressType::kRandom)) {
-        scan_rsp.set_random(big_endian_addr, 6);
-      }
-
-      scan_rsp.set_connectable(peer->connectable);
-      scan_rsp.mutable_data()->set_complete_local_name(peer->name);
-      if (!svc->scan_rsp_writer_->Write(scan_rsp)) {
-        FX_LOGS(INFO) << "LE scan canceled by gRPC client.";
-        svc->scan_rsp_writer_ = nullptr;
-        stop_le_scan();
-      }
-    }
-  }
-
-  std::mutex m_scan_rsp_writer_;
-  // If this Writer is non-null, there is an ongoing `Scan` response streaming RPC.
-  grpc::ServerWriter<::pandora::ScanningResponse>* scan_rsp_writer_ = nullptr;
+  async_dispatcher_t* dispatcher_;
 
   // Wait for a Peer with the given |addr| to become known. If |enforce_connected| is set, wait
   // until the Peer is also connected. Returns an iterator to the peer.
@@ -111,6 +81,7 @@ class HostService : public pandora::Host::Service {
       peripheral_controller_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::HostController> host_controller_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::CentralController> central_controller_client_;
 
   std::condition_variable cv_access_;
   std::mutex m_access_;

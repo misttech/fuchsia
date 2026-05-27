@@ -3,17 +3,19 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_bluetooth_affordances::{
-    HostControllerRequest, HostControllerRequestStream, HostControllerSetDeviceClassRequest,
+    CentralControllerRequest, CentralControllerRequestStream, HostControllerRequest,
+    HostControllerRequestStream, HostControllerSetDeviceClassRequest,
     HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
     HostSelector, PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
     PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
     PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
-    PeripheralControllerRequestStream,
+    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::error;
 use std::sync::Arc;
 
@@ -21,6 +23,7 @@ pub enum Services {
     Peer(PeerControllerRequestStream),
     Host(HostControllerRequestStream),
     Peripheral(PeripheralControllerRequestStream),
+    Central(CentralControllerRequestStream),
 }
 
 macro_rules! selector_to_peer_id {
@@ -341,12 +344,101 @@ async fn handle_peripheral_request(
         .await
 }
 
+async fn handle_single_central_request(
+    worker: Arc<WorkThread>,
+    request: CentralControllerRequest,
+    scan_task: &mut Option<fuchsia_async::Task<()>>,
+) -> Result<(), Error> {
+    match request {
+        CentralControllerRequest::StartScan { payload, responder } => {
+            let fidl_fuchsia_bluetooth_affordances::CentralControllerStartScanRequest {
+                listener: Some(listener),
+                ..
+            } = payload
+            else {
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
+                return Ok(());
+            };
+
+            let (tx, rx) = futures::channel::mpsc::unbounded::<
+                Vec<fidl_fuchsia_bluetooth_affordances::ScannedPeer>,
+            >();
+
+            match worker.start_le_scan(tx).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+
+                    let listener_proxy = listener.into_proxy();
+                    let worker = worker.clone();
+                    *scan_task = Some(fuchsia_async::Task::spawn(async move {
+                        let mut rx = rx.fuse();
+                        let on_closed = listener_proxy.on_closed().fuse();
+                        futures::pin_mut!(on_closed);
+                        loop {
+                            futures::select! {
+                                peers = rx.next() => {
+                                    let Some(peers) = peers else {
+                                        break;
+                                    };
+                                    let request = ScanResultListenerOnPeersDiscoveredRequest {
+                                        peers: Some(peers),
+                                        ..Default::default()
+                                    };
+                                    if let Err(e) =
+                                        listener_proxy.on_peers_discovered(&request).await
+                                    {
+                                        eprintln!("Error sending results to listener: {:?}", e);
+                                        break;
+                                    }
+                                },
+                                _ = on_closed => {
+                                    println!("Client dropped ScanResultListener");
+                                    break;
+                                }
+                            }
+                        }
+                        let _ = worker.stop_le_scan().await;
+                    }));
+                }
+                Err(err) => {
+                    error!("StartScan encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        CentralControllerRequest::_UnknownMethod { ordinal, .. } => {
+            error!("CentralControllerRequest: unknown method received with ordinal {ordinal}");
+        }
+    }
+    Ok(())
+}
+
+async fn handle_central_request(
+    mut stream: CentralControllerRequestStream,
+    worker: Arc<WorkThread>,
+) -> Result<(), Error> {
+    let mut scan_task: Option<fuchsia_async::Task<()>> = None;
+
+    while let Some(request) = stream.next().await {
+        let request = request.context("failed request")?;
+        handle_single_central_request(worker.clone(), request, &mut scan_task).await?;
+    }
+
+    if let Some(task) = scan_task.take() {
+        let _ = worker.stop_le_scan().await;
+        task.await;
+    }
+    Ok(())
+}
+
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let mut fs = ServiceFs::new_local();
     let _ = fs.dir("svc").add_fidl_service(Services::Peer);
     let _ = fs.dir("svc").add_fidl_service(Services::Host);
     let _ = fs.dir("svc").add_fidl_service(Services::Peripheral);
+    let _ = fs.dir("svc").add_fidl_service(Services::Central);
     let _ = fs.take_and_serve_directory_handle()?;
 
     let worker = Arc::new(WorkThread::spawn());
@@ -362,6 +454,9 @@ async fn main() -> Result<(), Error> {
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
                 Services::Peripheral(stream) => handle_peripheral_request(stream, worker_clone)
+                    .await
+                    .unwrap_or_else(|e| error!("{e:?}")),
+                Services::Central(stream) => handle_central_request(stream, worker_clone)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
             }

@@ -9,123 +9,23 @@ use fidl_fuchsia_bluetooth_gatt2::{
     AttributePermissions, Characteristic, CharacteristicPropertyBits, Handle, SecurityRequirements,
     ServiceHandle,
 };
-use fuchsia_async::LocalExecutor;
 use fuchsia_bt_test_affordances::WorkThread;
-use fuchsia_sync::Mutex;
-use futures::StreamExt;
-use futures::channel::mpsc::UnboundedReceiver;
-use futures::channel::oneshot;
 use futures::executor::block_on;
 use std::ffi::{CStr, CString, c_void};
 use std::str::FromStr;
 use std::sync::LazyLock;
-use std::thread::JoinHandle;
 
 struct State {
     worker: WorkThread,
-    // Sender used to notify shutdown.
-    le_scan: Mutex<Option<(JoinHandle<()>, oneshot::Sender<()>)>>,
 }
 
 impl State {
     const fn init() -> LazyLock<Self> {
-        LazyLock::new(|| Self { worker: WorkThread::spawn(), le_scan: Mutex::new(None) })
-    }
-
-    fn start_le_scan(
-        &self,
-        context: FfiPointer,
-        cb: LeScanCallbackWrapper,
-    ) -> Result<(), anyhow::Error> {
-        let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
-
-        let le_peer_receiver = block_on(self.worker.start_le_scan())?;
-        *self.le_scan.lock() = Some((
-            std::thread::spawn(move || {
-                LocalExecutor::default().run_singlethreaded(Self::le_scan(
-                    le_peer_receiver,
-                    context,
-                    cb,
-                    shutdown_receiver,
-                ));
-            }),
-            shutdown_sender,
-        ));
-
-        Ok(())
-    }
-
-    async fn le_scan(
-        mut le_peer_receiver: UnboundedReceiver<
-            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-        >,
-        context: FfiPointer,
-        cb: LeScanCallbackWrapper,
-        mut shutdown_receiver: oneshot::Receiver<()>,
-    ) {
-        loop {
-            let le_peers = futures::select! {
-                le_peers_result = le_peer_receiver.next() => le_peers_result,
-                _ = shutdown_receiver => {
-                    println!("Stopping LE scan.");
-                    return;
-                }
-            };
-
-            let Some(le_peers) = le_peers else {
-                eprintln!("LE scan stream ended unexpectedly.");
-                return;
-            };
-
-            for (found_peer, address) in le_peers {
-                Self::process_le_peer(found_peer, address, context, &cb);
-            }
-        }
-    }
-
-    fn process_le_peer(
-        found_peer: fidl_fuchsia_bluetooth_le::Peer,
-        address: Option<fidl_fuchsia_bluetooth::Address>,
-        context: FfiPointer,
-        cb: &LeScanCallbackWrapper,
-    ) {
-        let mut le_peer = LePeer {
-            id: found_peer.id.unwrap().value,
-            address_type: if address.is_some() {
-                address.unwrap().type_.into_primitive()
-            } else {
-                0
-            },
-            address: if address.is_some() { address.unwrap().bytes } else { [0; 6] },
-            connectable: found_peer.connectable.unwrap(),
-            name: [0; 248],
-        };
-        if let Some(name) = found_peer.name {
-            // SAFETY: Core Spec v6.0 Vol 4, Part E, Section 6.23 specifies the maximum length of a
-            // Bluetooth device name as 248 octets, so this copy cannot overflow our buffer. The src
-            // & dst of this copy are nonoverlapping regions of memory allocated separately by the
-            // client and this library, valid for the duration of this copy.
-            unsafe {
-                let bytes = name.as_bytes();
-                std::ptr::copy_nonoverlapping(
-                    bytes.as_ptr() as *const core::ffi::c_char,
-                    le_peer.name.as_mut_ptr(),
-                    bytes.len(),
-                );
-            }
-        }
-        cb.0(context.0, &le_peer);
+        LazyLock::new(|| Self { worker: WorkThread::spawn() })
     }
 }
 
 static STATE: LazyLock<State> = State::init();
-
-// SAFETY: An `FfiPointer` shall only be dereferenced within one thread in this library to prevent
-// concurrent access.
-#[derive(Clone, Copy)]
-struct FfiPointer(*mut c_void);
-unsafe impl Send for FfiPointer {}
-unsafe impl Sync for FfiPointer {}
 
 /// Stop serving Rust affordances.
 ///
@@ -240,71 +140,6 @@ pub extern "C" fn set_connectability(connectable: bool) -> i32 {
         eprintln!("set_connectability encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
     }
-    zx::Status::OK.into_raw()
-}
-
-/// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
-/// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
-#[repr(C)]
-pub struct LePeer {
-    pub id: u64,
-    pub address_type: u8,
-    pub address: [u8; 6],
-    pub connectable: bool,
-    pub name: [core::ffi::c_char; 248],
-    // TODO(https://fxbug.dev/396500079): Support more fields as necessary to enable PTS tests.
-}
-
-/// `peer` is only valid for the duration of this callback.
-type LeScanCallback = extern "C" fn(context: *mut c_void, peer: *const LePeer);
-struct LeScanCallbackWrapper(LeScanCallback);
-unsafe impl Send for LeScanCallbackWrapper {}
-unsafe impl Sync for LeScanCallbackWrapper {}
-
-/// Scan for all nearby LE peripherals and broadcasters.
-///
-/// The callback `cb` is invoked on every LE peer found or updated. The `context` provided to this
-/// function is included in each invocation of `cb`.
-///
-/// Calling this while a scan is ongoing drops and overwrites the existing scan.
-///
-/// Returns ZX_STATUS_INTERNAL if scan was unable to start because of an error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> i32 {
-    let ffi_ptr = FfiPointer(context);
-    let cb_wrapper = LeScanCallbackWrapper(cb);
-    if let Err(err) = STATE.start_le_scan(ffi_ptr, cb_wrapper) {
-        eprintln!("start_le_scan encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-
-    zx::Status::OK.into_raw()
-}
-
-/// Stop an ongoing LE scan.
-///
-/// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
-#[unsafe(no_mangle)]
-pub extern "C" fn stop_le_scan() -> i32 {
-    let Some(le_scan) = STATE.le_scan.lock().take() else {
-        return zx::Status::BAD_STATE.into_raw();
-    };
-
-    // The le_scan thread join operation must be non-blocking. We spawn a new thread to handle the
-    // shutdown logic to prevent deadlocks if called from the scan callback thread.
-    let _ = std::thread::spawn(|| {
-        if !block_on(STATE.worker.stop_le_scan()) {
-            eprintln!("LE scan could not be stopped (likely stopped already).");
-        }
-
-        let _ = le_scan.1.send(());
-        le_scan.0.join().expect("Failed to join LE scan thread");
-    });
-
     zx::Status::OK.into_raw()
 }
 

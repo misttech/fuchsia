@@ -17,19 +17,6 @@ struct UuidBytes {
   uint8_t value[16];
 };
 
-/// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
-/// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
-struct LePeer {
-  uint64_t id;
-  uint8_t address_type;
-  uint8_t address[6];
-  bool connectable;
-  char name[248];
-};
-
-/// `peer` is only valid for the duration of this callback.
-using LeScanCallback = void (*)(void *context, const LePeer *peer);
-
 /// `characteristic_handles` may start with nonzero entries encoding the handles of GATT
 /// characteristics discovered on the service. Up to 43 handles can be reported here.
 ///
@@ -100,25 +87,6 @@ int32_t write_l2cap(const uint8_t *data, uintptr_t len);
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t set_connectability(bool connectable);
-
-/// Scan for all nearby LE peripherals and broadcasters.
-///
-/// The callback `cb` is invoked on every LE peer found or updated. The `context` provided to this
-/// function is included in each invocation of `cb`.
-///
-/// Calling this while a scan is ongoing drops and overwrites the existing scan.
-///
-/// Returns ZX_STATUS_INTERNAL if scan was unable to start because of an error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-int32_t start_le_scan(void *context, LeScanCallback cb);
-
-/// Stop an ongoing LE scan.
-///
-/// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
-int32_t stop_le_scan();
 
 /// Connect to an LE peer with the given identifier.
 ///

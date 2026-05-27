@@ -11,8 +11,8 @@ use fidl_fuchsia_bluetooth_le::{
     PrivilegedPeripheralProxy,
 };
 use fidl_fuchsia_bluetooth_sys::{
-    AccessMarker, AccessProxy, HostInfo, HostWatcherMarker, HostWatcherProxy, PairingMarker,
-    PairingProxy, Peer, ProcedureTokenProxy,
+    AccessMarker, AccessProxy, AddressLookupMarker, AddressLookupProxy, HostInfo,
+    HostWatcherMarker, HostWatcherProxy, PairingMarker, PairingProxy, Peer, ProcedureTokenProxy,
 };
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
@@ -27,6 +27,7 @@ pub(crate) struct Proxies {
     pub(crate) peripheral_proxy: PrivilegedPeripheralProxy,
     pub(crate) pairing_proxy: PairingProxy,
     pub(crate) host_watcher_proxy: HostWatcherProxy,
+    pub(crate) address_lookup_proxy: AddressLookupProxy,
     pub(crate) host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
     pub(crate) peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
     pub(crate) discovery_session: Mutex<Option<ProcedureTokenProxy>>,
@@ -53,6 +54,7 @@ impl Proxies {
         let host_watcher_proxy = connect_to_protocol::<HostWatcherMarker>()?;
         let host_watcher_stream =
             HangingGetStream::new_with_fn_ptr(host_watcher_proxy.clone(), HostWatcherProxy::watch);
+        let address_lookup_proxy = connect_to_protocol::<AddressLookupMarker>()?;
         let peer_watcher_stream =
             HangingGetStream::new_with_fn_ptr(access_proxy.clone(), AccessProxy::watch_peers);
 
@@ -64,6 +66,7 @@ impl Proxies {
             peripheral_proxy,
             pairing_proxy,
             host_watcher_proxy,
+            address_lookup_proxy,
             host_watcher_stream,
             peer_watcher_stream,
             discovery_session: Mutex::new(None),

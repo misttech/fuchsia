@@ -21,6 +21,8 @@ using namespace std::chrono_literals;
 // TODO(https://fxbug.dev/316721276): Implement gRPCs necessary to enable GAP/A2DP testing.
 
 HostService::HostService(async_dispatcher_t* dispatcher) {
+  dispatcher_ = dispatcher;
+
   // Connect to fuchsia.bluetooth.affordances.PeripheralController
   zx::result peripheral_controller_client_end =
       component::Connect<fuchsia_bluetooth_affordances::PeripheralController>();
@@ -49,6 +51,16 @@ HostService::HostService(async_dispatcher_t* dispatcher) {
   } else {
     FX_LOGS(ERROR) << "Error connecting to PeerController service: "
                    << peer_controller_client_end.status_string();
+  }
+
+  // Connect to fuchsia.bluetooth.affordances.CentralController
+  zx::result central_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::CentralController>();
+  if (central_controller_client_end.is_ok()) {
+    central_controller_client_.Bind(std::move(*central_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to CentralController service: "
+                   << central_controller_client_end.status_string();
   }
 }
 
@@ -247,35 +259,91 @@ Status HostService::Advertise(::grpc::ServerContext* context,
   return Status::OK;
 }
 
+namespace {
+
+class ScanResultListenerImpl
+    : public fidl::Server<fuchsia_bluetooth_affordances::ScanResultListener> {
+ public:
+  explicit ScanResultListenerImpl(::grpc::ServerWriter<::pandora::ScanningResponse>* writer)
+      : writer_(writer) {}
+
+  void OnPeersDiscovered(OnPeersDiscoveredRequest& request,
+                         OnPeersDiscoveredCompleter::Sync& completer) override {
+    std::scoped_lock lock(mutex_);
+    if (!writer_) {
+      completer.Reply();
+      return;
+    }
+
+    for (const fuchsia_bluetooth_affordances::ScannedPeer& peer : request.peers().value()) {
+      pandora::ScanningResponse scan_rsp;
+
+      // Address (always present)
+      uint8_t addr[6];
+      std::ranges::copy(peer.address().value().bytes(), addr);
+      std::ranges::reverse(addr);  // Big endian -> little endian
+
+      if (peer.address().value().type() == fuchsia_bluetooth::AddressType::kPublic) {
+        scan_rsp.set_public_(addr, 6);
+      } else if (peer.address().value().type() == fuchsia_bluetooth::AddressType::kRandom) {
+        scan_rsp.set_random(addr, 6);
+      }
+
+      // Connectable flag (always present)
+      scan_rsp.set_connectable(peer.peer().value().connectable().value());
+
+      // Name (if present)
+      if (peer.peer().value().name().has_value()) {
+        scan_rsp.mutable_data()->set_complete_local_name(peer.peer().value().name().value());
+      }
+
+      if (!writer_->Write(scan_rsp)) {
+        FX_LOGS(INFO) << "LE scan canceled by gRPC client.";
+        writer_ = nullptr;
+        break;
+      }
+    }
+    completer.Reply();
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_bluetooth_affordances::ScanResultListener> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FX_LOGS(WARNING) << "Unknown method received: " << metadata.method_ordinal;
+  }
+
+ private:
+  ::grpc::ServerWriter<::pandora::ScanningResponse>* writer_;
+  std::mutex mutex_;
+};
+
+}  // namespace
+
 Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRequest* request,
                          ::grpc::ServerWriter<::pandora::ScanningResponse>* writer) {
-  {
-    std::lock_guard lock(m_scan_rsp_writer_);
-    scan_rsp_writer_ = writer;
+  auto endpoints = fidl::CreateEndpoints<fuchsia_bluetooth_affordances::ScanResultListener>();
+  ZX_ASSERT(endpoints.is_ok());
+  auto [client_end, server_end] = *std::move(endpoints);
+
+  ScanResultListenerImpl listener_impl(writer);
+  auto binding = fidl::BindServer(dispatcher_, std::move(server_end), &listener_impl);
+
+  fuchsia_bluetooth_affordances::CentralControllerStartScanRequest start_request;
+  start_request.listener() = std::move(client_end);
+
+  auto start_result = central_controller_client_->StartScan(std::move(start_request));
+  if (start_result.is_error()) {
+    FX_LOGS(ERROR) << "StartScan encountered error: "
+                   << start_result.error_value().FormatDescription();
+    return Status(StatusCode::INTERNAL, "Failed to start scan");
   }
 
-  if (start_le_scan(/*context=*/this, LeScanCb) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Failure to start_le_scan (check logs)");
-  }
-
-  // TODO(https://fxbug.dev/396500079): Potentially migrate to gRPC async callback API and remove
-  // this timeout. Since we are using the sync API, `writer` is invalidated when this handler exits,
-  // so we keep it alive for an arbitrary sleep period allowing the scan to proceed, after which we
-  // cancel the scan. In practice, the mmi2gRPC client cancels the scan earlier (when the test peer
-  // is found).
+  // Scan for an arbitrary period of 5 seconds, which passes PTS tests.
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
-  std::lock_guard lock(m_scan_rsp_writer_);
-  scan_rsp_writer_ = nullptr;
-  zx_status_t status = stop_le_scan();
-  if (status == ZX_OK) {
-    FX_LOGS(WARNING) << "LE scan stopped after timeout.";
-  } else if (status == ZX_ERR_BAD_STATE) {
-    FX_LOGS(INFO) << "LE scan was already stopped after timeout.";
-  } else {
-    return Status(StatusCode::INTERNAL, "Unexpected error in stop_le_scan");
-  }
-  return {/*OK*/};
+  binding.Unbind();  // Stop listening
+
+  return Status::OK;
 }
 
 Status HostService::Inquiry(::grpc::ServerContext* context,
