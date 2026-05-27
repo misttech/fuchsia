@@ -25,6 +25,7 @@ use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_minstrel as fidl_minstrel;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_trace as trace;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes};
 use log::{error, warn};
@@ -156,6 +157,10 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
             }
             wlan_sme::MlmeRequest::GetMinstrelStats(req, responder) => {
                 self.on_sme_get_minstrel_stats(responder, &req.peer_addr.into())?;
+                Ok(())
+            }
+            wlan_sme::MlmeRequest::GetSignalReport(responder) if self.sta.is_none() => {
+                responder.respond(Ok(fidl_stats::SignalReport::default()));
                 Ok(())
             }
             req if self.sta.is_some() => {
