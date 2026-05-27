@@ -555,16 +555,6 @@
         "instance_id": "RzTlTepFEDhKahYepE3mIDfR2keF-vp2y-if_c7lnm8C"
     },
     {
-        "package": "fuchsia/third_party/llvm/mac-amd64",
-        "version": "git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3",
-        "instance_id": "tsqMT0n53B6prbCzGwARDMV69eaVyZsYVZcbeEewyk4C"
-    },
-    {
-        "package": "fuchsia/third_party/llvm/mac-arm64",
-        "version": "git_revision:2bf92787dfa5e59bfbc62edd397ecff051991ed3",
-        "instance_id": "arA4EAz9T1LoiUvCI8JEYRxi0KtM1rg15q2zQHqDtXoC"
-    },
-    {
         "package": "fuchsia/third_party/ninja/linux-amd64",
         "version": "git_revision:942136314befe9e4250e56cf31c5be953ab3dd13",
         "instance_id": "ZC0qv3lhEDWAc9aO1qxe8XDWfc7X8dgwQofJf9oXTe0C"
