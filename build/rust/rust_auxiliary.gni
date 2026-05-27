@@ -1,6 +1,7 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import("//build/rust/rust_auxiliary_args.gni")
 
 # An internal template for defining targets to collect Rust-related metadata for
@@ -255,7 +256,6 @@ template("rust_auxiliary") {
       args += [
         "${rebased_rustc_prefix}/bin/clippy-driver",
         rebase_path(invoker.crate_root, root_build_dir),
-        "--sysroot=${rebased_rustc_prefix}",
         "--crate-type=${invoker.crate_type}",
       ]
 
@@ -434,7 +434,6 @@ template("rust_auxiliary") {
         "--parts-out-dir",
         rebase_path(_rustdoc_parts_dir, root_build_dir),
         "@" + rebase_path(_transdeps_output, root_build_dir),
-        "--sysroot=${rebased_rustc_prefix}",
         "--crate-type=${crate_type}",
         "--crate-name=${_crate_name}",
         "{{rustflags}}",

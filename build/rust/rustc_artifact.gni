@@ -4,6 +4,7 @@
 
 import("//build/config/profile/config.gni")
 import("//build/rust/config.gni")
+import("//build/rust/rust_auxiliary.gni")
 import("//build/toolchain/rbe.gni")
 
 # Common logic for implementing the other rustc_* templates in this directory.
