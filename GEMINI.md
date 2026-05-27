@@ -202,10 +202,6 @@ for iteration. It is usually a bit faster than running `fx build`.
 When running `fx test` give your shell command tool longer wait intervals than
 the default. Consider waiting 2+ minutes at minimum each time you test.
 
-If `fx test` fails because there are no devices, prompt the user to
-either attach a device or start an emulator. Verify that the device is
-connected using `fx ffx target list`.
-
 If more than one device is present, you can choose the correct one by name as
 the first argument to `fx`: `fx -t <device name> test ...`.
 
@@ -224,12 +220,6 @@ diagnostic information.
 
 `fx get-device` will tell you what default device the user has configured for
 the current build directory.
-
-`ffx emu start` will start an emulator using whatever image has been built.
-You'll need to run `fx build` to generate a fresh image. The `--headless` flag
-may be necessary for some environments where a graphical desktop is unavailable.
-
-`ffx emu stop` will stop the emulator.
 
 `ffx doctor` can tell you if the development environment is configured
 correctly.
