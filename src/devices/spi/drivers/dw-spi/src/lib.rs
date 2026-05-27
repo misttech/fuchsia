@@ -18,271 +18,26 @@ use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
 use fidl_next_fuchsia_hardware_reset as freset;
-use fidl_next_fuchsia_hardware_spiimpl::{
-    self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
-};
+use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
 use fspi_businfo::SpiBusMetadata;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use futures::channel::mpsc;
-use log::{error, info, warn};
-use mmio::Register;
-use mmio::region::MmioRegion;
-use mmio::vmo::VmoMemory;
+use log::{error, info};
 use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
-use std::time::Duration;
 use zx::Status;
-mod registers;
-use registers::DwSpiRegsBlock;
-
-const FIFO_SIZE: usize = 256;
+mod spi_device;
+use spi_device::{DwSpiDevice, SpiImplRequest};
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct DwSpiConfig {
     dw_spi_rx_sample_delay_ns: u64,
 }
 
-enum SpiImplRequest {
-    TransmitVector {
-        chip_select: u32,
-        data: Vec<u8>,
-        responder: Responder<fspi_impl::TransmitVector>,
-    },
-    ReceiveVector {
-        chip_select: u32,
-        size: usize,
-        responder: Responder<fspi_impl::ReceiveVector>,
-    },
-    ExchangeVector {
-        chip_select: u32,
-        txdata: Vec<u8>,
-        responder: Responder<fspi_impl::ExchangeVector>,
-    },
-}
-
-struct DwSpiDevice {
-    mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
-    cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
-}
-
 struct SpiImplServer {
     tx: mpsc::UnboundedSender<SpiImplRequest>,
-}
-
-impl DwSpiDevice {
-    fn set_baud_rate(
-        &mut self,
-        parent_clock_hz: u64,
-        max_bus_clock_hz: u64,
-        rx_sample_delay_ns: u64,
-    ) -> Result<(), Status> {
-        // Round the divider up to avoid overclocking.
-        let Some(numerator) = parent_clock_hz.checked_add(max_bus_clock_hz - 1) else {
-            error!(
-                "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-            );
-            return Err(Status::INVALID_ARGS);
-        };
-
-        let divider = numerator / max_bus_clock_hz;
-        if divider >= 0xffff {
-            error!(
-                "Unsupported max bus clock {max_bus_clock_hz} for parent clock rate {parent_clock_hz}"
-            );
-            return Err(Status::INVALID_ARGS);
-        }
-
-        // The divider must be even.
-        let divider = if divider % 2 == 0 { divider } else { divider + 1 };
-
-        self.mmio.baudr_mut().write({
-            let mut baudr = registers::Baudr::from_raw(0);
-            baudr.set_sckdv(divider as u32);
-            baudr
-        });
-
-        // Convert the RX delay from nanoseconds to parent clock cycles.
-        let Some(numerator) = rx_sample_delay_ns.checked_mul(parent_clock_hz) else {
-            error!(
-                "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
-            );
-            return Err(Status::INVALID_ARGS);
-        };
-
-        let rx_sample_delay = Duration::from_nanos(numerator);
-        let rx_sample_delay_clocks = rx_sample_delay.as_secs();
-        // Verify that the clock count fits in the register, and that the conversion from
-        // nanoseconds to clock cycles did not result in rounding.
-        if rx_sample_delay_clocks > 0xff || rx_sample_delay.subsec_nanos() != 0 {
-            error!(
-                "Unsupported RX delay {rx_sample_delay_ns} for parent clock rate {parent_clock_hz}"
-            );
-            return Err(Status::INVALID_ARGS);
-        }
-
-        self.mmio.rx_sample_dly_mut().write({
-            let mut rx_sample_dly = registers::RxSampleDly::from_raw(0);
-            rx_sample_dly.set_rsd(rx_sample_delay_clocks as u32);
-            rx_sample_dly
-        });
-
-        Ok(())
-    }
-
-    fn init_registers(
-        &mut self,
-        parent_clock_hz: u64,
-        max_bus_clock_hz: u64,
-        rx_sample_delay_ns: u64,
-    ) -> Result<(), Status> {
-        self.mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
-
-        self.mmio.ctrlr0_mut().write({
-            let mut ctrlr0 = registers::CtrlR0::from_raw(0);
-            ctrlr0.set_spi_frf(0); // Standard SPI
-            ctrlr0.set_frf(0); // Motorola SPI
-            ctrlr0.set_dfs(7); // 8-bit (values 3-15 correspond to 4-16 bits, so 7 means 8 bits)
-            ctrlr0.set_tmod(0); // Transmit & Receive
-            ctrlr0
-        });
-
-        if max_bus_clock_hz > 0 {
-            self.set_baud_rate(parent_clock_hz, max_bus_clock_hz, rx_sample_delay_ns)?;
-        } else {
-            warn!("Max bus clock rate reported to be zero, skipping baud rate initialization");
-        }
-
-        // Mask all interrupts initially in IMR
-        self.mmio.imr_mut().write(registers::Imr::from_raw(0));
-
-        // Enable SSI
-        self.mmio.ssi_enr_mut().write({
-            let mut ssi_enr = registers::SsiEnr::from_raw(0);
-            ssi_enr.set_ssi_en(true);
-            ssi_enr
-        });
-
-        Ok(())
-    }
-
-    async fn exchange_pio(
-        &mut self,
-        chip_select: u32,
-        mut txdata: &[u8],
-        rx: bool,
-        mut size: usize,
-    ) -> Result<Vec<u8>, Status> {
-        if size == 0 {
-            return Ok(vec![]);
-        }
-
-        assert!(txdata.len() > 0 || rx); // If there is no TX data then we must be receiving.
-        assert!(txdata.len() == 0 || txdata.len() == size); // TX size must match RX size.
-
-        // Only one chip select is supported for now.
-        if chip_select != 0 {
-            return Err(Status::NOT_FOUND);
-        }
-
-        if let Some(cs_gpio) = &self.cs_gpio {
-            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputLow).wire().await.map_err(
-                |e| {
-                    error!("Failed to assert CS: {e}");
-                    Status::IO
-                },
-            )?;
-        }
-
-        // TODO(https://fxbug.dev/500865936): Support DMA transfers for larger sizes.
-        // This is a placeholder indicating where DMA support would be added.
-        // For now, we only implement PIO.
-
-        // A target must be selected before the transfer can begin.
-        self.mmio.ser_mut().write({
-            let mut ser = registers::Ser::from_raw(0);
-            ser.set_ser(1);
-            ser
-        });
-
-        let mut rxdata = Vec::<u8>::with_capacity(if rx { size } else { 0 });
-
-        while size > 0 {
-            if self.mmio.sr().read().rfne() {
-                warn!("RX FIFO is not empty before starting transfer");
-            }
-
-            // Wait for the TX FIFO to be empty.
-            while !self.mmio.sr().read().tfe() {}
-
-            let transfer_size = std::cmp::min(size, FIFO_SIZE);
-
-            // Fill the TX FIFO up to available space or remaining data.
-            for i in 0..transfer_size {
-                let data = if txdata.len() > 0 { txdata[i] } else { 0xFF };
-                self.mmio.dr0_mut().write(registers::Dr0::from_raw(data as u32));
-            }
-
-            // Read the RX FIFO for the bytes we just sent.
-            for _ in 0..transfer_size {
-                // Wait for at least one byte to be in the RX FIFO.
-                while !self.mmio.sr().read().rfne() {}
-
-                let data = self.mmio.dr0().read().dr() as u8;
-                if rx {
-                    rxdata.push(data);
-                }
-            }
-
-            size -= transfer_size;
-            if txdata.len() > 0 {
-                txdata = &txdata[transfer_size..];
-            }
-        }
-
-        self.mmio.ser_mut().write(registers::Ser::from_raw(0));
-
-        if let Some(cs_gpio) = &self.cs_gpio {
-            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputHigh).wire().await.map_err(
-                |e| {
-                    error!("Failed to deassert CS: {e}");
-                    Status::IO
-                },
-            )?;
-        }
-
-        return Ok(rxdata);
-    }
-
-    async fn handle_request(&mut self, req: SpiImplRequest) {
-        match req {
-            SpiImplRequest::TransmitVector { chip_select, data, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &data, false, data.len())
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.into_raw());
-                let _ = responder.respond_with(result).await;
-            }
-            SpiImplRequest::ReceiveVector { chip_select, size, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &[], true, size)
-                    .await
-                    .map(|data| SpiImplReceiveVectorResponse { data })
-                    .map_err(|e| e.into_raw());
-                let _ = responder.respond_with(result).await;
-            }
-            SpiImplRequest::ExchangeVector { chip_select, txdata, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &txdata, true, txdata.len())
-                    .await
-                    .map(|rxdata| SpiImplExchangeVectorResponse { rxdata })
-                    .map_err(|e| e.into_raw());
-                let _ = responder.respond_with(result).await;
-            }
-        }
-    }
 }
 
 impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer {
@@ -470,9 +225,6 @@ impl Driver for DwSpiDriver {
 
         reset.toggle().await.context("Failed to toggle reset")?;
 
-        let pdev = context.connect_to_pdev()?;
-        let mmio = DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
-
         let cs_gpio_service: ServiceInstance<fgpio::Service> =
             context.incoming.service().instance("gpio-cs-0").connect_next()?;
         let (cs_gpio_client, cs_gpio_server) = fuchsia::create_channel();
@@ -487,7 +239,8 @@ impl Driver for DwSpiDriver {
             _ => None,
         };
 
-        let mut device = DwSpiDevice { mmio, cs_gpio };
+        let pdev = context.connect_to_pdev()?;
+        let mut device = DwSpiDevice::new(pdev.map_mmio_by_id(0).await?, cs_gpio);
 
         let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;
         let config: DwSpiConfig = pdev

@@ -33,7 +33,8 @@ fuchsia_rust_driver("dw-spi-driver") {
 
   sources = [
     "src/lib.rs",
-    "src/registers.rs",
+    "src/spi_device.rs",
+    "src/spi_device/registers.rs",
     "src/tests.rs",
   ]
   deps = [
