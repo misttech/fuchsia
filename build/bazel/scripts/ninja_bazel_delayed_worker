@@ -1,9 +1,8 @@
 #!/bin/bash
 
-  ../../build/bazel/scripts/bazel_ninja_delayed_actions.py \
-    --delayed-actions-request \
-    "$1" \
-    --delayed-actions-response \
-    "$2" \
-    \
+../../build/bazel/scripts/bazel_ninja_delayed_actions.py \
+  --delayed-actions-request \
+  "$1" \
+  --delayed-actions-response \
+  "$2"
 

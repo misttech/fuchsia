@@ -198,6 +198,8 @@ def write_file_if_changed(dst_path: FilePath, content: str) -> None:
     if os.path.lexists(dst_path):
         os.remove(dst_path)
 
-    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    dst_dirname = os.path.dirname(dst_path)
+    if dst_dirname:
+        os.makedirs(dst_dirname, exist_ok=True)
     with open(dst_path, "wt") as f:
         f.write(content)
