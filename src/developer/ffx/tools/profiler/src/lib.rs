@@ -158,7 +158,7 @@ struct SessionOpts {
 
 fn check_background_args(
     duration: Option<u64>,
-    output: &str,
+    output: Option<&str>,
     print_stats: bool,
     symbolize: bool,
     pprof_conversion: bool,
@@ -169,7 +169,7 @@ fn check_background_args(
     }
 
     // Check for non-default values for the other arguments.
-    if output != "profile"
+    if output.is_some()
         || print_stats
         || !symbolize
         || !pprof_conversion
@@ -210,17 +210,21 @@ fn create_session_opts(
     symbolize: bool,
     buffer_size_mb: Option<u64>,
     print_stats: bool,
-    output: String,
+    output: Option<String>,
     duration: Option<u64>,
     pprof_conversion: bool,
     color_output: bool,
 ) -> SessionOpts {
     let extension = if symbolize { "pb" } else { "fxt" };
+    let final_output = match output {
+        Some(o) => o,
+        None => format!("profile.{}", extension),
+    };
     SessionOpts {
         symbolize,
         buffer_size_mb,
         print_stats,
-        output: format!("{}.{}", output, extension),
+        output: final_output,
         duration,
         pprof_conversion,
         color_output,
@@ -693,7 +697,7 @@ impl ProfilerTool {
                 if opts.background {
                     check_background_args(
                         opts.duration,
-                        &opts.output,
+                        opts.output.as_deref(),
                         opts.print_stats,
                         opts.symbolize,
                         opts.pprof_conversion,
@@ -716,7 +720,7 @@ impl ProfilerTool {
                 if opts.background {
                     check_background_args(
                         opts.duration,
-                        &opts.output,
+                        opts.output.as_deref(),
                         opts.print_stats,
                         opts.symbolize,
                         opts.pprof_conversion,
@@ -793,14 +797,18 @@ impl ProfilerTool {
                         return Ok(());
                     }
 
-                    let extension = if stop_options.symbolize { "pb" } else { "txt" };
+                    let extension = if stop_options.symbolize { "pb" } else { "fxt" };
+                    let final_output = match stop_options.output {
+                        Some(o) => o,
+                        None => format!("profile.{}", extension),
+                    };
 
                     let session_opts = SessionOpts {
                         symbolize: stop_options.symbolize,
                         buffer_size_mb: None,
                         print_stats: stop_options.print_stats,
                         pprof_conversion: stop_options.pprof_conversion,
-                        output: format!("{}.{}", stop_options.output, extension),
+                        output: final_output,
                         duration: None,
                         color_output: stop_options.color_output,
                     };
@@ -922,7 +930,7 @@ mod tests {
             buffer_size_mb: Some(8 as u64),
             moniker: None,
             duration: None,
-            output: String::from("output_file"),
+            output: Some(String::from("output_file.pb")),
             ..Default::default()
         };
         let target = gather_targets(&args);
@@ -939,7 +947,7 @@ mod tests {
             url: None,
             buffer_size_mb: None,
             duration: None,
-            output: String::from("output_file"),
+            output: Some(String::from("output_file.pb")),
             ..Default::default()
         };
 
@@ -954,7 +962,7 @@ mod tests {
             buffer_size_mb: Some(8 as u64),
             url: None,
             duration: None,
-            output: String::from("output_file"),
+            output: Some(String::from("output_file.pb")),
             ..Default::default()
         };
         let invalid_args2 = args::Attach {
@@ -965,7 +973,7 @@ mod tests {
             url: None,
             buffer_size_mb: Some(8 as u64),
             duration: None,
-            output: String::from("output_file"),
+            output: Some(String::from("output_file.pb")),
             ..Default::default()
         };
         let invalid_args3 = args::Attach {
@@ -976,7 +984,7 @@ mod tests {
             buffer_size_mb: Some(8 as u64),
             url: None,
             duration: None,
-            output: String::from("output_file"),
+            output: Some(String::from("output_file.pb")),
             ..Default::default()
         };
         let invalid_targets1 = gather_targets(&invalid_args1);
@@ -1035,14 +1043,8 @@ mod tests {
 
     #[test]
     fn test_check_background_args_valid() {
-        let result = check_background_args(
-            None,
-            "profile",
-            false,
-            true,
-            true,
-            std::io::stdout().is_terminal(),
-        );
+        let result =
+            check_background_args(None, None, false, true, true, std::io::stdout().is_terminal());
         assert!(result.is_ok());
     }
 
@@ -1050,7 +1052,7 @@ mod tests {
     fn test_check_background_args_with_duration() {
         let result = check_background_args(
             Some(10),
-            "profile",
+            None,
             false,
             true,
             true,
@@ -1063,7 +1065,7 @@ mod tests {
     fn test_check_background_args_invalid_output() {
         let result = check_background_args(
             None,
-            "custom_profile",
+            Some("custom_profile"),
             false,
             true,
             true,
@@ -1074,54 +1076,56 @@ mod tests {
 
     #[test]
     fn test_check_background_args_print_stats() {
-        let result = check_background_args(
-            None,
-            "profile",
-            true,
-            true,
-            true,
-            std::io::stdout().is_terminal(),
-        );
+        let result =
+            check_background_args(None, None, true, true, true, std::io::stdout().is_terminal());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_no_symbolize() {
-        let result = check_background_args(
-            None,
-            "profile",
-            false,
-            false,
-            true,
-            std::io::stdout().is_terminal(),
-        );
+        let result =
+            check_background_args(None, None, false, false, true, std::io::stdout().is_terminal());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_no_pprof() {
-        let result = check_background_args(
-            None,
-            "profile",
-            false,
-            true,
-            false,
-            std::io::stdout().is_terminal(),
-        );
+        let result =
+            check_background_args(None, None, false, true, false, std::io::stdout().is_terminal());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_invalid_color() {
-        let result = check_background_args(
-            None,
-            "profile",
-            false,
-            true,
-            true,
-            !std::io::stdout().is_terminal(),
-        );
+        let result =
+            check_background_args(None, None, false, true, true, !std::io::stdout().is_terminal());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_session_opts_extension() {
+        // Test that default is used if output is None
+        let opts = create_session_opts(true, None, false, None, None, true, true);
+        assert_eq!(opts.output, "profile.pb");
+
+        let opts = create_session_opts(false, None, false, None, None, true, true);
+        assert_eq!(opts.output, "profile.fxt");
+
+        // Test that output is literal if Some is provided
+        let opts =
+            create_session_opts(true, None, false, Some("profile".to_string()), None, true, true);
+        assert_eq!(opts.output, "profile");
+
+        let opts = create_session_opts(
+            true,
+            None,
+            false,
+            Some("profile.pb".to_string()),
+            None,
+            true,
+            true,
+        );
+        assert_eq!(opts.output, "profile.pb");
     }
 
     #[fuchsia::test]
@@ -1148,7 +1152,7 @@ mod tests {
             session_manager: fho::Deferred::from_output(Ok(session_manager)),
             cmd: ProfilerCommand {
                 sub_cmd: ProfilerSubCommand::Stop(args::Stop {
-                    output: String::from("profile"),
+                    output: None,
                     abort: false,
                     symbolize: false,
                     pprof_conversion: false,

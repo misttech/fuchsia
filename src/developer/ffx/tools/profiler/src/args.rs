@@ -88,8 +88,8 @@ pub struct Attach {
     pub duration: Option<u64>,
 
     /// name of output trace file. Defaults to "profile.pb".
-    #[argh(option, default = "String::from(\"profile\")")]
-    pub output: String,
+    #[argh(option)]
+    pub output: Option<String>,
 
     /// print stats about how the profiling session went
     #[argh(switch)]
@@ -152,8 +152,8 @@ pub struct Launch {
     pub duration: Option<u64>,
 
     /// name of output trace file. Defaults to "profile.pb".
-    #[argh(option, default = "String::from(\"profile\")")]
-    pub output: String,
+    #[argh(option)]
+    pub output: Option<String>,
 
     /// print stats about how the profiling session went
     #[argh(switch)]
@@ -237,8 +237,8 @@ pub struct DownloadAndroidSymbols {
 #[derive(Default)]
 pub struct Stop {
     /// path to save the profile
-    #[argh(option, default = "String::from(\"profile\")")]
-    pub output: String,
+    #[argh(option)]
+    pub output: Option<String>,
 
     /// abort the session without saving the profile data
     #[argh(switch)]
