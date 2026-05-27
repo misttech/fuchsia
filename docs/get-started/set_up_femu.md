@@ -271,6 +271,26 @@ The `host` and `auto` GPU emulation modes are for **experimental use only** and
 are not officially supported at the moment. You may see graphics artifacts, testing
 failures or emulator crashes when using these two modes.
 
+### Input interaction profiles (mouse versus touchscreen)
+
+Fuchsia virtual device profiles configure different input interaction modes
+depending on the target hardware product characteristics:
+
+*   **Mouse Mode (`mouse`)**: Standard desktop mouse emulation pointer layout.
+*   **Touchscreen Mode (`touch`)**: Emulates interactive touchscreen input.
+
+**Engine compatibility**:
+The choice of the emulator background virtualization engine restricts the
+input options:
+
+*   **FEMU (`--engine femu`)**: Fully supports both `mouse` and `touch` input
+    profiles. This is the default and is required for testing smart displays or
+    touchscreen devices.
+*   **QEMU (`--engine qemu`)**: Only supports `mouse` pointer emulation inputs.
+    If the selected product bundle defaults to a touchscreen virtual device
+    profile layout, launching it under `--engine qemu` triggers capability
+    warnings or execution errors.
+
 <!-- Reference links -->
 
 [get-fuchsia-source]: /docs/get-started/get_fuchsia_source.md
