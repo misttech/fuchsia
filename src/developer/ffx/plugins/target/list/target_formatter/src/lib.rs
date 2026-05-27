@@ -419,7 +419,6 @@ macro_rules! make_structs_and_support_functions {
             fn format_fields_(target: &StringifiedTarget, limits: &Limits, index: usize) -> String {
                 let mut s = String::with_capacity(limits.capacity());
                 let nodename = match target.$nodename.at_index(index) {
-                    Some(nodename) if target.__is_default => format!("{}*", nodename),
                     Some(nodename) => nodename,
                     None => String::new(),
                 };
@@ -1381,7 +1380,8 @@ mod test {
         let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         let default_target_line = &lines[1];
-        assert!(default_target_line.contains("default-target*"));
+        assert!(default_target_line.contains("default-target"));
+        assert!(!default_target_line.contains("default-target*"));
         let other_target_line = &lines[2];
         assert!(other_target_line.contains("other-target"));
         assert!(!other_target_line.contains("other-target*"));
