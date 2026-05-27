@@ -19,6 +19,7 @@ ignore_policy = struct(
     rules = bool_dict([
         "fuchsia_scrutiny_config",  # Build time verification data.
         "fuchsia_debug_symbols",  # Debug symbols have no separate licenses.
+        "current_py_toolchain",  # Python toolchain has no separate licenses.
     ]),
 
     # These targets will be ignored:
@@ -71,6 +72,14 @@ def is_3p_target(target):
     """
     check_is_target(target)
     label = target.label
+
+    # The labels in //bundles/assembly/bazel_inputs are all forwarding
+    # labels to elsewhere in the tree, and have no licenses, but they
+    # can trigger false-positives when they export packages from
+    # the third_party folders.
+    if label.package.startswith("bundles/assembly/bazel_inputs"):
+        return False
+
     if label.workspace_name:
         # Anything in another workspace is typically third_party code.
         return True

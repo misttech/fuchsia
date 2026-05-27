@@ -2,26 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_platform_artifacts")
-
 package(default_visibility = ["//visibility:public"])
 
-fuchsia_platform_artifacts(
+alias(
     name = "platform_bringup",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:bringup.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:bringup.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:bringup.bazel_inputs",
+    actual = "//bundles/assembly:bringup",
 )
 
-fuchsia_platform_artifacts(
+alias(
     name = "platform",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:platform.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:platform.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:platform.bazel_inputs",
+    actual = "//bundles/assembly:platform",
 )
 
 # TODO(https://fxbug.dev/483063916): Remove these aliases when all references

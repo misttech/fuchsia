@@ -5,12 +5,11 @@
 import("//build/assembly/assembly_input_bundle.gni")
 import("//build/assembly/assembly_resources_directory.gni")
 import("//build/assembly/kernel_aib.gni")
-import("//build/assembly/platform_artifacts.gni")
+import("//build/bazel/bazel_build_action.gni")
 import("//build/bazel/bazel_inputs.gni")
 import("//build/components.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
 import("//build/info/info.gni")
-import("//bundles/assembly/platform_aibs.gni")
 import("//src/lib/icu/tzdata/icu_tzres_source.gni")
 import("//third_party/sbase/binaries.gni")
 import("//zircon/kernel/phys/qemu.gni")
@@ -78,16 +77,51 @@ group("assembly") {
   }
 }
 
-platform_artifacts("bringup") {
+# Construct the 'bringup' platform artifacts set
+bazel_build_action("bringup") {
   testonly = true
-  deps = bringup_platform_aib_labels
-  version = build_info_version
+  no_sdk = true
+  bazel_target = "//bundles/assembly:bringup"
+  deps = [
+    # The AIB Bazel inputs
+    "//bundles/assembly/bazel_inputs:bringup_inputs",
+  ]
+  directory_outputs = [
+    {
+      bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
+      ninja_dir = "bringup"
+      tracked_files = [ "platform_artifacts/platform_artifacts.json" ]
+    },
+  ]
 }
 
-platform_artifacts("platform") {
+# Construct the main platform artifacts set
+bazel_build_action("platform") {
   testonly = true
-  deps = platform_aib_labels
-  version = build_info_version
+  no_sdk = true
+  bazel_target = "//bundles/assembly:platform"
+  deps = [
+    # The AIB Bazel inputs
+    "//bundles/assembly/bazel_inputs:platform_inputs",
+  ]
+  directory_outputs = [
+    {
+      bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
+      ninja_dir = "platform"
+      tracked_files = [ "platform_artifacts/platform_artifacts.json" ]
+    },
+  ]
+  metadata = {
+    package_barrier = []
+    platform_artifacts = [
+      {
+        name = target_cpu
+        path = rebase_path("${target_out_dir}/platform/platform_artifacts",
+                           root_build_dir)
+        label = get_label_info(target_name, "label_no_toolchain")
+      },
+    ]
+  }
 }
 
 ########
