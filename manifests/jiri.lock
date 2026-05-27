@@ -566,18 +566,18 @@
     },
     {
         "package": "fuchsia/third_party/ninja/linux-amd64",
-        "version": "git_revision:e107bffb3a069cc8c901d4e54b2d3b306ef0cf9d",
+        "version": "git_revision:942136314befe9e4250e56cf31c5be953ab3dd13",
         "instance_id": "ZC0qv3lhEDWAc9aO1qxe8XDWfc7X8dgwQofJf9oXTe0C"
     },
     {
         "package": "fuchsia/third_party/ninja/linux-arm64",
-        "version": "git_revision:e107bffb3a069cc8c901d4e54b2d3b306ef0cf9d",
+        "version": "git_revision:942136314befe9e4250e56cf31c5be953ab3dd13",
         "instance_id": "HjiJdV9B5a1H70Om1z03mViL7WG3Jxc7XCTyfjX87R8C"
     },
     {
         "package": "fuchsia/third_party/ninja/windows-amd64",
-        "version": "git_revision:e107bffb3a069cc8c901d4e54b2d3b306ef0cf9d",
-        "instance_id": "0jV8tDSzznGQH7eXrp0lbIXqvvhwSMdU-7yNQH2I3Q4C"
+        "version": "git_revision:942136314befe9e4250e56cf31c5be953ab3dd13",
+        "instance_id": "2xKDKaPNGTvb4_nhtiHj7vtb31XlF824bxIOjcB7dYoC"
     },
     {
         "package": "fuchsia/third_party/openssh-portable/linux-amd64",
