@@ -197,9 +197,10 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
     let test_driver =
         PowerElementContext::builder(&topology, "test_driver", &[0, 1], td_runner_client)
             .dependencies(vec![fbroker::LevelDependency {
-                dependent_level: 1,
-                requires_token: application_activity_token,
-                requires_level_by_preference: vec![1],
+                dependent_level: Some(1),
+                requires_token: Some(application_activity_token),
+                requires_level_by_preference: Some(vec![1]),
+                ..Default::default()
             }])
             .build()
             .await?;
@@ -222,9 +223,10 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
         tdc_runner_client,
     )
     .dependencies(vec![fbroker::LevelDependency {
-        dependent_level: 1,
-        requires_token: test_driver.assertive_dependency_token().unwrap(),
-        requires_level_by_preference: vec![1],
+        dependent_level: Some(1),
+        requires_token: Some(test_driver.assertive_dependency_token().unwrap()),
+        requires_level_by_preference: Some(vec![1]),
+        ..Default::default()
     }])
     .build()
     .await?;

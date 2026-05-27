@@ -118,11 +118,12 @@ ElementSchema BuildAssertiveApplicationActivitySchema(
     zx::event requires_token, ServerEnd<ElementControl> element_control_server_end,
     ServerEnd<Lessor> lessor_server_end, ClientEnd<ElementRunner> element_runner_client_end,
     const std::string& element_name) {
-  LevelDependency dependency(
-      /*dependent_level=*/kPowerLevelActive,
-      /*requires_token=*/std::move(requires_token),
-      /*requires_level_by_preference=*/
-      std::vector<uint8_t>(1, ToUint(ApplicationActivityLevel::kActive)));
+  LevelDependency dependency{{
+      .dependent_level = kPowerLevelActive,
+      .requires_token = std::move(requires_token),
+      .requires_level_by_preference =
+          std::vector<uint8_t>(1, ToUint(ApplicationActivityLevel::kActive)),
+  }};
 
   ElementSchema schema{{
       .element_name = element_name,

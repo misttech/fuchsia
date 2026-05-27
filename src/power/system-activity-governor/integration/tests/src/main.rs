@@ -108,9 +108,10 @@ async fn create_suspend_topology(realm: &RealmProxyClient) -> Result<Arc<PowerEl
             element_runner_client,
         )
         .dependencies(vec![fbroker::LevelDependency {
-            dependent_level: 1,
-            requires_token: aa_token,
-            requires_level_by_preference: vec![1],
+            dependent_level: Some(1),
+            requires_token: Some(aa_token),
+            requires_level_by_preference: Some(vec![1]),
+            ..Default::default()
         }])
         .build()
         .await?,
@@ -2129,9 +2130,10 @@ async fn create_cpu_driver_topology(
     let cpu_driver_controller = Arc::new(
         PowerElementContext::builder(&topology, "cpu_driver", &[0, 1], element_runner_client)
             .dependencies(vec![fbroker::LevelDependency {
-                dependent_level: 1,
-                requires_token: cpu_element_token,
-                requires_level_by_preference: vec![1],
+                dependent_level: Some(1),
+                requires_token: Some(cpu_element_token),
+                requires_level_by_preference: Some(vec![1]),
+                ..Default::default()
             }])
             .build()
             .await?,

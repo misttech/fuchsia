@@ -1850,8 +1850,12 @@ void Node::StartDriver(
   if (suspend_enabled_for_node) {
     if (power_dependency_overrides_.has_value()) {
       for (const auto& dep : power_dependency_overrides_.value()) {
+        if (!dep.requires_token().has_value()) {
+          fdf_log::error("Power dependency override is missing requires_token, skipping.");
+          continue;
+        }
         fuchsia_power_broker::DependencyToken clone;
-        zx_status_t dupe_result = dep.requires_token().duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+        zx_status_t dupe_result = dep.requires_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
         if (dupe_result != ZX_OK) {
           fdf_log::error("Power token duplicate failed for node: {}", std::string(url));
           cb(zx::error(dupe_result));
