@@ -61,6 +61,8 @@ enum StepType {
     GeneratingRecord,
     Output(String),
     RecordGenerated(PathBuf),
+    DoctorNoticeWarning,
+    DoctorNoticeFailure,
 }
 
 #[derive(Debug)]
@@ -95,6 +97,12 @@ impl std::fmt::Display for StepType {
             }
             StepType::RecordGenerated(path) => {
                 format!("Record generated at: {}\n", path.to_string_lossy().into_owned())
+            }
+            StepType::DoctorNoticeWarning => {
+                "Warning: ffx doctor detected potential anomalies. Review the items marked with [!] above.".to_string()
+            }
+            StepType::DoctorNoticeFailure => {
+                "Error: ffx doctor detected operational failures. Resolve the items marked with [✗] above.".to_string()
             }
         };
 
@@ -423,6 +431,16 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
         true,
     )
     .await?;
+
+    match ledger.calc_outcome(0) {
+        LedgerOutcome::Warning => {
+            handler.output_step(StepType::DoctorNoticeWarning).await?;
+        }
+        LedgerOutcome::Failure => {
+            handler.output_step(StepType::DoctorNoticeFailure).await?;
+        }
+        _ => {}
+    }
 
     Ok(())
 }
