@@ -15,6 +15,7 @@ fidl_library(
     api_area = "WLAN",
     category = "partner",
     enable_hlcpp = True,
+    enable_rust_next = True,
     # TODO(https://fxbug.dev/42111344): Remove lint exclusions by fixing known FIDL lint violations in this target
     excluded_checks = [
         "disallowed-library-name-component",

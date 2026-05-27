@@ -43,6 +43,7 @@ fidl("fuchsia.wlan.common") {
   sdk_area = "WLAN"
   sdk_category = "partner"
   enable_hlcpp = true
+  enable_rust_next = true
   excluded_checks = [ "disallowed-library-name-component" ]
   stable = true
   visibility = [ "*" ]

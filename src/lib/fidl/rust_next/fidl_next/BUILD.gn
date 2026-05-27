@@ -27,6 +27,7 @@ rustc_library("fidl_next") {
     "//sdk/fidl/*",
     "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
+    "//src/connectivity/wlan/*",
     "//src/devices/*",
     "//src/graphics/display/*",
     "//src/lib/fdomain/*",

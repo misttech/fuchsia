@@ -45,6 +45,7 @@ fidl("fuchsia.wlan.ieee80211") {
   sdk_area = "WLAN"
   sdk_category = "partner"
   enable_hlcpp = true
+  enable_rust_next = true
   stable = true
   visibility = [ "*" ]
 }
