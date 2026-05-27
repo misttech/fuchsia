@@ -21,7 +21,7 @@ pub(super) mod testing;
 use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
-use audit::{Auditable, audit_decision, audit_todo_decision};
+use audit::{Auditable, audit_decision};
 use fuchsia_rcu::{RcuBox, RcuReadGuard};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
@@ -281,42 +281,6 @@ fn has_fs_node_permissions(
     Ok(())
 }
 
-/// Checks that `current_task` has `permissions` to `node`, with "todo_deny" on denial.
-#[allow(dead_code)]
-fn todo_has_fs_node_permissions(
-    bug: BugRef,
-    permission_check: &PermissionCheck<'_>,
-    current_task: &CurrentTask,
-    subject_sid: SecurityId,
-    fs_node: &FsNode,
-    permissions: &[impl ForClass<FsNodeClass>],
-    audit_context: Auditable<'_>,
-) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.todo_has_fs_node_permissions");
-
-    if fs_node.is_private() {
-        return Ok(());
-    }
-
-    let target = fs_node_effective_sid_and_class(fs_node);
-
-    let fs = fs_node.fs();
-    let audit_context = [audit_context, fs_node.into(), fs.as_ref().into()];
-    for permission in permissions {
-        todo_check_permission(
-            bug.clone(),
-            permission_check,
-            current_task,
-            subject_sid,
-            target.sid,
-            permission.for_class(target.class),
-            (&audit_context).into(),
-        )?;
-    }
-
-    Ok(())
-}
-
 fn file_class_from_file_mode(mode: FileMode) -> Result<FileClass, Errno> {
     let file_type = mode.bits() & starnix_uapi::S_IFMT;
     match file_type {
@@ -362,52 +326,6 @@ fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
         }
     }
     FsNodeSidAndClass { sid: label_class.sid(), class: label_class.class() }
-}
-
-/// Perform the specified check as would `check_permission()`, but report denials as "todo_deny" in
-/// the audit output, without actually denying access.
-fn todo_check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
-    bug: BugRef,
-    permission_check: &PermissionCheck<'_>,
-    current_task: &CurrentTask,
-    source_sid: SecurityId,
-    target_sid: SecurityId,
-    permission: P,
-    audit_context: Auditable<'_>,
-) -> Result<(), Errno> {
-    if is_internal_operation(current_task) {
-        return Ok(());
-    }
-    let kernel = current_task.kernel();
-    if kernel.features.selinux_test_suite {
-        check_permission(
-            permission_check,
-            current_task,
-            source_sid,
-            target_sid,
-            permission,
-            audit_context,
-        )
-    } else {
-        trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.todo_check_permission");
-
-        let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
-
-        if result.audit {
-            audit_todo_decision(
-                current_task,
-                bug,
-                permission_check,
-                result,
-                source_sid,
-                target_sid,
-                permission.into(),
-                audit_context,
-            );
-        }
-
-        Ok(())
-    }
 }
 
 /// Checks whether `source_sid` is allowed the specified `permission` on `target_sid`.

@@ -14,10 +14,10 @@ use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
-use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
+use starnix_logging::{CATEGORY_STARNIX_SECURITY, trace_instant};
 use std::collections::HashMap;
 use std::fmt::{Display, Error};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::sync::LazyLock;
 
 /// Represents a unique auditable instance, for rate limiting purposes.
@@ -88,7 +88,6 @@ pub enum Auditable<'a> {
     None,
     SockOptArguments(u32, u32),
     Task(&'a Task),
-    TodoCheck,
     // keep-sorted end
 }
 
@@ -168,7 +167,7 @@ impl<'a, const N: usize> From<&'a [Auditable<'a>; N]> for Auditable<'a> {
 ///
 /// If the `result` has a `todo_bug` then the audit entry's decision will be "todo_deny", instead of
 /// the standard "granted" or "denied" decisions, to indicate that the check failed, but was granted
-/// nonetheless, via [`super::todo_check_permission`] or the todo-deny exceptions configuration.
+/// nonetheless, via the todo-deny exceptions configuration.
 ///
 /// Callers must supply an [`Auditable`] with context for the check (e.g. the calling task, target
 /// file object or filesystem node, etc.).
@@ -239,43 +238,6 @@ pub(super) fn audit_decision(
     );
 }
 
-/// Emits an audit log entry for a check that failed, but will still be granted because it was made
-/// with the [`super::todo_check_permission()`] API.
-pub(super) fn audit_todo_decision(
-    current_task: &CurrentTask,
-    bug: BugRef,
-    permission_check: &PermissionCheck<'_>,
-    mut result: PermissionCheckResult,
-    source_sid: SecurityId,
-    target_sid: SecurityId,
-    permission: KernelPermission,
-    audit_context: Auditable<'_>,
-) {
-    if result.todo_bug.is_none() {
-        let bug_id: NonZeroU64 = bug.into();
-        result.todo_bug = Some(NonZeroU32::new(bug_id.get() as u32).unwrap());
-        audit_decision(
-            current_task,
-            permission_check,
-            result,
-            source_sid,
-            target_sid,
-            permission,
-            (&[Auditable::TodoCheck, audit_context]).into(),
-        )
-    } else {
-        audit_decision(
-            current_task,
-            permission_check,
-            result,
-            source_sid,
-            target_sid,
-            permission,
-            audit_context,
-        )
-    }
-}
-
 impl Display for Auditable<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), Error> {
         match self {
@@ -326,9 +288,6 @@ impl Display for Auditable<'_> {
             Auditable::None => Ok(()),
             Auditable::Task(task) => {
                 write!(f, " pid={}, comm={}", task.get_pid(), task.command())
-            }
-            Auditable::TodoCheck => {
-                write!(f, " todo_check")
             }
         }
     }
