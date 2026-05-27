@@ -46,37 +46,51 @@ pub async fn create_fvm_volume(
     instance_guid: [u8; 16],
     config: &BlockDeviceConfig,
 ) -> (fio::DirectoryProxy, Option<fasync::Task<()>>) {
-    let (crypt, crypt_task) = if config.use_zxcrypt {
-        let (crypt, stream) = create_request_stream::<fidl_fuchsia_fxfs::CryptMarker>();
-        let task = fasync::Task::spawn(async {
-            if let Err(err) =
-                zxcrypt_crypt::run_crypt_service(crypt_policy::Policy::Null, stream).await
-            {
-                log::error!(err:?; "Crypt service failure");
-            }
-        });
-        (Some(crypt), Some(task))
-    } else {
-        (None, None)
-    };
-    let (volume_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
-    fvm.create(
-        BENCHMARK_VOLUME_NAME,
-        server_end,
-        CreateOptions {
-            initial_size: config.volume_size,
-            type_guid: Some(BENCHMARK_TYPE_GUID.clone()),
-            guid: Some(instance_guid),
-            ..Default::default()
-        },
-        MountOptions { crypt, ..Default::default() },
-    )
-    .await
-    .expect("FIDL error")
-    .map_err(zx::Status::from_raw)
-    .expect("Failed to create volume");
+    loop {
+        let (crypt, crypt_task) = if config.use_zxcrypt {
+            let (crypt, stream) = create_request_stream::<fidl_fuchsia_fxfs::CryptMarker>();
+            let task = fasync::Task::spawn(async {
+                if let Err(err) =
+                    zxcrypt_crypt::run_crypt_service(crypt_policy::Policy::Null, stream).await
+                {
+                    log::error!(err:?; "Crypt service failure");
+                }
+            });
+            (Some(crypt), Some(task))
+        } else {
+            (None, None)
+        };
 
-    (volume_dir, crypt_task)
+        let (volume_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
+        let res = fvm
+            .create(
+                BENCHMARK_VOLUME_NAME,
+                server_end,
+                CreateOptions {
+                    initial_size: config.volume_size,
+                    type_guid: Some(BENCHMARK_TYPE_GUID.clone()),
+                    guid: Some(instance_guid),
+                    ..Default::default()
+                },
+                MountOptions { crypt, ..Default::default() },
+            )
+            .await
+            .expect("FIDL error")
+            .map_err(zx::Status::from_raw);
+
+        // If the FVM already exists, remove it and try again.
+        if res == Err(zx::Status::ALREADY_EXISTS) {
+            fvm.remove(BENCHMARK_VOLUME_NAME)
+                .await
+                .expect("FIDL error")
+                .map_err(zx::Status::from_raw)
+                .expect("Failed to remove volume");
+            continue;
+        }
+
+        res.expect("Failed to create volume");
+        return (volume_dir, crypt_task);
+    }
 }
 
 /// A factory for volumes which the benchmarks run in.  If the system has an FVM, benchmarks run in
