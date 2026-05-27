@@ -59,9 +59,15 @@ pub fn clean_stack() {
             continue;
         };
         // Afford some space on the stack for the op_range call.
-        let v = v - 64;
+        let v = v.checked_sub(64).unwrap_or_else(|| {
+            panic!("Starnix kernel stack pointer underflow: v = {v}");
+        });
         let max_addr = v - (v % page_size);
-        let start_addr = max_addr - CLEAN_SIZE;
+        let start_addr = max_addr.checked_sub(CLEAN_SIZE).unwrap_or_else(|| {
+            panic!(
+                "Starnix kernel stack range calculation underflow: max_addr = {max_addr}, CLEAN_SIZE = {CLEAN_SIZE}"
+            );
+        });
         let _ =
             fuchsia_runtime::vmar_root_self().op_range(zx::VmarOp::ZERO, start_addr, CLEAN_SIZE);
     }
