@@ -9,6 +9,9 @@ use chrono::LocalResult;
 use chrono::prelude::*;
 use fdio::service_connect;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_hardware_hrtimer as ffhh;
+use fidl_fuchsia_hardware_rtc as frtc;
+use fidl_fuchsia_io as fio;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_fs::directory;
 use fuchsia_runtime::{UtcDuration, UtcInstant};
@@ -21,10 +24,6 @@ use std::rc::Rc;
 use thiserror::Error;
 use time_persistence::State;
 use time_pretty::format_duration;
-use {
-    fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_hardware_rtc as frtc,
-    fidl_fuchsia_io as fio,
-};
 #[cfg(test)]
 use {fuchsia_sync::Mutex, std::sync::Arc};
 
@@ -36,6 +35,7 @@ const FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(
 // The minimum error at which to begin an async wait for top of second while setting RTC.
 const WAIT_THRESHOLD: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(1);
 
+// If a RTC device op lasts more than this, we declare a timeout.
 const RTC_DEVICE_OPEN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -249,6 +249,9 @@ impl RtcImpl {
             })?;
 
             let mut rtc_devices = device_watcher::watch_for_files(&dir)
+                .on_timeout(zx::MonotonicInstant::after(RTC_DEVICE_OPEN_TIMEOUT), || {
+                    Err(anyhow!("timed out waiting for device watcher"))
+                })
                 .await
                 .map_err(|err| {
                     RtcCreationError::ConnectionFailed(anyhow!(
