@@ -2672,9 +2672,6 @@ group("root_targets") {
     # its metadata target that actually follows the dependencies pass to it)
     ":product_bundles_metadata",
 
-    # Allow test-building of the AIBs in Bazel.
-    "//bundles/assembly/bazel",
-
     # A manifest file that points to implicit inputs for all targets listed
     # by ninja_implicit_inputs_root_labels.
     "//build/ninja_implicit_inputs:manifest",

@@ -19,6 +19,37 @@ load(
     "platform_aib_names",
 )
 
+########
+# Guaranteed Invariants
+#
+#
+# Invariants that are guaranteed by these platform-defined Assembly Input
+# Bundles (AIBs):
+#
+# 1) Their contents are bitwise identical for all boards and products, for a
+#    given architecture and "debug" vs. "release".  They could be built once-
+#    each for the following, and then used as prebuilts if the build supported
+#    that:
+#      - x64-release
+#      - x64-debug
+#      - arm64-release
+#      - arm64-debug
+#
+# 2) Any single artifact is only included in one AIB.
+
+########
+# Maintenance Guidelines
+#
+# DO:  Prefer verboseness and clarity over abstractions and delegation.
+#
+# DO NOT: import a file that defines, for example, a list of labels or a set of
+# config_data entries, that are added to an AIB using a variable.
+#
+# Importing other files which define variables used to provide the contents for
+# an AIB reduces the clarity of how an artifact gets included first in AIBs, and
+# later the assembled image.  This makes it harder to reason about how and when
+# the artifacts are included within the assembled product.
+
 package(default_visibility = ["//visibility:public"])
 
 platform_artifacts(
