@@ -1586,7 +1586,7 @@ mod tests {
     use super::*;
     use crate::fuchsia::directory::FxDirectory;
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::node::{FxNode, OpenedNode};
+    use crate::fuchsia::node::FxNode;
     use crate::fuchsia::pager::{PageInRange, PagerPacketReceiverRegistration, default_page_in};
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
@@ -2810,9 +2810,13 @@ mod tests {
                 unimplemented!();
             }
 
-            fn open_count_add_one(&self) {}
+            fn open_count_add_one(&self) {
+                unimplemented!();
+            }
 
-            fn open_count_sub_one(self: Arc<Self>) {}
+            fn open_count_sub_one(self: Arc<Self>) {
+                unimplemented!();
+            }
 
             fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
                 unimplemented!();
@@ -2820,10 +2824,6 @@ mod tests {
         }
 
         impl PagerBacked for File {
-            fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-                Ok(OpenedNode(self))
-            }
-
             fn pager(&self) -> &crate::pager::Pager {
                 self.handle.owner().pager()
             }

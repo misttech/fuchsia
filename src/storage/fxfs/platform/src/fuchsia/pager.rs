@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fuchsia::errors::map_to_status;
-use crate::fuchsia::node::{FxNode, OpenedNode};
+use crate::fuchsia::node::FxNode;
 use crate::fuchsia::profile::Recorder;
 use anyhow::Error;
 use bitflags::bitflags;
@@ -17,7 +17,7 @@ use fxfs::round::{round_down, round_up};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use storage_device::buffer;
@@ -131,25 +131,12 @@ impl<T: PagerBacked> PagerPacketReceiver<T> {
             file.pager().report_failure(file.vmo(), contents.range(), zx::Status::BAD_STATE);
             return;
         };
-        let opened_file = match file.try_keep_open() {
-            Ok(opened) => opened,
-            Err(bare) => {
-                bare.pager().report_failure(bare.vmo(), contents.range(), zx::Status::BAD_STATE);
-                return;
-            }
-        };
         match command {
             ZX_PAGER_VMO_READ => {
-                let file_arc = opened_file.clone();
-                file_arc.page_in(PageInRange::new(
-                    contents.range(),
-                    opened_file,
-                    epoch_guard.unwrap(),
-                ))
+                file.clone().page_in(PageInRange::new(contents.range(), file, epoch_guard.unwrap()))
             }
             ZX_PAGER_VMO_DIRTY => {
-                let file_arc = opened_file.clone();
-                file_arc.mark_dirty(MarkDirtyRange::new(contents.range(), opened_file))
+                file.clone().mark_dirty(MarkDirtyRange::new(contents.range(), file))
             }
             _ => unreachable!("Unhandled commands are filtered above"),
         }
@@ -446,9 +433,6 @@ impl Pager {
 
 /// This is a trait for objects (files/blobs) that expose a pager backed VMO.
 pub trait PagerBacked: FxNode + Sync + Send + Sized + 'static {
-    /// Create an OpenedNode if it is already open, if not, return the bare Arc.
-    fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>>;
-
     /// The pager backing this VMO.
     fn pager(&self) -> &Pager;
 
@@ -643,7 +627,7 @@ pub type PageInRange<T> = PagerRange<T, PageInRequest>;
 
 impl<T: PagerBacked> PageInRange<T> {
     /// Constructs a new `PageInRange<T>`. `range` must be page aligned.
-    pub fn new(range: Range<u64>, file: OpenedNode<T>, epoch_guard: EpochGuard<'static>) -> Self {
+    pub fn new(range: Range<u64>, file: Arc<T>, epoch_guard: EpochGuard<'static>) -> Self {
         debug_assert!(
             range.start % page_size() == 0 && range.end % page_size() == 0,
             "{:?} is not page aligned",
@@ -685,7 +669,7 @@ pub type MarkDirtyRange<T> = PagerRange<T, MarkDirtyRequest>;
 
 impl<T: PagerBacked> MarkDirtyRange<T> {
     /// Constructs a new `MarkDirtyRange<T>`. `range` must be page aligned.
-    pub fn new(range: Range<u64>, file: OpenedNode<T>) -> Self {
+    pub fn new(range: Range<u64>, file: Arc<T>) -> Self {
         debug_assert!(
             range.start % page_size() == 0 && range.end % page_size() == 0,
             "{:?} is not page aligned",
@@ -706,18 +690,15 @@ impl<T: PagerBacked> MarkDirtyRange<T> {
     }
 }
 
-struct PagerRangeInner<T: PagerBacked> {
-    file: OpenedNode<T>,
+#[derive(Clone)]
+struct PagerRangeInner<T: std::clone::Clone + Deref<Target: PagerBacked>> {
+    // All generic types in the template must be cloneable to derive Clone, so we template the Arc
+    // instead of the inner type.
+    file: T,
 
     /// Holds a reference to the current Epoch, so that in-flight read requests can be tracked. This
     /// should be None for MarkDirty requests.
     _epoch_guard: Option<EpochGuard<'static>>,
-}
-
-impl<T: PagerBacked> Clone for PagerRangeInner<T> {
-    fn clone(&self) -> Self {
-        Self { file: self.file.dup(), _epoch_guard: self._epoch_guard.clone() }
-    }
 }
 
 /// The requested range from a pager packet. This object ensures that all pager requests receive a
@@ -726,16 +707,12 @@ pub struct PagerRange<T: PagerBacked, U: PagerRequestType> {
     range: Range<u64>,
 
     /// Contains the file and the ref guard. If this is None, then the request is complete.
-    inner: Option<PagerRangeInner<T>>,
+    inner: Option<PagerRangeInner<Arc<T>>>,
 
     _request_type: PhantomData<U>,
 }
 
 impl<T: PagerBacked, U: PagerRequestType> PagerRange<T, U> {
-    pub fn file(&self) -> &OpenedNode<T> {
-        &self.inner.as_ref().unwrap().file
-    }
-
     /// Splits the underlying range allowing for different parts of the range to be handled and
     /// responded to independently. See `RangeExt::split` for how splitting a range works.
     /// `split_point` must be page aligned.
@@ -856,7 +833,7 @@ pub struct PagerRangeChunksIter<T: PagerBacked, U: PagerRequestType> {
     end: u64,
     chunk_size: u64,
     /// The file and locks/references that need to survive the request.
-    inner: Option<PagerRangeInner<T>>,
+    inner: Option<PagerRangeInner<Arc<T>>>,
     _request_type: PhantomData<U>,
 }
 
@@ -986,9 +963,13 @@ mod tests {
             unimplemented!();
         }
 
-        fn open_count_add_one(&self) {}
+        fn open_count_add_one(&self) {
+            unimplemented!();
+        }
 
-        fn open_count_sub_one(self: Arc<Self>) {}
+        fn open_count_sub_one(self: Arc<Self>) {
+            unimplemented!();
+        }
 
         fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
             unimplemented!();
@@ -996,10 +977,6 @@ mod tests {
     }
 
     impl PagerBacked for MockFile {
-        fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-            Ok(OpenedNode(self))
-        }
-
         fn pager(&self) -> &Pager {
             &self.pager
         }
@@ -1067,9 +1044,13 @@ mod tests {
             unimplemented!();
         }
 
-        fn open_count_add_one(&self) {}
+        fn open_count_add_one(&self) {
+            unimplemented!();
+        }
 
-        fn open_count_sub_one(self: Arc<Self>) {}
+        fn open_count_sub_one(self: Arc<Self>) {
+            unimplemented!();
+        }
 
         fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
             unimplemented!();
@@ -1077,10 +1058,6 @@ mod tests {
     }
 
     impl PagerBacked for OnZeroChildrenFile {
-        fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-            Ok(OpenedNode(self))
-        }
-
         fn pager(&self) -> &Pager {
             &self.pager
         }
@@ -1192,9 +1169,13 @@ mod tests {
                 unimplemented!();
             }
 
-            fn open_count_add_one(&self) {}
+            fn open_count_add_one(&self) {
+                unimplemented!();
+            }
 
-            fn open_count_sub_one(self: Arc<Self>) {}
+            fn open_count_sub_one(self: Arc<Self>) {
+                unimplemented!();
+            }
 
             fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
                 unimplemented!();
@@ -1202,10 +1183,6 @@ mod tests {
         }
 
         impl PagerBacked for StatusCodeFile {
-            fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-                Ok(OpenedNode(self))
-            }
-
             fn pager(&self) -> &Pager {
                 &self.pager
             }
@@ -1233,7 +1210,6 @@ mod tests {
             fn byte_size(&self) -> u64 {
                 unreachable!();
             }
-
             async fn aligned_read(
                 &self,
                 _aligned_byte_range: std::ops::Range<u64>,
@@ -1437,8 +1413,7 @@ mod tests {
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
 
-        let pager_range =
-            PageInRange::new(0..page_size() * 5, OpenedNode::new(file), Epoch::global().guard());
+        let pager_range = PageInRange::new(0..page_size() * 5, file, Epoch::global().guard());
         let ranges: Vec<Range<u64>> = pager_range
             .chunks(page_size() * 2)
             .map(|pager_range| {
@@ -1463,8 +1438,7 @@ mod tests {
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
 
-        let pager_range =
-            PageInRange::new(0..page_size() * 10, OpenedNode::new(file), Epoch::global().guard());
+        let pager_range = PageInRange::new(0..page_size() * 10, file, Epoch::global().guard());
         let (left, right) = pager_range.split(page_size() * 5);
         let (left, right) = (left.unwrap(), right.unwrap());
         assert_eq!(left.range(), 0..page_size() * 5);
@@ -1481,8 +1455,7 @@ mod tests {
         let pager = Arc::new(Pager::new(scope).unwrap());
         let file = MockFile::new(pager.clone());
 
-        let pager_range =
-            PageInRange::new(0..page_size() * 2, OpenedNode::new(file), Epoch::global().guard());
+        let pager_range = PageInRange::new(0..page_size() * 2, file, Epoch::global().guard());
         pager_range.expand(0..page_size()).consume();
     }
 
@@ -1532,9 +1505,13 @@ mod tests {
             unimplemented!()
         }
 
-        fn open_count_add_one(&self) {}
+        fn open_count_add_one(&self) {
+            unimplemented!()
+        }
 
-        fn open_count_sub_one(self: Arc<Self>) {}
+        fn open_count_sub_one(self: Arc<Self>) {
+            unimplemented!()
+        }
 
         fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
             unimplemented!()
@@ -1542,10 +1519,6 @@ mod tests {
     }
 
     impl PagerBacked for PagerRangeTestFile {
-        fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-            Ok(OpenedNode(self))
-        }
-
         fn pager(&self) -> &Pager {
             &self.pager
         }

@@ -18,6 +18,7 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use delivery_blob::compression::{CompressionAlgorithm, ThreadLocalDecompressor};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer as MemBuffer;
+use fuchsia_async::epoch::Epoch;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
 use futures::try_join;
@@ -157,11 +158,11 @@ impl FxBlob {
         if receiver_lock.is_strong() {
             // If there was a strong moved between them, then the counts exchange as well. It is
             // only important that the increment happen under the lock as it may handle the next
-            // zero children signal, no new requests can now go to the old blob, and because
-            // existing requests hold an open count reference using `try_keep_open` for the duration
-            // of the request, we can immediately decrement the open count of the old blob.
+            // zero children signal, no new requests can now go to the old blob, but to safely
+            // ensure that all existing requests finish, we will defer the open count decrement.
             new_blob.open_count_add_one();
-            self.clone().open_count_sub_one();
+            let old_blob = self.clone();
+            Epoch::global().defer(move || old_blob.open_count_sub_one());
         }
         new_blob
     }
@@ -288,25 +289,6 @@ impl FxNode for FxBlob {
 }
 
 impl PagerBacked for FxBlob {
-    fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
-        let mut old = self.open_count.load(Ordering::Relaxed);
-        loop {
-            if old & !PURGED == 0 {
-                return Err(self);
-            }
-            assert!(old & !PURGED < PURGED - 1);
-            match self.open_count.compare_exchange_weak(
-                old,
-                old + 1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return Ok(OpenedNode(self)),
-                Err(new_value) => old = new_value,
-            }
-        }
-    }
-
     fn pager(&self) -> &crate::pager::Pager {
         self.handle.owner().pager()
     }
@@ -1190,7 +1172,7 @@ mod tests {
             let data = vec![0xffu8; FILE_SIZE as usize];
             let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
-            let blob = fixture.get_opened_blob(hash).await.unwrap();
+            let blob = fixture.get_blob(hash).await.unwrap();
             assert_eq!(blob.chunks_supplied.len(), 4);
             // Nothing has been read yet.
             assert_eq!(&blob.chunks_supplied.get(), &[false, false, false, false]);
@@ -1211,7 +1193,7 @@ mod tests {
             // page_in directly and wait for the counters to change.
             blob.clone().page_in(PageInRange::new(
                 FILE_SIZE - READ_AHEAD_SIZE..FILE_SIZE,
-                blob.dup(),
+                blob.clone(),
                 Epoch::global().guard(),
             ));
             Epoch::global().barrier().await;
