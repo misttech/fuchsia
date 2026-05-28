@@ -39,6 +39,9 @@ type FFXClient interface {
 	RepositoryCreate(ctx context.Context, repoDir string) error
 	RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error
 	SymbolIndexAdd(ctx context.Context, buildID string) error
+	RepositoryServerStart(ctx context.Context, repoName, repoDir, address string) error
+	RepositoryServerStop(ctx context.Context, repoName string) error
+	RepositoryServerList(ctx context.Context) (string, error)
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
@@ -331,7 +334,7 @@ func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error 
 		return fmt.Errorf("serveAndWait: %w", err)
 	}
 
-	if _, err := r.ffx.RunCmdSync("repository", "server", "list"); err != nil {
+	if _, err := r.ffx.RepositoryServerList(context.Background()); err != nil {
 		return fmt.Errorf("ffx repository server list: %w", err)
 	}
 	return nil
@@ -344,15 +347,7 @@ func (r *TestOrchestrator) serveAndWait(repoDir string) error {
 		port = "0"
 	}
 	addr := fmt.Sprintf("[::]:%s", port)
-	args := []string{
-		"repository", "server", "start",
-		"--background", "--no-device",
-		"--address", addr,
-		"--repo-path", repoDir,
-		"--repository", r.repoName,
-		"--refresh-metadata",
-	}
-	if _, err := r.ffx.RunCmdSync(args...); err != nil {
+	if err := r.ffx.RepositoryServerStart(context.Background(), r.repoName, repoDir, addr); err != nil {
 		return fmt.Errorf("ffx repository server start: %w", err)
 	}
 
@@ -530,8 +525,8 @@ func writeJSON(filename string, data any) error {
 
 /* Cleanup */
 func (r *TestOrchestrator) stopPackageServer() {
-	if _, err := r.ffx.RunCmdSync("repository", "server", "stop", r.repoName); err != nil {
-		fmt.Printf("ffx repository server stop: %v", err)
+	if err := r.ffx.RepositoryServerStop(context.Background(), r.repoName); err != nil {
+		fmt.Printf("ffx repository server stop: %v\n", err)
 	}
 }
 

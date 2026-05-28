@@ -424,3 +424,28 @@ func (f *Ffx) SymbolIndexAdd(ctx context.Context, buildID string) error {
 	_, err := f.RunCmdSync("debug", "symbol-index", "add", buildID)
 	return err
 }
+
+// RepositoryServerStart starts the repository server.
+func (f *Ffx) RepositoryServerStart(ctx context.Context, repoName, repoDir, address string) error {
+	args := []string{
+		"repository", "server", "start",
+		"--background", "--no-device",
+		"--address", address,
+		"--repo-path", repoDir,
+		"--repository", repoName,
+		"--refresh-metadata",
+	}
+	_, err := f.RunCmdSync(args...)
+	return err
+}
+
+// RepositoryServerStop stops the repository server.
+func (f *Ffx) RepositoryServerStop(ctx context.Context, repoName string) error {
+	_, err := f.RunCmdSync("repository", "server", "stop", repoName)
+	return err
+}
+
+// RepositoryServerList lists the repository servers.
+func (f *Ffx) RepositoryServerList(ctx context.Context) (string, error) {
+	return f.RunCmdSync("repository", "server", "list")
+}

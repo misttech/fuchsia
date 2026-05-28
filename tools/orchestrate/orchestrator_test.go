@@ -182,6 +182,30 @@ func (m *mockFFXClient) SymbolIndexAdd(ctx context.Context, buildID string) erro
 	return call.retErr
 }
 
+func (m *mockFFXClient) RepositoryServerStart(ctx context.Context, repoName, repoDir, address string) error {
+	call := m.recordCall("RepositoryServerStart", repoName, repoDir, address)
+	return call.retErr
+}
+
+func (m *mockFFXClient) RepositoryServerStop(ctx context.Context, repoName string) error {
+	call := m.recordCall("RepositoryServerStop", repoName)
+	return call.retErr
+}
+
+func (m *mockFFXClient) RepositoryServerList(ctx context.Context) (string, error) {
+	call := m.recordCall("RepositoryServerList")
+	if call.retErr != nil {
+		return "", call.retErr
+	}
+	if call.retVal != nil {
+		if str, ok := call.retVal.(string); ok {
+			return str, nil
+		}
+		m.t.Fatalf("mockFFXClient: RepositoryServerList expected string retVal, got %T", call.retVal)
+	}
+	return "", nil
+}
+
 // recordCall records a call and returns a predefined error if one exists.
 func (m *mockFFXClient) recordCall(method string, args ...string) *mockCall {
 	m.t.Helper()
@@ -315,11 +339,9 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 		mockFfx.expectCall("SymbolIndexAdd", buildID)
 	}
 
-	mockFfx.expectCall("RunCmdSync", "repository", "server", "start",
-		"--background", "--no-device", "--address", "[::]:0",
-		"--repo-path", repoDir, "--repository", repoName, "--refresh-metadata")
-	mockFfx.expectCall("IsPackageServerRunning", repoName).Returns(true, nil)
-	mockFfx.expectCall("RunCmdSync", "repository", "server", "list").Returns(`{"ok":{"data":[{"Name":"mock-repo","Address":"[::]:8080"}]}}`, nil)
+	mockFfx.expectCall("RepositoryServerStart", repoName, repoDir, "[::]:0")
+	mockFfx.expectCall("IsPackageServerRunning", repoName)
+	mockFfx.expectCall("RepositoryServerList").Returns(`{"ok":{"data":[{"name":"mock-repo","address":"[::]:8080"}]}}`, nil)
 
 	// Reach device expectations (conditional on deviceConfig presence and not emulator)
 	if deviceConfig != nil && !isEmulator {
@@ -340,7 +362,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	// Cleanup calls (LIFO order due to defers)
 	mockFfx.expectCall("Cmd", "debug", "symbolize") // From stopFfxLog
 
-	mockFfx.expectCall("RunCmdSync", "repository", "server", "stop", repoName) // From stopPackageServer
+	mockFfx.expectCall("RepositoryServerStop", repoName) // From stopPackageServer
 
 	if isEmulator {
 		mockFfx.expectCall("RunCmdSync", "emu", "stop", "--all") // From stopEmulator
