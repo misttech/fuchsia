@@ -188,7 +188,6 @@ group("non_hermetic_deps") {
     "//build/testing:*",
     "//products/bringup:*",
     "//products/core:*",
-    "//products/zedboot:*",
   ]
 
   # TODO(https://fxbug.dev/42176361): Remove entry when action tracer can handle ld.lld invocations.
@@ -233,7 +232,6 @@ group("non_hermetic_deps") {
   visibility += [
     "//build/assembly/scripts:bazel_assembly_input_bundle_tool",
     "//build/bazel:*",
-    "//build/bazel/assembly/*",
     "//build/bazel/bazel_sdk:*",
     "//build/bazel/bazel_sdk/docs:*",
     "//build/bazel/bazel_sdk/tests:*",
