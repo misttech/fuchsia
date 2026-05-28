@@ -49,7 +49,7 @@ fn release_quota_mutex(ctx: Ctx) {
     *state_lock = RollingCaptureState::Empty;
 }
 
-pub(crate) async fn serve_packet_capture_rolling(
+async fn serve_rolling_packet_capture(
     _guard: QuotaGuard,
     mut ctx: Ctx,
     mut rs: fnet_debug::RollingPacketCaptureRequestStream,
@@ -258,7 +258,7 @@ pub(crate) fn handle_start_rolling(
     pcap::write_prelude(&mut pcap_headers, link_type, &device_name)
         .expect("failed to write pcap prelude");
     fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
-        serve_packet_capture_rolling(guard, ctx_clone, rs, id, pcap_headers)
+        serve_rolling_packet_capture(guard, ctx_clone, rs, id, pcap_headers)
     });
     Ok(rolling_client)
 }
