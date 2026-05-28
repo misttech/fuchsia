@@ -24,7 +24,7 @@ use netstack3_base::socket::{
     self, AddrVec, BoundSocketMap, ConnAddr, ConnInfoAddr, ConnIpAddr, DualStackConnIpAddr,
     DualStackListenerIpAddr, DualStackLocalIp, DualStackRemoteIp, EitherStack, InsertError,
     ListenerAddr, ListenerIpAddr, MaybeDualStack, NotDualStackCapableError, Shutdown, ShutdownType,
-    SocketCookie, SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
+    SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
     SocketMapAddrSpec, SocketMapConflictPolicy, SocketMapStateSpec, SocketStateEntry,
     SocketWritableListener, SocketZonedAddrExt as _, StrictlyZonedAddr,
 };
@@ -1219,10 +1219,10 @@ where
     S::SocketId<Ipv4, D>: SocketMetadata<CC>,
     S::SocketId<Ipv6, D>: SocketMetadata<CC>,
 {
-    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+    fn socket_info(&self, core_ctx: &mut CC) -> netstack3_base::socket::SocketInfo {
         match self {
-            EitherIpSocket::V4(id) => id.socket_cookie(core_ctx),
-            EitherIpSocket::V6(id) => id.socket_cookie(core_ctx),
+            EitherIpSocket::V4(id) => id.socket_info(core_ctx),
+            EitherIpSocket::V6(id) => id.socket_info(core_ctx),
         }
     }
     fn marks(&self, core_ctx: &mut CC) -> Marks {

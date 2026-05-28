@@ -12,7 +12,6 @@ use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::num::NonZeroU16;
 use core::ops::RangeInclusive;
-use netstack3_base::socket::SocketCookie;
 
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
@@ -24,7 +23,7 @@ use packet_formats::ip::IpExt;
 
 use crate::actions::MarkAction;
 use crate::conntrack::{self, ConnectionDirection};
-use crate::context::FilterBindingsTypes;
+use crate::context::{FilterBindingsTypes, SocketInfo};
 use crate::logic::FilterTimerId;
 use crate::logic::nat::NatConfig;
 use crate::matchers::PacketMatcher;
@@ -587,8 +586,8 @@ pub trait FilterIpMetadata<I: IpExt, A, BT: FilterBindingsTypes>: FilterPacketMe
 pub trait FilterPacketMetadata {
     /// Applies the mark action to the metadata.
     fn apply_mark_action(&mut self, domain: MarkDomain, action: MarkAction);
-    /// Socket cookie.
-    fn cookie(&self) -> Option<SocketCookie>;
+    /// Socket info.
+    fn socket_info(&self) -> Option<SocketInfo>;
     /// Socket marks.
     fn marks(&self) -> &Marks;
 }
@@ -619,7 +618,7 @@ impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePa
 impl FilterPacketMetadata for FakePacketMetadata {
     fn apply_mark_action(&mut self, _domain: MarkDomain, _action: MarkAction) {}
 
-    fn cookie(&self) -> Option<SocketCookie> {
+    fn socket_info(&self) -> Option<SocketInfo> {
         None
     }
 

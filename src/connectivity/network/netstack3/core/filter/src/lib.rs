@@ -36,9 +36,9 @@ pub use conntrack::{
     WeakConnection as WeakConntrackConnection, WeakConnectionError,
 };
 pub use context::{
-    FilterBindingsContext, FilterBindingsTypes, FilterContext, FilterIpContext, NatContext,
-    SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
-    SocketOpsFilterBindingContext,
+    EitherIpProto, FilterBindingsContext, FilterBindingsTypes, FilterContext, FilterIpContext,
+    Marks, NatContext, SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult,
+    SocketOpsFilter, SocketOpsFilterBindingContext,
 };
 pub use logic::{
     Accept, DropOrReject, DropPacket, FilterHandler, FilterImpl, FilterTimerId, IngressStopReason,
@@ -66,10 +66,9 @@ pub mod testutil {
     use packet::FragmentedByteSlice;
 
     use crate::{
-        FilterIpExt, IpPacket, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
+        FilterIpExt, IpPacket, Marks, SocketEgressFilterResult, SocketInfo,
+        SocketIngressFilterResult, SocketOpsFilter,
     };
-    use netstack3_base::Marks;
-    use netstack3_base::socket::SocketCookie;
 
     #[cfg(test)]
     pub(crate) trait TestIpExt:
@@ -91,7 +90,7 @@ pub mod testutil {
             &self,
             _packet: &P,
             _device: &D,
-            _cookie: SocketCookie,
+            _socket_info: SocketInfo,
             _marks: &Marks,
         ) -> SocketEgressFilterResult {
             SocketEgressFilterResult::Pass { congestion: false }
@@ -102,7 +101,7 @@ pub mod testutil {
             _ip_version: IpVersion,
             _packet: FragmentedByteSlice<'_, &[u8]>,
             _device: &D,
-            _cookie: SocketCookie,
+            _socket_info: SocketInfo,
             _marks: &Marks,
         ) -> SocketIngressFilterResult {
             SocketIngressFilterResult::Accept

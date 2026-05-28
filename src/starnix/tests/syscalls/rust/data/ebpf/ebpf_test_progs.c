@@ -104,10 +104,10 @@ int skb_test_prog(struct __sk_buff* skb) {
       .ether_type = skb->protocol,
       .ifindex = skb->ifindex,
   };
-  if (fullsock) {
-    result.sk_type = fullsock->type;
-    result.sk_protocol = fullsock->protocol;
-    result.sk_family = fullsock->family;
+  if (skb->sk) {
+    result.sk_type = skb->sk->type;
+    result.sk_protocol = skb->sk->protocol;
+    result.sk_family = skb->sk->family;
   }
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 

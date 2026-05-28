@@ -59,7 +59,7 @@ mod integration;
 
 use derivative::Derivative;
 use net_types::ip::{Ip, Ipv4, Ipv6};
-use netstack3_base::socket::SocketCookie;
+use netstack3_base::socket::SocketInfo;
 use netstack3_base::{CoreTxMetadataContext, HandleableTimer, TimerHandler, TxMetadata};
 use netstack3_datagram as datagram;
 use netstack3_device::WeakDeviceId;
@@ -241,28 +241,28 @@ impl<I: IpExt, L, BT: BindingsTypes>
 }
 
 impl<BT: BindingsTypes> TxMetadata for CoreTxMetadata<BT> {
-    fn socket_cookie(&self) -> Option<SocketCookie> {
+    fn socket_info(&self) -> Option<SocketInfo> {
         let CoreTxMetadata(inner) = self;
         match inner {
             // TODO(https://fxbug.dev/417224088): Handle Raw and Packet sockets.
             TxMetadataInner::None => None,
             TxMetadataInner::Tcpv4(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
             TxMetadataInner::Tcpv6(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
             TxMetadataInner::Udpv4(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
             TxMetadataInner::Udpv6(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
             TxMetadataInner::Icmpv4(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
             TxMetadataInner::Icmpv6(tx_metadata) => {
-                tx_metadata.socket().upgrade().map(|s| s.socket_cookie())
+                tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
         }
     }

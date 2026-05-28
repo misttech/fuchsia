@@ -140,14 +140,14 @@ pub mod socket {
         ListenerIpAddr, SocketIpAddr, StrictlyZonedAddr,
     };
     pub use base::{
-        AddrEntry, AddrVec, Bound, BoundSocketMap, DualStackIpExt, DualStackTuple, EitherStack,
-        FoundSockets, IncompatibleError, InsertError, Inserter, Listener, ListenerAddrInfo,
-        MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
+        AddrEntry, AddrVec, Bound, BoundSocketMap, DualStackIpExt, DualStackTuple, EitherIpProto,
+        EitherStack, FoundSockets, IncompatibleError, InsertError, Inserter, Listener,
+        ListenerAddrInfo, MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
         SetDualStackEnabledError, SharingDomain, Shutdown, ShutdownType, SocketAddrType,
-        SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddrExt, SocketIpExt,
-        SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapAddrStateUpdateSharingSpec,
-        SocketMapConflictPolicy, SocketMapStateSpec, SocketMapUpdateSharingPolicy,
-        SocketStateEntry, SocketZonedAddrExt, UpdateSharingError,
+        SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketInfo, SocketIpAddrExt,
+        SocketIpExt, SocketMapAddrSpec, SocketMapAddrStateSpec,
+        SocketMapAddrStateUpdateSharingSpec, SocketMapConflictPolicy, SocketMapStateSpec,
+        SocketMapUpdateSharingPolicy, SocketStateEntry, SocketZonedAddrExt, UpdateSharingError,
     };
     pub use cookie::SocketCookie;
     pub use sndbuf::{

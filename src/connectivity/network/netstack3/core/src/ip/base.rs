@@ -9,7 +9,7 @@ use lock_order::relation::LockBefore;
 use log::trace;
 use net_types::ip::{Ip, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
 use net_types::{MulticastAddr, SpecifiedAddr};
-use netstack3_base::socket::{SocketCookie, SocketIpAddr};
+use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{
     CounterContext, FrameDestination, Icmpv4ErrorCode, Icmpv6ErrorCode, Marks,
     ResourceCounterContext, TokenBucket, WeakDeviceIdentifier,
@@ -440,10 +440,10 @@ where
     DualStackUdpSocketId<I, D, BT>: SocketMetadata<CC>,
     DualStackTcpSocketId<I, D, BT>: SocketMetadata<CC>,
 {
-    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+    fn socket_info(&self, core_ctx: &mut CC) -> netstack3_base::socket::SocketInfo {
         match self {
-            Self::UdpSocket(s) => s.socket_cookie(core_ctx),
-            Self::TcpSocket(s) => s.socket_cookie(core_ctx),
+            Self::UdpSocket(s) => s.socket_info(core_ctx),
+            Self::TcpSocket(s) => s.socket_info(core_ctx),
         }
     }
 

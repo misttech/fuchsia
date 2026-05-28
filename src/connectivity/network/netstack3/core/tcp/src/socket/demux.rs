@@ -14,7 +14,7 @@ use net_types::ip::Ip;
 use net_types::{SpecifiedAddr, Witness as _};
 use netstack3_base::socket::{
     AddrIsMappedError, AddrVec, AddrVecIter, ConnAddr, ConnIpAddr, InsertError, IpAddrVec,
-    ListenerAddr, ListenerIpAddr, SocketCookie, SocketIpAddr, SocketIpAddrExt as _,
+    ListenerAddr, ListenerIpAddr, SocketIpAddr, SocketIpAddrExt as _,
 };
 use netstack3_base::{
     BidirectionalConverter as _, Control, CounterContext, CtxPair, EitherDeviceId, IpDeviceAddr,
@@ -623,7 +623,7 @@ where
         match run_socket_ingress_filter(
             bindings_ctx,
             incoming_device,
-            conn_id.socket_cookie(),
+            conn_id.socket_info(),
             socket_options,
             header_info,
             incoming.tcp_segment(),
@@ -1029,7 +1029,7 @@ where
     match run_socket_ingress_filter(
         bindings_ctx,
         incoming_device,
-        listener_id.socket_cookie(),
+        listener_id.socket_info(),
         &socket_state.socket_options,
         header_info,
         incoming.tcp_segment(),
@@ -1301,7 +1301,7 @@ where
 fn run_socket_ingress_filter<I, BC, D>(
     bindings_ctx: &BC,
     incoming_device: &D,
-    socket_cookie: SocketCookie,
+    socket_info: netstack3_base::socket::SocketInfo,
     socket_options: &SocketOptions,
     header_info: &impl IpHeaderInfo<I>,
     tcp_segment: &TcpSegment<&'_ [u8]>,
@@ -1320,7 +1320,7 @@ where
         I::VERSION,
         data,
         incoming_device,
-        socket_cookie,
+        socket_info,
         &socket_options.ip_options.marks,
     )
 }

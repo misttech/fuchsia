@@ -900,7 +900,6 @@ mod tests {
     use derivative::Derivative;
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
-    use netstack3_base::socket::SocketCookie;
     use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
     use netstack3_base::{
         AddressMatcher, AddressMatcherType, AssignedAddrIpExt, InterfaceMatcher, MarkDomain, Marks,
@@ -1001,7 +1000,7 @@ mod tests {
             action.apply(self.marks.get_mut(domain))
         }
 
-        fn cookie(&self) -> Option<SocketCookie> {
+        fn socket_info(&self) -> Option<crate::SocketInfo> {
             None
         }
 

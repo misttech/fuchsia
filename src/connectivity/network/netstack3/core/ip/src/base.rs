@@ -25,7 +25,7 @@ use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
     SpecifiedAddr, SpecifiedAddress as _, Witness,
 };
-use netstack3_base::socket::{EitherStack, SocketCookie, SocketIpAddr, SocketIpAddrExt as _};
+use netstack3_base::socket::{EitherStack, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
@@ -41,8 +41,8 @@ use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
     FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IpPacket, MarkAction,
-    MaybeTransportPacket as _, RejectType, TransportPacketSerializer, Tuple, WeakConnectionError,
-    WeakConntrackConnection,
+    MaybeTransportPacket as _, RejectType, SocketInfo, TransportPacketSerializer, Tuple,
+    WeakConnectionError, WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
 use packet::{
@@ -156,10 +156,8 @@ pub struct IpLayerPacketMetadata<
     /// Marks attached to the packet that can be acted upon by routing/filtering.
     marks: Marks,
 
-    /// Socket cookie of the associate socket if any. The value should be
-    /// passed to eBPF programs that process the packet, but it should not be
-    /// used as a unique identifier of the resource inside the netstack.
-    socket_cookie: Option<SocketCookie>,
+    /// Socket info of the associate socket if any.
+    socket_info: Option<SocketInfo>,
 
     #[cfg(debug_assertions)]
     drop_check: IpLayerPacketMetadataDropCheck,
@@ -249,13 +247,13 @@ impl<
             }
         };
 
-        let socket_cookie = tx_metadata.socket_cookie();
+        let socket_info = tx_metadata.socket_info();
 
         Self {
             conntrack_connection_and_direction,
             tx_metadata,
             marks,
-            socket_cookie,
+            socket_info,
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
@@ -266,12 +264,12 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
     IpLayerPacketMetadata<I, A, BT>
 {
     pub(crate) fn from_tx_metadata_and_marks(tx_metadata: BT::TxMetadata, marks: Marks) -> Self {
-        let socket_cookie = tx_metadata.socket_cookie();
+        let socket_info = tx_metadata.socket_info();
         Self {
             conntrack_connection_and_direction: None,
             tx_metadata,
             marks,
-            socket_cookie,
+            socket_info,
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
@@ -283,13 +281,13 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
         Option<(ConntrackConnection<I, A, BT>, ConnectionDirection)>,
         BT::TxMetadata,
         Marks,
-        Option<SocketCookie>,
+        Option<SocketInfo>,
     ) {
         let Self {
             tx_metadata,
             marks,
             conntrack_connection_and_direction,
-            socket_cookie,
+            socket_info,
             #[cfg(debug_assertions)]
             mut drop_check,
         } = self;
@@ -297,7 +295,7 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
         {
             drop_check.okay_to_drop = true;
         }
-        (conntrack_connection_and_direction, tx_metadata, marks, socket_cookie)
+        (conntrack_connection_and_direction, tx_metadata, marks, socket_info)
     }
 
     /// Acknowledge that it's okay to drop this packet metadata.
@@ -359,8 +357,8 @@ impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindin
         action.apply(self.marks.get_mut(domain))
     }
 
-    fn cookie(&self) -> Option<SocketCookie> {
-        self.socket_cookie.clone()
+    fn socket_info(&self) -> Option<SocketInfo> {
+        self.socket_info.clone()
     }
 
     fn marks(&self) -> &Marks {
@@ -1719,10 +1717,10 @@ pub trait SocketMetadata<CC>
 where
     CC: ?Sized,
 {
-    /// Returns Socket cookie for the socket.
-    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie;
+    /// Returns the SocketInfo for the socket.
+    fn socket_info(&self, core_ctx: &mut CC) -> SocketInfo;
     /// Returns Socket Marks.
-    fn marks(&self, core_ctx: &mut CC) -> Marks;
+    fn marks(&self, _core_ctx: &mut CC) -> Marks;
 }
 
 impl<T, O, CC> SocketMetadata<CC> for EitherStack<T, O>
@@ -1731,10 +1729,10 @@ where
     T: SocketMetadata<CC>,
     O: SocketMetadata<CC>,
 {
-    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+    fn socket_info(&self, core_ctx: &mut CC) -> SocketInfo {
         match self {
-            Self::ThisStack(t) => t.socket_cookie(core_ctx),
-            Self::OtherStack(o) => o.socket_cookie(core_ctx),
+            Self::ThisStack(t) => t.socket_info(core_ctx),
+            Self::OtherStack(o) => o.socket_info(core_ctx),
         }
     }
 
@@ -2512,7 +2510,7 @@ impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
         BC: IpLayerBindingsContext<I, CC::DeviceId>,
         CC: IpLayerIngressContext<I, BC>,
     {
-        packet_metadata.socket_cookie = Some(self.socket.socket_cookie(core_ctx));
+        packet_metadata.socket_info = Some(self.socket.socket_info(core_ctx));
         for mark in BC::marks_to_set_on_ingress() {
             *packet_metadata.marks.get_mut(*mark) = self.socket.marks(core_ctx).get(*mark).clone();
         }

@@ -108,12 +108,12 @@ pub mod filter {
     mod integration;
 
     pub use netstack3_filter::{
-        Action, BindingsPacketMatcher, FilterApi, FilterBindingsContext, FilterBindingsTypes,
-        FilterIpExt, FilterIpPacket, FilterPacketMetadata, Hook, Interfaces, IpPacket, IpRoutines,
-        MarkAction, NatRoutines, PacketMatcher, ProofOfEgressCheck, RejectType, Routine, Routines,
-        Rule, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
-        SocketOpsFilterBindingContext, TransparentProxy, TransportProtocolMatcher, Tuple,
-        UninstalledRoutine, ValidationError,
+        Action, BindingsPacketMatcher, EitherIpProto, FilterApi, FilterBindingsContext,
+        FilterBindingsTypes, FilterIpExt, FilterIpPacket, FilterPacketMetadata, Hook, Interfaces,
+        IpPacket, IpRoutines, MarkAction, NatRoutines, PacketMatcher, ProofOfEgressCheck,
+        RejectType, Routine, Routines, Rule, SocketEgressFilterResult, SocketInfo,
+        SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext,
+        TransparentProxy, TransportProtocolMatcher, Tuple, UninstalledRoutine, ValidationError,
     };
 }
 

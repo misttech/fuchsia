@@ -20,11 +20,11 @@ use log::{debug, trace};
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, IpVersion, IpVersionMarker, Ipv4, Ipv6};
 use net_types::{MulticastAddr, SpecifiedAddr, Witness, ZonedAddr};
 use netstack3_base::socket::{
-    AddrEntry, AddrIsMappedError, AddrVec, Bound, ConnAddr, ConnInfoAddr, ConnIpAddr, FoundSockets,
-    IncompatibleError, InsertError, Inserter, ListenerAddr, ListenerAddrInfo, ListenerIpAddr,
-    MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
-    SetDualStackEnabledError, SharingDomain, ShutdownType, SocketAddrType, SocketCookie,
-    SocketIpAddr, SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapConflictPolicy,
+    AddrEntry, AddrIsMappedError, AddrVec, Bound, ConnAddr, ConnInfoAddr, ConnIpAddr,
+    EitherIpProto, FoundSockets, IncompatibleError, InsertError, Inserter, ListenerAddr,
+    ListenerAddrInfo, ListenerIpAddr, MaybeDualStack, NotDualStackCapableError, RemoveResult,
+    ReusePortOption, SetDualStackEnabledError, SharingDomain, ShutdownType, SocketAddrType,
+    SocketCookie, SocketIpAddr, SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapConflictPolicy,
     SocketMapStateSpec, SocketWritableListener,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
@@ -67,7 +67,7 @@ use netstack3_trace::trace_duration;
 use packet::{
     BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, ParsablePacket, ParseBuffer,
 };
-use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt};
+use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt, Ipv4Proto, Ipv6Proto};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
 use thiserror::Error;
 
@@ -973,6 +973,18 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> UdpSocketId<I, D, 
         let Self(inner) = self;
         SocketCookie::new(inner.resource_token())
     }
+
+    /// Returns `SocketInfo` for the socket.
+    pub fn socket_info(&self) -> netstack3_base::socket::SocketInfo {
+        netstack3_base::socket::SocketInfo {
+            proto: I::map_ip(
+                (),
+                |()| EitherIpProto::V4(Ipv4Proto::Proto(IpProto::Udp)),
+                |()| EitherIpProto::V6(Ipv6Proto::Proto(IpProto::Udp)),
+            ),
+            cookie: self.socket_cookie(),
+        }
+    }
 }
 
 impl<CC, I, BT> SocketMetadata<CC> for UdpSocketId<I, CC::WeakDeviceId, BT>
@@ -981,8 +993,8 @@ where
     I: IpExt,
     BT: UdpBindingsContext<I, CC::DeviceId>,
 {
-    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
-        self.socket_cookie()
+    fn socket_info(&self, _core_ctx: &mut CC) -> netstack3_base::socket::SocketInfo {
+        self.socket_info()
     }
 
     fn marks(&self, core_ctx: &mut CC) -> Marks {
@@ -1651,7 +1663,7 @@ fn try_deliver<
             WireI::VERSION,
             data,
             device_id,
-            id.socket_cookie(),
+            id.socket_info(),
             state.options().marks(),
         );
 

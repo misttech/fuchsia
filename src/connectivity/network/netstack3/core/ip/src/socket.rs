@@ -15,7 +15,7 @@ use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AnyDevice, CounterContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId, InstantContext,
     InterfaceProperties, IpDeviceAddr, IpExt, Marks, Mms, NetworkSerializationContext,
-    SendFrameErrorReason, StrongDeviceIdentifier, TxMetadata as _, TxMetadataBindingsTypes,
+    SendFrameErrorReason, StrongDeviceIdentifier, TxMetadata, TxMetadataBindingsTypes,
     WeakDeviceIdentifier,
 };
 use netstack3_filter::{
@@ -1063,11 +1063,11 @@ where
         InternalForwarding::NotUsed => {}
     }
 
-    if let Some(socket_cookie) = packet_metadata.tx_metadata().socket_cookie() {
+    if let Some(socket_info) = packet_metadata.tx_metadata().socket_info() {
         let egress_filter_result = bindings_ctx.socket_ops_filter().on_egress(
             &packet,
             &egress_device,
-            socket_cookie,
+            socket_info,
             packet_metadata.marks(),
         );
 

@@ -42,10 +42,10 @@ use net_types::{
 };
 use netstack3_base::socket::{
     self, AddrIsMappedError, AddrVec, Bound, ConnAddr, ConnIpAddr, DualStackListenerIpAddr,
-    DualStackLocalIp, DualStackRemoteIp, DualStackTuple, EitherStack, IncompatibleError,
-    InsertError, Inserter, ListenerAddr, ListenerAddrInfo, ListenerIpAddr, MaybeDualStack,
-    NotDualStackCapableError, RemoveResult, SetDualStackEnabledError, ShutdownType, SocketCookie,
-    SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
+    DualStackLocalIp, DualStackRemoteIp, DualStackTuple, EitherIpProto, EitherStack,
+    IncompatibleError, InsertError, Inserter, ListenerAddr, ListenerAddrInfo, ListenerIpAddr,
+    MaybeDualStack, NotDualStackCapableError, RemoveResult, SetDualStackEnabledError, ShutdownType,
+    SocketCookie, SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
     SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapAddrStateUpdateSharingSpec,
     SocketMapConflictPolicy, SocketMapStateSpec, SocketMapUpdateSharingPolicy,
     SocketZonedAddrExt as _, UpdateSharingError,
@@ -73,7 +73,7 @@ use netstack3_ip::{
     self as ip, BaseTransportIpContext, IpLayerIpExt, SocketMetadata, TransportIpContext,
 };
 use netstack3_trace::{TraceResourceId, trace_duration};
-use packet_formats::ip::IpProto;
+use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
 use smallvec::{SmallVec, smallvec};
 use thiserror::Error;
 
@@ -1942,6 +1942,19 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
         SocketCookie::new(inner.resource_token())
     }
 
+    /// Returns `SocketInfo` for the socket.
+    pub fn socket_info(&self) -> netstack3_base::socket::SocketInfo {
+        let Self(inner) = self;
+        netstack3_base::socket::SocketInfo {
+            proto: I::map_ip(
+                (),
+                |()| EitherIpProto::V4(Ipv4Proto::Proto(IpProto::Tcp)),
+                |()| EitherIpProto::V6(Ipv6Proto::Proto(IpProto::Tcp)),
+            ),
+            cookie: SocketCookie::new(inner.resource_token()),
+        }
+    }
+
     pub(crate) fn either(&self) -> EitherTcpSocketId<'_, D, BT> {
         I::map_ip_in(self, EitherTcpSocketId::V4, EitherTcpSocketId::V6)
     }
@@ -1981,8 +1994,8 @@ where
     I: DualStackIpExt,
     BT: TcpBindingsTypes,
 {
-    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
-        self.socket_cookie()
+    fn socket_info(&self, _core_ctx: &mut CC) -> netstack3_base::socket::SocketInfo {
+        self.socket_info()
     }
 
     fn marks(&self, core_ctx: &mut CC) -> Marks {

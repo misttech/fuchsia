@@ -12,7 +12,7 @@ use core::marker::PhantomData;
 use core::num::NonZeroU16;
 
 use derivative::Derivative;
-use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersionMarker, Ipv4, Ipv6};
+use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, IpVersionMarker, Ipv4, Ipv6};
 use net_types::{
     AddrAndZone, MulticastAddress, ScopeableAddress, SpecifiedAddr, Witness, ZonedAddr,
 };
@@ -27,9 +27,11 @@ use crate::device::{
 };
 use crate::error::{ExistsError, NotFoundError, ZonedAddressError};
 use crate::ip::BroadcastIpExt;
+use crate::socket::SocketCookie;
 use crate::socket::address::{
     AddrVecIter, ConnAddr, ConnIpAddr, ListenerAddr, ListenerIpAddr, SocketIpAddr,
 };
+use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
 
 /// A dual stack IP extention trait that provides the `OtherVersion` associated
 /// type.
@@ -162,6 +164,58 @@ mod socket_ip_ext_test {
         let _addr = SocketIpAddr::new(I::LOOPBACK_ADDRESS_AS_SOCKET_IP_ADDR.addr())
             .expect("loopback address should be a valid SocketIpAddr");
     }
+}
+
+/// An IP version-specific protocol.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, GenericOverIp)]
+#[generic_over_ip()]
+pub enum EitherIpProto {
+    /// An IPv4 protocol.
+    V4(Ipv4Proto),
+    /// An IPv6 protocol.
+    V6(Ipv6Proto),
+}
+
+impl EitherIpProto {
+    /// Returns the IP version of the protocol.
+    pub fn ip_version(&self) -> IpVersion {
+        match self {
+            Self::V4(_) => IpVersion::V4,
+            Self::V6(_) => IpVersion::V6,
+        }
+    }
+
+    /// Returns the transport protocol if it is standard.
+    pub fn ip_proto(&self) -> Option<IpProto> {
+        match self {
+            Self::V4(p) => match p {
+                Ipv4Proto::Proto(proto) => Some(*proto),
+                _ => None,
+            },
+            Self::V6(p) => match p {
+                Ipv6Proto::Proto(proto) => Some(*proto),
+                _ => None,
+            },
+        }
+    }
+
+    /// Returns the raw protocol number as a u8.
+    pub fn u8_value(&self) -> u8 {
+        match self {
+            Self::V4(p) => (*p).into(),
+            Self::V6(p) => (*p).into(),
+        }
+    }
+}
+
+/// Information about a socket passed to a socket operations filter.
+#[derive(Clone, Debug)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq))]
+pub struct SocketInfo {
+    /// The IP-version-specific transport protocol.
+    pub proto: EitherIpProto,
+    /// The socket cookie.
+    pub cookie: SocketCookie,
 }
 
 /// State belonging to either IP stack.

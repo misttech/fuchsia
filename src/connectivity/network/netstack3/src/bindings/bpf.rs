@@ -25,15 +25,16 @@ use net_types::ip::IpVersion;
 use netstack3_core::NetworkSerializationContext;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
-    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, FilterPacketMetadata, Interfaces,
-    SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
+    BindingsPacketMatcher, EitherIpProto, FilterIpExt, FilterIpPacket, FilterPacketMetadata,
+    Interfaces, SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult, SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, Marks};
-use netstack3_core::socket::SocketCookie;
+
 use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
 use packet::{FragmentedByteSlice, PacketConstraints};
 use packet_formats::ethernet::EtherType;
+use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
 use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
@@ -65,17 +66,33 @@ pub struct BpfSock {
 }
 
 impl BpfSock {
-    pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
+    pub fn new(socket_info: SocketInfo, marks: &Marks) -> Option<Self> {
+        let type_ = match socket_info.proto {
+            EitherIpProto::V4(Ipv4Proto::Proto(IpProto::Udp))
+            | EitherIpProto::V6(Ipv6Proto::Proto(IpProto::Udp)) => libc::SOCK_DGRAM,
+            EitherIpProto::V4(Ipv4Proto::Proto(IpProto::Tcp))
+            | EitherIpProto::V6(Ipv6Proto::Proto(IpProto::Tcp)) => libc::SOCK_STREAM,
+            EitherIpProto::V4(Ipv4Proto::Icmp) | EitherIpProto::V6(Ipv6Proto::Icmpv6) => {
+                libc::SOCK_RAW
+            }
+            _ => 0,
+        };
+        let family = match socket_info.proto.ip_version() {
+            IpVersion::V4 => libc::AF_INET,
+            IpVersion::V6 => libc::AF_INET6,
+        };
+        let socket_cookie = socket_info.cookie.export_value();
         let Mark(socket_uid) = marks.get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
-        Self { value: bpf_sock::default(), socket_cookie: socket_cookie.export_value(), socket_uid }
-    }
-
-    pub fn from_packet_metadata(packet_metadata: &impl FilterPacketMetadata) -> Self {
-        let socket_cookie =
-            packet_metadata.cookie().map(|cookie| cookie.export_value()).unwrap_or(0);
-        let Mark(socket_uid) =
-            packet_metadata.marks().get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
-        Self { value: bpf_sock::default(), socket_cookie, socket_uid }
+        Some(Self {
+            value: bpf_sock {
+                family: family as u32,
+                type_: type_ as u32,
+                protocol: socket_info.proto.u8_value() as u32,
+                ..Default::default()
+            },
+            socket_cookie,
+            socket_uid,
+        })
     }
 }
 
@@ -451,7 +468,8 @@ where
         trace_duration!(c"ebpf::packet_matcher");
 
         let marks = packet_metadata.marks();
-        let bpf_sock = BpfSock::from_packet_metadata(packet_metadata);
+        let socket_info = packet_metadata.socket_info();
+        let bpf_sock = socket_info.and_then(|info| BpfSock::new(info, &marks));
 
         // `ifindex` field is set to either ingress or ingress interface index
         // depending on the context. When executing forwarding hooks we have
@@ -464,9 +482,9 @@ where
         let sk_buff = SkBuff::<'_, SocketFilterProgram>::from_ip_packet(
             packet,
             ifindex,
-            marks,
+            &marks,
             &mut data_buffer,
-            Some(&bpf_sock),
+            bpf_sock.as_ref(),
         );
 
         match self.run(sk_buff) {
@@ -821,7 +839,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         &self,
         packet: &P,
         device: &D,
-        socket_cookie: SocketCookie,
+        socket_info: SocketInfo,
         marks: &Marks,
     ) -> SocketEgressFilterResult {
         let state = self.state.read();
@@ -831,14 +849,14 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         trace_duration!("ebpf::egress");
 
-        let bpf_sock = BpfSock::new(socket_cookie, marks);
+        let bpf_sock = BpfSock::new(socket_info, marks);
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
         let sk_buff = SkBuff::from_ip_packet(
             packet,
             device.get_ifindex(),
             marks,
             &mut data_buffer,
-            Some(&bpf_sock),
+            bpf_sock.as_ref(),
         );
 
         let result = prog.run(sk_buff);
@@ -862,7 +880,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         ip_version: IpVersion,
         packet: FragmentedByteSlice<'_, &[u8]>,
         device: &D,
-        socket_cookie: SocketCookie,
+        socket_info: SocketInfo,
         marks: &Marks,
     ) -> SocketIngressFilterResult {
         let state = self.state.read();
@@ -872,7 +890,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         trace_duration!("ebpf::ingress");
 
-        let bpf_sock = BpfSock::new(socket_cookie, marks);
+        let bpf_sock = BpfSock::new(socket_info, marks);
         let ethertype = EtherType::from_ip_version(ip_version);
         let mark = get_linux_packet_mark(marks);
 
@@ -890,7 +908,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             &data,
             /*ip_offset=*/ 0,
             /*default_offset=*/ 0,
-            Some(&bpf_sock),
+            bpf_sock.as_ref(),
         );
 
         let result = prog.run(skb);
@@ -920,6 +938,7 @@ mod tests {
     use net_types::Witness;
     use netstack3_core::NetworkSerializationContext;
     use netstack3_core::ip::Mark;
+    use netstack3_core::socket::SocketCookie;
     use netstack3_core::sync::ResourceTokenValue;
     use netstack3_core::testutil::{self, FakeDeviceId, TestIpExt};
     use packet::{InnerPacketBuilder, NestablePacketBuilder, PacketConstraints, Serializer};
@@ -1153,6 +1172,14 @@ mod tests {
 
         let socket_resource_token = ResourceTokenValue::default();
         let socket_cookie = SocketCookie::new(socket_resource_token.token());
+        let socket_info = SocketInfo {
+            proto: I::map_ip(
+                (),
+                |()| EitherIpProto::V4(Ipv4Proto::Proto(IpProto::Udp)),
+                |()| EitherIpProto::V6(Ipv6Proto::Proto(IpProto::Udp)),
+            ),
+            cookie: socket_cookie,
+        };
 
         let mut marks = Marks::default();
         *marks.get_mut(fnet::MARK_DOMAIN_SOCKET_UID.into_core()) = Mark(Some(UID));
@@ -1167,7 +1194,7 @@ mod tests {
                     IpProto::Udp.into(),
                     &mut udp_packet,
                 );
-                let result = (&manager).on_egress(&packet, &device, socket_cookie, &marks);
+                let result = (&manager).on_egress(&packet, &device, socket_info, &marks);
                 assert!(result == SocketEgressFilterResult::Pass { congestion: false });
             }
             AttachType::CgroupInetIngress => {
@@ -1192,7 +1219,7 @@ mod tests {
                     I::VERSION,
                     FragmentedByteSlice::new(&mut parts),
                     &device,
-                    socket_cookie,
+                    socket_info,
                     &marks,
                 );
 

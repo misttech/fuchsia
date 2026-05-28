@@ -14,7 +14,7 @@ use packet::{BufferMut, SerializeError};
 use thiserror::Error;
 
 use crate::error::ErrorAndSerializer;
-use crate::socket::SocketCookie;
+use crate::socket::SocketInfo;
 use crate::{NetworkParsingContext, NetworkSerializer};
 
 /// A context for receiving frames.
@@ -249,10 +249,9 @@ impl<D, M, I: Ip> RecvIpFrameMeta<D, M, I> {
 /// The `Default` impl yields the default, i.e. unspecified, metadata
 /// instance.
 pub trait TxMetadata: Default + Debug + Send + Sync + 'static {
-    /// Returns [`SocketCookie`] for the socket associate with the packet.
-    /// `None` is returned if the packet is not associated with a local socket
-    /// or the socket has been destroyed.
-    fn socket_cookie(&self) -> Option<SocketCookie>;
+    /// Returns [`SocketInfo`] for the socket associated with the packet.
+    /// `None` is returned if the packet is not associated with a local socket.
+    fn socket_info(&self) -> Option<SocketInfo>;
 }
 
 /// A trait abstracting TX frame metadata when traversing the stack.
@@ -416,7 +415,7 @@ pub(crate) mod testutil {
     pub struct FakeTxMetadata;
 
     impl TxMetadata for FakeTxMetadata {
-        fn socket_cookie(&self) -> Option<SocketCookie> {
+        fn socket_info(&self) -> Option<SocketInfo> {
             None
         }
     }

@@ -6,9 +6,11 @@ use core::fmt::Debug;
 
 use net_types::SpecifiedAddr;
 use net_types::ip::{IpVersion, Ipv4, Ipv6};
-use netstack3_base::socket::SocketCookie;
+
+pub use netstack3_base::Marks;
+pub use netstack3_base::socket::{EitherIpProto, SocketInfo};
 use netstack3_base::{
-    InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext, Marks,
+    InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext,
     MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
 };
 use packet::FragmentedByteSlice;
@@ -148,7 +150,7 @@ pub trait SocketOpsFilter<D> {
         &self,
         packet: &P,
         device: &D,
-        cookie: SocketCookie,
+        socket_info: SocketInfo,
         marks: &Marks,
     ) -> SocketEgressFilterResult;
 
@@ -158,7 +160,7 @@ pub trait SocketOpsFilter<D> {
         ip_version: IpVersion,
         packet: FragmentedByteSlice<'_, &[u8]>,
         device: &D,
-        cookie: SocketCookie,
+        socket_info: SocketInfo,
         marks: &Marks,
     ) -> SocketIngressFilterResult;
 }

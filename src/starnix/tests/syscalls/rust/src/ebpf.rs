@@ -496,6 +496,13 @@ mod tests {
                 IpFamily::V6 => libc::ETH_P_IPV6 as u16,
             }
         }
+
+        fn family(&self) -> libc::c_int {
+            match self {
+                IpFamily::V4 => libc::AF_INET,
+                IpFamily::V6 => libc::AF_INET6,
+            }
+        }
     }
 
     fn get_loopback_ifindex() -> u32 {
@@ -544,6 +551,9 @@ mod tests {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
         assert_eq!(test_result.ifindex, get_loopback_ifindex());
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, socket_family.family() as u32);
     }
 
     #[test_case(IpFamily::V4, IpFamily::V4; "ipv4")]
@@ -585,6 +595,9 @@ mod tests {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
         assert_eq!(test_result.ifindex, get_loopback_ifindex());
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, socket_family.family() as u32);
     }
 
     #[test]

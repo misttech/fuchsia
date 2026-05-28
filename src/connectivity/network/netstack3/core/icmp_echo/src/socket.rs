@@ -97,6 +97,18 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> IcmpSocketId<
         let Self(inner) = self;
         SocketCookie::new(inner.resource_token())
     }
+
+    /// Returns a `SocketInfo` for this socket.
+    pub fn socket_info(&self) -> netstack3_base::socket::SocketInfo {
+        netstack3_base::socket::SocketInfo {
+            proto: I::map_ip(
+                (),
+                |()| netstack3_base::socket::EitherIpProto::V4(Ipv4Proto::Icmp),
+                |()| netstack3_base::socket::EitherIpProto::V6(Ipv6Proto::Icmpv6),
+            ),
+            cookie: self.socket_cookie(),
+        }
+    }
 }
 
 impl<CC, I, BT> SocketMetadata<CC> for IcmpSocketId<I, CC::WeakDeviceId, BT>
@@ -105,9 +117,10 @@ where
     I: IpExt,
     BT: IcmpEchoBindingsTypes,
 {
-    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
-        self.socket_cookie()
+    fn socket_info(&self, _core_ctx: &mut CC) -> netstack3_base::socket::SocketInfo {
+        self.socket_info()
     }
+
     fn marks(&self, core_ctx: &mut CC) -> Marks {
         core_ctx.with_socket_state(self, |_core_ctx, state| state.options().marks().clone())
     }
