@@ -168,7 +168,11 @@ class EndpointClient : public internal::EndpointClientBase,
   }
 
   void on_fidl_error(fidl::UnbindInfo error) override {
-    zxlogf(ERROR, "on_fidl_error: %s", error.FormatDescription().c_str());
+    if (error.status() == ZX_ERR_CANCELED) {
+      zxlogf(DEBUG, "on_fidl_error: %s", error.FormatDescription().c_str());
+    } else {
+      zxlogf(ERROR, "on_fidl_error: %s", error.FormatDescription().c_str());
+    }
   }
 
  private:
