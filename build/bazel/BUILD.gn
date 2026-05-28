@@ -93,6 +93,7 @@ group("bazel_action_allowlist") {
   visibility = [
     "//boards/arm64:*",
     "//boards/pkvm:*",
+    "//boards/qemu-arm64:*",
     "//boards/vim3:*",
     "//bundles/assembly/*",
     "//products/bringup:*",

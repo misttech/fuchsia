@@ -2,42 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/board_configuration.gni")
-import("//build/info/info.gni")
+import("//build/bazel/assembly/bazel_board_configuration.gni")
 
-board_configuration("qemu-arm64") {
-  partitions_config = "//boards/partitions:qemu-arm64"
-  provided_features = [
-    "fuchsia::bus_pci",
-    "fuchsia::driver_framework_v2_support",
-    "fuchsia::real_time_clock",
-    "fuchsia::usb_host",
+assert(current_toolchain == default_toolchain,
+       "The qemu-arm64 board can only be defined in the default toolchain.")
+assert(current_cpu == "arm64",
+       "The qemu-arm64 board can only be defined in an arm64 toolchain.")
+
+bazel_board_configuration("qemu-arm64") {
+  testonly = true
+  bazel_board_configuration_target = "//boards/qemu-arm64"
+  deps = [ ":qemu-arm64.bazel_input" ]
+}
+
+group("qemu-arm64.bazel_input") {
+  testonly = true
+  deps = [
+    "//boards/arm64:main_bundle.bazel_inputs",
+    "//boards/emulation/virtio:virtio.bazel_inputs",
   ]
-
-  input_bundles = [
-    "//boards/arm64:main_bundle",
-    "//boards/emulation/virtio",
-  ]
-
-  hardware_info = {
-    name = "qemu-arm64"
-    product_id = 1
-    vendor_id = 1
-    revision = 1
-  }
-
-  filesystems = {
-    fvm = {
-      slice_size = 8388608
-      blobfs = {
-        size_checker_maximum_bytes = 5216665600
-      }
-      sparse_output = {
-      }
-    }
-    fxfs = {
-      size_checker_maximum_bytes = 5216665600
-    }
-  }
-  version = build_info_version
 }
