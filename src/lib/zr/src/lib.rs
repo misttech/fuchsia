@@ -6,5 +6,7 @@
 
 mod opaque;
 mod static_assert;
+mod string;
 
 pub use opaque::Opaque;
+pub use string::{parse_usize, to_array};

@@ -31,3 +31,14 @@ KCOUNTER(init_time, "init.target.time.msec")
 static void counters_init(unsigned level) { init_time.Add(current_mono_time() / 1000000LL); }
 
 LK_INIT_HOOK(kcounters, counters_init, LK_INIT_LEVEL_USER - 1)
+
+// Provide access to kcounters to Rust.
+extern "C" {
+void kcounter_add_ffi(const counters::Descriptor* desc, int64_t delta);
+void kcounter_min_ffi(const counters::Descriptor* desc, int64_t value);
+void kcounter_max_ffi(const counters::Descriptor* desc, int64_t value);
+
+void kcounter_add_ffi(const counters::Descriptor* desc, int64_t delta) { Counter(desc).Add(delta); }
+void kcounter_min_ffi(const counters::Descriptor* desc, int64_t value) { Counter(desc).Min(value); }
+void kcounter_max_ffi(const counters::Descriptor* desc, int64_t value) { Counter(desc).Max(value); }
+}

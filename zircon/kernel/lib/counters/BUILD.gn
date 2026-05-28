@@ -5,6 +5,8 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_library.gni")
+import("//zircon/kernel/params.gni")
 
 source_set("counters") {
   visibility = [
@@ -23,6 +25,16 @@ source_set("counters") {
       "//zircon/kernel/lib/special-sections",
     ]
   }
+}
+
+rustc_library("counters-rs") {
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    ":counters",
+    "//src/lib/zr",
+  ]
+  rustenv = [ "SMP_MAX_CPUS=${smp_max_cpus}" ]
 }
 
 library_headers("headers") {

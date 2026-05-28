@@ -10,5 +10,6 @@ rustc_library("zr") {
     "src/lib.rs",
     "src/opaque.rs",
     "src/static_assert.rs",
+    "src/string.rs",
   ]
 }

@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/params.gni")
 
 source_set("top") {
   sources = [
@@ -42,4 +43,11 @@ source_set("top") {
     "//zircon/kernel/phys:zircon-abi-spec",
     "//zircon/kernel/platform",
   ]
+
+  if (enable_rust_in_zircon) {
+    # Temporary dependencies on kernel Rust crates to build them while we are
+    # working on bringing up more functionality in Rust. At the moment, this
+    # code is not actually used by the kernel.
+    deps += [ "//zircon/kernel/lib/counters:counters-rs" ]
+  }
 }
