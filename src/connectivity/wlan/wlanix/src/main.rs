@@ -1177,6 +1177,11 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                 Some(ssid) => match iface.connect_to_network(&ssid[..], credential, bssid).await {
                     Ok(ConnectResult::Success(connected)) => {
                         info!("Connected to requested network");
+                        // Report the requested SSID for OWE transition networks.
+                        let ssid = connected
+                            .ssid_if_owe_transition
+                            .unwrap_or_else(|| connected.bss.ssid.clone());
+
                         telemetry_sender.send(TelemetryEvent::ConnectResult {
                             result: fidl_ieee80211::StatusCode::Success,
                             bss: connected.bss.clone(),
@@ -1187,7 +1192,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                             bssid: Some(connected.bss.bssid.to_array()),
                             // TODO(b/316034688): do we need to keep track of actual id?
                             id: Some(1),
-                            ssid: Some(connected.bss.ssid.clone().into()),
+                            ssid: Some(ssid.into()),
                             ..Default::default()
                         };
                         maybe_run_callback(
@@ -1952,7 +1957,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         .send(Ok(vec![build_nl80211_ack()]))
                         .context("Failed to ack TriggerScan")?;
                     telemetry_sender.send(TelemetryEvent::ScanStart);
-                    match client_iface.trigger_scan(vec![]).await {
+                    match client_iface.trigger_scan(None, vec![]).await {
                         Ok(ScanEnd::Complete) => {
                             info!("Passive scan completed successfully");
                             telemetry_sender.send(TelemetryEvent::ScanResult {

@@ -18,7 +18,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::lock::Mutex as MutexAsync;
 use futures::{FutureExt, TryFutureExt, TryStreamExt, select};
-use ieee80211::{Bssid, MacAddr};
+use ieee80211::{Bssid, MacAddr, Ssid};
 use log::{debug, error, info, warn};
 use state_recorder as power_observability_state_recorder;
 use std::collections::HashMap;
@@ -26,19 +26,25 @@ use std::convert::TryFrom;
 use std::pin::pin;
 use std::sync::Arc;
 use strum_macros::{Display, EnumIter, EnumString};
-use wlan_common::bss::BssDescription;
-use wlan_common::scan::{Compatibility, CompatibilityExt as _};
+use wlan_common::bss::{self, BssDescription};
+use wlan_common::scan::{Compatibility, CompatibilityExt as _, Compatible};
+use wlan_common::security::SecurityDescriptor;
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
 
-// A long amount of time that a scan should be able to finish within. If a scan takes longer than
-// this is indicates something is wrong.
+/// A long amount of time that a scan should be able to finish within. If a scan takes longer than
+/// this is indicates something is wrong.
 const SCAN_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(60);
 const CONNECT_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(30);
 const DISCONNECT_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(10);
 
-// If the scan results are older than this duration when handling a connect request, refresh
-// the scan results.
+/// If the scan results are older than this duration when handling a connect request, refresh
+/// the scan results.
 const SCAN_CACHE_AGE_LIMIT: zx::BootDuration = zx::BootDuration::from_seconds(30);
+
+/// This is the acceptable difference in RSSI to treat two BSS's as similar. It is used for OWE
+/// transition networks to compare the open advertising BSS with the OWE BSS it points to. If the
+/// OWE BSS's signal is at least this close or better, we use it without a scan.
+const RSSI_DELTA_FOR_CLOSE_NETWORK: i8 = 5;
 
 #[async_trait]
 pub(crate) trait IfaceManager: Send + Sync {
@@ -306,6 +312,8 @@ impl IfaceManager for DeviceMonitorIfaceManager {
 pub(crate) struct ConnectSuccess {
     pub bss: Box<BssDescription>,
     pub transaction_stream: fidl_sme::ConnectTransactionEventStream,
+    /// If the connected network is OWE transition, include the SSID to report for the connection.
+    pub ssid_if_owe_transition: Option<Ssid>,
 }
 
 #[derive(Debug)]
@@ -365,7 +373,7 @@ pub(crate) struct ConnectedNetwork {
 #[async_trait]
 pub(crate) trait ClientIface: Sync + Send {
     async fn query(&self) -> Result<fidl_device_service::QueryIfaceResponse, Error>;
-    async fn trigger_scan(&self, channels: Vec<u8>) -> Result<ScanEnd, Error>;
+    async fn trigger_scan(&self, ssid: Option<&Ssid>, channels: Vec<u8>) -> Result<ScanEnd, Error>;
     async fn abort_scan(&self) -> Result<(), Error>;
     fn get_last_scan_results(&self) -> Vec<fidl_sme::ScanResult>;
     async fn connect_to_network(
@@ -557,6 +565,65 @@ impl SmeClientIface {
 
         Ok(())
     }
+
+    async fn find_owe_transition_bss(&self, bss: &BssDescription) -> Result<BssDescription, Error> {
+        // Look for the BSSID and SSID of the BSS's OWE transition IE.
+        let owe_ie = bss.owe_transition().context("Failed to parse OWE transition IE")?;
+
+        // Look for the OWE BSS in the recent scan results where the OWE transition BSS was seen:
+        // look for the BSSID of the transition IE.
+        if let Some(scan_results) = self.last_scan_results.lock().clone() {
+            let found_bss = scan_results.results.into_iter().find_map(|r| {
+                let bss_desc = BssDescription::try_from(r.bss_description).ok()?;
+                let bssid_matches = bss_desc.bssid == owe_ie.bssid;
+                if bssid_matches {
+                    if bss_desc.has_owe_configured() {
+                        Some(bss_desc)
+                    } else {
+                        info!("Matching OWE transition BSSID found but it's not OWE, ignoring");
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            // If the BSS is found and has an RSSI similar or better to the provided BSS, directly
+            // return this BSS and skip the extra scan.
+            if let Some(owe_bss) = found_bss {
+                if owe_bss.rssi_dbm >= bss.rssi_dbm - RSSI_DELTA_FOR_CLOSE_NETWORK {
+                    return Ok(owe_bss);
+                } else {
+                    info!("RSSI of seen OWE BSS not good enough, starting active scan");
+                }
+            } else {
+                info!("OWE BSS not found in scan results, starting active scan");
+            }
+        } else {
+            // We would not expect this to actually happen since the the transition BSS description
+            // should have come from a recent scan.
+            info!("No cached scan results, starting active scan for the OWE BSS");
+        }
+
+        // Perform an active scan to find the best BSS with the SSID specified in the IE
+        // in case there are multiple options. Don't scan for the specific channel from the IE if
+        // wasn't seen in the passive scan to keep it simple.
+        self.trigger_scan(Some(&owe_ie.ssid), vec![]).await?;
+
+        let last_scan_results = self
+            .last_scan_results
+            .lock()
+            .clone()
+            .ok_or_else(|| format_err!("No scan results after active scan"))?;
+
+        find_matching_network_in_scan(
+            &owe_ie.ssid,
+            &None,
+            last_scan_results.results,
+            &self.bss_scorer,
+        )
+        .map(|(bss, _)| bss)
+        .ok_or_else(|| format_err!("OWE BSS not found after active scan"))
+    }
 }
 
 #[async_trait]
@@ -574,9 +641,19 @@ impl ClientIface for SmeClientIface {
             Some(LastScanResults::new(fasync::BootInstant::now(), results));
     }
 
-    async fn trigger_scan(&self, channels: Vec<u8>) -> Result<ScanEnd, Error> {
-        let scan_request =
-            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels });
+    /// Trigger a scan with the given SSID and channels.
+    ///
+    /// If an SSID is provided, an active scan will be performed. Otherwise, a passive scan
+    /// will be performed. If channels to scan on are not provided, the scan will be performed over
+    /// all supported channels.
+    async fn trigger_scan(&self, ssid: Option<&Ssid>, channels: Vec<u8>) -> Result<ScanEnd, Error> {
+        let scan_request = match ssid {
+            Some(ssid) => fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
+                ssids: vec![ssid.to_vec()],
+                channels,
+            }),
+            None => fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels }),
+        };
         let (abort_sender, mut abort_receiver) = oneshot::channel();
         self.scan_abort_signal.lock().replace(abort_sender);
         let mut fut = pin!(
@@ -640,7 +717,7 @@ impl ClientIface for SmeClientIface {
         };
         if refresh_scan {
             info!("Scan results too old or no results available. Starting a connect scan");
-            match self.trigger_scan(vec![]).await {
+            match self.trigger_scan(None, vec![]).await {
                 Ok(ScanEnd::Complete) => info!("Connect scan completed"),
                 Ok(ScanEnd::Cancelled) => bail!("Connect scan was cancelled"),
                 Err(e) => bail!("Connect scan failed: {}", e),
@@ -652,35 +729,25 @@ impl ClientIface for SmeClientIface {
             None => bail!("No scan results available for connect attempt"),
         };
         info!("Checking for network in last scan: {} access points", last_scan_results.len());
-        let mut scan_results = last_scan_results
-            .iter()
-            .filter_map(|r| {
-                let bss_description = BssDescription::try_from(r.bss_description.clone());
-                let compatibility = Compatibility::try_from_fidl(r.compatibility.clone());
-                match (bss_description, compatibility) {
-                    (Ok(bss_description), Ok(compatibility)) if bss_description.ssid == *ssid => {
-                        match compatibility {
-                            Ok(compatible) => match bssid {
-                                Some(bssid) if bss_description.bssid != bssid => None,
-                                _ => Some((bss_description, compatible)),
-                            },
-                            Err(incompatible) => {
-                                error!(
-                                    "BSS ({:?}) is incompatible: {}",
-                                    bss_description.bssid, incompatible,
-                                );
-                                None
-                            }
-                        }
-                    }
-                    _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        scan_results.sort_by_key(|(bss_description, _)| self.bss_scorer.score_bss(bss_description));
+        let chosen_scan =
+            find_matching_network_in_scan(ssid, &bssid, last_scan_results, &self.bss_scorer);
 
-        let (bss_description, compatible) = match scan_results.pop() {
-            Some(scan_result) => scan_result,
+        let (bss_description, compatible, ssid_if_owe_transition) = match chosen_scan {
+            Some((bss_description, compatible)) => {
+                // If the public BSS of an OWE transition network was chosen and OWE is supported,
+                // we need to find the OWE BSS to actually connect to.
+                if bss_description.protection() == bss::Protection::OpenOweTransition
+                    && compatible.mutual_security_protocols().contains(&SecurityDescriptor::Owe)
+                {
+                    if let Ok(bss) = self.find_owe_transition_bss(&bss_description).await {
+                        (bss, compatible, Some(bss_description.ssid))
+                    } else {
+                        bail!("OWE BSS of selected OWE transition network not found.");
+                    }
+                } else {
+                    (bss_description, compatible, None)
+                }
+            }
             None => bail!("Requested network not found"),
         };
 
@@ -732,6 +799,7 @@ impl ClientIface for SmeClientIface {
             Ok(ConnectResult::Success(ConnectSuccess {
                 bss: Box::new(bss_description),
                 transaction_stream: stream,
+                ssid_if_owe_transition,
             }))
         } else {
             self.bss_scorer.report_connect_failure(bssid, &sme_result);
@@ -930,6 +998,41 @@ impl ClientIface for SmeClientIface {
     }
 }
 
+fn find_matching_network_in_scan(
+    ssid: &[u8],
+    bssid: &Option<Bssid>,
+    scan_results: Vec<fidl_sme::ScanResult>,
+    bss_scorer: &BssScorer,
+) -> Option<(BssDescription, Compatible)> {
+    let mut scan_results = scan_results
+        .iter()
+        .filter_map(|r| {
+            let bss_description = BssDescription::try_from(r.bss_description.clone());
+            let compatibility = Compatibility::try_from_fidl(r.compatibility.clone());
+            match (bss_description, compatibility) {
+                (Ok(bss_description), Ok(compatibility)) if bss_description.ssid == *ssid => {
+                    match compatibility {
+                        Ok(compatible) => match bssid {
+                            Some(bssid) if bss_description.bssid != *bssid => None,
+                            _ => Some((bss_description, compatible)),
+                        },
+                        Err(incompatible) => {
+                            error!(
+                                "BSS ({:?}) is incompatible: {}",
+                                bss_description.bssid, incompatible,
+                            );
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    scan_results.sort_by_key(|(bss_description, _)| bss_scorer.score_bss(bss_description));
+    scan_results.pop()
+}
+
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
 /// TODO(https://fxbug.dev/42084621): Function taken from wlancfg. Dedupe later.
 async fn wait_for_connect_result(
@@ -1103,7 +1206,11 @@ pub mod test_utils {
             self.calls.lock().push(ClientIfaceCall::UpdateLastScanResults(results));
         }
 
-        async fn trigger_scan(&self, _channels: Vec<u8>) -> Result<ScanEnd, Error> {
+        async fn trigger_scan(
+            &self,
+            _ssid: Option<&Ssid>,
+            _channels: Vec<u8>,
+        ) -> Result<ScanEnd, Error> {
             self.calls.lock().push(ClientIfaceCall::TriggerScan);
             let scan_end_receiver = self.scan_end_receiver.lock().take();
             match scan_end_receiver {
@@ -1141,6 +1248,7 @@ pub mod test_utils {
                         bssid: bssid.map(|b| b.to_array()).unwrap_or([42, 42, 42, 42, 42, 42]),
                     )),
                     transaction_stream: proxy.take_event_stream(),
+                    ssid_if_owe_transition: None,
                 }))
             } else {
                 Ok(ConnectResult::Fail(ConnectFail {
@@ -1154,6 +1262,7 @@ pub mod test_utils {
                 }))
             }
         }
+
         async fn disconnect(&self) -> Result<(), Error> {
             self.calls.lock().push(ClientIfaceCall::Disconnect);
             Ok(())
@@ -1569,9 +1678,9 @@ mod tests {
     use ieee80211::{MacAddrBytes, Ssid};
     use test_case::test_case;
     use wlan_common::channel::{Cbw, Channel};
-    use wlan_common::fake_fidl_bss_description;
     use wlan_common::test_utils::ExpectWithin;
     use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
+    use wlan_common::{fake_fidl_bss_description, ie};
     #[allow(
         clippy::single_component_path_imports,
         reason = "mass allow for https://fxbug.dev/381896734"
@@ -2144,7 +2253,7 @@ mod tests {
     fn test_trigger_scan_success() {
         let mut test_values = setup_test_manager_with_iface();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
+        let mut scan_fut = test_values.iface.trigger_scan(None, vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2162,7 +2271,7 @@ mod tests {
     #[test]
     fn test_trigger_scan_failure() {
         let mut test_values = setup_test_manager_with_iface();
-        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
+        let mut scan_fut = test_values.iface.trigger_scan(None, vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2174,7 +2283,7 @@ mod tests {
     #[test]
     fn test_trigger_scan_cancelled() {
         let mut test_values = setup_test_manager_with_iface();
-        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
+        let mut scan_fut = test_values.iface.trigger_scan(None, vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2192,7 +2301,7 @@ mod tests {
     fn test_abort_scan() {
         let mut test_values = setup_test_manager_with_iface();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
+        let mut scan_fut = test_values.iface.trigger_scan(None, vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2213,7 +2322,7 @@ mod tests {
     fn test_trigger_scan_timeout() {
         let mut test_values = setup_test_manager_with_iface_and_fake_time();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
+        let mut scan_fut = test_values.iface.trigger_scan(None, vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2351,6 +2460,296 @@ mod tests {
             assert_matches!(test_values.iface.get_connected_network(), Some(n) => n);
         assert_eq!(connected_network.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
         assert_eq!(connected_network.rssi, -30);
+    }
+
+    #[fuchsia::test]
+    fn test_connect_to_owe_transition_network_with_no_scan_needed() {
+        let mut test_values = setup_test_manager_with_iface();
+        let owe_ssid = "owe-ssid";
+        let transition_ssid = "transition-ssid";
+        const OWE_BSSID: [u8; 6] = [2, 2, 2, 2, 2, 2];
+        const OPEN_BSSID: [u8; 6] = [1, 1, 1, 1, 1, 1];
+
+        // 1. Create OWE transition IE for the Open network (points to OWE BSS)
+        let mut open_transition_ie = vec![
+            ie::Id::VENDOR_SPECIFIC.0,
+            (11 + owe_ssid.len()) as u8, // Length of IE
+            0x50,
+            0x6f,
+            0x9a, // 3 bytes of OUI
+            wlan_common::ie::owe_transition::VENDOR_SPECIFIC_TYPE,
+        ];
+        open_transition_ie.extend_from_slice(&OWE_BSSID); // BSSID of OWE BSS
+        open_transition_ie.push(owe_ssid.len() as u8);
+        open_transition_ie.extend_from_slice(owe_ssid.as_bytes());
+
+        // 2. Create OWE transition IE for the OWE BSS (points to Open BSS). This is not
+        // currently used in the connect process but is accurate to what the spec requires.
+        let mut owe_transition_ie = vec![
+            ie::Id::VENDOR_SPECIFIC.0,
+            (11 + transition_ssid.len()) as u8, // Length of IE
+            0x50,
+            0x6f,
+            0x9a, // 3 bytes of OUI
+            wlan_common::ie::owe_transition::VENDOR_SPECIFIC_TYPE,
+        ];
+        owe_transition_ie.extend_from_slice(&OPEN_BSSID); // BSSID of Open BSS
+        owe_transition_ie.push(transition_ssid.len() as u8);
+        owe_transition_ie.extend_from_slice(transition_ssid.as_bytes());
+
+        // This BSS is created as open with the OWE transition IE pointing to the OWE BSS.
+        let transition_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(transition_ssid).unwrap(),
+            bssid: OPEN_BSSID,
+            rssi_dbm: -50,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(open_transition_ie),
+        );
+
+        // This is the BSS description that would show up for the hidden OWE BSS in a passive scan.
+        let hidden_owe_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Owe,
+            ssid: Ssid::try_from("").unwrap(),
+            bssid: OWE_BSSID,
+            rssi_dbm: -40,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(owe_transition_ie.clone()),
+        );
+
+        // Build scan results that contain the transition and OWE BSSs and set the scan cache; the
+        // connect process will use these scan results.
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
+            fasync::BootInstant::now(),
+            vec![
+                fidl_sme::ScanResult {
+                    bss_description: transition_bss.clone(),
+                    compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                        mutual_security_protocols: vec![
+                            fidl_security::Protocol::Open,
+                            fidl_security::Protocol::Owe,
+                        ],
+                    }),
+                    timestamp_nanos: 1,
+                },
+                fidl_sme::ScanResult {
+                    bss_description: hidden_owe_bss.clone(),
+                    compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                        mutual_security_protocols: vec![fidl_security::Protocol::Owe],
+                    }),
+                    timestamp_nanos: 1,
+                },
+            ],
+        ));
+
+        // Initiate a connect request to the OWE transition network, which should use the
+        // transition SSID and result in a connection to the OWE BSS.
+        let mut connect_fut = test_values.iface.connect_to_network(
+            transition_ssid.as_bytes(),
+            Credential::None,
+            None,
+        );
+
+        // Verify that the connect request is sent immediately for the OWE BSS without any active scan.
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let (connect_req, connect_txn) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn, .. }))) => (req, txn)
+        );
+
+        assert_eq!(connect_req.bss_description, hidden_owe_bss);
+        assert_eq!(connect_req.authentication.protocol, fidl_security::Protocol::Owe);
+
+        let connect_txn_handle = connect_txn.unwrap().into_stream_and_control_handle().1;
+        connect_txn_handle
+            .send_on_connect_result(&fidl_sme::ConnectResult {
+                code: fidl_ieee80211::StatusCode::Success,
+                is_credential_rejected: false,
+                is_reconnect: false,
+            })
+            .unwrap();
+
+        let connect_result = test_values.exec.run_singlethreaded(&mut connect_fut).unwrap();
+        let success = assert_matches!(connect_result, ConnectResult::Success(s) => s);
+        assert_eq!(success.bss.bssid.to_array(), OWE_BSSID);
+        // Check that SSID requested is reported so that this SSID will be reported back to the
+        // caller.
+        assert_eq!(success.ssid_if_owe_transition, Some(Ssid::try_from(transition_ssid).unwrap()));
+    }
+
+    #[fuchsia::test]
+    fn test_connect_to_owe_transition_network_with_rssi_not_good_enough() {
+        let mut test_values = setup_test_manager_with_iface();
+        let owe_ssid = "owe-ssid";
+        let transition_ssid = "transition-ssid";
+        const OWE_BSSID: [u8; 6] = [2, 2, 2, 2, 2, 2];
+        const OPEN_BSSID: [u8; 6] = [1, 1, 1, 1, 1, 1];
+        const OTHER_OWE_BSSID: [u8; 6] = [3, 3, 3, 3, 3, 3];
+
+        // The signal strength of the open network is very strong but the OWE BSS
+        // it points to is a bit weak. A scan should be performed to see if there
+        // is a better BSS. This test will contain another OWE BSS with a better signal.
+        let open_rssi = -50;
+        let owe_rssi = -70;
+        let other_owe_rssi = -50;
+
+        // 1. Create OWE transition IE for the Open network (points to OWE BSS)
+        let mut open_transition_ie = vec![
+            ie::Id::VENDOR_SPECIFIC.0,
+            (11 + owe_ssid.len()) as u8, // Length of IE
+            0x50,
+            0x6f,
+            0x9a, // 3 bytes of OUI
+            wlan_common::ie::owe_transition::VENDOR_SPECIFIC_TYPE,
+        ];
+        open_transition_ie.extend_from_slice(&OWE_BSSID); // BSSID of OWE BSS
+        open_transition_ie.push(owe_ssid.len() as u8);
+        open_transition_ie.extend_from_slice(owe_ssid.as_bytes());
+
+        // 2. Create OWE transition IE for the OWE BSS (points to Open BSS). This is not
+        // currently used in the connect process but is accurate to what the spec requires.
+        let mut owe_transition_ie = vec![
+            ie::Id::VENDOR_SPECIFIC.0,
+            (11 + transition_ssid.len()) as u8, // Length of IE
+            0x50,
+            0x6f,
+            0x9a, // 3 bytes of OUI
+            wlan_common::ie::owe_transition::VENDOR_SPECIFIC_TYPE,
+        ];
+        owe_transition_ie.extend_from_slice(&OPEN_BSSID); // BSSID of Open BSS
+        owe_transition_ie.push(transition_ssid.len() as u8);
+        owe_transition_ie.extend_from_slice(transition_ssid.as_bytes());
+
+        // This BSS is created as open with the OWE transition IE pointing to the OWE BSS.
+        let transition_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(transition_ssid).unwrap(),
+            bssid: OPEN_BSSID,
+            rssi_dbm: open_rssi,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(open_transition_ie),
+        );
+
+        // This is the BSS description that would show up for the hidden OWE BSS in a passive scan.
+        let hidden_owe_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Owe,
+            ssid: Ssid::try_from("").unwrap(),
+            bssid: OWE_BSSID,
+            rssi_dbm: owe_rssi,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(owe_transition_ie.clone()),
+        );
+
+        // This is the BSS description that would show up for the OWE BSS in an active scan; the
+        // only difference is that it contains the SSID.
+        let owe_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Owe,
+            ssid: Ssid::try_from(owe_ssid).unwrap(),
+            bssid: OWE_BSSID,
+            rssi_dbm: owe_rssi,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(owe_transition_ie.clone()),
+        );
+
+        // This is for another OWE BSS with the OWE
+        let other_owe_bss = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Owe,
+            ssid: Ssid::try_from(owe_ssid).unwrap(),
+            bssid: OTHER_OWE_BSSID,
+            rssi_dbm: other_owe_rssi,
+            ies_overrides: wlan_common::test_utils::fake_stas::IesOverrides::new()
+                .set_raw(owe_transition_ie),
+        );
+
+        // Build scan results that contain the transition and OWE BSSs and set the scan cache; the
+        // connect process will use these scan results.
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
+            fasync::BootInstant::now(),
+            vec![
+                fidl_sme::ScanResult {
+                    bss_description: transition_bss.clone(),
+                    compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                        mutual_security_protocols: vec![
+                            fidl_security::Protocol::Open,
+                            fidl_security::Protocol::Owe,
+                        ],
+                    }),
+                    timestamp_nanos: 1,
+                },
+                fidl_sme::ScanResult {
+                    bss_description: hidden_owe_bss.clone(),
+                    compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                        mutual_security_protocols: vec![fidl_security::Protocol::Owe],
+                    }),
+                    timestamp_nanos: 1,
+                },
+            ],
+        ));
+
+        // Initiate a connect request to the OWE transition network, which should use the
+        // transition SSID and result in a connection to the OWE BSS.
+        let mut connect_fut = test_values.iface.connect_to_network(
+            transition_ssid.as_bytes(),
+            Credential::None,
+            None,
+        );
+
+        // Verify that an active scan is triggered for the OWE SSID.
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let (scan_req, scan_responder) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
+        );
+        assert_matches!(&scan_req, fidl_sme::ScanRequest::Active(active_scan_req) => {
+            assert_eq!(active_scan_req.ssids, vec![Ssid::try_from(owe_ssid).unwrap().to_vec()]);
+        });
+
+        // Respond to the scan request with the OWE BSS included in the OWE IE, and the other
+        // matching OWE BSS that has a stronger signal.
+        let scan_result_vmo = wlan_common::scan::write_vmo(vec![
+            fidl_sme::ScanResult {
+                bss_description: owe_bss.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Owe],
+                }),
+                timestamp_nanos: 1,
+            },
+            fidl_sme::ScanResult {
+                bss_description: other_owe_bss.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Owe],
+                }),
+                timestamp_nanos: 2,
+            },
+        ])
+        .unwrap();
+        scan_responder.send(Ok(scan_result_vmo)).unwrap();
+
+        // Now the connect request should be sent for the other OWE BSS with a stronger signal.
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let (connect_req, connect_txn) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn, .. }))) => (req, txn)
+        );
+
+        assert_eq!(connect_req.bss_description, other_owe_bss);
+        assert_eq!(connect_req.authentication.protocol, fidl_security::Protocol::Owe);
+
+        let connect_txn_handle = connect_txn.unwrap().into_stream_and_control_handle().1;
+        connect_txn_handle
+            .send_on_connect_result(&fidl_sme::ConnectResult {
+                code: fidl_ieee80211::StatusCode::Success,
+                is_credential_rejected: false,
+                is_reconnect: false,
+            })
+            .unwrap();
+
+        let connect_result = test_values.exec.run_singlethreaded(&mut connect_fut).unwrap();
+        let success = assert_matches!(connect_result, ConnectResult::Success(s) => s);
+        assert_eq!(success.bss.bssid.to_array(), OTHER_OWE_BSSID);
+        // Check that SSID requested is reported so that this SSID will be reported back to the
+        // caller.
+        assert_eq!(success.ssid_if_owe_transition, Some(Ssid::try_from(transition_ssid).unwrap()));
     }
 
     #[test]

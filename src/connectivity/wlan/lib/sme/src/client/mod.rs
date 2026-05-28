@@ -175,7 +175,9 @@ impl ClientConfig {
         // `BssProtection` changes.
         match bss.protection() {
             BssProtection::Open => vec![SecurityDescriptor::OPEN],
-            BssProtection::OpenOweTransition if has_owe_support() => {
+            // Add OWE support for OWE transition without checking if the BSS supports the protocol
+            // as this BSS would not actually support it, it points to one that does support it.
+            BssProtection::OpenOweTransition if self.owe_supported => {
                 vec![SecurityDescriptor::OWE, SecurityDescriptor::OPEN]
             }
             BssProtection::OpenOweTransition => vec![SecurityDescriptor::OPEN],

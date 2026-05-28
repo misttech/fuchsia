@@ -329,7 +329,7 @@ async fn software_scheduled_scan_loop(
     loop {
         // Trigger scan
         info!("Triggering software scheduled scan for iface {}", iface_id);
-        match iface.trigger_scan(scan_primary_channels.clone()).await {
+        match iface.trigger_scan(None, scan_primary_channels.clone()).await {
             Ok(ifaces::ScanEnd::Complete) => {
                 let results = iface.get_last_scan_results();
                 telemetry_sender.send(TelemetryEvent::ScanResult {
