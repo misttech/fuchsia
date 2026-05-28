@@ -589,8 +589,8 @@ env_vars = ["OUT_DIR=../../../compat/crc"]
 [gn.package.crc-catalog."2.4.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
 
-[gn.package.crc32fast."1.2.0"]
-rustflags = ["--cfg=crc32fast_stdarchx86"]
+[gn.package.crc32fast."1.5.0"]
+rustflags = ["--cfg=stable_arm_crc32_intrinsics"]
 
 [gn.package.crossbeam-utils."0.8.21"]
 rustflags = []

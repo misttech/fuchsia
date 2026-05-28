@@ -1,4 +1,4 @@
-use std::arch::aarch64 as arch;
+use core::arch::aarch64 as arch;
 
 #[derive(Clone)]
 pub struct State {
@@ -6,8 +6,20 @@ pub struct State {
 }
 
 impl State {
+    #[cfg(not(feature = "std"))]
     pub fn new(state: u32) -> Option<Self> {
-        if is_aarch64_feature_detected!("crc") {
+        if cfg!(target_feature = "crc") {
+            // SAFETY: The conditions above ensure that all
+            //         required instructions are supported by the CPU.
+            Some(Self { state })
+        } else {
+            None
+        }
+    }
+
+    #[cfg(feature = "std")]
+    pub fn new(state: u32) -> Option<Self> {
+        if std::arch::is_aarch64_feature_detected!("crc") {
             // SAFETY: The conditions above ensure that all
             //         required instructions are supported by the CPU.
             Some(Self { state })
@@ -31,7 +43,7 @@ impl State {
     }
 
     pub fn combine(&mut self, other: u32, amount: u64) {
-        self.state = ::combine::combine(self.state, other, amount);
+        self.state = crate::combine::combine(self.state, other, amount);
     }
 }
 
@@ -67,7 +79,7 @@ pub unsafe fn calculate(crc: u32, data: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod test {
-    quickcheck! {
+    quickcheck::quickcheck! {
         fn check_against_baseline(init: u32, chunks: Vec<(Vec<u8>, usize)>) -> bool {
             let mut baseline = super::super::super::baseline::State::new(init);
             let mut aarch64 = super::State::new(init).expect("not supported");

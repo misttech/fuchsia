@@ -1,4 +1,20 @@
-//! ## Example
+//! Fast, SIMD-accelerated CRC32 (IEEE) checksum computation.
+//!
+//! ## Usage
+//!
+//! ### Simple usage
+//!
+//! For simple use-cases, you can call the [`hash()`] convenience function to
+//! directly compute the CRC32 checksum for a given byte slice:
+//!
+//! ```rust
+//! let checksum = crc32fast::hash(b"foo bar baz");
+//! ```
+//!
+//! ### Advanced usage
+//!
+//! For use-cases that require more flexibility or performance, for example when
+//! processing large amounts of data, you can create and manipulate a [`Hasher`]:
 //!
 //! ```rust
 //! use crc32fast::Hasher;
@@ -15,26 +31,11 @@
 //! - A fast baseline implementation which processes up to 16 bytes per iteration
 //! - An optimized implementation for modern `x86` using `sse` and `pclmulqdq` instructions
 //!
-//! Calling the `Hasher::new` constructor at runtime will perform a feature detection to select the most
+//! Calling the [`Hasher::new`] constructor at runtime will perform a feature detection to select the most
 //! optimal implementation for the current CPU feature set.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(
-    all(feature = "nightly", target_arch = "aarch64"),
-    feature(stdsimd, aarch64_target_feature)
-)]
-
-#[deny(missing_docs)]
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
-
-#[macro_use]
-extern crate cfg_if;
-
-#[cfg(feature = "std")]
-use std as core;
-
+#![deny(missing_docs)]
 use core::fmt;
 use core::hash;
 
@@ -42,6 +43,15 @@ mod baseline;
 mod combine;
 mod specialized;
 mod table;
+
+/// Computes the CRC32 hash of a byte slice.
+///
+/// Check out [`Hasher`] for more advanced use-cases.
+pub fn hash(buf: &[u8]) -> u32 {
+    let mut h = Hasher::new();
+    h.update(buf);
+    h.finalize()
+}
 
 #[derive(Clone)]
 enum State {
@@ -72,25 +82,35 @@ impl Hasher {
     /// This works just like `Hasher::new`, except that it allows for an initial
     /// CRC32 state to be passed in.
     pub fn new_with_initial(init: u32) -> Self {
-        Self::internal_new_specialized(init).unwrap_or_else(|| Self::internal_new_baseline(init))
+        Self::new_with_initial_len(init, 0)
+    }
+
+    /// Create a new `Hasher` with an initial CRC32 state.
+    ///
+    /// As `new_with_initial`, but also accepts a length (in bytes). The
+    /// resulting object can then be used with `combine` to compute `crc(a ||
+    /// b)` from `crc(a)`, `crc(b)`, and `len(b)`.
+    pub fn new_with_initial_len(init: u32, amount: u64) -> Self {
+        Self::internal_new_specialized(init, amount)
+            .unwrap_or_else(|| Self::internal_new_baseline(init, amount))
     }
 
     #[doc(hidden)]
     // Internal-only API. Don't use.
-    pub fn internal_new_baseline(init: u32) -> Self {
+    pub fn internal_new_baseline(init: u32, amount: u64) -> Self {
         Hasher {
-            amount: 0,
+            amount,
             state: State::Baseline(baseline::State::new(init)),
         }
     }
 
     #[doc(hidden)]
     // Internal-only API. Don't use.
-    pub fn internal_new_specialized(init: u32) -> Option<Self> {
+    pub fn internal_new_specialized(init: u32, amount: u64) -> Option<Self> {
         {
             if let Some(state) = specialized::State::new(init) {
                 return Some(Hasher {
-                    amount: 0,
+                    amount,
                     state: State::Specialized(state),
                 });
             }
@@ -161,7 +181,7 @@ impl hash::Hasher for Hasher {
 mod test {
     use super::Hasher;
 
-    quickcheck! {
+    quickcheck::quickcheck! {
         fn combine(bytes_1: Vec<u8>, bytes_2: Vec<u8>) -> bool {
             let mut hash_a = Hasher::new();
             hash_a.update(&bytes_1);
@@ -173,6 +193,22 @@ mod test {
             hash_c.combine(&hash_b);
 
             hash_a.finalize() == hash_c.finalize()
+        }
+
+        fn combine_from_len(bytes_1: Vec<u8>, bytes_2: Vec<u8>) -> bool {
+            let mut hash_a = Hasher::new();
+            hash_a.update(&bytes_1);
+
+            let mut hash_b = Hasher::new();
+            hash_b.update(&bytes_2);
+
+            let mut hash_ab = Hasher::new();
+            hash_ab.update(&bytes_1);
+            hash_ab.update(&bytes_2);
+            let ab = hash_ab.finalize();
+
+            hash_a.combine(&hash_b);
+            hash_a.finalize() == ab
         }
     }
 }

@@ -5229,38 +5229,6 @@ rustc_library("cbc-v0_1_2") {
   applicable_licenses = [ ":cbc-v0_1_2.license" ]
 }
 
-license("cfg-if-v0_1_10.license") {
-  public_package_name = "cfg_if"
-  license_files = [
-    "//third_party/rust_crates/vendor/cfg-if-0.1.10/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cfg-if-0.1.10/LICENSE-MIT",
-  ]
-}
-
-rustc_library("cfg-if-v0_1_10") {
-  crate_name = "cfg_if"
-  source_root = "//third_party/rust_crates/vendor/cfg-if-0.1.10/src/lib.rs"
-  output_name = "cfg_if-de3fee777d28505f"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=de3fee777d28505f",
-    "-Cextra-filename=-de3fee777d28505f",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":cfg-if-v0_1_10.license" ]
-}
-
 license("cfg-if-v1_0_4.license") {
   public_package_name = "cfg_if"
   license_files = [
@@ -6109,40 +6077,40 @@ rustc_library("crc-v3_4_0") {
   applicable_licenses = [ ":crc-v3_4_0.license" ]
 }
 
-license("crc32fast-v1_2_0.license") {
+license("crc32fast-v1_5_0.license") {
   public_package_name = "crc32fast"
   license_files = [
-    "//third_party/rust_crates/vendor/crc32fast-1.2.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crc32fast-1.2.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crc32fast-1.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crc32fast-1.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("crc32fast-v1_2_0") {
+rustc_library("crc32fast-v1_5_0") {
   crate_name = "crc32fast"
-  source_root = "//third_party/rust_crates/vendor/crc32fast-1.2.0/src/lib.rs"
-  output_name = "crc32fast-6606a11d9036fb05"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/crc32fast-1.5.0/src/lib.rs"
+  output_name = "crc32fast-8d01c2afeadc8e7a"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":cfg-if-v0_1_10" ]
+  deps += [ ":cfg-if-v1_0_4" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6606a11d9036fb05",
-    "-Cextra-filename=-6606a11d9036fb05",
+    "-Cmetadata=8d01c2afeadc8e7a",
+    "-Cextra-filename=-8d01c2afeadc8e7a",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
-    "--cfg=crc32fast_stdarchx86",
+    "--cfg=stable_arm_crc32_intrinsics",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crc32fast-v1_2_0.license" ]
+  applicable_licenses = [ ":crc32fast-v1_5_0.license" ]
 }
 
 license("crc-catalog-v2_4_0.license") {
@@ -8411,7 +8379,7 @@ rustc_library("flate2-v1_1_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crc32fast-v1_2_0" ]
+  deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":miniz_oxide-v0_8_9" ]
   if (current_cpu == "wasm32" && !false) {
     deps += [ ":miniz_oxide-v0_8_9" ]
@@ -14665,7 +14633,7 @@ rustc_library("png-v0_18_1") {
 
   deps = []
   deps += [ ":bitflags-v2_11_1" ]
-  deps += [ ":crc32fast-v1_2_0" ]
+  deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":fdeflate-v0_3_7" ]
   deps += [ ":flate2-v1_1_9" ]
   deps += [ ":miniz_oxide-v0_8_9" ]
@@ -23959,7 +23927,7 @@ rustc_library("zip-v0_5_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crc32fast-v1_2_0" ]
+  deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":flate2-v1_1_9" ]
   deps += [ ":podio-v0_1_6" ]
 
