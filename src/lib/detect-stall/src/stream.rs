@@ -63,7 +63,10 @@ pin_project! {
 impl<RS, F> StallableRequestStream<RS, F> {
     /// Creates a new stallable request stream that will send the channel via `unbind_callback` when
     /// stream is stalled.
-    pub fn new(stream: RS, debounce_interval: MonotonicDuration, unbind_callback: F) -> Self {
+    pub fn new(stream: RS, mut debounce_interval: MonotonicDuration, unbind_callback: F) -> Self {
+        if debounce_interval < MonotonicDuration::from_millis(1) {
+            debounce_interval = MonotonicDuration::from_millis(1);
+        }
         Self {
             stream: Arc::new(Mutex::new(Some(stream))),
             debounce_interval,
@@ -136,28 +139,32 @@ impl<RS: RequestStream + Unpin, F: FnOnce(Option<zx::Channel>) + Unpin> Stream
                 Poll::Ready(message)
             }
             Poll::Pending => {
-                loop {
-                    if this.timer.is_none() {
-                        this.timer.set(Some(fasync::Timer::new(*this.debounce_interval)));
-                    }
-                    ready!(this.timer.as_mut().as_pin_mut().unwrap().poll(cx));
-                    this.timer.set(None);
+                if this.timer.is_none() {
+                    this.timer.set(Some(fasync::Timer::new(*this.debounce_interval)));
+                }
+                ready!(this.timer.as_mut().as_pin_mut().unwrap().poll(cx));
+                this.timer.set(None);
 
-                    // Try and unbind, which will fail if there are outstanding responders or
-                    // control handles.
-                    let (inner, is_terminated) = this.stream.lock().take().unwrap().into_inner();
-                    match Arc::try_unwrap(inner) {
-                        Ok(inner) => {
-                            this.unbind_callback.take().unwrap()(Some(
-                                inner.into_channel().into_zx_channel(),
-                            ));
-                            return Poll::Ready(None);
+                // Try and unbind, which will fail if there are outstanding responders or
+                // control handles.
+                let (inner, is_terminated) = this.stream.lock().take().unwrap().into_inner();
+                match Arc::try_unwrap(inner) {
+                    Ok(inner) => {
+                        this.unbind_callback.take().unwrap()(Some(
+                            inner.into_channel().into_zx_channel(),
+                        ));
+                        Poll::Ready(None)
+                    }
+                    Err(inner) => {
+                        // We can't unbind because there are outstanding responders or control
+                        // handles, so we'll try again after another debounce interval.
+                        *this.stream.lock() = Some(RS::from_inner(inner, is_terminated));
+                        this.timer.set(Some(fasync::Timer::new(*this.debounce_interval)));
+                        if this.timer.as_mut().as_pin_mut().unwrap().poll(cx).is_ready()
+                        {
+                            cx.waker().wake_by_ref();
                         }
-                        Err(inner) => {
-                            // We can't unbind because there are outstanding responders or control
-                            // handles, so we'll try again after another debounce interval.
-                            *this.stream.lock() = Some(RS::from_inner(inner, is_terminated));
-                        }
+                        Poll::Pending
                     }
                 }
             }
