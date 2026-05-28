@@ -12,7 +12,7 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 
 namespace zxdb {
 

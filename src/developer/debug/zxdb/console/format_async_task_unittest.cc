@@ -11,8 +11,8 @@
 #include "src/developer/debug/zxdb/client/async_task.h"
 #include "src/developer/debug/zxdb/client/async_task_tree.h"
 #include "src/developer/debug/zxdb/common/test_with_loop.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer_test_util.h"
 #include "src/developer/debug/zxdb/expr/mock_eval_context.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer_test_util.h"
 #include "src/developer/debug/zxdb/symbols/identifier.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 

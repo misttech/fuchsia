@@ -16,8 +16,8 @@
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_context.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 
 namespace zxdb {
@@ -78,7 +78,7 @@ void OutputFrameInfoForChange(CommandContext* cmd_context, const Frame* frame, i
   // Allow eliding of unnecessary path information.
   opts.loc.target_symbols = frame->GetThread()->GetProcess()->GetTarget()->GetSymbols();
 
-  opts.variable.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  opts.variable.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   opts.variable.pointer_expand_depth = 1;
   opts.variable.max_depth = 4;
 

@@ -10,7 +10,7 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {

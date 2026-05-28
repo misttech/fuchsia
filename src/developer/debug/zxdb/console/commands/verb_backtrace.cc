@@ -10,8 +10,8 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 namespace zxdb {
 
@@ -96,10 +96,10 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
   }
 
   // These are minimal since there is often a lot of data.
-  opts.frame.variable.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  opts.frame.variable.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   opts.frame.variable.verbosity = cmd.HasSwitch(kForceAllTypes)
-                                      ? ConsoleFormatOptions::Verbosity::kAllTypes
-                                      : ConsoleFormatOptions::Verbosity::kMinimal;
+                                      ? FormatBufferOptions::Verbosity::kAllTypes
+                                      : FormatBufferOptions::Verbosity::kMinimal;
 
   if (cmd.GetNounIndex(Noun::kThread) == Command::kWildcard) {
     FX_DCHECK(cmd.target());

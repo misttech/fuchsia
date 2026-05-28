@@ -10,9 +10,9 @@
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/print_command_utils.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -119,14 +119,13 @@ void RunVerbDisplay(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context)
   cmd_context->Output(out);
 
   // Output the new expression right away.
-  ConsoleFormatOptions options;
-  options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-  options.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+  FormatBufferOptions options;
+  options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+  options.wrapping = FormatBufferOptions::Wrapping::kSmart;
   options.pointer_expand_depth = 2;
   options.num_format = GetNumberFormatForTarget(cmd.target());
 
-  cmd_context->Output(
-      FormatExpressionsForConsole({new_expression}, options, GetEvalContextForCommand(cmd)));
+  cmd_context->Output(FormatExpressions({new_expression}, options, GetEvalContextForCommand(cmd)));
 }
 
 }  // namespace

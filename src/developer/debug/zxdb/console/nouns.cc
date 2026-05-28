@@ -32,8 +32,8 @@
 #include "src/developer/debug/zxdb/console/format_table.h"
 #include "src/developer/debug/zxdb/console/format_target.h"
 #include "src/developer/debug/zxdb/console/format_thread.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 
 namespace zxdb {
 

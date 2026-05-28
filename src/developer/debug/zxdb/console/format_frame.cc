@@ -15,10 +15,10 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/format_thread.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/format.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 #include "src/developer/debug/zxdb/symbols/value.h"
@@ -140,8 +140,8 @@ FormatStackOptions FormatStackOptions::GetFrameOptions(Target* target, bool verb
     opts.frame.loc.func.params = FormatFunctionNameOptions::kParamTypes;
   }
 
-  opts.frame.variable.verbosity = all_types ? ConsoleFormatOptions::Verbosity::kAllTypes
-                                            : ConsoleFormatOptions::Verbosity::kMinimal;
+  opts.frame.variable.verbosity = all_types ? FormatBufferOptions::Verbosity::kAllTypes
+                                            : FormatBufferOptions::Verbosity::kMinimal;
   opts.frame.variable.pointer_expand_depth = 1;
   opts.frame.variable.max_depth = max_depth;
 
@@ -204,7 +204,7 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFrame(const Frame* frame, const FormatFrame
           continue;  // Symbols are corrupt.
 
         out->Append("\n      ");  // Indent.
-        out->Append(FormatVariableForConsole(value, opts.variable, frame->GetEvalContext()));
+        out->Append(FormatVariable(value, opts.variable, frame->GetEvalContext()));
       }
     }
   }

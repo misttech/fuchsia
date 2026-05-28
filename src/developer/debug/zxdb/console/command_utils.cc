@@ -26,19 +26,14 @@
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_context.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_name.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/format_target.h"
 #include "src/developer/debug/zxdb/console/input_location_parser.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/expr/eval_context_impl.h"
 #include "src/developer/debug/zxdb/expr/expr.h"
 #include "src/developer/debug/zxdb/expr/expr_parser.h"
@@ -46,6 +41,11 @@
 #include "src/developer/debug/zxdb/expr/format.h"
 #include "src/developer/debug/zxdb/expr/number_parser.h"
 #include "src/developer/debug/zxdb/expr/return_value.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/format.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/base_type.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
@@ -515,7 +515,7 @@ std::string FormatConsoleString(const std::string& input) {
   return result;
 }
 
-ConsoleFormatOptions::NumFormat GetNumberFormatForTarget(Target* target) {
+FormatBufferOptions::NumFormat GetNumberFormatForTarget(Target* target) {
   if (target) {
     const auto& setting = target->settings().GetString(ClientSettings::Target::kIntegerFormat);
     if (setting == kIntegerFormatDecimal) {
@@ -527,7 +527,7 @@ ConsoleFormatOptions::NumFormat GetNumberFormatForTarget(Target* target) {
     }
   }
 
-  return ConsoleFormatOptions::NumFormat::kDefault;
+  return FormatBufferOptions::NumFormat::kDefault;
 }
 
 ErrOr<Target*> GetRunnableTarget(ConsoleContext* context, const Command& cmd) {
@@ -602,12 +602,12 @@ void AsyncPrintReturnValue(const FunctionReturnInfo& info, fit::deferred_callbac
                    out->Append(FormatFunctionName(func.get(), func_name_options));
                    out->Append(Syntax::kOperatorBold, " 🡲 ");
 
-                   ConsoleFormatOptions val_options;
-                   val_options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-                   val_options.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+                   FormatBufferOptions val_options;
+                   val_options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+                   val_options.wrapping = FormatBufferOptions::Wrapping::kSmart;
                    val_options.max_depth = 3;
 
-                   out->Append(FormatValueForConsole(val.value(), val_options, eval_context));
+                   out->Append(FormatValue(val.value(), val_options, eval_context));
 
                    out->Complete();
                    if (out->is_complete()) {

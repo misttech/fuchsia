@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/common/test_with_loop.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer_test_util.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/expr/format_node.h"
 #include "src/developer/debug/zxdb/expr/mock_eval_context.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer_test_util.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/base_type.h"
 #include "src/developer/debug/zxdb/symbols/collection.h"
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
@@ -25,7 +25,7 @@ namespace zxdb {
 
 namespace {
 
-// Test harness for tests for FormatValueForConsole that may be async.
+// Test harness for tests for FormatValue that may be async.
 class FormatValueConsoleTest : public TestWithLoop {
  public:
   FormatValueConsoleTest() : eval_context_(fxl::MakeRefCounted<MockEvalContext>()) {}
@@ -34,10 +34,9 @@ class FormatValueConsoleTest : public TestWithLoop {
   MockSymbolDataProvider* provider() { return eval_context_->data_provider(); }
 
   // Synchronously calls FormatExprValue, returning the result.
-  std::string SyncFormatValue(const ExprValue& value, const ConsoleFormatOptions& opts,
+  std::string SyncFormatValue(const ExprValue& value, const FormatBufferOptions& opts,
                               const std::string& name = std::string()) {
-    return LoopUntilAsyncOutputBufferComplete(
-               FormatValueForConsole(value, opts, eval_context_, name))
+    return LoopUntilAsyncOutputBufferComplete(FormatValue(value, opts, eval_context_, name))
         .AsString();
   }
 
@@ -58,26 +57,26 @@ void FillBaseTypeNode(const std::string& type_name, const std::string& descripti
 TEST(FormatNodeConsole, SimpleValue) {
   FormatNode node;
   FillBaseTypeNode("int", "54", &node);
-  ConsoleFormatOptions options;
+  FormatBufferOptions options;
 
   // Bare value.
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("kNormal \"54\"", out.GetDebugString());
 
   // Bare value with types forced on.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  out = FormatNodeForConsole(node, type_options);
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ(R"(kOperatorDim "(", kComment "int", kOperatorDim ") ", kNormal "54")",
             out.GetDebugString());
 
   // Named value.
   node.set_name("foo");
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ(R"(kVariable "foo", kOperatorNormal " = ", kNormal "54")", out.GetDebugString());
 
   // Named value with types forced on.
-  out = FormatNodeForConsole(node, type_options);
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ(
       R"(kOperatorDim "(", kComment "int", kOperatorDim ") ", kVariable "foo", kOperatorNormal " = ", kNormal "54")",
       out.GetDebugString());
@@ -85,7 +84,7 @@ TEST(FormatNodeConsole, SimpleValue) {
   // Force types on when there is no type shouldn't show anything.
   FormatNode err_node("foo");
   err_node.SetDescribedError(Err("Error."));
-  out = FormatNodeForConsole(err_node, type_options);
+  out = FormatTreeNode(err_node, type_options);
   EXPECT_EQ(R"(kVariable "foo", kOperatorNormal " = ", kComment "<Error.>")", out.GetDebugString());
 }
 
@@ -96,10 +95,10 @@ TEST(FormatNodeConsole, Collection) {
   node.set_description_kind(FormatNode::kCollection);
   node.set_description("This description is not displayed for a collection.");
 
-  ConsoleFormatOptions options;
+  FormatBufferOptions options;
 
   // Empty collection.
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("{}", out.AsString());
 
   // Add some children.
@@ -111,13 +110,13 @@ TEST(FormatNodeConsole, Collection) {
   FillBaseTypeNode("double", "3.14159", child.get());
   node.children().push_back(std::move(child));
 
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("{a = 42, b = 3.14159}", out.AsString());
 
   // With types forced.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  out = FormatNodeForConsole(node, type_options);
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(MyClass) {(int) a = 42, (double) b = 3.14159}", out.AsString());
 
   // Add a very long base class name.
@@ -129,21 +128,21 @@ TEST(FormatNodeConsole, Collection) {
   node.children().insert(node.children().begin(), std::move(base_node));
 
   // Test with no eliding.
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ(
       "{This_is::a::VeryLongBaseClass<which, should, be, elided, abcdefghijklmnopqrstuvwxyz> = {}, "
       "a = 42, b = 3.14159}",
       out.AsString());
 
   // With eliding.
-  ConsoleFormatOptions elide_options;
-  elide_options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-  out = FormatNodeForConsole(node, elide_options);
+  FormatBufferOptions elide_options;
+  elide_options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+  out = FormatTreeNode(node, elide_options);
   EXPECT_EQ("{This_is::a::VeryLongBaseC… = {}, a = 42, b = 3.14159}", out.AsString());
 
   // Expanded mode eliding shows more.
-  elide_options.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
-  out = FormatNodeForConsole(node, elide_options);
+  elide_options.wrapping = FormatBufferOptions::Wrapping::kExpanded;
+  out = FormatTreeNode(node, elide_options);
   EXPECT_EQ(
       "{\n"
       "  This_is::a::VeryLongBaseClass<which, should, be, e… = {}\n"
@@ -167,15 +166,15 @@ TEST(FormatValueConsole, Wrapper) {
   FillBaseTypeNode("int", "54", int_node.get());
   node.children().push_back(std::move(int_node));
 
-  ConsoleFormatOptions options;
-  EXPECT_EQ("std::optional(54)", FormatNodeForConsole(node, options).AsString());
+  FormatBufferOptions options;
+  EXPECT_EQ("std::optional(54)", FormatTreeNode(node, options).AsString());
 
   // With type info. This is a bit weird, it would be nice if the description expanded to the full
   // type name to avoid duplication.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
   EXPECT_EQ("(std::optional<int>) std::optional((int) 54)",
-            FormatNodeForConsole(node, type_options).AsString());
+            FormatTreeNode(node, type_options).AsString());
 
   // Test with a child that's a collection. This is the child of the collection.
   auto collection_child = std::make_unique<FormatNode>("child");
@@ -190,13 +189,13 @@ TEST(FormatValueConsole, Wrapper) {
   collection_node->children().push_back(std::move(collection_child));
   node.children()[0] = std::move(collection_node);
 
-  ConsoleFormatOptions expanded_options;
-  expanded_options.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  FormatBufferOptions expanded_options;
+  expanded_options.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ(
       "std::optional({\n"
       "  child = \"string value\"\n"
       "})",
-      FormatNodeForConsole(node, expanded_options).AsString());
+      FormatTreeNode(node, expanded_options).AsString());
 }
 
 TEST(FormatNodeConsole, Array) {
@@ -207,8 +206,8 @@ TEST(FormatNodeConsole, Array) {
   node.set_description("This description is not displayed for arrays.");
 
   // Empty array.
-  ConsoleFormatOptions options;
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  FormatBufferOptions options;
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("{}", out.AsString());
 
   // Add some children.
@@ -220,18 +219,18 @@ TEST(FormatNodeConsole, Array) {
   FillBaseTypeNode("int", "137", child.get());
   node.children().push_back(std::move(child));
 
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("{42, 137}", out.AsString());
 
   // Truncated array.
   node.children().push_back(std::make_unique<FormatNode>("..."));
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("{42, 137, ...}", out.AsString());
 
   // With types forced on.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  out = FormatNodeForConsole(node, type_options);
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(int[2]) {42, 137, ...}", out.AsString());
 }
 
@@ -253,13 +252,13 @@ TEST(FormatNodeConsole, String) {
   node.children().push_back(std::move(child));
 
   // Normal string presentation using the default number formatting.
-  ConsoleFormatOptions options;
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  FormatBufferOptions options;
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("\"a\"", out.AsString());
 
   // Now format using hex mode which should convert to an array.
   options.num_format = FormatOptions::NumFormat::kHex;
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("(0x61, 0x00)", out.AsString());
 }
 
@@ -277,35 +276,35 @@ TEST(FormatNodeConsole, Pointer) {
   node.children().push_back(std::move(child));
 
   // Print the bare pointer.
-  ConsoleFormatOptions options;
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  FormatBufferOptions options;
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("(*)0x12345678", out.AsString());
 
   // Fill the pointed-to value.
   FillBaseTypeNode("int", "42", node.children()[0].get());
 
   // Print with the pointed-to value.
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("(*)0x12345678 " + GetRightArrow() + " 42", out.AsString());
 
   // Print with type information. Should only show on the pointer and not be duplicated on the
   // pointed-to value.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  out = FormatNodeForConsole(node, type_options);
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(int*) 0x12345678 " + GetRightArrow() + " 42", out.AsString());
 
   // Add a name.
   node.set_name("a");
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("a = (*)0x12345678 " + GetRightArrow() + " 42", out.AsString());
-  out = FormatNodeForConsole(node, type_options);
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(int*) a = 0x12345678 " + GetRightArrow() + " 42", out.AsString());
 
   // Report an error for the pointed-to value, it should now be omitted.
   node.children()[0]->set_err(Err("Bad pointer"));
   node.children()[0]->set_description(std::string());
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("a = (*)0x12345678", out.AsString());
 }
 
@@ -323,34 +322,34 @@ TEST(FormatNodeConsole, Reference) {
   node.children().push_back(std::move(child));
 
   // Print the bare reference.
-  ConsoleFormatOptions options;
-  OutputBuffer out = FormatNodeForConsole(node, options);
+  FormatBufferOptions options;
+  OutputBuffer out = FormatTreeNode(node, options);
   EXPECT_EQ("(&)0x12345678", out.AsString());
 
   // Fill the pointed-to value.
   FillBaseTypeNode("int", "42", node.children()[0].get());
 
   // Print with the pointed-to value.
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("42", out.AsString());
 
   // Print with type information. Should only show on the pointer and not be duplicated on the
   // pointed-to value.
-  ConsoleFormatOptions type_options;
-  type_options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  out = FormatNodeForConsole(node, type_options);
+  FormatBufferOptions type_options;
+  type_options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(int&) 42", out.AsString());
 
   // Add a name.
   node.set_name("a");
-  out = FormatNodeForConsole(node, options);
+  out = FormatTreeNode(node, options);
   EXPECT_EQ("a = 42", out.AsString());
-  out = FormatNodeForConsole(node, type_options);
+  out = FormatTreeNode(node, type_options);
   EXPECT_EQ("(int&) a = 42", out.AsString());
 }
 
 TEST_F(FormatValueConsoleTest, SimpleSync) {
-  ConsoleFormatOptions opts;
+  FormatBufferOptions opts;
 
   // Basic synchronous number.
   ExprValue val_int16(fxl::MakeRefCounted<BaseType>(BaseType::kBaseTypeSigned, 2, "short"),
@@ -360,8 +359,8 @@ TEST_F(FormatValueConsoleTest, SimpleSync) {
 
 // Tests collections and nested references.
 TEST_F(FormatValueConsoleTest, Collection) {
-  ConsoleFormatOptions opts;
-  opts.num_format = ConsoleFormatOptions::NumFormat::kHex;
+  FormatBufferOptions opts;
+  opts.num_format = FormatBufferOptions::NumFormat::kHex;
 
   auto int32_type = MakeInt32Type();
 
@@ -430,7 +429,7 @@ TEST_F(FormatValueConsoleTest, NestingLimits) {
   ExprValue c_value(c_type, {0, 0x22, 0, 0, 0, 0, 0, 0});
 
   // Expand different levels of pointers but allow everything else.
-  ConsoleFormatOptions opts;
+  FormatBufferOptions opts;
   opts.pointer_expand_depth = 0;
   opts.max_depth = 1000;
   EXPECT_EQ("{c = {b = (*)0x2200}}", SyncFormatValue(c_value, opts));
@@ -463,7 +462,7 @@ TEST_F(FormatValueConsoleTest, NestingLimits) {
 
   // Tests max recursion for the expanded case. The elided structs should not be expanded.
   opts.max_depth = 2;
-  opts.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  opts.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ(
       "{\n"
       "  c = {…}\n"
@@ -499,17 +498,17 @@ TEST_F(FormatValueConsoleTest, Wrapping) {
   ExprValue outer_value(outer_collection, {0, 0x11, 0, 0, 0, 0, 0, 0});
 
   // First do non-expanded mode.
-  ConsoleFormatOptions opts;
+  FormatBufferOptions opts;
   opts.pointer_expand_depth = 1000;
   opts.max_depth = 1000;
-  opts.wrapping = ConsoleFormatOptions::Wrapping::kNone;
+  opts.wrapping = FormatBufferOptions::Wrapping::kNone;
 
   EXPECT_EQ(
       "{nested = (*)0x1100 " + GetRightArrow() + " {variable1 = 12, variable2 = 34}, empty = {}}",
       SyncFormatValue(outer_value, opts));
 
   // Expanded mode.
-  opts.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  opts.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ(
       "{\n"
       "  nested = (*)0x1100 " +
@@ -523,7 +522,7 @@ TEST_F(FormatValueConsoleTest, Wrapping) {
       SyncFormatValue(outer_value, opts));
 
   // Smart mode. First give it a really wide limit, everything should be one line.
-  opts.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+  opts.wrapping = FormatBufferOptions::Wrapping::kSmart;
   opts.smart_indent_cols = 1000;
   EXPECT_EQ(
       "{nested = (*)0x1100 " + GetRightArrow() + " {variable1 = 12, variable2 = 34}, empty = {}}",
@@ -586,18 +585,18 @@ TEST_F(FormatValueConsoleTest, RustCollectionName) {
   ExprValue simple_value(simple_type, {});
 
   // Minimal verbosity shows only the last name. Note that empty Rust structs don't use {}.
-  ConsoleFormatOptions minimal;
-  minimal.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  FormatBufferOptions minimal;
+  minimal.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   EXPECT_EQ("MyStruct", SyncFormatValue(simple_value, minimal));
 
   // Higher verbosity shows the namespace.
-  ConsoleFormatOptions medium;
-  medium.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+  FormatBufferOptions medium;
+  medium.verbosity = FormatBufferOptions::Verbosity::kMedium;
   EXPECT_EQ("my_ns::MyStruct", SyncFormatValue(simple_value, medium));
 
   // Full type information should be the same, it shouldn't duplicate the type.
-  ConsoleFormatOptions all_types;
-  all_types.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
+  FormatBufferOptions all_types;
+  all_types.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
   EXPECT_EQ("my_ns::MyStruct", SyncFormatValue(simple_value, all_types));
 
   // Make a long template name for a collection with a member.
@@ -613,9 +612,9 @@ TEST_F(FormatValueConsoleTest, RustCollectionName) {
             SyncFormatValue(template_value, minimal));
 
   // Minimal verbosity in expanded mode shows more but still elides.
-  ConsoleFormatOptions minimal_expanded = minimal;
-  minimal_expanded.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
-  minimal.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  FormatBufferOptions minimal_expanded = minimal;
+  minimal_expanded.wrapping = FormatBufferOptions::Wrapping::kExpanded;
+  minimal.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   EXPECT_EQ(
       "HashMap<alloc::string::String, &str, std::collections::has…>{\n"
       "  a: 123\n"
@@ -647,14 +646,14 @@ TEST_F(FormatValueConsoleTest, RustTuple) {
   ExprValue tuple_struct_value(tuple_struct_type, data);
 
   // Minimal one-line mode.
-  ConsoleFormatOptions minimal;
-  minimal.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  FormatBufferOptions minimal;
+  minimal.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   EXPECT_EQ("(1, 2)", SyncFormatValue(tuple_value, minimal));
   EXPECT_EQ("MyTupleStruct(1, 2)", SyncFormatValue(tuple_struct_value, minimal));
 
   // Expanded one-line mode.
-  ConsoleFormatOptions minimal_expanded = minimal;
-  minimal_expanded.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  FormatBufferOptions minimal_expanded = minimal;
+  minimal_expanded.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ(
       "(\n"
       "  0: 1\n"
@@ -671,8 +670,8 @@ TEST_F(FormatValueConsoleTest, RustTuple) {
   // With full type information. We should the type information for the members but not the tuple
   // itself. These are redundant and look confusing. Currently our full type information looks like
   // C and we may want to revisit this in the future.
-  ConsoleFormatOptions full_types = minimal_expanded;
-  full_types.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
+  FormatBufferOptions full_types = minimal_expanded;
+  full_types.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
   EXPECT_EQ(
       "(\n"
       "  (int32_t) 0: 1\n"
@@ -704,16 +703,16 @@ TEST_F(FormatValueConsoleTest, RustEnum) {
   ExprValue point_value(enum_type, {1, 0, 0, 0, 12, 0, 0, 0, 13, 0, 0, 0});
 
   // Minimal single-line formatting.
-  ConsoleFormatOptions minimal;
-  minimal.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+  FormatBufferOptions minimal;
+  minimal.verbosity = FormatBufferOptions::Verbosity::kMinimal;
   EXPECT_EQ("None", SyncFormatValue(none_value, minimal));
   EXPECT_EQ("Scalar(123)", SyncFormatValue(scalar_value, minimal));
   EXPECT_EQ("Point{x: 12, y: 13}", SyncFormatValue(point_value, minimal));
 
   // Expanded with type info.
-  ConsoleFormatOptions expanded_all_types;
-  expanded_all_types.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  expanded_all_types.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  FormatBufferOptions expanded_all_types;
+  expanded_all_types.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  expanded_all_types.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ("(RustEnum) None", SyncFormatValue(none_value, expanded_all_types));
   EXPECT_EQ(
       "(RustEnum) Scalar(\n"
@@ -756,34 +755,34 @@ TEST_F(FormatValueConsoleTest, RustVector) {
   vec.children()[1]->set_state(FormatNode::kDescribed);
   vec.children()[1]->set_description("19");
 
-  ConsoleFormatOptions options;
+  FormatBufferOptions options;
 
   // Minimal verbosity gets tyep type abbreviated "vec!" which is how Rust users would typically
   // instantiate an array.
-  options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-  EXPECT_EQ("vec![42, 19]", FormatNodeForConsole(vec, options).AsString());
+  options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+  EXPECT_EQ("vec![42, 19]", FormatTreeNode(vec, options).AsString());
 
   // Expanded mode.
-  options.wrapping = ConsoleFormatOptions::Wrapping::kExpanded;
+  options.wrapping = FormatBufferOptions::Wrapping::kExpanded;
   EXPECT_EQ(
       "vec![\n"
       "  [0]: 42\n"
       "  [1]: 19\n"
       "]",
-      FormatNodeForConsole(vec, options).AsString());
+      FormatTreeNode(vec, options).AsString());
 
   // Medium verbosity shows the real type.
   //
   // Note this shows the escaping $(...) around the type name. This is a test artifact because we
   // constructed the type as one string rather than constructing the full hierarchy of namespaces
   // (more code).
-  options.wrapping = ConsoleFormatOptions::Wrapping::kNone;
-  options.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
-  EXPECT_EQ("$(alloc::vec::Vec<i32>)[42, 19]", FormatNodeForConsole(vec, options).AsString());
+  options.wrapping = FormatBufferOptions::Wrapping::kNone;
+  options.verbosity = FormatBufferOptions::Verbosity::kMedium;
+  EXPECT_EQ("$(alloc::vec::Vec<i32>)[42, 19]", FormatTreeNode(vec, options).AsString());
 
   // Full type info is the same.
-  options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
-  EXPECT_EQ("$(alloc::vec::Vec<i32>)[42, 19]", FormatNodeForConsole(vec, options).AsString());
+  options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
+  EXPECT_EQ("$(alloc::vec::Vec<i32>)[42, 19]", FormatTreeNode(vec, options).AsString());
 
   // Use another type name in minimal mode. It shouldn't get abbreviated with the "vec!"
   auto fast_vec_type = MakeCollectionType(DwarfTag::kStructureType, "FastVector<i32>", {});
@@ -793,23 +792,23 @@ TEST_F(FormatValueConsoleTest, RustVector) {
   vec.SetValue(fast_vec_value);
   vec.set_type("FastVector<i32>");
   vec.set_state(FormatNode::kDescribed);
-  options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-  EXPECT_EQ("FastVector<i32>[42, 19]", FormatNodeForConsole(vec, options).AsString());
+  options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+  EXPECT_EQ("FastVector<i32>[42, 19]", FormatTreeNode(vec, options).AsString());
 }
 
 // This tests some constant expressions for simplicity since we assume evaluation is already tested.
-TEST_F(FormatValueConsoleTest, FormatExpressionsForConsole) {
-  ConsoleFormatOptions options;
-  options.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+TEST_F(FormatValueConsoleTest, FormatExpressions) {
+  FormatBufferOptions options;
+  options.wrapping = FormatBufferOptions::Wrapping::kSmart;
 
   // Should be a single line of output.
   fxl::RefPtr<AsyncOutputBuffer> async_out =
-      FormatExpressionsForConsole({"0", "0x5678", "(int*)12345"}, options, eval_context());
+      FormatExpressions({"0", "0x5678", "(int*)12345"}, options, eval_context());
   OutputBuffer out = LoopUntilAsyncOutputBufferComplete(async_out);
   EXPECT_EQ("0 = 0, 0x5678 = 22136, (int*)12345 = (*)0x3039", out.AsString());
 
-  async_out = FormatExpressionsForConsole(
-      {"0", "0x5678", "(int*)12345", "\"Some string that won't fit.\""}, options, eval_context());
+  async_out = FormatExpressions({"0", "0x5678", "(int*)12345", "\"Some string that won't fit.\""},
+                                options, eval_context());
   out = LoopUntilAsyncOutputBufferComplete(async_out);
   EXPECT_EQ(
       "0 = 0\n"

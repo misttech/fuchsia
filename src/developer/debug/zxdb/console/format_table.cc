@@ -6,8 +6,8 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 
 namespace zxdb {
 

@@ -8,9 +8,9 @@
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/expr/format_options.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 namespace zxdb {
 
@@ -46,8 +46,8 @@ void AppendPrintCommandSwitches(VerbRecord* record) {
   record->switches.emplace_back(kPointerDepth, true, "pointer-depth");
 }
 
-ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd) {
-  ConsoleFormatOptions options;
+ErrOr<FormatBufferOptions> GetPrintCommandFormatOptions(const Command& cmd) {
+  FormatBufferOptions options;
 
   options.pointer_expand_depth = 1;
   options.max_depth = 16;
@@ -73,15 +73,15 @@ ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd) {
   // Note also that this doesn't stricly wrap the output to 80 columns. Long type names or values
   // will still use the full width and will be wrapped by the console. This wrapping only affects
   // the splitting of items across lines.
-  options.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+  options.wrapping = FormatBufferOptions::Wrapping::kSmart;
 
   // Verbosity.
   if (cmd.HasSwitch(kForceAllTypes))
-    options.verbosity = ConsoleFormatOptions::Verbosity::kAllTypes;
+    options.verbosity = FormatBufferOptions::Verbosity::kAllTypes;
   else if (cmd.HasSwitch(kVerboseFormat))
-    options.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+    options.verbosity = FormatBufferOptions::Verbosity::kMedium;
   else
-    options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
+    options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
 
   // Array size.
   if (cmd.HasSwitch(kMaxArraySize)) {
@@ -93,12 +93,12 @@ ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd) {
 
   // Mapping from command-line parameter to format enum.
   constexpr size_t kFormatCount = 5;
-  static constexpr std::pair<int, ConsoleFormatOptions::NumFormat> kFormats[kFormatCount] = {
-      {kForceNumberChar, ConsoleFormatOptions::NumFormat::kChar},
-      {kForceNumberUnsigned, ConsoleFormatOptions::NumFormat::kUnsigned},
-      {kForceNumberSigned, ConsoleFormatOptions::NumFormat::kSigned},
-      {kForceNumberHex, ConsoleFormatOptions::NumFormat::kHex},
-      {kForceNumberBin, ConsoleFormatOptions::NumFormat::kBin}};
+  static constexpr std::pair<int, FormatBufferOptions::NumFormat> kFormats[kFormatCount] = {
+      {kForceNumberChar, FormatBufferOptions::NumFormat::kChar},
+      {kForceNumberUnsigned, FormatBufferOptions::NumFormat::kUnsigned},
+      {kForceNumberSigned, FormatBufferOptions::NumFormat::kSigned},
+      {kForceNumberHex, FormatBufferOptions::NumFormat::kHex},
+      {kForceNumberBin, FormatBufferOptions::NumFormat::kBin}};
 
   int num_type_overrides = 0;
   for (const auto& cur : kFormats) {

@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "src/developer/debug/zxdb/console/format_name.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 

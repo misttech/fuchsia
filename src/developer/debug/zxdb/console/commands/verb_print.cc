@@ -8,9 +8,9 @@
 #include "src/developer/debug/zxdb/console/command_context.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/print_command_utils.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -53,7 +53,7 @@ void RunVerbPrint(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
   // there's a stopped thread, a process, or nothing.
   fxl::RefPtr<EvalContext> eval_context = GetEvalContextForCommand(cmd);
 
-  ErrOr<ConsoleFormatOptions> options = GetPrintCommandFormatOptions(cmd);
+  ErrOr<FormatBufferOptions> options = GetPrintCommandFormatOptions(cmd);
   if (options.has_error()) {
     cmd_context->ReportError(options.err());
     return;
@@ -65,7 +65,7 @@ void RunVerbPrint(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
         if (value.has_error()) {
           cmd_context->ReportError(value.err());
         } else {
-          cmd_context->Output(FormatValueForConsole(value.value(), options, eval_context));
+          cmd_context->Output(FormatValue(value.value(), options, eval_context));
         }
       });
   if (err.has_error())

@@ -12,7 +12,7 @@
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/common/fuzzy_matcher.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/strings/trim.h"
 
 namespace zxdb {

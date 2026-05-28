@@ -7,7 +7,7 @@
 
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/zxdb/common/err_or.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -44,8 +44,8 @@ ErrOr<FormatSymbolOptions> GetFormatSymbolOptionsFromCommand(const Command& cmd,
   "  --dwarf-expr=(bytes | ops | pretty)\n"                                        \
   "      Controls how DWARF expressions are presented (defaults to \"pretty\"):\n" \
   "\n"                                                                             \
-  "       • bytes:  Print raw hex bytes.\n"                                      \
-  "       • ops:    Print DWARF constants.\n"                                    \
+  "       • bytes:  Print raw hex bytes.\n"                                        \
+  "       • ops:    Print DWARF constants.\n"                                      \
   "       • pretty: Decodes variable names and addresses and simplifies output.\n"
 
 }  // namespace zxdb

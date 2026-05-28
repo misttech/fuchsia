@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NODE_CONSOLE_H_
-#define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NODE_CONSOLE_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_H_
 
 #include "lib/fit/defer.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/developer/debug/zxdb/expr/format_options.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -17,8 +17,8 @@ class ExprValue;
 class FormatNode;
 class Variable;
 
-// Console-output-specific options format formatting.
-struct ConsoleFormatOptions : public FormatOptions {
+// Output-specific options for value formatting to buffer.
+struct FormatBufferOptions : public FormatOptions {
   // This has numeric values so one can compare verbosity levels.
   enum class Verbosity : int {
     // Show as little as possible without being misleading. Some long types will be elided with
@@ -36,7 +36,7 @@ struct ConsoleFormatOptions : public FormatOptions {
   enum class Wrapping {
     kNone,      // No linebreaks or whitespace will be inserted.
     kExpanded,  // Every member will be on a separate line and indented.
-    kSmart      // Use single-line if it first in smart_indent_cols, multiline otherwise.
+    kSmart      // Use single-line if it fits in smart_indent_cols, multiline otherwise.
   };
   Wrapping wrapping = Wrapping::kNone;
   int indent_amount = 2;       // Number of spaces to indent when using expanded formatting.
@@ -61,36 +61,35 @@ struct ConsoleFormatOptions : public FormatOptions {
 
 // Recursively describes the given format node according to the given settings. Executes the given
 // callback on completion or if the node is destroyed before formatting is done.
-void DescribeFormatNodeForConsole(FormatNode* node, const ConsoleFormatOptions& options,
-                                  fxl::RefPtr<EvalContext> context, fit::deferred_callback cb);
+void DescribeFormatTreeNode(FormatNode* node, const FormatBufferOptions& options,
+                            fxl::RefPtr<EvalContext> context, fit::deferred_callback cb);
 
-// Formats the given FormatNode for the console. The string will not be followed by a newline.
+// Formats the given FormatNode. The string will not be followed by a newline.
 //
 // This assumes the node has been evaluated and described as desired by the caller so the result
 // can be synchronously formatted and returned.
-OutputBuffer FormatNodeForConsole(const FormatNode& node, const ConsoleFormatOptions& options);
+OutputBuffer FormatTreeNode(const FormatNode& node, const FormatBufferOptions& options);
 
 // Describes and formats the given ExprValue and returns it as an async output buffer. The result
 // will not be followed by a newline.
 //
 // If the value_name is given, it will be printed with that name, otherwise it will have no name.
-fxl::RefPtr<AsyncOutputBuffer> FormatValueForConsole(ExprValue value,
-                                                     const ConsoleFormatOptions& options,
-                                                     fxl::RefPtr<EvalContext> context,
-                                                     const std::string& value_name = std::string());
+fxl::RefPtr<AsyncOutputBuffer> FormatValue(ExprValue value, const FormatBufferOptions& options,
+                                           fxl::RefPtr<EvalContext> eval_context,
+                                           const std::string& value_name = std::string());
 
-// Like FormatValueForConsole but evaluates the given variable in the given context to get the
+// Like FormatValue but evaluates the given variable in the given context to get the
 // result. The name of the variable will be included.
-fxl::RefPtr<AsyncOutputBuffer> FormatVariableForConsole(const Variable* var,
-                                                        const ConsoleFormatOptions& options,
-                                                        fxl::RefPtr<EvalContext> context);
+fxl::RefPtr<AsyncOutputBuffer> FormatVariable(const Variable* var,
+                                              const FormatBufferOptions& options,
+                                              fxl::RefPtr<EvalContext> eval_context);
 
 // Outputs all of the given expressions. The expressions themselves will be displayed as the
 // "variable name" of each resulting value.
-fxl::RefPtr<AsyncOutputBuffer> FormatExpressionsForConsole(
-    const std::vector<std::string>& expressions, const ConsoleFormatOptions& options,
-    fxl::RefPtr<EvalContext> context);
+fxl::RefPtr<AsyncOutputBuffer> FormatExpressions(const std::vector<std::string>& expressions,
+                                                 const FormatBufferOptions& options,
+                                                 fxl::RefPtr<EvalContext> eval_context);
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NODE_CONSOLE_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_H_

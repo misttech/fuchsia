@@ -14,11 +14,11 @@
 #include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/common/err_or.h"
 #include "src/developer/debug/zxdb/console/command.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/expr/eval_callback.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/developer/debug/zxdb/expr/expr_number_utils.h"
+#include "src/developer/debug/zxdb/format/format.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -139,7 +139,7 @@ Err RewriteCommandExpressionError(const std::string& verb, const Err& err);
 std::string FormatConsoleString(const std::string& input);
 
 // Returns the number format setting for the given target, or the default if target is invalid.
-ConsoleFormatOptions::NumFormat GetNumberFormatForTarget(Target* target);
+FormatBufferOptions::NumFormat GetNumberFormatForTarget(Target* target);
 
 // Makes sure there is a runnable target, creating one if necessary. In the success case, the
 // returned target should be used instead of the one from the command (it may be a new one).

@@ -5,8 +5,8 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_ASYNC_TASK_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_ASYNC_TASK_H_
 
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 namespace zxdb {
 
@@ -21,7 +21,7 @@ struct FormatTaskOptions {
   int indent_amount = 3;
   // The amount of indentation given to variables within a node.
   int variable_indent_amount = 2;
-  ConsoleFormatOptions variable;
+  FormatBufferOptions variable;
 };
 
 fxl::RefPtr<AsyncOutputBuffer> FormatAsyncTask(const AsyncTask& task, const TargetSymbols* symbols,

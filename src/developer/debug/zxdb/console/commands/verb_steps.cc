@@ -14,8 +14,8 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
 #include "src/lib/fxl/strings/string_printf.h"
 

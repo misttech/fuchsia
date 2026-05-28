@@ -10,7 +10,7 @@
 #include "src/developer/debug/shared/handle_info.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 
 namespace zxdb {
 

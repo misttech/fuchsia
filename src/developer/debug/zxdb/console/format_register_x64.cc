@@ -5,10 +5,10 @@
 #include "src/developer/debug/zxdb/console/format_register_x64.h"
 
 #include <inttypes.h>
-#include <span>
 #include <lib/syslog/cpp/macros.h>
 
 #include <set>
+#include <span>
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/arch_x86.h"
@@ -16,8 +16,8 @@
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/console/format_register.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/string_formatters.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {

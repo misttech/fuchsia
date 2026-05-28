@@ -8,9 +8,9 @@
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/print_command_utils.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 
@@ -114,14 +114,14 @@ void RunVerbLocals(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
     return;
   }
 
-  ErrOr<ConsoleFormatOptions> options = GetPrintCommandFormatOptions(cmd);
+  ErrOr<FormatBufferOptions> options = GetPrintCommandFormatOptions(cmd);
   if (options.has_error())
     return cmd_context->ReportError(options.err());
 
   auto output = fxl::MakeRefCounted<AsyncOutputBuffer>();
   for (const auto& pair : vars) {
-    output->Append(FormatVariableForConsole(pair.second.get(), options.value(),
-                                            cmd.frame()->GetEvalContext()));
+    output->Append(
+        FormatVariable(pair.second.get(), options.value(), cmd.frame()->GetEvalContext()));
     output->Append("\n");
   }
   output->Complete();

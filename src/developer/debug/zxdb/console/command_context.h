@@ -12,8 +12,8 @@
 
 #include "src/developer/debug/zxdb/client/analytics_event.h"
 #include "src/developer/debug/zxdb/common/err.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 

@@ -11,8 +11,8 @@
 
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/shared/register_value.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/expr/vector_register_format.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 

@@ -55,6 +55,7 @@ if (is_host) {
       "//src/developer/debug/zxdb/console:tests",
       "//src/developer/debug/zxdb/debug_adapter:tests",
       "//src/developer/debug/zxdb/expr:tests",
+      "//src/developer/debug/zxdb/format:tests",
       "//src/developer/debug/zxdb/symbols:tests",
       "//src/lib/fxl/test:gtest_main",
     ]

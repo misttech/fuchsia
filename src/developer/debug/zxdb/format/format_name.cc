@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/zxdb/console/format_name.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
 
 #include <ctype.h>
 
 #include "src/developer/debug/shared/string_util.h"
-#include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/expr/expr_tokenizer.h"
 #include "src/developer/debug/zxdb/symbols/collection.h"
 #include "src/developer/debug/zxdb/symbols/function.h"

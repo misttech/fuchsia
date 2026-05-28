@@ -22,16 +22,11 @@
 #include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_async_task.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_name.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/expr/cast.h"
 #include "src/developer/debug/zxdb/expr/expr.h"
@@ -43,6 +38,11 @@
 #include "src/developer/debug/zxdb/expr/resolve_collection.h"
 #include "src/developer/debug/zxdb/expr/resolve_ptr_ref.h"
 #include "src/developer/debug/zxdb/expr/resolve_variant.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/format.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/collection.h"
 #include "src/developer/debug/zxdb/symbols/data_member.h"
 #include "src/developer/debug/zxdb/symbols/identifier.h"
@@ -107,7 +107,7 @@ Examples
 
 struct FormatFutureOptions {
   bool verbose = false;
-  ConsoleFormatOptions variable;  // options to format variables
+  FormatBufferOptions variable;  // options to format variables
 };
 
 fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
@@ -199,7 +199,7 @@ fxl::RefPtr<AsyncOutputBuffer> FormatAsyncFunctionOrBlock(const ExprValue& futur
       } else if (options.verbose && printed.emplace(name).second) {
         // For some reason Rust could repeat the same field twice.
         out->Append(std::string(indent + 2, ' '));
-        out->Append(FormatValueForConsole(val.take_value(), options.variable, context, name));
+        out->Append(FormatValue(val.take_value(), options.variable, context, name));
         out->Append("\n");
       }
     }
@@ -460,12 +460,12 @@ fxl::RefPtr<AsyncOutputBuffer> FormatTraceFuture(const ExprValue& trace_future,
   ErrOrValue trace_category = ResolveNonstaticMember(context, trace_future, {"category"});
   if (trace_category.has_error())
     return FormatError("Invalid TraceFuture", trace_category.err());
-  auto category = FormatValueForConsole(trace_category.take_value(), options.variable, context);
+  auto category = FormatValue(trace_category.take_value(), options.variable, context);
 
   ErrOrValue trace_name = ResolveNonstaticMember(context, trace_future, {"name"});
   if (trace_name.has_error())
     return FormatError("Invalid TraceFuture", trace_name.err());
-  auto name = FormatValueForConsole(trace_name.take_value(), options.variable, context);
+  auto name = FormatValue(trace_name.take_value(), options.variable, context);
 
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
   out->Append("fuchsia_trace::TraceFuture(");
@@ -593,7 +593,7 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
   // General formatter.
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
   if (options.verbose) {
-    out->Append(FormatValueForConsole(future, options.variable, context));
+    out->Append(FormatValue(future, options.variable, context));
     out->Complete("\n");
   } else {
     out->Complete(std::string(type) + "\n", TextForegroundColor::kGray);
@@ -848,7 +848,7 @@ fxl::RefPtr<AsyncOutputBuffer> FormatScope(const ErrOrValue& scope_state,
                 resolved_scope_name->Complete(Syntax::kStringDim, "<failed to resolve scope name>");
               } else {
                 resolved_scope_name =
-                    FormatValueForConsole(scope_name.take_value(), options.variable, context);
+                    FormatValue(scope_name.take_value(), options.variable, context);
               }
 
               // ArcInner<ScopeInner> -> ScopeInner -> Condition<ScopeState> -> Arc<Mutex<_>> ->
@@ -954,13 +954,13 @@ void RunVerbAsyncBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_c
     FormatTaskOptions options;
     if (cmd.HasSwitch(kMoreVerbose)) {
       options.verbose = true;
-      options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
-      options.variable.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+      options.variable.verbosity = FormatBufferOptions::Verbosity::kMedium;
+      options.variable.wrapping = FormatBufferOptions::Wrapping::kSmart;
       options.variable.pointer_expand_depth = 3;
       options.variable.max_depth = 6;
     } else if (cmd.HasSwitch(kVerbose)) {
       options.verbose = true;
-      options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+      options.variable.verbosity = FormatBufferOptions::Verbosity::kMedium;
       options.variable.pointer_expand_depth = 1;
       options.variable.max_depth = 3;
     }
@@ -996,13 +996,13 @@ void RunVerbAsyncBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_c
   FormatFutureOptions options;
   if (cmd.HasSwitch(kMoreVerbose)) {
     options.verbose = true;
-    options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
-    options.variable.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+    options.variable.verbosity = FormatBufferOptions::Verbosity::kMedium;
+    options.variable.wrapping = FormatBufferOptions::Wrapping::kSmart;
     options.variable.pointer_expand_depth = 3;
     options.variable.max_depth = 6;
   } else if (cmd.HasSwitch(kVerbose)) {
     options.verbose = true;
-    options.variable.verbosity = ConsoleFormatOptions::Verbosity::kMedium;
+    options.variable.verbosity = FormatBufferOptions::Verbosity::kMedium;
     options.variable.pointer_expand_depth = 1;
     options.variable.max_depth = 3;
   }

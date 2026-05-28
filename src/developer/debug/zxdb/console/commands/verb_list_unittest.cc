@@ -12,7 +12,7 @@
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/symbols/mock_source_file_provider.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/scoped_temp_dir.h"

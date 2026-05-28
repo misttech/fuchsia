@@ -12,9 +12,9 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/expr/number_parser.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
@@ -128,7 +128,8 @@ void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
   for (const auto& region : map) {
     std::vector<std::string> row;
 
-    if (addr_limit && region.base > addr_limit) break;
+    if (addr_limit && region.base > addr_limit)
+      break;
 
     row.push_back(to_hex_string(region.base));
     row.push_back(to_hex_string(region.base + region.size));

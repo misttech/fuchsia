@@ -6,14 +6,13 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_PRINT_COMMAND_UTILS_H_
 
 #include "src/developer/debug/zxdb/common/err_or.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 namespace zxdb {
 
 // This file provides shared infrastructure for commands that print ExprValues.
 
 class Command;
-struct ConsoleFormatOptions;
 struct VerbRecord;
 
 // Appends the formatting switches used by GetPrintCommandFormatOptions. These switch values start
@@ -24,7 +23,7 @@ struct VerbRecord;
 void AppendPrintCommandSwitches(VerbRecord* record);
 
 // Populates the formatting options with the given command's switches.
-ErrOr<ConsoleFormatOptions> GetPrintCommandFormatOptions(const Command& cmd);
+ErrOr<FormatBufferOptions> GetPrintCommandFormatOptions(const Command& cmd);
 
 // Documentation for the switches appended by AppendPrintCommandSwitches().
 #define PRINT_COMMAND_SWITCH_HELP                                             \

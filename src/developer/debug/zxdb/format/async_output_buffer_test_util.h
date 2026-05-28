@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_
-#define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_
 
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
 
 namespace zxdb {
 
@@ -19,4 +19,4 @@ OutputBuffer LoopUntilAsyncOutputBufferComplete(fxl::RefPtr<AsyncOutputBuffer> b
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_TEST_UTIL_H_

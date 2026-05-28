@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/common/ref_ptr_to.h"
-#include "src/developer/debug/zxdb/console/command_utils.h"
-#include "src/developer/debug/zxdb/console/format_name.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
 #include "src/developer/debug/zxdb/expr/format.h"
 #include "src/developer/debug/zxdb/expr/format_node.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 
@@ -38,7 +37,7 @@ class AggregateDeferredCallback : public fxl::RefCountedThreadSafe<AggregateDefe
 
 // Some state needs to be tracked recursively as we iterate through the tree.
 struct RecursiveState {
-  explicit RecursiveState(const ConsoleFormatOptions& opts) : options(opts) {}
+  explicit RecursiveState(const FormatBufferOptions& opts) : options(opts) {}
 
   // Returns a modified version of the state for one additional level of recursion, advancing
   // both indent and tree depth.
@@ -49,13 +48,13 @@ struct RecursiveState {
 
   // Returns true if the combination of options means the type should be shown.
   bool TypeForcedOn() const {
-    return !inhibit_one_type && options.verbosity == ConsoleFormatOptions::Verbosity::kAllTypes;
+    return !inhibit_one_type && options.verbosity == FormatBufferOptions::Verbosity::kAllTypes;
   }
 
   // Returns true if the current item should be formatted in expanded tree mode or in one line.
   bool ShouldExpand() const {
-    return options.wrapping == ConsoleFormatOptions::Wrapping::kExpanded ||
-           (options.wrapping == ConsoleFormatOptions::Wrapping::kSmart && smart_indent_is_expanded);
+    return options.wrapping == FormatBufferOptions::Wrapping::kExpanded ||
+           (options.wrapping == FormatBufferOptions::Wrapping::kSmart && smart_indent_is_expanded);
   }
 
   int GetIndentAmount() const {
@@ -70,7 +69,7 @@ struct RecursiveState {
   // Returns true if items at this level should be elided because the printing depth is too deep.
   bool DepthTooDeep() const { return tree_depth >= options.max_depth; }
 
-  const ConsoleFormatOptions options;
+  const FormatBufferOptions options;
 
   // Forces various information off for exactly one level of printing. Use for array printing, for
   // example, to avoid duplicating the type information for every entry.
@@ -110,8 +109,8 @@ RecursiveState RecursiveState::AdvanceNoIndent() const {
   return result;
 }
 
-void RecursiveDescribeFormatNode(FormatNode* node, fxl::RefPtr<EvalContext> context,
-                                 const RecursiveState& state, fit::deferred_callback cb) {
+void RecursiveDescribeFormatTreeNode(FormatNode* node, fxl::RefPtr<EvalContext> context,
+                                     const RecursiveState& state, fit::deferred_callback cb) {
   if (state.tree_depth == state.options.max_depth)
     return;  // Reached max depth, give up.
 
@@ -131,7 +130,7 @@ void RecursiveDescribeFormatNode(FormatNode* node, fxl::RefPtr<EvalContext> cont
     // Recurse into children.
     auto aggregator = fxl::MakeRefCounted<AggregateDeferredCallback>(std::move(cb));
     for (const auto& child : weak_node->children())
-      RecursiveDescribeFormatNode(child.get(), context, state, aggregator->MakeSubordinate());
+      RecursiveDescribeFormatTreeNode(child.get(), context, state, aggregator->MakeSubordinate());
   });
 
   if (node->state() != FormatNode::kDescribed)
@@ -145,13 +144,14 @@ bool IsRust(const FormatNode* node) {
 }
 
 // Forward decls, see the implementation for comments.
-OutputBuffer DoFormatNode(const FormatNode* node, const RecursiveState& state, int line_start_char);
+OutputBuffer DoFormatTreeNode(const FormatNode* node, const RecursiveState& state,
+                              int line_start_char);
 OutputBuffer DoFormatNodeOneWay(const FormatNode* node, const RecursiveState& state,
                                 int indent_amount);
 
 // Get a possibly-elided version of the type name for a medium verbosity level.
 std::string GetElidedTypeName(const RecursiveState& state, const std::string& name) {
-  if (state.options.verbosity != ConsoleFormatOptions::Verbosity::kMinimal)
+  if (state.options.verbosity != FormatBufferOptions::Verbosity::kMinimal)
     return name;  // No eliding except in minimal mode.
 
   // Pick different thresholds depending on if we're doing multiline or not. The threshold and
@@ -181,7 +181,7 @@ void AppendRustCollectionName(const FormatNode* node, const RecursiveState& stat
   if (!IsRust(node) || !node->value().type())
     return;
 
-  if (state.options.verbosity != ConsoleFormatOptions::Verbosity::kMinimal) {
+  if (state.options.verbosity != FormatBufferOptions::Verbosity::kMinimal) {
     // Use the full identifier name in the more verbose modes.
     FormatIdentifierOptions opts;
     opts.show_global_qual = false;
@@ -329,7 +329,7 @@ void AppendNodeChildren(const FormatNode* node, const RecursiveState& node_state
       if (!child->name().empty())
         out->Append(Syntax::kComment, child->name());
     } else {
-      out->Append(DoFormatNode(child, child_state, child_indent));
+      out->Append(DoFormatTreeNode(child, child_state, child_indent));
     }
 
     // Separator (comma or newline).
@@ -503,13 +503,13 @@ OutputBuffer DoFormatGroupNode(const FormatNode* node, const RecursiveState& sta
   return out;
 }
 
-// Inner implementation for DoFormatNode() (see that for more). This does the actual formatting one
-// time according to the current formatting options and state.
+// Inner implementation for DoFormatTreeNode() (see that for more). This does the actual formatting
+// one time according to the current formatting options and state.
 //
-// Some callers may want to call this directly rather than DoFormatNode() if they want to bypass the
-// two-pass formatting. This is useful for pointers which are two nodes (when auto dereferenced) but
-// appear as one and the expansion mode of the outer should be passed transparently to the nested
-// node.
+// Some callers may want to call this directly rather than DoFormatTreeNode() if they want to bypass
+// the two-pass formatting. This is useful for pointers which are two nodes (when auto dereferenced)
+// but appear as one and the expansion mode of the outer should be passed transparently to the
+// nested node.
 OutputBuffer DoFormatNodeOneWay(const FormatNode* node, const RecursiveState& state,
                                 int indent_amount) {
   OutputBuffer out;
@@ -583,8 +583,9 @@ OutputBuffer DoFormatNodeOneWay(const FormatNode* node, const RecursiveState& st
 // The caller must compute the indenting amount because whether or not there's indenting for this
 // node depends the expansion level of the caller, not this node. (This item could be in single-line
 // mode and still be indented if the caller is expanded.)
-OutputBuffer DoFormatNode(const FormatNode* node, const RecursiveState& state, int indent_amount) {
-  if (state.options.wrapping != ConsoleFormatOptions::Wrapping::kSmart)
+OutputBuffer DoFormatTreeNode(const FormatNode* node, const RecursiveState& state,
+                              int indent_amount) {
+  if (state.options.wrapping != FormatBufferOptions::Wrapping::kSmart)
     return DoFormatNodeOneWay(node, state, indent_amount);  // Nothing fancy to do.
 
   // Nodes with few children we try to fit on one line if possible in smart mode. Generally
@@ -611,56 +612,55 @@ OutputBuffer DoFormatNode(const FormatNode* node, const RecursiveState& state, i
 
 }  // namespace
 
-void DescribeFormatNodeForConsole(FormatNode* node, const ConsoleFormatOptions& options,
-                                  fxl::RefPtr<EvalContext> context, fit::deferred_callback cb) {
-  RecursiveDescribeFormatNode(node, context, RecursiveState(options), std::move(cb));
+void DescribeFormatTreeNode(FormatNode* node, const FormatBufferOptions& options,
+                            fxl::RefPtr<EvalContext> context, fit::deferred_callback cb) {
+  RecursiveDescribeFormatTreeNode(node, context, RecursiveState(options), std::move(cb));
 }
 
-OutputBuffer FormatNodeForConsole(const FormatNode& node, const ConsoleFormatOptions& options) {
-  return DoFormatNode(&node, RecursiveState(options), 0);
+OutputBuffer FormatTreeNode(const FormatNode& node, const FormatBufferOptions& options) {
+  return DoFormatTreeNode(&node, RecursiveState(options), 0);
 }
 
-fxl::RefPtr<AsyncOutputBuffer> FormatValueForConsole(ExprValue value,
-                                                     const ConsoleFormatOptions& options,
-                                                     fxl::RefPtr<EvalContext> context,
-                                                     const std::string& value_name) {
+fxl::RefPtr<AsyncOutputBuffer> FormatValue(ExprValue value, const FormatBufferOptions& options,
+                                           fxl::RefPtr<EvalContext> eval_context,
+                                           const std::string& value_name) {
   auto node = std::make_unique<FormatNode>(value_name, std::move(value));
   node->set_child_kind(FormatNode::kVariable);
 
   FormatNode* node_ptr = node.get();
 
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
-  DescribeFormatNodeForConsole(node_ptr, options, context,
-                               fit::defer_callback([node = std::move(node), options, out]() {
-                                 // Asynchronous expansion is complete, now format the completed
-                                 // output.
-                                 out->Complete(FormatNodeForConsole(*node, options));
-                               }));
+  DescribeFormatTreeNode(node_ptr, options, eval_context,
+                         fit::defer_callback([node = std::move(node), options, out]() {
+                           // Asynchronous expansion is complete, now format the completed
+                           // output.
+                           out->Complete(FormatTreeNode(*node, options));
+                         }));
   return out;
 }
 
-fxl::RefPtr<AsyncOutputBuffer> FormatVariableForConsole(const Variable* var,
-                                                        const ConsoleFormatOptions& options,
-                                                        fxl::RefPtr<EvalContext> context) {
+fxl::RefPtr<AsyncOutputBuffer> FormatVariable(const Variable* var,
+                                              const FormatBufferOptions& options,
+                                              fxl::RefPtr<EvalContext> eval_context) {
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
-  context->GetVariableValue(
-      RefPtrTo(var), [name = var->GetAssignedName(), context, options, out](ErrOrValue value) {
-        if (value.has_error()) {
-          // In the error case, construct a node with the error set so the formatting with other
-          // types of errors is consistent.
-          FormatNode err_node(name);
-          err_node.SetDescribedError(value.err());
-          out->Complete(FormatNodeForConsole(err_node, options));
-        } else {
-          out->Complete(FormatValueForConsole(value.take_value(), options, context, name));
-        }
-      });
+  eval_context->GetVariableValue(RefPtrTo(var), [name = var->GetAssignedName(), eval_context,
+                                                 options, out](ErrOrValue value) mutable {
+    if (value.has_error()) {
+      // In the error case, construct a node with the error set so the formatting with other
+      // types of errors is consistent.
+      FormatNode err_node(name);
+      err_node.SetDescribedError(value.err());
+      out->Complete(FormatTreeNode(err_node, options));
+    } else {
+      out->Complete(FormatValue(value.take_value(), options, eval_context, name));
+    }
+  });
   return out;
 }
 
-fxl::RefPtr<AsyncOutputBuffer> FormatExpressionsForConsole(
-    const std::vector<std::string>& expressions, const ConsoleFormatOptions& options,
-    fxl::RefPtr<EvalContext> context) {
+fxl::RefPtr<AsyncOutputBuffer> FormatExpressions(const std::vector<std::string>& expressions,
+                                                 const FormatBufferOptions& options,
+                                                 fxl::RefPtr<EvalContext> eval_context) {
   // Put all of the expressions in a "group" node and then evaluate and format this node. This will
   // allow single- and multi-line formatting for the values and also handles all of the asynchronous
   // state across all of the expressions automatically.
@@ -674,12 +674,10 @@ fxl::RefPtr<AsyncOutputBuffer> FormatExpressionsForConsole(
     list_node->children().push_back(std::move(child_node));
   }
 
-  DescribeFormatNodeForConsole(
-      list_node_ptr, options, context,
-      fit::defer_callback([list_node = std::move(list_node), options, out]() {
-        RecursiveState state(options);
-        out->Complete(FormatNodeForConsole(*list_node, options));
-      }));
+  DescribeFormatTreeNode(list_node_ptr, options, eval_context,
+                         fit::defer_callback([list_node = std::move(list_node), options, out]() {
+                           out->Complete(FormatTreeNode(*list_node, options));
+                         }));
   return out;
 }
 

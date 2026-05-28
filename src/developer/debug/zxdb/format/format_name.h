@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NAME_H_
-#define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NAME_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_NAME_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_NAME_H_
 
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/expr/parsed_identifier.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 namespace zxdb {
 
@@ -14,7 +14,7 @@ class Function;
 class TargetSymbols;
 
 struct FormatIdentifierOptions {
-  // Includes the preceeding "::" if the identifier is marked as globally qualified. Otherwise the
+  // Includes the preceding "::" if the identifier is marked as globally qualified. Otherwise the
   // leading "::" is omitted regardless of qualification.
   bool show_global_qual = false;
 
@@ -34,7 +34,7 @@ struct FormatIdentifierOptions {
 
 // Formats the given string as an identifier, with any template annotations dimmed.
 //
-// If |show_global_qual| is set, the output will be preceeded with "::" if it's globally qualified.
+// If |show_global_qual| is set, the output will be preceded with "::" if it's globally qualified.
 // Otherwise, global qualifications on the identifier will be ignored. Callers may want to ignore
 // the global qualifiers in cases where it's clear in context whether the name is global or not.
 // For example, function names in backtraces are always global and adding "::" to everything adds
@@ -67,4 +67,4 @@ OutputBuffer FormatFunctionName(const Function* function, const FormatFunctionNa
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_NAME_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_NAME_H_

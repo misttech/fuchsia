@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 
 #include <cstdio>
 #include <map>
 #include <string_view>
 
 #include "src/developer/debug/zxdb/common/err.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/lib/fxl/strings/split_string.h"
 
 namespace zxdb {

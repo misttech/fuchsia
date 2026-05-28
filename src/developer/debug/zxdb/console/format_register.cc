@@ -20,12 +20,12 @@
 #include "src/developer/debug/zxdb/console/format_register_arm64.h"
 #include "src/developer/debug/zxdb/console/format_register_x64.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/string_formatters.h"
 #include "src/developer/debug/zxdb/expr/abi_null.h"
 #include "src/developer/debug/zxdb/expr/eval_context_impl.h"
 #include "src/developer/debug/zxdb/expr/format.h"
 #include "src/developer/debug/zxdb/expr/format_options.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {

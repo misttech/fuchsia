@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_STRING_UTIL_H_
-#define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_STRING_UTIL_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_STRING_UTIL_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_STRING_UTIL_H_
 
 #include <optional>
 #include <string_view>
@@ -45,4 +45,4 @@ size_t UnicodeCharWidth(const std::string& str);
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_STRING_UTIL_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_STRING_UTIL_H_

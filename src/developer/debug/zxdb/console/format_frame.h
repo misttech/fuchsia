@@ -6,14 +6,13 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_FORMAT_FRAME_H_
 
 #include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
-#include "src/developer/debug/zxdb/console/async_output_buffer.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
+#include "src/developer/debug/zxdb/format/async_output_buffer.h"
+#include "src/developer/debug/zxdb/format/format.h"
 
 namespace zxdb {
 
-struct ConsoleFormatOptions;
 struct FormatLocationOptions;
 class Frame;
 class OutputBuffer;
@@ -33,7 +32,7 @@ struct FormatFrameOptions {
   FormatLocationOptions loc;
 
   // Formatting options for function parameters if requested in the Detail.
-  ConsoleFormatOptions variable;
+  FormatBufferOptions variable;
 
   // Include the trust of this frame, indicating which unwinder implementation was successful for
   // this frame.

@@ -29,10 +29,10 @@
 #include "src/developer/debug/zxdb/console/format_context.h"
 #include "src/developer/debug/zxdb/console/format_exception.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_node_console.h"
 #include "src/developer/debug/zxdb/console/format_target.h"
 #include "src/developer/debug/zxdb/console/format_thread.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/format.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
@@ -329,16 +329,16 @@ void ConsoleContext::ScheduleDisplayExpressions(Thread* thread) const {
   fxl::RefPtr<EvalContext> eval_context = frame->GetEvalContext();
 
   // When something is printed every time, assume the user wants to see relatively little detail.
-  ConsoleFormatOptions options;
-  options.verbosity = ConsoleFormatOptions::Verbosity::kMinimal;
-  options.wrapping = ConsoleFormatOptions::Wrapping::kSmart;
+  FormatBufferOptions options;
+  options.verbosity = FormatBufferOptions::Verbosity::kMinimal;
+  options.wrapping = FormatBufferOptions::Wrapping::kSmart;
   options.pointer_expand_depth = 2;
 
   if (thread->GetProcess()) {
     options.num_format = GetNumberFormatForTarget(thread->GetProcess()->GetTarget());
   }
 
-  Console::get()->Output(FormatExpressionsForConsole(exprs, options, eval_context));
+  Console::get()->Output(FormatExpressions(exprs, options, eval_context));
 }
 
 Err ConsoleContext::FillOutCommand(Command* cmd) const {

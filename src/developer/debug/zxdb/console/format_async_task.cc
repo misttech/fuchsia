@@ -7,8 +7,8 @@
 #include "src/developer/debug/zxdb/client/async_task.h"
 #include "src/developer/debug/zxdb/client/async_task_tree.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
-#include "src/developer/debug/zxdb/console/format_name.h"
-#include "src/developer/debug/zxdb/console/string_util.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
+#include "src/developer/debug/zxdb/format/string_util.h"
 
 namespace zxdb {
 
@@ -82,8 +82,8 @@ fxl::RefPtr<AsyncOutputBuffer> FormatAsyncTask(const AsyncTask& task, const Targ
   if (options.verbose) {
     for (const auto& value : task.GetValues()) {
       out->Append(std::string(indent + options.variable_indent_amount, ' '));
-      out->Append(FormatValueForConsole(value.value, options.variable, eval_context,
-                                        value.name ? *value.name : ""));
+      out->Append(
+          FormatValue(value.value, options.variable, eval_context, value.name ? *value.name : ""));
       out->Append("\n");
     }
   }

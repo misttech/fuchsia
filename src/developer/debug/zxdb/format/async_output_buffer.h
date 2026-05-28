@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_H_
-#define SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_H_
+#ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_H_
+#define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_H_
 
 #include <variant>
 
 #include "lib/fit/function.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 
 namespace zxdb {
@@ -23,7 +23,7 @@ class Err;
 // asynchronously and the toplevel buffer's callback will be issued when everything is marked
 // complete.
 //
-// Usage guidelines for general sanity:
+// Usage guidelines for recommended usage:
 //
 //   - The same code is responsible for Complete()ing an AsyncOutputBuffer as for creating it.
 //
@@ -147,4 +147,4 @@ class AsyncOutputBuffer : public fxl::RefCountedThreadSafe<AsyncOutputBuffer> {
 
 }  // namespace zxdb
 
-#endif  // SRC_DEVELOPER_DEBUG_ZXDB_CONSOLE_ASYNC_OUTPUT_BUFFER_H_
+#endif  // SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_ASYNC_OUTPUT_BUFFER_H_

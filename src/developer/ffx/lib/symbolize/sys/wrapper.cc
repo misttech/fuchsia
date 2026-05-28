@@ -5,7 +5,7 @@
 #include "src/developer/ffx/lib/symbolize/sys/wrapper.h"
 
 #include "src/developer/debug/zxdb/common/curl.h"
-#include "src/developer/debug/zxdb/console/format_name.h"
+#include "src/developer/debug/zxdb/format/format_name.h"
 #include "tools/symbolizer/command_line_options.h"
 #include "tools/symbolizer/symbolizer.h"
 #include "tools/symbolizer/symbolizer_impl.h"

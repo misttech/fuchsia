@@ -27,10 +27,10 @@
 #include "src/developer/debug/zxdb/console/console_impl.h"
 #include "src/developer/debug/zxdb/console/console_noninteractive.h"
 #include "src/developer/debug/zxdb/console/fd_streamer.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/script_runner.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/debug_adapter/server.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/developer/debug/zxdb/local_agent.h"
 #include "src/lib/fxl/strings/string_printf.h"
 

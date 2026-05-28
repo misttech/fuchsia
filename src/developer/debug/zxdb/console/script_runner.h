@@ -11,7 +11,7 @@
 #include <string>
 
 #include "src/developer/debug/zxdb/console/console.h"
-#include "src/developer/debug/zxdb/console/output_buffer.h"
+#include "src/developer/debug/zxdb/format/output_buffer.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace zxdb {
