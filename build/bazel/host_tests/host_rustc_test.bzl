@@ -7,6 +7,65 @@ load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(":host_test.bzl", "host_test")
 load(":host_test_data.bzl", "host_test_data_files")
 
+def wrap_host_rustc_test(
+        name,
+        binary_name,
+        test_args = [],
+        test_data = [],
+        visibility = None):
+    """Generate a host_test() target to run a rustc_test().
+
+    This ensures that a host rustc_test() binary can be run with 'fx test'
+    and in infra builders. This is called implicitely by 'host_rustc_test()'
+    and other macros wrapping Rust test targets.
+
+    Args:
+       name: (string) host_test() target name
+       binary_name: (string) label to rustc_test() binary.
+       test_args: (list[string]) List of test arguments.
+       test_data: (list[string]) List of labels to test's runtime requirements.
+       visibility: (list[string]) Visibility of the final host_test() target.
+    """
+    binary_as_test_data = binary_name + "_as_test_data"
+    host_test_data_files(
+        name = binary_as_test_data,
+        srcs = [":" + binary_name],
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
+
+    # Wrap the binary invocation with //tools/rust_test_parser
+    # LINT.IfChange(rustc_test_invocation)
+    wrapper_script = "//tools/rust_test_parser:rust_test_parser"
+
+    # In Bazel, and unlike GN, rustc_test() binaries always contain debug
+    # symbols (see //build/bazel/debug_symbols/README.md for details).
+    #
+    # Enable Rust stack traces by default. In GN, when an ASan or Coverage
+    # toolchain is detected, this is disabled and the test uses the stripped
+    # binary instead. This is not implemented yet  because there is no good
+    # way to track these in Bazel at the moment.
+    #
+    # TODO(https://fxbug.dev/495755822): Disable for ASan and Coverage build
+    # configurations.
+    test_args = [
+        "env RUST_BACKTRACE=1",
+        "./{}".format(binary_name),
+    ] + test_args
+
+    test_data = test_data + [":" + binary_as_test_data]
+
+    # LINT.ThenChange(//build/rust/rustc_test.gni:rustc_test_invocation)
+
+    host_test(
+        name = name,
+        binary = wrapper_script,
+        test_args = test_args,
+        data = test_data,
+        target_compatible_with = HOST_CONSTRAINTS,
+        visibility = visibility,
+    )
+
 def legacy_host_rustc_test(
         name,
         binary_name = "",
@@ -49,45 +108,15 @@ def legacy_host_rustc_test(
         name = binary_name,
         tags = tags,
         visibility = ["//visibility:private"],
+        target_compatible_with = HOST_CONSTRAINTS,
         **kwargs
     )
 
-    host_test_data_files(
-        name = binary_as_test_data,
-        srcs = [":" + binary_name],
-        testonly = True,
-        visibility = ["//visibility:private"],
-    )
-
-    # Wrap the binary invocation with //tools/rust_test_parser
-    # LINT.IfChange(rustc_test_invocation)
-    wrapper_script = "//tools/rust_test_parser:rust_test_parser"
-
-    # In Bazel, and unlike GN, rustc_test() binaries always contain debug
-    # symbols (see //build/bazel/debug_symbols/README.md for details).
-    #
-    # Enable Rust stack traces by default. In GN, when an ASan or Coverage
-    # toolchain is detected, this is disabled and the test uses the stripped
-    # binary instead. This is not implemented yet  because there is no good
-    # way to track these in Bazel at the moment.
-    #
-    # TODO(https://fxbug.dev/495755822): Disable for ASan and Coverage build
-    # configurations.
-    test_args = [
-        "env RUST_BACKTRACE=1",
-        "./" + binary_name,
-    ] + test_args
-
-    test_data = test_data + [":" + binary_as_test_data]
-
-    # LINT.ThenChange(//build/rust/rustc_test.gni:rustc_test_invocation)
-
-    host_test(
-        name = name,
-        binary = wrapper_script,
+    wrap_host_rustc_test(
+        name,
+        binary_name = binary_name,
         test_args = test_args,
-        data = test_data,
-        target_compatible_with = HOST_CONSTRAINTS,
+        test_data = test_data,
         visibility = visibility,
     )
 
