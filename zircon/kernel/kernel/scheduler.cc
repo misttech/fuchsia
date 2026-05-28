@@ -3087,9 +3087,11 @@ void Scheduler::UnblockSynchronous(Thread* thread) {
   trace.End();
 
   // If there was a power level change we need to account for, reschedule those CPUs. But do not
-  // reschedule the target CPU.
-  if (targets.cpus_to_reschedule != 0) {
+  // reschedule the target CPU, if it is the current CPU.
+  if (targets.target_cpu == arch_curr_cpu_num()) {
     RescheduleMask(targets.cpus_to_reschedule);
+  } else {
+    RescheduleMask(targets.Mask());
   }
 }
 
