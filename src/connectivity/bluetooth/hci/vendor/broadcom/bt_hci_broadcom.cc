@@ -749,8 +749,17 @@ void BtHciBroadcom::handle_unknown_method(
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::AssertLevel(PowerLevel requested_level) {
-  if (!element_lessor_client_.is_valid() || requested_level == power_level_) {
-    // We are not using power framework or no change is needed.
+  if (!element_lessor_client_.is_valid()) {
+    // We are not using power framework
+    return fpromise::make_promise(
+        []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
+  }
+  if (requested_level == power_level_) {
+    // We don't need to change our power level, but we may need to bump the timeout.
+    if (requested_level != PowerLevel::kOff) {
+      drop_level_task_.Cancel();
+      drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultHostIdleThreshold);
+    }
     return fpromise::make_promise(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
@@ -816,6 +825,9 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AcquirePowerElementLease() {
         }
         fdf::debug("Lease is satisfied");
         power_level_ = PowerLevel::kOn;
+        // Schedule when we should drop the lease.
+        drop_level_task_.Cancel();
+        drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultHostIdleThreshold);
         completer.complete_ok();
         return;
       });
@@ -862,8 +874,6 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
 }
 
 void BtHciBroadcom::NoteActivity(ActivityType activity) {
-  drop_level_task_.Cancel();
-  drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultHostIdleThreshold);
   executor_->schedule_task(AssertLevel(PowerLevel::kOn));
 }
 

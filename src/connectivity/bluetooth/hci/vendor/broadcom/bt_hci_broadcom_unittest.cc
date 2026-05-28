@@ -79,8 +79,12 @@ std::vector<uint8_t> MakeReadVerboseConfigVersionInfoCommandCompleteEvent(uint8_
 }
 
 using fuchsia_power_system::LeaseToken;
+
+constexpr zx::duration kDefaultHostIdleThreshold = zx::usec(12500);
+
 class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
                         public fidl::Server<fuchsia_power_broker::Lessor>,
+                        public fidl::Server<fuchsia_power_broker::LeaseControl>,
                         public fidl::testing::TestBase<fuchsia_power_broker::ElementControl> {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) {
@@ -95,6 +99,39 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
 
   fidl::ServerEnd<fuchsia_power_broker::LeaseControl> TakeLeaseControlServerEnd() {
     return std::move(lease_control_server_end_);
+  }
+
+  void SatisfyLease() {
+    ASSERT_TRUE(lease_control_server_end_.is_valid());
+    lease_control_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                       std::move(lease_control_server_end_), this,
+                                       fidl::kIgnoreBindingClosure);
+  }
+
+  bool IsLeaseControlClosed() {
+    if (!lease_control_server_end_.is_valid()) {
+      return true;
+    }
+    zx_signals_t observed{};
+    auto result = lease_control_server_end_.channel().wait_one(
+        ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+    return (result == ZX_OK && (observed & ZX_CHANNEL_PEER_CLOSED));
+  }
+
+  bool IsLeaseControlReadable() {
+    if (!lease_control_server_end_.is_valid()) {
+      return false;
+    }
+    zx_signals_t observed{};
+    auto result = lease_control_server_end_.channel().wait_one(
+        ZX_CHANNEL_READABLE, zx::time::infinite_past(), &observed);
+    return (result == ZX_OK && (observed & ZX_CHANNEL_READABLE));
+  }
+
+  bool IsLeaseBound() {
+    bool has_bindings = false;
+    lease_control_bindings_.ForEachBinding([&](const auto& binding) { has_bindings = true; });
+    return has_bindings;
   }
 
   // Verify that the lease has been released at this point (and reset lease power level)
@@ -164,6 +201,16 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
     FAIL();
   }
 
+  // fuchsia.power.broker/LeaseControl
+  void WatchStatus(WatchStatusRequest& request, WatchStatusCompleter::Sync& completer) override {
+    completer.Reply(fuchsia_power_broker::LeaseStatus::kSatisfied);
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::LeaseControl> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
   // fuchsia.power.broker/ElementControl
   void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
                                RegisterDependencyTokenCompleter::Sync& completer) override {
@@ -189,6 +236,7 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
 
   fidl::ServerBindingGroup<fuchsia_power_broker::Lessor> lessor_bindings_;
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> element_control_bindings_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::LeaseControl> lease_control_bindings_;
   fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end_;
 
   std::optional<uint8_t> lease_power_level_;
@@ -1018,7 +1066,7 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, InitPowerManagement) {
   driver_test().runtime().ResetQuit();
 }
 
-TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
+TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresAndExtendsLease) {
   // Should have acquired a Boot lease as part of startup
   std::optional<uint8_t> lease_power_level = driver_test().RunInEnvironmentTypeContext(
       fit::callback<std::optional<uint8_t>(TestEnvironment&)>(
@@ -1050,9 +1098,8 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
   });
 
   EXPECT_EQ(*lease_power_level, BtHciBroadcom::kOn);
-  fdf::info("Lease at On, waiting for lease off");
 
-  // Lease should be dropped after a timeout.
+  // Get the lease control server end to monitor closure.
   auto lease_control_server_end = driver_test().RunInEnvironmentTypeContext(
       fit::callback<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>(TestEnvironment&)>(
           [](TestEnvironment& env) {
@@ -1060,18 +1107,115 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
           }));
   EXPECT_TRUE(lease_control_server_end.is_valid());
 
+  // Wait for some time less than timeout (timeout is 2 * kDefaultHostIdleThreshold).
+  // Let's wait kDefaultHostIdleThreshold.
+  driver_test().RunInDriverContext<void>(
+      [this](BtHciBroadcom& driver) { RunLoopFor(kDefaultHostIdleThreshold); });
+
+  // Verify lease is STILL ACTIVE (not closed).
+  bool closed = driver_test().RunInEnvironmentTypeContext<bool>([&](TestEnvironment& env) {
+    zx_signals_t observed{};
+    auto wait_result = lease_control_server_end.channel().wait_one(
+        ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+    return (wait_result == ZX_OK && (observed & ZX_CHANNEL_PEER_CLOSED));
+  });
+  EXPECT_FALSE(closed);
+
+  fdf::info("Sending another packet to extend lease");
+  auto result2 = hci_transport_client()->Send(
+      fhbt::wire::SentPacket::WithCommand(arena, std::vector<uint8_t>{0x1A, 0xFD}));
+  ASSERT_EQ(result2.status(), ZX_OK);
+
+  // Wait another kDefaultHostIdleThreshold. Total time since first packet is 2 *
+  // kDefaultHostIdleThreshold. Total time since second packet is kDefaultHostIdleThreshold (should
+  // not expire).
+  driver_test().RunInDriverContext<void>(
+      [this](BtHciBroadcom& driver) { RunLoopFor(kDefaultHostIdleThreshold); });
+
+  // Verify lease is STILL ACTIVE.
+  closed = driver_test().RunInEnvironmentTypeContext<bool>([&](TestEnvironment& env) {
+    zx_signals_t observed{};
+    auto wait_result = lease_control_server_end.channel().wait_one(
+        ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+    return (wait_result == ZX_OK && (observed & ZX_CHANNEL_PEER_CLOSED));
+  });
+  EXPECT_FALSE(closed);
+
+  // Wait another 2 * kDefaultHostIdleThreshold. Total time since second packet is 3 *
+  // kDefaultHostIdleThreshold (should expire).
+  driver_test().RunInDriverContext<void>(
+      [this](BtHciBroadcom& driver) { RunLoopFor(2 * kDefaultHostIdleThreshold); });
+
+  // Verify lease IS DROPPED.
   driver_test().runtime().RunUntil([&]() {
     return !driver_test().RunInEnvironmentTypeContext<bool>([&](TestEnvironment& env) {
       zx_signals_t observed{};
-      auto result = lease_control_server_end.channel().wait_one(
+      auto wait_result = lease_control_server_end.channel().wait_one(
           ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
-      if (result == ZX_ERR_TIMED_OUT) {
+      if (wait_result == ZX_ERR_TIMED_OUT) {
         return false;
       }
-      EXPECT_EQ(result, ZX_OK);
+      EXPECT_EQ(wait_result, ZX_OK);
       return (observed & ZX_CHANNEL_PEER_CLOSED) != 0;
-      fdf::info("Lease dropped");
     });
+  });
+}
+
+TEST_F(BtHciBroadcomInitializedWithPowerTest, LeasePendingVeryLong) {
+  // Should have acquired a Boot lease as part of startup
+  std::optional<uint8_t> lease_power_level = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<std::optional<uint8_t>(TestEnvironment&)>(
+          [](TestEnvironment& env) { return env.fake_power_broker().lease_power_level(); }));
+  ASSERT_TRUE(lease_power_level);
+  EXPECT_EQ(*lease_power_level, BtHciBroadcom::kBoot);
+
+  fdf::info("Checking that boot lease has been dropped");
+  // But after startup firmware load, the lease should be dropped already.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.fake_power_broker().ExpectLeaseReleased(); });
+
+  OpenHciTransportClient();
+  fdf::info("Sending a packet through, should get a power lease");
+
+  fidl::Arena arena;
+  auto result = hci_transport_client()->Send(
+      fhbt::wire::SentPacket::WithCommand(arena, std::vector<uint8_t>{0x1A, 0xFD}));
+
+  ASSERT_EQ(result.status(), ZX_OK);
+
+  // Wait for the lease request to be processed by FakePowerBroker.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>([](TestEnvironment& env) {
+      return env.fake_power_broker().lease_power_level().has_value();
+    });
+  });
+
+  // Wait for longer than the timeout (2 * kDefaultHostIdleThreshold).
+  // Let's wait 3 * kDefaultHostIdleThreshold.
+  // The lease should NOT be dropped yet because it's pending.
+  driver_test().RunInDriverContext<void>(
+      [this](BtHciBroadcom& driver) { RunLoopFor(3 * kDefaultHostIdleThreshold); });
+
+  // Verify lease is STILL ACTIVE (not closed).
+  bool closed = driver_test().RunInEnvironmentTypeContext<bool>(
+      [](TestEnvironment& env) { return env.fake_power_broker().IsLeaseControlClosed(); });
+  EXPECT_FALSE(closed);
+
+  // Verify that WatchStatus hasn't been satisfied yet (it should be readable).
+  bool readable = driver_test().RunInEnvironmentTypeContext<bool>(
+      [](TestEnvironment& env) { return env.fake_power_broker().IsLeaseControlReadable(); });
+  EXPECT_TRUE(readable);
+
+  fdf::info("Satisfying lease after timeout");
+  // Now satisfy the lease.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.fake_power_broker().SatisfyLease(); });
+
+  // Now it should be satisfied, and the driver should schedule a drop.
+  // Wait for it to be dropped (binding removed).
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return !env.fake_power_broker().IsLeaseBound(); });
   });
 }
 
