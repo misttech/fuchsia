@@ -39,6 +39,10 @@
                     runner: "realm_builder",
                     from: "#realm_builder_server",
                 },
+                {
+                    runner: "zxtest_runner",
+                    from: "#zxtest_runner",
+                },
             ],
             resolvers: [
                 {

@@ -28,6 +28,11 @@
             environment: "#test-env",
             durability: "transient",
         },
+        {
+            name: "system-tests",
+            environment: "#test-env",
+            durability: "transient",
+        },
     ],
     capabilities: [
         { protocol: "fuchsia.test.manager.Query" },
@@ -59,6 +64,15 @@
             directory: "dev-builtin",
             from: "parent",
             to: [ "#tests" ],
+        },
+        {
+            service: [
+                "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.Service",
+                "fuchsia.gpu.magma.TrustedService",
+            ],
+            from: "parent",
+            to: [ "#system-tests" ],
         },
         {
             protocol: [
@@ -99,6 +113,11 @@
             from: "self",
             to: [ "#tests" ],
         },
+        {
+            dictionary: "diagnostics",
+            from: "parent",
+            to: "#system-tests",
+        },
     ],
     expose: [
         {
@@ -134,6 +153,10 @@
                 {
                     runner: "realm_builder",
                     from: "#realm_builder_server",
+                },
+                {
+                    runner: "zxtest_runner",
+                    from: "#zxtest_runner",
                 },
             ],
             resolvers: [

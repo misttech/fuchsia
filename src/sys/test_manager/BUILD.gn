@@ -255,6 +255,7 @@ fuchsia_package("pkg_for_bootstrap") {
     "//src/storage/memfs:memfs_component",
     "//src/sys/test_runners/elf:elf-test-runner-component",
     "//src/sys/test_runners/gtest:gtest-runner-component",
+    "//src/sys/test_runners/gtest:zxtest-runner-component",
     "//src/sys/test_runners/lib_loader_cache:lib_loader_runner_cache_cmp",
     "//src/sys/testing:bootstrap_test_realm",
   ]
