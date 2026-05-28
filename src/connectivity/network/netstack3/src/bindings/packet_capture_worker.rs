@@ -31,11 +31,11 @@ enum RollingCaptureState {
     Attached,
 }
 
-pub(crate) struct PacketCaptureState {
+pub(crate) struct PacketCaptures {
     state: Mutex<RollingCaptureState>,
 }
 
-impl Default for PacketCaptureState {
+impl Default for PacketCaptures {
     fn default() -> Self {
         Self { state: Mutex::new(RollingCaptureState::Empty) }
     }

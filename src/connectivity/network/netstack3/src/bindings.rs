@@ -94,7 +94,7 @@ use crate::bindings::devices::TxBuffer;
 pub use crate::bindings::interface_config::InterfaceConfigDefaults;
 use crate::bindings::interface_config::InterfaceConfigType;
 use crate::bindings::interfaces_watcher::AddressPropertiesUpdate;
-use crate::bindings::packet_capture_worker::PacketCaptureState;
+use crate::bindings::packet_capture_worker::PacketCaptures;
 use crate::bindings::settings::Settings;
 use crate::bindings::socket::queue::NoSpace;
 use crate::bindings::stats_sampler::StatsSampler;
@@ -407,7 +407,7 @@ pub(crate) struct BindingsCtxInner {
     config: GlobalConfig,
     counters: BindingsCounters,
     ebpf_manager: EbpfManager,
-    packet_captures: PacketCaptureState,
+    packet_captures: PacketCaptures,
     power: PowerWorkerSink,
     wake_groups: waker::WakeGroups,
     settings: Settings,
