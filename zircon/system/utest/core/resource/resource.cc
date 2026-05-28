@@ -526,3 +526,39 @@ TEST(Resource, MexecEmptyZbi) {
   EXPECT_EQ(ZX_ERR_IO_DATA_INTEGRITY,
             zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get()));
 }
+
+#if defined(__x86_64__)
+
+// Regression test for https://fxbug.dev/517585028
+TEST(Resource, PcInterruptVectorPoolLeak) {
+  zx::unowned_resource irq_res = standalone::GetIrqResource();
+  if (!irq_res->is_valid()) {
+    ZXTEST_SKIP("IRQ resource not available");
+  }
+  std::atomic<bool> stop{false};
+
+  // This test spawns two threads repeatedly creating and destroying interrupt dispatcher
+  // objects in order to exploit a potential race condition in the pc platform's
+  // interrupt manager and leak entries of the vector pool.
+
+  auto repeatedly_create_and_destroy_interrupt = [&]() {
+    while (!stop.load()) {
+      zx_handle_t h = ZX_HANDLE_INVALID;
+      if (zx_interrupt_create(irq_res->get(), 8, ZX_INTERRUPT_MODE_EDGE_HIGH, &h) == ZX_OK) {
+        zx_handle_close(h);
+      }
+    }
+  };
+
+  std::thread t1(repeatedly_create_and_destroy_interrupt);
+  std::thread t2(repeatedly_create_and_destroy_interrupt);
+
+  zx_nanosleep(zx_deadline_after(ZX_MSEC(50)));
+  stop.store(true);
+  t1.join();
+  t2.join();
+
+  // By this point, if there was a leak, we would expect a crash.
+}
+
+#endif  // defined(__x86_64__)

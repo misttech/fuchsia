@@ -60,6 +60,10 @@ class InterruptManager {
   zx_status_t ConfigureInterrupt(unsigned int global_irq, enum interrupt_trigger_mode tm,
                                  enum interrupt_polarity pol) {
     Guard<SpinLock, IrqSave> guard{&lock_};
+    uint8_t x86_vector = IoApic::FetchIrqVector(global_irq);
+    if (x86_vector >= X86_INT_PLATFORM_BASE && x86_vector <= X86_INT_PLATFORM_MAX) {
+      return ZX_ERR_ALREADY_BOUND;
+    }
     IoApic::ConfigureIrq(global_irq, tm, pol, DELIVERY_MODE_FIXED, IO_APIC_IRQ_MASK,
                          DST_MODE_PHYSICAL, apic_bsp_id(), 0);
     return ZX_OK;
