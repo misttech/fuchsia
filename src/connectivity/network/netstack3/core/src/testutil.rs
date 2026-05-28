@@ -1455,6 +1455,7 @@ impl DeviceLayerEventDispatcher for FakeBindingsCtx {
         device: &EthernetDeviceId<FakeBindingsCtx>,
         frame: Buf<Vec<u8>>,
         _dequeue_context: Option<&mut Self::DequeueContext>,
+        _csum_offload: Option<netstack3_base::ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError> {
         let frame_meta = DispatchedFrame::Ethernet(device.downgrade());
         self.with_inner_mut(|ctx| ctx.frames.push(frame_meta, frame.into_inner()));
@@ -1467,6 +1468,7 @@ impl DeviceLayerEventDispatcher for FakeBindingsCtx {
         packet: Buf<Vec<u8>>,
         ip_version: IpVersion,
         _dequeue_context: Option<&mut Self::DequeueContext>,
+        _csum_offload: Option<netstack3_base::ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError> {
         let frame_meta = DispatchedFrame::PureIp(PureIpDeviceAndIpVersion {
             device: device.downgrade(),

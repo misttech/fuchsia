@@ -12,8 +12,8 @@ use derivative::Derivative;
 use log::trace;
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
-    ChecksumOffloadSpec, Device, DeviceIdContext, ErrorAndSerializer, NetworkSerializationContext,
-    NetworkSerializer,
+    ChecksumOffloadResult, ChecksumOffloadSpec, Device, DeviceIdContext, ErrorAndSerializer,
+    NetworkSerializationContext, NetworkSerializer, TxMetadata,
 };
 use packet::{Buf, FragmentedBuffer as _, NoReuseBufferProvider, ReusableBuffer, new_buf_vec};
 
@@ -69,10 +69,22 @@ pub trait TransmitQueueBindingsContext<DeviceId>: DeviceBufferBindingsTypes {
     fn wake_tx_task(&mut self, device_id: &DeviceId);
 }
 
+/// A trait for metadata that is attached to a frame in the queue.
+pub trait TxQueuePacketMetadataCommon {
+    /// Sets the checksum offload result.
+    fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>);
+}
+
+impl<T: TxMetadata> TxQueuePacketMetadataCommon for T {
+    fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
+        TxMetadata::set_checksum_offload_result(self, result);
+    }
+}
+
 /// Basic definitions for a transmit queue.
 pub trait TransmitQueueCommon<D: Device, C>: DeviceIdContext<D> {
     /// The metadata associated with every packet in the queue.
-    type Meta;
+    type Meta: TxQueuePacketMetadataCommon;
 
     /// The context given to `send_frame` when dequeueing.
     type DequeueContext;
@@ -274,7 +286,7 @@ impl<
         &mut self,
         bindings_ctx: &mut BC,
         device_id: &CC::DeviceId,
-        meta: CC::Meta,
+        mut meta: CC::Meta,
         body: S,
     ) -> Result<usize, TransmitQueueFrameError<S>>
     where
@@ -309,9 +321,7 @@ impl<
                             ),
                         })
                     })?;
-                // TODO(https://fxbug.dev/512101182): Insert the checksum
-                // offloading result into the queue along with the buffer so
-                // that it can be passed down to netdevice.
+                meta.set_checksum_offload_result(context.csum_offload_result());
                 let len = body.len();
                 let result = insert_and_notify::<_, _, CC>(
                     bindings_ctx,
@@ -417,7 +427,7 @@ mod tests {
     use net_declare::net_mac;
     use net_types::ethernet::Mac;
     use netstack3_base::testutil::{
-        FakeBindingsCtx, FakeCoreCtx, FakeLinkDevice, FakeLinkDeviceId,
+        FakeBindingsCtx, FakeCoreCtx, FakeLinkDevice, FakeLinkDeviceId, FakeTxMetadata,
     };
 
     impl<BT> DeviceBufferSpec<BT> for FakeLinkDevice {
@@ -436,7 +446,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeTxQueueState {
-        queue: TransmitQueueState<(), Buf<Vec<u8>>, BufVecU8Allocator>,
+        queue: TransmitQueueState<FakeTxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>,
         transmitted_packets: Vec<(Buf<Vec<u8>>, Option<DequeueContext>)>,
         no_buffers: bool,
         stack_wide_device_counters: DeviceCounters,
@@ -449,7 +459,7 @@ mod tests {
         delivered_to_sockets: Vec<Frame<Vec<u8>>>,
     }
 
-    type FakeCoreCtxImpl = FakeCoreCtx<FakeTxQueueState, (), FakeLinkDeviceId>;
+    type FakeCoreCtxImpl = FakeCoreCtx<FakeTxQueueState, FakeTxMetadata, FakeLinkDeviceId>;
     type FakeBindingsCtxImpl = FakeBindingsCtx<(), (), FakeTxQueueBindingsCtxState, ()>;
 
     impl TransmitQueueBindingsContext<FakeLinkDeviceId> for FakeBindingsCtxImpl {
@@ -466,11 +476,11 @@ mod tests {
 
     impl TransmitQueueCommon<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type DequeueContext = DequeueContext;
-        type Meta = ();
+        type Meta = FakeTxMetadata;
 
         fn parse_outgoing_frame<'a, 'b>(
             buf: &'a [u8],
-            (): &'b Self::Meta,
+            _meta: &'b Self::Meta,
         ) -> Result<SentFrame<&'a [u8]>, ParseSentFrameError> {
             Ok(fake_sent_ethernet_with_body(buf))
         }
@@ -498,7 +508,7 @@ mod tests {
     impl TransmitQueueContext<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         fn with_transmit_queue<
             O,
-            F: FnOnce(&TransmitQueueState<(), Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
+            F: FnOnce(&TransmitQueueState<FakeTxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
         >(
             &mut self,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
@@ -509,7 +519,7 @@ mod tests {
 
         fn with_transmit_queue_mut<
             O,
-            F: FnOnce(&mut TransmitQueueState<(), Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
+            F: FnOnce(&mut TransmitQueueState<FakeTxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
         >(
             &mut self,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
@@ -523,7 +533,7 @@ mod tests {
             _bindings_ctx: &mut FakeBindingsCtxImpl,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
             dequeue_context: Option<&mut DequeueContext>,
-            (): (),
+            _meta: FakeTxMetadata,
             buf: Buf<Vec<u8>>,
         ) -> Result<(), DeviceSendFrameError> {
             let FakeTxQueueState { transmitted_packets, no_buffers, .. } = &mut self.state;
@@ -555,7 +565,10 @@ mod tests {
 
         fn with_dequed_packets_and_tx_queue_ctx<
             O,
-            F: FnOnce(&mut DequeueState<(), Buf<Vec<u8>>>, &mut Self::TransmitQueueCtx<'_>) -> O,
+            F: FnOnce(
+                &mut DequeueState<FakeTxMetadata, Buf<Vec<u8>>>,
+                &mut Self::TransmitQueueCtx<'_>,
+            ) -> O,
         >(
             &mut self,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
@@ -589,7 +602,7 @@ mod tests {
                 core_ctx,
                 bindings_ctx,
                 &FakeLinkDeviceId,
-                (),
+                FakeTxMetadata,
                 body.clone(),
             ),
             Ok(body.len())
@@ -636,7 +649,7 @@ mod tests {
                         core_ctx,
                         bindings_ctx,
                         &FakeLinkDeviceId,
-                        (),
+                        FakeTxMetadata,
                         body
                     ),
                     Ok(1)
@@ -652,7 +665,7 @@ mod tests {
                     core_ctx,
                     bindings_ctx,
                     &FakeLinkDeviceId,
-                    (),
+                    FakeTxMetadata,
                     body.clone(),
                 ),
                 Err(TransmitQueueFrameError::QueueFull(body))
@@ -731,7 +744,7 @@ mod tests {
                 core_ctx,
                 bindings_ctx,
                 &FakeLinkDeviceId,
-                (),
+                FakeTxMetadata,
                 body.clone(),
             ),
             Ok(body.len())
@@ -790,7 +803,7 @@ mod tests {
                 core_ctx,
                 bindings_ctx,
                 &FakeLinkDeviceId,
-                (),
+                FakeTxMetadata,
                 body.clone(),
             ),
             Ok(body.len())
@@ -834,7 +847,7 @@ mod tests {
                 core_ctx,
                 bindings_ctx,
                 &FakeLinkDeviceId,
-                (),
+                FakeTxMetadata,
                 body,
             ),
             Ok(1)

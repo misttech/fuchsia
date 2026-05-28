@@ -495,6 +495,7 @@ pub trait DeviceLayerEventDispatcher:
         device: &EthernetDeviceId<Self>,
         frame: Self::TxBuffer,
         dequeue_context: Option<&mut Self::DequeueContext>,
+        csum_offload: Option<netstack3_base::ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError>;
 
     /// Send an IP packet to an IP device driver.
@@ -512,6 +513,7 @@ pub trait DeviceLayerEventDispatcher:
         packet: Self::TxBuffer,
         ip_version: IpVersion,
         dequeue_context: Option<&mut Self::DequeueContext>,
+        csum_offload: Option<netstack3_base::ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError>;
 }
 

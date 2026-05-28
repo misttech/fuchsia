@@ -60,7 +60,9 @@ mod integration;
 use derivative::Derivative;
 use net_types::ip::{Ip, Ipv4, Ipv6};
 use netstack3_base::socket::SocketInfo;
-use netstack3_base::{CoreTxMetadataContext, HandleableTimer, TimerHandler, TxMetadata};
+use netstack3_base::{
+    ChecksumOffloadResult, CoreTxMetadataContext, HandleableTimer, TimerHandler, TxMetadata,
+};
 use netstack3_datagram as datagram;
 use netstack3_device::WeakDeviceId;
 use netstack3_icmp_echo::{IcmpSocketTxMetadata, IcmpSockets};
@@ -264,6 +266,32 @@ impl<BT: BindingsTypes> TxMetadata for CoreTxMetadata<BT> {
             TxMetadataInner::Icmpv6(tx_metadata) => {
                 tx_metadata.socket().upgrade().map(|s| s.socket_info())
             }
+        }
+    }
+
+    fn checksum_offload_result(&self) -> Option<ChecksumOffloadResult> {
+        let CoreTxMetadata(inner) = self;
+        match inner {
+            TxMetadataInner::None => None,
+            TxMetadataInner::Tcpv4(tx_metadata) => tx_metadata.checksum_offload_result(),
+            TxMetadataInner::Tcpv6(tx_metadata) => tx_metadata.checksum_offload_result(),
+            TxMetadataInner::Udpv4(tx_metadata) => tx_metadata.checksum_offload_result(),
+            TxMetadataInner::Udpv6(tx_metadata) => tx_metadata.checksum_offload_result(),
+            TxMetadataInner::Icmpv4(tx_metadata) => tx_metadata.checksum_offload_result(),
+            TxMetadataInner::Icmpv6(tx_metadata) => tx_metadata.checksum_offload_result(),
+        }
+    }
+
+    fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
+        let CoreTxMetadata(inner) = self;
+        match inner {
+            TxMetadataInner::None => {}
+            TxMetadataInner::Tcpv4(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
+            TxMetadataInner::Tcpv6(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
+            TxMetadataInner::Udpv4(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
+            TxMetadataInner::Udpv6(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
+            TxMetadataInner::Icmpv4(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
+            TxMetadataInner::Icmpv6(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
         }
     }
 }

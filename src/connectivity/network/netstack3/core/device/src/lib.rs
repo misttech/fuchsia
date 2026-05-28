@@ -103,7 +103,7 @@ pub mod queue {
     pub use crate::internal::queue::tx::{
         BufVecU8Allocator, TransmitDequeueContext, TransmitQueueBindingsContext,
         TransmitQueueCommon, TransmitQueueConfiguration, TransmitQueueContext,
-        TransmitQueueHandler, TransmitQueueState, TxBufferAllocator,
+        TransmitQueueHandler, TransmitQueueState, TxBufferAllocator, TxQueuePacketMetadataCommon,
     };
     pub use crate::internal::queue::{
         BatchSize, DequeueState, DeviceBufferSpec, ReceiveQueueFullError,

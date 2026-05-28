@@ -18,7 +18,6 @@ use log::{debug, error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{MulticastAddr, UnicastAddr};
-use netstack3_core::NetworkParsingContext;
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId,
     MaxEthernetFrameSize, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
@@ -27,6 +26,7 @@ use netstack3_core::device::{
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
+use netstack3_core::{ChecksumOffloadResult, NetworkParsingContext};
 use thiserror::Error;
 
 use crate::bindings::devices::{NetdeviceAllocator, StaticCommonInfo, TxTask};
@@ -818,6 +818,9 @@ impl PortHandler {
         &self,
         frame_type: fhardware_network::FrameType,
         mut tx: netdevice_client::TxBuffer,
+        // TODO(https://fxbug.dev/512101182): set checksum offload info on tx
+        // buffer.
+        _csum_offload: Option<ChecksumOffloadResult>,
     ) -> Result<(), netdevice_client::Error> {
         trace_duration!("netdevice::send");
         let Self { port_id, inner: Inner { session, .. }, .. } = self;

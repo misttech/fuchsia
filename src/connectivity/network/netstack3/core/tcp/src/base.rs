@@ -11,8 +11,8 @@ use derivative::Derivative;
 use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Mtu};
 use netstack3_base::{
-    IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms, UnscaledWindowSize,
-    WeakDeviceIdentifier, WindowSize,
+    ChecksumOffloadResult, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms,
+    UnscaledWindowSize, WeakDeviceIdentifier, WindowSize,
 };
 use netstack3_ip::socket::{RouteResolutionOptions, SendOptions};
 use packet_formats::icmp::{
@@ -191,6 +191,7 @@ impl IcmpErrorResult {
 pub struct TcpSocketTxMetadata<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
     /// The socket from which the packet originates.
     socket: WeakTcpSocketId<I, D, BT>,
+    checksum_offload_result: Option<ChecksumOffloadResult>,
 }
 
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
@@ -198,12 +199,22 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 {
     /// Creates a new `TcpSocketTxMetadata`.
     pub(crate) fn new(socket: WeakTcpSocketId<I, D, BT>) -> Self {
-        Self { socket }
+        Self { socket, checksum_offload_result: None }
     }
 
     /// Gets the socket from which the packet originates.
     pub fn socket(&self) -> &WeakTcpSocketId<I, D, BT> {
         &self.socket
+    }
+
+    /// Returns the checksum offload result.
+    pub fn checksum_offload_result(&self) -> Option<ChecksumOffloadResult> {
+        self.checksum_offload_result.clone()
+    }
+
+    /// Sets the checksum offload result.
+    pub fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
+        self.checksum_offload_result = result;
     }
 }
 

@@ -9,7 +9,7 @@ use lock_order::lock::LockLevelFor;
 use lock_order::relation::LockBefore;
 use lock_order::wrap::LockedWrapperApi;
 use net_types::ip::Ip;
-use netstack3_base::DeviceIdContext;
+use netstack3_base::{DeviceIdContext, TxMetadata};
 use netstack3_device::pure_ip::{
     DynamicPureIpDeviceState, PureIpDevice, PureIpDeviceId, PureIpDeviceStateContext,
     PureIpDeviceTxQueueFrameMetadata, PureIpPrimaryDeviceId, PureIpWeakDeviceId,
@@ -128,18 +128,17 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxQueu
         meta: Self::Meta,
         buf: BC::TxBuffer,
     ) -> Result<(), DeviceSendFrameError> {
-        let PureIpDeviceTxQueueFrameMetadata {
-            ip_version,
-            // Drop metadata at the end of scope after publishing to bindings.
-            tx_metadata: _tx_metadata,
-        } = meta;
+        let PureIpDeviceTxQueueFrameMetadata { ip_version, tx_metadata } = meta;
         DeviceLayerEventDispatcher::send_ip_packet(
             bindings_ctx,
             device_id,
             buf,
             ip_version,
             dequeue_context,
+            tx_metadata.checksum_offload_result(),
         )
+        // Metadata is dropped at the end of the scope after publishing to
+        // bindings.
     }
 }
 

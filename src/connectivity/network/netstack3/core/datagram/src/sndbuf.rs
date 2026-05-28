@@ -10,7 +10,7 @@ use core::mem::ManuallyDrop;
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip, IpVersion};
 use netstack3_base::socket::{SendBufferFullError, SendBufferSpace};
-use netstack3_base::{PositiveIsize, WeakDeviceIdentifier};
+use netstack3_base::{ChecksumOffloadResult, PositiveIsize, WeakDeviceIdentifier};
 use packet::FragmentedBuffer;
 
 use crate::internal::datagram::{DatagramSocketSpec, IpExt};
@@ -87,7 +87,11 @@ impl<S: DatagramSocketSpec> SendBufferTracking<S> {
         // System imposes a limit of isize::max length for a single datagram.
         let size = PositiveIsize::new_unsigned(size).ok_or(SendBufferError::InvalidLength)?;
         let space = tracking.acquire(size)?;
-        Ok(TxMetadata { socket: S::downgrade_socket_id(id), space: ManuallyDrop::new(space) })
+        Ok(TxMetadata {
+            socket: S::downgrade_socket_id(id),
+            space: ManuallyDrop::new(space),
+            checksum_offload_result: None,
+        })
     }
 }
 
@@ -98,6 +102,7 @@ impl<S: DatagramSocketSpec> SendBufferTracking<S> {
 pub struct TxMetadata<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     socket: S::WeakSocketId<I, D>,
     space: ManuallyDrop<SendBufferSpace>,
+    checksum_offload_result: Option<ChecksumOffloadResult>,
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> TxMetadata<I, D, S> {
@@ -105,11 +110,21 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> TxMetadata<I, D, 
     pub fn socket(&self) -> &S::WeakSocketId<I, D> {
         &self.socket
     }
+
+    /// Returns the checksum offload result.
+    pub fn checksum_offload_result(&self) -> Option<ChecksumOffloadResult> {
+        self.checksum_offload_result.clone()
+    }
+
+    /// Sets the checksum offload result.
+    pub fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
+        self.checksum_offload_result = result;
+    }
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> Drop for TxMetadata<I, D, S> {
     fn drop(&mut self) {
-        let Self { socket, space } = self;
+        let Self { socket, space, checksum_offload_result: _ } = self;
         // Take space out and leave the slot in uninitialized state so drop is
         // not called.
         //

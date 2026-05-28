@@ -71,6 +71,7 @@ use fuchsia_inspect::health::Reporter as _;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
 use log::{debug, error, info, warn};
+use netstack3_core::ChecksumOffloadResult;
 use packet::BufferMut;
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore, TryRngCore as _};
@@ -594,6 +595,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
         device: &EthernetDeviceId<Self>,
         frame: TxBuffer,
         dequeue_context: Option<&mut Self::DequeueContext>,
+        csum_offload: Option<ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError> {
         let EthernetInfo {
             mac: _,
@@ -610,6 +612,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
             frame,
             fhardware_network::FrameType::Ethernet,
             dequeue_context,
+            csum_offload,
         )
     }
 
@@ -619,6 +622,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
         packet: TxBuffer,
         ip_version: IpVersion,
         dequeue_context: Option<&mut Self::DequeueContext>,
+        csum_offload: Option<ChecksumOffloadResult>,
     ) -> Result<(), DeviceSendFrameError> {
         let frame_type = match ip_version {
             IpVersion::V4 => fhardware_network::FrameType::Ipv4,
@@ -627,7 +631,14 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
         let PureIpDeviceInfo { common_info: _, netdevice, dynamic_info, status_sampler: _ } =
             device.external_state();
         let dynamic_info = dynamic_info.read();
-        send_netdevice_frame(netdevice, &dynamic_info, packet, frame_type, dequeue_context)
+        send_netdevice_frame(
+            netdevice,
+            &dynamic_info,
+            packet,
+            frame_type,
+            dequeue_context,
+            csum_offload,
+        )
     }
 }
 
@@ -650,6 +661,7 @@ fn send_netdevice_frame(
     frame: TxBuffer,
     frame_type: fhardware_network::FrameType,
     dequeue_context: Option<&mut TxTaskState>,
+    csum_offload: Option<ChecksumOffloadResult>,
 ) -> Result<(), DeviceSendFrameError> {
     let StaticNetdeviceInfo { handler, .. } = netdevice;
     if !(*phy_up && *admin_enabled) {
@@ -695,7 +707,7 @@ fn send_netdevice_frame(
         }
     };
     handler
-        .send(frame_type, tx_buffer)
+        .send(frame_type, tx_buffer, csum_offload)
         .unwrap_or_else(|e| warn!("failed to send frame to {:?}: {:?}", handler, e));
     Ok(())
 }

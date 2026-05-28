@@ -25,7 +25,9 @@ use crate::internal::base::{
     PureIpDeviceCounters,
 };
 use crate::internal::id::{BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId, DeviceId};
-use crate::internal::queue::tx::{TransmitQueue, TransmitQueueHandler, TransmitQueueState};
+use crate::internal::queue::tx::{
+    TransmitQueue, TransmitQueueHandler, TransmitQueueState, TxQueuePacketMetadataCommon,
+};
 use crate::internal::queue::{DequeueState, DeviceBufferSpec, TransmitQueueFrameError};
 use crate::internal::socket::{
     DeviceSocketHandler, DeviceSocketMetadata, DeviceSocketSendTypes, Frame, IpFrame, ReceivedFrame,
@@ -69,6 +71,19 @@ pub struct PureIpDeviceTxQueueFrameMetadata<BT: TxMetadataBindingsTypes> {
     pub ip_version: IpVersion,
     /// Tx metadata associated with the frame.
     pub tx_metadata: BT::TxMetadata,
+}
+
+impl<BT: TxMetadataBindingsTypes> TxQueuePacketMetadataCommon
+    for PureIpDeviceTxQueueFrameMetadata<BT>
+where
+    BT::TxMetadata: TxQueuePacketMetadataCommon,
+{
+    fn set_checksum_offload_result(
+        &mut self,
+        result: Option<netstack3_base::ChecksumOffloadResult>,
+    ) {
+        self.tx_metadata.set_checksum_offload_result(result);
+    }
 }
 
 /// Metadata for sending IP packets from a device socket.

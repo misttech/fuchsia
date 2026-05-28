@@ -36,6 +36,7 @@ use crate::internal::queue::rx::{
 };
 use crate::internal::queue::tx::{
     BufVecU8Allocator, TransmitQueue, TransmitQueueHandler, TransmitQueueState,
+    TxQueuePacketMetadataCommon,
 };
 use crate::internal::queue::{DequeueState, DeviceBufferSpec, TransmitQueueFrameError};
 use crate::internal::socket::{
@@ -140,6 +141,18 @@ pub struct LoopbackTxQueueMeta<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTy
     /// Metadata that is produced and consumed by the IP layer but which traverses
     /// the device layer through the loopback device.
     ip_layer_metadata: DeviceIpLayerMetadata<BT>,
+}
+
+impl<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTypes> TxQueuePacketMetadataCommon
+    for LoopbackTxQueueMeta<D, BT>
+{
+    fn set_checksum_offload_result(
+        &mut self,
+        _result: Option<netstack3_base::ChecksumOffloadResult>,
+    ) {
+        // Loopback doesn't need checksum offload result because it skips
+        // verification on receive.
+    }
 }
 
 /// Metadata associated with a frame in the Loopback RX queue.

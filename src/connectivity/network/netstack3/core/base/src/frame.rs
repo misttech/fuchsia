@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::error::ErrorAndSerializer;
 use crate::socket::SocketInfo;
-use crate::{NetworkParsingContext, NetworkSerializer};
+use crate::{ChecksumOffloadResult, NetworkParsingContext, NetworkSerializer};
 
 /// A context for receiving frames.
 ///
@@ -252,6 +252,13 @@ pub trait TxMetadata: Default + Debug + Send + Sync + 'static {
     /// Returns [`SocketInfo`] for the socket associated with the packet.
     /// `None` is returned if the packet is not associated with a local socket.
     fn socket_info(&self) -> Option<SocketInfo>;
+
+    /// Returns the result of TX checksum offloading, if any was performed.
+    fn checksum_offload_result(&self) -> Option<ChecksumOffloadResult>;
+
+    /// Sets the TX checksum offload result. Replaces the previous result if
+    /// called multiple times.
+    fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>);
 }
 
 /// A trait abstracting TX frame metadata when traversing the stack.
@@ -418,6 +425,12 @@ pub(crate) mod testutil {
         fn socket_info(&self) -> Option<SocketInfo> {
             None
         }
+
+        fn checksum_offload_result(&self) -> Option<ChecksumOffloadResult> {
+            None
+        }
+
+        fn set_checksum_offload_result(&mut self, _result: Option<ChecksumOffloadResult>) {}
     }
 }
 

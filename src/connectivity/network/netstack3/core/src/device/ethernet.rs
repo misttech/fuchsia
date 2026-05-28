@@ -18,6 +18,7 @@ use net_types::{SpecifiedAddr, UnicastAddr, Witness};
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{
     CoreTimerContext, CounterContext, DeviceIdContext, Marks, NetworkSerializer, SendFrameError,
+    TxMetadata,
 };
 use netstack3_device::ethernet::{
     self, DynamicEthernetDeviceState, EthernetDeviceId, EthernetIpLinkDeviceDynamicStateContext,
@@ -553,7 +554,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         dequeue_context: Option<&mut BC::DequeueContext>,
-        _meta: Self::Meta,
+        meta: Self::Meta,
         buf: BC::TxBuffer,
     ) -> Result<(), DeviceSendFrameError> {
         DeviceLayerEventDispatcher::send_ethernet_frame(
@@ -561,6 +562,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
             device_id,
             buf,
             dequeue_context,
+            meta.checksum_offload_result(),
         )
     }
 }
