@@ -2023,7 +2023,7 @@ zx_status_t VmObjectPaged::GetPage(uint64_t offset, uint pf_flags, list_node* al
     }
     return ZX_OK;
   }
-  auto result = cursor->RequirePage(write, kPageSize, deferred, page_request);
+  auto result = cursor->RequirePage(write, /*max_request_pages=*/1, deferred, page_request);
   if (result.is_error()) {
     return result.error_value();
   }

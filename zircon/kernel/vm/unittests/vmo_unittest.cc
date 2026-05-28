@@ -5266,6 +5266,40 @@ static bool vmo_lookup_readable_clone_test() {
   END_TEST;
 }
 
+// Test that all offsets of a VMO are accessible via GetPage.
+//
+// This is a regression test for https://fxbug.dev/515752748.
+static bool vmo_get_page_offset_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  const uint64_t size = 10 * kPageSize;
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(/*num_pages=*/10, /*committed_pages=*/0,
+                                               /*trap_dirty=*/false, /*resizable=*/false,
+                                               /*ignore_requests=*/true, nullptr, &vmo));
+
+  for (uint64_t i = 0; i < size; i += kPageSize) {
+    vm_page_t* page;
+
+    // Use VMM_PF_FLAG_FAULT_MASK so that GetPage attempts to acquire a page if none is present in
+    // the local page list.
+
+    __UNINITIALIZED MultiPageRequest page_request;
+    zx_status_t status =
+        vmo->GetPage(i, VMM_PF_FLAG_FAULT_MASK, nullptr, &page_request, &page, nullptr);
+    if (status == ZX_ERR_SHOULD_WAIT) {
+      // The stub page provider does not support waiting.
+      page_request.CancelRequests();
+    } else {
+      EXPECT_OK(status);
+    }
+  }
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5344,6 +5378,7 @@ VM_UNITTEST(vmo_compress_to_marker_anon_test)
 VM_UNITTEST(vmo_always_pinned_with_no_pages_test)
 VM_UNITTEST(vmo_lookup_readable_simple_test)
 VM_UNITTEST(vmo_lookup_readable_clone_test)
+VM_UNITTEST(vmo_get_page_offset_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace
