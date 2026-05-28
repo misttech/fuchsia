@@ -448,6 +448,37 @@ async fn slaac_with_privacy_extensions<N: Netstack>(
     .expect("failed to wait for SLAAC addresses to be generated")
 }
 
+/// Returns the assignment state for an address if it appears in `addrs`.
+fn address_assignment_state(
+    (expected_addr, expected_prefix_len): (net_types_ip::Ipv6Addr, u8),
+    addrs: impl IntoIterator<Item = fnet_interfaces_ext::Address<fnet_interfaces_ext::AllInterest>>,
+) -> Option<fnet_interfaces::AddressAssignmentState> {
+    addrs
+        .into_iter()
+        .filter_map(
+            |fnet_interfaces_ext::Address {
+                 addr: fnet::Subnet { addr, prefix_len },
+                 valid_until: _,
+                 preferred_lifetime_info: _,
+                 assignment_state,
+             }| {
+                if prefix_len == expected_prefix_len
+                    && match addr {
+                        fnet::IpAddress::Ipv4(_) => false,
+                        fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr }) => {
+                            addr == expected_addr.ipv6_bytes()
+                        }
+                    }
+                {
+                    Some(assignment_state)
+                } else {
+                    None
+                }
+            },
+        )
+        .next()
+}
+
 /// Adds `ipv6_consts::LINK_LOCAL_ADDR` to the interface and makes sure a Neighbor Solicitation
 /// message is transmitted by the netstack for DAD.
 ///
@@ -507,22 +538,9 @@ async fn add_address_for_dad<
     // Ensure that fuchsia.net.interfaces/Watcher doesn't erroneously report
     // the address as added before DAD completes successfully or otherwise.
     assert_eq!(
-        addrs.expect("failed to get addresses").into_iter().find(
-            |fnet_interfaces_ext::Address {
-                 addr: fnet::Subnet { addr, prefix_len },
-                 valid_until: _,
-                 preferred_lifetime_info: _,
-                 assignment_state,
-             }| {
-                assert_eq!(*assignment_state, fnet_interfaces::AddressAssignmentState::Assigned);
-                *prefix_len == ipv6_consts::LINK_LOCAL_SUBNET_PREFIX
-                    && match addr {
-                        fnet::IpAddress::Ipv4(fnet::Ipv4Address { .. }) => false,
-                        fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr }) => {
-                            *addr == ipv6_consts::LINK_LOCAL_ADDR.ipv6_bytes()
-                        }
-                    }
-            }
+        address_assignment_state(
+            (ipv6_consts::LINK_LOCAL_ADDR, ipv6_consts::LINK_LOCAL_SUBNET_PREFIX),
+            addrs.expect("failed to get addresses"),
         ),
         None,
         "added IPv6 LL address already present even though it is tentative"
@@ -531,15 +549,14 @@ async fn add_address_for_dad<
     state_stream
 }
 
-/// Tests that if the netstack attempts to assign an address to an interface, and a remote node
-/// is already assigned the address or attempts to assign the address at the same time, DAD
-/// fails on the local interface.
-///
-/// If no remote node has any interest in an address the netstack is attempting to assign to
-/// an interface, DAD should succeed.
+/// Tests that if the netstack attempts to assign an address to an interface,
+/// and a remote node is already assigned the address or attempts to assign the
+/// address at the same time, DAD fails on the local interface.
 #[netstack_test]
 #[variant(N, Netstack)]
-async fn duplicate_address_detection<N: Netstack>(name: &str) {
+#[test_case(true ; "ns")]
+#[test_case(false ; "na")]
+async fn dad_fails_due_to_remote_address_conflict<N: Netstack>(name: &str, with_ns: bool) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let (_network, _realm, iface, fake_ep) =
         setup_network::<N>(&sandbox, name, None).await.expect("error setting up network");
@@ -547,78 +564,100 @@ async fn duplicate_address_detection<N: Netstack>(name: &str) {
     let control = iface.control();
 
     // The next steps want to observe a DAD failure. To prevent flakes in CQ due
-    // to DAD retransmission time, set the number of DAD transmits very high and
-    // restore it later.
-    let previous_dad_transmits =
-        iface.set_ipv6_dad_transmits(u16::MAX).await.expect("set dad transmits");
+    // to DAD retransmission time, set the number of DAD transmits very high.
+    let _ = iface.set_ipv6_dad_transmits(u16::MAX).await.expect("set dad transmits");
 
-    // Add an address and expect it to fail DAD because we simulate another node
-    // performing DAD at the same time.
-    {
-        let state_stream =
-            add_address_for_dad(&iface, &fake_ep, &control, true, |ep, _| fail_dad_with_ns(ep))
-                .await;
-        assert_dad_failed(state_stream).await;
-    }
-    // Add an address and expect it to fail DAD because we simulate another node
-    // already owning the address.
-    {
-        let state_stream =
-            add_address_for_dad(&iface, &fake_ep, &control, true, |ep, _| fail_dad_with_na(ep))
-                .await;
-        assert_dad_failed(state_stream).await;
-    }
+    let state_stream = add_address_for_dad(&iface, &fake_ep, &control, true, |ep, _| async move {
+        if with_ns {
+            fail_dad_with_ns(ep).await;
+        } else {
+            fail_dad_with_na(ep).await;
+        }
+    })
+    .await;
+    assert_dad_failed(state_stream).await;
+}
 
-    // Restore the original DAD transmits value.
-    if let Some(previous) = previous_dad_transmits {
-        let _: Option<u16> =
-            iface.set_ipv6_dad_transmits(previous).await.expect("restore dad transmits");
-    }
+/// Tests that duplicate address detection succeeds when no remote node has any
+/// interest in the address.
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dad_succeeds_if_no_remote_address_conflict<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let (_network, _realm, iface, fake_ep) =
+        setup_network::<N>(&sandbox, name, None).await.expect("error setting up network");
 
-    {
-        // Add the address, and make sure it gets assigned.
-        let mut state_stream =
-            add_address_for_dad(
-                &iface,
-                &fake_ep,
-                &control,
-                true,
-                |_, _| futures::future::ready(()),
-            )
+    let control = iface.control();
+
+    // Add the address, and make sure it gets assigned.
+    let mut state_stream =
+        add_address_for_dad(&iface, &fake_ep, &control, true, |_, _| futures::future::ready(()))
             .await;
 
-        assert_dad_success(&mut state_stream).await;
+    assert_dad_success(&mut state_stream).await;
 
-        // Disable the interface, ensure that the address becomes unavailable.
-        let did_disable = iface.control().disable().await.expect("send disable").expect("disable");
-        assert!(did_disable);
+    let addresses = iface.get_addrs(Default::default()).await.expect("addrs");
+    assert_eq!(
+        address_assignment_state(
+            (ipv6_consts::LINK_LOCAL_ADDR, ipv6_consts::LINK_LOCAL_SUBNET_PREFIX),
+            addresses,
+        ),
+        Some(fnet_interfaces::AddressAssignmentState::Assigned),
+        "added IPv6 LL address not in Assigned state",
+    );
+}
 
-        assert_matches::assert_matches!(
-            state_stream.by_ref().next().await,
-            Some(Ok(fnet_interfaces::AddressAssignmentState::Unavailable))
-        );
+/// Tests that duplicate address detection repeats and succeeds when an
+/// interface with an assigned address is disabled and re-enabled.
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dad_link_state_change<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let (_network, _realm, iface, fake_ep) =
+        setup_network::<N>(&sandbox, name, None).await.expect("error setting up network");
 
-        // Re-enable the interface, expect DAD to repeat and have it succeed.
-        assert!(iface.control().enable().await.expect("send enable").expect("enable"));
-        let _: Vec<u8> = expect_dad_neighbor_solicitation(&fake_ep).await;
-        assert_dad_success(&mut state_stream).await;
+    let control = iface.control();
 
-        let removed = control
-            .remove_address(&fnet::Subnet {
-                addr: fnet::IpAddress::Ipv6(fnet::Ipv6Address {
-                    addr: ipv6_consts::LINK_LOCAL_ADDR.ipv6_bytes(),
-                }),
-                prefix_len: ipv6_consts::LINK_LOCAL_SUBNET_PREFIX,
-            })
-            .await
-            .expect("FIDL error removing address")
-            .expect("failed to remove address");
-        assert!(removed);
-    }
+    let mut state_stream =
+        add_address_for_dad(&iface, &fake_ep, &control, true, |_, _| futures::future::ready(()))
+            .await;
+    assert_dad_success(&mut state_stream).await;
 
-    // Disable the interface, this time add the address while it's down.
-    let did_disable = iface.control().disable().await.expect("send disable").expect("disable");
-    assert!(did_disable);
+    assert!(control.disable().await.expect("send disable").expect("disable"));
+
+    assert_matches::assert_matches!(
+        state_stream.by_ref().next().await,
+        Some(Ok(fnet_interfaces::AddressAssignmentState::Unavailable))
+    );
+
+    // Re-enable the interface, expect DAD to repeat and have it succeed.
+    assert!(control.enable().await.expect("send enable").expect("enable"));
+    let _: Vec<u8> = expect_dad_neighbor_solicitation(&fake_ep).await;
+    assert_dad_success(&mut state_stream).await;
+
+    let addresses = iface.get_addrs(Default::default()).await.expect("addrs");
+    assert_eq!(
+        address_assignment_state(
+            (ipv6_consts::LINK_LOCAL_ADDR, ipv6_consts::LINK_LOCAL_SUBNET_PREFIX),
+            addresses,
+        ),
+        Some(fnet_interfaces::AddressAssignmentState::Assigned),
+        "added IPv6 LL address not in Assigned state",
+    );
+}
+
+/// Tests that if an address is added while an interface is disabled, duplicate
+/// address detection runs and succeeds when the interface is re-enabled.
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dad_address_assigned_while_interface_down<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let (_network, _realm, iface, fake_ep) =
+        setup_network::<N>(&sandbox, name, None).await.expect("error setting up network");
+
+    let control = iface.control();
+
+    assert!(control.disable().await.expect("send disable").expect("disable"));
     let mut state_stream =
         add_address_for_dad(&iface, &fake_ep, &control, false, |_, _| futures::future::ready(()))
             .await;
@@ -629,33 +668,18 @@ async fn duplicate_address_detection<N: Netstack>(name: &str) {
     );
 
     // Re-enable the interface, DAD should run.
-    let did_enable = iface.control().enable().await.expect("send enable").expect("enable");
-    assert!(did_enable);
-
+    assert!(control.enable().await.expect("send enable").expect("enable"));
     let _: Vec<u8> = expect_dad_neighbor_solicitation(&fake_ep).await;
-
     assert_dad_success(&mut state_stream).await;
 
     let addresses = iface.get_addrs(Default::default()).await.expect("addrs");
-    assert!(
-        addresses.iter().any(
-            |&fnet_interfaces_ext::Address {
-                 addr: fnet::Subnet { addr, prefix_len: _ },
-                 valid_until: _,
-                 preferred_lifetime_info: _,
-                 assignment_state,
-             }| {
-                assert_eq!(assignment_state, fnet_interfaces::AddressAssignmentState::Assigned);
-                match addr {
-                    fnet::IpAddress::Ipv4(fnet::Ipv4Address { .. }) => false,
-                    fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr }) => {
-                        addr == ipv6_consts::LINK_LOCAL_ADDR.ipv6_bytes()
-                    }
-                }
-            }
+    assert_eq!(
+        address_assignment_state(
+            (ipv6_consts::LINK_LOCAL_ADDR, ipv6_consts::LINK_LOCAL_SUBNET_PREFIX),
+            addresses,
         ),
-        "addresses: {:?}",
-        addresses
+        Some(fnet_interfaces::AddressAssignmentState::Assigned),
+        "added IPv6 LL address not in Assigned state",
     );
 }
 
