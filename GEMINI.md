@@ -190,6 +190,10 @@ You do not need to run `fx format-code` frequently during the iteration process.
 It need only be run as a final step before committing, prior to pushing your
 code, or before returning control to the user.
 
+**Always** run `fx format-code` from the specific **git repository root** of
+your changes (e.g., `vendor/google` or the main repository root). Running it
+from the project root only formats the main repository.
+
 ### Linting
 
 `fx clippy` runs the Rust linter and for Rust-only changes it can be very useful
