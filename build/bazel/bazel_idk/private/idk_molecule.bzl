@@ -11,21 +11,49 @@ load(
     "FuchsiaIdkAtomInfo",
     "FuchsiaIdkMoleculeInfo",
 )
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
-load(":idk_transitions.bzl", "api_level_and_cpu_combinations_transition")
+load(
+    ":idk_transitions.bzl",
+    "api_level_and_cpu_combinations_transition",
+    "configured_host_cpus_transition",
+    "current_host_cpu_transition",
+)
 
 visibility([
     "//build/bazel/bazel_idk/...",
     "//sdk",
 ])
 
+# IDK molecules may be one of the following:
+# * Contains Fuchsia or OS-independent molecules and/or atoms and is
+#   `target_compatible_with` `["@platforms//os:fuchsia"]`.
+# * Contains host tool molecules and/or atoms and is `target_compatible_with`
+#   `HOST_OS_CONSTRAINTS`. Their `allowed_in_configurations` attribute must be
+#   `"PLATFORM"`.
+# * A special molecule that `target_compatible_with`
+#   `["@platforms//os:fuchsia"]` but contains host tool molecules and/or atoms
+#   that are `target_compatible_with` `HOST_OS_CONSTRAINTS`. Such molecules use
+#   a transition to build the host tools in the appropriate configuration(s).
+
+def _verify_target_compatible_with_is_fuchsia(ctx):
+    if (len(ctx.attr.target_compatible_with) != 1 or
+        str(ctx.attr.target_compatible_with[0].label) != "@@platforms//os:fuchsia"):
+        fail('`target_compatible_with` must be `["@platforms//os:fuchsia"]`.')
+
 def _idk_molecule_common_impl(ctx, allowed_in_configurations):
     if not ctx.attr.name.endswith("_idk"):
         fail("IDK molecule `name`s must end with `_idk`.")
 
-    if (len(ctx.attr.target_compatible_with) != 1 or
-        str(ctx.attr.target_compatible_with[0].label) != "@@platforms//os:fuchsia"):
-        fail('`target_compatible_with` must be `["@platforms//os:fuchsia"]`.')
+    if (len(ctx.attr.target_compatible_with) != 1):
+        fail("`target_compatible_with` must have exactly one element, not `%s`." % ctx.attr.target_compatible_with)
+    elif str(ctx.attr.target_compatible_with[0].label) == "@@platforms//os:fuchsia":
+        pass
+    elif str(ctx.attr.target_compatible_with[0].label) == ("@" + HOST_OS_CONSTRAINTS[0]):
+        if not ctx.attr.allowed_in_configurations == "PLATFORM":
+            fail('`allowed_in_configurations` must be "PLATFORM" when `target_compatible_with` is `HOST_OS_CONSTRAINTS`.')
+    else:
+        fail('`target_compatible_with` must be `["@platforms//os:fuchsia"]` or `HOST_OS_CONSTRAINTS`.')
 
     if allowed_in_configurations != "fuchsia":
         api_level = ctx.attr._current_api_level[BuildSettingInfo].value
@@ -80,7 +108,8 @@ idk_molecule = rule(
     doc = """Generate an IDK molecule containing atoms for Fuchsia targets.
 
     * `name` must end with '_idk' (unlike most other IDK macros).
-    * `target_compatible_with` must be `["@platforms//os:fuchsia"]`.
+    * `target_compatible_with` must be `["@platforms//os:fuchsia"]` or
+      `HOST_OS_CONSTRAINTS`.
     """,
     implementation = _idk_molecule_impl,
     attrs = {
@@ -107,6 +136,7 @@ idk_molecule = rule(
 )
 
 def _idk_all_api_level_and_cpu_combinations_molecule_impl(ctx):
+    _verify_target_compatible_with_is_fuchsia(ctx)
     return _idk_molecule_common_impl(ctx, allowed_in_configurations = "once")
 
 idk_all_api_level_and_cpu_combinations_molecule = rule(
@@ -131,31 +161,48 @@ idk_all_api_level_and_cpu_combinations_molecule = rule(
     } | COMMON_MOLECULE_ATTRS,
 )
 
-def _idk_host_tool_molecule_impl(ctx):
+def _idk_host_tool_molecule_for_host_cpus_impl(ctx):
+    _verify_target_compatible_with_is_fuchsia(ctx)
     return _idk_molecule_common_impl(ctx, allowed_in_configurations = "once")
 
-idk_host_tool_molecule = rule(
-    doc = """Generate an IDK molecule containing atoms for the host.
+idk_host_tool_molecule_for_current_host_cpu = rule(
+    doc = """Generate an IDK molecule containing atoms for the current host OS and CPU architecture.
 
     * `name` must end with '_idk' (unlike most other IDK macros).
     * `target_compatible_with` must be `["@platforms//os:fuchsia"]`.
-      The `deps` will be built for the host platforms via a transition.
-
-    Only supported in the main "PLATFORM" Fuhsia build.
-
-    Currently only supports the current host platform.
+      The `deps` will be built for the current host platform via a transition.
     """,
-    implementation = _idk_host_tool_molecule_impl,
+    implementation = _idk_host_tool_molecule_for_host_cpus_impl,
     attrs = {
         "deps": attr.label_list(
-            doc = "Atoms and other molecules the molecule depends on.",
+            doc = """Atoms and other molecules the molecule depends on.
+            All must be `target_compatible_with` `HOST_OS_CONSTRAINTS` or
+            `HOST_CONSTRAINTS`.
+            """,
             providers = [[FuchsiaIdkAtomInfo], [FuchsiaIdkMoleculeInfo]],
             mandatory = True,
-            # TODO(https://fxbug.dev/442025401): Use a custom transition that
-            # uses the more permissive sysroot. See https://fxbug.dev/484422864.
-            # TODO(https://fxbug.dev/442025401): Support a 1:2 transition that
-            # builds the host tools for both x64 and arm64 when appropriate.
-            cfg = "exec",
+            cfg = current_host_cpu_transition,
+        ),
+    } | COMMON_MOLECULE_ATTRS,
+)
+
+idk_host_tool_molecule_for_configured_host_cpus = rule(
+    doc = """Generate an IDK molecule containing atoms for the current host OS and configured host CPU architectures.
+
+    * `name` must end with '_idk' (unlike most other IDK macros).
+    * `target_compatible_with` must be `["@platforms//os:fuchsia"]`.
+      The `deps` will be built for the current host OS and configured host CPU
+      architectures via a transition.
+    """,
+    implementation = _idk_host_tool_molecule_for_host_cpus_impl,
+    attrs = {
+        "deps": attr.label_list(
+            doc = """Atoms and other molecules the molecule depends on.
+            All must be `target_compatible_with` `HOST_OS_CONSTRAINTS`.
+            """,
+            providers = [[FuchsiaIdkAtomInfo], [FuchsiaIdkMoleculeInfo]],
+            mandatory = True,
+            cfg = configured_host_cpus_transition,
         ),
     } | COMMON_MOLECULE_ATTRS,
 )

@@ -3,19 +3,18 @@
 # found in the LICENSE file.
 
 load("@fuchsia_build_info//:args.bzl", "target_cpu")
-load(
-    "//build/bazel/bazel_idk:defs.bzl",
-    "idk_host_tool_molecule",
-    "idk_molecule",
-)
+load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
 load(
     "//build/bazel/bazel_idk/private:idk_molecule.bzl",
     "idk_all_api_level_and_cpu_combinations_molecule",
+    "idk_host_tool_molecule_for_configured_host_cpus",
+    "idk_host_tool_molecule_for_current_host_cpu",
 )
 load(
     "//build/bazel/bazel_idk/private:idk_transitions.bzl",
     "build_in_all_idk_api_level_and_cpu_combinations",
 )
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load(
     "//build/sdk:sdk_version_history.bzl",
     "sdk_version_history",
@@ -53,9 +52,7 @@ idk_molecule(
         ":fuchsia_idk_atoms_for_all_api_level_and_cpu_combinations_idk",
 
         # Host tools.
-        # TODO(https://fxbug.dev/507577175): Build these for both x64 and arm64.
-        ":build_host_tools_idk",
-        ":non_build_host_tools_idk",
+        ":fuchsia_idk_host_tools_for_configured_host_cpus_idk",
     ],
 )
 
@@ -77,7 +74,7 @@ idk_molecule(
         ":fuchsia_idk_atoms_produced_by_main_platform_build_idk",
 
         # Host tools.
-        ":build_host_tools_idk",
+        ":in_tree_host_tools_for_host_cpu_idk",
     ],
 )
 
@@ -189,21 +186,39 @@ idk_molecule(
     deps = DATA_ATOMS,
 )
 
+idk_host_tool_molecule_for_configured_host_cpus(
+    name = "fuchsia_idk_host_tools_for_configured_host_cpus_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":build_host_tools_idk",
+        ":non_build_host_tools_idk",
+    ],
+)
+
+idk_host_tool_molecule_for_current_host_cpu(
+    name = "in_tree_host_tools_for_host_cpu_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":build_host_tools_idk",
+    ],
+)
+
 # Tools and data used on a host development machine to build software to run
 # on Fuchsia.
-idk_host_tool_molecule(
+idk_molecule(
     name = "build_host_tools_idk",
-    target_compatible_with = ["@platforms//os:fuchsia"],
+    allowed_in_configurations = "PLATFORM",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = BUILD_HOST_TOOLS_ATOMS,
 )
 
 # Tools and data used on a host development machine to interact with a
 # target device running Fuchsia. These are not needed to build the IDK or SDK.
 # Some tools may depend on tools in peer molecules.
-idk_host_tool_molecule(
+idk_molecule(
     name = "non_build_host_tools_idk",
-    # The macro handles transitioning to the host platform.
-    target_compatible_with = ["@platforms//os:fuchsia"],
+    allowed_in_configurations = "PLATFORM",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = NON_BUILD_HOST_TOOLS_ATOMS,
 )
 

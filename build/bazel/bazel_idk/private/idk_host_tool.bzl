@@ -16,7 +16,7 @@ load(
 
 visibility(["//build/bazel/bazel_idk/..."])
 
-def _idk_host_tool_impl(
+def _idk_host_tool_atom_impl(
         name,
         idk_name,
         category,
@@ -66,15 +66,15 @@ def _idk_host_tool_impl(
         atom_build_deps = [],
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         visibility = get_atom_visibility(visibility),
-        target_compatible_with = HOST_OS_CONSTRAINTS,
+        target_compatible_with = target_compatible_with,
     )
 
-_idk_host_tool = macro(
+_idk_host_tool_atom = macro(
     doc = """Defines a host tool in the IDK.
 
     `name` must end with "_idk".
     """,
-    implementation = _idk_host_tool_impl,
+    implementation = _idk_host_tool_atom_impl,
     attrs = {
         "idk_name": attr.string(
             doc = """Name of the tool in the IDK. Usually matches `name`.
@@ -95,12 +95,9 @@ GN equivalent: `sdk_area`""",
         ),
         "tool": attr.label(
             doc = """Label of the tool to be added to the IDK.
-It will be built with `cfg = "exec"`.
 GN equivalent: `deps`.""",
-            allow_single_file = True,
             mandatory = True,
             configurable = False,
-            cfg = "exec",
         ),
         # TODO(https://fxbug.dev/425931839): Remove if unused after all tools are migrated.
         "output_name": attr.string(
@@ -136,8 +133,11 @@ _BINARY_HOST_TOOL_ATTRS = {
         doc = "The API area responsible for maintaining this tool.",
         mandatory = True,
     ),
-    # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
-    # being used for host tools.
+    # TODO(https://fxbug.dev/442025401): Consider implementing this within
+    # bazel2gn rather than requiring it at each call site.
+    # TODO(https://fxbug.dev/460538634): Replace with the following once
+    # bazel2gn is no longer being used for host tools.
+    # "target_compatible_with": None,
     "target_compatible_with": attr.string_list(
         doc = "Standard meaning. Must be `HOST_OS_CONSTRAINTS`.",
         default = HOST_OS_CONSTRAINTS,
@@ -151,7 +151,10 @@ def _idk_cc_binary_host_tool_impl(
         category,
         api_area,
         target_compatible_with,
+        visibility,
         **kwargs):
+    if "idk" in name or "sdk" in name:
+        fail('`name`s must not include "idk" or "sdk".')
     if target_compatible_with != HOST_OS_CONSTRAINTS:
         fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
@@ -160,16 +163,18 @@ def _idk_cc_binary_host_tool_impl(
     cc_binary_host_tool(
         name = binary_name,
         target_compatible_with = HOST_OS_CONSTRAINTS,
+        visibility = visibility,
         **kwargs
     )
 
-    _idk_host_tool(
+    _idk_host_tool_atom(
         name = name + "_idk",
         idk_name = idk_name,
         category = category,
         api_area = api_area,
         tool = binary_name,
         target_compatible_with = HOST_OS_CONSTRAINTS,
+        visibility = visibility,
     )
 
 idk_cc_binary_host_tool = macro(
@@ -189,6 +194,7 @@ def idk_go_binary_host_tool(
         idk_name,
         category,
         api_area,
+        visibility = None,
         # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
         # being used for host tools.
         target_compatible_with = HOST_OS_CONSTRAINTS,
@@ -200,11 +206,17 @@ def idk_go_binary_host_tool(
         idk_name: The name of the tool in the IDK. Usually matches `name`.
         category: Publication level of the tool in the IDK. See _create_idk_atom().
         api_area: The API area responsible for maintaining this tool.
+        # TODO(https://fxbug.dev/442025401): Consider implementing this within
+        # bazel2gn rather than requiring it at each call site.
+        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+        # being used for host tools.
         target_compatible_with: Standard meaning. Must be `HOST_OS_CONSTRAINTS`.
         **kwargs: Passed to `go_binary()`.
 
     GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
     """
+    if "idk" in name or "sdk" in name:
+        fail('`name`s must not include "idk" or "sdk".')
     if target_compatible_with != HOST_OS_CONSTRAINTS:
         fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
@@ -213,16 +225,18 @@ def idk_go_binary_host_tool(
     go_binary_host_tool(
         name = binary_name,
         target_compatible_with = HOST_OS_CONSTRAINTS,
+        visibility = visibility,
         **kwargs
     )
 
-    _idk_host_tool(
+    _idk_host_tool_atom(
         name = name + "_idk",
         idk_name = idk_name,
         category = category,
         api_area = api_area,
         tool = binary_name,
         target_compatible_with = HOST_OS_CONSTRAINTS,
+        visibility = visibility,
     )
 
 def _idk_rustc_binary_host_tool_impl(
@@ -243,7 +257,7 @@ def _idk_rustc_binary_host_tool_impl(
         **kwargs
     )
 
-    _idk_host_tool(
+    _idk_host_tool_atom(
         name = name + "_idk",
         idk_name = idk_name,
         category = category,

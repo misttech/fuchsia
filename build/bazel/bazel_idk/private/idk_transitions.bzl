@@ -108,3 +108,81 @@ build_in_all_idk_api_level_and_cpu_combinations = rule(
         ),
     },
 )
+
+# TODO(https://fxbug.dev/442025401): Add build settings we do not want to carry
+# over from the Fuchsia configuration.
+BUILD_SETTINGS_TO_RESET_FOR_HOST_TOOLS = [
+]
+
+BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES = {
+}
+
+def _get_host_platform_cpu(host_cpu):
+    """Returns the CPU string, following Fuchsia conventions, for the host CPU architecture.
+
+    Args:
+        host_cpu: The host CPU architecture following Bazel conventions, as a string.
+
+    Returns:
+        The host CPU architecture following Fuchsia conventions, as a string.
+    """
+    if host_cpu == "k8":
+        return "x64"
+    elif host_cpu == "aarch64":
+        return "arm64"
+    else:
+        fail("Unsupported host CPU architecture: '%s'" % host_cpu)
+
+def _current_host_cpu_transition_impl(settings, _attr):
+    _verify_is_main_platform_configuration(
+        settings["//command_line_option:platforms"],
+        settings["@//build/bazel:fuchsia_api_level"],
+    )
+
+    host_platform_cpu = _get_host_platform_cpu(settings["//command_line_option:host_cpu"])
+    host_platform_os = "linux"
+
+    return {
+        "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_%s" % (host_platform_os, host_platform_cpu),
+    } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES
+
+current_host_cpu_transition = transition(
+    implementation = _current_host_cpu_transition_impl,
+    inputs = [
+        "@//build/bazel:fuchsia_api_level",
+        "//command_line_option:host_cpu",
+        "//command_line_option:platforms",
+    ],
+    outputs = ["//command_line_option:platforms"] + BUILD_SETTINGS_TO_RESET_FOR_HOST_TOOLS,
+)
+
+def _configured_host_cpus_transition_impl(settings, _attr):
+    _verify_is_main_platform_configuration(
+        settings["//command_line_option:platforms"],
+        settings["@//build/bazel:fuchsia_api_level"],
+    )
+
+    host_platform_os = "linux"
+
+    # TODO(https://fxbug.dev/442025401): Make this conditional on `sdk_cross_compile_host_tools`.
+    # Consider merging this function with `_current_host_cpu_transition_impl()`.
+    return [
+        # TODO(https://fxbug.dev/516865467): Uncomment this when issues with building Rust host
+        # tools for Linux arm64 are resolved.
+        # {
+        #     "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_arm64" % host_platform_os,
+        # } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES,
+        {
+            "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_x64" % host_platform_os,
+        } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES,
+    ]
+
+configured_host_cpus_transition = transition(
+    implementation = _configured_host_cpus_transition_impl,
+    inputs = [
+        "@//build/bazel:fuchsia_api_level",
+        "//command_line_option:host_cpu",
+        "//command_line_option:platforms",
+    ],
+    outputs = ["//command_line_option:platforms"] + BUILD_SETTINGS_TO_RESET_FOR_HOST_TOOLS,
+)
