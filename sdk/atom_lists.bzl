@@ -12,6 +12,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/async:async_idk",
     "//sdk/lib/async-loop:async-loop-cpp_idk",
     "//sdk/lib/async-loop:async-loop_idk",
+    "//sdk/lib/component/incoming/cpp:cpp_idk",
     "//sdk/lib/fidl:fidl_idk",
     "//sdk/lib/fidl/cpp:cpp_base_idk",
     "//sdk/lib/fidl/cpp:cpp_idk",
