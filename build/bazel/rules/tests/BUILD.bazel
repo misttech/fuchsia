@@ -101,6 +101,9 @@ filegroup(
 
         # Aspect tests
         "//build/bazel/aspects/tests",
+
+        # To guard against build regression before ffx main binary target is fully migrated.
+        "//src/developer/ffx/frontends/ffx",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )

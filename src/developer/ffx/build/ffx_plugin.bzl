@@ -130,6 +130,7 @@ def _ffx_plugin_impl(
                 "//third_party/rust_crates/vendor:argh",
             ] + [str(d) + "_args" for d in plugin_deps],
             target_compatible_with = HOST_CONSTRAINTS,
+            visibility = visibility,
         )
 
     # Configuration merging
@@ -160,6 +161,7 @@ def _ffx_plugin_impl(
         edition = edition,
         deps = args_deps + ([":" + name + "_sub_command"] if plugin_deps else []),
         visibility = visibility,
+        version = version,
         target_compatible_with = HOST_CONSTRAINTS,
     )
 
