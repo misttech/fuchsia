@@ -12,6 +12,7 @@ go_library("lib") {
     "config.go",
     "config_test.go",
     "orchestrator.go",
+    "orchestrator_test.go",
     "serial.go",
   ]
   deps = [
@@ -74,10 +75,12 @@ go_binary("orchestrate") {
 # Used for distributing the Orchestrate tool to private IDKs. Not to be included in
 # the Fuchsia IDK.
 # See http://goto.google.com/orchestrate-distribution-testing.
-sdk_host_tool("orchestrate_sdk") {
-  category = "partner"
-  output_name = "orchestrate"
-  deps = [ ":orchestrate" ]
+if (is_host) {
+  sdk_host_tool("orchestrate_sdk") {
+    category = "partner"
+    output_name = "orchestrate"
+    deps = [ ":orchestrate" ]
+  }
 }
 
 group("tests") {

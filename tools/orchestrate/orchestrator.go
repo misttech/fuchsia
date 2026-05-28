@@ -19,9 +19,24 @@ import (
 	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
 )
 
+// FFXClient defines the interface for interacting with ffx commands.
+type FFXClient interface {
+	Close() error
+	Cmd(args ...string) (*exec.Cmd, error)
+	ApplyEnv(env []string) ([]string, error)
+	RunCmdSync(args ...string) (string, error)
+	RunCmdAsync(args ...string) (*exec.Cmd, error)
+	ConfigGet(field string, result any) error
+	SetDefaultTarget(target *string)
+	GetDefaultTarget() (string, error)
+	WaitForDaemon(ctx context.Context) error
+	Flash(fastbootSerial, productDir, pubKeyPath string) error
+	IsPackageServerRunning(repoName string) (bool, error)
+}
+
 // TestOrchestrator uses FFX to run Fuchsia component tests.
 type TestOrchestrator struct {
-	ffx           *ffx.Ffx
+	ffx           FFXClient
 	deviceConfig  *DeviceConfig
 	ffxLogProc    *os.Process
 	targetLogFile *os.File
@@ -46,6 +61,9 @@ func NewTestOrchestrator(deviceConfig *DeviceConfig) *TestOrchestrator {
 }
 
 func (r *TestOrchestrator) instantiateFfx(in *RunInput) error {
+	if r.ffx != nil {
+		return nil
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("os.Getwd: %w", err)
