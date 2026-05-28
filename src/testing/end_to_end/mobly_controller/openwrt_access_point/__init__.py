@@ -34,6 +34,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"
 
+PHY_2G: str = "phy0"
+PHY_5G: str = "phy1"
+
 
 def create(configs: List[ControllerConfig]) -> List["OpenWrtAP"]:
     """Creates OpenWRT controller objects from testbed configs.
@@ -148,12 +151,12 @@ class OpenWrtAP:
     @property
     def wlan_2g_interface(self) -> str:
         """Returns the default 2G wireless interface."""
-        return "phy1-ap0"
+        return f"{PHY_2G}-ap0"
 
     @property
     def wlan_5g_interface(self) -> str:
         """Returns the default 5G wireless interface."""
-        return "phy0-ap0"
+        return f"{PHY_5G}-ap0"
 
     def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
         """Configures a BSS on the Access Point.
@@ -305,7 +308,7 @@ class OpenWrtAP:
     def _is_ap_enabled(self, band: Band) -> bool:
         """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status."""
         try:
-            phy = "phy0" if band == Band.BAND_2G else "phy1"
+            phy = PHY_2G if band == Band.BAND_2G else PHY_5G
             res = self.ssh.run(f"ubus list hostapd.{phy}*")
             interfaces = res.stdout.decode("utf-8").splitlines()
             if not interfaces:
@@ -325,7 +328,7 @@ class OpenWrtAP:
         """Get station status for all interfaces on OpenWrt."""
         result = {}
         for band in [Band.BAND_2G, Band.BAND_5G]:
-            phy = "phy0" if band == Band.BAND_2G else "phy1"
+            phy = PHY_2G if band == Band.BAND_2G else PHY_5G
             try:
                 res = self.ssh.run(f"ubus list hostapd.{phy}*")
                 interfaces = res.stdout.decode("utf-8").splitlines()
