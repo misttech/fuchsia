@@ -94,6 +94,7 @@ group("bazel_action_allowlist") {
     "//boards/arm64:*",
     "//boards/pkvm:*",
     "//boards/qemu-arm64:*",
+    "//boards/riscv64:*",
     "//boards/vim3:*",
     "//boards/x64:*",
     "//bundles/assembly/*",
