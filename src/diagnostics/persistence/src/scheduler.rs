@@ -15,6 +15,7 @@ use log::{debug, error, warn};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_async as fasync;
 use persistence_config::{Config, ServiceName, Tag};
+use selectors::SelectorExt;
 use std::collections::VecDeque;
 use std::pin::pin;
 use std::sync::Arc;
@@ -207,8 +208,11 @@ impl Scheduler {
         };
 
         for tag_info in self.tag_info.iter() {
-            for data in snapshot.clone() {
-                match data.filter(&tag_info.selectors) {
+            for data in &snapshot {
+                if data.moniker.match_against_selectors(&tag_info.selectors).next().is_none() {
+                    continue;
+                }
+                match data.clone().filter(&tag_info.selectors) {
                     Ok(Some(data)) => {
                         modify_tag_data(&mut current_data, tag_info, &timestamps, |tag_data| {
                             tag_data.merge(timestamps.clone(), data)

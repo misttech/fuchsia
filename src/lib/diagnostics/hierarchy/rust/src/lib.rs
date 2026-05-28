@@ -18,8 +18,9 @@ use selectors::ValidateExt;
 use serde::{Deserialize, Serialize};
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::hash::Hash;
 use std::ops::{Add, AddAssign, MulAssign};
 use thiserror::Error;
 
@@ -320,29 +321,33 @@ where
 
 impl<Key> DiagnosticsHierarchy<Key>
 where
-    Key: PartialEq,
+    Key: Eq + Hash + Clone,
 {
     /// Recursively merge another [`DiagnosticsHierarchy`] into this one.
     pub fn merge(&mut self, other: DiagnosticsHierarchy<Key>) {
+        let mut self_props: HashMap<Key, usize> =
+            self.properties.iter().enumerate().map(|(i, p)| (p.key().clone(), i)).collect();
+
         for other_property in other.properties {
-            if let Some(existing) =
-                self.properties.iter_mut().find(|p| p.key() == other_property.key())
-            {
-                *existing = other_property;
+            if let Some(&index) = self_props.get(other_property.key()) {
+                self.properties[index] = other_property;
             } else {
+                self_props.insert(other_property.key().clone(), self.properties.len());
                 self.properties.push(other_property);
             }
         }
 
+        let mut self_children: HashMap<String, usize> =
+            self.children.iter().enumerate().map(|(i, c)| (c.name.clone(), i)).collect();
+
         for other_child in other.children {
-            if let Some(existing_child) =
-                self.children.iter_mut().find(|c| c.name == other_child.name)
-            {
-                existing_child.merge(other_child);
+            if let Some(&index) = self_children.get(&other_child.name) {
+                self.children[index].merge(other_child);
             } else {
                 // Remove missing errors for matching lazy nodes.
                 self.missing.retain(|m| m.name != other_child.name);
 
+                self_children.insert(other_child.name.clone(), self.children.len());
                 self.children.push(other_child);
             }
         }
