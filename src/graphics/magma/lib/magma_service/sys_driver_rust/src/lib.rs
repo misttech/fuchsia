@@ -11,6 +11,7 @@ pub mod magma_system_device;
 pub mod magma_system_semaphore;
 pub mod performance_counters_server;
 pub mod primary_fidl_server;
+pub mod utils;
 
 pub mod traits;
 

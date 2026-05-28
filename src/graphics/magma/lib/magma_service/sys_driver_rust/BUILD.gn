@@ -22,6 +22,7 @@ rustc_library("sys_driver_rust") {
     "src/performance_counters_server.rs",
     "src/primary_fidl_server.rs",
     "src/traits.rs",
+    "src/utils.rs",
   ]
   deps = [
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_rust",
