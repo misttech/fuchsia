@@ -5746,48 +5746,41 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
   // efficient code below.
   if (!parent_ && pages->IsEmpty() && splice_offset == 0) {
     bool found_page = false;
-    page_list_.ForEveryPageInRangeMutable(
-        [&compression, &found_page](VmPageOrMarkerRef p, uint64_t off) {
-          found_page = true;
-          // Splice lists do not support page intervals.
-          ASSERT(!p->IsInterval());
-          // Have no parent and so should not see parent content.
-          DEBUG_ASSERT(!p->IsParentContent());
-          if (p->IsPage()) {
-            DEBUG_ASSERT(p->Page()->object.pin_count == 0);
-            // Cannot be taking pages from a pager backed VMO, hence cannot be taking a loaned page.
-            DEBUG_ASSERT(!p->Page()->is_loaned());
-            pmm_page_queues()->Remove(p->Page());
-          } else if (p->IsReference()) {
-            // A regular reference we can move are permitted in the VmPageSpliceList, it is up to
-            // the receiver of the pages to reject or otherwise deal with them. A temporary
-            // reference we need to turn back into its page so we can move it.
-            if (auto maybe_page = MaybeDecompressReference(compression, p->Reference())) {
-              // Don't insert the page in the page queues, since we're trying to remove the pages,
-              // just update the page list reader for TakePages below.
-              VmPageOrMarker::ReferenceValue ref = p.SwapReferenceForPage(*maybe_page);
-              ASSERT(compression->IsTempReference(ref));
-            }
-          }
-          return ZX_ERR_NEXT;
-        },
-        range.offset, range.end());
-
-    // If we did not find any pages, we could either be entirely inside a gap or an interval. Make
-    // sure we're not inside an interval; checking a single offset for membership should suffice.
-    ASSERT(found_page || !page_list_.IsOffsetInZeroInterval(range.offset));
-
     uint32_t populated_slots_removed = 0;
     zx_status_t status = pages->AddPagesFrom(
         [&](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) {
           AssertHeld(lock_ref());
-          if (src->IsPageOrRef() || src->IsParentContent()) {
+          found_page = true;
+          // Splice lists do not support page intervals.
+          ASSERT(!src->IsInterval());
+          // Have no parent and so should not see parent content.
+          DEBUG_ASSERT(!src->IsParentContent());
+          if (src->IsPageOrRef()) {
             ++populated_slots_removed;
           }
-
+          if (src->IsPage()) {
+            DEBUG_ASSERT(src->Page()->object.pin_count == 0);
+            // Cannot be taking pages from a pager backed VMO, hence cannot be taking a loaned page.
+            DEBUG_ASSERT(!src->Page()->is_loaned());
+            pmm_page_queues()->Remove(src->Page());
+          } else if (src->IsReference()) {
+            // A regular reference we can move are permitted in the VmPageSpliceList, it is up to
+            // the receiver of the pages to reject or otherwise deal with them. A temporary
+            // reference we need to turn back into its page so we can move it.
+            if (auto maybe_page = MaybeDecompressReference(compression, src->Reference())) {
+              // Don't insert the page in the page queues, since we're trying to remove the pages,
+              // just update the page list reader for TakePages below.
+              VmPageOrMarker::ReferenceValue ref = src->SwapReferenceForPage(*maybe_page);
+              ASSERT(compression->IsTempReference(ref));
+            }
+          }
           *dst = ktl::move(*src);
         },
         page_list_, range.offset);
+
+    // If we did not find any pages, we could either be entirely inside a gap or an interval. Make
+    // sure we're not inside an interval; checking a single offset for membership should suffice.
+    ASSERT(found_page || !page_list_.IsOffsetInZeroInterval(range.offset));
 
     if (populated_slots_removed > 0) {
       continuous_attribution_tracker_.Decrement(populated_slots_removed);
@@ -5797,6 +5790,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
       CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
       return status;
     }
+
     *taken_len = range.len;
     return ZX_OK;
   }
