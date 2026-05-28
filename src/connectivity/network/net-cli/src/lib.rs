@@ -35,6 +35,7 @@ use flex_fuchsia_net_interfaces as finterfaces;
 use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
 use flex_fuchsia_net_name as fname;
 use flex_fuchsia_net_neighbor as fneighbor;
+use flex_fuchsia_net_resources as fnet_resources;
 use flex_fuchsia_net_root as froot;
 use flex_fuchsia_net_routes as froutes;
 use flex_fuchsia_net_stack as fstack;
@@ -42,6 +43,7 @@ use flex_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use itertools::Itertools as _;
 use log::{info, warn};
+use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Ipv4, Ipv6};
 use netfilter::FidlReturn as _;
 use prettytable::{Row, Table, cell, format, row};
@@ -86,6 +88,8 @@ pub trait ServiceConnector<S: flex_client::fidl::ProtocolMarker> {
 pub trait NetCliDepsConnector:
     ServiceConnector<fdebug::InterfacesMarker>
     + ServiceConnector<froot::InterfacesMarker>
+    + ServiceConnector<froot::RoutesV4Marker>
+    + ServiceConnector<froot::RoutesV6Marker>
     + ServiceConnector<froot::FilterMarker>
     + ServiceConnector<fdhcp::Server_Marker>
     + ServiceConnector<ffilter_deprecated::FilterMarker>
@@ -107,6 +111,8 @@ pub trait NetCliDepsConnector:
 impl<O> NetCliDepsConnector for O where
     O: ServiceConnector<fdebug::InterfacesMarker>
         + ServiceConnector<froot::InterfacesMarker>
+        + ServiceConnector<froot::RoutesV4Marker>
+        + ServiceConnector<froot::RoutesV6Marker>
         + ServiceConnector<froot::FilterMarker>
         + ServiceConnector<fdhcp::Server_Marker>
         + ServiceConnector<ffilter_deprecated::FilterMarker>
@@ -982,6 +988,51 @@ async fn do_if_config_set(
     Ok(())
 }
 
+enum IpAddrAndGateway {
+    V4(std::net::Ipv4Addr, Option<std::net::Ipv4Addr>),
+    V6(std::net::Ipv6Addr, Option<std::net::Ipv6Addr>),
+}
+
+fn try_into_matched_ip_and_gateway(
+    destination: std::net::IpAddr,
+    gateway: Option<std::net::IpAddr>,
+) -> Result<IpAddrAndGateway, Error> {
+    match (destination, gateway) {
+        (std::net::IpAddr::V4(addr), Some(std::net::IpAddr::V4(g))) => {
+            Ok(IpAddrAndGateway::V4(addr, Some(g)))
+        }
+        (std::net::IpAddr::V4(addr), None) => Ok(IpAddrAndGateway::V4(addr, None)),
+        (std::net::IpAddr::V6(addr), Some(std::net::IpAddr::V6(g))) => {
+            Ok(IpAddrAndGateway::V6(addr, Some(g)))
+        }
+        (std::net::IpAddr::V6(addr), None) => Ok(IpAddrAndGateway::V6(addr, None)),
+        (std::net::IpAddr::V4(_), Some(std::net::IpAddr::V6(_)))
+        | (std::net::IpAddr::V6(_), Some(std::net::IpAddr::V4(_))) => {
+            Err(anyhow!("Gateway IP version mismatch"))
+        }
+    }
+}
+
+async fn get_interface_authorization_proof<C: NetCliDepsConnector>(
+    interface: &opts::InterfaceIdentifier,
+    connector: &C,
+) -> Result<(u64, fnet_resources::ProofOfInterfaceAuthorization), Error> {
+    let nicid = interface.find_nicid(connector).await?;
+
+    let control = get_control(connector, nicid).await?;
+
+    let grant = control
+        .get_authorization_for_interface()
+        .await
+        .context("failed to get authorization for interface")?;
+    let proof = fnet_resources::ProofOfInterfaceAuthorization {
+        interface_id: grant.interface_id,
+        token: grant.token,
+    };
+
+    Ok((nicid, proof))
+}
+
 async fn do_route<C: NetCliDepsConnector>(
     out: &mut writer::JsonWriter<serde_json::Value>,
     cmd: opts::RouteEnum,
@@ -989,24 +1040,199 @@ async fn do_route<C: NetCliDepsConnector>(
 ) -> Result<(), Error> {
     match cmd {
         opts::RouteEnum::List(opts::RouteList {}) => do_route_list(out, connector).await?,
-        opts::RouteEnum::Add(route) => {
-            let stack = connect_with_context::<fstack::StackMarker, _>(connector).await?;
-            let nicid = route.interface.find_u32_nicid(connector).await?;
-            let entry = route.into_route_table_entry(nicid);
-            fstack_ext::exec_fidl!(
-                stack.add_forwarding_entry(&entry),
-                "error adding next-hop forwarding entry"
-            )?;
+        opts::RouteEnum::Add(route) => do_route_add(route, connector).await?,
+        opts::RouteEnum::Del(route) => do_route_del(route, connector).await?,
+    }
+    Ok(())
+}
+
+async fn do_route_add<C: NetCliDepsConnector>(
+    route: opts::RouteAdd,
+    connector: &C,
+) -> Result<(), Error> {
+    let (nicid, proof) = get_interface_authorization_proof(&route.interface, connector).await?;
+
+    match try_into_matched_ip_and_gateway(route.destination, route.gateway)? {
+        IpAddrAndGateway::V4(addr, g) => {
+            let destination = net_types::ip::Subnet::new(addr.into(), route.prefix_len)
+                .map_err(|e| anyhow!("invalid destination subnet: {:?}", e))?;
+            let gateway = match g {
+                Some(g) => Some(
+                    SpecifiedAddr::new(g.into())
+                        .ok_or_else(|| anyhow!("gateway must be a specified address"))?,
+                ),
+                None => None,
+            };
+            do_route_add_inner::<Ipv4, C>(
+                destination,
+                gateway,
+                nicid,
+                route.metric,
+                proof,
+                connector,
+            )
+            .await?;
         }
-        opts::RouteEnum::Del(route) => {
-            let stack = connect_with_context::<fstack::StackMarker, _>(connector).await?;
-            let nicid = route.interface.find_u32_nicid(connector).await?;
-            let entry = route.into_route_table_entry(nicid);
-            fstack_ext::exec_fidl!(
-                stack.del_forwarding_entry(&entry),
-                "error removing forwarding entry"
-            )?;
+        IpAddrAndGateway::V6(addr, g) => {
+            let destination = net_types::ip::Subnet::new(addr.into(), route.prefix_len)
+                .map_err(|e| anyhow!("invalid destination subnet: {:?}", e))?;
+            let gateway = match g {
+                Some(g) => Some(
+                    SpecifiedAddr::new(g.into())
+                        .ok_or_else(|| anyhow!("gateway must be a specified address"))?,
+                ),
+                None => None,
+            };
+            do_route_add_inner::<Ipv6, C>(
+                destination,
+                gateway,
+                nicid,
+                route.metric,
+                proof,
+                connector,
+            )
+            .await?;
         }
+    }
+    Ok(())
+}
+
+fn new_route<I: Ip>(
+    destination: net_types::ip::Subnet<I::Addr>,
+    nicid: u64,
+    gateway: Option<SpecifiedAddr<I::Addr>>,
+    metric: Option<u32>,
+) -> froutes_ext::Route<I> {
+    match metric {
+        Some(metric) => froutes_ext::Route::<I>::new_forward_with_explicit_metric(
+            destination,
+            nicid,
+            gateway,
+            metric,
+        ),
+        None => {
+            froutes_ext::Route::<I>::new_forward_with_inherited_metric(destination, nicid, gateway)
+        }
+    }
+}
+
+async fn do_route_add_inner<I, C>(
+    destination: net_types::ip::Subnet<I::Addr>,
+    gateway: Option<SpecifiedAddr<I::Addr>>,
+    nicid: u64,
+    metric: Option<u32>,
+    proof: fnet_resources::ProofOfInterfaceAuthorization,
+    connector: &C,
+) -> Result<(), Error>
+where
+    I: Ip + froutes_ext::admin::FidlRouteAdminIpExt + froutes_ext::FidlRouteIpExt,
+    C: NetCliDepsConnector + ServiceConnector<I::GlobalRouteTableMarker>,
+{
+    let routes_proxy = connect_with_context::<I::GlobalRouteTableMarker, _>(connector).await?;
+    let route_set_proxy = froutes_ext::admin::new_global_route_set::<I>(&routes_proxy)
+        .context("failed to create global route set")?;
+
+    froutes_ext::admin::authenticate_for_interface::<I>(&route_set_proxy, proof)
+        .await
+        .context("authenticate_for_interface failed")?
+        .map_err(|e| anyhow!("authenticate failed: {:?}", e))?;
+
+    let route = new_route::<I>(destination, nicid, gateway, metric);
+    let fidl_route =
+        route.try_into().map_err(|e| anyhow!("failed to convert route to FIDL: {:?}", e))?;
+
+    let did_add = froutes_ext::admin::add_route::<I>(&route_set_proxy, &fidl_route)
+        .await
+        .context("add_route failed")?
+        .map_err(|e| anyhow!("add_route failed: {:?}", e))?;
+    if !did_add {
+        warn!("Route already exists, did not add.");
+    }
+    Ok(())
+}
+
+async fn do_route_del<C: NetCliDepsConnector>(
+    route: opts::RouteDel,
+    connector: &C,
+) -> Result<(), Error> {
+    let (nicid, proof) = get_interface_authorization_proof(&route.interface, connector).await?;
+
+    match try_into_matched_ip_and_gateway(route.destination, route.gateway)? {
+        IpAddrAndGateway::V4(addr, g) => {
+            let destination = net_types::ip::Subnet::new(addr.into(), route.prefix_len)
+                .map_err(|e| anyhow!("invalid destination subnet: {:?}", e))?;
+            let gateway = match g {
+                Some(g) => Some(
+                    SpecifiedAddr::new(g.into())
+                        .ok_or_else(|| anyhow!("gateway must be a specified address"))?,
+                ),
+                None => None,
+            };
+            do_route_del_inner::<Ipv4, C>(
+                destination,
+                gateway,
+                nicid,
+                route.metric,
+                proof,
+                connector,
+            )
+            .await?;
+        }
+        IpAddrAndGateway::V6(addr, g) => {
+            let destination = net_types::ip::Subnet::new(addr.into(), route.prefix_len)
+                .map_err(|e| anyhow!("invalid destination subnet: {:?}", e))?;
+            let gateway = match g {
+                Some(g) => Some(
+                    SpecifiedAddr::new(g.into())
+                        .ok_or_else(|| anyhow!("gateway must be a specified address"))?,
+                ),
+                None => None,
+            };
+            do_route_del_inner::<Ipv6, C>(
+                destination,
+                gateway,
+                nicid,
+                route.metric,
+                proof,
+                connector,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn do_route_del_inner<I, C>(
+    destination: net_types::ip::Subnet<I::Addr>,
+    gateway: Option<SpecifiedAddr<I::Addr>>,
+    nicid: u64,
+    metric: Option<u32>,
+    proof: fnet_resources::ProofOfInterfaceAuthorization,
+    connector: &C,
+) -> Result<(), Error>
+where
+    I: Ip + froutes_ext::admin::FidlRouteAdminIpExt + froutes_ext::FidlRouteIpExt,
+    C: NetCliDepsConnector + ServiceConnector<I::GlobalRouteTableMarker>,
+{
+    let routes_proxy = connect_with_context::<I::GlobalRouteTableMarker, _>(connector).await?;
+    let route_set_proxy = froutes_ext::admin::new_global_route_set::<I>(&routes_proxy)
+        .context("failed to create global route set")?;
+
+    froutes_ext::admin::authenticate_for_interface::<I>(&route_set_proxy, proof)
+        .await
+        .context("authenticate_for_interface failed")?
+        .map_err(|e| anyhow!("authenticate failed: {:?}", e))?;
+
+    let route = new_route::<I>(destination, nicid, gateway, metric);
+    let fidl_route =
+        route.try_into().map_err(|e| anyhow!("failed to convert route to FIDL: {:?}", e))?;
+
+    let did_remove = froutes_ext::admin::remove_route::<I>(&route_set_proxy, &fidl_route)
+        .await
+        .context("remove_route failed")?
+        .map_err(|e| anyhow!("remove_route failed: {:?}", e))?;
+    if !did_remove {
+        warn!("Route was not found, did not remove.");
     }
     Ok(())
 }
@@ -1891,6 +2117,8 @@ mod testutil {
         pub stack: Option<fstack::StackProxy>,
         pub root_interfaces: Option<froot::InterfacesProxy>,
         pub root_filter: Option<froot::FilterProxy>,
+        pub root_routes_v4: Option<froot::RoutesV4Proxy>,
+        pub root_routes_v6: Option<froot::RoutesV6Proxy>,
         pub routes_v4: Option<froutes::StateV4Proxy>,
         pub routes_v6: Option<froutes::StateV6Proxy>,
         pub name_lookup: Option<fname::LookupProxy>,
@@ -2026,6 +2254,26 @@ mod testutil {
                 .as_ref()
                 .cloned()
                 .ok_or_else(|| anyhow!("connector has no routes_v6 instance"))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ServiceConnector<froot::RoutesV4Marker> for TestConnector {
+        async fn connect(&self) -> Result<<froot::RoutesV4Marker as ProtocolMarker>::Proxy, Error> {
+            self.root_routes_v4
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no root_routes_v4 instance"))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ServiceConnector<froot::RoutesV6Marker> for TestConnector {
+        async fn connect(&self) -> Result<<froot::RoutesV6Marker as ProtocolMarker>::Proxy, Error> {
+            self.root_routes_v6
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no root_routes_v6 instance"))
         }
     }
 
@@ -3230,6 +3478,7 @@ port_identity_koid    -
     }
 
     async fn test_modify_route(client: flex_client::ClientArg, cmd: opts::RouteEnum) {
+        let event_token = client.create_event();
         let expected_interface = match &cmd {
             opts::RouteEnum::List(_) => panic!("test_modify_route should not take a List command"),
             opts::RouteEnum::Add(opts::RouteAdd { interface, .. }) => interface,
@@ -3243,45 +3492,139 @@ port_identity_koid    -
             }
         };
 
-        let (stack, mut requests) = client.create_proxy_and_stream::<fstack::StackMarker>();
-        let connector = TestConnector { stack: Some(stack), ..Default::default() };
+        let (root_interfaces, mut interfaces_requests) =
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
+        let (routes_v4, mut routes_v4_requests) =
+            client.create_proxy_and_stream::<froot::RoutesV4Marker>();
+        let (routes_v6, _routes_v6_requests) =
+            client.create_proxy_and_stream::<froot::RoutesV6Marker>();
+
+        let connector = TestConnector {
+            root_interfaces: Some(root_interfaces),
+            root_routes_v4: Some(routes_v4),
+            root_routes_v6: Some(routes_v6),
+            ..Default::default()
+        };
         let buffers = writer::TestBuffers::default();
         let mut out = writer::JsonWriter::new_test(None, &buffers);
         let op = do_route(&mut out, cmd.clone(), &connector);
+
         let op_succeeds = async move {
+            // Handle get_interface_authorization_proof.
+            let (nic_id, control_server, _get_admin_responder) = interfaces_requests
+                .try_next()
+                .await
+                .expect("get_admin FIDL error")
+                .expect("request stream should not have ended")
+                .into_get_admin()
+                .expect("request should be get_admin");
+            assert_eq!(nic_id, expected_id);
+
+            let mut control_stream = control_server.into_stream();
+            let auth_responder = control_stream
+                .try_next()
+                .await
+                .expect("get_authorization_for_interface FIDL error")
+                .expect("request stream should not have ended")
+                .into_get_authorization_for_interface()
+                .expect("request should be get_authorization_for_interface");
+
+            let grant = fnet_resources::GrantForInterfaceAuthorization {
+                interface_id: nic_id,
+                token: event_token,
+            };
+            auth_responder.send(grant).expect("failed to send grant");
+
+            // Handle RouteSet API calls.
             match cmd {
-                opts::RouteEnum::List(opts::RouteList {}) => {
+                opts::RouteEnum::List(_) => {
                     panic!("test_modify_route should not take a List command")
                 }
-                opts::RouteEnum::Add(route) => {
-                    let expected_entry = route.into_route_table_entry(
-                        expected_id.try_into().expect("nicid does not fit in u32"),
-                    );
-                    let (entry, responder) = requests
-                        .try_next()
-                        .await
-                        .expect("add route FIDL error")
-                        .expect("request stream should not have ended")
-                        .into_add_forwarding_entry()
-                        .expect("request should be of type AddRoute");
-                    assert_eq!(entry, expected_entry);
-                    responder.send(Ok(()))
-                }
-                opts::RouteEnum::Del(route) => {
-                    let expected_entry = route.into_route_table_entry(
-                        expected_id.try_into().expect("nicid does not fit in u32"),
-                    );
-                    let (entry, responder) = requests
-                        .try_next()
-                        .await
-                        .expect("del route FIDL error")
-                        .expect("request stream should not have ended")
-                        .into_del_forwarding_entry()
-                        .expect("request should be of type DelRoute");
-                    assert_eq!(entry, expected_entry);
-                    responder.send(Ok(()))
-                }
-            }?;
+                opts::RouteEnum::Add(route) => match route.destination {
+                    std::net::IpAddr::V4(addr) => {
+                        let (route_set_server, _routes_responder) = routes_v4_requests
+                            .try_next()
+                            .await
+                            .expect("global_route_set FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_global_route_set()
+                            .expect("request should be global_route_set");
+
+                        let mut route_set_stream = route_set_server.into_stream();
+
+                        let (proof, auth_responder) = route_set_stream
+                            .try_next()
+                            .await
+                            .expect("authenticate FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_authenticate_for_interface()
+                            .expect("request should be authenticate");
+                        assert_eq!(proof.interface_id, nic_id);
+                        auth_responder.send(Ok(())).expect("failed to send authenticate response");
+
+                        let (route_v4, add_responder) = route_set_stream
+                            .try_next()
+                            .await
+                            .expect("add_route FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_add_route()
+                            .expect("request should be add_route");
+                        assert_eq!(route_v4.destination.addr.addr, addr.octets());
+                        assert_eq!(route_v4.destination.prefix_len, route.prefix_len);
+                        assert_eq!(
+                            route_v4.action,
+                            froutes::RouteActionV4::Forward(froutes::RouteTargetV4 {
+                                outbound_interface: nic_id,
+                                next_hop: None,
+                            })
+                        );
+                        add_responder.send(Ok(true)).expect("failed to send add_route response");
+                    }
+                    _ => panic!("test only mocks IPv4 currently"),
+                },
+                opts::RouteEnum::Del(route) => match route.destination {
+                    std::net::IpAddr::V4(addr) => {
+                        let (route_set_server, _routes_responder) = routes_v4_requests
+                            .try_next()
+                            .await
+                            .expect("global_route_set FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_global_route_set()
+                            .expect("request should be global_route_set");
+
+                        let mut route_set_stream = route_set_server.into_stream();
+
+                        let (proof, auth_responder) = route_set_stream
+                            .try_next()
+                            .await
+                            .expect("authenticate FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_authenticate_for_interface()
+                            .expect("request should be authenticate");
+                        assert_eq!(proof.interface_id, nic_id);
+                        auth_responder.send(Ok(())).expect("failed to send authenticate response");
+
+                        let (route_v4, del_responder) = route_set_stream
+                            .try_next()
+                            .await
+                            .expect("remove_route FIDL error")
+                            .expect("request stream should not have ended")
+                            .into_remove_route()
+                            .expect("request should be remove_route");
+                        assert_eq!(route_v4.destination.addr.addr, addr.octets());
+                        assert_eq!(route_v4.destination.prefix_len, route.prefix_len);
+                        assert_eq!(
+                            route_v4.action,
+                            froutes::RouteActionV4::Forward(froutes::RouteTargetV4 {
+                                outbound_interface: nic_id,
+                                next_hop: None,
+                            })
+                        );
+                        del_responder.send(Ok(true)).expect("failed to send remove_route response");
+                    }
+                    _ => panic!("test only mocks IPv4 currently"),
+                },
+            }
             Ok(())
         };
         let ((), ()) =
@@ -3300,7 +3643,7 @@ port_identity_koid    -
                 prefix_len: 24,
                 gateway: None,
                 interface: 2.into(),
-                metric: 100,
+                metric: Some(100),
             }),
         )
         .await;
@@ -3318,7 +3661,7 @@ port_identity_koid    -
                 prefix_len: 24,
                 gateway: None,
                 interface: 2.into(),
-                metric: 100,
+                metric: Some(100),
             }),
         )
         .await;
