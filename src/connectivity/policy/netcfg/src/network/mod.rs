@@ -158,13 +158,19 @@ struct RegisteredNetworks {
 }
 
 impl RegisteredNetworks {
-    fn apply(&mut self, update: PropertyUpdate) -> UpdateApplied {
+    fn apply(&mut self, update: PropertyUpdate) -> RegistryUpdateResult {
         match update {
-            PropertyUpdate::LoseDefaultNetwork => self.handle_default_network_update(None),
+            PropertyUpdate::LoseDefaultNetwork => RegistryUpdateResult {
+                event: UpdateApplied::None,
+                default_changed: self.handle_default_network_update(None),
+            },
             PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
-                NetworkUpdate::Properties(event) => self.handle_changed_network(network_id, event),
+                NetworkUpdate::Properties(event) => RegistryUpdateResult {
+                    event: self.handle_changed_network(network_id, event),
+                    default_changed: None,
+                },
                 NetworkUpdate::Remove => {
-                    if self.default_network == Some(network_id) {
+                    let event = if self.default_network == Some(network_id) {
                         error!("Cannot remove the default network. Update ignored.");
                         UpdateApplied::None
                     } else {
@@ -174,17 +180,22 @@ impl RegisteredNetworks {
                             error!("Cannot remove a non-existent network. Update ignored.");
                             UpdateApplied::None
                         }
-                    }
+                    };
+                    RegistryUpdateResult { event, default_changed: None }
                 }
-                NetworkUpdate::MakeDefault => self.handle_default_network_update(Some(network_id)),
+                NetworkUpdate::MakeDefault => RegistryUpdateResult {
+                    event: UpdateApplied::None,
+                    default_changed: self.handle_default_network_update(Some(network_id)),
+                },
             },
             PropertyUpdate::UpdateDns(dns_servers) => {
-                if self.dns_servers != dns_servers {
+                let event = if self.dns_servers != dns_servers {
                     self.dns_servers = dns_servers;
                     UpdateApplied::DnsChanged
                 } else {
                     UpdateApplied::None
-                }
+                };
+                RegistryUpdateResult { event, default_changed: None }
             }
         }
     }
@@ -197,15 +208,15 @@ impl RegisteredNetworks {
     fn handle_default_network_update(
         &mut self,
         new_default_network: Option<NetworkId>,
-    ) -> UpdateApplied {
+    ) -> Option<DefaultChangedEvent> {
         // We do not need to send an update applied if the network stayed the same.
         if new_default_network == self.default_network {
-            return UpdateApplied::None;
+            return None;
         }
 
         let old_default_network = self.default_network;
         self.default_network = new_default_network;
-        return UpdateApplied::DefaultNetworkChanged(old_default_network);
+        Some(DefaultChangedEvent { previous_default: old_default_network })
     }
 
     // Handle the `NetworkPropertiesChange` in a `PropertyUpdate`, determining
@@ -460,13 +471,23 @@ pub enum NetworkUpdate {
     MakeDefault,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct DefaultChangedEvent {
+    previous_default: Option<NetworkId>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
+struct RegistryUpdateResult {
+    event: UpdateApplied,
+    /// Stores whether the default network has changed, and the previous default
+    /// network, if any.
+    default_changed: Option<DefaultChangedEvent>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum UpdateApplied {
     /// No update was performed.
     None,
-
-    /// A default network has changed. Carries the previous default id, if any.
-    DefaultNetworkChanged(Option<NetworkId>),
 
     /// Whether the DNS servers changed.
     DnsChanged,
@@ -1022,95 +1043,20 @@ impl NetpolNetworksService {
 
     pub async fn update(&mut self, update: PropertyUpdate) {
         self.current_generation.properties += 1;
-        let update_applied = self.network_registry.apply(update);
-        if let UpdateApplied::None = update_applied {
-            // Return early if the update resulted in no changes.
-            return;
+        let RegistryUpdateResult { event, default_changed } = self.network_registry.apply(update);
+
+        if let UpdateApplied::None = event {
+            if default_changed.is_none() {
+                // Return early if there were absolutely no changes and the default stayed the same.
+                return;
+            }
         }
 
         let mut property_responders = HashMap::new();
         std::mem::swap(&mut self.property_responders, &mut property_responders);
 
-        match update_applied {
-            UpdateApplied::DefaultNetworkChanged(previous_default) => {
-                self.changed_default_network(previous_default, &mut property_responders).await;
-                match self.network_registry.default_network {
-                    Some(default_network) => {
-                        if let Some(telemetry) = &self.telemetry {
-                            if let Some(props) =
-                                self.network_registry.networks.get(&default_network)
-                            {
-                                telemetry.send(TelemetryEvent::DefaultNetworkChanged(
-                                    NetworkEventMetadata {
-                                        id: default_network.get().get(),
-                                        name: props.name.clone(),
-                                        transport: props
-                                            .network_type
-                                            .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
-                                        is_fuchsia_provisioned: matches!(
-                                            default_network,
-                                            NetworkId::Fuchsia(_)
-                                        ),
-                                        connectivity_state: props.connectivity_state,
-                                    },
-                                ));
-                            } else {
-                                warn!("Could not fetch network data for default network.");
-                            }
-                        }
-                        self.current_generation.default_network += 1;
-                        let mut responders = HashMap::new();
-                        std::mem::swap(&mut self.default_network_responders, &mut responders);
-                        for (id, responder) in responders {
-                            self.generations_by_connection
-                                .set_default_network(id, self.current_generation);
-                            match self
-                                .tokens
-                                .ensure_token(NetworkTokenContents {
-                                    network_id: default_network,
-                                    is_default: true,
-                                })
-                                .get()
-                                .duplicate()
-                            {
-                                Ok(token) => {
-                                    if let Err(e) = responder.send(
-                                        fnp_properties::NetworksWatchDefaultResponse::Network(
-                                            token,
-                                        ),
-                                    ) {
-                                        warn!("Could not send to responder: {e}");
-                                    }
-                                }
-                                Err(e) => warn!("Could not duplicate token: {e}"),
-                            };
-                        }
-                    }
-                    None => {
-                        if let Some(telemetry) = &self.telemetry {
-                            telemetry.send(TelemetryEvent::DefaultNetworkLost);
-                        }
-                        // The default network has been lost.
-                        self.current_generation.default_network += 1;
-                        let mut responders = HashMap::new();
-                        std::mem::swap(&mut self.default_network_responders, &mut responders);
-                        for (id, responder) in responders {
-                            self.generations_by_connection
-                                .set_default_network(id, self.current_generation);
-                            if let Err(e) = responder.send(
-                                fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
-                                    fnp_properties::Empty,
-                                ),
-                            ) {
-                                warn!("Could not send to responder: {e}");
-                            }
-                        }
-                    }
-                }
-
-                // All property updaters have been notified
-                return;
-            }
+        // Clean up or register tokens based on whether the network was added or removed.
+        match event {
             UpdateApplied::NetworkChanged { network_id, added: true, .. } => {
                 let _ = self
                     .tokens
@@ -1119,17 +1065,18 @@ impl NetpolNetworksService {
             UpdateApplied::NetworkRemoved(network_id) => {
                 self.tokens.drop_if(|c| !c.is_default && c.network_id == network_id);
             }
-            UpdateApplied::NetworkChanged { added: false, .. } => {
-                // The network already exists so the token must also exist.
-                // No action is needed.
-            }
-            // TODO(https://fxbug.dev/477980011): Switch to deriving dns servers from
-            // NetworkRegistry updates.
-            UpdateApplied::DnsChanged => {}
-            UpdateApplied::None => {}
+            UpdateApplied::NetworkChanged { added: false, .. }
+            | UpdateApplied::DnsChanged
+            | UpdateApplied::None => {}
         }
 
-        if let UpdateApplied::NetworkChanged { network_id, .. } = update_applied {
+        // Notify watchers of default network changes if one occurred.
+        if let Some(DefaultChangedEvent { previous_default }) = default_changed {
+            self.notify_default_network_changed(previous_default, &mut property_responders).await;
+            return;
+        }
+
+        if let UpdateApplied::NetworkChanged { network_id, .. } = event {
             if let Some(telemetry) = &self.telemetry {
                 if let Some(props) = self.network_registry.networks.get(&network_id) {
                     telemetry.send(TelemetryEvent::NetworkChanged(NetworkEventMetadata {
@@ -1155,14 +1102,12 @@ impl NetpolNetworksService {
                 }
             };
 
-            if let UpdateApplied::NetworkChanged { network_id, changed_marks: true, .. } =
-                update_applied
-            {
+            if let UpdateApplied::NetworkChanged { network_id, changed_marks: true, .. } = event {
                 if network.network_id == network_id {
                     updates.add_socket_marks(&self.network_registry, &network, &responder);
                 }
             }
-            if let UpdateApplied::DnsChanged = update_applied {
+            if let UpdateApplied::DnsChanged = event {
                 updates.add_dns(&self.network_registry, &network, &responder);
             }
 
@@ -1174,6 +1119,81 @@ impl NetpolNetworksService {
             } else {
                 if let Err(e) = responder.respond(Ok(&updates)) {
                     warn!("Could not send to responder: {e}");
+                }
+            }
+        }
+    }
+
+    async fn notify_default_network_changed(
+        &mut self,
+        old_default: Option<NetworkId>,
+        property_responders: &mut HashMap<ConnectionId, NetworkPropertyResponder>,
+    ) {
+        self.changed_default_network(old_default, property_responders).await;
+        match self.network_registry.default_network {
+            Some(default_network) => {
+                if let Some(telemetry) = &self.telemetry {
+                    if let Some(props) = self.network_registry.networks.get(&default_network) {
+                        telemetry.send(TelemetryEvent::DefaultNetworkChanged(
+                            NetworkEventMetadata {
+                                id: default_network.get().get(),
+                                name: props.name.clone(),
+                                transport: props
+                                    .network_type
+                                    .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
+                                is_fuchsia_provisioned: matches!(
+                                    default_network,
+                                    NetworkId::Fuchsia(_)
+                                ),
+                                connectivity_state: props.connectivity_state,
+                            },
+                        ));
+                    } else {
+                        warn!("Could not fetch network data for default network.");
+                    }
+                }
+                self.current_generation.default_network += 1;
+                let mut responders = HashMap::new();
+                std::mem::swap(&mut self.default_network_responders, &mut responders);
+                for (id, responder) in responders {
+                    self.generations_by_connection.set_default_network(id, self.current_generation);
+                    match self
+                        .tokens
+                        .ensure_token(NetworkTokenContents {
+                            network_id: default_network,
+                            is_default: true,
+                        })
+                        .get()
+                        .duplicate()
+                    {
+                        Ok(token) => {
+                            if let Err(e) = responder
+                                .send(fnp_properties::NetworksWatchDefaultResponse::Network(token))
+                            {
+                                warn!("Could not send to responder: {e}");
+                            }
+                        }
+                        Err(e) => warn!("Could not duplicate token: {e}"),
+                    };
+                }
+            }
+            None => {
+                if let Some(telemetry) = &self.telemetry {
+                    telemetry.send(TelemetryEvent::DefaultNetworkLost);
+                }
+                // The default network has been lost.
+                self.current_generation.default_network += 1;
+                let mut responders = HashMap::new();
+                std::mem::swap(&mut self.default_network_responders, &mut responders);
+                for (id, responder) in responders {
+                    self.generations_by_connection.set_default_network(id, self.current_generation);
+                    if let Err(e) = responder.send(
+                        fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
+                            fnp_properties::Empty,
+                        ),
+                    ) {
+                        warn!("Could not send to responder: {e}");
+                    }
                 }
             }
         }
@@ -1218,7 +1238,6 @@ impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for Connectio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::InterfaceId;
     use std::num::NonZeroU64;
     const ID_1: InterfaceId = InterfaceId(NonZeroU64::new(1).unwrap());
     const ID_2: InterfaceId = InterfaceId(NonZeroU64::new(2).unwrap());
@@ -1228,10 +1247,10 @@ mod tests {
     #[test]
     fn test_handle_changed_network_delegated() {
         let mut networks = RegisteredNetworks::default();
-        let network_id = NetworkId::Delegated(ID_1);
-        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+        let delegated_id = NetworkId::Delegated(ID_1);
 
         // Add a new delegated network
+        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
@@ -1241,17 +1260,16 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(delegated_id, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: delegated_id,
                 added: true,
                 changed_marks: true,
                 name: Some(NAME_1.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
             }
         );
-
-        let properties = networks.networks.get(&network_id).expect("network should be present");
+        let properties = networks.networks.get(&delegated_id).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(marks.clone()));
         assert_eq!(
             properties.connectivity_state,
@@ -1268,9 +1286,9 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(delegated_id, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: delegated_id,
                 added: false,
                 changed_marks: false,
                 name: Some(NAME_1.to_string()),
@@ -1278,7 +1296,7 @@ mod tests {
             }
         );
 
-        let properties = networks.networks.get(&network_id).expect("network should be present");
+        let properties = networks.networks.get(&delegated_id).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(marks.clone()));
         assert_eq!(
             properties.connectivity_state,
@@ -1291,33 +1309,32 @@ mod tests {
             added: false,
             marks: Some(new_marks.clone()),
             dns_servers: None,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(delegated_id, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: delegated_id,
                 added: false,
                 changed_marks: true,
                 name: Some(NAME_1.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
             }
         );
-
-        let properties = networks.networks.get(&network_id).expect("network should be present");
+        let properties = networks.networks.get(&delegated_id).expect("network should be present");
         assert_eq!(properties.socket_marks, Some(new_marks));
         assert_eq!(
             properties.connectivity_state,
-            Some(fnp_socketproxy::ConnectivityState::FullConnectivity)
+            Some(fnp_socketproxy::ConnectivityState::NoConnectivity)
         );
     }
 
     #[test]
     fn test_handle_changed_network_fuchsia() {
         let mut networks = RegisteredNetworks::default();
-        let network_id = NetworkId::Fuchsia(ID_2);
+        let fuchsia_id = NetworkId::Fuchsia(ID_2);
 
         // Add a Fuchsia network
         let event = NetworkPropertiesChange {
@@ -1329,17 +1346,16 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(fuchsia_id, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: fuchsia_id,
                 added: true,
                 changed_marks: true,
                 name: Some(NAME_2.to_string()),
                 network_type: Some(fnp_socketproxy::NetworkType::Wifi),
             }
         );
-
-        let properties = networks.networks.get(&network_id).expect("network should be present");
+        let properties = networks.networks.get(&fuchsia_id).expect("network should be present");
         assert_eq!(properties.socket_marks, None);
         assert_eq!(
             properties.connectivity_state,
@@ -1356,9 +1372,9 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
-            networks.handle_changed_network(network_id, event),
+            networks.handle_changed_network(fuchsia_id, event),
             UpdateApplied::NetworkChanged {
-                network_id,
+                network_id: fuchsia_id,
                 added: false,
                 changed_marks: false,
                 name: Some(NAME_2.to_string()),
@@ -1366,7 +1382,7 @@ mod tests {
             }
         );
 
-        let properties = networks.networks.get(&network_id).expect("network should be present");
+        let properties = networks.networks.get(&fuchsia_id).expect("network should be present");
         assert_eq!(
             properties.connectivity_state,
             Some(fnp_socketproxy::ConnectivityState::FullConnectivity)
@@ -1376,6 +1392,7 @@ mod tests {
     #[test]
     fn test_handle_changed_network_validation() {
         let mut networks = RegisteredNetworks::default();
+        let fuchsia_id = NetworkId::Fuchsia(ID_1);
         let network_id = NetworkId::Delegated(ID_1);
         let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
 
@@ -1389,6 +1406,7 @@ mod tests {
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
+
         // Add the network
         let event = NetworkPropertiesChange {
             added: true,
@@ -1421,7 +1439,6 @@ mod tests {
         assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
 
         // Fuchsia network with marks
-        let fuchsia_id = NetworkId::Fuchsia(ID_1);
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
@@ -1447,14 +1464,17 @@ mod tests {
         // Make the network default
         assert_eq!(
             networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::MakeDefault)),
-            UpdateApplied::DefaultNetworkChanged(None)
+            RegistryUpdateResult {
+                event: UpdateApplied::None,
+                default_changed: Some(DefaultChangedEvent { previous_default: None })
+            }
         );
 
         // Attempt to remove default network. This is invalid change since
         // the default must be unset prior to removal.
         assert_eq!(
             networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::Remove)),
-            UpdateApplied::None
+            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
         );
 
         // Verify it was not removed
