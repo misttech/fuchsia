@@ -10,6 +10,7 @@ if (is_host) {
     deps = [
       "cli:cli_test",
       "daemon:tests",
+      "daemon_manager:tests",
       "tests:cli_integration_test",
     ]
   }
