@@ -1766,6 +1766,26 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     if (status != ZX_OK) {
       return zx::error(status);
     }
+    if (flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
+      VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(object_.get());
+      DEBUG_ASSERT(paged);
+      uint64_t original_stream_size;
+      {
+        Guard<CriticalMutex> object_guard{AliasedLock, paged->lock(), object_lock()};
+        ktl::optional<uint64_t> stream_size = paged->user_stream_size_locked();
+        DEBUG_ASSERT(stream_size.has_value());
+        original_stream_size = *stream_size;
+      }
+      const uint64_t stream_size_over_offset =
+          ktl::max(original_stream_size, object_offset_) - object_offset_;
+      const uint64_t stream_size_limited_by_map_size = ktl::min(stream_size_over_offset, size_);
+      zx::result<fbl::RefPtr<StreamSizeManager>> result =
+          StreamSizeManager::Create(stream_size_limited_by_map_size);
+      if (result.is_error()) {
+        return zx::error(result.error_value());
+      }
+      clone->SetUserStreamSize(ktl::move(*result));
+    }
     // TODO(https://fxbug.dev/503042881) Support a more efficient deep copy.
     btree::BTree<vaddr_t, arch_mmu_flags_t> protection_ranges;
     for (auto [key, value] : rest_protection_ranges_locked()) {

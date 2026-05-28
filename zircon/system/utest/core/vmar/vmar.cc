@@ -3321,4 +3321,142 @@ TEST(Vmar, WriteReadOnlyMemory) {
   EXPECT_OK(zx::process::self()->write_memory(addr, &addr, 8, &actual));
 }
 
+// Test that attempting to access the stream size of a read-only VMO subject to
+// zx_process_write_memory doesn't crash, and that the inherited stream size is correct. Regression
+// test for https://fxbug.dev/506555297.
+TEST(Vmar, FaultBeyondStreamSizeForceWritable) {
+  class ForceWritableMapping {
+   public:
+    struct Params {
+      const uint64_t vmo_size;
+      const uint64_t stream_size;
+      const uint64_t map_offset;
+      const uint64_t map_size;
+    };
+
+    static zx::result<ForceWritableMapping> Create(Params params) {
+      zx::vmo vmo;
+      if (zx_status_t status = zx::vmo::create(params.vmo_size, 0, &vmo); status != ZX_OK) {
+        return zx::error(status);
+      }
+      if (zx_status_t status = vmo.set_stream_size(params.stream_size); status != ZX_OK) {
+        return zx::error(status);
+      }
+      zx::vmo read_vmo;
+      if (zx_status_t status = vmo.duplicate(
+              ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_GET_PROPERTY | ZX_RIGHT_SET_PROPERTY,
+              &read_vmo);
+          status != ZX_OK) {
+        return zx::error(status);
+      }
+      zx_vaddr_t addr;
+      if (zx_status_t status = zx::vmar::root_self()->map(
+              ZX_VM_PERM_READ | ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS, 0, read_vmo,
+              params.map_offset, params.map_size, &addr);
+          status != ZX_OK) {
+        return zx::error(status);
+      }
+      fit::deferred_action<fit::closure> cleanup =
+          fit::defer(fit::closure([addr = addr, size = params.map_size]() {
+            ZX_ASSERT(ZX_OK == zx::vmar::root_self()->unmap(addr, size));
+          }));
+      uint64_t actual;
+      constexpr char source[] = "Trigger a call to VmMapping::ForceWritable.";
+      if (zx_status_t status = zx::process::self()->write_memory(addr, std::data(source),
+                                                                 std::size(source), &actual);
+          status != ZX_OK) {
+        return zx::error(status);
+      }
+      return zx::ok(ForceWritableMapping(addr, std::move(cleanup)));
+    }
+
+    char* Get() const { return reinterpret_cast<char*>(addr_); }
+
+   private:
+    ForceWritableMapping(uint64_t addr, fit::deferred_action<fit::closure> cleanup)
+        : addr_(addr), cleanup_(std::move(cleanup)) {}
+    const uint64_t addr_;
+    fit::deferred_action<fit::closure> cleanup_;
+  };
+
+  {
+    // Ensure that ZX_VMAR_OP_PREFETCH, which triggers a lookup of the stream size manager, doesn't
+    // fail.
+    zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
+        .vmo_size = 2 * zx_system_get_page_size(),
+        .stream_size = 2 * zx_system_get_page_size(),
+        .map_offset = 0,
+        .map_size = 2 * zx_system_get_page_size(),
+    });
+    ASSERT_OK(map.status_value());
+    const zx_vaddr_t addr = reinterpret_cast<zx_vaddr_t>(map->Get());
+    EXPECT_OK(zx::vmar::root_self()->op_range(ZX_VMAR_OP_PREFETCH, addr,
+                                              2 * zx_system_get_page_size(), nullptr, 0));
+  }
+
+  {
+    // We expect the read probes to not be limited by the stream size.
+    zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
+        .vmo_size = 2 * zx_system_get_page_size(),
+        .stream_size = 2 * zx_system_get_page_size(),
+        .map_offset = 0,
+        .map_size = 2 * zx_system_get_page_size(),
+    });
+    ASSERT_OK(map.status_value());
+    EXPECT_OK(probe_for_read(map->Get()));
+    EXPECT_OK(probe_for_read(map->Get() + zx_system_get_page_size()));
+    // Write probes will always fail because we have a read-only mapping.
+    EXPECT_STATUS(probe_for_write(map->Get()), ZX_ERR_ACCESS_DENIED);
+    EXPECT_STATUS(probe_for_write(map->Get() + zx_system_get_page_size()), ZX_ERR_ACCESS_DENIED);
+  }
+
+  {
+    // Use a smaller stream size, and expect the read probe at the boundary to fail. We inherit the
+    // stream size.
+    zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
+        .vmo_size = 2 * zx_system_get_page_size(),
+        .stream_size = 1 * zx_system_get_page_size(),
+        .map_offset = 0,
+        .map_size = 2 * zx_system_get_page_size(),
+    });
+    ASSERT_OK(map.status_value());
+    EXPECT_OK(probe_for_read(map->Get()));
+    // ZX_ERR_OUT_OF_RANGE: Exceed the stream size (fault after stream size).
+    EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
+    // ZX_ERR_NOT_FOUND: Exceed the boundaries of the mapping.
+    EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
+  }
+
+  {
+    // We handle offset mappings correctly. The first page of the mapping is visible and within the
+    // stream size, the second page isn't within the stream size, and the third page isn't mapped.
+    zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
+        .vmo_size = 10 * zx_system_get_page_size(),
+        .stream_size = 2 * zx_system_get_page_size(),
+        .map_offset = zx_system_get_page_size(),
+        .map_size = 2 * zx_system_get_page_size(),
+    });
+    ASSERT_OK(map.status_value());
+    EXPECT_OK(probe_for_read(map->Get()));
+    EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
+    EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
+  }
+
+  {
+    // The inherited stream size is zero, so no read probes will succeed. We inherit zero because
+    // map_offset >= stream_size.
+    zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
+        .vmo_size = 5 * zx_system_get_page_size(),
+        .stream_size = 1 * zx_system_get_page_size(),
+        .map_offset = 2 * zx_system_get_page_size(),
+        .map_size = 3 * zx_system_get_page_size(),
+    });
+    ASSERT_OK(map.status_value());
+    EXPECT_STATUS(probe_for_read(map->Get()), ZX_ERR_OUT_OF_RANGE);
+    EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
+    EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
+    EXPECT_STATUS(probe_for_read(map->Get() + 3 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
+  }
+}
+
 }  // namespace
