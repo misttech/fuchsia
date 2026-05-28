@@ -351,6 +351,7 @@ def _fidl_library_impl(
             enable_cpp = enable_cpp,
             enable_hlcpp = enable_hlcpp,
             hlcpp_lib_deps = hlcpp_lib_deps,
+            define_idk_atom_aliases = (category == "partner"),
             testonly = testonly,
             visibility = visibility,
         )

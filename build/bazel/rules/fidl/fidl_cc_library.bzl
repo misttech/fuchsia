@@ -83,6 +83,7 @@ def fidl_cpp_family(
         enable_cpp,
         enable_hlcpp,
         hlcpp_lib_deps,
+        define_idk_atom_aliases,
         testonly,
         visibility):
     """Generates instances of `cc_library()` providing the generated C++ bindings for a given FIDL library.
@@ -222,6 +223,13 @@ def fidl_cpp_family(
             visibility = visibility,
         )
 
+        if define_idk_atom_aliases:
+            native.alias(
+                name = cpp_lib_name + "_idk",
+                actual = name + "_idk",
+                visibility = visibility,
+            )
+
         _testing_headers_wrapper(
             name = cpp_testing_headers_name,
             generated_fidl_cc_bindings = ":%s" % cpp_codegen_name,
@@ -229,8 +237,9 @@ def fidl_cpp_family(
         )
 
         testing_suffix = "testing"
+        cpp_testing_lib_name = _get_name_with_suffix(cpp_lib_name, testing_suffix)
         _fidl_cc_library(
-            name = _get_name_with_suffix(cpp_lib_name, testing_suffix),
+            name = cpp_testing_lib_name,
             fidl_library_name = fidl_library_name,
             fidl_deps = deps,
             bindings_flavor = cpp_bindings_flavor,
@@ -243,6 +252,13 @@ def fidl_cpp_family(
             visibility = visibility,
         )
 
+        if define_idk_atom_aliases:
+            native.alias(
+                name = cpp_testing_lib_name + "_idk",
+                actual = name + "_idk",
+                visibility = visibility,
+            )
+
         if enable_hlcpp:
             cpp_hlcpp_conversion_headers_name = "%s_hlcpp_conversion_headers" % cpp_lib_name
             _conversion_headers_wrapper(
@@ -252,8 +268,9 @@ def fidl_cpp_family(
             )
 
             cpp_hlcpp_conversion_suffix = "hlcpp_conversion"
+            hlcpp_conversion_lib_name = _get_name_with_suffix(cpp_lib_name, cpp_hlcpp_conversion_suffix)
             _fidl_cc_library(
-                name = _get_name_with_suffix(cpp_lib_name, cpp_hlcpp_conversion_suffix),
+                name = hlcpp_conversion_lib_name,
                 fidl_library_name = fidl_library_name,
                 fidl_deps = deps,
                 bindings_flavor = cpp_bindings_flavor,
@@ -268,6 +285,13 @@ def fidl_cpp_family(
                 testonly = testonly,
                 visibility = visibility,
             )
+
+            if define_idk_atom_aliases:
+                native.alias(
+                    name = hlcpp_conversion_lib_name + "_idk",
+                    actual = name + "_idk",
+                    visibility = visibility,
+                )
 
     if enable_hlcpp:
         hlcpp_codegen_name = "%s_generated_fidl_cc_bindings" % hlcpp_lib_name
@@ -319,6 +343,13 @@ def fidl_cpp_family(
             testonly = testonly,
             visibility = hlcpp_visibility,
         )
+
+        if define_idk_atom_aliases:
+            native.alias(
+                name = hlcpp_lib_name + "_idk",
+                actual = name + "_idk",
+                visibility = hlcpp_visibility,
+            )
 
 def _fidl_cc_library(
         name,
