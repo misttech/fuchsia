@@ -1060,10 +1060,7 @@ pub fn check_task_capable(
 }
 
 /// Checks if creating a task is allowed.
-/// Directly maps to the `selinux_task_create` LSM hook from the original NSA white paper.
-/// Partially corresponds to the `task_alloc()` LSM hook. Compared to `task_alloc()`,
-/// this hook doesn't actually modify the task's label, but instead verifies whether the task has
-/// the "fork" permission on itself.
+/// Corresponds to the `task_alloc()` LSM hook, except this hook doesn't modify the task's label.
 pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_task_create_access");
     if_selinux_else_default_ok(current_task, |security_server| {
