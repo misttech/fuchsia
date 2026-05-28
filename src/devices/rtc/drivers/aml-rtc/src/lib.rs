@@ -21,24 +21,29 @@ use std::sync::Arc;
 use zx::Status;
 
 register! {
-    pub struct RtcCtrl(u32) @ 0x00, RW {
+    #[register(offset = 0x00, mode = RW)]
+    pub struct RtcCtrl(u32) {
         pub bool, osc_sel, set_osc_sel: 8;
         pub bool, enable, set_enable: 12;
     }
 
-    pub struct RtcCounter(u32) @ 0x04, RW;
+    #[register(offset = 0x04, mode = RW)]
+    pub struct RtcCounter(u32);
 
-    pub struct OscinCtrl0(u32) @ 0x28, RW {
+    #[register(offset = 0x28, mode = RW)]
+    pub struct OscinCtrl0(u32) {
         pub freq_out_select, set_freq_out_select: 29, 28;
         pub bool, clk_in_gate_en, set_clk_in_gate_en: 31;
     }
 
-    pub struct OscinCtrl1(u32) @ 0x2C, RW {
+    #[register(offset = 0x2C, mode = RW)]
+    pub struct OscinCtrl1(u32) {
         pub clk_div_m0, set_clk_div_m0: 11, 0;
         pub clk_div_m1, set_clk_div_m1: 23, 12;
     }
 
-    pub struct RtcRealTime(u32) @ 0x34, RW;
+    #[register(offset = 0x34, mode = RW)]
+    pub struct RtcRealTime(u32);
 }
 
 register_block! {

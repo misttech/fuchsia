@@ -266,9 +266,10 @@ pub trait WritableIndexedRegister: IndexedRegister {
 ///
 /// ```rust
 /// register! {
-///     pub struct StatusReg(u32) @ 0x10, RW {
-///         pub enabled, set_enabled: 0;
-///         pub error, _: 1;
+///     #[register(offset = 0x10, mode = RW)]
+///     pub struct StatusReg(u32) {
+///         pub enabled, set_enabled: 0, 0;
+///         pub error, _: 1, 1;
 ///         pub value, set_value: 15, 8;
 ///     }
 /// }
@@ -278,7 +279,8 @@ pub trait WritableIndexedRegister: IndexedRegister {
 ///
 /// ```rust
 /// register! {
-///     pub struct ControlReg(u32) @ 0x14, RW;
+///     #[register(offset = 0x14, mode = RW)]
+///     pub struct ControlReg(u32);
 /// }
 /// ```
 ///
@@ -286,25 +288,34 @@ pub trait WritableIndexedRegister: IndexedRegister {
 /// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! register {
-    // Multiple definitions support
+    // Multiple definitions support (with block)
     (
-        $(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, $mode:ident { $($field_spec:tt)* }
+        #[register(offset = $offset:expr, mode = $mode:ident)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
         $($tail:tt)+
     ) => {
-        $crate::register! { $(#[$attr])* pub struct $name($val_type) @ $offset, $mode { $($field_spec)* } }
+        $crate::register! { #[register(offset = $offset, mode = $mode)] $(#[$attr])* pub struct $name($val_type) { $($field_spec)* } }
         $crate::register! { $($tail)+ }
     };
 
+    // Multiple definitions support (full-width)
     (
-        $(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, $mode:ident ;
+        #[register(offset = $offset:expr, mode = $mode:ident)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
         $($tail:tt)+
     ) => {
-        $crate::register! { $(#[$attr])* pub struct $name($val_type) @ $offset, $mode ; }
+        $crate::register! { #[register(offset = $offset, mode = $mode)] $(#[$attr])* pub struct $name($val_type) ; }
         $crate::register! { $($tail)+ }
     };
 
-    // New syntax: Read-Only with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RO { $($field_spec:tt)* }) => {
+    // Read-Only with block
+    (
+        #[register(offset = $offset:expr, mode = RO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -331,8 +342,12 @@ macro_rules! register {
         }
     };
 
-    // New syntax: Write-Only with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, WO { $($field_spec:tt)* }) => {
+    // Write-Only with block
+    (
+        #[register(offset = $offset:expr, mode = WO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -359,8 +374,12 @@ macro_rules! register {
         }
     };
 
-    // New syntax: Read-Write with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RW { $($field_spec:tt)* }) => {
+    // Read-Write with block
+    (
+        #[register(offset = $offset:expr, mode = RW)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -388,8 +407,12 @@ macro_rules! register {
         }
     };
 
-    // New syntax: Read-Only full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RO ;) => {
+    // Read-Only full-width
+    (
+        #[register(offset = $offset:expr, mode = RO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -419,8 +442,12 @@ macro_rules! register {
         }
     };
 
-    // New syntax: Write-Only full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, WO ;) => {
+    // Write-Only full-width
+    (
+        #[register(offset = $offset:expr, mode = WO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -450,8 +477,12 @@ macro_rules! register {
         }
     };
 
-    // New syntax: Read-Write full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $offset:expr, RW ;) => {
+    // Read-Write full-width
+    (
+        #[register(offset = $offset:expr, mode = RW)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -482,8 +513,6 @@ macro_rules! register {
             fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
         }
     };
-
-
 }
 
 /// A macro for defining an [`IndexedRegister`] and its bitfields.
@@ -497,7 +526,8 @@ macro_rules! register {
 ///
 /// ```rust
 /// indexed_register! {
-///     pub struct DataReg(u32) @ 0x100, stride 4, count 16, RO {
+///     #[register(offset = 0x100, stride = 4, count = 16, mode = RO)]
+///     pub struct DataReg(u32) {
 ///         pub value, _: 31, 0;
 ///     }
 /// }
@@ -507,7 +537,8 @@ macro_rules! register {
 ///
 /// ```rust
 /// indexed_register! {
-///     pub struct ValueReg(u32) @ 0x200, stride 4, count 8, RW;
+///     #[register(offset = 0x200, stride = 4, count = 8, mode = RW)]
+///     pub struct ValueReg(u32);
 /// }
 /// ```
 ///
@@ -515,8 +546,12 @@ macro_rules! register {
 /// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! indexed_register {
-    // New syntax: Read-Only with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RO { $($field_spec:tt)* }) => {
+    // Read-Only with block
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -545,8 +580,12 @@ macro_rules! indexed_register {
         }
     };
 
-    // New syntax: Write-Only with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, WO { $($field_spec:tt)* }) => {
+    // Write-Only with block
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -575,8 +614,12 @@ macro_rules! indexed_register {
         }
     };
 
-    // New syntax: Read-Write with block
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RW { $($field_spec:tt)* }) => {
+    // Read-Write with block
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -606,8 +649,12 @@ macro_rules! indexed_register {
         }
     };
 
-    // New syntax: Read-Only full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RO ;) => {
+    // Read-Only full-width
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -639,8 +686,12 @@ macro_rules! indexed_register {
         }
     };
 
-    // New syntax: Write-Only full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, WO ;) => {
+    // Write-Only full-width
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -672,8 +723,12 @@ macro_rules! indexed_register {
         }
     };
 
-    // New syntax: Read-Write full-width
-    ($(#[$attr:meta])* pub struct $name:ident ($val_type:ty) @ $base_offset:expr, stride $stride:expr, count $count:expr, RW ;) => {
+    // Read-Write full-width
+    (
+        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+    ) => {
         ::bitfield::bitfield! {
             $(#[$attr])*
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
@@ -706,8 +761,6 @@ macro_rules! indexed_register {
             fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::IndexedRegisterProxyMut::new(mmio) }
         }
     };
-
-
 }
 
 /// A macro for generating a block of registers over an MMIO region.
@@ -780,26 +833,30 @@ mod tests {
     use core::mem::MaybeUninit;
 
     register! {
-        pub struct TestReg(u32) @ 4, RW {
+        #[register(offset = 4, mode = RW)]
+        pub struct TestReg(u32) {
             pub field1, set_field1: 7, 0;
             pub field2, set_field2: 15, 8;
         }
     }
 
     register! {
-        pub struct ReadOnlyReg(u32) @ 8, RO {
+        #[register(offset = 8, mode = RO)]
+        pub struct ReadOnlyReg(u32) {
             pub field1, _: 7, 0;
         }
     }
 
     register! {
-        pub struct WriteOnlyReg(u32) @ 12, WO {
+        #[register(offset = 12, mode = WO)]
+        pub struct WriteOnlyReg(u32) {
             _, set_field1: 7, 0;
         }
     }
 
     indexed_register! {
-        pub struct TestIndexedReg(u32) @ 16, stride 4, count 2, RW {
+        #[register(offset = 16, stride = 4, count = 2, mode = RW)]
+        pub struct TestIndexedReg(u32) {
             pub field1, set_field1: 7, 0;
         }
     }
@@ -952,27 +1009,32 @@ mod tests {
     }
 
     register! {
+        #[register(offset = 4, mode = RW)]
         /// New syntax test register
-        pub struct NewSyntaxReg(u32) @ 4, RW {
+        pub struct NewSyntaxReg(u32) {
             pub field1, set_field1: 7, 0;
         }
     }
 
     register! {
+        #[register(offset = 8, mode = RW)]
         /// Full width test register
-        pub struct FullWidthReg(u32) @ 8, RW;
+        pub struct FullWidthReg(u32);
     }
 
     indexed_register! {
+        #[register(offset = 12, stride = 4, count = 2, mode = RW)]
         /// New syntax indexed register
-        pub struct NewSyntaxIndexedReg(u32) @ 12, stride 4, count 2, RW {
+        pub struct NewSyntaxIndexedReg(u32) {
             pub field1, set_field1: 7, 0;
         }
     }
 
     register! {
-        pub struct MultiReg1(u32) @ 0x20, RW;
-        pub struct MultiReg2(u32) @ 0x24, RO {
+        #[register(offset = 0x20, mode = RW)]
+        pub struct MultiReg1(u32);
+        #[register(offset = 0x24, mode = RO)]
+        pub struct MultiReg2(u32) {
             pub field1, _: 7, 0;
         }
     }

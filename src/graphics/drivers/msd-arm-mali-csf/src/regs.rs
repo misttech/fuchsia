@@ -7,11 +7,14 @@ use bitfield::bitfield;
 use mmio::{Mmio, ReadableRegister, register};
 
 register! {
-    pub struct GpuId(u32) @ 0x0, RO;
+    #[register(offset = 0x0, mode = RO)]
+    pub struct GpuId(u32);
 
-    pub struct GpuIrqClear(u32) @ 0x24, RW;
+    #[register(offset = 0x24, mode = RW)]
+    pub struct GpuIrqClear(u32);
 
-    pub struct GpuIrqMask(u32) @ 0x28, RW {
+    #[register(offset = 0x28, mode = RW)]
+    pub struct GpuIrqMask(u32) {
         pub gpu_fault, set_gpu_fault: 0, 0;
         pub multiple_gpu_faults, set_multiple_gpu_faults: 7, 7;
         pub reset_completed, set_reset_completed: 8, 8;
@@ -23,35 +26,47 @@ register! {
         pub mcu_status, set_mcu_status: 19, 19;
     }
 
-    pub struct GpuIrqStatus(u32) @ 0x2c, RO;
+    #[register(offset = 0x2c, mode = RO)]
+    pub struct GpuIrqStatus(u32);
 
-    pub struct GpuCommand(u32) @ 0x30, WO;
+    #[register(offset = 0x30, mode = WO)]
+    pub struct GpuCommand(u32);
 
-    pub struct L2Config(u32) @ 0x48, WO {
+    #[register(offset = 0x48, mode = WO)]
+    pub struct L2Config(u32) {
         pub cache_size, set_cache_size: 23, 16;
         pub hash_enable, set_hash_enable: 24, 24;
         pub hash, set_hash: 31, 24;
     }
 
-    pub struct GpuFaultStatus(u32) @ 0x3c, RO;
+    #[register(offset = 0x3c, mode = RO)]
+    pub struct GpuFaultStatus(u32);
 
-    pub struct GpuFaultAddress(u32) @ 0x40, RO;
+    #[register(offset = 0x40, mode = RO)]
+    pub struct GpuFaultAddress(u32);
 
-    pub struct GpuShaderPresentLow(u32) @ 0x100, RO;
+    #[register(offset = 0x100, mode = RO)]
+    pub struct GpuShaderPresentLow(u32);
 
-    pub struct L2Ready(u32) @ 0x160, RO {
+    #[register(offset = 0x160, mode = RO)]
+    pub struct L2Ready(u32) {
         pub enabled, set_enabled: 1, 0;
     }
 
-    pub struct L2Power(u32) @ 0x1a0, WO;
+    #[register(offset = 0x1a0, mode = WO)]
+    pub struct L2Power(u32);
 
-    pub struct AddressSpaceHash0(u32) @ 0x2c0, WO;
+    #[register(offset = 0x2c0, mode = WO)]
+    pub struct AddressSpaceHash0(u32);
 
-    pub struct AddressSpaceHash1(u32) @ 0x2c4, WO;
+    #[register(offset = 0x2c4, mode = WO)]
+    pub struct AddressSpaceHash1(u32);
 
-    pub struct AddressSpaceHash2(u32) @ 0x2c8, WO;
+    #[register(offset = 0x2c8, mode = WO)]
+    pub struct AddressSpaceHash2(u32);
 
-    pub struct CoherencyFeatures(u32) @ 0x300, RO {
+    #[register(offset = 0x300, mode = RO)]
+    pub struct CoherencyFeatures(u32) {
         // The GPU can snoop on CPU caches.
         pub ace_lite, set_ace_lite: 0, 0;
         // Both GPU and CPU can snoop on each other's caches.
@@ -59,41 +74,55 @@ register! {
         pub none, set_none: 31, 31;
     }
 
-    pub struct CoherencyEnable(u32) @ 0x304, RW;
+    #[register(offset = 0x304, mode = RW)]
+    pub struct CoherencyEnable(u32);
 
-    pub struct McuControl(u32) @ 0x700, RW {
+    #[register(offset = 0x700, mode = RW)]
+    pub struct McuControl(u32) {
         pub field, set_field: 1, 0;
     }
 
-    pub struct McuStatus(u32) @ 0x704, RW {
+    #[register(offset = 0x704, mode = RW)]
+    pub struct McuStatus(u32) {
         pub value, set_value: 3, 0;
     }
 
-    pub struct CsfConfig(u32) @ 0xf00, WO;
+    #[register(offset = 0xf00, mode = WO)]
+    pub struct CsfConfig(u32);
 
-    pub struct ShaderConfig(u32) @ 0xf04, WO;
+    #[register(offset = 0xf04, mode = WO)]
+    pub struct ShaderConfig(u32);
 
-    pub struct TilerConfig(u32) @ 0xf08, WO;
+    #[register(offset = 0xf08, mode = WO)]
+    pub struct TilerConfig(u32);
 
-    pub struct L2MmuConfig(u32) @ 0xf0c, WO;
+    #[register(offset = 0xf0c, mode = WO)]
+    pub struct L2MmuConfig(u32);
 
-    pub struct JobIrqClear(u32) @ 0x1004, WO;
+    #[register(offset = 0x1004, mode = WO)]
+    pub struct JobIrqClear(u32);
 
-    pub struct JobIrqMask(u32) @ 0x1008, RW;
+    #[register(offset = 0x1008, mode = RW)]
+    pub struct JobIrqMask(u32);
 
-    pub struct JobIrqStatus(u32) @ 0x100c, RO {
+    #[register(offset = 0x100c, mode = RO)]
+    pub struct JobIrqStatus(u32) {
         pub global_interface_ready, set_global_interface_ready: 31, 31;
     }
 
-    pub struct MmuIrqRawStatus(u32) @ 0x2000, RW {
+    #[register(offset = 0x2000, mode = RW)]
+    pub struct MmuIrqRawStatus(u32) {
         pub address_space, set_address_space: 15, 0;
     }
 
-    pub struct MmuIrqClear(u32) @ 0x2004, RW;
+    #[register(offset = 0x2004, mode = RW)]
+    pub struct MmuIrqClear(u32);
 
-    pub struct MmuIrqMask(u32) @ 0x2008, RW;
+    #[register(offset = 0x2008, mode = RW)]
+    pub struct MmuIrqMask(u32);
 
-    pub struct MmuIrqStatus(u32) @ 0x200c, RW {
+    #[register(offset = 0x200c, mode = RW)]
+    pub struct MmuIrqStatus(u32) {
         pub address_space, set_address_space: 15, 0;
     }
 }
