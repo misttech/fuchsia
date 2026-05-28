@@ -148,7 +148,7 @@ impl<D: Driver> TestHarness<D> {
 
     /// Gets a driver dispatcher that can be used to run test side driver transport client/servers.
     pub fn dispatcher(&self) -> WeakDispatcher {
-        WeakDispatcher::from(&self.dispatcher)
+        self.dispatcher.as_weak()
     }
 
     pub(crate) fn node_manager(&self) -> Weak<NodeManager> {

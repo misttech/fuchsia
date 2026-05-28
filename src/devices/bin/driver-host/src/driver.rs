@@ -547,7 +547,7 @@ impl Driver {
                 .dispatcher
                 .as_ref()
                 .expect("dispatcher should always be valid")
-                .downgrade()
+                .as_weak()
                 .compute(async move {
                     {
                         let mut inner = self_clone.inner.lock();

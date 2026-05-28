@@ -110,7 +110,8 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));
         let client_dispatcher = ClientDispatcher::new(client_end);
         let client = client_dispatcher.client();
-        WeakDispatcher::from(&dispatcher)
+        dispatcher
+            .as_weak()
             .spawn(async move {
                 // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
                 // At that point the driver has closed its server which signifies it has
@@ -166,7 +167,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
 
     /// Gets the driver's initial dispatcher.
     pub fn dispatcher(&self) -> WeakDispatcher {
-        WeakDispatcher::from(&self.dispatcher)
+        self.dispatcher.as_weak()
     }
 
     /// Gets the TestNode that the driver-under-test is bound to.
