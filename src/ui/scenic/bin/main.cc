@@ -44,20 +44,26 @@ int main(int argc, const char** argv) {
   // Set up an inspect::Node to inject into the App.
   inspect::ComponentInspector inspector(render_loop.dispatcher(), {});
 
-  auto display_coordinator_promise =
-      fpromise::make_promise([]() -> fpromise::result<
-                                      fidl::ClientEnd<fuchsia_hardware_display::Provider>,
-                                      zx_status_t> {
-        component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
-        zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-            watcher.GetNextInstance(/*stop_at_idle=*/false);
-        if (provider_result.is_error()) {
-          return fpromise::error(provider_result.error_value());
-        }
-        return fpromise::ok(std::move(provider_result).value());
-      }).and_then([](fidl::ClientEnd<fuchsia_hardware_display::Provider>& provider) {
-        return display::GetCoordinator(std::move(provider));
-      });
+  // `watcher` and `display_coordinator_promise` will be run on the render loop's dispatcher.
+  fpromise::bridge<fidl::ClientEnd<fuchsia_hardware_display::Provider>>
+      display_service_provider_bridge;
+  component::ServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+  zx::result<> watch_result =
+      watcher.Begin(render_loop.dispatcher(),
+                    [completer = std::move(display_service_provider_bridge.completer)](
+                        fidl::ClientEnd<fuchsia_hardware_display::Provider> client_end) mutable {
+                      completer.complete_ok(std::move(client_end));
+                    });
+  if (watch_result.is_error()) {
+    FX_LOGS(FATAL) << "Failed to watch fuchsia.hardware.display.Provider: "
+                   << zx_status_get_string(watch_result.error_value());
+  }
+  fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> display_coordinator_promise =
+      display_service_provider_bridge.consumer.promise()
+          .or_else([]() { return fpromise::error<zx_status_t>(ZX_ERR_CANCELED); })
+          .and_then([](fidl::ClientEnd<fuchsia_hardware_display::Provider>& provider) {
+            return display::GetCoordinator(std::move(provider));
+          });
 
   zx::channel pkg_dir, pkg_server;
   zx::channel::create(0, &pkg_dir, &pkg_server);
