@@ -156,7 +156,7 @@ async fn handle_single_peer_request(
     Ok(())
 }
 
-async fn handle_peer_request(
+async fn handle_peer_requests(
     stream: PeerControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
@@ -286,7 +286,7 @@ async fn handle_single_host_request(
     Ok(())
 }
 
-async fn handle_host_request(
+async fn handle_host_requests(
     stream: HostControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
@@ -337,7 +337,7 @@ async fn handle_single_peripheral_request(
     Ok(())
 }
 
-async fn handle_peripheral_request(
+async fn handle_peripheral_requests(
     stream: PeripheralControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
@@ -429,7 +429,7 @@ async fn handle_single_central_request(
     Ok(())
 }
 
-async fn handle_central_request(
+async fn handle_central_requests(
     mut stream: CentralControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
@@ -473,7 +473,7 @@ async fn handle_single_gatt_client_request(
     Ok(())
 }
 
-async fn handle_gatt_client_request(
+async fn handle_gatt_client_requests(
     stream: GattClientControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
@@ -500,18 +500,18 @@ async fn main() -> Result<(), Error> {
         async move {
             match request {
                 Services::Peer(stream) => {
-                    handle_peer_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
+                    handle_peer_requests(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
                 }
                 Services::Host(stream) => {
-                    handle_host_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
+                    handle_host_requests(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
                 }
-                Services::Peripheral(stream) => handle_peripheral_request(stream, worker)
+                Services::Peripheral(stream) => handle_peripheral_requests(stream, worker)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
-                Services::Central(stream) => {
-                    handle_central_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
-                }
-                Services::GattClient(stream) => handle_gatt_client_request(stream, worker)
+                Services::Central(stream) => handle_central_requests(stream, worker)
+                    .await
+                    .unwrap_or_else(|e| error!("{e:?}")),
+                Services::GattClient(stream) => handle_gatt_client_requests(stream, worker)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
             }
