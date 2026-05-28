@@ -34,6 +34,8 @@ void rs_test_duration_begin_end_macros_str(void);
 void rs_test_duration_begin_end_macros_str_and_string(void);
 
 void rs_test_vthread_duration_begin_end_macros(void);
+void rs_test_custom_track_and_async_events(void);
+void rs_test_custom_track_concurrent_usage(void);
 
 void rs_test_blob_macro_cstr(void);
 void rs_test_blob_macro_str(void);

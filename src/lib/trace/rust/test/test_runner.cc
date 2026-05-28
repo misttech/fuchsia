@@ -501,6 +501,54 @@ TEST(TEST_SUITE, test_async_event) {
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", AsyncEnd(id: 1), {})\n");
 }
 
+TEST(TEST_SUITE, test_custom_track_and_async) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_custom_track_and_async_events();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"async_instant_name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"async_instant_name\", AsyncInstant(id: 42), {x: int32(1)})\n"
+      "String(index: 5, \"y\")\n"
+      "String(index: 6, \"async_duration_name\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"async_duration_name\", AsyncBegin(id: 42), {y: int32(2)})\n"
+      "String(index: 7, \"arg\")\n"
+      "String(index: 8, \"instant_in_between\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"instant_in_between\", Instant(scope: process), {arg: int32(10)})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"async_duration_name\", AsyncEnd(id: 42), {})\n"
+      "String(index: 9, \"a\")\n"
+      "String(index: 10, \"track_instant_name\")\n"
+      "String(index: 11, \"my_custom_track\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"my_custom_track\", {process: koid(<>)})\n"
+      "Thread(index: 2, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"track_instant_name\", Instant(scope: thread), {a: int32(10)})\n"
+      "String(index: 12, \"b\")\n"
+      "String(index: 13, \"track_manual_duration\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"track_manual_duration\", DurationBegin, {b: int32(20)})\n"
+      "String(index: 14, \"instant_in_between_track\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"instant_in_between_track\", Instant(scope: process), {arg: int32(20)})\n"
+      "String(index: 15, \"c\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"track_manual_duration\", DurationEnd, {c: int32(30)})\n"
+      "String(index: 16, \"d\")\n"
+      "String(index: 17, \"track_scoped_duration\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"track_scoped_duration\", DurationComplete(end_ts: <>), {d: int32(40)})\n");
+}
+
+TEST(TEST_SUITE, test_custom_track_concurrency) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_custom_track_concurrent_usage();
+}
+
 TEST(TEST_SUITE, test_alert_cstr) {
   BEGIN_TRACE_TEST;
 

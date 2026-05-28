@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(not(fuchsia_api_level_at_least = "31"))]
+use fuchsia_runtime as _;
 use pin_project::pin_project;
 use std::ffi::CStr;
 use std::future::Future;
@@ -903,6 +905,99 @@ macro_rules! vthread_duration_end {
     };
 }
 
+/// Writes an instant event to a custom track.
+///
+/// NOTE: This macro requires API level 31 or higher because the underlying virtual thread
+/// (`VThread`) support was stabilized and introduced in Fuchsia API level 31.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[macro_export]
+macro_rules! track_instant {
+    ($category:expr, $track:expr, $name:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                $crate::track_instant(
+                    &context,
+                    $name,
+                    &$track,
+                    $crate::Scope::Thread,
+                    &[$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*]
+                )
+            }
+        }
+    };
+}
+
+/// Writes a duration begin event to a custom track.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[macro_export]
+macro_rules! track_duration_begin {
+    ($category:expr, $track:expr, $name:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                $crate::track_duration_begin(
+                    &context,
+                    $name,
+                    &$track,
+                    &[$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*]
+                )
+            }
+        }
+    };
+}
+
+/// Writes a duration end event to a custom track.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[macro_export]
+macro_rules! track_duration_end {
+    ($category:expr, $track:expr, $name:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                $crate::track_duration_end(
+                    &context,
+                    $name,
+                    &$track,
+                    &[$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*]
+                )
+            }
+        }
+    };
+}
+
+/// Scoped duration for a custom track.
+///
+/// NOTE: This macro creates variables for `args` and `_scope` in the enclosing scope and relies on
+/// Rust's lifetime rules to drop the duration guard to calculate the duration.
+/// If you need to invoke `track_duration!` multiple times in the same function, you must wrap
+/// each invocation in its own nested lexical block `{ ... }` to have separate duration events emitted.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[macro_export]
+macro_rules! track_duration {
+    ($category:expr, $track:expr, $name:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        // NB: `args` is declared uninitialized here and only initialized if the category is active.
+        // This is a standard Rust macro pattern to ensure that `args` lives as long as the returned
+        // `TrackDurationScope` (which borrows it), without requiring dynamic heap allocation.
+        // Since `args` is never read if the category is disabled, this is completely safe and
+        // will not trigger any uninitialized variable compiler errors.
+        let mut args;
+        let _scope = {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                args = [$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*];
+                Some($crate::track_duration($category, $name, &$track, &args))
+            } else {
+                None
+            }
+        };
+    };
+}
+
 /// Writes a duration begin event only.
 /// This event must be matched by a duration end event with the same category and name.
 ///
@@ -922,6 +1017,7 @@ pub fn duration_begin<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S,
 }
 
 #[cfg(fuchsia_api_level_at_least = "31")]
+#[derive(Clone, Debug)]
 pub struct VThread<S: AsTraceStrRef = &'static str> {
     name: S,
     id: sys::trace_vthread_id_t,
@@ -988,6 +1084,149 @@ pub fn vthread_duration_end<S1: AsTraceStrRef, S2: AsTraceStrRef>(
 
     let name_ref = name.as_trace_str_ref(context);
     context.write_vthread_duration_end(ticks, name_ref, vthread, args);
+}
+
+/// Like `instant`, but writes the event to a vthread track.
+#[cfg(fuchsia_api_level_at_least = "31")]
+pub fn vthread_instant<S1: AsTraceStrRef, S2: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    vthread: &VThread<S2>,
+    scope: Scope,
+    args: &[Arg<'_>],
+) {
+    let ticks = zx::BootTicks::get();
+    assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
+
+    let name_ref = name.as_trace_str_ref(context);
+    context.write_vthread_instant(ticks, name_ref, vthread, scope, args);
+}
+
+/// Represents a custom track for grouping related trace events (e.g., state machines, status tracks).
+///
+/// Under the hood, this is backed by a virtual thread (`VThread`). A virtual thread acts like
+/// a physical thread to the visualizer but is completely managed in userspace.
+///
+/// Encapsulating `VThread` here with a static string generic guarantees that the track name has
+/// static lifetime, which prevents memory safety issues and makes registration cheap.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[derive(Clone, Debug)]
+pub struct Track {
+    pub(crate) vthread: VThread<&'static str>,
+}
+
+#[cfg(fuchsia_api_level_at_least = "31")]
+impl Track {
+    /// Creates a new custom track with the given name.
+    ///
+    /// The track is automatically grouped under the current process.
+    ///
+    /// We use `Id::new()` to generate the underlying `VThread` ID. This is crucial because
+    /// virtual threads generate artificial KOIDs based on their ID. Using a random ID minimizes
+    /// the risk of cross-process fake KOID collisions in the visualizer.
+    pub fn new(name: &'static str) -> Self {
+        let id = Id::new();
+        let process_koid = fuchsia_runtime::process_self()
+            .koid()
+            .map(|k| k.raw_koid())
+            .unwrap_or(zx::sys::ZX_KOID_INVALID);
+        Self { vthread: VThread::new_with_process_koid(name, id.into(), process_koid) }
+    }
+}
+
+/// Writes an instant event to a custom track.
+///
+/// NOTE: Instant events emitted to a custom track should generally be emitted with
+/// `Scope::Thread` to guarantee that the Perfetto UI renders them directly on the custom track
+/// rather than process-wide.
+#[cfg(fuchsia_api_level_at_least = "31")]
+pub fn track_instant<S1: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    track: &Track,
+    scope: Scope,
+    args: &[Arg<'_>],
+) {
+    vthread_instant(context, name, &track.vthread, scope, args);
+}
+
+/// Writes a duration begin event to a custom track.
+#[cfg(fuchsia_api_level_at_least = "31")]
+pub fn track_duration_begin<S1: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    track: &Track,
+    args: &[Arg<'_>],
+) {
+    vthread_duration_begin(context, name, &track.vthread, args);
+}
+
+/// Writes a duration end event to a custom track.
+#[cfg(fuchsia_api_level_at_least = "31")]
+pub fn track_duration_end<S1: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    track: &Track,
+    args: &[Arg<'_>],
+) {
+    vthread_duration_end(context, name, &track.vthread, args);
+}
+
+/// Scoped duration guard for a custom track. The duration ends and the trace record is written
+/// when the guard is dropped.
+///
+/// Under the hood, when the guard is dropped, it writes a single, complete `DurationComplete`
+/// event to the track backing virtual thread, which contains both the start time (stored in the
+/// guard) and the end time (determined at drop). This is highly efficient as it only writes a
+/// single record to the trace buffer.
+#[cfg(fuchsia_api_level_at_least = "31")]
+#[must_use = "TrackDurationScope must be held to be recorded"]
+pub struct TrackDurationScope<'a, C: CategoryString, S: AsTraceStrRef> {
+    category: C,
+    name: S,
+    track: &'a Track,
+    args: &'a [Arg<'a>],
+    start_time: zx::BootTicks,
+}
+
+#[cfg(fuchsia_api_level_at_least = "31")]
+impl<'a, C: CategoryString, S: AsTraceStrRef> TrackDurationScope<'a, C, S> {
+    /// Starts a new duration scope that starts now and will be end'ed when dropped.
+    pub fn begin(category: C, name: S, track: &'a Track, args: &'a [Arg<'_>]) -> Self {
+        let start_time = zx::BootTicks::get();
+        Self { category, name, track, args, start_time }
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "31")]
+impl<'a, C: CategoryString, S: AsTraceStrRef> Drop for TrackDurationScope<'a, C, S> {
+    fn drop(&mut self) {
+        if let Some(context) = TraceCategoryContext::acquire(self.category) {
+            let name_ref = self.name.as_trace_str_ref(&context);
+            context.write_vthread_duration(
+                self.start_time,
+                zx::BootTicks::get(),
+                name_ref,
+                &self.track.vthread,
+                self.args,
+            );
+        }
+    }
+}
+
+/// Writes a duration event to a custom track which ends when the returned guard is dropped.
+///
+/// 0 to 15 arguments can be associated with the event, each of which is used to annotate
+/// the duration with additional information.
+#[cfg(fuchsia_api_level_at_least = "31")]
+pub fn track_duration<'a, C: CategoryString, S: AsTraceStrRef>(
+    category: C,
+    name: S,
+    track: &'a Track,
+    args: &'a [Arg<'_>],
+) -> TrackDurationScope<'a, C, S> {
+    assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
+    TrackDurationScope::begin(category, name, track, args)
 }
 
 /// AsyncScope maintains state around the context of async events generated via the
@@ -1869,6 +2108,58 @@ impl TraceCategoryContext {
         unsafe {
             sys::trace_context_write_duration_end_event_record(
                 self.context.raw,
+                ticks.into_raw(),
+                &thread_ref,
+                &self.category_ref,
+                &name_ref,
+                args.as_ptr() as *const sys::trace_arg_t,
+                args.len(),
+            );
+        }
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "31")]
+    fn write_vthread_instant<S: AsTraceStrRef>(
+        &self,
+        ticks: zx::BootTicks,
+        name_ref: sys::trace_string_ref_t,
+        vthread: &VThread<S>,
+        scope: Scope,
+        args: &[Arg<'_>],
+    ) {
+        let thread_ref = self.register_vthread(&vthread.name, vthread.id, vthread.process_koid);
+        // SAFETY: The trace context is live, and all pointers (including string refs and args)
+        // point to memory whose lifetimes are guaranteed to outlive this function call stack.
+        unsafe {
+            sys::trace_context_write_instant_event_record(
+                self.context.raw,
+                ticks.into_raw(),
+                &thread_ref,
+                &self.category_ref,
+                &name_ref,
+                scope.into_raw(),
+                args.as_ptr() as *const sys::trace_arg_t,
+                args.len(),
+            );
+        }
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "31")]
+    fn write_vthread_duration<S: AsTraceStrRef>(
+        &self,
+        start_time: zx::BootTicks,
+        ticks: zx::BootTicks,
+        name_ref: sys::trace_string_ref_t,
+        vthread: &VThread<S>,
+        args: &[Arg<'_>],
+    ) {
+        let thread_ref = self.register_vthread(&vthread.name, vthread.id, vthread.process_koid);
+        // SAFETY: The trace context is live, and all pointers (including string refs and args)
+        // point to memory whose lifetimes are guaranteed to outlive this function call stack.
+        unsafe {
+            sys::trace_context_write_duration_event_record(
+                self.context.raw,
+                start_time.into_raw(),
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,

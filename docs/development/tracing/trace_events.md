@@ -26,6 +26,9 @@ Note: In the Fuchsia trace format a tracing event is known as an
 * [Async event](#async-event)
   Allows specifying an `id` that links events across different threads together
   and places these events on a single track.
+* [Custom Track event](#custom-track-event)
+  Allows grouping related duration and instant events on a dedicated, named track
+  associated with the component's process (backed by a virtual thread).
 
 In its most basic form, a trace event has a category (the first parameter) and
 a name (the second parameter).
@@ -383,6 +386,80 @@ follows:
 `example_nested_async` below it. The screenshot also shows 2 blue arrows in the
 `example_async` event and 2 blue arrows in the `example_async2` event which
 indicate instant events.](images/async_event_perfetto.png "A view of a flow event from a trace using the Perfetto Viewer"){: width="600"}
+
+### Custom Track event {#custom-track-event}
+
+In a trace, instant and duration events are placed on the track of the thread on
+which they are produced. In some cases, you want to group related events (such as
+state machine transitions, status changes, or power levels) on a dedicated, named
+track associated with your component's process.
+
+Custom Track events allow you to define a `Track` object once and then emit
+instants and durations to that track. Under the hood, this is implemented using
+virtual threads (`VThread`).
+
+Note: This API is currently supported in **Rust** (starting from API level 31).
+
+To use a custom track:
+
+1.  Create a `Track` object during component initialization.
+2.  Emit events to the track using `track_instant!`, `track_duration!`, `track_duration_begin!`, and `track_duration_end!`.
+
+Note: This macro creates variables for `args` and `_scope` in the enclosing scope and relies on
+    Rust's lifetime rules to drop the duration guard to calculate the duration.
+    If you need to invoke `track_duration!` multiple times in the same function, you must wrap
+    each invocation in its own nested lexical block `{ ... }` to have separate duration events emitted.
+
+
+For example:
+
+* {Rust}
+
+  ```rust
+  // 1. Create the track once (e.g., during component initialization)
+  let my_track = trace::Track::new("My State Machine");
+
+  // 2. Emit a scoped duration that automatically closes at the end of the block
+  {
+      track_duration!("{{ '<var>trace_category</var>' }}", my_track, "Idle State");
+      // Do some work...
+  }
+
+  // 3. Emit a transient instant event on the track
+  track_instant!("{{ '<var>trace_category</var>' }}", my_track, "Stimulus Received", "type" => "button_press");
+
+  // 4. Manual duration begin/end (e.g., for non-lexical scopes)
+  track_duration_begin!("{{ '<var>trace_category</var>' }}", my_track, "Active State");
+  // Do some work...
+  track_duration_end!("{{ '<var>trace_category</var>' }}", my_track, "Active State");
+  ```
+
+### Process-Wide Shared Tracks (Recommended for Reusable Code)
+
+If your tracing calls occur inside functions or helper modules that are executed multiple times (such as request handlers, transaction steps, or download loops), creating a `Track` locally inside the function will generate a new virtual thread ID for every invocation. This causes the visualizer to render each invocation on a separate track.
+
+To group all events onto the **same** visual track process-wide, you should declare a process-wide static track using `std::sync::LazyLock`:
+
+* {Rust}
+
+  ```rust
+  // 1. Declare the track as a process-wide static using LazyLock
+  static DOWNLOAD_TRACK: std::sync::LazyLock<trace::Track> = std::sync::LazyLock::new(|| {
+      trace::Track::new("http-client-download-blob")
+  });
+
+  // 2. Reference the static track in your function
+  async fn download_blob_impl(url: &str) {
+      let track = &*DOWNLOAD_TRACK;
+
+      // Scoped duration on the process-wide shared track
+      track_duration!("{{ '<var>trace_category</var>' }}", track, "http-client-download-blob", "url" => url);
+  }
+  ```
+
+In Perfetto, a custom track is cleanly nested inside your component's process group, right alongside the physical threads. The track is consistently named after the `Track` object name (e.g., "My State Machine"), and the states appear as solid duration blocks, while instant events appear as small diamond arrows directly on the track.
+
+![A screenshot of the Perfetto trace viewer showing a Custom Track named "http-client-download-blob" nested cleanly inside the process group, showing duration blocks on a single unified track.](images/sample_track.png "A view of a Custom Track event from a trace using the Perfetto Viewer"){: width="600"}
 
 ## Arguments {#arguments}
 

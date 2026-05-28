@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_async as fasync;
+use fuchsia_trace as trace;
 use fuchsia_trace::TraceFutureExt;
+use fuchsia_trace_observer as trace_observer;
 use std::future::{Future, poll_fn};
 use std::sync::{Barrier, Condvar, Mutex};
 use std::task::Poll;
-use {fuchsia_async as fasync, fuchsia_trace as trace, fuchsia_trace_observer as trace_observer};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_test_trace_enabled() -> bool {
@@ -343,4 +345,52 @@ pub extern "C" fn rs_setup_trace_observer() {
     // Ensure that we've registered our trace_observer in the spawned thread before continuing on
     // and potentially starting the trace session.
     BARRIER.wait();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_custom_track_and_async_events() {
+    // 1. Existing Async Events
+    let async_id = 42.into();
+    trace::async_instant!(async_id, c"+enabled", c"async_instant_name", "x" => 1);
+    {
+        let _guard = trace::async_enter!(async_id, c"+enabled", c"async_duration_name", "y" => 2);
+        trace::instant!(c"+enabled", c"instant_in_between", trace::Scope::Process, "arg" => 10);
+    }
+
+    // 2. New Custom Track Events
+    let track = trace::Track::new("my_custom_track");
+    trace::track_instant!(c"+enabled", track, c"track_instant_name", "a" => 10);
+
+    // Manual begin/end
+    trace::track_duration_begin!(c"+enabled", track, c"track_manual_duration", "b" => 20);
+    trace::instant!(c"+enabled", c"instant_in_between_track", trace::Scope::Process, "arg" => 20);
+    trace::track_duration_end!(c"+enabled", track, c"track_manual_duration", "c" => 30);
+
+    // RAII Scoped duration
+    {
+        trace::track_duration!(c"+enabled", track, c"track_scoped_duration", "d" => 40);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_custom_track_concurrent_usage() {
+    let track = trace::Track::new("concurrent_custom_track");
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+
+    let mut handles = vec![];
+    for i in 0..4 {
+        let track = track.clone();
+        let barrier = barrier.clone();
+        handles.push(std::thread::spawn(move || {
+            barrier.wait();
+            for j in 0..50 {
+                trace::track_duration!(c"+enabled", track, c"concurrent_duration", "thread" => i, "iter" => j);
+                trace::track_instant!(c"+enabled", track, c"concurrent_instant", "thread" => i);
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
 }

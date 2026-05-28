@@ -14,6 +14,7 @@ rustc_library("trace") {
   edition = "2024"
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:rand",
