@@ -122,6 +122,7 @@ group("tests") {
     "webpki-roots-fuchsia:webpki-roots-fuchsia_tests",
     "windowed-stats:tests",
     "zbitl:tests",
+    "zx-lockdep-runtime:tests",
     "zxc:tests",
     "zxdump:tests",
   ]
