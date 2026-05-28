@@ -79,6 +79,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 )
             )
             self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
+            channel_number = DEFAULT_2G_CHANNEL.number
         elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
                 access_point=self.test_kit.access_point,
@@ -90,13 +91,14 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     password=password,
                 ),
             )
+            channel_number = AP_DEFAULT_CHANNEL_2G
 
         scan_results = (
             (
                 await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
                         passive=fidl_sme.PassiveScanRequest(
-                            channels=[AP_DEFAULT_CHANNEL_2G]
+                            channels=[channel_number]
                         )
                     )
                 )

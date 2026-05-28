@@ -205,6 +205,7 @@ class OpenWrtAP:
             config: The Wi-Fi configuration containing multiple radios.
         """
         self.reset_wifi_config()
+
         for radio_config in config.radios:
             match radio_config.channel.band:
                 case Band.BAND_2G:
@@ -305,10 +306,32 @@ class OpenWrtAP:
         ]
         self.ssh.run("; ".join(cmds))
 
-    def _is_ap_enabled(self, band: Band) -> bool:
+    def get_configured_ssids(self) -> list[str]:
+        """Retrieves all currently configured SSIDs from the AP's wireless configuration."""
+        try:
+            res = self.ssh.run("uci -q show wireless")
+            output = res.stdout.decode("utf-8")
+            ssids = []
+            for line in output.splitlines():
+                if ".ssid=" in line:
+                    ssid_val = line.split("=", 1)[-1].strip("'\"")
+                    ssids.append(ssid_val)
+            return ssids
+        except Exception:
+            return []
+
+    def _is_ap_enabled(
+        self, band: Band, expected_ssids: list[str] | None = None
+    ) -> bool:
         """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status."""
         try:
-            phy = PHY_2G if band == Band.BAND_2G else PHY_5G
+            match band:
+                case Band.BAND_2G:
+                    phy = PHY_2G
+                case Band.BAND_5G:
+                    phy = PHY_5G
+                case _:
+                    raise ValueError(f"Unsupported band: {band}")
             res = self.ssh.run(f"ubus list hostapd.{phy}*")
             interfaces = res.stdout.decode("utf-8").splitlines()
             if not interfaces:
@@ -319,6 +342,9 @@ class OpenWrtAP:
                 )
                 status_data = json.loads(status_res.stdout.decode("utf-8"))
                 if status_data.get("status") != "ENABLED":
+                    return False
+                ssid = status_data.get("ssid")
+                if expected_ssids and ssid not in expected_ssids:
                     return False
             return True
         except Exception:
@@ -353,13 +379,28 @@ class OpenWrtAP:
                 _LOGGER.error(f"Failed to get status for band {band}: {e}")
         return result
 
+    def _is_ap_broadcasting(
+        self, interface: str, expected_ssids: list[str]
+    ) -> bool:
+        """Verifies via iwinfo that the radio is actively broadcasting one of the expected SSIDs."""
+        try:
+            res = self.ssh.run(f"iwinfo {interface} info")
+            output = res.stdout.decode("utf-8")
+            for ssid in expected_ssids:
+                target_string = f'ESSID: "{ssid}"'
+                if target_string in output:
+                    return True
+            return False
+        except Exception:
+            return False
+
     # TODO(https://fxbug.dev/487804746): Use async functions in this file.
     def verify_wifi_status(
         self,
         band: Band,
         timeout_sec: int = 70,  # TODO(b/504795188): Bypass DFS wait times (60s) via custom regdb
     ) -> bool:
-        """Polls the AP until hostapd is ENABLED.
+        """Polls the AP until the hostapd BSS is actively transmitting beacons.
 
         Args:
             band: The band to verify the status for.
@@ -368,10 +409,20 @@ class OpenWrtAP:
         Returns:
             True if the radios are confirmed up and ENABLED within the timeout, False otherwise.
         """
+        match band:
+            case Band.BAND_2G:
+                interface = self.wlan_2g_interface
+            case Band.BAND_5G:
+                interface = self.wlan_5g_interface
+            case _:
+                raise ValueError(f"Unsupported band: {band}")
+        configured_ssids = self.get_configured_ssids()
         start_time = time.time()
         end_time = start_time + timeout_sec
         while time.time() < end_time:
-            if self._is_ap_enabled(band):
+            if self._is_ap_enabled(
+                band, configured_ssids
+            ) and self._is_ap_broadcasting(interface, configured_ssids):
                 return True
             time.sleep(1)
         return False
