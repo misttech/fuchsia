@@ -47,7 +47,10 @@ fuchsia_test_component("integration_test") {
 
 starnix_linux_executable("generate_linux_nanohub_module") {
   testonly = true
-  sources = [ "src/endpoint_reader.cc" ]
+  sources = [
+    "src/endpoint_reader.cc",
+    "src/gpio.h",
+  ]
 }
 
 fuchsia_component("container_with_endpoint_reader") {

@@ -4,6 +4,8 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -13,8 +15,9 @@
 #include <string>
 #include <vector>
 
+#include "src/starnix/tests/nanohub/src/gpio.h"
 namespace fs = std::filesystem;
-
+namespace {
 bool check_sysfs_file(const char* path, const char* expected_value) {
   auto fd = open(path, 'r');
   if (!fd) {
@@ -90,7 +93,7 @@ bool check_symlink_file(const char* path1, const char* path2) {
 
 // Opens the given device path.
 // Returns a file descriptor on success, or -1 on failure.
-static int OpenDevice(const char* path) {
+int OpenDevice(const char* path) {
   while (1) {
     int fd = open(path, O_RDWR);
     if (fd == -1) {
@@ -105,7 +108,7 @@ static int OpenDevice(const char* path) {
 
 // Reads the contents of the given file descriptor into `out`.
 // Returns true on success, false on failure.
-static bool ReadContents(int fd, std::string& out) {
+bool ReadContents(int fd, std::string& out) {
   // Max sysfs return size: 4096
   char buffer[4096];
 
@@ -121,7 +124,7 @@ static bool ReadContents(int fd, std::string& out) {
 
 // Writes the given data to the file descriptor.
 // Returns true on success, false on failure.
-static bool WriteContents(int fd, const std::string& data) {
+bool WriteContents(int fd, const std::string& data) {
   ssize_t bytes_written = write(fd, data.c_str(), data.length());
   if (bytes_written < 0) {
     fprintf(stderr, "Error: write() failed.\n");
@@ -132,7 +135,7 @@ static bool WriteContents(int fd, const std::string& data) {
 
 // Polls the given file descriptor for a specific event.
 // Returns true on success, false on failure or timeout.
-static bool PollForEvent(int fd, short poll_event) {
+bool PollForEvent(int fd, short poll_event) {
   struct pollfd fds = {.fd = fd, .events = poll_event, .revents = 0};
   int rv = poll(&fds, 1, 500);  // 500ms timeout
 
@@ -212,8 +215,8 @@ int test_datachannel() {
   };
 
   std::vector<TestConfig> tests = {
-      {"/dev/test_endpoint1", "test_endpoint1_data"},
-      {"/dev/test_endpoint2", "test_endpoint2_data"},
+      {.path = "/dev/test_endpoint1", .expected_result = "test_endpoint1_data"},
+      {.path = "/dev/test_endpoint2", .expected_result = "test_endpoint2_data"},
   };
 
   for (const auto& test : tests) {
@@ -255,10 +258,72 @@ int test_procfs() {
   return 0;
 }
 
+int test_gpiod_api() {
+  constexpr char gpio_chip_path[] = "/dev/gpiochipwake0";
+  constexpr char gpio_chip_consumer_name[] = "gpio_chip_test";
+
+  static constexpr uint32_t kGpioOffset = 19;
+
+  // Open base GPIO Chip
+  auto chip_fd = open(gpio_chip_path, O_RDWR);
+  if (chip_fd < 0) {
+    fprintf(stderr, "Error: Failed to open test gpiochip(%s) .\n", strerror(errno));
+    return 1;
+  }
+
+  // Test IOCTL surface area
+  struct mock_gpio_v2_line_request req;
+  memset(&req, 0, sizeof(req));
+  req.num_lines = 1;
+  req.offsets[0] = kGpioOffset;
+  req.config.flags = (MOCK_GPIO_V2_LINE_FLAG_INPUT | MOCK_GPIO_V2_LINE_FLAG_EDGE_RISING |
+                      MOCK_GPIO_V2_LINE_FLAG_BIAS_PULL_DOWN);
+  strncpy(req.consumer, gpio_chip_consumer_name, sizeof(req.consumer) - 1);
+
+  if (ioctl(chip_fd, MOCK_GPIO_V2_GET_LINE_IOCTL, &req) < 0) {
+    fprintf(stderr, "Failed to request GPIO line: %s\n", strerror(errno));
+
+    return 1;
+  }
+
+  // Test One-shot Poll
+  struct pollfd fds = {.fd = req.fd, .events = POLLIN, .revents = 0};
+
+  int rv = poll(&fds, 1, 100);  // 500ms timeout
+
+  if (rv < 0) {
+    fprintf(stderr, "Error: poll() failed.\n");
+    return 1;
+  }
+  if (fds.revents & POLLIN) {
+    return 1;
+  }
+  if (rv == 0) {
+    fprintf(stdout, "poll() correctly timed out.\n");
+  }
+
+  // Test epoll
+  int epoll_fd = epoll_create1(/*flags*/ 0);
+  epoll_event event;
+  event.data.fd = req.fd;
+  event.events = POLLIN;
+
+  auto epoll_ctl_result = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, req.fd, &event);
+
+  if (epoll_ctl_result != 0) {
+    fprintf(stderr, "Error: epoll_ctl() returned status: %d (errno: %s).\n", epoll_ctl_result,
+            strerror(errno));
+    return 1;
+  }
+
+  return 0;
+}
+}  // namespace
 int main(int argc, char** argv) {
   int test_sysfs_result = test_sysfs();
   int test_procfs_result = test_procfs();
   int test_datachannel_result = test_datachannel();
+  int test_gpiod_result = test_gpiod_api();
 
-  return test_sysfs_result | test_procfs_result | test_datachannel_result;
+  return test_sysfs_result | test_procfs_result | test_datachannel_result | test_gpiod_result;
 }

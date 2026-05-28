@@ -6,7 +6,10 @@ use crate::datachannel_file::DataChannelDevice;
 use crate::nanohub_comms_directory::{
     build_display_comms_directory, build_nanohub_comms_directory,
 };
+use crate::nanohub_gpio_stub::register_gpio_chip_device;
 use crate::socket_tunnel_file::register_socket_tunnel_device;
+use fidl_fuchsia_hardware_google_nanohub as fnanohub;
+use fidl_fuchsia_hardware_serial as fserial;
 use fuchsia_component::client::Service;
 use futures::TryStreamExt;
 use starnix_core::device::serial::SerialDevice;
@@ -16,11 +19,12 @@ use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{Locked, Unlocked};
 use std::ops::DerefMut;
 use std::sync::Arc;
-use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_hardware_serial as fserial};
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
 
 pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &CurrentTask) {
+    register_gpio_chip_device(locked, current_task, "gpiochipwake0");
+
     register_socket_tunnel_device(
         locked,
         current_task,

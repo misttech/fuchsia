@@ -9,6 +9,7 @@ mod display_sysfs_files;
 mod nanohub;
 mod nanohub_comms_directory;
 mod nanohub_firmware_file;
+mod nanohub_gpio_stub;
 mod nanohub_socket_file;
 mod nanohub_sysfs_files;
 mod socket_tunnel_file;
