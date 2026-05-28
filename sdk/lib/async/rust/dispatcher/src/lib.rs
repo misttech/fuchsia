@@ -15,14 +15,17 @@ use std::sync::{Arc, Weak};
 use zx_status::Status;
 use zx_types::zx_time_t;
 
+mod dispatcher_arc;
 mod task;
+mod weak_dispatcher;
 
 pub use task::*;
+pub use weak_dispatcher::*;
 
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
 /// [`AsyncDispatcher::release`]. When this object goes out of scope it won't shut down the dispatcher,
 /// leaving that up to the driver runtime or another owner.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct AsyncDispatcherRef<'a>(NonNull<async_dispatcher_t>, PhantomData<&'a async_dispatcher_t>);
 
 unsafe impl<'a> Send for AsyncDispatcherRef<'a> {}
@@ -43,12 +46,6 @@ impl<'a> AsyncDispatcherRef<'a> {
     /// Gets the inner pointer to the dispatcher struct.
     pub fn inner(&self) -> NonNull<async_dispatcher_t> {
         self.0
-    }
-}
-
-impl<'a> Clone for AsyncDispatcherRef<'a> {
-    fn clone(&self) -> Self {
-        Self(self.0, PhantomData)
     }
 }
 
@@ -93,7 +90,7 @@ pub trait AsyncDispatcher: Send + Sync {
 
 impl<'a> AsyncDispatcher for AsyncDispatcherRef<'a> {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
-        self.clone()
+        *self
     }
 }
 
@@ -166,7 +163,7 @@ impl<D: AsyncDispatcher> OnDispatcher for &D {
 
 impl<'a> OnDispatcher for AsyncDispatcherRef<'a> {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.clone()))
+        f(Some(*self))
     }
 }
 
