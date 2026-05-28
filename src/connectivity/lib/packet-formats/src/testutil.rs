@@ -15,8 +15,9 @@ use zerocopy::SplitByteSlice;
 use log::debug;
 use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4Addr, Ipv6Addr};
-use packet::{ParsablePacket, ParseBuffer, SliceBufViewMut};
+use packet::{ParsablePacket, ParseBuffer, SerializationContext, SliceBufViewMut};
 
+use crate::TransportChecksumAction;
 use crate::arp::{ArpOp, ArpPacket};
 use crate::error::{IpParseResult, ParseError, ParseResult};
 use crate::ethernet::{EtherType, EthernetFrame, EthernetFrameLengthCheck};
@@ -25,8 +26,8 @@ use crate::ip::{DscpAndEcn, IpExt, Ipv4Proto};
 use crate::ipv4::{Ipv4FragmentType, Ipv4Header, Ipv4Packet};
 use crate::ipv6::{Ipv6Header, Ipv6Packet};
 use crate::tcp::options::{TcpOptions, TcpOptionsBuilder};
-use crate::tcp::{TcpParseContext, TcpSegment};
-use crate::udp::{UdpPacket, UdpParseContext};
+use crate::tcp::{TcpEnvelope, TcpParseContext, TcpSegment, TcpSerializationContext};
+use crate::udp::{UdpEnvelope, UdpPacket, UdpParseContext, UdpSerializationContext};
 
 #[cfg(test)]
 pub(crate) use crateonly::*;
@@ -357,12 +358,31 @@ impl TcpParseContext for ForceSkipChecksumValidation {
     }
 }
 
+/// A [`SerializationContext`] that forces a specific transport-layer
+/// checksum action to be used.
+pub struct ForceChecksumAction(pub TransportChecksumAction);
+impl SerializationContext for ForceChecksumAction {
+    type ContextState = ();
+}
+impl UdpSerializationContext for ForceChecksumAction {
+    fn envelope_to_state(_envelope: UdpEnvelope) -> Self::ContextState {
+        ()
+    }
+    fn checksum_action(&mut self) -> TransportChecksumAction {
+        self.0
+    }
+}
+impl TcpSerializationContext for ForceChecksumAction {
+    fn envelope_to_state(_envelope: TcpEnvelope) -> Self::ContextState {
+        ()
+    }
+    fn checksum_action(&mut self) -> TransportChecksumAction {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod crateonly {
-    use crate::TransportChecksumAction;
-    use crate::tcp::{TcpEnvelope, TcpSerializationContext};
-    use crate::udp::{UdpEnvelope, UdpSerializationContext};
-    use packet::SerializationContext;
     use std::sync::Once;
 
     /// Install a logger for tests.
@@ -395,29 +415,6 @@ mod crateonly {
             log::set_logger(&Logger).unwrap();
             log::set_max_level(log::LevelFilter::Trace);
         })
-    }
-
-    /// A [`SerializationContext`] that forces a specific transport-layer
-    /// checksum action to be used.
-    pub(crate) struct ForceChecksumAction(pub TransportChecksumAction);
-    impl SerializationContext for ForceChecksumAction {
-        type ContextState = ();
-    }
-    impl UdpSerializationContext for ForceChecksumAction {
-        fn envelope_to_state(_envelope: UdpEnvelope) -> Self::ContextState {
-            ()
-        }
-        fn checksum_action(&mut self) -> TransportChecksumAction {
-            self.0
-        }
-    }
-    impl TcpSerializationContext for ForceChecksumAction {
-        fn envelope_to_state(_envelope: TcpEnvelope) -> Self::ContextState {
-            ()
-        }
-        fn checksum_action(&mut self) -> TransportChecksumAction {
-            self.0
-        }
     }
 }
 

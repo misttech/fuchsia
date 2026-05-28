@@ -15,13 +15,22 @@ use net_types::ip::{IpAddress, IpVersionMarker, Ipv4, Ipv6};
 use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::realms::{Netstack3, TestRealmExt as _, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
-use packet::{FromRaw as _, ParsablePacket as _};
-use packet_formats::error::ParseError;
+use packet::{
+    FromRaw as _, InnerPacketBuilder as _, NestablePacketBuilder as _, ParsablePacket as _,
+    Serializer as _,
+};
+use packet_formats::TransportChecksumAction;
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::ip::{IpExt, IpProto};
-use packet_formats::tcp::{TcpParseArgs, TcpSegment, TcpSegmentRaw};
-use packet_formats::testutil::{ForceSkipChecksumValidation, parse_ip_packet_in_ethernet_frame};
-use packet_formats::udp::{UdpPacket, UdpPacketRaw, UdpParseArgs};
+use packet_formats::tcp::{
+    CHECKSUM_OFFSET as TCP_CHECKSUM_OFFSET, TcpParseArgs, TcpSegment, TcpSegmentRaw,
+};
+use packet_formats::testutil::{
+    ForceChecksumAction, ForceSkipChecksumValidation, parse_ip_packet_in_ethernet_frame,
+};
+use packet_formats::udp::{
+    CHECKSUM_OFFSET as UDP_CHECKSUM_OFFSET, UdpPacket, UdpPacketRaw, UdpParseArgs,
+};
 
 const PORT: u16 = 9875;
 const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
@@ -61,15 +70,26 @@ fn verify_udp_raw_packet<A: IpAddress>(
     dst_ip: A,
     expect_valid_checksum: bool,
 ) {
-    let parse_result = UdpPacket::try_from_raw_with(
+    let packet = UdpPacket::try_from_raw_with(
         udp,
-        UdpParseArgs::with_context(src_ip, dst_ip, ForceSkipChecksumValidation(false)),
-    );
-    if expect_valid_checksum {
-        assert!(parse_result.is_ok(), "expected success");
+        UdpParseArgs::with_context(src_ip, dst_ip, ForceSkipChecksumValidation(true)),
+    )
+    .unwrap();
+
+    let header_bytes = packet.as_bytes()[0];
+    let actual_checksum = &header_bytes[UDP_CHECKSUM_OFFSET..UDP_CHECKSUM_OFFSET + 2];
+
+    let action = if expect_valid_checksum {
+        TransportChecksumAction::ComputeFull
     } else {
-        assert_eq!(parse_result.err(), Some(ParseError::Checksum));
-    }
+        TransportChecksumAction::ComputePartial
+    };
+
+    let serializer = packet.builder(src_ip, dst_ip).wrap_body(packet.body().into_serializer());
+    let new_buf = serializer.serialize_vec_outer(&mut ForceChecksumAction(action)).unwrap();
+    let expected_checksum = &new_buf.as_ref()[UDP_CHECKSUM_OFFSET..UDP_CHECKSUM_OFFSET + 2];
+
+    assert_eq!(actual_checksum, expected_checksum);
 }
 
 async fn send_and_recv_tcp(
@@ -115,15 +135,26 @@ fn verify_tcp_raw_segment<A: IpAddress>(
     dst_ip: A,
     expect_valid_checksum: bool,
 ) {
-    let parse_result = TcpSegment::try_from_raw_with(
+    let segment = TcpSegment::try_from_raw_with(
         tcp,
-        TcpParseArgs::with_context(src_ip, dst_ip, ForceSkipChecksumValidation(false)),
-    );
-    if expect_valid_checksum {
-        assert!(parse_result.is_ok(), "expected success");
+        TcpParseArgs::with_context(src_ip, dst_ip, ForceSkipChecksumValidation(true)),
+    )
+    .unwrap();
+
+    let header_bytes = segment.as_bytes()[0];
+    let actual_checksum = &header_bytes[TCP_CHECKSUM_OFFSET..TCP_CHECKSUM_OFFSET + 2];
+
+    let action = if expect_valid_checksum {
+        TransportChecksumAction::ComputeFull
     } else {
-        assert_eq!(parse_result.err(), Some(ParseError::Checksum));
-    }
+        TransportChecksumAction::ComputePartial
+    };
+
+    let serializer = segment.builder(src_ip, dst_ip).wrap_body(segment.body().into_serializer());
+    let new_buf = serializer.serialize_vec_outer(&mut ForceChecksumAction(action)).unwrap();
+    let expected_checksum = &new_buf.as_ref()[TCP_CHECKSUM_OFFSET..TCP_CHECKSUM_OFFSET + 2];
+
+    assert_eq!(actual_checksum, expected_checksum);
 }
 
 /// Helper function to capture and verify UDP packets on an interface.
@@ -254,6 +285,8 @@ async fn test_loopback_checksum_skipped_udp<I: IpExt>(name: &str) {
     capture_and_verify_udp::<I>(
         &realm,
         loopback_id.get(),
+        // We only compute a partial checksum over the loopback interface, so
+        // checksum validation should fail.
         false,
         send_and_recv_udp(&realm, (loopback_ip, PORT).into(), &PAYLOAD),
     )
@@ -280,6 +313,8 @@ async fn test_loopback_checksum_skipped_tcp<I: IpExt>(name: &str) {
     capture_and_verify_tcp::<I>(
         &realm,
         loopback_id.get(),
+        // We only compute a partial checksum over the loopback interface, so
+        // checksum validation should fail.
         false,
         send_and_recv_tcp(&realm, (loopback_ip, PORT).into(), &PAYLOAD),
     )
@@ -322,6 +357,9 @@ async fn test_local_delivery_checksum_skipped_udp<I: TestIpExt>(name: &str) {
     capture_and_verify_udp::<I>(
         &realm,
         iface.id(),
+        // Packets originating and destined locally are delivered over the
+        // loopback interface. We only compute a partial checksum over the
+        // loopback interface, so checksum validation should fail.
         false,
         send_and_recv_udp(&realm, (I::LOCAL_ADDR, PORT).into(), &PAYLOAD),
     )
@@ -343,6 +381,9 @@ async fn test_local_delivery_checksum_skipped_tcp<I: TestIpExt>(name: &str) {
     capture_and_verify_tcp::<I>(
         &realm,
         iface.id(),
+        // Packets originating and destined locally are delivered over the
+        // loopback interface. We only compute a partial checksum over the
+        // loopback interface, so checksum validation should fail.
         false,
         send_and_recv_tcp(&realm, (I::LOCAL_ADDR, PORT).into(), &PAYLOAD),
     )
@@ -409,7 +450,15 @@ async fn test_remote_delivery_checksum_computed_udp<I: TestIpExt>(name: &str) {
         assert_eq!(from_addr.ip(), I::LOCAL_ADDR);
     };
 
-    capture_and_verify_udp::<I>(&client_realm, client_iface.id(), true, traffic_fut).await;
+    capture_and_verify_udp::<I>(
+        &client_realm,
+        client_iface.id(),
+        // Packets destined for a remote host should have their full checksum
+        // computed, so checksum validation should pass.
+        true,
+        traffic_fut,
+    )
+    .await;
 }
 
 #[netstack_test]
@@ -474,5 +523,13 @@ async fn test_remote_delivery_checksum_computed_tcp<I: TestIpExt>(name: &str) {
         futures::join!(client_fut, server_fut);
     };
 
-    capture_and_verify_tcp::<I>(&client_realm, client_iface.id(), true, traffic_fut).await;
+    capture_and_verify_tcp::<I>(
+        &client_realm,
+        client_iface.id(),
+        // Packets destined for a remote host should have their full checksum
+        // computed, so checksum validation should pass.
+        true,
+        traffic_fut,
+    )
+    .await;
 }
