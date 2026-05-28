@@ -109,6 +109,14 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.power.battery.BatteryManager",
+            from: "#battery_manager",
+            to: "#feedback",
+            dependency: "weak",
+            source_availability: "unknown",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.feedback.CrashReporter",
             from: "#feedback",
             to: "#exceptions",

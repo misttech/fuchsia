@@ -5,6 +5,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_UTILS_ERRORS_H_
 #define SRC_DEVELOPER_FORENSICS_UTILS_ERRORS_H_
 
+#include <lib/fidl/cpp/wire/status.h>
 #include <lib/fpromise/promise.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -34,6 +35,8 @@ enum class Error {
   // Custom errors code that can be interpreted in different ways by different components.
   kCustom,
 };
+
+Error FidlErrorToForensicsError(const ::fidl::Error& error);
 
 class ErrorOrString {
  public:

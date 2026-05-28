@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "src/developer/forensics/feedback/annotations/annotation_manager.h"
+#include "src/developer/forensics/feedback/annotations/battery_info_provider.h"
 #include "src/developer/forensics/feedback/annotations/board_info_provider.h"
 #include "src/developer/forensics/feedback/annotations/current_channel_provider.h"
 #include "src/developer/forensics/feedback/annotations/data_register.h"
@@ -75,6 +76,7 @@ class AnnotationProviders {
   std::unique_ptr<CurrentChannelProvider> current_channel_provider_;
   std::unique_ptr<IntlProvider> intl_provider_;
   std::unique_ptr<TargetChannelProvider> target_channel_provider_;
+  std::unique_ptr<BatteryInfoProvider> battery_info_provider_;
   std::unique_ptr<UIStateProvider> ui_state_provider_;
 
   AnnotationManager annotation_manager_;

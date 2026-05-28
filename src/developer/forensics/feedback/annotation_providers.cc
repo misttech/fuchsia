@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "src/developer/forensics/feedback/annotations/battery_info_provider.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/lib/backoff/exponential_backoff.h"
@@ -129,6 +130,12 @@ std::vector<DynamicAsyncAnnotationProvider*> AnnotationProviders::GetDynamicAsyn
     target_channel_provider_ =
         std::make_unique<TargetChannelProvider>(dispatcher_, services, AnnotationProviderBackoff());
     providers.push_back(target_channel_provider_.get());
+  }
+
+  if (IncludesAnyInAllowlist(BatteryInfoProvider::GetAnnotationKeys(), allowlist)) {
+    battery_info_provider_ =
+        std::make_unique<BatteryInfoProvider>(dispatcher_, services, AnnotationProviderBackoff());
+    providers.push_back(battery_info_provider_.get());
   }
 
   return providers;

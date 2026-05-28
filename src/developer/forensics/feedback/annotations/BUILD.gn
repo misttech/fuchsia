@@ -52,6 +52,21 @@ source_set("annotations") {
   ]
 }
 
+source_set("battery_info_provider") {
+  sources = [
+    "battery_info_provider.cc",
+    "battery_info_provider.h",
+  ]
+
+  public_deps = [
+    ":fidl_provider",
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
+    "//src/developer/forensics/feedback/annotations",
+  ]
+
+  deps = [ "//sdk/lib/component/incoming/cpp" ]
+}
+
 source_set("board_info_provider") {
   sources = [
     "board_info_provider.cc",

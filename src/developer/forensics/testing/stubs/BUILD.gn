@@ -7,6 +7,20 @@ visibility = [ "//src/developer/forensics/*" ]
 ###############################################################################
 # SOURCES
 ###############################################################################
+
+source_set("battery_info_provider") {
+  testonly = true
+
+  sources = [
+    "battery_info_provider.cc",
+    "battery_info_provider.h",
+  ]
+
+  public_deps = [ "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp" ]
+
+  deps = [ "//sdk/lib/syslog/cpp" ]
+}
+
 source_set("board_info_provider") {
   testonly = true
 

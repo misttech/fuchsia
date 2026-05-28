@@ -97,6 +97,23 @@ cc_test_executable("attachment_metrics_unittest_exe") {
   ]
 }
 
+cc_test_executable("battery_info_provider_unittest_exe") {
+  testonly = true
+
+  sources = [ "battery_info_provider_unittest.cc" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
+    "//src/developer/forensics/feedback/annotations:battery_info_provider",
+    "//src/developer/forensics/testing:gpretty_printers",
+    "//src/developer/forensics/testing:gtest_with_syslog_main",
+    "//src/developer/forensics/testing:unit_test_fixture",
+    "//src/developer/forensics/testing/stubs:battery_info_provider",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 cc_test_executable("board_info_provider_unittest_exe") {
   testonly = true
 
@@ -584,6 +601,10 @@ fuchsia_unittest_component("attachment_metrics_unittest") {
   deps = [ ":attachment_metrics_unittest_exe" ]
 }
 
+fuchsia_unittest_component("battery_info_provider_unittest") {
+  deps = [ ":battery_info_provider_unittest_exe" ]
+}
+
 fuchsia_unittest_component("board_info_provider_unittest") {
   deps = [ ":board_info_provider_unittest_exe" ]
 }
@@ -735,6 +756,7 @@ fuchsia_test_package("feedback-tests") {
     ":attachment_manager_unittest",
     ":annotation_metrics_unittest",
     ":attachment_metrics_unittest",
+    ":battery_info_provider_unittest",
     ":board_info_provider_unittest",
     ":config_unittest",
     ":current_channel_provider_unittest",
