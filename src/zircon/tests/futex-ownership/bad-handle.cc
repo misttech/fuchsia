@@ -146,4 +146,11 @@ TEST(BadHandleTest, WaitBadHandleWithMatchedValueIsKilled) {
   ASSERT_EQ(proc_info.return_code, ZX_TASK_RETCODE_POLICY_KILL);
 }
 
+TEST(BadHandleTest, RequeueBadHandleWithMatchedValueIsKilled) {
+  zx_info_process_t proc_info;
+  ASSERT_NO_FATAL_FAILURE(LaunchTestCase("match_requeue", &proc_info, ZX_POL_ACTION_KILL));
+  // We should see an exception kill due to the policy violation
+  ASSERT_EQ(proc_info.return_code, ZX_TASK_RETCODE_POLICY_KILL);
+}
+
 }  // namespace
