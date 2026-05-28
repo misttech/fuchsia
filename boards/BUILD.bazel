@@ -16,9 +16,9 @@ fuchsia_prebuilt_board_configuration(
     files = "@gn_targets//boards/x64:reduced_perf_variation",
 )
 
-fuchsia_prebuilt_board_configuration(
+alias(
     name = "arm64",
-    directory = "@gn_targets//boards/arm64",
+    actual = "//boards/arm64",
 )
 
 fuchsia_prebuilt_board_configuration(

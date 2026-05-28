@@ -91,6 +91,7 @@ group("tests") {
 group("bazel_action_allowlist") {
   # Bazel assembly
   visibility = [
+    "//boards/arm64:*",
     "//boards/pkvm:*",
     "//boards/vim3:*",
     "//bundles/assembly/*",

@@ -87,6 +87,24 @@ def _fuchsia_board_configuration_impl(ctx):
         input_files.append(ctx.file.devicetree_overlay)
         board_config["devicetree_overlay"] = ctx.file.devicetree_overlay.path
 
+    if ctx.attr.zbi_extra_items:
+        zbi_extra_items_file = ctx.actions.declare_file(ctx.label.name + "_zbi_extra_items.zbi")
+        zbi_args = ["-o", zbi_extra_items_file.path]
+        for f in ctx.files.zbi_extra_items:
+            zbi_args += ["--type=container", f.path]
+
+        ctx.actions.run(
+            executable = sdk.zbi,
+            arguments = zbi_args,
+            inputs = ctx.files.zbi_extra_items,
+            outputs = [zbi_extra_items_file],
+            mnemonic = "FuchsiaBoardZbiExtraItems",
+            progress_message = "Combining ZBI extra items for %s" % ctx.label,
+        )
+
+        input_files.append(zbi_extra_items_file)
+        board_config["zbi_extra_items"] = zbi_extra_items_file.path
+
     filesystems = json.decode(ctx.attr.filesystems)
     check_type(filesystems, "dict")
     replace_labels_with_files(filesystems, ctx.attr.filesystems_labels)
@@ -248,6 +266,10 @@ _fuchsia_board_configuration = rule(
         "devicetree_overlay": attr.label(
             doc = "Devicetree binary overlay (.dtbo) file",
             allow_single_file = True,
+        ),
+        "zbi_extra_items": attr.label_list(
+            doc = "ZBI extra items containers",
+            allow_files = True,
         ),
         "post_processing_script": attr.label(
             doc = "The post processing script to be included into the board configuration",

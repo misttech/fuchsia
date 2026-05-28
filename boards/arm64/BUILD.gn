@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/board_configuration.gni")
 import("//build/assembly/board_input_bundle.gni")
-import("//build/board.gni")
-import("//build/info/info.gni")
+import("//build/bazel/assembly/bazel_board_configuration.gni")
+import("//build/bazel/bazel_inputs.gni")
 import("//zircon/tools/zbi/zbi_item.gni")
 
 assert(current_toolchain == default_toolchain,
@@ -13,58 +12,20 @@ assert(current_toolchain == default_toolchain,
 assert(current_cpu == "arm64",
        "The arm64 board can only be defined in an arm64 toolchain.")
 
-board_configuration("arm64") {
+bazel_board_configuration("arm64") {
   testonly = true
-  partitions_config = "//boards/partitions:arm64"
-  provided_features = [
-    # keep-sorted start
-    "fuchsia::bus_pci",
-    "fuchsia::driver_framework_v2_support",
-    "fuchsia::input",
-    "fuchsia::paravirtualization",
-    "fuchsia::power",
-    "fuchsia::pwm",
-    "fuchsia::real_time_clock",
-    "fuchsia::shared_registers",
-    "fuchsia::usb_host",
-    "fuchsia::usb_peripheral_support",
-    "fuchsia::vulkan_gpu",
-    "fuchsia::xhci",
+  bazel_board_configuration_target = "//boards/arm64"
+  deps = [ ":arm64.bazel_input" ]
+}
 
-    # keep-sorted end
+group("arm64.bazel_input") {
+  testonly = true
+  deps = [
+    ":main_bundle.bazel_inputs",
+    ":qemu_psci_cpu_suspend_states.bazel_inputs",
+    "//boards/emulation/virtio:virtio.bazel_inputs",
+    "//src/firmware/gigaboot/cpp:esp.bazel_input",
   ]
-
-  input_bundles = [
-    ":main_bundle",
-    "//boards/emulation/virtio",
-  ]
-
-  hardware_info = {
-    name = "qemu-arm64"
-    product_id = 1
-    vendor_id = 1
-    revision = 1
-  }
-
-  filesystems = {
-    vbmeta = {
-      key = "//third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem"
-      key_metadata = "//third_party/android/platform/external/avb/test/data/atx_metadata.bin"
-    }
-    fvm = {
-      blobfs = {
-        size_checker_maximum_bytes = 5216665600
-      }
-      sparse_output = {
-      }
-    }
-    fxfs = {
-      size_checker_maximum_bytes = 5216665600
-    }
-  }
-  version = build_info_version
-
-  zbi_extra_items = [ ":qemu_psci_cpu_suspend_states" ]
 }
 
 board_input_bundle("main_bundle") {
@@ -102,28 +63,6 @@ board_input_bundle("main_bundle") {
   version = build_info_version
 }
 
-board_input_bundle("bus_pci") {
-  drivers = [
-    {
-      package_target = "//src/devices/bus/drivers/pci:bus-pci-package"
-      package_set = "bootfs"
-      driver_components = [ "meta/bus-pci.cm" ]
-    },
-  ]
-  version = build_info_version
-}
-
-board_input_bundle("bus_kpci") {
-  drivers = [
-    {
-      package_target = "//src/devices/bus/drivers/pci:bus-kpci-package"
-      package_set = "bootfs"
-      driver_components = [ "meta/bus-kpci.cm" ]
-    },
-  ]
-  version = build_info_version
-}
-
 # Special PSCI_CPU_SUSPEND states for QEMU.
 #
 # Both in TCG and KVM mode, suspend states are accepted, and treated as a `retention` state, meaning
@@ -149,4 +88,8 @@ zbi_item("qemu_psci_cpu_suspend_states") {
       flags = 0
     },
   ]
+}
+
+bazel_input_file("qemu_psci_cpu_suspend_states.bazel_inputs") {
+  generator = ":qemu_psci_cpu_suspend_states"
 }
