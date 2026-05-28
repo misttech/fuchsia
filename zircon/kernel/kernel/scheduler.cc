@@ -981,6 +981,7 @@ Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
     eligible_thread = EarliestDeadlineThread(critical_thread, normal_thread);
   }
 
+  Thread* selected_thread = nullptr;
   if (eligible_thread != nullptr) {
     // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
     // access to the thread's COVs and exclusive access to the thread's SOVs.
@@ -992,20 +993,44 @@ Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
 
     if (is_oversubscribed) {
       if (eligible_is_critical && !reference_is_critical) {
-        return const_cast<Thread*>(eligible_thread);
+        selected_thread = const_cast<Thread*>(eligible_thread);
+      } else if (!eligible_is_critical && reference_is_critical) {
+        selected_thread = nullptr;
+      } else if (eligible_thread->scheduler_state().finish_time() <
+                 reference_thread->scheduler_state().finish_time()) {
+        selected_thread = const_cast<Thread*>(eligible_thread);
       }
-      if (!eligible_is_critical && reference_is_critical) {
-        return nullptr;
-      }
+    } else if (eligible_thread->scheduler_state().finish_time() <
+               reference_thread->scheduler_state().finish_time()) {
+      selected_thread = const_cast<Thread*>(eligible_thread);
     }
 
-    if (eligible_thread->scheduler_state().finish_time() <
-        reference_thread->scheduler_state().finish_time()) {
-      return const_cast<Thread*>(eligible_thread);
-    }
+    LOCAL_KTRACE_INSTANT(
+        QUEUE, "find_earlier_deadline", ("is_oversubscribed", is_oversubscribed),
+        ("contender_name", eligible_thread->name()), ("contender_tid", eligible_thread->tid()),
+        ("contender_finish_delta_ns",
+         SchedDuration{eligible_thread->scheduler_state().finish_time() - eligible_time}),
+        ("contender_start_delta_ns",
+         SchedDuration{eligible_time - eligible_thread->scheduler_state().start_time()}),
+        ("contender_remaining_slice_ns",
+         eligible_thread->scheduler_state().remaining_time_slice_ns()),
+        ("contender_capacity_ns", eligible_thread->scheduler_state().time_slice_ns()),
+        ("active_name", reference_thread->name()), ("active_tid", reference_thread->tid()),
+        ("active_finish_delta_ns",
+         SchedDuration{reference_thread->scheduler_state().finish_time() - eligible_time}),
+        ("active_start_delta_ns",
+         SchedDuration{eligible_time - reference_thread->scheduler_state().start_time()}),
+        ("active_remaining_slice_ns",
+         reference_thread->scheduler_state().remaining_time_slice_ns()),
+        ("active_capacity_ns", reference_thread->scheduler_state().time_slice_ns()),
+        ("critical_state", (eligible_is_critical && reference_is_critical) ? "both"_intern
+                           : eligible_is_critical                          ? "contender"_intern
+                           : reference_is_critical                         ? "active"_intern
+                                                                           : "none"_intern),
+        ("selected", selected_thread ? "contender"_intern : "active"_intern));
   }
 
-  return nullptr;
+  return selected_thread;
 }
 
 SchedTime Scheduler::GetNextEligibleTime() const {
