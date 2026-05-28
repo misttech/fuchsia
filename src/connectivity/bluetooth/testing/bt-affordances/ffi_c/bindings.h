@@ -11,24 +11,9 @@
 #include <new>
 #include <ostream>
 
-constexpr static const uintptr_t MAX_NUM_CHARACTERISTICS = 43;
-
 struct UuidBytes {
   uint8_t value[16];
 };
-
-/// `characteristic_handles` may start with nonzero entries encoding the handles of GATT
-/// characteristics discovered on the service. Up to 43 handles can be reported here.
-///
-/// `uuid` is the UUID in C string format including a null terminator.
-struct DiscoveredService {
-  uint64_t handle;
-  uint32_t kind;
-  int8_t uuid[37];
-  uint64_t characteristic_handles[MAX_NUM_CHARACTERISTICS];
-};
-
-using DiscoverServicesCallback = void (*)(void *context, const DiscoveredService *service);
 
 struct ReadCharacteristicResult {
   uint64_t handle;
@@ -62,6 +47,15 @@ uint64_t get_peer_id(const char *address);
 ///
 /// The caller must ensure that `uuid_str` points to a valid C string.
 UuidBytes uuid_from_string(const char *uuid_str);
+
+/// Convert a UUID to a string.
+///
+/// Returns ZX_STATUS_INTERNAL on error.
+///
+/// # Safety
+///
+/// The caller must ensure that `out_str` points to a valid buffer of at least 37 bytes.
+int32_t uuid_to_string(UuidBytes uuid, char *out_str);
 
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
 /// result in the channel being closed after the new channel is opened.
@@ -99,18 +93,6 @@ int32_t set_connectability(bool connectable);
 int32_t publish_service(uint64_t handle, const char *uuid, uint64_t characteristic_handle,
                         const char *characteristic_uuid, uint16_t characteristic_properties,
                         uint16_t characteristic_permissions);
-
-/// Discover GATT services.
-///
-/// The callback `cb` is invoked on every service. The `context` provided to this function is
-/// included in each invocation of `cb`.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-int32_t discover_services(void *context, DiscoverServicesCallback cb);
 
 /// Read the value of a GATT characteristic on the remote peer identified with the given handles.
 ///

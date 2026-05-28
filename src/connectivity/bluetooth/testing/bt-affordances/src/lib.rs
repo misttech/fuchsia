@@ -11,7 +11,7 @@ use fidl_fuchsia_bluetooth_gatt2::{
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use futures::executor::block_on;
-use std::ffi::{CStr, CString, c_void};
+use std::ffi::CStr;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -85,6 +85,32 @@ pub unsafe extern "C" fn uuid_from_string(uuid_str: *const core::ffi::c_char) ->
         }
         Err(_) => UuidBytes { value: [0; 16] },
     }
+}
+
+/// Convert a UUID to a string.
+///
+/// Returns ZX_STATUS_INTERNAL on error.
+///
+/// # Safety
+///
+/// The caller must ensure that `out_str` points to a valid buffer of at least 37 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uuid_to_string(uuid: UuidBytes, out_str: *mut core::ffi::c_char) -> i32 {
+    let fidl_uuid = fidl_fuchsia_bluetooth::Uuid { value: uuid.value };
+    let uuid = fuchsia_bluetooth::types::Uuid::from(fidl_uuid);
+    let s = uuid.to_string().to_uppercase();
+    let Ok(c_str) = std::ffi::CString::new(s) else {
+        return zx::Status::INTERNAL.into_raw();
+    };
+    let bytes = c_str.as_bytes_with_nul();
+    if bytes.len() > 37 {
+        eprintln!("UUID string length {} exceeds expected bound of 37", bytes.len());
+        return zx::Status::INTERNAL.into_raw();
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_str as *mut u8, bytes.len());
+    }
+    zx::Status::OK.into_raw()
 }
 
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
@@ -296,79 +322,6 @@ pub unsafe extern "C" fn publish_service(
         return zx::Status::INTERNAL.into_raw();
     }
 
-    zx::Status::OK.into_raw()
-}
-
-// TODO(https://fxbug.dev/396500079): Support reporting more (or all) characteristics. 43 is enough
-// to pass PTS-bot GATT tests.
-pub const MAX_NUM_CHARACTERISTICS: usize = 43;
-
-/// `characteristic_handles` may start with nonzero entries encoding the handles of GATT
-/// characteristics discovered on the service. Up to 43 handles can be reported here.
-///
-/// `uuid` is the UUID in C string format including a null terminator.
-#[repr(C)]
-pub struct DiscoveredService {
-    pub handle: u64,
-    pub kind: u32,
-    pub uuid: [i8; 37],
-    pub characteristic_handles: [u64; MAX_NUM_CHARACTERISTICS],
-}
-
-type DiscoverServicesCallback =
-    extern "C" fn(context: *mut c_void, service: *const DiscoveredService);
-
-/// Discover GATT services.
-///
-/// The callback `cb` is invoked on every service. The `context` provided to this function is
-/// included in each invocation of `cb`.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn discover_services(context: *mut c_void, cb: DiscoverServicesCallback) -> i32 {
-    match block_on(STATE.worker.discover_services()) {
-        Ok(services) => {
-            for service in services {
-                let mut characteristic_handles = [0; MAX_NUM_CHARACTERISTICS];
-                if service.characteristics.as_ref().is_some() {
-                    let characteristics = service.characteristics.as_ref().unwrap();
-                    for i in 0..std::cmp::min(characteristics.len(), MAX_NUM_CHARACTERISTICS) {
-                        characteristic_handles[i] = characteristics[i].handle.unwrap().value;
-                    }
-                }
-
-                let uuid_cstr = CString::new(
-                    fuchsia_bluetooth::types::Uuid::to_string(&service.type_.unwrap().into())
-                        .to_ascii_uppercase(),
-                )
-                .unwrap();
-                let mut uuid_char_arr = [0; 37];
-                uuid_char_arr.copy_from_slice(uuid_cstr.as_bytes_with_nul());
-
-                let discovered_service = DiscoveredService {
-                    handle: service.handle.unwrap().value,
-                    kind: service.kind.unwrap().into_primitive(),
-                    uuid: uuid_char_arr
-                        .into_iter()
-                        .map(|c| c as i8)
-                        .collect::<Vec<i8>>()
-                        .try_into()
-                        .unwrap(),
-                    characteristic_handles: characteristic_handles,
-                };
-
-                cb(context, &discovered_service);
-            }
-        }
-        Err(err) => {
-            eprintln!("discover_services encountered error: {err}");
-            return zx::Status::INTERNAL.into_raw();
-        }
-    }
     zx::Status::OK.into_raw()
 }
 

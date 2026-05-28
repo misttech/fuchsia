@@ -5,13 +5,15 @@
 use anyhow::{Context, Error};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_bluetooth_affordances::{
-    CentralControllerRequest, CentralControllerRequestStream, HostControllerRequest,
-    HostControllerRequestStream, HostControllerSetDeviceClassRequest,
-    HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
-    HostSelector, PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
-    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
-    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
-    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
+    CentralControllerRequest, CentralControllerRequestStream,
+    GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
+    GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
+    HostControllerSetDeviceClassRequest, HostControllerSetDiscoverabilityRequest,
+    HostControllerStartPairingDelegateRequest, HostSelector, PeerControllerPairRequest,
+    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
+    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
+    PeripheralControllerRequest, PeripheralControllerRequestStream,
+    ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -24,6 +26,7 @@ pub enum Services {
     Host(HostControllerRequestStream),
     Peripheral(PeripheralControllerRequestStream),
     Central(CentralControllerRequestStream),
+    GattClient(GattClientControllerRequestStream),
 }
 
 macro_rules! selector_to_peer_id {
@@ -444,6 +447,42 @@ async fn handle_central_request(
     Ok(())
 }
 
+async fn handle_single_gatt_client_request(
+    worker: Arc<WorkThread>,
+    request: GattClientControllerRequest,
+) -> Result<(), Error> {
+    match request {
+        GattClientControllerRequest::DiscoverServices { responder } => {
+            match worker.discover_services().await {
+                Ok(services) => {
+                    responder.send(Ok(&GattClientControllerDiscoverServicesResponse {
+                        services: Some(services),
+                        ..Default::default()
+                    }))?;
+                }
+                Err(err) => {
+                    error!("DiscoverServices encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        GattClientControllerRequest::_UnknownMethod { ordinal, .. } => {
+            error!("GattClientControllerRequest: unknown method received with ordinal {ordinal}");
+        }
+    }
+    Ok(())
+}
+
+async fn handle_gatt_client_request(
+    stream: GattClientControllerRequestStream,
+    worker: Arc<WorkThread>,
+) -> Result<(), Error> {
+    stream
+        .map(|result| result.context("failed request"))
+        .try_for_each(|request| handle_single_gatt_client_request(worker.clone(), request))
+        .await
+}
+
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let mut fs = ServiceFs::new_local();
@@ -451,24 +490,28 @@ async fn main() -> Result<(), Error> {
     let _ = fs.dir("svc").add_fidl_service(Services::Host);
     let _ = fs.dir("svc").add_fidl_service(Services::Peripheral);
     let _ = fs.dir("svc").add_fidl_service(Services::Central);
+    let _ = fs.dir("svc").add_fidl_service(Services::GattClient);
     let _ = fs.take_and_serve_directory_handle()?;
 
     let worker = Arc::new(WorkThread::spawn());
 
-    fs.for_each_concurrent(None, |request| {
-        let worker_clone = worker.clone();
+    fs.for_each_concurrent(None, move |request| {
+        let worker = worker.clone();
         async move {
             match request {
-                Services::Peer(stream) => handle_peer_request(stream, worker_clone)
+                Services::Peer(stream) => {
+                    handle_peer_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
+                }
+                Services::Host(stream) => {
+                    handle_host_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
+                }
+                Services::Peripheral(stream) => handle_peripheral_request(stream, worker)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
-                Services::Host(stream) => handle_host_request(stream, worker_clone)
-                    .await
-                    .unwrap_or_else(|e| error!("{e:?}")),
-                Services::Peripheral(stream) => handle_peripheral_request(stream, worker_clone)
-                    .await
-                    .unwrap_or_else(|e| error!("{e:?}")),
-                Services::Central(stream) => handle_central_request(stream, worker_clone)
+                Services::Central(stream) => {
+                    handle_central_request(stream, worker).await.unwrap_or_else(|e| error!("{e:?}"))
+                }
+                Services::GattClient(stream) => handle_gatt_client_request(stream, worker)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
             }

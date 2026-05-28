@@ -4,12 +4,24 @@
 
 #include "gatt.h"
 
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
 
 using grpc::Status;
 using grpc::StatusCode;
+
+GattService::GattService(async_dispatcher_t* dispatcher) {
+  zx::result client_end_client =
+      component::Connect<fuchsia_bluetooth_affordances::GattClientController>();
+  if (client_end_client.is_ok()) {
+    gatt_client_controller_client_.Bind(std::move(*client_end_client));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to GattClientController service: "
+                   << client_end_client.status_string();
+  }
+}
 
 Status GattService::ExchangeMTU(::grpc::ServerContext* context,
                                 const ::pandora::ExchangeMTURequest* request,
@@ -29,28 +41,36 @@ Status GattService::DiscoverServiceByUuid(::grpc::ServerContext* context,
   return Status(StatusCode::UNIMPLEMENTED, "");
 }
 
-namespace {
-void DiscoverServicesCb(void* context, const struct DiscoveredService* service) {
-  auto response = static_cast<pandora::DiscoverServicesResponse*>(context);
-  pandora::GattService* new_service = response->add_services();
-  new_service->set_handle(service->handle);
-  new_service->set_uuid(reinterpret_cast<const char*>(service->uuid), sizeof(service->uuid) - 1);
-  for (uint64_t characteristic_handle : service->characteristic_handles) {
-    if (characteristic_handle == 0) {
-      break;
-    }
-    new_service->add_characteristics()->set_handle(characteristic_handle);
-  }
-}
-}  // namespace
-
 Status GattService::DiscoverServices(::grpc::ServerContext* context,
                                      const ::pandora::DiscoverServicesRequest* request,
                                      ::pandora::DiscoverServicesResponse* response) {
-  if (discover_services(response, DiscoverServicesCb) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  auto result = gatt_client_controller_client_->DiscoverServices();
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.GattClientController/DiscoverServices error: " +
+                      result.error_value().FormatDescription());
   }
-  return {/*OK*/};
+
+  for (const fuchsia_bluetooth_gatt2::ServiceInfo& service : *result->services()) {
+    pandora::GattService* new_service = response->add_services();
+
+    new_service->set_handle(service.handle()->value());
+
+    UuidBytes ffi_uuid;
+    std::ranges::copy(service.type()->value(), ffi_uuid.value);
+    char uuid_str[37];
+    uuid_to_string(ffi_uuid, uuid_str);
+    new_service->set_uuid(uuid_str);
+
+    if (service.characteristics().has_value()) {
+      for (const fuchsia_bluetooth_gatt2::Characteristic& characteristic :
+           *service.characteristics()) {
+        new_service->add_characteristics()->set_handle(characteristic.handle()->value());
+      }
+    }
+  }
+
+  return Status::OK;
 }
 
 Status GattService::DiscoverServicesSdp(::grpc::ServerContext* context,

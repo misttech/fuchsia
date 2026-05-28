@@ -5,11 +5,13 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_GATT_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_GATT_H_
 
+#include <fidl/fuchsia.bluetooth.affordances/cpp/fidl.h>
+
 #include "third_party/github.com/google/bt-test-interfaces/src/pandora/gatt.grpc.pb.h"
 
 class GattService : public pandora::GATT::Service {
  public:
-  explicit GattService() = default;
+  explicit GattService(async_dispatcher_t* dispatcher);
 
   ::grpc::Status ExchangeMTU(::grpc::ServerContext* context,
                              const ::pandora::ExchangeMTURequest* request,
@@ -77,6 +79,10 @@ class GattService : public pandora::GATT::Service {
   ::grpc::Status IndicateOnCharacteristic(
       ::grpc::ServerContext* context, const ::pandora::IndicateOnCharacteristicRequest* request,
       ::pandora::IndicateOnCharacteristicResponse* response) override;
+
+ private:
+  fidl::SyncClient<fuchsia_bluetooth_affordances::GattClientController>
+      gatt_client_controller_client_;
 };
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_GATT_H_
