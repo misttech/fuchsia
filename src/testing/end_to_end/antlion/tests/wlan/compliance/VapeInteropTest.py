@@ -21,7 +21,13 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityWpa2,
     VhtMode,
 )
-from openwrt_access_point.lib.profiles import actiontec, asus, belkin, linksys
+from openwrt_access_point.lib.profiles import (
+    actiontec,
+    asus,
+    belkin,
+    linksys,
+    netgear,
+)
 
 
 class VapeInteropTest(base_test.WifiBaseTest):
@@ -1046,25 +1052,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_netgear_r7000_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_r7000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_r7000(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_r7000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_netgear_r7000_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_r7000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_r7000(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_r7000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1075,25 +1106,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_netgear_r7000_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_r7000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_r7000(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=80),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_r7000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_netgear_r7000_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_r7000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_r7000(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=80),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_r7000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1104,25 +1160,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_netgear_wndr3400_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_wndr3400",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_wndr3400(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_wndr3400",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_netgear_wndr3400_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_wndr3400",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_wndr3400(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_wndr3400",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1133,25 +1214,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_netgear_wndr3400_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_wndr3400",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_wndr3400(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    HtMode(bw=40, extension="+"),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_wndr3400",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_netgear_wndr3400_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="netgear_wndr3400",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = netgear.netgear_wndr3400(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    HtMode(bw=40, extension="+"),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="netgear_wndr3400",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,

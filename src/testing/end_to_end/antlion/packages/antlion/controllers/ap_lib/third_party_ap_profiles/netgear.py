@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange
 
 from antlion.controllers.ap_lib import (
     hostapd_config,
@@ -278,3 +279,6 @@ def netgear_wndr3400(
     )
 
     return config
+
+
+# LINT.ThenChange(//src/testing/end_to_end/mobly_controller/openwrt_access_point/lib/profiles/netgear.py)
