@@ -206,6 +206,7 @@ template("ffx_plugin") {
                                      "target_name",
                                      "with_unit_tests",
                                      "original_target_name",
+                                     "proc_macro_deps",
                                    ])
         assert_no_deps = disallowed_category_markers
         deps += [ category_marker ]
@@ -287,6 +288,7 @@ template("ffx_plugin") {
                                    "with_unit_tests",
                                    "original_target_name",
                                    "test_deps",
+                                   "proc_macro_deps",
                                  ])
       assert_no_deps = disallowed_category_markers
       deps += [ category_marker ]
@@ -413,6 +415,7 @@ template("ffx_plugin") {
                                    "enforce_source_listing",
                                    "with_unit_tests",
                                    "original_target_name",
+                                   "proc_macro_deps",
                                  ])
 
       if (!defined(assert_no_deps)) {

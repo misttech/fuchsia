@@ -1,3 +1,30 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "gn_generate_cmd",
+    srcs = ["gn_generate_cmd.py"],
+    legacy_create_init = False,
+    deps = [
+        "//third_party/jinja2",
+    ],
+)
+
+py_binary(
+    name = "gn_generate_plugins",
+    srcs = ["gn_generate_plugins.py"],
+    legacy_create_init = False,
+    deps = [
+        "//third_party/jinja2",
+    ],
+)
+
+exports_files([
+    "templates/command.rs.jinja",
+    "templates/plugins.rs.jinja",
+])
