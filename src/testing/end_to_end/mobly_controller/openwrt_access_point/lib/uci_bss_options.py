@@ -28,3 +28,9 @@ class UciBssOptions(TypedDict, total=False):
 
     uapsd_advertisement_enabled: bool
     """WMM-PS Unscheduled Automatic Power Save Delivery [U-APSD]"""
+
+    bss_load_update_period: int
+    """BSS Load update period (in BUs)"""
+
+    chan_util_avg_period: int
+    """Channel utilization averaging period (in BUs)"""

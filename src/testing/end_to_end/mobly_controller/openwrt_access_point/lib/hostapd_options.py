@@ -53,6 +53,15 @@ class HostapdOptions(TypedDict, total=False):
     # Regulatory
     country3: str
 
+    obss_interval: int
+    """
+    If set non-zero, require stations to perform scans of overlapping
+    channels to test for stations which would be affected by 40 MHz traffic.
+    This parameter sets the interval in seconds between these scans. Setting this
+    to non-zero allows 2.4 GHz band AP to move dynamically to a 40 MHz channel if
+    no co-existence issues with neighboring devices are found.
+    """
+
 
 # WMM
 class WmmParams:

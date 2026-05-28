@@ -27,3 +27,5 @@ targets:
       - dtim_period
       - vendor_elements
       - uapsd_advertisement_enabled
+      - bss_load_update_period
+      - chan_util_avg_period

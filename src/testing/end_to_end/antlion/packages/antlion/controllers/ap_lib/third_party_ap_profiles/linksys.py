@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange
 
 from antlion.controllers.ap_lib import (
     hostapd_config,
@@ -327,3 +328,6 @@ def linksys_wrt1900acv2(
         additional_parameters=additional_params,
     )
     return config
+
+
+# LINT.ThenChange(//src/testing/end_to_end/mobly_controller/openwrt_access_point/lib/profiles/linksys.py)

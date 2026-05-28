@@ -19,8 +19,9 @@ from openwrt_access_point.lib.access_point_config import (
     LegacyMode,
     SecurityOpen,
     SecurityWpa2,
+    VhtMode,
 )
-from openwrt_access_point.lib.profiles import actiontec, asus, belkin
+from openwrt_access_point.lib.profiles import actiontec, asus, belkin, linksys
 
 
 class VapeInteropTest(base_test.WifiBaseTest):
@@ -721,25 +722,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_ea4500_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea4500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea4500(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=40, extension="+"),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea4500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_ea4500_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea4500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea4500(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=40, extension="+"),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea4500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -750,25 +776,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_ea4500_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea4500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea4500(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea4500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_ea4500_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea4500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea4500(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea4500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -779,25 +830,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_ea9500_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea9500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea9500(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea9500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_ea9500_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea9500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea9500(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea9500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -808,25 +884,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_ea9500_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea9500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea9500(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea9500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_ea9500_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_ea9500",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_ea9500(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_ea9500",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -837,25 +938,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_wrt1900acv2_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_wrt1900acv2",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_wrt1900acv2(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_wrt1900acv2",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_wrt1900acv2_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_wrt1900acv2",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_wrt1900acv2(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_wrt1900acv2",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -866,25 +992,50 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_linksys_wrt1900acv2_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_wrt1900acv2",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_wrt1900acv2(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_wrt1900acv2",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_linksys_wrt1900acv2_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="linksys_wrt1900acv2",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = linksys.linksys_wrt1900acv2(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="linksys_wrt1900acv2",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
