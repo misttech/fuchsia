@@ -936,7 +936,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -1073,7 +1073,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/riscv64-unknown-fuchsia/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -10221,14 +10221,6 @@ TODO(https://fxbug.dev/42168336): move this to boards.
 **Current value (from the default):** `true`
 
 From //build/config/arm.gni:9
-
-### qemu_arm64_enable_user_pci
-
-Enable user space PCI stack in the qemu-arm64 board driver.
-
-**Current value (from the default):** `true`
-
-From //src/devices/board/drivers/qemu-arm64/pci.gni:7
 
 ## `target_cpu = "x64"`
 
