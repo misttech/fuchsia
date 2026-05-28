@@ -395,3 +395,32 @@ func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
 	)
 	return err
 }
+
+// RepositoryCreate creates a repository.
+func (f *Ffx) RepositoryCreate(ctx context.Context, repoDir string) error {
+	_, err := f.RunCmdSync("repository", "create", repoDir)
+	return err
+}
+
+// RepositoryPublish publishes packages to a repository.
+func (f *Ffx) RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error {
+	if _, err := f.RunCmdSync("repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
+		return err
+	}
+	if len(packageArchives) > 0 {
+		publishArgs := []string{"repository", "publish", repoDir}
+		for _, far := range packageArchives {
+			publishArgs = append(publishArgs, "--package-archive", far)
+		}
+		if _, err := f.RunCmdSync(publishArgs...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SymbolIndexAdd adds a build ID to the symbol index.
+func (f *Ffx) SymbolIndexAdd(ctx context.Context, buildID string) error {
+	_, err := f.RunCmdSync("debug", "symbol-index", "add", buildID)
+	return err
+}

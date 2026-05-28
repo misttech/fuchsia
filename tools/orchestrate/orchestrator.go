@@ -36,6 +36,9 @@ type FFXClient interface {
 	// High-level provisioning operations
 	ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error
 	EmuStart(ctx context.Context, productDir, name string) error
+	RepositoryCreate(ctx context.Context, repoDir string) error
+	RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error
+	SymbolIndexAdd(ctx context.Context, buildID string) error
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
@@ -312,24 +315,15 @@ func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error 
 		return fmt.Errorf("os.Getwd: %w", err)
 	}
 	repoDir := filepath.Join(wd, "repo")
-	if out, err := r.ffx.RunCmdSync("repository", "create", repoDir); err != nil {
-		return fmt.Errorf("ffx repository create: %w out: %s", err, out)
+	if err := r.ffx.RepositoryCreate(context.Background(), repoDir); err != nil {
+		return fmt.Errorf("ffx repository create: %w", err)
 	}
-	if out, err := r.ffx.RunCmdSync("repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
-		return fmt.Errorf("ffx repository add-from-pm: %w out: %s", err, out)
-	}
-	if len(in.Target().PackageArchives) > 0 {
-		publishArgs := []string{"repository", "publish", repoDir}
-		for _, far := range in.Target().PackageArchives {
-			publishArgs = append(publishArgs, "--package-archive", far)
-		}
-		if out, err := r.ffx.RunCmdSync(publishArgs...); err != nil {
-			return fmt.Errorf("ffx %v: %w out: %v", publishArgs, err, out)
-		}
+	if err := r.ffx.RepositoryPublish(context.Background(), repoDir, productDir, in.Target().PackageArchives); err != nil {
+		return fmt.Errorf("ffx repository publish: %w", err)
 	}
 	for _, buildID := range in.Target().BuildIds {
-		if out, err := r.ffx.RunCmdSync("debug", "symbol-index", "add", buildID); err != nil {
-			return fmt.Errorf("ffx debug symbol-index add %s: %w out: %s", buildID, err, out)
+		if err := r.ffx.SymbolIndexAdd(context.Background(), buildID); err != nil {
+			return fmt.Errorf("ffx debug symbol-index add %s: %w", buildID, err)
 		}
 	}
 

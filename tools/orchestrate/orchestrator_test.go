@@ -166,6 +166,22 @@ func (m *mockFFXClient) EmuStart(ctx context.Context, productDir, name string) e
 	return call.retErr
 }
 
+func (m *mockFFXClient) RepositoryCreate(ctx context.Context, repoDir string) error {
+	call := m.recordCall("RepositoryCreate", repoDir)
+	return call.retErr
+}
+
+func (m *mockFFXClient) RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error {
+	args := append([]string{repoDir, productDir}, packageArchives...)
+	call := m.recordCall("RepositoryPublish", args...)
+	return call.retErr
+}
+
+func (m *mockFFXClient) SymbolIndexAdd(ctx context.Context, buildID string) error {
+	call := m.recordCall("SymbolIndexAdd", buildID)
+	return call.retErr
+}
+
 // recordCall records a call and returns a predefined error if one exists.
 func (m *mockFFXClient) recordCall(method string, args ...string) *mockCall {
 	m.t.Helper()
@@ -292,17 +308,11 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 
 	// Package serving expectations (common)
 	repoDir := filepath.Join(wd, "repo")
-	mockFfx.expectCall("RunCmdSync", "repository", "create", repoDir)
-	mockFfx.expectCall("RunCmdSync", "repository", "publish", repoDir, "--product-bundle", productBundleDir)
-	if len(targetRunInput.PackageArchives) > 0 {
-		publishArgs := []string{"repository", "publish", repoDir}
-		for _, far := range targetRunInput.PackageArchives {
-			publishArgs = append(publishArgs, "--package-archive", far)
-		}
-		mockFfx.expectCall("RunCmdSync", publishArgs...)
-	}
+	mockFfx.expectCall("RepositoryCreate", repoDir)
+	publishArgs := append([]string{repoDir, productBundleDir}, targetRunInput.PackageArchives...)
+	mockFfx.expectCall("RepositoryPublish", publishArgs...)
 	for _, buildID := range targetRunInput.BuildIds {
-		mockFfx.expectCall("RunCmdSync", "debug", "symbol-index", "add", buildID)
+		mockFfx.expectCall("SymbolIndexAdd", buildID)
 	}
 
 	mockFfx.expectCall("RunCmdSync", "repository", "server", "start",
