@@ -156,6 +156,16 @@ func (m *mockFFXClient) IsPackageServerRunning(repoName string) (bool, error) {
 	return true, nil
 }
 
+func (m *mockFFXClient) ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error {
+	call := m.recordCall("ProductDownload", transferURL, outDir, authPath)
+	return call.retErr
+}
+
+func (m *mockFFXClient) EmuStart(ctx context.Context, productDir, name string) error {
+	call := m.recordCall("EmuStart", productDir, name)
+	return call.retErr
+}
+
 // recordCall records a call and returns a predefined error if one exists.
 func (m *mockFFXClient) recordCall(method string, args ...string) *mockCall {
 	m.t.Helper()
@@ -265,7 +275,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	targetRunInput := runInput.Target()
 	if targetRunInput.TransferURL != "" {
 		productBundleDir = filepath.Join(wd, "ffx-product-bundle")
-		mockFfx.expectCall("RunCmdSync", "product", "download", targetRunInput.TransferURL, productBundleDir)
+		mockFfx.expectCall("ProductDownload", targetRunInput.TransferURL, productBundleDir, "")
 	} else if targetRunInput.LocalPB != "" {
 		productBundleDir = targetRunInput.LocalPB
 		// No ffx call for local product bundle, just uses the path.
@@ -273,7 +283,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 
 	if isEmulator {
 		// Emulator-specific expectations
-		mockFfx.expectCall("RunCmdSync", "emu", "start", productBundleDir, "--net", "user", "--headless", "--startup-timeout", "300", "--name", emuName)
+		mockFfx.expectCall("EmuStart", productBundleDir, emuName)
 		mockFfx.expectCall("SetDefaultTarget", emuName) // Pass emuName as actual string, mock will check pointer value.
 	} else {
 		// Hardware-specific expectations

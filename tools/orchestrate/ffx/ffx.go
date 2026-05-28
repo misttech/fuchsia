@@ -366,3 +366,32 @@ func (f *Ffx) IsPackageServerRunning(repoName string) (bool, error) {
 	// We don't need to differentiate between a stopped package server, no server found, etc.
 	return false, nil
 }
+
+// ProductDownload downloads a product bundle.
+func (f *Ffx) ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error {
+	args := []string{
+		"product",
+		"download",
+		transferURL,
+		outDir,
+	}
+	if authPath != "" {
+		args = append(args, "--auth", authPath)
+	}
+	_, err := f.RunCmdSync(args...)
+	return err
+}
+
+// EmuStart starts the emulator.
+func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
+	_, err := f.RunCmdSync(
+		"emu",
+		"start",
+		productDir,
+		"--net", "user",
+		"--headless",
+		"--startup-timeout", "300",
+		"--name", name,
+	)
+	return err
+}

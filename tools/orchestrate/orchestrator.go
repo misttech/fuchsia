@@ -32,6 +32,10 @@ type FFXClient interface {
 	WaitForDaemon(ctx context.Context) error
 	Flash(fastbootSerial, productDir, pubKeyPath string) error
 	IsPackageServerRunning(repoName string) (bool, error)
+
+	// High-level provisioning operations
+	ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error
+	EmuStart(ctx context.Context, productDir, name string) error
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
@@ -263,17 +267,8 @@ func (r *TestOrchestrator) downloadProductBundle(in *RunInput) (string, error) {
 		return "", fmt.Errorf("os.Getwd: %w", err)
 	}
 	dir := filepath.Join(wd, "ffx-product-bundle")
-	ffxArgs := []string{
-		"product",
-		"download",
-		in.Target().TransferURL,
-		dir,
-	}
-	if in.Target().FfxluciauthPath != "" {
-		ffxArgs = append(ffxArgs, "--auth", in.Target().FfxluciauthPath)
-	}
-	_, err = r.ffx.RunCmdSync(ffxArgs...)
-	if err != nil {
+
+	if err := r.ffx.ProductDownload(context.Background(), in.Target().TransferURL, dir, in.Target().FfxluciauthPath); err != nil {
 		return "", fmt.Errorf("ffx product download: %w", err)
 	}
 	return dir, nil
@@ -290,23 +285,7 @@ func (r *TestOrchestrator) flashDevice(productDir string) error {
 func (r *TestOrchestrator) startEmulator(productDir string) error {
 	emu_name := fmt.Sprintf("fuchsia-emulator-%d", os.Getpid())
 
-	if _, err := r.ffx.RunCmdSync(
-		"emu",
-		"start",
-		productDir,
-		"--net",
-		"user",
-		"--headless",
-
-		// Wait up to 5 minutes for the emulator to start up.
-		// This helps with local test reproduction workflows where the host machine
-		// does not have kvm enabled.
-		"--startup-timeout",
-		"300",
-
-		"--name",
-		emu_name,
-	); err != nil {
+	if err := r.ffx.EmuStart(context.Background(), productDir, emu_name); err != nil {
 		return fmt.Errorf("ffx emu start: %w", err)
 	}
 
