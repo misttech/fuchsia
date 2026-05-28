@@ -467,6 +467,9 @@ impl DocYamlCheck for YamlChecker {
             .filter(|p| {
                 !p.components().any(|c| c == path::Component::Normal(OsStr::new("_common")))
             })
+            // Ignore SKILL.md files situated under any 'skills' directory as they
+            // are developer-facing agent tools and not part of the published docs set.
+            .filter(|p| !p.components().any(|c| c == path::Component::Normal(OsStr::new("skills"))))
             .filter(|p| !p.ends_with("gen/build_arguments.md"))
             .copied()
             .for_each(|f| {
