@@ -300,6 +300,7 @@ impl FlashManifestVersion {
         // Create the flash manifest.
         let ret = FlashManifestV3 {
             hw_revision: product_bundle.partitions.hardware_revision.clone(),
+            product_matches: product_bundle.partitions.product_matches.clone(),
             credentials,
             products,
         };

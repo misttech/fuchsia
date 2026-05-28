@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 pub struct FlashManifest {
     pub hw_revision: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub product_matches: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub credentials: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub products: Vec<Product>,
@@ -82,6 +84,7 @@ impl From<&FlashManifest> for FlashManifestV2 {
     fn from(p: &FlashManifest) -> FlashManifestV2 {
         FlashManifestV2 {
             hw_revision: p.hw_revision.clone(),
+            product_matches: p.product_matches.clone(),
             credentials: p.credentials.iter().map(|c| c.clone()).collect(),
             v1: FlashManifestV1(p.products.iter().map(|p| p.into()).collect()),
         }

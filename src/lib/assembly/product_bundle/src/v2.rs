@@ -567,6 +567,7 @@ mod tests {
                 partitions: vec![],
                 hardware_revision: "board".into(),
                 unlock_credentials: vec![],
+                product_matches: vec![],
             },
             sdk_version: "".to_string(),
             system_a: None,
@@ -625,6 +626,7 @@ mod tests {
                 ],
                 hardware_revision: "board".into(),
                 unlock_credentials: vec!["unlock_credentials".into()],
+                product_matches: vec![],
             },
             sdk_version: "".to_string(),
             system_a: Some(vec![
@@ -674,6 +676,7 @@ mod tests {
                 partitions: vec![],
                 hardware_revision: "board".into(),
                 unlock_credentials: vec![],
+                product_matches: vec![],
             },
             sdk_version: "".to_string(),
             system_a: None,
@@ -719,6 +722,7 @@ mod tests {
                 ],
                 hardware_revision: "board".into(),
                 unlock_credentials: vec![tempdir.join("unlock_credentials")],
+                product_matches: vec![],
             },
             sdk_version: "".to_string(),
             system_a: Some(vec![

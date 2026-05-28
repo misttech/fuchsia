@@ -25,8 +25,23 @@ pub enum FfxFastbootError {
     #[error("Sparse image error: {0}")]
     Sparse(#[from] sparse::SparseError),
 
-    #[error("Hardware mismatch! Trying to flash images built for {expected} but have {found}")]
-    HardwareMismatch { expected: String, found: String },
+    #[error(
+        "Hardware mismatch! Trying to flash images built for '{}' but found '{}'",
+        match attempted_products.is_empty() {
+            true => expected.to_string(),
+            false => format!("hw-revision {expected} / product {attempted_products:?}")
+        },
+        match attempted_products.is_empty() {
+            true => found.to_string(),
+            false => format!("hw-revision {found} / product {found_product:?}")
+        }
+    )]
+    HardwareMismatch {
+        expected: String,
+        found: String,
+        attempted_products: Vec<String>,
+        found_product: Option<String>,
+    },
 
     #[error("Could not verify hardware revision of target device")]
     HardwareVerificationFailure,

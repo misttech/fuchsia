@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FlashManifest {
     pub hw_revision: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub product_matches: Vec<String>,
     #[serde(default)]
     pub credentials: Vec<String>,
     #[serde(rename = "products")]

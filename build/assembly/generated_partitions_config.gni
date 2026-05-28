@@ -12,6 +12,10 @@ import("//build/compiled_action.gni")
 #     This is placed in the flash manifest to ensure partitions are not
 #     flashed to the wrong hardware.
 #
+#   product_matches (optional)
+#     [list of strings] The names of the products to accept in addition to
+#     the default "hw-revision" target.
+#
 #   bootloader_partitions (optional)
 #     [list] List of bootloaders to use when flashing or updating.
 #     Each entry will have the following format.
@@ -278,6 +282,9 @@ template("generated_partitions_config") {
 
     contents = {
       hardware_revision = invoker.hw_revision
+      if (defined(invoker.product_matches)) {
+        product_matches = invoker.product_matches
+      }
       bootloader_partitions = bootloaders
       partitions = _partitions
       bootstrap_partitions = bootstraps

@@ -830,6 +830,7 @@ mod tests {
                 partitions: vec![],
                 hardware_revision: "board".into(),
                 unlock_credentials: vec![],
+                product_matches: vec![],
             },
             sdk_version: "".to_string(),
             system_a: Some(vec![

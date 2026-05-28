@@ -313,6 +313,7 @@ mod test {
     fn test_serialization() -> Result<()> {
         let manifest = FlashManifestVersion::V3(FlashManifestV3 {
             hw_revision: "board".into(),
+            product_matches: vec![],
             credentials: vec![],
             products: vec![],
         });
@@ -370,6 +371,7 @@ mod test {
                 }],
                 partitions: vec![],
                 hardware_revision: String::default(),
+                product_matches: vec![],
                 unlock_credentials: vec![],
             },
             sdk_version: String::default(),

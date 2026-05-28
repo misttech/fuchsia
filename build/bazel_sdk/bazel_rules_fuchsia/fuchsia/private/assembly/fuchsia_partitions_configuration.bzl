@@ -18,6 +18,7 @@ def _fuchsia_partitions_configuration(ctx):
 
     partitions_config = {
         "hardware_revision": ctx.attr.hardware_revision,
+        "product_matches": ctx.attr.product_matches,
         "bootstrap_partitions": [p[FuchsiaPartitionInfo].partition for p in ctx.attr.bootstrap_partitions],
         "bootloader_partitions": [p[FuchsiaPartitionInfo].partition for p in ctx.attr.bootloader_partitions],
         "partitions": [partition[FuchsiaPartitionInfo].partition for partition in ctx.attr.partitions],
@@ -73,6 +74,10 @@ fuchsia_partitions_configuration = rule(
         ),
         "hardware_revision": attr.string(
             doc = "Name of the hardware that needs to assert before flashing images.",
+        ),
+        "product_matches": attr.string_list(
+            doc = "List of product names to match for flashing.",
+            default = [],
         ),
         "unlock_credentials": attr.label_list(
             doc = "List of zip files containing the fastboot unlock credentials.",

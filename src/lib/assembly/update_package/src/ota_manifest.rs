@@ -264,6 +264,7 @@ mod tests {
                 Partition::VBMeta { name: "vbmeta_a".into(), slot: PartitionSlot::A, size: None },
             ],
             hardware_revision: "board".into(),
+            product_matches: vec![],
         };
 
         let meta_far_merkle = "0".repeat(64).parse().unwrap();
@@ -414,6 +415,7 @@ mod tests {
                 Partition::VBMeta { name: "vbmeta_r".into(), slot: PartitionSlot::R, size: None },
             ],
             hardware_revision: "board".into(),
+            product_matches: vec![],
         };
 
         // Packages with subpackages
@@ -598,6 +600,7 @@ mod tests {
                 },
             ],
             hardware_revision: "board".into(),
+            product_matches: vec![],
         };
 
         let (private_key_file, public_key) = create_private_key();
@@ -675,6 +678,7 @@ mod tests {
             ],
             partitions: vec![],
             hardware_revision: "board".into(),
+            product_matches: vec![],
         };
 
         let (private_key_file, public_key) = create_private_key();

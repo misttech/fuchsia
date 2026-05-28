@@ -5,5 +5,6 @@
 pub const REVISION_VAR: &str = "hw-revision";
 pub const IS_USERSPACE_VAR: &str = "is-userspace";
 pub const MAX_DOWNLOAD_SIZE_VAR: &str = "max-download-size";
+pub const PRODUCT_VAR: &str = "product";
 
 pub const LOCKED_VAR: &str = "vx-locked";

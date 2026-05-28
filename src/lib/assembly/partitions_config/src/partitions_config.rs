@@ -34,6 +34,10 @@ pub struct PartitionsConfig {
     /// The name of the hardware to assert before flashing images to partitions.
     pub hardware_revision: String,
 
+    /// The names of the products to accept in addition to the default "hw-revision" target.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub product_matches: Vec<String>,
+
     /// Zip files containing the fastboot unlock credentials.
     #[serde(default)]
     #[walk_paths]
@@ -309,6 +313,7 @@ pub enum RecoveryStyle {
 mod tests {
     use super::*;
     use camino::Utf8Path;
+    use serde_json;
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
@@ -403,6 +408,33 @@ mod tests {
         assert_eq!(config.unlock_credentials[0], test_dir.join("unlock_credentials.zip"));
         assert_eq!(config.partitions.len(), 8);
         assert_eq!(config.hardware_revision, "hw");
+    }
+
+    #[test]
+    fn serialize_product_matches() {
+        // Empty `product_matches` should be skipped when serializing, so that older FFX builds
+        // can continue to use newer configs as long as they don't specify a product match.
+        let config = PartitionsConfig {
+            hardware_revision: "hw".to_string(),
+            product_matches: vec![],
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&config).unwrap();
+        assert!(json.get("product_matches").is_none());
+
+        // Non-empty `product_matches` should exist in the serialization, older FFX builds will not
+        // be able to flash these configs.
+        let config_with_matches = PartitionsConfig {
+            hardware_revision: "hw".to_string(),
+            product_matches: vec!["product_test".to_string()],
+            ..Default::default()
+        };
+        let json_with_matches = serde_json::to_value(&config_with_matches).unwrap();
+        assert!(json_with_matches.get("product_matches").is_some());
+        assert_eq!(
+            json_with_matches.get("product_matches").unwrap(),
+            &serde_json::json!(["product_test"])
+        );
     }
 
     #[test]

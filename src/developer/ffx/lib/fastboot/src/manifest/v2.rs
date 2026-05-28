@@ -33,7 +33,7 @@ impl Flash for FlashManifest {
         T: FastbootInterface,
     {
         if !cmd.skip_verify {
-            verify_hardware(&self.hw_revision, fastboot_interface).await?;
+            verify_hardware(&self.hw_revision, &self.product_matches, fastboot_interface).await?;
         }
         let product = match self.v1.0.iter().find(|product| product.name == cmd.product) {
             Some(res) => res,

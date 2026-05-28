@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::vars::{IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR};
+use crate::common::vars::{
+    IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, PRODUCT_VAR, REVISION_VAR,
+};
 use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::manifest::{from_in_tree, from_local_product_bundle, from_path, from_sdk};
@@ -300,20 +302,38 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
 
 pub async fn verify_hardware(
     revision: &String,
+    product_matches: &[String],
     fastboot_interface: &mut impl FastbootInterface,
 ) -> Result<()> {
     let rev = fastboot_interface.get_var(REVISION_VAR).await?;
     if let Some(r) = rev.split("-").next() {
-        if r != *revision && rev != *revision {
-            return Err(FfxFastbootError::HardwareMismatch {
-                expected: revision.clone(),
-                found: r.to_string(),
-            });
+        if r == *revision || rev == *revision {
+            return Ok(());
         }
-    } else {
-        return Err(FfxFastbootError::HardwareVerificationFailure);
     }
-    Ok(())
+
+    let mut found_product = None;
+    if !product_matches.is_empty() {
+        match fastboot_interface.get_var(PRODUCT_VAR).await {
+            Ok(product) => {
+                // Any match of the given set of products means success.
+                if product_matches.contains(&product) {
+                    return Ok(());
+                }
+                found_product = Some(product);
+            }
+            Err(e) => {
+                log::warn!("Failed to get product variable from device: {e}");
+            }
+        }
+    }
+
+    return Err(FfxFastbootError::HardwareMismatch {
+        expected: revision.clone(),
+        found: rev,
+        attempted_products: product_matches.to_vec(),
+        found_product,
+    });
 }
 
 pub async fn verify_variable_value(

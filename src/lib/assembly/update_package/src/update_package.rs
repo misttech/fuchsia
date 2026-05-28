@@ -519,6 +519,7 @@ mod tests {
                 size: None,
             }],
             hardware_revision: "hw".into(),
+            product_matches: vec![],
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
         let mut fake_version = NamedTempFile::new().unwrap();
@@ -656,6 +657,7 @@ mod tests {
                 Partition::ZBI { name: "vbmeta_r".into(), slot: PartitionSlot::R, size: None },
             ],
             hardware_revision: "hw".into(),
+            product_matches: vec![],
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
         let mut fake_version = NamedTempFile::new().unwrap();
