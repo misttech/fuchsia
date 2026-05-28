@@ -30,6 +30,7 @@ class DriverFactory:
         ap_ip: Optional[str] = None,
         ap_ssh_port: Optional[int] = None,
         ap_ssh_key: Optional[str] = None,
+        ssh_key: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
         Args:
@@ -52,6 +53,7 @@ class DriverFactory:
         self._ap_ip = ap_ip
         self._ap_ssh_port = ap_ssh_port
         self._ap_ssh_key = ap_ssh_key
+        self._ssh_key = ssh_key
 
     def get_driver(self) -> base.BaseDriver:
         """Returns an environment-specific Mobly Driver implementation.
@@ -73,6 +75,7 @@ class DriverFactory:
                 ap_ip=self._ap_ip,
                 ap_ssh_port=self._ap_ssh_port,
                 ap_ssh_key=self._ap_ssh_key,
+                ssh_key=self._ssh_key,
             )
         try:
             return infra.InfraDriver(

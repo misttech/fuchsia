@@ -4,6 +4,7 @@
 """Mobly Controller for Fuchsia Device"""
 
 import logging
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -46,6 +47,29 @@ async def create(
     test_logs_dir: str = _get_log_directory()
     ffx_config_dict: dict[str, Any] = _get_ffx_config(configs)
 
+    device_configs = []
+    ssh_private_keys = []
+    for config in configs:
+        device_config: dict[str, Any] = _parse_device_config(config)
+        device_configs.append(device_config)
+        if (
+            "ssh_key" in device_config
+            and device_config["ssh_key"] not in ssh_private_keys
+        ):
+            ssh_private_keys.append(device_config["ssh_key"])
+
+    # If no SSH private keys are explicitly provided in the Mobly config,
+    # resolve default SSH keys from the environment or fallback paths.
+    # This is required to override strict-mode ffx configuration defaults.
+    if not ssh_private_keys:
+        env_ssh_key = os.environ.get("FUCHSIA_SSH_KEY")
+        if env_ssh_key:
+            ssh_private_keys.append(env_ssh_key)
+        else:
+            default_priv_key = os.path.expanduser("~/.ssh/fuchsia_ed25519")
+            if os.path.exists(default_priv_key):
+                ssh_private_keys.append(default_priv_key)
+
     # Call `FfxConfig.setup` before calling `create_device` as
     # `create_device` results in calling an FFX command and we
     # don't want to miss those FFX logs
@@ -75,12 +99,12 @@ async def create(
         usb_socket_path=ffx_config_dict.get("usb_socket_path"),
         usb_driver_autostart=ffx_config_dict.get("usb_driver_autostart")
         or False,
+        emu_instance_dir=ffx_config_dict.get("emu_instance_dir"),
+        ssh_private_keys=ssh_private_keys if ssh_private_keys else None,
     )
 
     fuchsia_devices = []
-    for config in configs:
-        device_config: dict[str, Any] = _parse_device_config(config)
-
+    for device_config in device_configs:
         fuchsia_devices.append(
             honeydew.create_device(
                 device_info=custom_types.DeviceInfo(
@@ -299,6 +323,6 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
                 raise RuntimeError(
                     f"Invalid value sent in '{ffx_config_key}'. Please pass a int value"
                 ) from err
-
     ffx_config_dict["enable_usb"] = True
+    ffx_config_dict["emu_instance_dir"] = "$SHARED_DATA"
     return ffx_config_dict

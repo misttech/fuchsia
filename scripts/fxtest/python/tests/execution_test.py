@@ -954,8 +954,9 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("127.0.0.1:6000"),
-            self._make_command_output("foo-bar"),
+            self._make_command_output(""),  # target wait
+            self._make_command_output("127.0.0.1:6000"),  # target list
+            self._make_command_output("foo-bar"),  # target default get
             # config get ssh.priv
             self._make_command_output(self._ssh_key_file),
         ]
@@ -977,8 +978,9 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("[::1]:6000"),
-            self._make_command_output("foo-bar"),
+            self._make_command_output(""),  # target wait
+            self._make_command_output("[::1]:6000"),  # target list
+            self._make_command_output("foo-bar"),  # target default get
             # config get ssh.priv
             self._make_command_output(self._ssh_key_file),
         ]
@@ -1000,7 +1002,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("", return_code=1),
+            self._make_command_output(""),  # target wait
+            self._make_command_output("", return_code=1),  # target list fails
         ]
 
         with self.assertRaisesRegex(
@@ -1009,16 +1012,31 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             await execution.get_device_environment_from_exec_env(self._env)
 
     @mock.patch("execution.run_command")
-    async def test_get_device_environment_bad_ip_format(
+    async def test_get_device_environment_wait_error(
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("foo"),
+            self._make_command_output("", return_code=1),  # target wait fails
         ]
 
         with self.assertRaisesRegex(
             execution.DeviceConfigError,
-            "Could not parse target address: foo. Expected 'ip:port' format.",
+            "Failed to wait for target to become reachable",
+        ):
+            await execution.get_device_environment_from_exec_env(self._env)
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_bad_ip_format(
+        self, command_patch: mock.AsyncMock
+    ) -> None:
+        command_patch.side_effect = [
+            self._make_command_output(""),  # target wait
+            self._make_command_output("foo"),  # target list
+        ]
+
+        with self.assertRaisesRegex(
+            execution.DeviceConfigError,
+            r"Could not parse target address: 'foo'\.\nExpected 'ip:port' format\.\nReturn code: 0,\nStderr: ''",
         ):
             await execution.get_device_environment_from_exec_env(self._env)
 
@@ -1027,8 +1045,11 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("127.0.0.1:6000"),
-            self._make_command_output("", return_code=1),
+            self._make_command_output(""),  # target wait
+            self._make_command_output("127.0.0.1:6000"),  # target list
+            self._make_command_output(
+                "", return_code=1
+            ),  # target default get fails
         ]
 
         with self.assertRaisesRegex(
@@ -1042,9 +1063,12 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         self, command_patch: mock.AsyncMock
     ) -> None:
         command_patch.side_effect = [
-            self._make_command_output("127.0.0.1:6000"),
-            self._make_command_output("foo-bar"),
-            self._make_command_output("/nonexistent/path"),
+            self._make_command_output(""),  # target wait
+            self._make_command_output("127.0.0.1:6000"),  # target list
+            self._make_command_output("foo-bar"),  # target default get
+            self._make_command_output(
+                "/nonexistent/path"
+            ),  # config get ssh.priv
         ]
 
         with self.assertRaisesRegex(

@@ -27,7 +27,8 @@ class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.FuchsiaBaseTest):
         self.dut.ffx.notify_intentional_disconnect()
         self.dut.ffx.run(_REBOOT)
 
-        self.dut.ffx.wait_for_rcs_disconnection()
+        process = self.dut.ffx.wait_for_rcs_disconnection()
+        process.wait(timeout=60)
 
         self.dut.ffx.wait_for_rcs_connection()
 

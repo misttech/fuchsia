@@ -46,6 +46,9 @@ _INPUT_ARGS: dict[str, Any] = {
         subtools_search_path=_SUBTOOLS_SEARCH_PATH,
         proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
+        emu_instance_dir=None,
+        ssh_private_keys=[],
+        ssh_public_keys=[],
     ),
 }
 
@@ -127,7 +130,13 @@ class FfxConfigTests(unittest.TestCase):
         with self.assertRaises(ffx_config.FfxConfigError):
             ffx_config_obj.close()
 
-    def test_get_config(self) -> None:
+    @mock.patch("honeydew.transports.ffx.config.os.environ", {}, autospec=False)
+    @mock.patch(
+        "honeydew.transports.ffx.config.os.path.exists",
+        return_value=False,
+        autospec=True,
+    )
+    def test_get_config(self, mock_exists: mock.Mock) -> None:
         """Test case for ffx_config.FfxConfig.get_config()"""
 
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
@@ -161,3 +170,44 @@ class FfxConfigTests(unittest.TestCase):
         # Calling setup() again should fail
         with self.assertRaises(ffx_config.FfxConfigError):
             ffx_config_obj.get_config()
+
+    @mock.patch("honeydew.transports.ffx.config.os.path.exists", autospec=True)
+    def test_setup_with_ssh_keys_fallback(self, mock_exists: mock.Mock) -> None:
+        """Test case for FfxConfig.setup() with SSH keys fallback"""
+        mock_exists.side_effect = lambda p: p == "/path/to/key1.pub"
+
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+            ssh_private_keys=["/path/to/key1", "/path/to/key2"],
+        )
+        config = ffx_config_obj.get_config()
+        self.assertEqual(
+            config.ssh_private_keys, ["/path/to/key1", "/path/to/key2"]
+        )
+        # /path/to/key2.pub does not exist (mocked), so only key1.pub should be here
+        self.assertEqual(config.ssh_public_keys, ["/path/to/key1.pub"])
+
+    def test_setup_with_explicit_ssh_keys(self) -> None:
+        """Test case for FfxConfig.setup() with explicit SSH keys"""
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+            ssh_private_keys=["/path/to/key1"],
+            ssh_public_keys=["/path/to/pub1", "/path/to/pub2"],
+        )
+        config = ffx_config_obj.get_config()
+        self.assertEqual(config.ssh_private_keys, ["/path/to/key1"])
+        self.assertEqual(
+            config.ssh_public_keys, ["/path/to/pub1", "/path/to/pub2"]
+        )

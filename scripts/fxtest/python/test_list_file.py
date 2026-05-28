@@ -203,17 +203,20 @@ class Test:
         """Determine if this test is an E2E test.
 
         E2E tests run on the host system (Linux) and also have a device_type
-        set in their environments.
+        set in their environments, or explicitly expect SSH.
 
         Returns:
             bool: True only if the test is an E2E test.
         """
-        return self.build.test.os.lower() == "linux" and any(
-            [
-                env.dimensions.device_type is not None
-                for env in self.build.environments or []
-            ]
+        is_linux = self.build.test.os.lower() == "linux"
+        has_device = any(
+            env.dimensions.device_type is not None
+            for env in self.build.environments or []
         )
+        expects_ssh = (
+            self.build.expects_ssh is not None and self.build.expects_ssh
+        )
+        return is_linux and (has_device or expects_ssh)
 
     def is_pure_device_test(self) -> bool:
         """Determine if this test is a pure device test.

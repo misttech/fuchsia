@@ -4,13 +4,15 @@
 """FuchsiaDevice abstract base class implementation."""
 
 
+import asyncio
 import dataclasses
 import inspect
 import ipaddress
 import json
 import logging
 import os
-from collections.abc import Awaitable, Callable
+import subprocess
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from functools import cached_property
 from typing import Any
@@ -142,6 +144,8 @@ _LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+_REBOOT_OFFLINE_TIMEOUT_SEC: int = 60
+
 
 class FuchsiaDevice(
     device_knobs.DeviceKnobs,
@@ -204,13 +208,17 @@ class FuchsiaDevice(
         ffx_config_data: FfxConfigData,
         # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
         config: dict[str, Any] | None = None,
+        environ: Mapping[str, str] = os.environ,
     ) -> None:
         _LOGGER.debug("Initializing FuchsiaDevice")
 
         self._device_info: custom_types.DeviceInfo = device_info
 
-        # Track if the device was created with a statically provided IP.
-        self._is_static_ip: bool = device_info.ip_port is not None
+        # Track if the device was created with a statically provided IP (infra).
+        self._is_static_ip: bool = (
+            device_info.ip_port is not None
+            and environ.get("BOTANIST_CONFIG") is not None
+        )
 
         self._ffx_config_data: FfxConfigData = ffx_config_data
 
@@ -999,7 +1007,7 @@ class FuchsiaDevice(
 
         _LOGGER.info("Powering off %s...", self.device_name)
         power_switch.power_off(outlet)
-        self.wait_for_offline()
+        await asyncio.to_thread(self.wait_for_offline)
 
         _LOGGER.info("Powering on %s...", self.device_name)
         power_switch.power_on(outlet)
@@ -1076,7 +1084,7 @@ class FuchsiaDevice(
         self.fuchsia_controller.before_usb_disconnect()
 
         self._usb_power_hub.power_off(self._usb_power_hub_port)
-        self.wait_for_offline()
+        await asyncio.to_thread(self.wait_for_offline)
 
     async def resume(self) -> None:
         """Resume the device by reconnecting USB power.
@@ -1123,9 +1131,31 @@ class FuchsiaDevice(
         )
 
         self.ffx.notify_intentional_disconnect()
-        await self._send_reboot_command()
 
-        self.wait_for_offline()
+        # Start wait for offline in background to avoid race conditions.
+        _LOGGER.info(
+            "Starting background wait for %s to go offline...", self.device_name
+        )
+        wait_process = self.ffx.wait_for_rcs_disconnection()
+        try:
+            await self._send_reboot_command()
+
+            _LOGGER.info(
+                "Waiting for background offline process to complete..."
+            )
+            try:
+                await asyncio.to_thread(
+                    wait_process.wait, timeout=_REBOOT_OFFLINE_TIMEOUT_SEC
+                )
+            except subprocess.TimeoutExpired as err:
+                raise errors.FuchsiaDeviceError(
+                    f"'{self.device_name}' failed to go offline within "
+                    f"{_REBOOT_OFFLINE_TIMEOUT_SEC} seconds."
+                ) from err
+        finally:
+            if wait_process.poll() is None:
+                wait_process.kill()
+                wait_process.wait()
         await self.wait_for_online()
         await self.on_device_boot()
 
@@ -1284,7 +1314,17 @@ class FuchsiaDevice(
         """
         _LOGGER.info("Waiting for %s to go offline...", self.device_name)
         try:
-            self.ffx.wait_for_rcs_disconnection()
+            wait_process = self.ffx.wait_for_rcs_disconnection()
+            try:
+                wait_process.wait(timeout=60)
+            except subprocess.TimeoutExpired as err:
+                raise errors.FuchsiaDeviceError(
+                    f"'{self.device_name}' failed to go offline within 60 seconds."
+                ) from err
+            finally:
+                if wait_process.poll() is None:
+                    wait_process.kill()
+                    wait_process.wait()
             _LOGGER.info("%s is offline.", self.device_name)
         except (
             errors.DeviceNotConnectedError,

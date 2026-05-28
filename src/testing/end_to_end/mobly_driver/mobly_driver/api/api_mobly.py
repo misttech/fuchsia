@@ -189,6 +189,36 @@ def new_testbed_config(
             # Propagate shared_data to the ffx transport config
             if "shared_data" in controller:
                 shared_data = controller.pop("shared_data")
+
+                # If shared_data doesn't exist, check if its nearest existing parent is writable.
+                # If it exists, check if it is writable.
+                path_to_check = shared_data
+                while path_to_check and not os.path.exists(path_to_check):
+                    path_to_check = os.path.dirname(path_to_check)
+
+                is_writable = path_to_check and os.access(
+                    path_to_check, os.W_OK
+                )
+
+                if not is_writable:
+                    original_shared_data = shared_data
+                    output_path_parent = output_path
+                    while output_path_parent and not os.path.exists(
+                        output_path_parent
+                    ):
+                        output_path_parent = os.path.dirname(output_path_parent)
+                    if output_path_parent and os.access(
+                        output_path_parent, os.W_OK
+                    ):
+                        shared_data = os.path.join(output_path, "shared_data")
+                    else:
+                        shared_data = "/tmp/shared_data"
+                    print(
+                        f"Warning: Provided shared_data directory "
+                        f"'{original_shared_data}' is not writable. "
+                        f"Using '{shared_data}' instead."
+                    )
+
                 honeydew_config = controller[HONEYDEW_CONFIG_KEY]
                 transports = honeydew_config.setdefault("transports", {})
                 ffx = transports.setdefault("ffx", {})

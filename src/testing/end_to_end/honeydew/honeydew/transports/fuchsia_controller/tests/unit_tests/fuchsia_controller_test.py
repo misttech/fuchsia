@@ -48,6 +48,9 @@ _MOCK_ARGS: dict[str, Any] = {
         subtools_search_path=None,
         proxy_timeout_secs=None,
         ssh_keepalive_timeout=None,
+        emu_instance_dir=None,
+        ssh_private_keys=None,
+        ssh_public_keys=None,
     ),
 }
 

@@ -66,3 +66,18 @@ class DriverFactoryTest(unittest.TestCase):
         with mock.patch.dict(os.environ, invalid_infra_env, clear=True):
             with self.assertRaises(common.DriverException):
                 factory.get_driver()
+
+    def test_get_driver_with_ssh_key_success(self) -> None:
+        """Test case to ensure ssh_key is passed to LocalDriver"""
+        ssh_key = "/path/to/ssh/key"
+        factory = driver_factory.DriverFactory(
+            honeydew_config=_HONEYDEW_CONFIG, ssh_key=ssh_key
+        )
+        test_env = {
+            base.TEST_OUTDIR_ENV: "log/path",
+        }
+        with mock.patch.dict(os.environ, test_env, clear=True):
+            driver = factory.get_driver()
+        self.assertIsInstance(driver, local.LocalDriver)
+        assert isinstance(driver, local.LocalDriver)
+        self.assertEqual(driver._ssh_key, ssh_key)

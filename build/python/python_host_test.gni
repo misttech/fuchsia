@@ -179,8 +179,12 @@ template("python_host_test") {
                              "visibility",
                              "timeout_secs",
                              "isolated",
-                             "expects_ssh",
                            ])
+    if (defined(invoker.expects_ssh)) {
+      expects_ssh = invoker.expects_ssh
+    } else if (!defined(invoker.environments)) {
+      expects_ssh = false
+    }
 
     list_cases_argument = _list_cases_argument
 

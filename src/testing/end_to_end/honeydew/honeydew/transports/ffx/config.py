@@ -4,8 +4,11 @@
 """Provides methods to configure FFX."""
 
 import atexit
+import json
 import logging
+import os
 from dataclasses import dataclass
+from typing import Any
 
 import fuchsia_controller_py as fuchsia_controller
 
@@ -44,6 +47,9 @@ class FfxConfigData:
             protocol driver.
         usb_driver_autostart: Whether to start the USB protocol driver if it
             isn't running.
+        emu_instance_dir: Directory where emulators are stored.
+        ssh_private_keys: List of SSH private keys for connection.
+        ssh_public_keys: List of SSH public keys for connection.
     """
 
     binary_path: str
@@ -56,6 +62,9 @@ class FfxConfigData:
     enable_usb: bool
     usb_socket_path: str | None
     usb_driver_autostart: bool
+    emu_instance_dir: str | None
+    ssh_private_keys: list[str] | None
+    ssh_public_keys: list[str] | None
 
     def __str__(self) -> str:
         return (
@@ -69,6 +78,9 @@ class FfxConfigData:
             f"enable_usb={self.enable_usb}, "
             f"usb_socket_path={self.usb_socket_path}, "
             f"usb_driver_autostart={self.usb_driver_autostart}, "
+            f"emu_instance_dir={self.emu_instance_dir}, "
+            f"ssh_private_keys={self.ssh_private_keys}, "
+            f"ssh_public_keys={self.ssh_public_keys}, "
         )
 
     def get_config_args(self) -> list[str]:
@@ -77,24 +89,42 @@ class FfxConfigData:
         Returns:
             List of FFX command arguments.
         """
-        configs = {
+
+        def set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
+            keys = key_path.split(".")
+            for k in keys[:-1]:
+                if k not in d:
+                    d[k] = {}
+                d = d[k]
+            d[keys[-1]] = value
+
+        config_dict: dict[str, Any] = {}
+
+        # Map of hierarchical ffx config key to value.
+        # Values can be None, which will be ignored.
+        configs_to_set: dict[str, Any] = {
             "log.dir": self.logs_dir,
             "log.level": self.logs_level,
-            "ffx.subtool-search-paths": self.subtools_search_path,
+            "ffx.subtool-search-paths": (
+                [self.subtools_search_path]
+                if self.subtools_search_path is not None
+                else None
+            ),
             "proxy.timeout_secs": self.proxy_timeout_secs,
             "ssh.keepalive_timeout": self.ssh_keepalive_timeout,
-            "connectivity.enable_usb": str(self.enable_usb).lower(),
-            "connectivity.usb_driver_autostart": str(
-                self.usb_driver_autostart
-            ).lower(),
+            "connectivity.enable_usb": self.enable_usb,
+            "connectivity.usb_driver_autostart": self.usb_driver_autostart,
             "connectivity.usb_socket_path": self.usb_socket_path,
+            "emu.instance_dir": self.emu_instance_dir,
+            "ssh.priv": self.ssh_private_keys,
+            "ssh.pub": self.ssh_public_keys,
         }
 
-        ffx_args = []
-        for key, value in configs.items():
+        for key_path, value in configs_to_set.items():
             if value is not None:
-                ffx_args.extend(["-c", f"{key}={value}"])
-        return ffx_args
+                set_nested(config_dict, key_path, value)
+
+        return ["-c", json.dumps(config_dict)]
 
 
 class FfxConfig:
@@ -116,6 +146,9 @@ class FfxConfig:
         ssh_keepalive_timeout: int | None = None,
         usb_socket_path: str | None = None,
         usb_driver_autostart: bool = True,
+        emu_instance_dir: str | None = None,
+        ssh_private_keys: list[str] | None = None,
+        ssh_public_keys: list[str] | None = None,
     ) -> None:
         """Sets up configuration need to be used while running FFX command.
 
@@ -135,6 +168,12 @@ class FfxConfig:
             ssh_keepalive_timeout: SSH keep-alive timeout in secs.
                 Default value is None which means, it will not update
                 ssh_keepalive_timeout
+            emu_instance_dir: Directory where emulators are stored.
+            ssh_private_keys: Explicit list of SSH private keys from the environment to
+                provide to FFX. If left empty, setup will search the os.environ for fallback
+                keys instead of relying on the strict-mode suppressed default ffx configurations.
+            ssh_public_keys: Explicit list of SSH public keys. If left empty, setup will
+                fallback to .pub extension of private keys if they exist.
 
         Raises:
             FfxConfigError: If setup has already been called once.
@@ -157,6 +196,50 @@ class FfxConfig:
         self._enable_usb: bool = enable_usb
         self._usb_socket_path: str | None = usb_socket_path
         self._usb_driver_autostart: bool = usb_driver_autostart
+        self._emu_instance_dir: str | None = emu_instance_dir
+
+        # Use explicitly provided keys or fallback to os.environ keys
+        _ssh_priv_keys: list[str] = (
+            list(ssh_private_keys) if ssh_private_keys else []
+        )
+        env_ssh_key = os.environ.get("FUCHSIA_SSH_KEY")
+        if env_ssh_key and env_ssh_key not in _ssh_priv_keys:
+            _ssh_priv_keys.append(env_ssh_key)
+
+        if not _ssh_priv_keys:
+            default_priv = os.path.expanduser("~/.ssh/fuchsia_ed25519")
+            if os.path.exists(default_priv):
+                _ssh_priv_keys.append(default_priv)
+
+        _ssh_pub_keys: list[str] = (
+            list(ssh_public_keys) if ssh_public_keys else []
+        )
+        if not _ssh_pub_keys:
+            for key in _ssh_priv_keys:
+                pub_key = f"{key}.pub"
+                if os.path.exists(pub_key):
+                    _ssh_pub_keys.append(pub_key)
+                else:
+                    _LOGGER.warning(
+                        "Public key '%s' not found for private key '%s'",
+                        pub_key,
+                        key,
+                    )
+
+        env_auth_keys = os.environ.get("FUCHSIA_AUTHORIZED_KEYS")
+        if env_auth_keys and env_auth_keys not in _ssh_pub_keys:
+            _ssh_pub_keys.append(env_auth_keys)
+
+        if not _ssh_pub_keys:
+            default_pub = os.path.expanduser("~/.ssh/fuchsia_authorized_keys")
+            if os.path.exists(default_pub):
+                _ssh_pub_keys.append(default_pub)
+
+        # Set these to the resolved lists (which may be empty, e.g., []).
+        # An empty list overrides the ffx defaults that contain variable mappings (e.g., $HOME),
+        # preventing ffx strict mode from failing on variable expansions.
+        self._ssh_private_keys: list[str] | None = _ssh_priv_keys
+        self._ssh_public_keys: list[str] | None = _ssh_pub_keys
 
         self._setup_done = True
 
@@ -199,6 +282,9 @@ class FfxConfig:
             enable_usb=self._enable_usb,
             usb_socket_path=self._usb_socket_path,
             usb_driver_autostart=self._usb_driver_autostart,
+            emu_instance_dir=self._emu_instance_dir,
+            ssh_private_keys=self._ssh_private_keys,
+            ssh_public_keys=self._ssh_public_keys,
         )
 
     def _atexit_callback(self) -> None:

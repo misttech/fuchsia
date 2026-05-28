@@ -152,6 +152,9 @@ _INPUT_ARGS: dict[str, Any] = {
         subtools_search_path=_SUBTOOLS_SEARCH_PATH,
         proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
+        emu_instance_dir=None,
+        ssh_private_keys=None,
+        ssh_public_keys=None,
     ),
     "run_cmd": ffx._FFX_CMDS["TARGET_SHOW"],
     "run_machine_cmd": ffx._FFX_CMDS["TARGET_WAIT"],
@@ -532,6 +535,17 @@ class FfxTests(unittest.TestCase):
     )
     def test_ffx_run(self, mock_host_shell_run: mock.Mock) -> None:
         """Test case for ffx.run()"""
+        expected_config = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+
         self.assertEqual(
             self.ffx_obj_with_ip.run(cmd=_INPUT_ARGS["run_cmd"]),
             _EXPECTED_VALUES["ffx_target_show_output"],
@@ -540,31 +554,18 @@ class FfxTests(unittest.TestCase):
         mock_host_shell_run.assert_called_with(
             [
                 _BINARY_PATH,
+                "--strict",
                 "-t",
                 str(_TARGET_SSH_ADDRESS),
-                "--isolate-dir",
-                _ISOLATE_DIR,
                 "--machine",
                 "json",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
                 "--direct",
                 "-c",
-                f"log.dir={_LOGS_DIR}",
+                json.dumps(expected_config),
                 "-c",
-                f"log.level={_LOGS_LEVEL}",
-                "-c",
-                f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
-                "-c",
-                f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
-                "-c",
-                f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
-                "-c",
-                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
-                "-c",
-                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
-                "-c",
-                f"shared_data={_LOGS_DIR}",
+                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ffx._FFX_CMDS["TARGET_SHOW"],
             capture_output=True,
@@ -580,6 +581,17 @@ class FfxTests(unittest.TestCase):
     )
     def test_ffx_run_machine(self, mock_host_shell_run: mock.Mock) -> None:
         """Test case for ffx.run()"""
+        expected_config = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+
         self.assertEqual(
             self.ffx_obj_with_ip.run(
                 cmd=_INPUT_ARGS["run_machine_cmd"], machine=MachineFormat.RAW
@@ -590,31 +602,18 @@ class FfxTests(unittest.TestCase):
         mock_host_shell_run.assert_called_with(
             [
                 _BINARY_PATH,
+                "--strict",
                 "-t",
                 str(_TARGET_SSH_ADDRESS),
-                "--isolate-dir",
-                _ISOLATE_DIR,
                 "--machine",
                 "raw",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
                 "--direct",
                 "-c",
-                f"log.dir={_LOGS_DIR}",
+                json.dumps(expected_config),
                 "-c",
-                f"log.level={_LOGS_LEVEL}",
-                "-c",
-                f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
-                "-c",
-                f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
-                "-c",
-                f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
-                "-c",
-                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
-                "-c",
-                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
-                "-c",
-                f"shared_data={_LOGS_DIR}",
+                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ffx._FFX_CMDS["TARGET_WAIT"],
             capture_output=True,
@@ -740,34 +739,32 @@ class FfxTests(unittest.TestCase):
             stdout="abc",
         )
 
+        expected_config = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+
         mock_host_shell_popen.assert_called_with(
             [
                 _BINARY_PATH,
+                "--strict",
                 "-t",
                 str(_TARGET_SSH_ADDRESS),
-                "--isolate-dir",
-                _ISOLATE_DIR,
                 "--machine",
                 "raw",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
                 "--direct",
                 "-c",
-                f"log.dir={_LOGS_DIR}",
+                json.dumps(expected_config),
                 "-c",
-                f"log.level={_LOGS_LEVEL}",
-                "-c",
-                f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
-                "-c",
-                f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
-                "-c",
-                f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
-                "-c",
-                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
-                "-c",
-                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
-                "-c",
-                f"shared_data={_LOGS_DIR}",
+                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ["a", "b", "c"],
             stdout="abc",
@@ -817,7 +814,7 @@ class FfxTests(unittest.TestCase):
         mock_host_run.assert_called()
         cmd = mock_host_run.call_args[1]["cmd"]
         self.assertIn("-c", cmd)
-        self.assertIn(f"shared_data={_LOGS_DIR}", cmd)
+        self.assertIn(json.dumps({"shared_data": _LOGS_DIR}), cmd)
 
     @mock.patch.object(
         host_shell, "run", return_value='{"targets": []}', autospec=True
@@ -830,13 +827,15 @@ class FfxTests(unittest.TestCase):
         mock_host_run.assert_called()
         cmd = mock_host_run.call_args[1]["cmd"]
         self.assertIn("-c", cmd)
-        self.assertIn(f"shared_data={_LOGS_DIR}", cmd)
+        self.assertIn(json.dumps({"shared_data": _LOGS_DIR}), cmd)
 
-    @mock.patch.object(ffx.FFX, "run", return_value="", autospec=True)
-    def test_wait_for_rcs_disconnection(self, mock_ffx_run: mock.Mock) -> None:
+    @mock.patch.object(ffx.FFX, "popen", autospec=True)
+    def test_wait_for_rcs_disconnection(
+        self, mock_ffx_popen: mock.Mock
+    ) -> None:
         """Test case for ffx.wait_for_rcs_disconnection()"""
         self.ffx_obj_with_ip.wait_for_rcs_disconnection()
-        self.assertEqual(mock_ffx_run.call_count, 1)
+        self.assertEqual(mock_ffx_popen.call_count, 1)
 
     @mock.patch.object(
         host_shell,
@@ -855,35 +854,32 @@ class FfxTests(unittest.TestCase):
             match, msg=f"Pattern failed to match in output: {result}"
         )
 
-        # Verify host_shell.run was called with correct arguments
+        expected_config = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+
         mock_host_shell_run.assert_called_with(
             cmd=[
                 "ffx",
+                "--strict",
                 "-t",
                 "[fe80::4fce:3102:ef13:888c%1]:8022",
-                "--isolate-dir",
-                "/tmp/isolate",
                 "--machine",
                 "json",
                 "-o",
                 "/tmp/logs/ffx.log",
                 "--direct",
                 "-c",
-                "log.dir=/tmp/logs",
+                json.dumps(expected_config),
                 "-c",
-                "log.level=debug",
-                "-c",
-                "ffx.subtool-search-paths=/subtools",
-                "-c",
-                "proxy.timeout_secs=30",
-                "-c",
-                "ssh.keepalive_timeout=60",
-                "-c",
-                "connectivity.enable_usb=false",
-                "-c",
-                "connectivity.usb_driver_autostart=false",
-                "-c",
-                "shared_data=/tmp/logs",
+                json.dumps({"shared_data": "/tmp/logs"}),
                 "target",
                 "status",
             ],

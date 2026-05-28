@@ -6,6 +6,7 @@
 import json
 import logging
 import subprocess
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -113,6 +114,17 @@ class FFX:
             # default.
             shared_data = self.config.logs_dir
         self._shared_data = shared_data
+
+        # Ensure shared_data directory exists
+        try:
+            Path(self._shared_data).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            _LOGGER.error(
+                "Failed to create shared_data directory %s: %s",
+                self._shared_data,
+                e,
+            )
+            raise
         self._use_monitor = use_monitor_state
         if use_monitor_state:
             if not self._check_running_monitor():
@@ -615,16 +627,44 @@ class FFX:
                     _LOGGER.info("%s is connected to host", self._log_name)
                     return
 
-        self.run(
-            cmd=_FFX_CMDS["TARGET_WAIT"],
-            include_target_name=include_target_name,
-            disable_controlmaster=True,
-        )
+        if include_target_name:
+            # In strict mode, we cannot use nodename with `-t` for `target wait`.
+            # Instead, poll `target list` until RCS is connected.
+
+            _LOGGER.info(
+                "Waiting for RCS connection via target list polling..."
+            )
+            while True:
+                try:
+                    # Run target list without `-t` but with nodename filter as positional arg
+                    target_filter = self._name if self._name else self._query
+                    cmd = ["target", "list", target_filter]
+                    output = self.run(cmd=cmd, include_target=False)
+                    targets = json.loads(output)
+                    if targets and targets[0].get("rcs_state") == "Y":
+                        _LOGGER.info("RCS connected!")
+                        break
+                except (
+                    errors.DeviceNotConnectedError,
+                    ffx_errors.FfxCommandError,
+                    ffx_errors.FfxTimeoutError,
+                    json.JSONDecodeError,
+                ) as e:
+                    _LOGGER.debug("Error polling target list: %s", e)
+                time.sleep(2)
+        else:
+            self.run(
+                cmd=_FFX_CMDS["TARGET_WAIT"],
+                include_target_name=include_target_name,
+                disable_controlmaster=True,
+            )
 
         _LOGGER.info("%s is connected to host", self._log_name)
         return
 
-    def wait_for_rcs_disconnection(self) -> None:
+    def wait_for_rcs_disconnection(
+        self,
+    ) -> subprocess.Popen[custom_types.AnyString]:
         """Wait until FFX is able to disconnect RCS connection to the target.
 
         Raises:
@@ -632,12 +672,10 @@ class FFX:
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info(
-            "Waiting for %s to disconnect from host...", self._log_name
+            "Waiting for %s to disconnect from host in background...",
+            self._log_name,
         )
-        self.run(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"], disable_controlmaster=True)
-        _LOGGER.info("%s is not connected to host", self._log_name)
-
-        return
+        return self.popen(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"])
 
     def _get_target_status(self) -> MonitorTargetInfo:
         """Gets the status information of the target node from 'ffx monitor status'.
@@ -711,6 +749,10 @@ class FFX:
         """
         ffx_args: list[str] = []
 
+        # Specifying strict mode and isolate dir are mutually exclusive in ffx.
+        # Since we use strict mode, we do not pass isolate_dir.
+        ffx_args.extend(["--strict"])
+
         if include_target:
             if include_target_name:
                 # Use the unresolved target query
@@ -720,8 +762,6 @@ class FFX:
                 target = self.get_target_address()
                 ffx_args.extend(["-t", f"{target}"])
 
-        # To run FFX in isolation mode
-        ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
         # Don't add "--machine" if the machine type is already specified
         if "--machine" not in cmd:
             ffx_args.extend(["--machine", str(machine)])
@@ -739,7 +779,7 @@ class FFX:
         ffx_args.extend(self.config.get_config_args())
 
         # "-c shared_data=<dir>" will be required, once ffx-strict is being used.
-        ffx_args.extend(["-c", f"shared_data={self.shared_data}"])
+        ffx_args.extend(["-c", json.dumps({"shared_data": self._shared_data})])
 
         return [self.config.binary_path] + ffx_args + cmd
 

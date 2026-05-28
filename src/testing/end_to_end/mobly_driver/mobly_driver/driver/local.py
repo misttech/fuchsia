@@ -4,6 +4,7 @@
 """Implements BaseDriver for the local execution environment."""
 
 import os
+import time
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +39,7 @@ class LocalDriver(base.BaseDriver):
         ap_ip: Optional[str] = None,
         ap_ssh_port: Optional[int] = None,
         ap_ssh_key: Optional[str] = None,
+        ssh_key: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
 
@@ -68,6 +70,7 @@ class LocalDriver(base.BaseDriver):
         self._ap_ip = ap_ip
         self._ap_ssh_port = ap_ssh_port
         self._ap_ssh_key = ap_ssh_key
+        self._ssh_key = ssh_key
 
         self._target_address_type: Optional[str] = target_address_type
 
@@ -96,15 +99,33 @@ class LocalDriver(base.BaseDriver):
           common.DriverException if device discovery command fails or no devices
             detected.
         """
-        try:
-            res: api_ffx.TargetListResult = self._ffx_client.target_list(
-                # Run without isolate dir to access relevant "default" device.
-                isolate_dir=None
+        last_error = None
+        res = None
+        for i in range(10):
+            try:
+                res = self._ffx_client.target_list(
+                    # Run without isolate dir to access relevant "default" device.
+                    isolate_dir=None
+                )
+                if len(res.all_nodes) > 0:
+                    break
+            except (
+                api_ffx.CommandException,
+                api_ffx.OutputFormatException,
+            ) as e:
+                # If it fails, maybe daemon is starting, so retry
+                last_error = e
+            print(
+                f"No targets discovered yet, retrying in 2s... (attempt {i+1}/10)"
             )
-        except (api_ffx.CommandException, api_ffx.OutputFormatException) as e:
-            raise common.DriverException(
-                f"Failed to enumerate local targets: {e}"
-            )
+            time.sleep(2)
+
+        if not res:
+            if last_error:
+                raise common.DriverException(
+                    f"Failed to enumerate local targets: {last_error}"
+                )
+            raise common.DriverException("Failed to enumerate local targets")
 
         test_targets: List[str] = res.all_nodes
         if self._multi_device:
@@ -118,7 +139,7 @@ class LocalDriver(base.BaseDriver):
         if len(test_targets) == 0:
             # Raise exception here because any meaningful Mobly test should run
             # against at least one Fuchsia target.
-            raise common.DriverException("No devices found.")
+            raise common.DriverException("No devices found after retries.")
 
         print(f"Target(s) to use in Mobly test: {test_targets}")
         return test_targets
@@ -151,6 +172,8 @@ class LocalDriver(base.BaseDriver):
                 "type": api_infra.FUCHSIA_DEVICE,
                 "name": target,
             }
+            if self._ssh_key:
+                fx_device["ssh_key"] = self._ssh_key
             if (
                 self._target_address_type == "serial"
                 or not self._target_address_type

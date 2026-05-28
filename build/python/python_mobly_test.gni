@@ -179,6 +179,10 @@ import("//build/testing/host_test_data.gni")
 #    to access points.
 #    Type: String
 #
+#  ssh_key_path (optional)
+#    Path to the SSH key to be used for connecting to Fuchsia devices.
+#    Type: String
+#
 #  test_data_deps (optional)
 #    List of test data GN targets that are needed at runtime.
 #    Type: list(string)
@@ -300,6 +304,14 @@ template("python_mobly_test") {
     _list_cases_argument = invoker.list_cases_argument
   }
 
+  _expects_ssh_defined = defined(invoker.expects_ssh)
+  if (_expects_ssh_defined) {
+    _expects_ssh = invoker.expects_ssh
+  } else if (defined(invoker.ssh_key_path)) {
+    _expects_ssh = true
+    _expects_ssh_defined = true
+  }
+
   #
   # Define Mobly test python_binary().
   #
@@ -405,6 +417,18 @@ template("python_mobly_test") {
   }
 
   _additional_deps = []
+  if (defined(invoker.ssh_key_path)) {
+    _ssh_key_data_target = "${_test_name}_ssh_key_data"
+    host_test_data(_ssh_key_data_target) {
+      sources = [ invoker.ssh_key_path ]
+      outputs = [ "${_test_dir}/ssh_key" ]
+    }
+    _common_host_test_args += [
+      "--ssh-key",
+      rebase_path("${_test_dir}/ssh_key", root_build_dir),
+    ]
+    _additional_deps += [ ":${_ssh_key_data_target}" ]
+  }
 
   # If specified, define test params data target and data path add to host args.
   if (defined(invoker.params_source)) {
@@ -533,6 +557,9 @@ template("python_mobly_test") {
                              "timeout_secs",
                              "visibility",
                            ])
+    if (_expects_ssh_defined) {
+      expects_ssh = _expects_ssh
+    }
 
     list_cases_argument = _list_cases_argument
 
@@ -717,6 +744,9 @@ template("python_mobly_test") {
                                "visibility",
                                "timeout_secs",
                              ])
+      if (_expects_ssh_defined) {
+        expects_ssh = _expects_ssh
+      }
 
       binary_path = get_label_info("//tools/mobly_test_parser",
                                    "root_out_dir") + "/mobly_test_parser"

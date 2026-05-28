@@ -474,6 +474,45 @@ class LocalDriverTest(unittest.TestCase):
         self.assertEqual(ap_config["ssh_key"], "/path/to/key")
 
     @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.get_target_ssh_address",
+        autospec=True,
+        return_value=api_ffx.TargetSshAddress(
+            ip=ipaddress.ip_address("::1"), port=8022
+        ),
+    )
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.target_list",
+        autospec=True,
+        return_value=api_ffx.TargetListResult(
+            all_nodes=["dut_1"], default_nodes=[]
+        ),
+    )
+    @patch("mobly_driver.api.api_mobly.new_testbed_config", autospec=True)
+    def test_generate_test_config_with_ssh_key_success(
+        self,
+        mock_new_tb_config: Any,
+        mock_ffx_target_list: Any,
+        mock_ffx_target_ssh_address: Any,
+        *unused_args: Any,
+    ) -> None:
+        """Test case for successful config generation with Fuchsia ssh_key"""
+        driver = local.LocalDriver(
+            honeydew_config=_HONEYDEW_CONFIG,
+            output_path="output/path",
+            ssh_key="/path/to/fuchsia/key",
+        )
+        driver.generate_test_config()
+
+        mock_new_tb_config.assert_called_once()
+        controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
+        self.assertEqual(1, len(controllers))
+        fx_config = controllers[0]
+        self.assertEqual(fx_config["name"], "dut_1")
+        self.assertEqual(fx_config["ssh_key"], "/path/to/fuchsia/key")
+
+    @patch("builtins.print")
     @patch(
         "mobly_driver.api.api_ffx.FfxClient.get_target_ssh_address",
         autospec=True,

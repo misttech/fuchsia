@@ -276,10 +276,19 @@ class TestExecution:
                 + suffix_args
             )
         elif self._test.build.test.path:
-            cmd = [self._test.build.test.path]
+            command_line = [self._test.build.test.path]
+            if self._test.is_e2e_test() and self._device_env is not None:
+                if (
+                    self._test.build.test.list_cases_argument
+                    == "list_mobly_tests"
+                ):
+                    command_line += [
+                        "--ssh-key",
+                        self._device_env.private_key_path,
+                    ]
             if test_cases:
-                cmd += ["--test_cases"] + test_cases
-            return cmd + self._flags.extra_args
+                command_line += ["--test_cases"] + test_cases
+            return command_line + self._flags.extra_args
         else:
             raise TestCouldNotRun(
                 f"We do not know how to run this test: {str(self._test)}"
@@ -788,17 +797,34 @@ async def get_device_environment_from_exec_env(
     exec_env: environment.ExecutionEnvironment,
     recorder: event.EventRecorder | None = None,
 ) -> environment.DeviceEnvironment:
+    # Wait for the target to become ready and reachable.
+    # This is more efficient than polling ffx target list in a sleep loop.
+    wait_output = await run_command(
+        *exec_env.fx_cmd_line("ffx", "target", "wait", "-t", "10"),
+        recorder=recorder,
+    )
+    if not wait_output or wait_output.return_code != 0:
+        raise DeviceConfigError("Failed to wait for target to become reachable")
+
     ssh_output = await run_command(
         *exec_env.fx_cmd_line("ffx", "target", "list", "--format", "addresses"),
         recorder=recorder,
     )
-    if not ssh_output or ssh_output.return_code != 0:
+
+    if (
+        not ssh_output
+        or ssh_output.return_code != 0
+        or not ssh_output.stdout.strip()
+    ):
         raise DeviceConfigError("Failed to get the ssh address of the target")
 
     last_colon_index = ssh_output.stdout.rfind(":")
     if last_colon_index == -1:
         raise DeviceConfigError(
-            f"Could not parse target address: {ssh_output.stdout}. Expected 'ip:port' format."
+            f"Could not parse target address: {ssh_output.stdout!r}.\n"
+            f"Expected 'ip:port' format.\n"
+            f"Return code: {ssh_output.return_code},\n"
+            f"Stderr: {ssh_output.stderr!r}"
         )
     ip = ssh_output.stdout[0:last_colon_index].strip()
     port = ssh_output.stdout[last_colon_index + 1 :].strip()
