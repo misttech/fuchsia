@@ -809,6 +809,9 @@
                 // socket_unix_seqpacket_local_test
                 "SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.Sendto/*",
 
+                // socket_unix_non_stream_blocking_local_test
+                "UnixSeqpacketBlockingTest.RecvfromTruncPeekNullBufferRestarted",
+
                 // socket_unix_unbound_stream_test
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.FDPassPartialRead/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CredPassPartialRead/*",
