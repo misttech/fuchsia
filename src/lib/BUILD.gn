@@ -71,6 +71,7 @@ group("tests") {
     "intl:tests",
     "json_parser:tests",
     "kalloc:tests",
+    "kstring:tests",
     "ksync:tests",
     "libdoc:tests($host_toolchain)",
     "line_input:tests",
