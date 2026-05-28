@@ -204,6 +204,7 @@
         {
             config: [
                 "fuchsia.starnix.config.container.ExtraFeatures",
+                "fuchsia.starnix.config.Prefetch",
                 "fuchsia.time.config.WritableUTCTime",
                 "fuchsia.ui.VisualDebuggingLevel",
             ],

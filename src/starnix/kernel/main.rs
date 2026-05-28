@@ -9,12 +9,19 @@
 
 // Avoid unused crate warnings on non-test/non-debug builds because this needs to be an
 // unconditional dependency for rustdoc generation.
-use {extended_pstate as _, tracing_mutex as _};
+use extended_pstate as _;
+use tracing_mutex as _;
 
 use anyhow::{Context as _, Error};
 use async_lock::OnceCell;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fidl_fuchsia_starnix_container as fstarcontainer;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter;
+use fuchsia_runtime as fruntime;
 use futures::{StreamExt, TryStreamExt};
 use starnix_core::mm::{init_usercopy, zxio_maybe_faultable_copy_impl};
 use starnix_kernel_runner::{
@@ -23,14 +30,9 @@ use starnix_kernel_runner::{
 };
 use starnix_kernel_structured_config::Config as KernelStructuredConfig;
 use starnix_logging::{
-    CATEGORY_STARNIX, NAME_START_KERNEL, log_debug, log_error, log_warn, trace_instant,
+    CATEGORY_STARNIX, NAME_START_KERNEL, log_debug, log_error, log_info, log_warn, trace_instant,
 };
 use std::rc::Rc;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_starnix_container as fstarcontainer,
-    fuchsia_async as fasync, fuchsia_runtime as fruntime,
-};
 
 /// Overrides the `zxio_maybe_faultable_copy` weak symbol found in zxio.
 #[unsafe(no_mangle)]
@@ -133,7 +135,29 @@ async fn main() -> Result<(), Error> {
         .context("ensuring main process panics kill whole kernel")?;
 
     let kernel_structured_config = KernelStructuredConfig::take_from_startup_handle();
-    let KernelStructuredConfig { extra_features: kernel_extra_features } = kernel_structured_config;
+    let KernelStructuredConfig { extra_features: kernel_extra_features, prefetch, .. } =
+        kernel_structured_config;
+
+    if prefetch {
+        let file_proxy = fuchsia_fs::file::open_in_namespace(
+            "/pkg/bin/starnix_kernel",
+            fidl_fuchsia_io::PERM_READABLE | fidl_fuchsia_io::PERM_EXECUTABLE,
+        )
+        .context("open /pkg/bin/starnix_kernel")?;
+
+        let vmo = file_proxy
+            .get_backing_memory(
+                fidl_fuchsia_io::VmoFlags::READ | fidl_fuchsia_io::VmoFlags::EXECUTE,
+            )
+            .await
+            .context("call get_backing_memory")?
+            .map_err(zx::Status::from_raw)
+            .context("get_backing_memory")?;
+        let size = vmo.get_size().context("get vmo size")?;
+        vmo.op_range(zx::VmoOp::PREFETCH, 0, size).context("prefetch vmo")?;
+
+        log_info!("Prefetched starnix_kernel binary");
+    }
 
     let _inspect_server_task = inspect_runtime::publish(
         fuchsia_inspect::component::init_inspector_with_size(1_000_000),

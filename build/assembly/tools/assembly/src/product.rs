@@ -66,6 +66,7 @@ Resulting product is not supported and may misbehave!
     #[cfg(feature = "experimental_memory_opt")]
     {
         product_config.platform.kernel.oom.experimental_expand_memory_stall = true;
+        product_config.platform.starnix.prefetch_kernel = true;
     }
 
     let mut board_config =

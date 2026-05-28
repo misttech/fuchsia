@@ -16,6 +16,12 @@ pub struct PlatformStarnixConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_android_support: bool,
 
+    /// If true, starnix_kernel will do an operation to prefetch its binary into memory before
+    /// starting up. This is a strategy to mitigate execution delays from demand paging. See
+    /// https://fxbug.dev/515805843
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub prefetch_kernel: bool,
+
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub socket_mark: SocketMarkTreatment,
 

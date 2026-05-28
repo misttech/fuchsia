@@ -71,6 +71,19 @@ fuchsia_package("starnix_package") {
   ]
 }
 
+fuchsia_package("starnix_package_prefetch") {
+  package_name = "starnix"
+
+  subpackages = [ "//src/starnix/kernel:starnix_kernel_package_prefetch" ]
+
+  deps = [
+    ":starnix_runner_bin",
+    ":starnix_runner_component",
+    ":starnix_runner_component_manifest",
+    "//src/starnix/psi_provider",
+  ]
+}
+
 fuchsia_unittest_package("starnix_runner_bin-tests") {
   deps = [ ":starnix_runner_bin_test" ]
 }

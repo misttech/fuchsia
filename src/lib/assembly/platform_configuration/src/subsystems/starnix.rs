@@ -24,6 +24,7 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             socket_mark,
             network_manager,
             enable_wakeup_test,
+            prefetch_kernel,
         } = starnix_config;
 
         if *enabled {
@@ -76,6 +77,10 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             builder.set_config_capability(
                 "fuchsia.starnix.fastrpc.ExpectReady",
                 Config::new(ConfigValueType::Bool, (*enable_android_support).into()),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.starnix.config.Prefetch",
+                Config::new(ConfigValueType::Bool, (*prefetch_kernel).into()),
             )?;
             builder.set_config_capability(
                 "fuchsia.starnix.config.container.ExtraFeatures",

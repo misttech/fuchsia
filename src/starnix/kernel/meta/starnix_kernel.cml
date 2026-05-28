@@ -122,6 +122,14 @@
             path: "/container_config",
             availability: "optional",
         },
+        {
+            config: "fuchsia.starnix.config.Prefetch",
+            from: "parent",
+            key: "prefetch",
+            type: "bool",
+            default: false,
+            availability: "transitional",
+        },
 
         // LINT.IfChange
         {
