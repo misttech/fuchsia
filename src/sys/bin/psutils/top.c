@@ -55,7 +55,8 @@ static zx_koid_t last_process_scanned;
 
 // Return text representation of thread state.
 static const char* state_string(const zx_info_thread_t* info) {
-  if (info->wait_exception_channel_type != ZX_EXCEPTION_CHANNEL_TYPE_NONE) {
+  if (ZX_THREAD_STATE_BASIC(info->state) == ZX_THREAD_STATE_BLOCKED_EXCEPTION &&
+      info->wait_exception_channel_type != ZX_EXCEPTION_CHANNEL_TYPE_NONE) {
     return "excp";
   } else {
     switch (ZX_THREAD_STATE_BASIC(info->state)) {
@@ -316,7 +317,9 @@ int main(int argc, char** argv) {
 
     // mark all active threads as not scanned
     thread_info_t* e;
-    list_for_every_entry (&thread_list, e, thread_info_t, node) { e->scanned = false; }
+    list_for_every_entry (&thread_list, e, thread_info_t, node) {
+      e->scanned = false;
+    }
 
     // If we have a target job, only walk the target subtree. Otherwise walk from root.
     zx_status_t status;

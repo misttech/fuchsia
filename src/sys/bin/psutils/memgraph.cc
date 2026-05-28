@@ -293,7 +293,8 @@ class JsonTaskEnumerator final : public TaskEnumerator {
       set_partial_failure(s);
     } else {
       const char* state = "<UNKNOWN>";
-      if (info.wait_exception_channel_type != ZX_EXCEPTION_CHANNEL_TYPE_NONE) {
+      if (ZX_THREAD_STATE_BASIC(info.state) == ZX_THREAD_STATE_BLOCKED_EXCEPTION &&
+          info.wait_exception_channel_type != ZX_EXCEPTION_CHANNEL_TYPE_NONE) {
         state = "EXCEPTION";
       } else {
         switch (ZX_THREAD_STATE_BASIC(info.state)) {
