@@ -335,6 +335,154 @@ class ListBazelHostTestsCommand(ScriptCommandBase):
         return 0
 
 
+class ExpandCommand(ScriptCommandBase):
+    """Expand Bazel action's command lines."""
+
+    DESCRIPTION_RAW = """
+This command runs `bazel aquery` on a given target to extract its compilation or
+linking command lines, while expanding in the output the content of response files
+that are used to implement the build_flags() feature.
+
+In the presence of response files, this will try to read them directly from the
+Bazel execroot. This requires the target having been built to ensure their
+content is correct.
+
+Example usage:
+
+    fx bazel-tool expand //build/bazel/host_tests -- --config=host
+"""
+
+    @staticmethod
+    def _format_human_command(
+        target: str,
+        config: str,
+        mnemonic: str,
+        args: list[str],
+        env_vars: list[str] | None = None,
+        warnings: list[str] | None = None,
+    ) -> str:
+        import shlex
+
+        quoted_envs = [shlex.quote(env) for env in env_vars] if env_vars else []
+        quoted_args = [shlex.quote(arg) for arg in args]
+
+        full_command_line = []
+        if quoted_envs:
+            full_command_line = ["env"] + quoted_envs
+        full_command_line.extend(quoted_args)
+
+        out = []
+        out.append("=========================================")
+        out.append(f"Mnemonic: {mnemonic}")
+        out.append(f"Target: {target}")
+        out.append(f"Configuration: {config}")
+        if warnings:
+            for warning in warnings:
+                out.append(f"WARNING: {warning}")
+        out.append("=========================================")
+
+        if full_command_line:
+            formatted_cmd = [full_command_line[0]]
+            for arg in full_command_line[1:]:
+                formatted_cmd[-1] += " \\"
+                formatted_cmd.append(f"  {arg}")
+            out.extend(formatted_cmd)
+
+        out.append("=========================================\n")
+        return "\n".join(out)
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--format",
+            choices=["human", "json"],
+            default="human",
+            help="Output format (human-readable or JSON)",
+        )
+        parser.add_argument(
+            "--mnemonic",
+            help="Filter actions to only those matching the given mnemonic name(s) (comma-separated, e.g., CppCompile,CppLink,Rustc)",
+        )
+        parser.add_argument(
+            "target_label", help="Bazel target label to inspect."
+        )
+        parser.add_argument(
+            "--",
+            dest="extra_args",
+            default=[],
+            nargs=argparse.REMAINDER,
+            help="extra Bazel query-compatible arguments (e.g. --config=host).",
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        import json
+
+        import bazel_build_args
+        import build_utils
+
+        target = args.target_label
+        if not target.startswith(("//", "@")):
+            return error_message(f"Invalid Bazel target label: {target}")
+        if "(" in target:
+            return error_message(
+                f"Target label cannot use a GN toolchain suffix: {target}"
+            )
+
+        # Auto-detect build environment and paths
+        try:
+            bazel_paths = build_utils.BazelPaths.new(
+                fuchsia_dir=args.fuchsia_dir, build_dir=args.build_dir
+            )
+        except ValueError as e:
+            return error_message(str(e))
+
+        execroot = str(bazel_paths.execroot)
+        bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+
+        # Extract extra config args from -- if passed
+        config_args = []
+        if args.extra_args:
+            # The first element of extra_args is the "--" separator.
+            config_args = args.extra_args[1:]
+
+        filter_mnemonics = None
+        if args.mnemonic:
+            filter_mnemonics = [m.strip() for m in args.mnemonic.split(",")]
+
+        # Perform the aquery and expand its results.
+        expanded_actions = bazel_build_args.get_bazel_expanded_actions(
+            bazel_launcher=bazel_launcher,
+            bazel_execroot=execroot,
+            bazel_target=target,
+            config_args=config_args,
+            filter_mnemonics=filter_mnemonics,
+        )
+
+        # 4. Print the results according to format. Use a pager to make
+        #    it human-friendly, as the output will always be long.
+        import pydoc
+
+        out_lines = []
+        if args.format == "json":
+            json_actions = [action.to_dict() for action in expanded_actions]
+            out_lines.append(json.dumps(json_actions, indent=2))
+        else:
+            for action in expanded_actions:
+                out_lines.append(
+                    ExpandCommand._format_human_command(
+                        action.target,
+                        action.configuration,
+                        action.mnemonic,
+                        action.command,
+                        env_vars=action.env_vars if action.env_vars else None,
+                        warnings=action.warnings if action.warnings else None,
+                    )
+                )
+        pydoc.pager("\n".join(out_lines))
+        return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -370,6 +518,7 @@ def main() -> int:
     commands.add_command(ActionsCommand())
     commands.add_command(SetGnTargetsCommand())
     commands.add_command(ListBazelHostTestsCommand())
+    commands.add_command(ExpandCommand())
 
     args = parser.parse_args()
 

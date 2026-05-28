@@ -104,12 +104,21 @@ if (is_host) {
       "build_utils.py",
     ]
   }
+
+  python_build_time_tests("bazel_build_args_test") {
+    tests = [ "bazel_build_args_test.py" ]
+    inputs = [
+      "bazel_build_args.py",
+      "build_utils.py",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":bazel_action_utils_test($host_toolchain)",
+    ":bazel_build_args_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
     ":bazel_source_path_mapper_test($host_toolchain)",
