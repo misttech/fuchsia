@@ -46,6 +46,7 @@ class NotInCogWorkspaceError(WorkspaceError):
 
 CARTFS_SYMLINK_NAME: str = "cartfs-dir"
 COG_METADATA_FILE_NAME: str = ".cog.json"
+GOLDEN_SNAPSHOT_DIR: Path = Path(".fuchsia_golden_snapshot")
 
 
 class CogMetadata:
@@ -163,6 +164,19 @@ class Workspace:
         self._lock_file_handle: TextIO | None = None
         self._lock_count = 0
         logger.setup_file_logging(self.workspace_root)
+
+        # We will check for the presence of the golden snapshot directory to
+        # determine if the workspace should be initialized from the golden
+        # snapshot. A full usable golden snapshot is indicated by the presence of
+        # the `.integration_commit_hash` file.
+        #
+        # We will not use the golden snapshot for the fuchsia repo
+        # as it is not supported for fuchsia/fuchsia.
+        self._use_golden_snapshot = (
+            self.cartfs_mount_point
+            / GOLDEN_SNAPSHOT_DIR
+            / ".integration_commit_hash"
+        ).exists() and self.repo_dir.name != "fuchsia"
 
     @property
     def workspace_root(self) -> Path:
@@ -350,7 +364,10 @@ class Workspace:
         ] = snapshotter.snapshot_workspace,
     ) -> None:
         """Snapshots and links to the workspace from the most recent cartfs directory."""
-        previous_cartfs_workspace_dir_name = self._find_previous_instance()
+        previous_cartfs_workspace_dir_name: Path | None = GOLDEN_SNAPSHOT_DIR
+        if not self._use_golden_snapshot:
+            previous_cartfs_workspace_dir_name = self._find_previous_instance()
+
         if not previous_cartfs_workspace_dir_name:
             logger.log_info("No previous cartfs workspace directory found.")
             return
@@ -650,7 +667,12 @@ class Workspace:
             cwd=self.cartfs_fuchsia_dir,
         )
 
-        # Restore changes snapshotted from former workspace
+        # Restore local changes snapshotted from former workspace. If
+        # snapshotted from golden snapshot, they are in clean state thus we can
+        # skip this.
+        if self._use_golden_snapshot:
+            return
+
         self._run(
             [".jiri_root/bin/jiri", "runp", "git", "clean", "-df"],
             cwd=self.cartfs_fuchsia_dir,
