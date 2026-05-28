@@ -57,10 +57,8 @@ register! {
     pub struct Dr0(u32) @ 0x60, RW {
         pub dr, set_dr: 7, 0;
     }
-}
 
-register! {
-    RxSampleDly, u32, 0xf0, RW, {
+    pub struct RxSampleDly(u32) @ 0xf0, RW {
         pub rsd, set_rsd: 7, 0;
     }
 }

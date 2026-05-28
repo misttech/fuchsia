@@ -6,22 +6,97 @@ use crate::utils;
 use bitfield::bitfield;
 use mmio::{Mmio, ReadableRegister, register};
 
-register! {GpuId, u32, 0x0, RO, {}}
-
-// Same layout as GpuIrqMask.
-register! {GpuIrqClear, u32, 0x24, RW, {}}
 register! {
-    GpuIrqMask, u32, 0x28, RW, {
-    pub gpu_fault, set_gpu_fault: 0, 0;
-    pub multiple_gpu_faults, set_multiple_gpu_faults: 7, 7;
-    pub reset_completed, set_reset_completed: 8, 8;
-    pub power_changed_single, set_power_changed_single: 9, 9;
-    pub power_changed_all, set_power_changed_all: 10, 10;
-    pub performace_counter_sample_completed, set_performance_counter_sample_completed: 16, 16;
-    pub clean_caches_completed, set_clean_caches_completed: 17, 17;
-    pub doorbell_mirror, set_doorbell_mirror: 18, 18;
-    pub mcu_status, set_mcu_status: 19, 19;
-}}
+    pub struct GpuId(u32) @ 0x0, RO;
+
+    pub struct GpuIrqClear(u32) @ 0x24, RW;
+
+    pub struct GpuIrqMask(u32) @ 0x28, RW {
+        pub gpu_fault, set_gpu_fault: 0, 0;
+        pub multiple_gpu_faults, set_multiple_gpu_faults: 7, 7;
+        pub reset_completed, set_reset_completed: 8, 8;
+        pub power_changed_single, set_power_changed_single: 9, 9;
+        pub power_changed_all, set_power_changed_all: 10, 10;
+        pub performace_counter_sample_completed, set_performance_counter_sample_completed: 16, 16;
+        pub clean_caches_completed, set_clean_caches_completed: 17, 17;
+        pub doorbell_mirror, set_doorbell_mirror: 18, 18;
+        pub mcu_status, set_mcu_status: 19, 19;
+    }
+
+    pub struct GpuIrqStatus(u32) @ 0x2c, RO;
+
+    pub struct GpuCommand(u32) @ 0x30, WO;
+
+    pub struct L2Config(u32) @ 0x48, WO {
+        pub cache_size, set_cache_size: 23, 16;
+        pub hash_enable, set_hash_enable: 24, 24;
+        pub hash, set_hash: 31, 24;
+    }
+
+    pub struct GpuFaultStatus(u32) @ 0x3c, RO;
+
+    pub struct GpuFaultAddress(u32) @ 0x40, RO;
+
+    pub struct GpuShaderPresentLow(u32) @ 0x100, RO;
+
+    pub struct L2Ready(u32) @ 0x160, RO {
+        pub enabled, set_enabled: 1, 0;
+    }
+
+    pub struct L2Power(u32) @ 0x1a0, WO;
+
+    pub struct AddressSpaceHash0(u32) @ 0x2c0, WO;
+
+    pub struct AddressSpaceHash1(u32) @ 0x2c4, WO;
+
+    pub struct AddressSpaceHash2(u32) @ 0x2c8, WO;
+
+    pub struct CoherencyFeatures(u32) @ 0x300, RO {
+        // The GPU can snoop on CPU caches.
+        pub ace_lite, set_ace_lite: 0, 0;
+        // Both GPU and CPU can snoop on each other's caches.
+        pub ace, set_ace: 1, 1;
+        pub none, set_none: 31, 31;
+    }
+
+    pub struct CoherencyEnable(u32) @ 0x304, RW;
+
+    pub struct McuControl(u32) @ 0x700, RW {
+        pub field, set_field: 1, 0;
+    }
+
+    pub struct McuStatus(u32) @ 0x704, RW {
+        pub value, set_value: 3, 0;
+    }
+
+    pub struct CsfConfig(u32) @ 0xf00, WO;
+
+    pub struct ShaderConfig(u32) @ 0xf04, WO;
+
+    pub struct TilerConfig(u32) @ 0xf08, WO;
+
+    pub struct L2MmuConfig(u32) @ 0xf0c, WO;
+
+    pub struct JobIrqClear(u32) @ 0x1004, WO;
+
+    pub struct JobIrqMask(u32) @ 0x1008, RW;
+
+    pub struct JobIrqStatus(u32) @ 0x100c, RO {
+        pub global_interface_ready, set_global_interface_ready: 31, 31;
+    }
+
+    pub struct MmuIrqRawStatus(u32) @ 0x2000, RW {
+        pub address_space, set_address_space: 15, 0;
+    }
+
+    pub struct MmuIrqClear(u32) @ 0x2004, RW;
+
+    pub struct MmuIrqMask(u32) @ 0x2008, RW;
+
+    pub struct MmuIrqStatus(u32) @ 0x200c, RW {
+        pub address_space, set_address_space: 15, 0;
+    }
+}
 
 impl GpuIrqMask {
     pub fn to_clear(&self) -> GpuIrqClear {
@@ -33,85 +108,23 @@ impl GpuIrqMask {
     }
 }
 
-// Same layout as GpuIrqMask.
-register! {GpuIrqStatus, u32, 0x2c, RO, {}}
-
-register! {GpuCommand, u32, 0x30, WO, {}}
 impl GpuCommand {
     pub fn soft_reset() -> Self {
         Self(1 | (1 << 8))
     }
 }
 
-register! {L2Config, u32, 0x48, WO, {
-    pub cache_size, set_cache_size: 23, 16;
-    pub hash_enable, set_hash_enable: 24, 24;
-    pub hash, set_hash: 31, 24;
-}}
-
-register! {GpuFaultStatus, u32, 0x3c, RO, {}}
-register! {GpuFaultAddress, u32, 0x40, RO, {}}
-
-register! {GpuShaderPresentLow, u32, 0x100, RO, {}}
-
-register! {L2Ready, u32, 0x160, RO, {
-    pub enabled, set_enabled: 1, 0;
-}}
-
-register! {L2Power, u32, 0x1a0, WO, {}}
 impl L2Power {
     pub fn enable() -> Self {
         Self(1)
     }
 }
 
-register! {AddressSpaceHash0, u32, 0x2c0, WO, {}}
-register! {AddressSpaceHash1, u32, 0x2c4, WO, {}}
-register! {AddressSpaceHash2, u32, 0x2c8, WO, {}}
-
-register! {CoherencyFeatures, u32, 0x300, RO, {
-    // The GPU can snoop on CPU caches.
-    pub ace_lite, set_ace_lite: 0, 0;
-    // Both GPU and CPU can snoop on each other's caches.
-    pub ace, set_ace: 1, 1;
-    pub none, set_none: 31, 31;
-}}
-
-register! {CoherencyEnable, u32, 0x304, RW, {}}
-
-register! {McuControl, u32, 0x700, RW, {
-    pub field, set_field: 1, 0;
-}}
-
 impl McuControl {
     pub fn auto() -> Self {
         McuControl(0x2)
     }
 }
-
-register! {McuStatus, u32, 0x704, RW, {
-    pub value, set_value: 3, 0;
-}}
-
-register! {CsfConfig, u32, 0xf00, WO, {}}
-register! {ShaderConfig, u32, 0xf04, WO, {}}
-register! {TilerConfig, u32, 0xf08, WO, {}}
-register! {L2MmuConfig, u32, 0xf0c, WO, {}}
-
-register! {JobIrqClear, u32, 0x1004, WO, {}}
-register! {JobIrqMask, u32, 0x1008, RW, {}}
-register! {JobIrqStatus, u32, 0x100c, RO, {
-    pub global_interface_ready, set_global_interface_ready: 31, 31;
-}}
-
-register! {MmuIrqRawStatus, u32, 0x2000, RW, {
-    pub address_space, set_address_space: 15, 0;
-}}
-register! {MmuIrqClear, u32, 0x2004, RW, {}}
-register! {MmuIrqMask, u32, 0x2008, RW, {}}
-register! {MmuIrqStatus, u32, 0x200C, RW, {
-    pub address_space, set_address_space: 15, 0;
-}}
 
 const MMU_BASE_OFFSET: u64 = 0x2400;
 const MMU_ADDRESS_SPACE_SHIFT: u64 = 6;
