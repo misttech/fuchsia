@@ -4,7 +4,6 @@
 
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
-import("//src/devices/board/drivers/qemu-arm64/pci.gni")
 
 driver_bind_rules("qemu-arm64_bind") {
   rules = "meta/qemu-arm64.bind"
@@ -29,7 +28,7 @@ fuchsia_cc_driver("qemu-arm64-driver") {
   ]
   sources = [
     "qemu-bus.cc",
-    "qemu-kpci.cc",
+    "qemu-pci.cc",
     "qemu-rtc.cc",
   ]
   deps = [
@@ -47,11 +46,6 @@ fuchsia_cc_driver("qemu-arm64-driver") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
-
-  if (qemu_arm64_enable_user_pci) {
-    sources -= [ "qemu-kpci.cc" ]
-    sources += [ "qemu-pci.cc" ]
-  }
 
   if (current_cpu == "arm64") {
     # TODO(https://fxbug.dev/42124149): restore some form of data dependency on qemu
