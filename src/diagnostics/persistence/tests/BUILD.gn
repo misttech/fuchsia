@@ -89,6 +89,10 @@ fuchsia_test_package("persistence-integration-tests") {
     # TODO before submitting: ":config-validation-test",
     ":persistence-integration-test",
   ]
+  test_specs = {
+    # TODO(https://fxbug.dev/476485362): Re-enable when flakes are resolved.
+    environments = []
+  }
   deps = [
     ":persistence-component-for-test",
     "//src/diagnostics/sampler/tests/test_component:single_counter_test_component",
