@@ -57,11 +57,8 @@ rust_library(
         "serde",
         "serde-1",
     ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "std",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "std",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "std",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "std",  # x86_64-unknown-linux-gnu
@@ -81,9 +78,8 @@ rust_library(
         "norustfmt",
     ],
     target_compatible_with = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [],
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [],
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -119,11 +115,8 @@ cargo_build_script(
         "serde",
         "serde-1",
     ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "std",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "std",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "std",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "std",  # x86_64-unknown-linux-gnu

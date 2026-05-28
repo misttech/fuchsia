@@ -69,9 +69,8 @@ rust_library(
         "norustfmt",
     ],
     target_compatible_with = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [],
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [],
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -83,11 +82,9 @@ rust_library(
         "//third_party/rust_crates/vendor/filetime-0.2.14:filetime",
         "//third_party/rust_crates/vendor/libc-0.2.186:libc",
     ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/vendor/fsevent-sys-4.1.0:fsevent_sys",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/vendor/fsevent-sys-4.1.0:fsevent_sys",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "//third_party/rust_crates/vendor/inotify-0.9.6:inotify",  # cfg(any(target_os = "linux", target_os = "android"))
+            "//third_party/rust_crates/vendor/mio-0.8.11:mio",  # cfg(any(target_os = "linux", target_os = "android"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "//third_party/rust_crates/vendor/inotify-0.9.6:inotify",  # cfg(any(target_os = "linux", target_os = "android"))

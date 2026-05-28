@@ -61,13 +61,9 @@ rust_library(
         "socket",
         "user",
     ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "mount",  # aarch64-apple-darwin
-            "uio",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "mount",  # x86_64-apple-darwin
-            "uio",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "mount",  # aarch64-unknown-linux-gnu
+            "uio",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "mount",  # x86_64-unknown-linux-gnu
@@ -104,9 +100,8 @@ rust_library(
         "norustfmt",
     ],
     target_compatible_with = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [],
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [],
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],

@@ -50,23 +50,14 @@ rust_library(
         ],
     ),
     crate_features = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "alloc",  # aarch64-apple-darwin
-            "ascii",  # aarch64-apple-darwin
-            "binary",  # aarch64-apple-darwin
-            "default",  # aarch64-apple-darwin
-            "parser",  # aarch64-apple-darwin
-            "simd",  # aarch64-apple-darwin
-            "std",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "alloc",  # x86_64-apple-darwin
-            "ascii",  # x86_64-apple-darwin
-            "binary",  # x86_64-apple-darwin
-            "default",  # x86_64-apple-darwin
-            "parser",  # x86_64-apple-darwin
-            "simd",  # x86_64-apple-darwin
-            "std",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "alloc",  # aarch64-unknown-linux-gnu
+            "ascii",  # aarch64-unknown-linux-gnu
+            "binary",  # aarch64-unknown-linux-gnu
+            "default",  # aarch64-unknown-linux-gnu
+            "parser",  # aarch64-unknown-linux-gnu
+            "simd",  # aarch64-unknown-linux-gnu
+            "std",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "alloc",  # x86_64-unknown-linux-gnu
@@ -92,20 +83,16 @@ rust_library(
         "norustfmt",
     ],
     target_compatible_with = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [],
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [],
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "1.0.1",
     deps = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-apple-darwin
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "//third_party/rust_crates/ask2patch/memchr",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "//third_party/rust_crates/ask2patch/memchr",  # x86_64-unknown-linux-gnu
