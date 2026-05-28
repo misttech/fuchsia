@@ -9,8 +9,8 @@ import("//build/cpp/library_headers.gni")
 library_headers("headers") {
   headers = [ "lib/control-region.h" ]
   public_deps = [
+    "//src/lib/lockdep:headers",
     "//zircon/kernel/lib/ktl:headers",
-    "//zircon/system/ulib/lockdep:headers",
   ]
 }
 

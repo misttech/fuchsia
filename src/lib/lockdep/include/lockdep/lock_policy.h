@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_POLICY_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_POLICY_H_
 
 #include <zircon/compiler.h>
 
@@ -233,3 +234,5 @@ template <typename Lock, typename Option = void>
 using LockPolicy = typename LockPolicyType<Lock, Option>::Type;
 
 }  // namespace lockdep
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_POLICY_H_

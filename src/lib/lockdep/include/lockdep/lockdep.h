@@ -6,7 +6,8 @@
 // Runtime lock dependency tracking and validation library.
 //
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCKDEP_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCKDEP_H_
 
 #include <lockdep/common.h>
 #include <lockdep/guard.h>
@@ -14,3 +15,5 @@
 #include <lockdep/lock_class_state.h>
 #include <lockdep/lock_policy.h>
 #include <lockdep/lock_traits.h>
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCKDEP_H_

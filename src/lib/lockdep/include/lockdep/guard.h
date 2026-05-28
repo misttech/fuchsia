@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LOCKDEP_GUARD_H_
-#define LOCKDEP_GUARD_H_
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_H_
 
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
@@ -799,4 +799,4 @@ class __TA_SCOPED_CAPABILITY NullGuard {
 
 }  // namespace lockdep
 
-#endif  // LOCKDEP_GUARD_H_
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_H_

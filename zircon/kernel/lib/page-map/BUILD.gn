@@ -9,10 +9,10 @@ import("//build/cpp/library_headers.gni")
 library_headers("headers") {
   headers = [ "lib/page-map.h" ]
   public_deps = [
+    "//src/lib/lockdep:headers",
     "//zircon/kernel/lib/ktl:headers",
     "//zircon/kernel/lib/object_cache:headers",
     "//zircon/kernel/vm:headers",
-    "//zircon/system/ulib/lockdep:headers",
   ]
 }
 

@@ -20,7 +20,7 @@ test("lockdep-test") {
   sources = [ "lock_dep_test.cc" ]
   deps = [
     "//sdk/lib/fdio",
-    "//zircon/system/ulib/lockdep",
+    "//src/lib/lockdep",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zxtest",
   ]
@@ -43,5 +43,8 @@ fuchsia_unittest_package("lockdep-test-pkg") {
 
 group("tests") {
   testonly = true
-  deps = [ ":lockdep-test-pkg" ]
+  deps = []
+  if (is_fuchsia) {
+    deps += [ ":lockdep-test-pkg" ]
+  }
 }

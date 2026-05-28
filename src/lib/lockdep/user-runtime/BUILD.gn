@@ -5,10 +5,10 @@
 import("//build/components.gni")
 import("//build/test.gni")
 
-static_library("zx-lockdep-runtime") {
-  sources = [ "lock_dep.cc" ]
+static_library("user-runtime") {
+  sources = [ "lockdep-runtime.cc" ]
 
-  public_deps = [ "//zircon/system/ulib/lockdep" ]
+  public_deps = [ "//src/lib/lockdep" ]
 
   if (is_fuchsia) {
     deps = [ "//src/lib/debug:backtrace-request" ]
@@ -19,10 +19,10 @@ config("unused") {
   cflags = [ "-Wno-unneeded-internal-declaration" ]
 }
 
-test("zx-lockdep-runtime-test") {
-  sources = [ "zx_lockdep_runtime_test.cc" ]
+test("user-runtime-test") {
+  sources = [ "tests.cc" ]
   deps = [
-    ":zx-lockdep-runtime",
+    ":user-runtime",
     "//zircon/system/ulib/zxtest",
   ]
   defines = [
@@ -32,12 +32,18 @@ test("zx-lockdep-runtime-test") {
   configs += [ ":unused" ]
 }
 
-fuchsia_unittest_package("zx-lockdep-runtime-test-pkg") {
-  package_name = "zx-lockdep-runtime-test"
-  deps = [ ":zx-lockdep-runtime-test" ]
+fuchsia_unittest_package("user-runtime-test-pkg") {
+  package_name = "user-runtime-test"
+  deps = [ ":user-runtime-test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":zx-lockdep-runtime-test-pkg" ]
+  deps = []
+  if (is_fuchsia) {
+    deps += [ ":user-runtime-test-pkg" ]
+  }
+  if (is_host) {
+    deps += [ ":user-runtime-test" ]
+  }
 }

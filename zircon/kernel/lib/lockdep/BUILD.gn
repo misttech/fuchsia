@@ -17,7 +17,7 @@ source_set("lockdep") {
     # userland lockdep library, which supplies all the API headers.  So
     # kernel/lib/lockdep is used as if it were a library() itself and acts
     # as the kernel's drop-in replacement for system/ulib/lockdep.
-    "//zircon/system/ulib/lockdep",
+    "//src/lib/lockdep",
   ]
 }
 

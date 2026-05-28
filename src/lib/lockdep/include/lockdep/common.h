@@ -6,8 +6,8 @@
 // Common definitions for the lockdep library.
 //
 
-#ifndef LOCKDEP_COMMON_H_
-#define LOCKDEP_COMMON_H_
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_COMMON_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_COMMON_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -172,4 +172,4 @@ inline const char* ToString(LockResult result) {
 
 }  // namespace lockdep
 
-#endif  // LOCKDEP_COMMON_H_
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_COMMON_H_

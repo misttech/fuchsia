@@ -35,7 +35,6 @@ group("tests") {
     "inspector:tests",
     "lazy_init:tests",
     "ldmsg:tests",
-    "lockdep:tests",
     "mmio-ptr:tests",
     "mock-function:tests",
     "perftest:tests",

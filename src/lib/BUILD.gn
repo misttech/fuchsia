@@ -77,6 +77,7 @@ group("tests") {
     "listnode:tests",
     "llvm-profdata:tests",
     "loader_service:tests",
+    "lockdep:tests",
     "mapped-clock:tests",
     "mapped-vmo:tests",
     "mdns:tests",
@@ -122,7 +123,6 @@ group("tests") {
     "webpki-roots-fuchsia:webpki-roots-fuchsia_tests",
     "windowed-stats:tests",
     "zbitl:tests",
-    "zx-lockdep-runtime:tests",
     "zxc:tests",
     "zxdump:tests",
   ]

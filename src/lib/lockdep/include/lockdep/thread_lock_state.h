@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_THREAD_LOCK_STATE_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_THREAD_LOCK_STATE_H_
 
 #include <stdint.h>
 #include <zircon/assert.h>
@@ -276,3 +277,5 @@ inline void AssertNoLocksHeld() {
 }
 
 }  // namespace lockdep
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_THREAD_LOCK_STATE_H_

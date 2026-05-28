@@ -9,7 +9,8 @@
 // integration of the lock validator into the runtime environment.
 //
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_RUNTIME_API_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_RUNTIME_API_H_
 
 #include <stdint.h>
 
@@ -50,3 +51,5 @@ extern void SystemInitThreadLockState(ThreadLockState* state);
 extern void SystemTriggerLoopDetection();
 
 }  // namespace lockdep
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_RUNTIME_API_H_

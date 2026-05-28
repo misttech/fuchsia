@@ -42,5 +42,8 @@ zx_library("lockdep") {
 
 group("tests") {
   testonly = true
-  deps = [ "test:tests" ]
+  deps = [
+    "test:tests",
+    "user-runtime:tests",
+  ]
 }

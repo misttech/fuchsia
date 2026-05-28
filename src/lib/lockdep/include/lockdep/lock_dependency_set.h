@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LOCKDEP_LOCK_DEPENDENCY_SET_H_
-#define LOCKDEP_LOCK_DEPENDENCY_SET_H_
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_DEPENDENCY_SET_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_DEPENDENCY_SET_H_
 
 #include <atomic>
 #include <cstddef>
@@ -151,4 +151,4 @@ class LockDependencySet {
 
 }  // namespace lockdep
 
-#endif  // LOCKDEP_LOCK_DEPENDENCY_SET_H_
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_DEPENDENCY_SET_H_

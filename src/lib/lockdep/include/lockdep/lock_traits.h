@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_TRAITS_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_TRAITS_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -218,3 +219,5 @@ class LockDep;
   LOCK_DEP_TRAITS<lock_type> LOCK_DEP_GetLockTraits(lock_type*)
 
 }  // namespace lockdep
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_TRAITS_H_

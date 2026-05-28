@@ -1,8 +1,8 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef LOCKDEP_LOCK_NAME_HELPER_H_
-#define LOCKDEP_LOCK_NAME_HELPER_H_
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_NAME_HELPER_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_NAME_HELPER_H_
 
 #include <lib/fxt/interned_string.h>
 #include <stddef.h>
@@ -108,4 +108,4 @@ class LockNameHelper {
 
 }  // namespace lockdep::internal
 
-#endif  // LOCKDEP_LOCK_NAME_HELPER_H_
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_LOCK_NAME_HELPER_H_

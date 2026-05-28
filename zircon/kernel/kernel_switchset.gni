@@ -106,7 +106,7 @@ template("kernel_switchset") {
         "//zircon/system/ulib/lazy_init:headers.config",
 
         # <kernel/spinlock.h> has #include <lockdep/lock_policy.h>.
-        "//zircon/system/ulib/lockdep:headers.config",
+        "//src/lib/lockdep:headers.config",
 
         # <kernel/{scheduler.h,scheduler_state.h> has #include <ffl/fixed.h>.
         "//zircon/system/ulib/ffl:headers.config",

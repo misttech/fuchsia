@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_MULTIPLE_H_
+#define SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_MULTIPLE_H_
 
 #include <cstddef>
 #include <new>
@@ -107,3 +108,5 @@ class GuardMultiple {
 };
 
 }  // namespace lockdep
+
+#endif  // SRC_LIB_LOCKDEP_INCLUDE_LOCKDEP_GUARD_MULTIPLE_H_
