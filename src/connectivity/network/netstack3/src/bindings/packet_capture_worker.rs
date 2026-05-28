@@ -41,7 +41,7 @@ impl Default for PacketCaptures {
     }
 }
 
-pub(crate) type QuotaGuard = scopeguard::ScopeGuard<Ctx, fn(Ctx)>;
+type QuotaGuard = scopeguard::ScopeGuard<Ctx, fn(Ctx)>;
 
 fn release_quota_mutex(ctx: Ctx) {
     let mut state_lock = ctx.bindings_ctx().packet_captures.state.lock();
@@ -112,7 +112,7 @@ async fn serve_rolling_packet_capture(
 
 // Serve a stream of fuchsia.net.debug.PacketCaptureProvider API requests for a single
 // channel (e.g. a single client connection).
-pub(crate) fn handle_start_rolling(
+fn handle_start_rolling(
     ctx: &mut Ctx,
     common_params: fnet_debug::CommonPacketCaptureParams,
     params: fnet_debug::RollingPacketCaptureParams,
