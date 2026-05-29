@@ -29,3 +29,5 @@ targets:
       - uapsd_advertisement_enabled
       - bss_load_update_period
       - chan_util_avg_period
+      - rrm_beacon_report
+      - rrm_neighbor_report

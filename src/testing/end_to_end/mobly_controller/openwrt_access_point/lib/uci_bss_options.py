@@ -34,3 +34,9 @@ class UciBssOptions(TypedDict, total=False):
 
     chan_util_avg_period: int
     """Channel utilization averaging period (in BUs)"""
+
+    rrm_beacon_report: bool
+    """Enable beacon report via radio measurements"""
+
+    rrm_neighbor_report: bool
+    """Enable neighbor report via radio measurements"""

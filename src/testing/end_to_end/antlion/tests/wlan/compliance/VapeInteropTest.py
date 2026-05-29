@@ -28,6 +28,7 @@ from openwrt_access_point.lib.profiles import (
     linksys,
     netgear,
     securifi,
+    tplink,
 )
 
 
@@ -1325,25 +1326,52 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_tplink_archerc5_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc5(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_tplink_archerc5_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc5(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1354,25 +1382,52 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_tplink_archerc5_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc5(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_tplink_archerc5_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc5(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1383,25 +1438,52 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_tplink_archerc7_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc7",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc7(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc7",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_tplink_archerc7_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc7",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc7(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc7",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -1412,25 +1494,52 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_tplink_archerc7_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc7",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc7(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=80),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc7",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_tplink_archerc7_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="tplink_archerc7",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = tplink.tplink_archerc7(
+                channel=BssChannel(
+                    Band.BAND_5G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                    VhtMode(bw=80),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="tplink_archerc7",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
