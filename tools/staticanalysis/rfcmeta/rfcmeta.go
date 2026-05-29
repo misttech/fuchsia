@@ -26,7 +26,7 @@ const (
 	rfcsDir      = "docs/contribute/governance/rfcs"
 	tocPath      = "docs/contribute/governance/rfcs/_toc.yaml"
 	rfcIndexPath = "docs/contribute/governance/rfcs/_rfcs.yaml"
-	areasPath    = "docs/contribute/governance/rfcs/_areas.yaml"
+	areasPath    = "docs/contribute/governance/rfcs/_rfc_areas.yaml"
 )
 
 type analyzer struct {

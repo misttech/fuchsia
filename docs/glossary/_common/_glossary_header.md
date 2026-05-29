@@ -1,13 +1,12 @@
 {# This file is used to define the objects and css style for the Fuchsia glossary #}
 {%- set fuchsia_source = "docs/" %}
 {%- set glossary_metadata_file = "_glossary.yaml" %}
-{%- set areas_yaml_file = "_areas.yaml" %}
 {%- set fuchsia_editor = "https://ci.android.com/edit?repo=fuchsia/fuchsia/main&file=" %}
 {%- set glossary_file = "docs/glossary/_glossary.yaml" %}
-{%- set areas_yaml_file = "docs/contribute/governance/rfcs/_areas.yaml" %}
+{%- set areas_yaml_file = "docs/contribute/governance/rfcs/_rfc_areas.yaml" %}
 
 {%- set areas | yamlloads %}
-{% include "docs/contribute/governance/rfcs/_areas.yaml" %}
+{% include "docs/contribute/governance/rfcs/_rfc_areas.yaml" %}
 {%- endset %}
 
 {%- set glossary | yamlloads %}

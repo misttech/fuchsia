@@ -59,7 +59,7 @@ pub struct CreateRfcArgs {
     pub reviewers: Vec<String>,
 }
 
-const AREAS_FILE: &str = "_areas.yaml";
+const AREAS_FILE: &str = "_rfc_areas.yaml";
 const FX_RFC_GENERATED: &str = "<!-- Generated with `fx rfc` -->";
 const META_FILE: &str = "_rfcs.yaml";
 const RFC_NAME_PLACEHOLDER: &str = "RFC-0000";

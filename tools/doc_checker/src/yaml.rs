@@ -230,7 +230,7 @@ impl DocYamlCheck for YamlChecker {
         if let Some(yaml_name) = filename.file_name() {
             let result = match yaml_name.to_str() {
                 Some("_all_drivers_doc.yaml") => check_all_drivers_doc(filename, yaml_value),
-                Some("_areas.yaml") => check_areas(filename, yaml_value),
+                Some("_areas.yaml") | Some("_rfc_areas.yaml") => check_areas(filename, yaml_value),
                 Some("_deprecated-docs.yaml") => check_deprecated_docs(filename, yaml_value),
                 Some("_drivers_areas.yaml") => check_drivers_areas(filename, yaml_value),
                 Some("_drivers_epitaphs.yaml") => check_drivers_epitaphs(filename, yaml_value),
@@ -587,6 +587,8 @@ fn check_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>
         let (items, errors) = parse_entries::<AreaEntry>(filename, yaml_value);
         let mut errs = errors.unwrap_or_default();
         if let Some(entries) = items {
+            let mut last_name: Option<String> = None;
+            let mut seen_names = std::collections::HashSet::new();
             for entry in entries {
                 if entry.name.is_empty() {
                     errs.push(DocCheckError::new_error(
@@ -594,7 +596,29 @@ fn check_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>
                         filename.to_path_buf(),
                         "area name cannot be empty",
                     ));
+                    continue;
                 }
+                if !seen_names.insert(entry.name.to_lowercase()) {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("duplicate area name: {}", entry.name),
+                    ));
+                }
+                if let Some(ref last) = last_name {
+                    if last.to_lowercase() > entry.name.to_lowercase() {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!(
+                                "areas are not alphabetically sorted: '{}' should be before '{}'",
+                                entry.name, last
+                            ),
+                        ));
+                    }
+                }
+                last_name = Some(entry.name.clone());
+
                 if !entry.api_primary.is_empty() && !entry.api_primary.contains('@') {
                     errs.push(DocCheckError::new_error(
                         1,
@@ -619,8 +643,43 @@ fn check_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>
         }
         if errs.is_empty() { None } else { Some(errs) }
     } else {
-        let (_items, errors) = parse_entries::<String>(filename, yaml_value);
-        errors
+        let (items, errors) = parse_entries::<String>(filename, yaml_value);
+        let mut errs = errors.unwrap_or_default();
+        if let Some(entries) = items {
+            let mut last_name: Option<String> = None;
+            let mut seen_names = std::collections::HashSet::new();
+            for entry in entries {
+                if entry.is_empty() {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        "area name cannot be empty",
+                    ));
+                    continue;
+                }
+                if !seen_names.insert(entry.to_lowercase()) {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("duplicate area name: {}", entry),
+                    ));
+                }
+                if let Some(ref last) = last_name {
+                    if last.to_lowercase() > entry.to_lowercase() {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!(
+                                "areas are not alphabetically sorted: '{}' should be before '{}'",
+                                entry, last
+                            ),
+                        ));
+                    }
+                }
+                last_name = Some(entry.clone());
+            }
+        }
+        if errs.is_empty() { None } else { Some(errs) }
     }
 }
 
@@ -1375,6 +1434,86 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
 mod test {
 
     use super::*;
+
+    #[test]
+    fn test_check_rfc_areas() -> Result<()> {
+        let filename = "docs/contribute/governance/rfcs/_rfc_areas.yaml";
+
+        // Test valid sorted and unique areas
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- AreaA
+- AreaB
+- AreaC
+            "#,
+        )?;
+        let result = check_areas(&PathBuf::from(filename), &yaml_value);
+        assert!(result.is_none());
+
+        // Test unsorted areas
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- AreaB
+- AreaA
+- AreaC
+            "#,
+        )?;
+        let result = check_areas(&PathBuf::from(filename), &yaml_value);
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message,
+            "areas are not alphabetically sorted: 'AreaA' should be before 'AreaB'"
+        );
+
+        // Test duplicate areas
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- AreaA
+- AreaA
+- AreaB
+            "#,
+        )?;
+        let result = check_areas(&PathBuf::from(filename), &yaml_value);
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "duplicate area name: AreaA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_areas_sorting_and_duplicates() -> Result<()> {
+        let filename = "docs/contribute/governance/areas/_areas.yaml";
+
+        // Test duplicates and unsorted in areas struct
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- name: 'AreaB'
+  api_primary: 'someone@google.com'
+  api_secondary: ''
+- name: 'AreaA'
+  api_primary: 'someone@google.com'
+  api_secondary: ''
+- name: 'areab'
+  api_primary: 'someone@google.com'
+  api_secondary: ''
+            "#,
+        )?;
+        let result = check_areas(&PathBuf::from(filename), &yaml_value);
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors[0].message,
+            "areas are not alphabetically sorted: 'AreaA' should be before 'AreaB'"
+        );
+        assert_eq!(errors[1].message, "duplicate area name: areab");
+
+        Ok(())
+    }
 
     #[test]
     fn test_check_path() -> Result<()> {

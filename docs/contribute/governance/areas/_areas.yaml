@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 # NOTE: This should be a subset of the areas listed in
-# docs/contribute/governance/rfcs/_areas.yaml.
+# docs/contribute/governance/rfcs/_rfc_areas.yaml.
 
 - name: 'Bluetooth'
   api_primary: 'jamuraa@google.com'
@@ -65,6 +65,17 @@
     - fidl: 'fuchsia.diagnostics'
     - fidl: 'fuchsia.inspect'
 
+- name: 'Driver SDK'
+  api_primary: 'jocelyndang@google.com'
+  api_secondary: 'surajmalhotra@google.com'
+  description: |
+    The set of APIs used to interact with devices via the driver manager. This
+    may be used by developers to retrieve information about a device or change
+    its current state.
+  examples:
+    - fidl: 'fuchsia.device'
+    - fidl: 'fuchsia.driver.framework'
+
 - name: 'Drivers'
   api_primary: 'jocelyndang@google.com'
   api_secondary: 'puneetha@google.com'
@@ -87,17 +98,6 @@
     </p>
   examples:
     - fidl: 'fuchsia.hardware.pci'
-
-- name: 'Driver SDK'
-  api_primary: 'jocelyndang@google.com'
-  api_secondary: 'surajmalhotra@google.com'
-  description: |
-    The set of APIs used to interact with devices via the driver manager. This
-    may be used by developers to retrieve information about a device or change
-    its current state.
-  examples:
-    - fidl: 'fuchsia.device'
-    - fidl: 'fuchsia.driver.framework'
 
 - name: 'Experiences'
   api_primary: 'chaselatta@google.com'

@@ -23,7 +23,7 @@ type file struct {
 
 func TestAnalyzer(t *testing.T) {
 	areasFile := file{
-		path: "docs/contribute/governance/rfcs/_areas.yaml",
+		path: "docs/contribute/governance/rfcs/_rfc_areas.yaml",
 		content: `
 - Bluetooth
 - Kernel
@@ -222,7 +222,7 @@ toc:
 			expected: []*staticanalysis.Finding{
 				{
 					Category: "rfcmeta/index/missing_area",
-					Message:  `Include an 'area' for this RFC. Options are listed in //docs/contribute/governance/rfcs/_areas.yaml`,
+					Message:  `Include an 'area' for this RFC. Options are listed in //docs/contribute/governance/rfcs/_rfc_areas.yaml`,
 					Path:     "docs/contribute/governance/rfcs/_rfcs.yaml",
 					Line:     2,
 					EndLine:  2,
@@ -257,7 +257,7 @@ toc:
 			path: "docs/contribute/governance/rfcs/_rfcs.yaml",
 			files: []file{
 				{
-					path:    "docs/contribute/governance/rfcs/_areas.yaml",
+					path:    "docs/contribute/governance/rfcs/_rfc_areas.yaml",
 					content: `asd'f`,
 				},
 				{
@@ -279,7 +279,7 @@ toc:
 			expected: []*staticanalysis.Finding{
 				{
 					Category: "rfcmeta/index/unknown_area",
-					Message:  `area "Kernel" is not listed in //docs/contribute/governance/rfcs/_areas.yaml`,
+					Message:  `area "Kernel" is not listed in //docs/contribute/governance/rfcs/_rfc_areas.yaml`,
 					Path:     "docs/contribute/governance/rfcs/_rfcs.yaml",
 					Line:     2,
 					EndLine:  2,
@@ -310,7 +310,7 @@ toc:
 			expected: []*staticanalysis.Finding{
 				{
 					Category: "rfcmeta/index/unknown_area",
-					Message:  `area "Area 51" is not listed in //docs/contribute/governance/rfcs/_areas.yaml`,
+					Message:  `area "Area 51" is not listed in //docs/contribute/governance/rfcs/_rfc_areas.yaml`,
 					Path:     "docs/contribute/governance/rfcs/_rfcs.yaml",
 					Line:     2,
 					EndLine:  2,

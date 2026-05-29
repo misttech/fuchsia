@@ -7,14 +7,14 @@
 {%- set rfcs_dir = "docs/contribute/governance/rfcs/" %}
 {%- set rfcs_metadata_file = "_rfcs.yaml" %}
 {%- set eng_council_yaml_file = "_eng_council.yaml" %}
-{%- set areas_yaml_file = "_areas.yaml" %}
+{%- set areas_yaml_file = "_rfc_areas.yaml" %}
 
 {%- set rfcs | yamlloads %}
 {% include "docs/contribute/governance/rfcs/_rfcs.yaml" %}
 {%- endset %}
 
 {%- set areas | yamlloads %}
-{% include "docs/contribute/governance/rfcs/_areas.yaml" %}
+{% include "docs/contribute/governance/rfcs/_rfc_areas.yaml" %}
 {%- endset %}
 
 {%- set eng_council | yamlloads %}

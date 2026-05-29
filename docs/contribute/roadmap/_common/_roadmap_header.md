@@ -2,7 +2,7 @@
 {%- set url_qualifier = "http://" %}
 
 {%- set areas | yamlloads %}
-{% include "docs/contribute/governance/rfcs/_areas.yaml" %}
+{% include "docs/contribute/governance/rfcs/_rfc_areas.yaml" %}
 {%- endset %}
 
 <style>
