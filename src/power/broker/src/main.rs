@@ -291,16 +291,22 @@ impl BrokerSvc {
                 );
                 responder.send(res.map_err(Into::into)).context("send failed")
             }
-            ElementControlRequest::AddDependency { payload, responder } => {
+            ElementControlRequest::AddDependency {
+                dependent_level,
+                requires_token,
+                requires_level_by_preference,
+                responder,
+            } => {
                 fuchsia_trace::duration!(c"power-broker", c"ElementControl::AddDependency");
-                let dep = payload;
                 log::debug!(
-                    "{debug_info}: AddDependency({:?}, {:?}, {:?}, {:?})",
-                    dep.dependent_level,
-                    dep.requires_token,
-                    dep.requires_level_by_preference,
-                    dep.remove_with_required_element
+                    "{debug_info}: AddDependency({dependent_level:?}, {requires_token:?}, {requires_level_by_preference:?})"
                 );
+
+                let dep = fpb::LevelDependency {
+                    dependent_level,
+                    requires_token,
+                    requires_level_by_preference,
+                };
                 let provisional_lease_id =
                     match self.broker.borrow_mut().prepare_add_dependency(element_id, &dep) {
                         Ok(res) => res.map(|l| l.id),

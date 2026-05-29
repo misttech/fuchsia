@@ -130,10 +130,10 @@ TEST_P(DriverRunnerTest, RestartWithPowerDependenciesAndCpuOverride) {
   zx::event token;
   ASSERT_EQ(zx::event::create(0, &token), ZX_OK);
   std::vector<fuchsia_power_broker::LevelDependency> power_deps;
-  power_deps.push_back(fuchsia_power_broker::LevelDependency{{
+  power_deps.push_back({{
       .dependent_level = 1,
       .requires_token = std::move(token),
-      .requires_level_by_preference = std::vector<uint8_t>{1},
+      .requires_level_by_preference = {1},
   }});
 
   zx::eventpair release_fence1, release_fence2;

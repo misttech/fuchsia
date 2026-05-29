@@ -482,10 +482,10 @@ TEST_F(Dfv2NodeTest, StartDriverWithPowerDependencyOverrides) {
   ASSERT_EQ(dep_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dep_token_copy), ZX_OK);
 
   std::vector<fuchsia_power_broker::LevelDependency> overrides;
-  overrides.push_back(fuchsia_power_broker::LevelDependency{{
+  overrides.push_back({{
       .dependent_level = 1,
       .requires_token = std::move(dep_token_copy),
-      .requires_level_by_preference = std::vector<uint8_t>{1},
+      .requires_level_by_preference = {1},
   }});
   node->SetPowerDependencyOverrides(std::move(overrides));
 

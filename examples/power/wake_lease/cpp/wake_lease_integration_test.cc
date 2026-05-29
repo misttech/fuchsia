@@ -72,12 +72,11 @@ class ApplicationActivityElement {
  private:
   ElementSchema BuildAssertiveApplicationActivitySchema(const std::string& name,
                                                         zx::event requires_token) {
-    LevelDependency dependency{{
-        .dependent_level = fidl::ToUnderlying(BinaryPowerLevel::kOn),
-        .requires_token = std::move(requires_token),
-        .requires_level_by_preference =
-            std::vector<uint8_t>({fidl::ToUnderlying(ApplicationActivityLevel::kActive)}),
-    }};
+    LevelDependency dependency(
+        /*dependent_level=*/fidl::ToUnderlying(BinaryPowerLevel::kOn),
+        /*requires_token=*/std::move(requires_token),
+        /*requires_level_by_preference=*/
+        std::vector<uint8_t>({fidl::ToUnderlying(ApplicationActivityLevel::kActive)}));
     ElementSchema schema{{
         .element_name = name,
         .initial_current_level = fidl::ToUnderlying(BinaryPowerLevel::kOn),

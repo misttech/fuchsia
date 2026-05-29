@@ -1735,19 +1735,14 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
         // Clone power dependencies for the node
         std::vector<fuchsia_power_broker::LevelDependency> deps;
         for (const auto& dep : power_dependencies) {
-          if (!dep.requires_token().has_value() || !dep.dependent_level().has_value() ||
-              !dep.requires_level_by_preference().has_value()) {
-            fdf_log::warn("Power dependency is invalid, skipping.");
-            continue;
-          }
           fuchsia_power_broker::DependencyToken clone;
-          zx_status_t status = dep.requires_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+          zx_status_t status = dep.requires_token().duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
           if (status != ZX_OK) {
             fdf_log::error("Failed to duplicate power token: {}", zx_status_get_string(status));
             continue;
           }
-          deps.push_back(CreateLevelDependency(dep.dependent_level().value(), std::move(clone),
-                                               dep.requires_level_by_preference().value()));
+          deps.push_back(CreateLevelDependency(dep.dependent_level(), std::move(clone),
+                                               dep.requires_level_by_preference()));
         }
         current->SetPowerDependencyOverrides(std::move(deps));
 

@@ -77,10 +77,9 @@ impl SystemActivityGovernorControl {
                 element_runner_client,
             )
             .dependencies(vec![fbroker::LevelDependency {
-                dependent_level: Some(1),
-                requires_token: Some(aa_token),
-                requires_level_by_preference: Some(vec![1]),
-                ..Default::default()
+                dependent_level: 1,
+                requires_token: aa_token,
+                requires_level_by_preference: vec![1],
             }])
             .build()
             .await

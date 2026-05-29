@@ -213,9 +213,8 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
     for (const auto& dependency : *req.dependencies()) {
       zx_info_handle_basic_t dependency_info{}, token_info{};
 
-      ASSERT_TRUE(dependency.requires_token().has_value());
-      ASSERT_OK(dependency.requires_token()->get_info(ZX_INFO_HANDLE_BASIC, &dependency_info,
-                                                      sizeof(dependency_info), nullptr, nullptr));
+      ASSERT_OK(dependency.requires_token().get_info(ZX_INFO_HANDLE_BASIC, &dependency_info,
+                                                     sizeof(dependency_info), nullptr, nullptr));
       ASSERT_OK(
           token_.get_info(ZX_INFO_HANDLE_BASIC, &token_info, sizeof(token_info), nullptr, nullptr));
 

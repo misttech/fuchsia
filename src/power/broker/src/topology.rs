@@ -159,21 +159,6 @@ impl Element {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum OnRequiredElementRemoval {
-    RemoveWithRequiredElement,
-    MakeUnsatisfiable,
-}
-
-impl OnRequiredElementRemoval {
-    pub fn from_level_dependency(dep: fpb::LevelDependency) -> Self {
-        match dep.remove_with_required_element {
-            Some(true) => Self::RemoveWithRequiredElement,
-            _ => Self::MakeUnsatisfiable,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum AddElementError {
     Invalid,
@@ -215,7 +200,6 @@ impl Into<fpb::ModifyDependencyError> for ModifyDependencyError {
 pub struct Topology {
     pub(crate) elements: HashMap<ElementID, Element>,
     dependencies: HashMap<ElementLevel, Vec<ElementLevel>>,
-    removable_dependencies: rustc_hash::FxHashSet<Dependency>,
     unsatisfiable_element_id: ElementID,
     inspect: TopologyInspect,
 }
@@ -229,7 +213,6 @@ impl Topology {
         let mut topology = Topology {
             elements: HashMap::new(),
             dependencies: HashMap::new(),
-            removable_dependencies: rustc_hash::FxHashSet::default(),
             unsatisfiable_element_id: ElementID::new(0),
             inspect: TopologyInspect::new(
                 parent_inspect_node.create_child("topology"),
@@ -340,7 +323,7 @@ impl Topology {
 
     pub fn remove_element(&mut self, element_id: ElementID) -> Option<Element> {
         if self.unsatisfiable_element_id != element_id {
-            self.update_dependencies_for_removed_element(element_id);
+            self.invalidate_dependent_elements(element_id);
             self.elements.remove(&element_id)
         } else {
             None
@@ -435,54 +418,57 @@ impl Topology {
         dependencies.into_iter().collect()
     }
 
-    /// Updates dependencies when an element is removed.
-    /// Non-removable dependencies are replaced with a dependency on the unsatisfiable element.
-    /// Removable dependencies are simply removed, along with all other dependencies where the
-    /// removed element is the dependent element.
-    fn update_dependencies_for_removed_element(&mut self, removed_element_id: ElementID) {
-        // For each dependency that is not removable, we must first
-        // replace the dependency with one on the unsatisfiable element.
-        let dependencies_on_removed_element: Vec<Dependency> = self
+    /// Elements that have any type of dependency on the provided ElementID are 'invalidated'
+    /// by replacing their dependency on the provided ElementID with the 'unsatisfiable' element that
+    /// will never be turned on.
+    fn invalidate_dependent_elements(&mut self, invalid_element_id: ElementID) {
+        // Prior to removing any dependencies that are no longer valid, ensure that we add a
+        // dependency to the unsatisfiable element, which forces *future* leases into the
+        // pending state and prevents the broker from attempting to turn on other dependent
+        // elements. Existing leases will remain unaffected.
+        let dependents_of_invalid_elements: Vec<ElementLevel> = self
             .dependencies
             .iter()
-            .flat_map(|(dependent, requires)| {
-                requires
+            .filter_map(|(dependent, requires)| {
+                if requires
                     .iter()
-                    .filter(move |required_level| required_level.element_id == removed_element_id)
-                    .map(move |required_level| Dependency {
-                        dependent: dependent.clone(),
-                        requires: required_level.clone(),
-                    })
+                    .any(|required_level| required_level.element_id == invalid_element_id)
+                {
+                    Some(dependent.clone())
+                } else {
+                    None
+                }
             })
             .collect();
-        for dep in dependencies_on_removed_element {
-            if !self.removable_dependencies.contains(&dep) {
-                match self.add_dependency(
-                    &Dependency {
-                        dependent: dep.dependent.clone(),
-                        requires: ElementLevel {
-                            element_id: self.unsatisfiable_element_id,
-                            level: IndexedPowerLevel { level: fpb::PowerLevel::MAX, index: 1 },
-                        },
+        for dependent in dependents_of_invalid_elements {
+            match self.add_dependency(
+                &Dependency {
+                    dependent: dependent.clone(),
+                    requires: ElementLevel {
+                        element_id: self.unsatisfiable_element_id,
+                        level: IndexedPowerLevel { level: fpb::PowerLevel::MAX, index: 1 },
                     },
-                    OnRequiredElementRemoval::MakeUnsatisfiable,
-                    &mut EagerInspectWriter,
-                ) {
-                    Ok(_) | Err(ModifyDependencyError::AlreadyExists) => {
-                        // This is fine, there could be multiple removed elements.
-                    }
-                    Err(e) => {
-                        panic!(
-                            "failed to replace dependency with unsatisfiable dependency: {:?}",
-                            e
-                        )
-                    }
+                },
+                &mut EagerInspectWriter,
+            ) {
+                Ok(_) | Err(ModifyDependencyError::AlreadyExists) => {
+                    // This is fine, there could be multiple invalid elements.
+                }
+                Err(e) => {
+                    panic!("failed to replace dependency with unsatisfiable dependency: {:?}", e)
                 }
             }
-            self.remove_dependency(&dep).expect("failed to remove dependency");
+            for requires in self.dependencies.get(&dependent).unwrap().clone() {
+                if requires.element_id == invalid_element_id {
+                    self.remove_dependency(&Dependency {
+                        dependent: dependent.clone(),
+                        requires: requires.clone(),
+                    })
+                    .expect("failed to remove invalid dependency");
+                }
+            }
         }
-        // Remove all dependencies where this element is the dependent element.
-        self.dependencies.retain(|key, _| key.element_id != removed_element_id);
+        self.dependencies.retain(|key, _| key.element_id != invalid_element_id);
     }
 
     /// Checks that a dependency is valid. Returns ModifyDependencyError if not.
@@ -512,7 +498,6 @@ impl Topology {
     pub fn add_dependency<I>(
         &mut self,
         dep: &Dependency,
-        on_required_element_removal: OnRequiredElementRemoval,
         inspect_writer: &mut I,
     ) -> Result<(), ModifyDependencyError>
     where
@@ -524,12 +509,7 @@ impl Topology {
             return Err(ModifyDependencyError::AlreadyExists);
         }
         required_levels.push(dep.requires.clone());
-        let remove_with_required_element =
-            on_required_element_removal == OnRequiredElementRemoval::RemoveWithRequiredElement;
-        if remove_with_required_element {
-            self.mark_dependency_removable(dep.clone());
-        }
-        inspect_writer.add_dependency(&self, dep, on_required_element_removal);
+        inspect_writer.add_dependency(&self, dep, true);
         Ok(())
     }
 
@@ -546,26 +526,8 @@ impl Topology {
             return Err(ModifyDependencyError::NotFound(dep.requires.element_id));
         }
         required_levels.retain(|el| el != &dep.requires);
-        self.removable_dependencies.remove(dep);
         self.inspect.on_remove_dependency(&self.elements, dep);
         Ok(())
-    }
-
-    /// Marks a dependency to be automatically removed when its required element is removed.
-    pub fn mark_dependency_removable(&mut self, dep: Dependency) {
-        self.removable_dependencies.insert(dep);
-    }
-
-    /// Returns all removable dependencies that require the given element.
-    pub fn get_removable_dependencies_for_required_element(
-        &self,
-        element_id: ElementID,
-    ) -> Vec<Dependency> {
-        self.removable_dependencies
-            .iter()
-            .filter(|dep| dep.requires.element_id == element_id)
-            .cloned()
-            .collect()
     }
 }
 
@@ -699,7 +661,6 @@ mod tests {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");
@@ -773,7 +734,6 @@ mod tests {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         );
         assert!(matches!(extra_add_dep_res, Err(ModifyDependencyError::AlreadyExists { .. })));
@@ -855,7 +815,6 @@ mod tests {
                 dependent: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");
@@ -916,7 +875,6 @@ mod tests {
                 dependent: ElementLevel { element_id: air.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         );
         assert!(matches!(element_not_found_res, Err(ModifyDependencyError::NotFound { .. })));
@@ -926,7 +884,6 @@ mod tests {
                 dependent: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         );
         assert!(matches!(req_element_not_found_res, Err(ModifyDependencyError::NotFound { .. })));
@@ -976,7 +933,6 @@ mod tests {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");
@@ -1080,30 +1036,22 @@ mod tests {
             dependent: ElementLevel { element_id: b.clone(), level: ONE },
             requires: ElementLevel { element_id: a.clone(), level: ONE },
         };
-        t.add_dependency(&ba, OnRequiredElementRemoval::MakeUnsatisfiable, &mut EagerInspectWriter)
-            .expect("add_dependency failed");
+        t.add_dependency(&ba, &mut EagerInspectWriter).expect("add_dependency failed");
         let cb = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel { element_id: b.clone(), level: ONE },
         };
-        t.add_dependency(&cb, OnRequiredElementRemoval::MakeUnsatisfiable, &mut EagerInspectWriter)
-            .expect("add_dependency failed");
+        t.add_dependency(&cb, &mut EagerInspectWriter).expect("add_dependency failed");
         let cd = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel { element_id: d.clone(), level: ONE },
         };
-        t.add_dependency(&cd, OnRequiredElementRemoval::MakeUnsatisfiable, &mut EagerInspectWriter)
-            .expect("add_dependency failed");
+        t.add_dependency(&cd, &mut EagerInspectWriter).expect("add_dependency failed");
         let cd2 = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: TWO },
             requires: ElementLevel { element_id: d.clone(), level: TWO },
         };
-        t.add_dependency(
-            &cd2,
-            OnRequiredElementRemoval::MakeUnsatisfiable,
-            &mut EagerInspectWriter,
-        )
-        .expect("add_dependency failed");
+        t.add_dependency(&cd2, &mut EagerInspectWriter).expect("add_dependency failed");
         assert_data_tree!(inspect, root: {
             topology: {
                 "fuchsia.inspect.Graph": {
@@ -1236,12 +1184,7 @@ mod tests {
                 level: IndexedPowerLevel { level: 5, index: 2 },
             },
         };
-        t.add_dependency(
-            &c1_b5,
-            OnRequiredElementRemoval::MakeUnsatisfiable,
-            &mut EagerInspectWriter,
-        )
-        .expect("add_dependency failed");
+        t.add_dependency(&c1_b5, &mut EagerInspectWriter).expect("add_dependency failed");
         let c1_d3 = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel {
@@ -1249,22 +1192,12 @@ mod tests {
                 level: IndexedPowerLevel { level: 3, index: 2 },
             },
         };
-        t.add_dependency(
-            &c1_d3,
-            OnRequiredElementRemoval::MakeUnsatisfiable,
-            &mut EagerInspectWriter,
-        )
-        .expect("add_dependency failed");
+        t.add_dependency(&c1_d3, &mut EagerInspectWriter).expect("add_dependency failed");
         let d1_a1 = Dependency {
             dependent: ElementLevel { element_id: d.clone(), level: ONE },
             requires: ElementLevel { element_id: a.clone(), level: ONE },
         };
-        t.add_dependency(
-            &d1_a1,
-            OnRequiredElementRemoval::MakeUnsatisfiable,
-            &mut EagerInspectWriter,
-        )
-        .expect("add_dependency failed");
+        t.add_dependency(&d1_a1, &mut EagerInspectWriter).expect("add_dependency failed");
 
         let a_deps = t.all_direct_and_indirect_dependencies(&ElementLevel {
             element_id: a.clone(),
@@ -1316,7 +1249,6 @@ mod tests {
                 dependent: ElementLevel { element_id: c.clone(), level: ONE },
                 requires: ElementLevel { element_id: a.clone(), level: ONE },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");
@@ -1326,7 +1258,6 @@ mod tests {
                 dependent: ElementLevel { element_id: c.clone(), level: ONE },
                 requires: ElementLevel { element_id: b.clone(), level: ONE },
             },
-            OnRequiredElementRemoval::MakeUnsatisfiable,
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");

@@ -190,10 +190,9 @@ where
         mut extra_dependencies: Vec<fbroker::LevelDependency>,
     ) -> Vec<fbroker::LevelDependency> {
         extra_dependencies.push(fbroker::LevelDependency {
-            dependent_level: Some(fsystem::ExecutionStateLevel::Suspending.into_primitive()),
-            requires_token: Some(self.cpu_assertive_dependency_token()),
-            requires_level_by_preference: Some(vec![fsystem::CpuLevel::Active.into_primitive()]),
-            ..Default::default()
+            dependent_level: fsystem::ExecutionStateLevel::Suspending.into_primitive(),
+            requires_token: self.cpu_assertive_dependency_token(),
+            requires_level_by_preference: vec![fsystem::CpuLevel::Active.into_primitive()],
         });
         extra_dependencies
     }
@@ -242,13 +241,11 @@ where
                                     self.cpu_manager.clone(),
                                     self.create_execution_state_level_dependencies(vec![
                                         fbroker::LevelDependency {
-                                            dependent_level: Some(
+                                            dependent_level:
                                                 fsystem::ExecutionStateLevel::Suspending
                                                     .into_primitive(),
-                                            ),
-                                            requires_token: Some(dependency_token),
-                                            requires_level_by_preference: Some(vec![power_level]),
-                                            ..Default::default()
+                                            requires_token: dependency_token,
+                                            requires_level_by_preference: vec![power_level],
                                         },
                                     ]),
                                 )
