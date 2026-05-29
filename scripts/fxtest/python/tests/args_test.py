@@ -400,3 +400,36 @@ class TestArgs(unittest.TestCase):
         flags.validate()
         self.assertEqual(flags.debugger_will_attach(), debugger_will_attach)
         self.assertEqual(flags.debugger_should_spawn(), debugger_should_spawn)
+
+    def test_agent_debugging_mode(self) -> None:
+        """Tests that --agent-debugging-mode implies --break-on-failure and --enable-debug-adapter."""
+        flags = args.parse_args(["--agent-debugging-mode"])
+        flags.validate()
+        self.assertEqual(flags.agent_debugging_mode, True)
+        self.assertEqual(flags.break_on_failure, True)
+        self.assertEqual(flags.enable_debug_adapter, True)
+
+    def test_break_on_failure_boolean_optional(self) -> None:
+        """Tests that boolean optional flags work and raise FlagError on conflict."""
+        # Test --no-break-on-failure correctly resolves to False
+        flags = args.parse_args(["--no-break-on-failure"])
+        flags.validate()
+        self.assertEqual(flags.break_on_failure, False)
+
+        # Test --no-enable-debug-adapter correctly resolves to False
+        flags = args.parse_args(["--no-enable-debug-adapter"])
+        flags.validate()
+        self.assertEqual(flags.enable_debug_adapter, False)
+
+        # Test that explicitly disabling either flag while enabling agent debugging raises FlagError
+        with self.assertRaises(args.FlagError):
+            flags = args.parse_args(
+                ["--agent-debugging-mode", "--no-break-on-failure"]
+            )
+            flags.validate()
+
+        with self.assertRaises(args.FlagError):
+            flags = args.parse_args(
+                ["--agent-debugging-mode", "--no-enable-debug-adapter"]
+            )
+            flags.validate()

@@ -110,6 +110,7 @@ class Flags:
     use_existing_debugger: bool
     enable_debug_adapter: bool
     debug_adapter_port: int | None
+    agent_debugging_mode: bool
     use_test_pilot: bool
     extra_args: typing.List[str]
     env: typing.List[str]
@@ -139,6 +140,23 @@ class Flags:
         Raises:
             FlagError: If the flags are invalid.
         """
+        if self.agent_debugging_mode:
+            if self.break_on_failure is False:
+                raise FlagError(
+                    "--no-break-on-failure is incompatible with --agent-debugging-mode"
+                )
+            if self.enable_debug_adapter is False:
+                raise FlagError(
+                    "--no-enable-debug-adapter is incompatible with --agent-debugging-mode"
+                )
+            self.break_on_failure = True
+            self.enable_debug_adapter = True
+
+        if self.break_on_failure is None:
+            self.break_on_failure = False
+        if self.enable_debug_adapter is None:
+            self.enable_debug_adapter = False
+
         if self.simple and self.status:
             raise FlagError("--simple is incompatible with --status")
         if self.simple and self.style:
@@ -627,11 +645,11 @@ def parse_args(
     )
     execution.add_argument(
         "--break-on-failure",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         help="""If set and supported by the test runner, any test case failures will stop test
         execution. zxdb is automatically launched and attached to the failed test case unless
         `--use-existing-debugger` is set.""",
-        default=False,
+        default=None,
     )
     execution.add_argument(
         "--breakpoint",
@@ -655,8 +673,8 @@ def parse_args(
         help="""If set, spawns zxdb in Debug Adapter mode. This will not spawn a zxdb console
         session. Instead, zxdb will be acting as a Debug Adapter server. This option is incompatible
         with --use-existing-debugger.""",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=None,
     )
     execution.add_argument(
         "--debug-adapter-port",
@@ -665,6 +683,14 @@ def parse_args(
         with --enable-debug-adapter. An open port is randomly assigned if not specified.""",
         metavar="PORT",
         default=None,
+    )
+    execution.add_argument(
+        "--agent-debugging-mode",
+        action="store_true",
+        help="""If set, automatically spawns the zxdb-daemon process in the background, which
+        simplifies the agentic test debugging workflow. Implies --break-on-failure and
+        --enable-debug-adapter.""",
+        default=False,
     )
     execution.add_argument(
         "--allow-temporary-package-server",

@@ -392,3 +392,108 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             start_new_session=True,
             stderr=subprocess.STDOUT,
         )
+
+    @mock.patch("debugger._start_zxdb_daemon")
+    async def test_enable_debug_adapter_sequences_daemon_startup(
+        self, mock_start_daemon: mock.AsyncMock
+    ) -> None:
+        """Tests that when enable_debug_adapter is True, _start_zxdb_daemon is awaited before the ready callback."""
+        condvar = asyncio.Condition()
+        callback_called = False
+        daemon_started = False
+        daemon_completed = False
+
+        mock_proc = mock.MagicMock()
+        mock_manager = mock.MagicMock()
+        mock_manager._proc = mock_proc
+
+        async def mock_start(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            nonlocal daemon_started, daemon_completed
+            daemon_started = True
+            await asyncio.sleep(0.1)  # Simulate async work
+            daemon_completed = True
+            return mock_manager
+
+        mock_start_daemon.side_effect = mock_start
+
+        async def mock_on_debugger_ready() -> None:
+            nonlocal callback_called
+            # Verify that the daemon startup has fully completed before ready callback is called!
+            self.assertTrue(daemon_started)
+            self.assertTrue(daemon_completed)
+            callback_called = True
+            async with condvar:
+                condvar.notify_all()
+
+        package_name = "fuchsia-pkg://fuchsia.com/foo_test#meta/foo_test.cm"
+        test = Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(package_name, "", ""),
+            ),
+        )
+
+        debugger.spawn(
+            [test],
+            mock_on_debugger_ready,
+            recorder=None,
+            break_on_failure=True,
+            enable_debug_adapter=True,
+            debug_adapter_port=1234,
+        )
+
+        # Ensure signal handler is cleaned up
+        self.addCleanup(
+            lambda: asyncio.get_event_loop().remove_signal_handler(
+                signal.SIGUSR1
+            )
+        )
+
+        # Simulate SIGUSR1
+        await asyncio.sleep(0.2)
+        os.kill(os.getpid(), signal.SIGUSR1)
+
+        async with condvar:
+            await condvar.wait()
+            self.assertTrue(callback_called)
+
+    @mock.patch("debugger.DaemonManager")
+    async def test_start_zxdb_daemon(
+        self,
+        mock_daemon_manager_class: mock.Mock,
+    ) -> None:
+        """Tests that _start_zxdb_daemon correctly starts the daemon."""
+        mock_manager_instance = mock_daemon_manager_class.return_value
+        mock_process = mock.MagicMock()
+        mock_manager_instance.start = mock.AsyncMock(return_value=mock_process)
+        mock_manager_instance._proc = mock_process
+
+        manager = await debugger._start_zxdb_daemon(None, 1234)
+
+        self.assertEqual(manager, mock_manager_instance)
+        self.assertEqual(manager._proc, mock_process)
+        mock_daemon_manager_class.assert_called_once_with(
+            port=1234, connect_to_existing=True
+        )
+        mock_manager_instance.start.assert_called_once()
+
+    @mock.patch("debugger.DaemonManager")
+    async def test_start_zxdb_daemon_eof_fails(
+        self,
+        mock_daemon_manager_class: mock.Mock,
+    ) -> None:
+        """Tests that _start_zxdb_daemon fails if the daemon manager fails to start."""
+        mock_manager_instance = mock_daemon_manager_class.return_value
+        mock_manager_instance.start = mock.AsyncMock(
+            side_effect=Exception("connection failed")
+        )
+
+        with self.assertRaises(RuntimeError) as context:
+            await debugger._start_zxdb_daemon(None, 1234)
+
+        self.assertIn("Failed to start zxdb-daemon", str(context.exception))
+        mock_daemon_manager_class.assert_called_once_with(
+            port=1234, connect_to_existing=True
+        )
+        mock_manager_instance.start.assert_called_once()

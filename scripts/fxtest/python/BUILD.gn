@@ -50,6 +50,8 @@ if (is_host) {
 
   binary_deps = [
     "dataparse",
+    "//scripts/debug/zxdb_cli/daemon:install",
+    "//scripts/debug/zxdb_cli/daemon_manager",
     "//scripts/fxtest/scripts:install",
     "//scripts/lib/async_utils",
     "//scripts/lib/fx_cmd",

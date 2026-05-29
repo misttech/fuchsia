@@ -4,6 +4,7 @@
 
 import asyncio
 import atexit
+from collections.abc import Awaitable
 import os
 import random
 import signal
@@ -13,15 +14,39 @@ import sys
 import tempfile
 import typing
 
+from daemon_manager import DaemonManager
 from portpicker import portpicker
 
 from event import EventRecorder
 import test_list_file
 
 
+async def _start_zxdb_daemon(
+    recorder: EventRecorder | None, port: int
+) -> DaemonManager:
+    try:
+        manager = DaemonManager(port=port, connect_to_existing=True)
+        proc = await manager.start()
+        if proc is None:
+            raise RuntimeError(
+                "Daemon process was not started (already running or failed)"
+            )
+    except Exception as e:
+        raise RuntimeError(f"Failed to start zxdb-daemon: {e}") from e
+
+    # Print a hint when using DAP mode for how to connect with zxdb-cli.
+    if recorder is not None:
+        recorder.emit_info_message(
+            "A new fx debug cli session has been started automatically, "
+            "get started with `fx debug cli wait-for-event`."
+        )
+
+    return manager
+
+
 def spawn(
     tests: list[test_list_file.Test],
-    on_debugger_ready: typing.Callable[[], typing.Any],
+    on_debugger_ready: typing.Callable[[], Awaitable[typing.Any]],
     recorder: EventRecorder | None = None,
     break_on_failure: bool = False,
     enable_debug_adapter: bool = False,
@@ -90,25 +115,22 @@ def spawn(
     if break_on_failure:
         embedded_mode_context_args = ["--embedded-mode-context", "test failure"]
 
+    port: int | None = None
     debug_adapter_args = []
-    if enable_debug_adapter:
-        debug_adapter_args = ["--enable-debug-adapter"]
 
+    # |enable_debug_adapter| means we're always going to spawn a zxdb-daemon process now.
+    # zxdb-daemon will connect to the zxdb that we create below.
+    if enable_debug_adapter:
         port = (
             debug_adapter_port
             if debug_adapter_port is not None
             else portpicker.pick_unused_port()
         )
+
+        debug_adapter_args = ["--enable-debug-adapter"]
+
         debug_adapter_args.append("--debug-adapter-port")
         debug_adapter_args.append(f"{port}")
-
-        # Print a hint when using DAP mode for how to connect with zxdb-cli.
-        if recorder is not None:
-            recorder.emit_info_message(
-                f"""zxdb is in DAP mode listening on port {port}. Use
-`fx debug cli start --connect --port {port}` to connect
-with zxdb-cli."""
-            )
 
     zxdb_args = [
         "fx",
@@ -139,11 +161,29 @@ with zxdb-cli."""
         args=zxdb_args, start_new_session=True, stderr=subprocess.STDOUT
     )
 
+    daemon_manager: DaemonManager | None = None
+
+    async def init_debugger() -> None:
+        nonlocal daemon_manager
+        try:
+            if enable_debug_adapter and port is not None:
+                daemon_manager = await _start_zxdb_daemon(recorder, port)
+        except Exception as e:
+            if recorder is not None:
+                recorder.emit_warning_message(
+                    f"Failed to start zxdb-daemon: {e}"
+                )
+        await on_debugger_ready()
+
     def on_sigusr1() -> None:
+        # Remove the signal handler immediately so it doesn't fire again.
+        loop.remove_signal_handler(signal.SIGUSR1)
+
+        asyncio.create_task(init_debugger())
+
         # Replace stdout with the named pipe we created and enable line buffering.
         # Note: 1 == line buffered. See https://docs.python.org/3/library/functions.html#open.
         sys.stdout = open(fifo, "w", buffering=1)
-        asyncio.create_task(on_debugger_ready())
 
     # zxdb will send us a SIGUSR1 when it has successfully connected to DebugAgent and is ready to
     # stream output.
@@ -163,6 +203,13 @@ with zxdb-cli."""
             # The tests for this don't actually create a file for the fifo, and we don't want to
             # throw an exception, since we were trying to remove the file anyway.
             pass
+
+        # Clean up daemon process if it was running
+        if daemon_manager is not None:
+            try:
+                daemon_manager.stop_sync(timeout=5.0)
+            except BaseException:
+                pass
 
         try:
             # Give zxdb a chance to gracefully shutdown, in the normal case this should return
