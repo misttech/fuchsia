@@ -365,7 +365,7 @@ impl MapImpl for RingBuffer {
 
         // Read the header at the consumer position, and check that the entry is not busy.
         let can_read = consumer_position < producer_position
-            && ((*state.header_mut(producer_position).length.get_mut()) & BPF_RINGBUF_BUSY_BIT
+            && ((*state.header_mut(consumer_position).length.get_mut()) & BPF_RINGBUF_BUSY_BIT
                 == 0);
         Some(can_read)
     }
@@ -446,6 +446,7 @@ const_assert!(std::mem::size_of::<RingBufferRecordHeader>() == BPF_RINGBUF_HDR_S
 #[cfg(test)]
 mod test {
     use super::*;
+    use ebpf::MapFlags;
 
     #[fuchsia::test]
     fn test_ring_buffer_wakeup_policy() {
@@ -459,5 +460,40 @@ mod test {
             RingBufferWakeupPolicy::ForceWakeup
         );
         assert_eq!(RingBufferWakeupPolicy::from(42), RingBufferWakeupPolicy::DefaultWakeup);
+    }
+
+    #[fuchsia::test]
+    fn test_ring_buffer_can_read() {
+        let schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+
+        let ringbuf = RingBuffer::new(&schema, "test_ringbuf").unwrap();
+
+        // 1. Initially, can_read should be false since consumer == producer.
+        assert_eq!(ringbuf.can_read(), Some(false));
+
+        // 2. After reserving space, can_read should still be false because the
+        //    entry is marked busy.
+        let data_pos = ringbuf.ringbuf_reserve(16, 0).unwrap();
+        assert_eq!(ringbuf.can_read(), Some(false));
+
+        // 3. After submitting, the busy bit is cleared and can_read should be true.
+        // SAFETY: `data_pos` was successfully returned by `ringbuf_reserve` on this
+        // same buffer.
+        unsafe {
+            RingBuffer::submit(data_pos as u64, RingBufferWakeupPolicy::DefaultWakeup);
+        }
+        assert_eq!(ringbuf.can_read(), Some(true));
+
+        // 4. If consumer position advances to match producer, can_read should
+        //    be false again.
+        let producer_pos = ringbuf.state().read().producer_position().load(Ordering::Acquire);
+        ringbuf.state().write().consumer_position().store(producer_pos, Ordering::Release);
+        assert_eq!(ringbuf.can_read(), Some(false));
     }
 }
