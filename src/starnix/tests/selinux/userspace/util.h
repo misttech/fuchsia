@@ -160,4 +160,7 @@ constexpr bool operator==(const fit::result<E, T>& result, const fit::success<T2
 
 }  // namespace fit
 
+/// Returns a ScopedTempFD labeled with the given SELinux `label`.
+test_helper::ScopedTempFD ScopedTempFDWithLabel(std::string_view label);
+
 #endif  // SRC_STARNIX_TESTS_SELINUX_USERSPACE_UTIL_H_

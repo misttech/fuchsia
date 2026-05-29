@@ -1017,6 +1017,26 @@
             ]
         },
         {
+            "name": "OpenPermsTest.ReadAllowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "OpenPermsTest.ReadDenied",
+            "audit_expectations": [
+                "avc:  denied  { open } for path=\"/tmp/proc_test_file_eAl3C4\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_open_allow_read_deny_open_t:s0 tcontext=test_u:object_r:test_open_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "OpenPermsTest.WriteAllowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "OpenPermsTest.WriteDenied",
+            "audit_expectations": [
+                "avc:  denied  { open } for path=\"/tmp/proc_test_file_9UJ016\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_open_allow_write_deny_open_t:s0 tcontext=test_u:object_r:test_open_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "OverlayFsTest.AuditChecksFileOpenAndRead",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"file\" dev=\"overlay\" ino=120 scontext=test_u:test_r:test_overlayfs_caller_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1"

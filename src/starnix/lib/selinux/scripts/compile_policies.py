@@ -339,6 +339,14 @@ _COMPOSITE_POLICY_PATHS = [
         ],
         "overlayfs_policy",
     ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/open_perms.conf",
+        ],
+        "open_perms_policy",
+    ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [

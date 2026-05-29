@@ -14,12 +14,6 @@
 extern std::string DoPrePolicyLoadWork() { return "audit_access_policy"; }
 
 namespace {
-
-test_helper::ScopedTempFD ScopedTempFDWithLabel(std::string_view label) {
-  auto fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", label);
-  return test_helper::ScopedTempFD();
-}
-
 constexpr char kAuditAccessTestContext[] = "test_u:test_r:test_audit_access_t:s0";
 constexpr char kAuditAccessFileLabel[] = "test_u:object_r:test_audit_access_file_t:s0";
 constexpr char kDontAuditAccessFileLabel[] = "test_u:object_r:test_audit_access_noaudit_file_t:s0";

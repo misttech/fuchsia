@@ -211,3 +211,8 @@ ScopedEnforcement::ScopedEnforcement(bool enforcing) {
 ScopedEnforcement::~ScopedEnforcement() {
   EXPECT_TRUE(files::WriteFile("/sys/fs/selinux/enforce", previous_state_)) << strerror(errno);
 }
+
+test_helper::ScopedTempFD ScopedTempFDWithLabel(std::string_view label) {
+  auto fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", label);
+  return test_helper::ScopedTempFD();
+}
