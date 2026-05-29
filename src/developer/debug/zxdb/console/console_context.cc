@@ -1007,9 +1007,9 @@ void ConsoleContext::OnSettingChanged(const SettingStore&, const std::string& se
       console->EnableOutput();
     } else if (mode == ClientSettings::System::kConsoleMode_NonInteractive) {
       // TODO(https://fxbug.dev/462395065): Consider disabling input here.
-      console->DisableStreaming();
       console->EnableInput();
       console->EnableOutput();
+      // Note that Streaming is always enabled when in the noninteractive mode.
     } else {
       console->DisableInput();
       console->DisableOutput();
