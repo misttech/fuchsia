@@ -4,8 +4,8 @@
 
 # LINT.IfChange
 
-from mobly_controller.openwrt_access_point.lib import capabilities
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib import capabilities
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
@@ -14,16 +14,9 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     Security,
 )
-from mobly_controller.openwrt_access_point.lib.hostapd_options import (
-    HostapdOptions,
-)
-from mobly_controller.openwrt_access_point.lib.uci_options import (
-    BasicRate,
-    SupportedRates,
-)
-from mobly_controller.openwrt_access_point.lib.uci_radio_options import (
-    UciRadioOptions,
-)
+from openwrt_access_point.lib.hostapd_options import HostapdOptions
+from openwrt_access_point.lib.uci_options import BasicRate, SupportedRates
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 
 def netgear_r7000(

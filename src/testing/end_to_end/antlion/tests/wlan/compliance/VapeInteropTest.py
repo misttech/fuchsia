@@ -27,6 +27,7 @@ from openwrt_access_point.lib.profiles import (
     belkin,
     linksys,
     netgear,
+    securifi,
 )
 
 
@@ -1268,25 +1269,52 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_securifi_almond_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="securifi_almond",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = securifi.securifi_almond(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="securifi_almond",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_securifi_almond_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="securifi_almond",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = securifi.securifi_almond(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="securifi_almond",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,

@@ -21,6 +21,7 @@ python_library("openwrt_access_point") {
     "lib/profiles/belkin.py",
     "lib/profiles/linksys.py",
     "lib/profiles/netgear.py",
+    "lib/profiles/securifi.py",
     "lib/uci_bss_options.py",
     "lib/uci_options.py",
     "lib/uci_radio_options.py",
