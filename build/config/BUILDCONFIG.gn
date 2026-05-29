@@ -3116,6 +3116,43 @@ template("variant_target") {
   }
 }
 
+template("_rust_generated_files") {
+  deps_target = "$target_name.rust_compilation_deps"
+  sources_target = "$target_name.rust_sources"
+
+  generated_file(deps_target) {
+    data_keys = [ "rust_compilation_deps" ]
+    walk_keys = [ "rust_compilation_deps_barrier" ]
+    outputs = [ "${target_gen_dir}/${target_name}" ]
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "deps",
+                             "public_deps",
+                             "testonly",
+                           ])
+    metadata = {
+      # This is a handy place for this to be collected by $sources_target,
+      # along with any other rust_sources metadata reached by the deps here.
+      rust_sources = rebase_path(invoker.sources, root_build_dir)
+    }
+  }
+
+  generated_file(sources_target) {
+    # This will catch invoker.sources along with any transitive rust_sources
+    # metadata lists reached via deps.
+    data_keys = [ "rust_sources" ]
+    walk_keys = [ "rust_barrier" ]
+    outputs = [ "${target_gen_dir}/${target_name}" ]
+    deps = [ ":$deps_target" ]
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                           ])
+  }
+}
+
 # _fuchsia_shared_library is an internal library used by the shared_library
 # wrapper in this file.
 #
@@ -3124,25 +3161,13 @@ template("variant_target") {
 template("_fuchsia_shared_library") {
   _is_rust_target = defined(invoker.crate_root)
   if (_is_rust_target) {
-    generated_file(target_name + ".rust_compilation_deps") {
-      data_keys = [ "rust_compilation_deps" ]
-      walk_keys = [ "rust_compilation_deps_barrier" ]
-      outputs = [ "${target_gen_dir}/${target_name}" ]
+    _rust_generated_files(target_name) {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "public_deps",
-                               "testonly",
-                             ])
-    }
-
-    generated_file(target_name + ".rust_sources") {
-      contents = rebase_path(invoker.sources, root_build_dir)
-      outputs = [ "${target_gen_dir}/${target_name}" ]
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
+                               "sources",
                                "testonly",
                              ])
     }
@@ -3606,25 +3631,13 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
   template("shared_library") {
     _is_rust_target = defined(invoker.crate_root)
     if (_is_rust_target) {
-      generated_file(target_name + ".rust_compilation_deps") {
-        data_keys = [ "rust_compilation_deps" ]
-        walk_keys = [ "rust_compilation_deps_barrier" ]
-        outputs = [ "${target_gen_dir}/${target_name}" ]
+      _rust_generated_files(target_name) {
         forward_variables_from(invoker,
                                [
                                  "applicable_licenses",
                                  "deps",
                                  "public_deps",
-                                 "testonly",
-                               ])
-      }
-
-      generated_file(target_name + ".rust_sources") {
-        contents = rebase_path(invoker.sources, root_build_dir)
-        outputs = [ "${target_gen_dir}/${target_name}" ]
-        forward_variables_from(invoker,
-                               [
-                                 "applicable_licenses",
+                                 "sources",
                                  "testonly",
                                ])
       }
@@ -3749,25 +3762,13 @@ template("executable") {
 
   _is_rust_target = defined(invoker.crate_root)
   if (_is_rust_target) {
-    generated_file(target_name + ".rust_compilation_deps") {
-      data_keys = [ "rust_compilation_deps" ]
-      walk_keys = [ "rust_compilation_deps_barrier" ]
-      outputs = [ "${target_gen_dir}/${target_name}" ]
+    _rust_generated_files(target_name) {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "public_deps",
-                               "testonly",
-                             ])
-    }
-
-    generated_file(target_name + ".rust_sources") {
-      contents = rebase_path(invoker.sources, root_build_dir)
-      outputs = [ "${target_gen_dir}/${target_name}" ]
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
+                               "sources",
                                "testonly",
                              ])
     }
@@ -4025,25 +4026,13 @@ template("loadable_module") {
 
   _is_rust_target = defined(invoker.crate_root)
   if (_is_rust_target) {
-    generated_file(target_name + ".rust_compilation_deps") {
-      data_keys = [ "rust_compilation_deps" ]
-      walk_keys = [ "rust_compilation_deps_barrier" ]
-      outputs = [ "${target_gen_dir}/${target_name}" ]
+    _rust_generated_files(target_name) {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "public_deps",
-                               "testonly",
-                             ])
-    }
-
-    generated_file(target_name + ".rust_sources") {
-      contents = rebase_path(invoker.sources, root_build_dir)
-      outputs = [ "${target_gen_dir}/${target_name}" ]
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
+                               "sources",
                                "testonly",
                              ])
     }
@@ -4264,25 +4253,13 @@ template("static_library") {
   _is_rust_target = defined(invoker.crate_root)
 
   if (_is_rust_target) {
-    generated_file(target_name + ".rust_compilation_deps") {
-      data_keys = [ "rust_compilation_deps" ]
-      walk_keys = [ "rust_compilation_deps_barrier" ]
-      outputs = [ "${target_gen_dir}/${target_name}" ]
+    _rust_generated_files(target_name) {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "public_deps",
-                               "testonly",
-                             ])
-    }
-
-    generated_file(target_name + ".rust_sources") {
-      contents = rebase_path(invoker.sources, root_build_dir)
-      outputs = [ "${target_gen_dir}/${target_name}" ]
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
+                               "sources",
                                "testonly",
                              ])
     }
@@ -4365,25 +4342,13 @@ template("rust_library") {
   _rlib_path = "${_searchdir_path}/lib${invoker.output_name}.rlib"
   _rmeta_path = "${_searchdir_path}/lib${invoker.output_name}.rmeta"
 
-  generated_file(target_name + ".rust_compilation_deps") {
-    data_keys = [ "rust_compilation_deps" ]
-    walk_keys = [ "rust_compilation_deps_barrier" ]
-    outputs = [ "${target_gen_dir}/${target_name}" ]
+  _rust_generated_files(target_name) {
     forward_variables_from(invoker,
                            [
                              "applicable_licenses",
                              "deps",
                              "public_deps",
-                             "testonly",
-                           ])
-  }
-
-  generated_file(target_name + ".rust_sources") {
-    contents = rebase_path(invoker.sources, root_build_dir)
-    outputs = [ "${target_gen_dir}/${target_name}" ]
-    forward_variables_from(invoker,
-                           [
-                             "applicable_licenses",
+                             "sources",
                              "testonly",
                            ])
   }
@@ -4475,25 +4440,13 @@ template("rust_proc_macro") {
         "$_searchdir_path/lib${invoker.output_name}.$_output_extension"
     _rmeta_path = "${_searchdir_path}/lib${invoker.output_name}.rmeta"
 
-    generated_file(target_name + ".rust_compilation_deps") {
-      data_keys = [ "rust_compilation_deps" ]
-      walk_keys = [ "rust_compilation_deps_barrier" ]
-      outputs = [ "${target_gen_dir}/${target_name}" ]
+    _rust_generated_files(target_name) {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "public_deps",
-                               "testonly",
-                             ])
-    }
-
-    generated_file(target_name + ".rust_sources") {
-      contents = rebase_path(invoker.sources, root_build_dir)
-      outputs = [ "${target_gen_dir}/${target_name}" ]
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
+                               "sources",
                                "testonly",
                              ])
     }
