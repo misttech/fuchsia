@@ -159,7 +159,7 @@ impl Descriptor<Tx> {
     fn set_tx_flags(&mut self, flags: netdev::TxFlags) {
         let Self(this, _marker) = self;
         let bits = flags.bits();
-        this.return_flags = bits;
+        this.inbound_flags = bits;
     }
 
     fn set_frame_type(&mut self, frame_type: netdev::FrameType) {
