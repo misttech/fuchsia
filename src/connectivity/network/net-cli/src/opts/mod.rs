@@ -12,6 +12,7 @@ use fidl_fuchsia_net_interfaces_ext_fdomain as finterfaces_ext;
 use flex_fuchsia_net as fnet;
 use flex_fuchsia_net_interfaces as finterfaces;
 use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
+use flex_fuchsia_net_stack as fnet_stack;
 use flex_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use std::collections::HashMap;
 use std::convert::{TryFrom as _, TryInto as _};
@@ -738,9 +739,24 @@ macro_rules! route_struct {
             )]
             /// the outgoing network interface of the route
             pub interface: InterfaceIdentifier,
-            #[argh(option)]
+            #[argh(option, default = "0")]
             /// the metric for the route
-            pub metric: Option<u32>,
+            pub metric: u32,
+        }
+
+        impl $ty_name {
+            pub fn into_route_table_entry(self, nicid: u32) -> fnet_stack::ForwardingEntry {
+                let Self { destination, prefix_len, gateway, interface: _, metric } = self;
+                fnet_stack::ForwardingEntry {
+                    subnet: fnet_ext::apply_subnet_mask(fnet::Subnet {
+                        addr: fnet_ext::IpAddress(destination).into(),
+                        prefix_len,
+                    }),
+                    device_id: nicid.into(),
+                    next_hop: gateway.map(|gateway| Box::new(fnet_ext::IpAddress(gateway).into())),
+                    metric,
+                }
+            }
         }
     };
 }
@@ -879,6 +895,37 @@ mod tests {
     #[test]
     fn parse_interface_without_prefix_fails() {
         assert_matches!("lo".parse::<InterfaceIdentifier>(), Err(_))
+    }
+
+    #[test]
+    fn into_route_table_entry_applies_subnet_mask() {
+        // Leave off last two 16-bit segments.
+        const PREFIX_LEN: u8 = 128 - 32;
+        const ORIGINAL_NICID: u32 = 1;
+        const NICID_TO_OVERWRITE_WITH: u32 = 2;
+        assert_eq!(
+            RouteAdd {
+                destination: std::net::IpAddr::V6(std::net::Ipv6Addr::new(
+                    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
+                )),
+                prefix_len: PREFIX_LEN,
+                gateway: None,
+                interface: u64::from(ORIGINAL_NICID).into(),
+                metric: 100,
+            }
+            .into_route_table_entry(NICID_TO_OVERWRITE_WITH),
+            fnet_stack::ForwardingEntry {
+                subnet: fnet::Subnet {
+                    addr: net_declare::fidl_ip!("ffff:ffff:ffff:ffff:ffff:ffff:0:0"),
+                    prefix_len: PREFIX_LEN,
+                },
+                // The interface ID in the RouteAdd struct should be overwritten by the NICID
+                // parameter passed to `into_route_table_entry`.
+                device_id: NICID_TO_OVERWRITE_WITH.into(),
+                next_hop: None,
+                metric: 100,
+            }
+        )
     }
 
     #[test_case("0", Err("Invalid IGMP version (0). Valid values: 1, 2, 3".to_string()); "input_0")]
