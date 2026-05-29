@@ -13,8 +13,8 @@
 
 #include "option.h"
 
-zx::vmo GetBootfsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self,
-                         const zx::vmo& zbi_vmo);
+zx::vmo GetBootfsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, const zx::vmo& zbi_vmo,
+                         const Options& opts);
 
 Options GetOptionsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, const zx::vmo& zbi);
 

@@ -133,13 +133,28 @@ class ScratchAllocator {
 
 }  // namespace
 
-zx::vmo GetBootfsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self,
-                         const zx::vmo& zbi_vmo) {
+zx::vmo GetBootfsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, const zx::vmo& zbi_vmo,
+                         const Options& opts) {
   ZbiView zbi(zbitl::MapUnownedVmo{zx::unowned_vmo{zbi_vmo}, /*writable=*/true,
                                    zx::unowned_vmar{vmar_self}});
 
   for (auto it = zbi.begin(); it != zbi.end(); ++it) {
     if (it->header->type == ZBI_TYPE_STORAGE_BOOTFS) {
+      if (opts.bootfs_crc_check) {
+        printl(log, "Checking BOOTFS item at %#" PRIx32 " CRC32 %#" PRIx32 "...\n",
+               it.item_offset(), it->header->crc32);
+        auto result = zbi.CheckCrc32(it);
+        if (result.is_error()) {
+          printl(log, "BOOTFS item CRC32 check failed: ");
+          FailFromZbiError(result.error_value(), log);
+        }
+        if (*result) {
+          printl(log, "BOOTFS payload matches item CRC32.\n");
+        } else {
+          printl(log, "*** BOOTFS payload DOES NOT MATCH item CRC32! ***\n");
+        }
+      }
+
       auto result = zbi.CopyStorageItem(it, ScratchAllocator{vmar_self, log});
       if (result.is_error()) {
         printl(log, "cannot extract BOOTFS from ZBI: ");

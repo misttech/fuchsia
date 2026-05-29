@@ -20,6 +20,7 @@ constexpr std::string_view kNextOpt = "userboot.next";
 constexpr std::string_view kTestRootOpt = "userboot.test.root";
 constexpr std::string_view kTestNextOpt = "userboot.test.next";
 constexpr std::string_view kNextIsTestOpt = "userboot.next-is-test";
+constexpr std::string_view kCrcOpt = "userboot.crc";
 
 // TODO(joshuaseaton): This should really be defined as a default value of
 // `Options::next` and expressed as a std::string_view; however, that can
@@ -67,7 +68,12 @@ constexpr bool ParseOption(std::string_view key, std::string_view value, Options
   }
 
   if (key == kNextIsTestOpt) {
-    opts.next_is_test = (value == "true");
+    opts.next_is_test = value == "true";
+    return true;
+  }
+
+  if (key == kCrcOpt) {
+    opts.bootfs_crc_check = value == "true";
     return true;
   }
 

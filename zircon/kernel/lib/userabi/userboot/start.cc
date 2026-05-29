@@ -487,14 +487,17 @@ struct TerminationInfo {
   check(log, UserbootPostStashSvc(userboot_client, std::move(svc_stash_server)).status_value(),
         "UserbootPost of SvcStash handle failed.");
 
-  // Locate the ZBI_TYPE_STORAGE_BOOTFS item and decompress it. This will be used to load
-  // the binary referenced by userboot.next, as well as libc. Bootfs will be fully parsed
-  // and hosted under '/boot' either by bootsvc or component manager.
   const zx::unowned_vmo zbi{handles[kZbi]};
-  zx::vmo bootfs_vmo = GetBootfsFromZbi(log, vmar_self, *zbi);
 
   // Parse CMDLINE items to determine the set of runtime options.
   Options opts = GetOptionsFromZbi(log, vmar_self, *zbi);
+
+  // Locate the ZBI_TYPE_STORAGE_BOOTFS item and decompress it. This will be
+  // used to load the binary referenced by userboot.next, as well as
+  // libc. Bootfs will be fully parsed and hosted under '/boot' either by
+  // bootsvc or component manager.
+  zx::vmo bootfs_vmo = GetBootfsFromZbi(log, vmar_self, *zbi, opts);
+
   bool booting_multiple_programs = !opts.boot.next.empty() && !opts.test.next.empty();
   TerminationInfo info = {
       .power = std::move(power),
