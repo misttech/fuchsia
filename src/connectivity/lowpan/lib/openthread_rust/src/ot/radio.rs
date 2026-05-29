@@ -32,6 +32,14 @@ pub trait Radio {
     /// [`otsys::otPlatRadioGetVersionString`](crate::otsys::otPlatRadioGetVersionString).
     fn radio_get_version_string(&self) -> &str;
 
+    /// Functional equivalent of
+    /// [`otsys::otPlatRadioGetCslAccuracy`](crate::otsys::otPlatRadioGetCslAccuracy).
+    fn get_csl_accuracy(&self) -> u8;
+
+    /// Functional equivalent of
+    /// [`otsys::otPlatRadioGetCslUncertainty`](crate::otsys::otPlatRadioGetCslUncertainty).
+    fn get_csl_uncertainty(&self) -> u8;
+
     /// Calling into OT state change handler in platform radio
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags);
 }
@@ -59,6 +67,14 @@ impl<T: Radio + Boxable> Radio for ot::Box<T> {
 
     fn radio_get_version_string(&self) -> &str {
         self.as_ref().radio_get_version_string()
+    }
+
+    fn get_csl_accuracy(&self) -> u8 {
+        self.as_ref().get_csl_accuracy()
+    }
+
+    fn get_csl_uncertainty(&self) -> u8 {
+        self.as_ref().get_csl_uncertainty()
     }
 
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags) {
@@ -106,6 +122,14 @@ impl Radio for Instance {
                 .to_str()
                 .expect("OpenThread version string was bad UTF8")
         }
+    }
+
+    fn get_csl_accuracy(&self) -> u8 {
+        unsafe { otPlatRadioGetCslAccuracy(self.as_ot_ptr()) }
+    }
+
+    fn get_csl_uncertainty(&self) -> u8 {
+        unsafe { otPlatRadioGetCslUncertainty(self.as_ot_ptr()) }
     }
 
     fn on_radio_handle_state_change(&self, flags: ot::ChangedFlags) {
