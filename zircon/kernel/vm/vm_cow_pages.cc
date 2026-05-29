@@ -4668,11 +4668,23 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
       // Inform potential mappings of the marker we are inserting.
       do_unmap();
 
-      // Let's look up the owner of whatever content is remaining, and decrement their share
-      // count. We will no longer be referencing it after inserting a marker.
+      // Begin the page list addition transaction. This is fallible and will allocate the slot/node.
+      auto page_transaction = BeginAddPageLocked(offset, CanOverwriteSlot::PageOrRef);
+      if (page_transaction.is_error()) {
+        status = page_transaction.status_value();
+        break;
+      }
+
+      // Decrement the share count on the potential ancestor page/reference.
       status = decrement_potential_ancestor(offset);
       if (status == ZX_OK) {
-        status = replace_with_marker(offset);
+        // Infallibly complete the transaction by inserting the zero marker.
+        [[maybe_unused]] VmPageOrMarker old =
+            CompleteAddPageLocked(*page_transaction, VmPageOrMarker::Marker(), nullptr);
+        DEBUG_ASSERT(old.IsEmpty());
+      } else {
+        CancelAddPageLocked(*page_transaction);
+        break;
       }
     }
   }
