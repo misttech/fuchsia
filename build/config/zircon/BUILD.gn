@@ -185,6 +185,7 @@ config("nolibc") {
     "-nostartfiles",
     "-nolibc",
   ]
+  rustflags = [ "-Cdefault-linker-libraries=no" ]
 
   # Don't use -nostdlib, because the builtins (or libgcc) are what we want
   # and are otherwise annoying to find and specify.  It's just the -lc that
@@ -197,6 +198,14 @@ config("nolibc") {
   # config. Since ldflags does not propagate that way, this uses explicitly the
   # -L switch that lib_dirs would expand to.
   ldflags += [ "-L" + rebase_path("libc-stub", root_build_dir) ]
+
+  # In the case of the Rust driver, -Lnative=... affects any searching it might
+  # do itself like -L... affects the C++ compiler driver; but the Rust driver
+  # doesn't translate that to also passing -L... to the _linker_ as C++ does.
+  rustflags += [
+    "-Lnative=" + rebase_path("libc-stub", root_build_dir),
+    "-Clink-arg=-L" + rebase_path("libc-stub", root_build_dir),
+  ]
 }
 
 config("data_sections") {
@@ -286,18 +295,14 @@ variant("user-link") {
 }
 
 variant("user-executable") {
-  configs = [ ":no-dynamic-linker" ]
-
-  # crt1 and libc will come via explicit link dependencies if at all.
-  ldflags = [
-    "-nostartfiles",
-    "-nolibc",
+  configs = [
+    ":no-dynamic-linker",
+    ":nolibc",
   ]
-  rustflags = [ "-Cdefault-linker-libraries=no" ]
 
   if (is_gcc) {
     # This is already the default in Clang for Fuchsia targets.
-    ldflags += [ "-pie" ]
+    ldflags = [ "-pie" ]
   }
 }
 
