@@ -13,9 +13,6 @@
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/log_settings.h>
-#if FUCHSIA_API_LEVEL_AT_LEAST(29)
-#include <lib/syslog/cpp/log_settings_internal.h>
-#endif
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
@@ -32,6 +29,9 @@
 
 #include "lib/component/incoming/cpp/protocol.h"
 #include "lib/syslog/cpp/macros.h"
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
+#include "log_settings_internal.h"
+#endif
 
 namespace fuchsia_logging {
 namespace {

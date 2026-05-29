@@ -29,6 +29,8 @@ bazel2gn_verification_targets = [
   "//sdk/lib/media/cpp:verify_bazel2gn",
   "//sdk/lib/memory_barriers:verify_bazel2gn",
   "//sdk/lib/stdcompat:verify_bazel2gn",
+  "//sdk/lib/syslog/cpp:verify_bazel2gn",
+  "//sdk/lib/syslog/structured_backend:verify_bazel2gn",
   "//sdk/lib/utf-utils:verify_bazel2gn",
   "//sdk/lib/zxio:verify_bazel2gn",
   "//sdk/rust/fidl-data-zx:verify_bazel2gn",

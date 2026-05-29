@@ -28,6 +28,8 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/magma_common:magma_common_idk",
     "//sdk/lib/media/cpp:no_converters_idk",
     "//sdk/lib/stdcompat:stdcompat_idk",
+    "//sdk/lib/syslog/cpp:cpp_idk",
+    "//sdk/lib/syslog/structured_backend:structured_backend_idk",
     "//sdk/lib/utf-utils:utf-utils_idk",
     "//zircon/system/ulib/sync:sync-cpp_idk",
     "//zircon/system/ulib/zx:zx_idk",
@@ -44,6 +46,7 @@ CC_PREBUILT_SHARED_LIBRARY_ATOMS = [
     # buildifier: keep sorted
     "//sdk/lib/async-default:async-default_idk",
     "//sdk/lib/fdio:fdio_idk",
+    "//sdk/lib/syslog/cpp:backend_fuchsia_globals_idk",
 ]
 
 CC_PREBUILT_STATIC_LIBRARY_ATOMS = [
