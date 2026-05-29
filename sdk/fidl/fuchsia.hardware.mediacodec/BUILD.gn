@@ -34,10 +34,7 @@ if (is_host) {
 }
 
 fidl("fuchsia.hardware.mediacodec") {
-  sources = [
-    "mediacodec.fidl",
-    "tester.fidl",
-  ]
+  sources = [ "mediacodec.fidl" ]
   enable_hlcpp = true
   visibility = [ "*" ]
   public_deps = [

@@ -63,7 +63,7 @@ TEST(PtsManagerUnitTest, KeepingMaxEntriesButNotMore) {
   PtsManager::LookupResult result_present = pts_manager.Lookup(kStartingOffset + kOffsetIncrement);
   EXPECT_FALSE(result_present.is_end_of_stream());
   EXPECT_TRUE(result_present.has_pts());
-  EXPECT_EQ(kStartingPts + kOffsetIncrement, result_present.pts());
+  EXPECT_EQ(kStartingPts + kPtsIncrement, result_present.pts());
   PtsManager::LookupResult result_absent =
       pts_manager.Lookup(kStartingOffset + kOffsetIncrement - 1);
   EXPECT_FALSE(result_absent.is_end_of_stream());

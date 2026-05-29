@@ -8,7 +8,6 @@ fidl_library(
     name = "fuchsia.hardware.mediacodec",
     srcs = [
         "mediacodec.fidl",
-        "tester.fidl",
     ],
     enable_hlcpp = True,
     visibility = ["//visibility:public"],

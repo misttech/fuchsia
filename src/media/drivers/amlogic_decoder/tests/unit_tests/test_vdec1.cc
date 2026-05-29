@@ -15,7 +15,6 @@
 
 #include "amlogic-video.h"
 #include "src/media/drivers/amlogic_decoder/decoder_core.h"
-#include "tests/test_support.h"
 #include "vdec1.h"
 
 namespace amlogic_decoder {

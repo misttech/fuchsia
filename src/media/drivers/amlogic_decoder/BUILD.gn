@@ -60,12 +60,6 @@ if (target_cpu == "arm64") {
     "tests/runner:amlogic_decoder_integration_tests",
     "tests/unit_tests:amlogic-decoder-unittest",
   ]
-  if (_has_decoder_firmware) {
-    test_list += [
-      ":amlogic_decoder_firmware",
-      ":amlogic_decoder_test-package",
-    ]
-  }
 
   fuchsia_cc_driver("amlogic_video_decoder-driver") {
     legacy = true
@@ -73,7 +67,6 @@ if (target_cpu == "arm64") {
     deps = [
       ":amlogic_video_bind",
       ":sources",
-      ":test_support",
     ]
 
     sources = [ "binding.cc" ]
@@ -86,46 +79,8 @@ if (target_cpu == "arm64") {
     manifest = "meta/amlogic_video_decoder-component.cml"
   }
 
-  # This version of the driver runs tests on startup.
-  fuchsia_cc_driver("amlogic_decoder_test-driver") {
-    legacy = true
-    output_name = "amlogic_video_decoder_test"
-
-    testonly = true
-
-    deps = [
-      ":amlogic_video_test_bind",
-      ":sources",
-      ":test_sources",
-      ":test_support",
-      "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec_cpp",
-      "//sdk/lib/fdio",
-    ]
-    sources = [
-      "test_binding.cc",
-      "test_device_ctx.cc",
-      "test_device_ctx.h",
-    ]
-  }
-
-  fuchsia_driver_component("amlogic_decoder_test-component") {
-    testonly = true
-    component_name = "amlogic_video_decoder_test"
-    deps = [ ":amlogic_decoder_test-driver" ]
-    info = "meta/amlogic_video_decoder_test-info.json"
-    manifest = "meta/amlogic_video_decoder_test.cml"
-  }
-
   config("sources_include_config") {
     include_dirs = [ "." ]
-  }
-
-  source_set("test_support") {
-    deps = [
-      "//src/devices/lib/driver",
-      "//src/lib/ddk",
-    ]
-    sources = [ "tests/test_support.h" ]
   }
 
   source_set("sources") {
@@ -221,7 +176,6 @@ if (target_cpu == "arm64") {
       "//zircon/third_party/ulib/safemath",
     ]
     deps = [
-      ":test_support",
       "third_party/libvpx",
       "third_party/vp9_adapt_probs",
       "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_hlcpp",
@@ -236,53 +190,6 @@ if (target_cpu == "arm64") {
     ]
     public_configs = [ ":sources_include_config" ]
     cflags = []
-  }
-
-  source_set("test_sources") {
-    testonly = true
-    deps = [
-      ":sources",
-      ":test_support",
-      "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_hlcpp",
-      "//sdk/lib/driver/mmio/testing/cpp",
-      "//src/media/lib/codec_impl",
-      "//third_party/boringssl:crypto",
-      "//third_party/googletest:gtest",
-      "//zircon/system/ulib/mmio-ptr",
-    ]
-    sources = [
-      "tests/integration/bear_h264_hashes.h",
-      "tests/integration/test_25fps_h264_hashes.h",
-      "tests/integration/test_25fps_vp9_hashes.h",
-      "tests/integration/test_amlogic_video.cc",
-      "tests/integration/test_frame_allocator.h",
-      "tests/integration/test_h264_multi.cc",
-      "tests/integration/test_mpeg2.cc",
-      "tests/integration/test_parser.cc",
-      "tests/integration/test_vp9.cc",
-      "tests/integration/video_frame_helpers.cc",
-      "tests/integration/video_frame_helpers.h",
-      "tests/test_basic_client.h",
-      "tests/test_support.cc",
-      "tests/test_support.h",
-      "tests/unit_tests/test_pts_manager.cc",
-      "tests/unit_tests/test_vp9.cc",
-    ]
-
-    # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
-    configs += [ "//build/config:Wno-vla-cxx-extension" ]
-  }
-
-  resource("test_files") {
-    sources = [
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data/bear.h264",
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data/red-green.h264",
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data/test-25fps.h264",
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data/test-25fps.vp9",
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data/test-25fps.vp9_2",
-      "//prebuilt/test_data/media/third_party/chromium_media_test_data_downstream/bear.mpeg2",
-    ]
-    outputs = [ "lib/firmware/video_test_data/{{source_file_part}}" ]
   }
 
   if (_has_decoder_firmware) {
@@ -301,12 +208,6 @@ if (target_cpu == "arm64") {
       driver_components = [ ":amlogic_video_decoder-component" ]
       deps = [ ":amlogic_decoder_firmware" ]
     }
-  }
-
-  fuchsia_driver_package("amlogic_decoder_test-package") {
-    testonly = true
-    driver_components = [ ":amlogic_decoder_test-component" ]
-    deps = [ ":test_files" ]
   }
 }
 

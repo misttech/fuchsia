@@ -10,7 +10,6 @@ cc_test_executable("amlogic-decoder-unittest-bin") {
   output_name = "amlogic-decoder-unittest"
   deps = [
     "../..:sources",
-    "../..:test_support",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
@@ -25,6 +24,7 @@ cc_test_executable("amlogic-decoder-unittest-bin") {
   ]
   sources = [
     "test_binding.cc",
+    "test_pts_manager.cc",
     "test_vdec1.cc",
   ]
 }
