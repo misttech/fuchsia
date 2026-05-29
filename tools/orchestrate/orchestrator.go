@@ -22,20 +22,17 @@ import (
 // FFXClient defines the interface for interacting with ffx commands.
 type FFXClient interface {
 	Close() error
-	Cmd(args ...string) (*exec.Cmd, error)
 	ApplyEnv(env []string) ([]string, error)
-	RunCmdSync(args ...string) (string, error)
-	RunCmdAsync(args ...string) (*exec.Cmd, error)
-	ConfigGet(field string, result any) error
 	SetDefaultTarget(target *string)
-	GetDefaultTarget() (string, error)
-	WaitForDaemon(ctx context.Context) error
 	Flash(fastbootSerial, productDir, pubKeyPath string) error
 	IsPackageServerRunning(repoName string) (bool, error)
 
 	// High-level provisioning operations
+	SetupFfx(ctx context.Context, repoName string) error
+	DaemonStop(ctx context.Context) error
 	ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error
 	EmuStart(ctx context.Context, productDir, name string) error
+	EmuStop(ctx context.Context) error
 	RepositoryCreate(ctx context.Context, repoDir string) error
 	RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error
 	SymbolIndexAdd(ctx context.Context, buildID string) error
@@ -49,15 +46,16 @@ type FFXClient interface {
 	TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error
 	TargetSnapshot(ctx context.Context, dir string) error
 	Symbolize(ctx context.Context, input io.Reader, output io.Writer) error
+	TargetLogStart(ctx context.Context, output io.Writer) (io.Closer, error)
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
 type TestOrchestrator struct {
-	ffx           FFXClient
-	deviceConfig  *DeviceConfig
-	ffxLogProc    *os.Process
-	targetLogFile *os.File
-	repoName      string
+	ffx             FFXClient
+	deviceConfig    *DeviceConfig
+	targetLogCloser io.Closer
+	targetLogFile   *os.File
+	repoName        string
 }
 
 var (
@@ -115,10 +113,14 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 				fmt.Printf("ffx.Close: %v\n", err)
 			}
 		}()
-		if err := r.setupFfx(); err != nil {
-			return fmt.Errorf("setupFfx: %w", err)
+		if err := r.ffx.SetupFfx(context.Background(), r.repoName); err != nil {
+			return fmt.Errorf("SetupFfx: %w", err)
 		}
-		defer r.stopDaemon()
+		defer func() {
+			if err := r.ffx.DaemonStop(context.Background()); err != nil {
+				fmt.Printf("DaemonStop: %v\n", err)
+			}
+		}()
 		productDir := ""
 		if in.Target().TransferURL != "" {
 			fmt.Println("=== orchestrate - Downloading Product Bundle (2/6) ===")
@@ -141,7 +143,11 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 			if err := r.startEmulator(productDir); err != nil {
 				return fmt.Errorf("startEmulator: %w", err)
 			}
-			defer r.stopEmulator()
+			defer func() {
+				if err := r.ffx.EmuStop(context.Background()); err != nil {
+					fmt.Printf("EmuStop: %v\n", err)
+				}
+			}()
 		}
 		fmt.Println("=== orchestrate - Serving Packages (4/6) ===")
 		if err := r.servePackages(in, productDir); err != nil {
@@ -193,84 +199,6 @@ func (r *TestOrchestrator) cipdEnsure(in *RunInput) error {
 		}
 	}
 	return nil
-}
-
-/* Step 1 - Setting up ffx. */
-func (r *TestOrchestrator) setupFfx() error {
-	cmds := [][]string{
-		{"config", "set", "log.level", "Debug"},
-		{"config", "set", "test.experimental_json_input", "true"},
-		{"config", "set", "fastboot.flash.timeout_rate", "1"},
-		{"config", "set", "fastboot.flash.min_timeout_secs", "600"},
-		{"config", "set", "discovery.mdns.enabled", "false"},
-		{"config", "set", "fastboot.usb.disabled", "true"},
-		{"config", "set", "proactive_log.enabled", "false"},
-		{"config", "set", "daemon.autostart", "false"},
-		{"config", "set", "overnet.cso", "only"},
-		// Set a unique repository server name for this run.
-		{"config", "set", "repository.default", r.repoName},
-		// Disable the daemon based repo server.
-		{"config", "set", "repository.server.enabled", "false"},
-	}
-
-	for _, cmd := range cmds {
-		if out, err := r.ffx.RunCmdSync(cmd...); err != nil {
-			return fmt.Errorf("ffx setup %v: %w out: %s", cmd, err, out)
-		}
-	}
-
-	// If there is a log dir, set it instead of the default
-	log_dir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
-	if log_dir != "" {
-		cmd := []string{"config", "set", "log.dir", log_dir}
-		if out, err := r.ffx.RunCmdSync(cmd...); err != nil {
-			return fmt.Errorf("ffx setup %v: %w out: %s", cmd, err, out)
-		}
-	}
-
-	if err := r.dumpFfxConfig(); err != nil {
-		return fmt.Errorf("dumpFfxConfig: %w", err)
-	}
-	if err := r.daemonStart(); err != nil {
-		return fmt.Errorf("ffx daemon start: %w", err)
-	}
-	if err := r.ffx.WaitForDaemon(context.Background()); err != nil {
-		return fmt.Errorf("ffx daemon wait: %w", err)
-	}
-	return nil
-}
-
-func (r *TestOrchestrator) dumpFfxConfig() error {
-	logFile, err := os.Create(ffxConfigDump)
-	if err != nil {
-		return fmt.Errorf("os.Create: %w", err)
-	}
-	defer func() {
-		if err := logFile.Close(); err != nil {
-			fmt.Printf("logFile.Close: %v\n", err)
-		}
-	}()
-	cmd, err := r.ffx.Cmd("config", "get")
-	if err != nil {
-		return fmt.Errorf("ffx.Cmd: %v", err)
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	return cmd.Run()
-}
-
-func (r *TestOrchestrator) daemonStart() error {
-	logFile, err := os.Create(ffxDaemonLog)
-	if err != nil {
-		return fmt.Errorf("os.Create: %w", err)
-	}
-	cmd, err := r.ffx.Cmd("daemon", "start")
-	if err != nil {
-		return fmt.Errorf("ffx.Cmd: %v", err)
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	return cmd.Start()
 }
 
 /* Step 2 - Downloading product bundle. */
@@ -406,21 +334,11 @@ func (r *TestOrchestrator) dumpFfxLog() error {
 		return fmt.Errorf("os.Create: %w", err)
 	}
 	r.targetLogFile = logFile
-	cmd, err := r.ffx.Cmd("log", "--symbolize", "off")
+	closer, err := r.ffx.TargetLogStart(context.Background(), logFile)
 	if err != nil {
-		return fmt.Errorf("ffx.Cmd: %v", err)
+		return fmt.Errorf("TargetLogStart: %w", err)
 	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("cmd.Start: %w", err)
-	}
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			fmt.Printf("cmd.Wait: %v", err)
-		}
-	}()
-	r.ffxLogProc = cmd.Process
+	r.targetLogCloser = closer
 	return nil
 }
 
@@ -527,24 +445,12 @@ func (r *TestOrchestrator) stopPackageServer() {
 	}
 }
 
-func (r *TestOrchestrator) stopEmulator() {
-	if _, err := r.ffx.RunCmdSync("emu", "stop", "--all"); err != nil {
-		fmt.Printf("ffx emu stop: %v", err)
-	}
-}
-
-func (r *TestOrchestrator) stopDaemon() {
-	if _, err := r.ffx.RunCmdSync("daemon", "stop", "--no-wait"); err != nil {
-		fmt.Printf("ffx daemon stop: %v", err)
-	}
-}
-
 func (r *TestOrchestrator) stopFfxLog() {
-	if r.ffxLogProc == nil {
+	if r.targetLogCloser == nil {
 		return
 	}
-	if err := r.ffxLogProc.Kill(); err != nil {
-		fmt.Printf("ffxLogProc.Kill: %v\n", err)
+	if err := r.targetLogCloser.Close(); err != nil {
+		fmt.Printf("targetLogCloser.Close: %v\n", err)
 	}
 	if err := r.targetLogFile.Close(); err != nil {
 		fmt.Printf("targetLogFile.Close: %v\n", err)

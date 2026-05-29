@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,15 +48,6 @@ func (m *mockFFXClient) Close() error {
 	return call.retErr
 }
 
-func (m *mockFFXClient) Cmd(args ...string) (*exec.Cmd, error) {
-	call := m.recordCall("Cmd", args...)
-	if call.retErr != nil {
-		return nil, call.retErr
-	}
-	// Return a command pointing to the fake executable
-	return &exec.Cmd{Path: m.fakeExecPath, Args: append([]string{m.fakeExecPath}, args...)}, nil
-}
-
 func (m *mockFFXClient) ApplyEnv(env []string) ([]string, error) {
 	// ApplyEnv takes []string, but we record args as flattened strings.
 	// We can skip checking env content for now or just check it was called.
@@ -65,9 +55,6 @@ func (m *mockFFXClient) ApplyEnv(env []string) ([]string, error) {
 	if call.retErr != nil {
 		return nil, call.retErr
 	}
-	// Simulate adding FFX_ISOLATE_DIR so assertions pass.
-	// In the real implementation, this comes from the ffx struct.
-	// Here we use the test environment variable.
 	if val := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); val != "" {
 		env = append(env, fmt.Sprintf("FFX_ISOLATE_DIR=%s", val))
 	}
@@ -76,38 +63,6 @@ func (m *mockFFXClient) ApplyEnv(env []string) ([]string, error) {
 	}
 	m.recordedEnv = env
 	return env, nil
-}
-
-func (m *mockFFXClient) RunCmdSync(args ...string) (string, error) {
-	call := m.recordCall("RunCmdSync", args...)
-	if call.retErr != nil {
-		return "", call.retErr
-	}
-	if call.retVal != nil {
-		if str, ok := call.retVal.(string); ok {
-			return str, nil
-		}
-		m.t.Fatalf("mockFFXClient: RunCmdSync expected string retVal, got %T", call.retVal)
-	}
-	// Simulate expected outputs for specific commands
-	if len(args) >= 2 && args[0] == "daemon" && args[1] == "echo" {
-		return "", nil
-	}
-	return "", nil
-}
-
-func (m *mockFFXClient) RunCmdAsync(args ...string) (*exec.Cmd, error) {
-	call := m.recordCall("RunCmdAsync", args...)
-	if call.retErr != nil {
-		return nil, call.retErr
-	}
-	return &exec.Cmd{Path: m.fakeExecPath, Args: append([]string{m.fakeExecPath}, args...)}, nil
-}
-
-func (m *mockFFXClient) ConfigGet(field string, result any) error {
-	// Args for recordCall should be strings, convert if needed or simplify
-	call := m.recordCall("ConfigGet", field)
-	return call.retErr
 }
 
 func (m *mockFFXClient) SetDefaultTarget(target *string) {
@@ -119,23 +74,37 @@ func (m *mockFFXClient) SetDefaultTarget(target *string) {
 	m.defaultTarget = target
 }
 
-func (m *mockFFXClient) GetDefaultTarget() (string, error) {
-	call := m.recordCall("GetDefaultTarget")
-	if call.retErr != nil {
-		return "", call.retErr
-	}
-	if call.retVal != nil {
-		if str, ok := call.retVal.(string); ok {
-			return str, nil
-		}
-		m.t.Fatalf("mockFFXClient: GetDefaultTarget expected string retVal, got %T", call.retVal)
-	}
-	return "mock-target", nil
+func (m *mockFFXClient) SetupFfx(ctx context.Context, repoName string) error {
+	call := m.recordCall("SetupFfx", repoName)
+	return call.retErr
 }
 
-func (m *mockFFXClient) WaitForDaemon(ctx context.Context) error {
-	call := m.recordCall("WaitForDaemon")
+func (m *mockFFXClient) DaemonStop(ctx context.Context) error {
+	call := m.recordCall("DaemonStop")
 	return call.retErr
+}
+
+func (m *mockFFXClient) EmuStop(ctx context.Context) error {
+	call := m.recordCall("EmuStop")
+	return call.retErr
+}
+
+type mockTargetLogCloser struct{}
+
+func (c *mockTargetLogCloser) Close() error { return nil }
+
+func (m *mockFFXClient) TargetLogStart(ctx context.Context, output io.Writer) (io.Closer, error) {
+	call := m.recordCall("TargetLogStart")
+	if call.retErr != nil {
+		return nil, call.retErr
+	}
+	if call.retVal != nil {
+		if closer, ok := call.retVal.(io.Closer); ok {
+			return closer, nil
+		}
+		m.t.Fatalf("mockFFXClient: TargetLogStart expected io.Closer retVal, got %T", call.retVal)
+	}
+	return &mockTargetLogCloser{}, nil
 }
 
 func (m *mockFFXClient) Flash(fastbootSerial, productDir, pubKeyPath string) error {
@@ -345,25 +314,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	// --- Build Expected Calls for Mock FFX Client ---
 
 	// Common FFX setup expectations
-	mockFfx.expectCall("RunCmdSync", "config", "set", "log.level", "Debug")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "test.experimental_json_input", "true")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "fastboot.flash.timeout_rate", "1")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "fastboot.flash.min_timeout_secs", "600")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "discovery.mdns.enabled", "false")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "fastboot.usb.disabled", "true")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "proactive_log.enabled", "false")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "daemon.autostart", "false")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "overnet.cso", "only")
-	mockFfx.expectCall("RunCmdSync", "config", "set", "repository.default", repoName)
-	mockFfx.expectCall("RunCmdSync", "config", "set", "repository.server.enabled", "false")
-
-	if os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR") != "" {
-		mockFfx.expectCall("RunCmdSync", "config", "set", "log.dir", os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"))
-	}
-
-	mockFfx.expectCall("Cmd", "config", "get").Returns("{}", nil)
-	mockFfx.expectCall("Cmd", "daemon", "start")
-	mockFfx.expectCall("WaitForDaemon")
+	mockFfx.expectCall("SetupFfx", repoName)
 
 	wd, _ := os.Getwd()
 	productBundleDir := ""
@@ -405,7 +356,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	mockFfx.expectCall("TargetList")
 	mockFfx.expectCall("TargetWait")
 	mockFfx.expectCall("TargetShow")
-	mockFfx.expectCall("Cmd", "log", "--symbolize", "off")
+	mockFfx.expectCall("TargetLogStart")
 	mockFfx.expectCall("TargetRepositoryRegister", repoName, "fuchsia.com", "chromium.org")
 
 	// Test execution environment setup (ApplyEnv)
@@ -420,11 +371,11 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	mockFfx.expectCall("RepositoryServerStop", repoName) // From stopPackageServer
 
 	if isEmulator {
-		mockFfx.expectCall("RunCmdSync", "emu", "stop", "--all") // From stopEmulator
+		mockFfx.expectCall("EmuStop") // From stopEmulator
 	}
 
-	mockFfx.expectCall("RunCmdSync", "daemon", "stop", "--no-wait") // From stopDaemon
-	mockFfx.expectCall("Close")                                     // From ffx.Close
+	mockFfx.expectCall("DaemonStop") // From stopDaemon
+	mockFfx.expectCall("Close")      // From ffx.Close
 
 	// Create the orchestrator and inject mock
 	orchestrator := NewTestOrchestrator(deviceConfig)

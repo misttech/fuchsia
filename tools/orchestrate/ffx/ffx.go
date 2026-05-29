@@ -502,3 +502,128 @@ func (f *Ffx) Symbolize(ctx context.Context, input io.Reader, output io.Writer) 
 	cmd.Stderr = output
 	return cmd.Run()
 }
+
+// SetupFfx configures ffx, starts the daemon, and waits for it to be ready.
+func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
+	cmds := [][]string{
+		{"config", "set", "log.level", "Debug"},
+		{"config", "set", "test.experimental_json_input", "true"},
+		{"config", "set", "fastboot.flash.timeout_rate", "1"},
+		{"config", "set", "fastboot.flash.min_timeout_secs", "600"},
+		{"config", "set", "discovery.mdns.enabled", "false"},
+		{"config", "set", "fastboot.usb.disabled", "true"},
+		{"config", "set", "proactive_log.enabled", "false"},
+		{"config", "set", "daemon.autostart", "false"},
+		{"config", "set", "overnet.cso", "only"},
+		{"config", "set", "repository.default", repoName},
+		{"config", "set", "repository.server.enabled", "false"},
+	}
+
+	for _, cmd := range cmds {
+		if _, err := f.RunCmdSync(cmd...); err != nil {
+			return fmt.Errorf("ffx setup %v: %w", cmd, err)
+		}
+	}
+
+	logDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if logDir != "" {
+		cmd := []string{"config", "set", "log.dir", logDir}
+		if _, err := f.RunCmdSync(cmd...); err != nil {
+			return fmt.Errorf("ffx setup %v: %w", cmd, err)
+		}
+	}
+
+	ffxConfigDump := filepath.Join(logDir, "ffx_config.txt")
+	if err := f.dumpFfxConfig(ffxConfigDump); err != nil {
+		return fmt.Errorf("dumpFfxConfig: %w", err)
+	}
+
+	ffxDaemonLog := filepath.Join(logDir, "ffx_daemon.log")
+	if err := f.daemonStart(ffxDaemonLog); err != nil {
+		return fmt.Errorf("ffx daemon start: %w", err)
+	}
+	if err := f.WaitForDaemon(ctx); err != nil {
+		return fmt.Errorf("ffx daemon wait: %w", err)
+	}
+	return nil
+}
+
+func (f *Ffx) dumpFfxConfig(outputPath string) error {
+	logFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("os.Create: %w", err)
+	}
+	defer logFile.Close()
+	cmd, err := f.Cmd("config", "get")
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	return cmd.Run()
+}
+
+func (f *Ffx) daemonStart(outputPath string) error {
+	logFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("os.Create: %w", err)
+	}
+	defer logFile.Close()
+	cmd, err := f.Cmd("daemon", "start")
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("ffx daemon start finished: %v", err)
+		}
+	}()
+	return nil
+}
+
+// EmuStop stops all running emulator instances.
+func (f *Ffx) EmuStop(ctx context.Context) error {
+	_, err := f.RunCmdSync("emu", "stop", "--all")
+	return err
+}
+
+// DaemonStop stops the ffx daemon.
+func (f *Ffx) DaemonStop(ctx context.Context) error {
+	_, err := f.RunCmdSync("daemon", "stop", "--no-wait")
+	return err
+}
+
+type ffxLogCloser struct {
+	cmd *exec.Cmd
+}
+
+func (c *ffxLogCloser) Close() error {
+	if c.cmd == nil || c.cmd.Process == nil {
+		return nil
+	}
+	return c.cmd.Process.Kill()
+}
+
+// TargetLogStart starts streaming target logs in the background.
+func (f *Ffx) TargetLogStart(ctx context.Context, output io.Writer) (io.Closer, error) {
+	cmd, err := f.Cmd("log", "--symbolize", "off")
+	if err != nil {
+		return nil, fmt.Errorf("ffx.Cmd: %w", err)
+	}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("cmd.Start: %w", err)
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("ffx log stream finished: %v", err)
+		}
+	}()
+	return &ffxLogCloser{cmd: cmd}, nil
+}
