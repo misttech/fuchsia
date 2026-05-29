@@ -76,6 +76,10 @@ type AllCounters = table {
     /// Border agent related counters.
     @available(added=29)
     8: border_agent BorderAgentCounters;
+
+    /// MLE counters.
+    @available(added=HEAD)
+    9: mle MleCounters;
 };
 
 /// Counters associated with the MAC layer.
@@ -273,4 +277,56 @@ type BorderAgentCounters = table {
 
     /// The number of MGMT_PENDING_GET.req sent over secure sessions.
     16: mgmt_pending_gets uint32;
+};
+
+/// Counters associated with the MLE.
+@available(added=HEAD)
+type MleCounters = table {
+    /// Number of times device entered OT_DEVICE_ROLE_DISABLED role.
+    1: disabled_role uint16;
+
+    /// Number of times device entered OT_DEVICE_ROLE_DETACHED role.
+    2: detached_role uint16;
+
+    /// Number of times device entered OT_DEVICE_ROLE_CHILD role.
+    3: child_role uint16;
+
+    /// Number of times device entered OT_DEVICE_ROLE_ROUTER role.
+    4: router_role uint16;
+
+    /// Number of times device entered OT_DEVICE_ROLE_LEADER role.
+    5: leader_role uint16;
+
+    /// Number of attach attempts while device was detached.
+    6: attach_attempts uint16;
+
+    /// Number of changes to partition ID.
+    7: partition_id_changes uint16;
+
+    /// Number of attempts to attach to a better partition.
+    8: better_partition_attach_attempts uint16;
+
+    /// Number of attempts to attach to find a better parent (parent search).
+    9: better_parent_attach_attempts uint16;
+
+    /// Number of milliseconds device has been in OT_DEVICE_ROLE_DISABLED role.
+    10: disabled_time uint64;
+
+    /// Number of milliseconds device has been in OT_DEVICE_ROLE_DETACHED role.
+    11: detached_time uint64;
+
+    /// Number of milliseconds device has been in OT_DEVICE_ROLE_CHILD role.
+    12: child_time uint64;
+
+    /// Number of milliseconds device has been in OT_DEVICE_ROLE_ROUTER role.
+    13: router_time uint64;
+
+    /// Number of milliseconds device has been in OT_DEVICE_ROLE_LEADER role.
+    14: leader_time uint64;
+
+    /// Number of milliseconds tracked by previous counters.
+    15: tracked_time uint64;
+
+    /// Number of times device changed its parent.
+    16: parent_changes uint16;
 };

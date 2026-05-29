@@ -1935,4 +1935,9 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     43: buffer_info BufferInfo;
+
+    /// The counters of the MLE protocol.
+    ///
+    /// Only present on Thread networks.
+    44: mle_counters fuchsia.lowpan.device.MleCounters;
 };
