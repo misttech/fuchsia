@@ -64,7 +64,7 @@ filter_headers \
     --impl-debug \
     --use-core \
     --output "${OUTPUT}" \
-    --allowlist-item 'async_.+' \
+    --allowlist-item 'async_.+|ASYNC_.+' \
     --blocklist-type 'zx_.+' \
     -- \
     -D "__Fuchsia_API_level__=${FUCHSIA_API_LEVEL_HEAD}" \

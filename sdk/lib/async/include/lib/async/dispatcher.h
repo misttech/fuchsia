@@ -70,9 +70,10 @@ typedef struct {
 // the whole interface to ensure broad compatibility.
 typedef uint32_t async_ops_version_t;
 
-#define ASYNC_OPS_V1 ((async_ops_version_t)1)
-#define ASYNC_OPS_V2 ((async_ops_version_t)2)
-#define ASYNC_OPS_V3 ((async_ops_version_t)3)
+static const async_ops_version_t ASYNC_OPS_V1 = 1;
+static const async_ops_version_t ASYNC_OPS_V2 = 2;
+static const async_ops_version_t ASYNC_OPS_V3 = 3;
+static const async_ops_version_t ASYNC_OPS_V4 = 4;
 
 typedef struct async_ops {
   // The interface version number, e.g. |ASYNC_OPS_V1|.
@@ -117,11 +118,47 @@ typedef struct async_ops {
     zx_status_t (*check_sequence_id)(async_dispatcher_t* dispatcher,
                                      async_sequence_id_t sequence_id, const char** out_error);
   } v3;
+  struct v4 {
+    // See |async_acquire_shared_ref| for details.
+    zx_status_t (*acquire_shared_ref)(async_dispatcher_t* dispatcher);
+    // See |async_release_shared_ref| for details.
+    zx_status_t (*release_shared_ref)(async_dispatcher_t* dispatcher);
+  } v4;
 } async_ops_t;
 
 struct async_dispatcher {
   const async_ops_t* ops;
 };
+
+// If supported, acquires a shared dispatcher reference for this dispatcher.
+//
+// If successful, the internal reference count of the dispatcher object will be incremented so that
+// it will not be deallocated for any other reason than the outstanding refcount reaching zero. If
+// it fails there will be no guarantees about the lifetime of the dispatcher object.
+//
+// Note that this will not prevent the dispatcher from shutting down. Calls to dispatcher methods
+// after shutting down will behave as if the dispatcher is still shutting down.
+//
+// The client MUST call |async_release_shared_ref| on the returned pointer when it is no
+// longer in use if this call succeeds. Not doing so will result in memory leaks.
+//
+// Returns |ZX_OK| if a shared dispatcher object's reference count has been incremented and its
+// memory won't be released before you have called a corresponding |async_release_shared_ref|.
+// Returns |ZX_ERR_NOT_SUPPORTED| if not supported by the dispatcher.
+//
+// This operation is thread-safe.
+zx_status_t async_acquire_shared_ref(async_dispatcher_t* dispatcher);
+
+// Releases a shared dispatcher reference for this dispatcher.
+//
+// The caller must call this to release a shared dispatcher object acquired by
+// |async_acquire_shared_ref|. In general, this should always return ZX_OK if the
+// api is used correctly.
+//
+// Returns |ZX_OK| if the dispatcher has been successfully released.
+// Returns |ZX_ERR_NOT_SUPPORTED| if you have tried to call this on a dispatcher that
+// does not support having shared references.
+zx_status_t async_release_shared_ref(async_dispatcher_t* dispatcher);
 
 __END_CDECLS
 

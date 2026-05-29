@@ -87,3 +87,17 @@ zx_status_t async_check_sequence_id(async_dispatcher_t* dispatcher, async_sequen
   }
   return dispatcher->ops->v3.check_sequence_id(dispatcher, sequence_id, out_error);
 }
+
+zx_status_t async_acquire_shared_ref(async_dispatcher_t* dispatcher) {
+  if (dispatcher->ops->version < ASYNC_OPS_V4) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  return dispatcher->ops->v4.acquire_shared_ref(dispatcher);
+}
+
+zx_status_t async_release_shared_ref(async_dispatcher_t* dispatcher) {
+  if (dispatcher->ops->version < ASYNC_OPS_V4) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  return dispatcher->ops->v4.release_shared_ref(dispatcher);
+}
