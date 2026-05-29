@@ -168,7 +168,7 @@ impl Broker {
         token: Token,
     ) -> Result<(), UnregisterDependencyTokenError> {
         let Some(credential) = self.lookup_credentials(&token) else {
-            log::debug!("unregister_dependency_token: token not found");
+            log::debug!("unregister_dependency_token: no element found matching requires_token");
             return Err(UnregisterDependencyTokenError::NotFound);
         };
         if credential.get_element() != element_id {
@@ -526,10 +526,12 @@ impl Broker {
         let mut required_levels = Vec::new();
         for dependency in dependencies {
             let Some(requires_token) = dependency.requires_token else {
+                log::error!("acquire_direct_lease: dependency is missing requires_token");
                 return Err(fpb::LeaseError::NotAuthorized);
             };
             let requires_token = Token::from(requires_token);
             let Some(requires_cred) = self.credentials.lookup(&requires_token) else {
+                log::error!("acquire_direct_lease: unable to find required credentials");
                 return Err(fpb::LeaseError::NotAuthorized);
             };
             let requires_element_id = requires_cred.get_element();
