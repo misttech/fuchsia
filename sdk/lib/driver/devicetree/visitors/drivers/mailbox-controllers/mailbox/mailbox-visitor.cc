@@ -151,7 +151,7 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
     if (channel_name_it != channel_names.cend()) {
       parent_spec.properties().push_back(
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL_NAME, *channel_name_it));
-      *channel_name_it++;
+      ++channel_name_it;
     }
 
     node.AddNodeSpec(parent_spec);
