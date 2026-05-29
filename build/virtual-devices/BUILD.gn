@@ -13,7 +13,12 @@ if (board_is_emu) {
   need_more_memory =
       is_asan || is_coverage || is_profile || target_cpu == "riscv64"
   if (need_more_memory) {
-    recommended_memory = 8192
+    if (is_asan && target_cpu != "x64") {
+      # It's weird that running bringup.x64-asan on 16G ram causes timeout.
+      recommended_memory = 16384
+    } else {
+      recommended_memory = 8192
+    }
   } else if (is_coverage && target_cpu == "x64") {
     # The max amount of memory supported on arm64 in infra is 8GB so only use this larger memory for x64.
     recommended_memory = 16384
@@ -38,7 +43,11 @@ if (board_is_emu) {
     }
     cpu = {
       arch = target_cpu
-      count = 4
+      if (need_more_memory && is_asan && target_cpu != "x64") {
+        count = 8
+      } else {
+        count = 4
+      }
     }
   }
 
