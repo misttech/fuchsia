@@ -527,6 +527,36 @@ impl AllCountersUpdate<ot::BorderAgentCounters> for AllCounters {
     }
 }
 
+impl FromExt<&ot::MessageQueueInfo> for fidl_fuchsia_lowpan_experimental::MessageQueueInfo {
+    fn from_ext(info: &ot::MessageQueueInfo) -> Self {
+        fidl_fuchsia_lowpan_experimental::MessageQueueInfo {
+            num_messages: Some(info.num_messages()),
+            num_buffers: Some(info.num_buffers()),
+            total_bytes: Some(info.total_bytes()),
+            ..Default::default()
+        }
+    }
+}
+
+impl FromExt<&ot::message::BufferInfo> for fidl_fuchsia_lowpan_experimental::BufferInfo {
+    fn from_ext(info: &ot::message::BufferInfo) -> Self {
+        fidl_fuchsia_lowpan_experimental::BufferInfo {
+            msg_total_buffers: Some(info.total_buffers()),
+            msg_free_buffers: Some(info.free_buffers()),
+            msg_max_used_buffers: Some(info.max_used_buffers()),
+            msg_6lo_send_queue: Some(info.six_lo_send_queue().into_ext()),
+            msg_6lo_reassembly_queue: Some(info.six_lo_reassembly_queue().into_ext()),
+            msg_ip6_queue: Some(info.ip6_queue().into_ext()),
+            msg_mpl_queue: Some(info.mpl_queue().into_ext()),
+            msg_mle_queue: Some(info.mle_queue().into_ext()),
+            msg_coap_queue: Some(info.coap_queue().into_ext()),
+            msg_coap_secure_queue: Some(info.coap_secure_queue().into_ext()),
+            msg_application_coap_queue: Some(info.application_coap_queue().into_ext()),
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

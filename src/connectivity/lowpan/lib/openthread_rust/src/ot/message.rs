@@ -421,6 +421,63 @@ pub struct BufferInfo(pub otBufferInfo);
 
 impl_ot_castable!(BufferInfo, otBufferInfo);
 
+impl BufferInfo {
+    /// Total number of buffers in the messages pool.
+    pub fn total_buffers(&self) -> u16 {
+        self.0.mTotalBuffers
+    }
+
+    /// Number of free buffers.
+    pub fn free_buffers(&self) -> u16 {
+        self.0.mFreeBuffers
+    }
+
+    /// Maximum number of used buffers at the same time.
+    pub fn max_used_buffers(&self) -> u16 {
+        self.0.mMaxUsedBuffers
+    }
+
+    /// Info about 6LoWPAN send queue.
+    pub fn six_lo_send_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.m6loSendQueue) }.unwrap()
+    }
+
+    /// Info about 6LoWPAN reassembly queue.
+    pub fn six_lo_reassembly_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.m6loReassemblyQueue) }.unwrap()
+    }
+
+    /// Info about IPv6 send queue.
+    pub fn ip6_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mIp6Queue) }.unwrap()
+    }
+
+    /// Info about MPL send queue.
+    pub fn mpl_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mMplQueue) }.unwrap()
+    }
+
+    /// Info about MLE delayed message queue.
+    pub fn mle_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mMleQueue) }.unwrap()
+    }
+
+    /// Info about CoAP/TMF send queue.
+    pub fn coap_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mCoapQueue) }.unwrap()
+    }
+
+    /// Info about CoAP secure send queue.
+    pub fn coap_secure_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mCoapSecureQueue) }.unwrap()
+    }
+
+    /// Info about application CoAP send queue.
+    pub fn application_coap_queue(&self) -> &MessageQueueInfo {
+        unsafe { MessageQueueInfo::ref_from_ot_ptr(&self.0.mApplicationCoapQueue) }.unwrap()
+    }
+}
+
 /// Trait for probing message buffer internal metrics.
 pub trait MessageBuffer {
     /// Functional equivalent of [`otsys::otMessageGetBufferInfo`](crate::otsys::otMessageGetBufferInfo).

@@ -903,6 +903,7 @@ where
         let driver_state = self.driver_state.lock();
 
         let ot = &driver_state.ot_instance;
+        let buffer_info = ot.get_buffer_info();
 
         // Compute total lease times and host/service fresh counts.
         let mut hosts_registration = SrpServerRegistration {
@@ -1821,6 +1822,12 @@ where
             ipaddrs: Some(ipaddrs),
             ipmaddrs: Some(ipmaddrs),
             netstat: Some(netstat),
+            csl_info: Some(fidl_fuchsia_lowpan_experimental::CslInfo {
+                csl_accuracy: Some(ot.get_csl_accuracy()),
+                csl_uncertainty: Some(ot.get_csl_uncertainty()),
+                ..Default::default()
+            }),
+            buffer_info: Some((&buffer_info).into_ext()),
             ..Default::default()
         })
     }
