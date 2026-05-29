@@ -3313,14 +3313,14 @@ alias(
 )
 
 alias(
-    name = "xattr-0.2.3",
-    actual = "//third_party/rust_crates/vendor/xattr-0.2.3:xattr",
+    name = "xattr-1.6.1",
+    actual = "//third_party/rust_crates/vendor/xattr-1.6.1:xattr",
     tags = ["manual"],
 )
 
 alias(
     name = "xattr",
-    actual = "//third_party/rust_crates/vendor/xattr-0.2.3:xattr",
+    actual = "//third_party/rust_crates/vendor/xattr-1.6.1:xattr",
     tags = ["manual"],
 )
 

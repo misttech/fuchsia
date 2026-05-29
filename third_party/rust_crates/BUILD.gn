@@ -2503,13 +2503,13 @@ if (current_os == "fuchsia") {
 
 if (!(current_os == "fuchsia")) {
   group("xattr") {
-    public_deps = [ ":xattr-v0_2_3" ]
+    public_deps = [ ":xattr-v1_6_1" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("xattr-0.2.3") {
-    public_deps = [ ":xattr-v0_2_3" ]
+  group("xattr-1.6.1") {
+    public_deps = [ ":xattr-v1_6_1" ]
   }
 }
 
@@ -11358,6 +11358,47 @@ rustc_library("linked-hash-map-v0_5_6") {
   applicable_licenses = [ ":linked-hash-map-v0_5_6.license" ]
 }
 
+license("linux-raw-sys-v0_12_1.license") {
+  public_package_name = "linux_raw_sys"
+  license_files = [
+    "//third_party/rust_crates/vendor/linux-raw-sys-0.12.1/COPYRIGHT",
+    "//third_party/rust_crates/vendor/linux-raw-sys-0.12.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/linux-raw-sys-0.12.1/LICENSE-Apache-2.0_WITH_LLVM-exception",
+    "//third_party/rust_crates/vendor/linux-raw-sys-0.12.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("linux-raw-sys-v0_12_1") {
+  crate_name = "linux_raw_sys"
+  source_root =
+      "//third_party/rust_crates/vendor/linux-raw-sys-0.12.1/src/lib.rs"
+  output_name = "linux_raw_sys-ea032e478f5aeabf"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ea032e478f5aeabf",
+    "-Cextra-filename=-ea032e478f5aeabf",
+    "--cfg=feature=\"auxvec\"",
+    "--cfg=feature=\"elf\"",
+    "--cfg=feature=\"errno\"",
+    "--cfg=feature=\"general\"",
+    "--cfg=feature=\"ioctl\"",
+    "--cfg=feature=\"no_std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":linux-raw-sys-v0_12_1.license" ]
+}
+
 license("lock_api-v0_4_14.license") {
   public_package_name = "lock_api"
   license_files = [
@@ -17767,6 +17808,99 @@ rustc_library("rustfix-v0_9_5") {
   applicable_licenses = [ ":rustfix-v0_9_5.license" ]
 }
 
+license("rustix-v1_1_4.license") {
+  public_package_name = "rustix"
+  license_files = [
+    "//third_party/rust_crates/vendor/rustix-1.1.4/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-Apache-2.0_WITH_LLVM-exception",
+    "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-MIT",
+  ]
+}
+
+rustc_library("rustix-v1_1_4") {
+  crate_name = "rustix"
+  source_root = "//third_party/rust_crates/vendor/rustix-1.1.4/src/lib.rs"
+  output_name = "rustix-72d085604b025605"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bitflags-v2_11_1" ]
+  if ((current_os == "linux" || false) &&
+      (false || false ||
+       !(current_os == "linux" && (true || (false || false)) &&
+         (false || (current_cpu == "arm64" && true) || false ||
+          (false && false) || (false && false) || (false && false) ||
+          (false && false) || (false && false) || (false && false) ||
+          (false && false) || false || (current_cpu == "x64" && true))))) {
+    deps += [ ":linux-raw-sys-v0_12_1" ]
+  }
+  if (!false && !false && current_os == "linux" && (true || (false || false)) &&
+      (false || (current_cpu == "arm64" && true) || false || (false && false) ||
+       (false && false) || (false && false) || (false && false) ||
+       (false && false) || (false && false) || (false && false) || false ||
+       (current_cpu == "x64" && true))) {
+    deps += [ ":errno-v0_3_14" ]
+    deps += [ ":libc-v0_2_186" ]
+    deps += [ ":linux-raw-sys-v0_12_1" ]
+  }
+  if (!false &&
+      (false || false ||
+       !(current_os == "linux" && (true || (false || false)) &&
+         (false || (current_cpu == "arm64" && true) || false ||
+          (false && false) || (false && false) || (false && false) ||
+          (false && false) || (false && false) || (false && false) ||
+          (false && false) || false || (current_cpu == "x64" && true))))) {
+    deps += [ ":errno-v0_3_14" ]
+    deps += [ ":libc-v0_2_186" ]
+  }
+  if (false) {
+    deps += [ ":windows-sys-v0_61_2" ]
+    deps += [ ":errno-v0_3_14" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=72d085604b025605",
+    "-Cextra-filename=-72d085604b025605",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"fs\"",
+    "--cfg=feature=\"std\"",
+  ]
+  if (current_os == "fuchsia") {
+    rustflags += [ "--cfg=libc" ]
+  }
+  if (current_os == "linux") {
+    rustflags += [
+      "--cfg=linux_raw",
+      "--cfg=linux_raw_dep",
+      "--cfg=linux_like",
+      "--cfg=linux_kernel",
+    ]
+  }
+  if (current_os == "mac") {
+    rustflags += [
+      "--cfg=libc",
+      "--cfg=apple",
+      "--cfg=bsd",
+    ]
+  }
+
+  aliased_deps = {
+    libc_errno = ":errno-v0_3_14.actual"
+    libc_errno = ":errno-v0_3_14.actual"
+    libc_errno = ":errno-v0_3_14.actual"
+  }
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":rustix-v1_1_4.license" ]
+}
+
 license("rustls-v0_21_12.license") {
   public_package_name = "rustls"
   license_files = [
@@ -23491,6 +23625,7 @@ rustc_library("windows-sys-v0_61_2") {
     "-Cmetadata=e6d20fb99309b432",
     "-Cextra-filename=-e6d20fb99309b432",
     "--cfg=feature=\"Win32_Foundation\"",
+    "--cfg=feature=\"Win32_Networking_WinSock\"",
     "--cfg=feature=\"Win32_System_Com\"",
     "--cfg=feature=\"Win32_System_Diagnostics_Debug\"",
     "--cfg=feature=\"Win32_UI_Shell\"",
@@ -23645,6 +23780,46 @@ rustc_library("xattr-v0_2_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":xattr-v0_2_3.license" ]
+}
+
+license("xattr-v1_6_1.license") {
+  public_package_name = "xattr"
+  license_files = [
+    "//third_party/rust_crates/vendor/xattr-1.6.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/xattr-1.6.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("xattr-v1_6_1") {
+  crate_name = "xattr"
+  source_root = "//third_party/rust_crates/vendor/xattr-1.6.1/src/lib.rs"
+  output_name = "xattr-8a9a7574aa11253"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  if (false || current_os == "linux" || current_os == "mac" || false) {
+    deps += [ ":rustix-v1_1_4" ]
+  }
+  if (false || false) {
+    deps += [ ":libc-v0_2_186" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=8a9a7574aa11253",
+    "-Cextra-filename=-8a9a7574aa11253",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"unsupported\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":xattr-v1_6_1.license" ]
 }
 
 license("xml-rs-v0_8_26.license") {

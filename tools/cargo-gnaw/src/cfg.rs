@@ -169,6 +169,18 @@ pub fn cfg_to_gn_conditional(cfg: &str) -> Result<String> {
         Ok(String::from("false"))
     } else if cfg.starts_with("getrandom_backend") {
         Ok(String::from("false"))
+    } else if cfg.starts_with("rustix_use_libc") {
+        Ok(String::from("false"))
+    } else if cfg.starts_with("rustix_use_experimental_asm") {
+        Ok(String::from("false"))
+    } else if cfg.starts_with("target_endian") {
+        if cfg.contains("little") { Ok(String::from("true")) } else { Ok(String::from("false")) }
+    } else if cfg.starts_with("target_pointer_width") {
+        if cfg.contains("64") { Ok(String::from("true")) } else { Ok(String::from("false")) }
+    } else if cfg == "miri" {
+        Ok(String::from("false"))
+    } else if cfg == "criterion" {
+        Ok(String::from("false"))
     } else {
         // TODO(https://fxbug.dev/42061225) better handling needed for these cases.
         Err(anyhow!("Unknown cfg option used: {}", cfg))
