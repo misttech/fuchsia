@@ -5,7 +5,7 @@
 #ifndef SRC_LIB_METRICS_BUFFER_LOG_H_
 #define SRC_LIB_METRICS_BUFFER_LOG_H_
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <string_view>
 
@@ -27,15 +27,14 @@
 // Temporary solution for logging in driver and non-driver contexts by logging to stderr.
 // TODO(b/299990391): Replace with syslog logging interface that accommodates both driver and
 // non-driver contexts, when available.
-#define LOG(severity, format, ...)                                   \
-  do {                                                               \
-    static_assert(true || DDK_LOG_##severity);                       \
-    if (DDK_LOG_##severity >= DDK_LOG_WARNING) {                     \
-      fprintf(stderr, "metrics_buffer " format "\n", ##__VA_ARGS__); \
-    } else if (DDK_LOG_##severity >= DDK_LOG_INFO) {                 \
-      fprintf(stdout, "metrics_buffer " format "\n", ##__VA_ARGS__); \
-      fflush(stdout);                                                \
-    }                                                                \
+#define LOG(severity, format, ...)                                     \
+  do {                                                                 \
+    if (fdf::LogSeverity::severity >= fdf::LogSeverity::WARN) {        \
+      fprintf(stderr, "metrics_buffer " format "\n", ##__VA_ARGS__);   \
+    } else if (fdf::LogSeverity::severity >= fdf::LogSeverity::INFO) { \
+      fprintf(stdout, "metrics_buffer " format "\n", ##__VA_ARGS__);   \
+      fflush(stdout);                                                  \
+    }                                                                  \
   } while (0)
 
 #endif  // SRC_LIB_METRICS_BUFFER_LOG_H_

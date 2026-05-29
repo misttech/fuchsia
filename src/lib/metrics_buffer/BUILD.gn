@@ -18,17 +18,15 @@ source_set("metrics_buffer") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/sys/cpp",
-
-    # Only for <ddk/debug.h>'s severity levels.
-    "//src/lib/ddk",
   ]
 
   visibility = [
     ":metrics_buffer_unittests",
     "//src/lib",
     "//src/media/drivers/amlogic_decoder:sources",
-    "//src/media/lib/codec_impl",
+    "//src/media/lib/codec_impl:*",
     "//src/sysmem/server:sysmem_common_srcs",
   ]
 }

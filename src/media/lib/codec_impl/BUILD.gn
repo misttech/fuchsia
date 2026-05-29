@@ -55,6 +55,7 @@ source_set("codec_impl") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fit",
     "//sdk/lib/inspect/component/cpp",
+    "//src/lib/ddk",
     "//src/lib/metrics_buffer",
     "//src/media/lib/blocking_mpsc_queue",
     "//src/media/lib/metrics",
@@ -74,9 +75,6 @@ source_set("codec_impl") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/vfs/cpp",
     "//src/devices/bind/fuchsia.sysmem.heap:fuchsia.sysmem.heap_cpp",
-
-    # Only for <ddk/debug.h>'s severity levels.
-    "//src/lib/ddk",
   ]
 }
 

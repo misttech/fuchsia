@@ -97,7 +97,7 @@ void MetricsBuffer::SetServiceDirectory(std::shared_ptr<sys::ServiceDirectory> s
       auto loop = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
       zx_status_t status = loop->StartThread("MetricsBuffer");
       if (status != ZX_OK) {
-        LOG(WARNING, "MetricsBuffer::SetServiceDirectory() thread creation failed.");
+        LOG(WARN, "MetricsBuffer::SetServiceDirectory() thread creation failed.");
         // ~loop
         // ~service_directory
         return;
