@@ -1184,6 +1184,61 @@ type Dhcp6PdInfo = table {
     3: hashed_pd_prefix vector<uint8>:32;
 };
 
+/// Message queue related info.
+type MessageQueueInfo = table {
+    /// Number of messages in the queue.
+    1: num_messages uint16;
+    /// Number of buffers used by all messages in the queue.
+    2: num_buffers uint16;
+    /// Total number of bytes of all messages in the queue.
+    3: total_bytes uint32;
+};
+
+/// CSL related info.
+type CslInfo = table {
+    /// CSL Accuracy value of the neighbor in units of PPM.
+    1: csl_accuracy uint8;
+
+    /// CSL Uncertainty value of the neighbor in units of 10 microseconds.
+    2: csl_uncertainty uint8;
+};
+
+/// Message pool related info.
+type BufferInfo = table {
+    /// The total number of buffers in the message pool.
+    1: msg_total_buffers uint16;
+
+    /// The number of free buffers in the message pool.
+    2: msg_free_buffers uint16;
+
+    /// The maximum number of used buffers at the same time.
+    3: msg_max_used_buffers uint16;
+
+    /// Info about 6LoWPAN send queue.
+    4: msg_6lo_send_queue MessageQueueInfo;
+
+    /// Info about 6LoWPAN reassembly queue.
+    5: msg_6lo_reassembly_queue MessageQueueInfo;
+
+    /// Info about IPv6 send queue.
+    6: msg_ip6_queue MessageQueueInfo;
+
+    /// Info about MPL send queue.
+    7: msg_mpl_queue MessageQueueInfo;
+
+    /// Info about MLE delayed message queue.
+    8: msg_mle_queue MessageQueueInfo;
+
+    /// Info about CoAP/TMF send queue.
+    9: msg_coap_queue MessageQueueInfo;
+
+    /// Info about CoAP secure send queue.
+    10: msg_coap_secure_queue MessageQueueInfo;
+
+    /// Info about application CoAP send queue.
+    11: msg_application_coap_queue MessageQueueInfo;
+};
+
 /// Link Metrics info of the neighbors.
 type LinkMetricsEntry = table {
     /// Link Margin value of the neighbor
@@ -1870,4 +1925,14 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     41: cca_threshold fuchsia.lowpan.PowerDbm;
+
+    /// CSL information.
+    ///
+    /// Only present on Thread networks.
+    42: csl_info CslInfo;
+
+    /// Buffer information.
+    ///
+    /// Only present on Thread networks.
+    43: buffer_info BufferInfo;
 };
