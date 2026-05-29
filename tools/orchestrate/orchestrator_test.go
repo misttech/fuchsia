@@ -7,6 +7,7 @@ package orchestrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -250,6 +251,16 @@ func (m *mockFFXClient) TargetRepositoryRegister(ctx context.Context, repoName s
 	return call.retErr
 }
 
+func (m *mockFFXClient) TargetSnapshot(ctx context.Context, dir string) error {
+	call := m.recordCall("TargetSnapshot", dir)
+	return call.retErr
+}
+
+func (m *mockFFXClient) Symbolize(ctx context.Context, input io.Reader, output io.Writer) error {
+	call := m.recordCall("Symbolize")
+	return call.retErr
+}
+
 // recordCall records a call and returns a predefined error if one exists.
 func (m *mockFFXClient) recordCall(method string, args ...string) *mockCall {
 	m.t.Helper()
@@ -401,10 +412,10 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	mockFfx.expectCall("ApplyEnv")
 
 	// Snapshot call
-	mockFfx.expectCall("RunCmdSync", "target", "snapshot", "-d", tmpDir)
+	mockFfx.expectCall("TargetSnapshot", tmpDir)
 
 	// Cleanup calls (LIFO order due to defers)
-	mockFfx.expectCall("Cmd", "debug", "symbolize") // From stopFfxLog
+	mockFfx.expectCall("Symbolize") // From stopFfxLog
 
 	mockFfx.expectCall("RepositoryServerStop", repoName) // From stopPackageServer
 

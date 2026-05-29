@@ -47,6 +47,8 @@ type FFXClient interface {
 	TargetWait(ctx context.Context) error
 	TargetShow(ctx context.Context) (string, error)
 	TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error
+	TargetSnapshot(ctx context.Context, dir string) error
+	Symbolize(ctx context.Context, input io.Reader, output io.Writer) error
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
@@ -471,7 +473,7 @@ func (r *TestOrchestrator) test(testCmd []string, in *RunInput) error {
 	fmt.Printf("Pausing 10 seconds for log flush...\n")
 	time.Sleep(10 * time.Second)
 	if in.IsTarget() {
-		if _, err := r.ffx.RunCmdSync("target", "snapshot", "-d", os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")); err != nil {
+		if err := r.ffx.TargetSnapshot(context.Background(), os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")); err != nil {
 			fmt.Printf("target snapshot: %v\n", err)
 		}
 	}
@@ -573,12 +575,5 @@ func (r *TestOrchestrator) Symbolize(input, output string) error {
 			fmt.Printf("symbolizedFile.Close: %v\n", err)
 		}
 	}()
-	cmd, err := r.ffx.Cmd("debug", "symbolize")
-	if err != nil {
-		return fmt.Errorf("ffx.Cmd: %v", err)
-	}
-	cmd.Stdin = logFile
-	cmd.Stdout = symbolizedFile
-	cmd.Stderr = symbolizedFile
-	return cmd.Run()
+	return r.ffx.Symbolize(context.Background(), logFile, symbolizedFile)
 }

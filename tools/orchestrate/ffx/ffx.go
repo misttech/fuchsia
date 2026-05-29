@@ -484,3 +484,21 @@ func (f *Ffx) TargetRepositoryRegister(ctx context.Context, repoName string, ali
 	_, err := f.RunCmdSync(args...)
 	return err
 }
+
+// TargetSnapshot takes a target snapshot.
+func (f *Ffx) TargetSnapshot(ctx context.Context, dir string) error {
+	_, err := f.RunCmdSync("target", "snapshot", "-d", dir)
+	return err
+}
+
+// Symbolize symbolizes logs using ffx debug symbolize.
+func (f *Ffx) Symbolize(ctx context.Context, input io.Reader, output io.Writer) error {
+	cmd, err := f.Cmd("debug", "symbolize")
+	if err != nil {
+		return err
+	}
+	cmd.Stdin = input
+	cmd.Stdout = output
+	cmd.Stderr = output
+	return cmd.Run()
+}
