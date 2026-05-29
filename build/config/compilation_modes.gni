@@ -48,7 +48,7 @@ _default_compilation_settings = {
   }
 
   balanced = {
-    fuchsia_optimize = "size_thinlto"
+    fuchsia_optimize = "size_thinlto_clang"
     host_optimize = "size"
     kernel_optimize = "moderate"
     user_optimize = "moderate"
@@ -125,15 +125,28 @@ _optimize_valid = [
   "none",
   "debug",
   "minimal",
-  "moderate",
-  "size",
-  "size_thinlto",
-  "size_lto",
-  "speed",
   "sanitizer",
   "profile",
   "coverage",
 ]
+foreach(primary,
+        [
+          "moderate",
+          "size",
+          "speed",
+        ]) {
+  foreach(suffix,
+          [
+            "",
+            "_lto",
+            "_thinlto",
+          ]) {
+    _optimize_valid += [ primary + suffix ]
+  }
+}
+
+# TODO(https://fxbug.dev/517626589): remove this when default is changed
+_optimize_valid += [ "size_thinlto_clang" ]
 
 foreach(_optimize_arg,
         [

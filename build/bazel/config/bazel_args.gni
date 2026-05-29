@@ -39,13 +39,25 @@ _optimize_to_fastbuild = [
   "sanitizer",
   "profile",
 ]
-_optimize_to_opt = [
-  "size",
-  "size_lto",
-  "size_thinlto",
-  "moderate",
-  "speed",
-]
+_optimize_to_opt = []
+foreach(mode,
+        [
+          "moderate",
+          "speed",
+          "size",
+        ]) {
+  foreach(suffix,
+          [
+            "",
+            "_lto",
+            "_thinlto",
+          ]) {
+    _optimize_to_opt += [ mode + suffix ]
+  }
+}
+
+# TODO(https://fxbug.dev/517626589): remove this when default is changed
+_optimize_to_opt += [ "size_thinlto_clang" ]
 
 _is_compilation_mode_dbg =
     _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
@@ -122,7 +134,7 @@ if (_is_compilation_mode_dbg) {
     _build_args += [ "--features=ml_inliner" ]
   }
 } else {
-  assert("Unsupported mode optimize = $optimize")
+  assert(false, "Unsupported mode optimize = $optimize")
 }
 
 if (zircon_asserts) {
