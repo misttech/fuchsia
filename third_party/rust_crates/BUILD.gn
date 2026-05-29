@@ -2135,13 +2135,13 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("tar") {
-    public_deps = [ ":tar-v0_4_25" ]
+    public_deps = [ ":tar-v0_4_46" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("tar-0.4.25") {
-    public_deps = [ ":tar-v0_4_25" ]
+  group("tar-0.4.46") {
+    public_deps = [ ":tar-v0_4_46" ]
   }
 }
 
@@ -20312,49 +20312,43 @@ rustc_library("redox_syscall-v0_5_17") {
   applicable_licenses = [ ":redox_syscall-v0_5_17.license" ]
 }
 
-license("tar-v0_4_25.license") {
+license("tar-v0_4_46.license") {
   public_package_name = "tar"
   license_files = [
-    "//third_party/rust_crates/vendor/tar-0.4.25/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/tar-0.4.25/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/tar-0.4.46/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/tar-0.4.46/LICENSE-MIT",
   ]
 }
 
-rustc_library("tar-v0_4_25") {
+rustc_library("tar-v0_4_46") {
   crate_name = "tar"
-  source_root = "//third_party/rust_crates/vendor/tar-0.4.25/src/lib.rs"
-  output_name = "tar-f84162c57b5f3fa8"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/tar-0.4.46/src/lib.rs"
+  output_name = "tar-8d147a5349072fb8"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":filetime-v0_2_14" ]
-  if (false) {
-    deps += [ ":redox_syscall-v0_1_51" ]
-  }
   if (true) {
     deps += [ ":libc-v0_2_186" ]
-    deps += [ ":xattr-v0_2_3" ]
+    deps += [ ":xattr-v1_6_1" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f84162c57b5f3fa8",
-    "-Cextra-filename=-f84162c57b5f3fa8",
+    "-Cmetadata=8d147a5349072fb8",
+    "-Cextra-filename=-8d147a5349072fb8",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"xattr\"",
   ]
 
-  aliased_deps = {
-    syscall = ":redox_syscall-v0_1_51.actual"
-  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tar-v0_4_25.license" ]
+  applicable_licenses = [ ":tar-v0_4_46.license" ]
 }
 
 license("tempfile-v3_2_0.license") {
@@ -23745,41 +23739,6 @@ rustc_library("x509-cert-v0_2_5") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":x509-cert-v0_2_5.license" ]
-}
-
-license("xattr-v0_2_3.license") {
-  public_package_name = "xattr"
-  license_files = [
-    "//third_party/rust_crates/vendor/xattr-0.2.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/xattr-0.2.3/LICENSE-MIT",
-  ]
-}
-
-rustc_library("xattr-v0_2_3") {
-  crate_name = "xattr"
-  source_root = "//third_party/rust_crates/vendor/xattr-0.2.3/src/lib.rs"
-  output_name = "xattr-2a5c4d8adcb30469"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":libc-v0_2_186" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=2a5c4d8adcb30469",
-    "-Cextra-filename=-2a5c4d8adcb30469",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"unsupported\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":xattr-v0_2_3.license" ]
 }
 
 license("xattr-v1_6_1.license") {

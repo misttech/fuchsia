@@ -2845,14 +2845,14 @@ alias(
 )
 
 alias(
-    name = "tar-0.4.25",
-    actual = "//third_party/rust_crates/vendor/tar-0.4.25:tar",
+    name = "tar-0.4.46",
+    actual = "//third_party/rust_crates/vendor/tar-0.4.46:tar",
     tags = ["manual"],
 )
 
 alias(
     name = "tar",
-    actual = "//third_party/rust_crates/vendor/tar-0.4.25:tar",
+    actual = "//third_party/rust_crates/vendor/tar-0.4.46:tar",
     tags = ["manual"],
 )
 

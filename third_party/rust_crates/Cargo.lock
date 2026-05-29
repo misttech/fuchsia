@@ -1902,7 +1902,7 @@ dependencies = [
  "which",
  "winnow 0.7.13",
  "x509-cert",
- "xattr 1.6.1",
+ "xattr",
  "xml-rs",
  "zerocopy 0.8.48",
  "zeroize",
@@ -5063,14 +5063,13 @@ dependencies = [
 
 [[package]]
 name = "tar"
-version = "0.4.25"
+version = "0.4.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7201214ded95b34e3bc00c9557b6dcec34fd1af428d343143f5db67c661762f0"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
 dependencies = [
  "filetime",
  "libc",
- "redox_syscall 0.1.51",
- "xattr 0.2.3",
+ "xattr",
 ]
 
 [[package]]
@@ -5906,15 +5905,6 @@ dependencies = [
  "der 0.7.10",
  "spki 0.7.3",
  "tls_codec",
-]
-
-[[package]]
-name = "xattr"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d1526bbe5aaeb5eb06885f4d987bcdfa5e23187055de9b83fe00156a821fabc"
-dependencies = [
- "libc",
 ]
 
 [[package]]
