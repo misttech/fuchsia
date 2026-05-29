@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::memio::EbpfPtr;
 use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
     BPF_STACK_SIZE, BpfValue, DataWidth, EbpfInstruction, EbpfProgramContext, FromBpfValue,
@@ -100,62 +101,46 @@ impl<C: EbpfProgramContext> ComputationContext<'_, C> {
         instruction_offset: u64,
         width: DataWidth,
     ) {
-        // SAFETY
-        //
-        // The address has been verified by the verifier that ensured the memory is valid for
-        // writing.
         let addr = addr.add(instruction_offset);
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
         match width {
-            DataWidth::U8 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u8()) },
-            DataWidth::U16 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u16()) },
-            DataWidth::U32 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u32()) },
-            DataWidth::U64 => unsafe { std::ptr::write_unaligned(addr.as_ptr(), value.as_u64()) },
+            DataWidth::U8 => {
+                // SAFETY: Verifier ensures that the store operation is safe.
+                unsafe { EbpfPtr::new(addr.as_ptr::<u8>()).store_relaxed(value.as_u8()) }
+            }
+            DataWidth::U16 => {
+                // SAFETY: Verifier ensures that the store operation is safe.
+                unsafe { EbpfPtr::new(addr.as_ptr::<u16>()).store_relaxed(value.as_u16()) }
+            }
+            DataWidth::U32 => {
+                // SAFETY: Verifier ensures that the store operation is safe.
+                unsafe { EbpfPtr::new(addr.as_ptr::<u32>()).store_relaxed(value.as_u32()) }
+            }
+            DataWidth::U64 => {
+                // SAFETY: Verifier ensures that the store operation is safe.
+                unsafe { EbpfPtr::new(addr.as_ptr::<u64>()).store_relaxed(value.as_u64()) }
+            }
         }
     }
 
     #[inline(always)]
     fn load_memory(&self, addr: BpfValue, instruction_offset: u64, width: DataWidth) -> BpfValue {
-        // SAFETY
-        //
-        // The address has been verified by the verifier that ensured the memory is valid for
-        // reading.
         let addr = addr.add(instruction_offset);
         match width {
-            DataWidth::U8 =>
-            {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u8>()) })
+            DataWidth::U8 => {
+                // SAFETY: Verifier ensures that the load is safe.
+                BpfValue::from(unsafe { EbpfPtr::new(addr.as_ptr::<u8>()).load_relaxed() })
             }
-            DataWidth::U16 =>
-            {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u16>()) })
+            DataWidth::U16 => {
+                // SAFETY: Verifier ensures that the load is safe.
+                BpfValue::from(unsafe { EbpfPtr::new(addr.as_ptr::<u16>()).load_relaxed() })
             }
-            DataWidth::U32 =>
-            {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u32>()) })
+            DataWidth::U32 => {
+                // SAFETY: Verifier ensures that the load is safe.
+                BpfValue::from(unsafe { EbpfPtr::new(addr.as_ptr::<u32>()).load_relaxed() })
             }
-            DataWidth::U64 =>
-            {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                BpfValue::from(unsafe { std::ptr::read_unaligned(addr.as_ptr::<u64>()) })
+            DataWidth::U64 => {
+                // SAFETY: Verifier ensures that the load is safe.
+                BpfValue::from(unsafe { EbpfPtr::new(addr.as_ptr::<u64>()).load_relaxed() })
             }
         }
     }

@@ -148,6 +148,36 @@ impl EbpfPtr<'_, i32> {
     }
 }
 
+impl EbpfPtr<'_, u16> {
+    /// Loads the value referenced by the pointer. Atomicity is guaranteed
+    /// if and only if the pointer is 2-byte aligned.
+    pub fn load_relaxed(&self) -> u16 {
+        // SAFETY: Atomic load of the value referenced by the pointer.
+        unsafe { arch::load_u16(self.ptr) }
+    }
+
+    /// Stores the `value` at the memory referenced by the pointer. Atomicity
+    /// is guaranteed if and only if the pointer is 2-byte aligned.
+    pub fn store_relaxed(&self, value: u16) {
+        // SAFETY: Atomic store of the value referenced by the pointer.
+        unsafe { arch::store_u16(self.ptr, value) }
+    }
+}
+
+impl EbpfPtr<'_, u8> {
+    /// Loads the value referenced by the pointer.
+    pub fn load_relaxed(&self) -> u8 {
+        // SAFETY: Atomic load of the value referenced by the pointer.
+        unsafe { arch::load_u8(self.ptr) }
+    }
+
+    /// Stores the `value` at the memory referenced by the pointer.
+    pub fn store_relaxed(&self, value: u8) {
+        // SAFETY: Atomic store of the value referenced by the pointer.
+        unsafe { arch::store_u8(self.ptr, value) }
+    }
+}
+
 /// Wraps a pointer to buffer used in eBPF runtime, such as an eBPF maps
 /// entry. The referenced data may be access from multiple threads in parallel,
 /// which makes it unsafe to access it using standard Rust types.
