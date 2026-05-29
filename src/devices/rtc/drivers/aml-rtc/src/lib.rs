@@ -13,9 +13,9 @@ use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use log::warn;
 use mmio::region::MmioRegion;
-use mmio::vmo::{VmoMapping, VmoMemory};
+use mmio::vmo::VmoMemory;
 use mmio::{register, register_block};
-use pdev::PdevExt;
+use pdev::{PdevExt, PlatformDevice};
 use std::cell::RefCell;
 use std::sync::Arc;
 use zx::Status;
@@ -91,16 +91,8 @@ impl Driver for AmlRtcDriver {
 
         let pdev = context.connect_to_pdev()?;
 
-        let mmio = pdev
-            .get_mmio_by_id(0)
-            .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|e| Status::from_raw(e))?;
-        let vmo = mmio.vmo.ok_or(Status::INTERNAL)?;
-        let size = mmio.size.ok_or(Status::INTERNAL)?;
-
-        let mmio_mapping = VmoMapping::map(0, size as usize, vmo)?;
-        let regs = RtcRegsBlock::new(mmio_mapping);
+        let mmio = pdev.map_mmio_by_id(0).await?;
+        let regs = RtcRegsBlock::new(mmio);
         let mut registers = Registers { regs };
 
         // Specific initialization for AML RTC

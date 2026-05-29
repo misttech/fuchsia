@@ -13,13 +13,13 @@ use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use log::error;
-use pdev::PdevExt;
+use pdev::{PdevExt, PlatformDevice};
 use zx::Status;
 
 use fdf_metadata::MetadataServer;
 
 use mmio::region::MmioRegion;
-use mmio::vmo::{VmoMapping, VmoMemory};
+use mmio::vmo::VmoMemory;
 mod registers;
 use registers::*;
 
@@ -244,34 +244,14 @@ impl Driver for AmlSaradc {
 
         let pdev = context.connect_to_pdev()?;
 
-        let adc_mmio = pdev
-            .get_mmio_by_id(0)
-            .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|e| Status::from_raw(e))?;
-        let adc_vmo = adc_mmio.vmo.ok_or(Status::INTERNAL)?;
-        let adc_size = adc_mmio.size.ok_or(Status::INTERNAL)?;
+        let adc_mmio = pdev.map_mmio_by_id(0).await?;
+        let ao_mmio = pdev.map_mmio_by_id(1).await?;
 
-        let ao_mmio = pdev
-            .get_mmio_by_id(1)
-            .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|e| Status::from_raw(e))?;
-        let ao_vmo = ao_mmio.vmo.ok_or(Status::INTERNAL)?;
-        let ao_size = ao_mmio.size.ok_or(Status::INTERNAL)?;
-
-        let irq = pdev
-            .get_interrupt_by_id(0, 0)
-            .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|e| Status::from_raw(e))?;
-
-        let adc_mmio_region = VmoMapping::map(0, adc_size as usize, adc_vmo)?;
-        let ao_mmio_region = VmoMapping::map(0, ao_size as usize, ao_vmo)?;
+        let irq = pdev.get_interrupt_by_id(0, 0).await?.map_err(Status::from_raw)?;
 
         let mut device = AmlSaradcDevice {
-            adc_regs: AdcRegsBlock::new(adc_mmio_region),
-            ao_regs: AoRegsBlock::new(ao_mmio_region),
+            adc_regs: AdcRegsBlock::new(adc_mmio),
+            ao_regs: AoRegsBlock::new(ao_mmio),
             irq,
         };
 
@@ -341,6 +321,7 @@ impl Driver for AmlSaradc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mmio::vmo::VmoMapping;
     use zx::Vmo;
 
     #[fuchsia::test]
