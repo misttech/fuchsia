@@ -15,6 +15,7 @@ rustc_library("rust") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust",
+    "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",

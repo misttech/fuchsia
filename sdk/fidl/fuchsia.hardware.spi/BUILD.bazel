@@ -11,10 +11,12 @@ fidl_library(
     ],
     api_area = "Drivers",
     category = "partner",
+    enable_rust_next = True,
     stable = False,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.hardware.sharedmemory",
+        "//sdk/fidl/fuchsia.mem",
         "//zircon/vdso/zx",
     ],
 )

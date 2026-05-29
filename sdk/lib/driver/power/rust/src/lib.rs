@@ -17,6 +17,7 @@ use std::sync::{Arc, Weak};
 use zx::Status;
 
 use fidl_next as _;
+use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
 
 /// Implement this trait if you'd like to get notifications when the system is about to go into
 /// suspend and come out of resume.
@@ -168,6 +169,31 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
 
     async fn stop(&self) {
         self.driver.stop().await;
+    }
+}
+
+/// Extension trait for [`DriverContext`] to simplify connecting to power resources.
+pub trait PowerExt {
+    /// Connects to a power domain resource with the given instance name.
+    fn connect_to_powerdomain(
+        &self,
+        instance: &str,
+    ) -> Result<fidl_next::Client<fpowerdomain::Domain>, DriverError>;
+}
+
+impl PowerExt for DriverContext {
+    fn connect_to_powerdomain(
+        &self,
+        instance: &str,
+    ) -> Result<fidl_next::Client<fpowerdomain::Domain>, DriverError> {
+        let service = self
+            .incoming
+            .service::<fdf_component::ServiceInstance<fpowerdomain::Service>>()
+            .instance(instance)
+            .connect_next()?;
+        let (client, server) = fidl_next::fuchsia::create_channel();
+        service.domain(server)?;
+        Ok(client.spawn())
     }
 }
 
