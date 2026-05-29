@@ -206,6 +206,50 @@ func (m *mockFFXClient) RepositoryServerList(ctx context.Context) (string, error
 	return "", nil
 }
 
+func (m *mockFFXClient) TargetAdd(ctx context.Context, addr string) error {
+	call := m.recordCall("TargetAdd", addr)
+	return call.retErr
+}
+
+func (m *mockFFXClient) TargetList(ctx context.Context) (string, error) {
+	call := m.recordCall("TargetList")
+	if call.retErr != nil {
+		return "", call.retErr
+	}
+	if call.retVal != nil {
+		if str, ok := call.retVal.(string); ok {
+			return str, nil
+		}
+		m.t.Fatalf("mockFFXClient: TargetList expected string retVal, got %T", call.retVal)
+	}
+	return "", nil
+}
+
+func (m *mockFFXClient) TargetWait(ctx context.Context) error {
+	call := m.recordCall("TargetWait")
+	return call.retErr
+}
+
+func (m *mockFFXClient) TargetShow(ctx context.Context) (string, error) {
+	call := m.recordCall("TargetShow")
+	if call.retErr != nil {
+		return "", call.retErr
+	}
+	if call.retVal != nil {
+		if str, ok := call.retVal.(string); ok {
+			return str, nil
+		}
+		m.t.Fatalf("mockFFXClient: TargetShow expected string retVal, got %T", call.retVal)
+	}
+	return "", nil
+}
+
+func (m *mockFFXClient) TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error {
+	args := append([]string{repoName}, aliases...)
+	call := m.recordCall("TargetRepositoryRegister", args...)
+	return call.retErr
+}
+
 // recordCall records a call and returns a predefined error if one exists.
 func (m *mockFFXClient) recordCall(method string, args ...string) *mockCall {
 	m.t.Helper()
@@ -345,13 +389,13 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 
 	// Reach device expectations (conditional on deviceConfig presence and not emulator)
 	if deviceConfig != nil && !isEmulator {
-		mockFfx.expectCall("RunCmdSync", "target", "add", deviceConfig.Network.IPv4, "--nowait")
+		mockFfx.expectCall("TargetAdd", deviceConfig.Network.IPv4)
 	}
-	mockFfx.expectCall("RunCmdSync", "--machine", "json-pretty", "target", "list")
-	mockFfx.expectCall("RunCmdSync", "target", "wait")
-	mockFfx.expectCall("RunCmdSync", "--machine", "json-pretty", "target", "show")
+	mockFfx.expectCall("TargetList")
+	mockFfx.expectCall("TargetWait")
+	mockFfx.expectCall("TargetShow")
 	mockFfx.expectCall("Cmd", "log", "--symbolize", "off")
-	mockFfx.expectCall("RunCmdSync", "target", "repository", "register", "--repository", repoName, "--alias", "fuchsia.com", "--alias", "chromium.org")
+	mockFfx.expectCall("TargetRepositoryRegister", repoName, "fuchsia.com", "chromium.org")
 
 	// Test execution environment setup (ApplyEnv)
 	mockFfx.expectCall("ApplyEnv")

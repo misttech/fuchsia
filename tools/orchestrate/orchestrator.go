@@ -42,6 +42,11 @@ type FFXClient interface {
 	RepositoryServerStart(ctx context.Context, repoName, repoDir, address string) error
 	RepositoryServerStop(ctx context.Context, repoName string) error
 	RepositoryServerList(ctx context.Context) (string, error)
+	TargetAdd(ctx context.Context, addr string) error
+	TargetList(ctx context.Context) (string, error)
+	TargetWait(ctx context.Context) error
+	TargetShow(ctx context.Context) (string, error)
+	TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error
 }
 
 // TestOrchestrator uses FFX to run Fuchsia component tests.
@@ -367,19 +372,19 @@ func (r *TestOrchestrator) serveAndWait(repoDir string) error {
 func (r *TestOrchestrator) reachDevice() error {
 	if r.deviceConfig != nil {
 		addr := r.deviceConfig.Network.IPv4
-		if _, err := r.ffx.RunCmdSync("target", "add", addr, "--nowait"); err != nil {
+		if err := r.ffx.TargetAdd(context.Background(), addr); err != nil {
 			return fmt.Errorf("ffx target add: %w", err)
 		}
 	}
 
-	if _, err := r.ffx.RunCmdSync("--machine", "json-pretty", "target", "list"); err != nil {
+	if _, err := r.ffx.TargetList(context.Background()); err != nil {
 		return fmt.Errorf("ffx target list: %w", err)
 	}
 
-	if _, err := r.ffx.RunCmdSync("target", "wait"); err != nil {
+	if err := r.ffx.TargetWait(context.Background()); err != nil {
 		return fmt.Errorf("ffx target wait: %w", err)
 	}
-	if _, err := r.ffx.RunCmdSync("--machine", "json-pretty", "target", "show"); err != nil {
+	if _, err := r.ffx.TargetShow(context.Background()); err != nil {
 		return fmt.Errorf("ffx target show: %w", err)
 	}
 	if err := r.dumpFfxLog(); err != nil {
@@ -387,18 +392,8 @@ func (r *TestOrchestrator) reachDevice() error {
 	}
 
 	// Register the repo server using the aliases configured with the running server.
-	if out, err := r.ffx.RunCmdSync(
-		"target",
-		"repository",
-		"register",
-		"--repository",
-		r.repoName,
-		"--alias",
-		"fuchsia.com",
-		"--alias",
-		"chromium.org",
-	); err != nil {
-		return fmt.Errorf("ffx target repository register: %w out: %s", err, out)
+	if err := r.ffx.TargetRepositoryRegister(context.Background(), r.repoName, []string{"fuchsia.com", "chromium.org"}); err != nil {
+		return fmt.Errorf("ffx target repository register: %w", err)
 	}
 	return nil
 }

@@ -449,3 +449,38 @@ func (f *Ffx) RepositoryServerStop(ctx context.Context, repoName string) error {
 func (f *Ffx) RepositoryServerList(ctx context.Context) (string, error) {
 	return f.RunCmdSync("repository", "server", "list")
 }
+
+// TargetAdd adds a target.
+func (f *Ffx) TargetAdd(ctx context.Context, addr string) error {
+	_, err := f.RunCmdSync("target", "add", addr, "--nowait")
+	return err
+}
+
+// TargetList lists the targets.
+func (f *Ffx) TargetList(ctx context.Context) (string, error) {
+	return f.RunCmdSync("--machine", "json-pretty", "target", "list")
+}
+
+// TargetWait waits for the target to be reachable.
+func (f *Ffx) TargetWait(ctx context.Context) error {
+	_, err := f.RunCmdSync("target", "wait")
+	return err
+}
+
+// TargetShow shows target details.
+func (f *Ffx) TargetShow(ctx context.Context) (string, error) {
+	return f.RunCmdSync("--machine", "json-pretty", "target", "show")
+}
+
+// TargetRepositoryRegister registers a repository with the target.
+func (f *Ffx) TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error {
+	args := []string{
+		"target", "repository", "register",
+		"--repository", repoName,
+	}
+	for _, alias := range aliases {
+		args = append(args, "--alias", alias)
+	}
+	_, err := f.RunCmdSync(args...)
+	return err
+}
