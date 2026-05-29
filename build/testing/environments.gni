@@ -20,6 +20,7 @@ device_types = {
   atlas = "Atlas"
   crosvm = "crosvm"
   gce = "GCE"
+  iris = "Iris"
   kola = "Kola"
   lilac = "Lilac"
   luis = "Luis"
@@ -238,6 +239,18 @@ _all_named_host_envs += [
   {
     name = "linux"
     env = linux_env
+  },
+]
+
+iris_env = {
+  dimensions = {
+    device_type = device_types.iris
+  }
+}
+_all_named_fuchsia_envs += [
+  {
+    name = "iris"
+    env = iris_env
   },
 ]
 
