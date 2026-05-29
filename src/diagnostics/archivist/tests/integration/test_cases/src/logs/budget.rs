@@ -5,12 +5,13 @@
 use crate::{test_topology, utils};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl_fuchsia_archivist_test as ftest;
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_types::Severity;
 use futures::StreamExt;
+use test_case::test_case;
 
 const SPAM_COUNT: usize = 1001;
 
-#[fuchsia::test]
 /// Verify that Archivist correctly budgets and evicts log messages when its
 /// cache is full. Archivist is configured with a limited buffer size, and this
 /// test ensures that as new logs are ingested, older logs are dropped to stay
@@ -22,7 +23,11 @@ const SPAM_COUNT: usize = 1001;
 /// configured budget. It then verifies that the victim's initial log message is
 /// evicted from the cache, confirming the FIFO (First-In, First-Out) eviction
 /// strategy.
-async fn test_budget() {
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(fdiagnostics::Format::Fxt))]
+#[cfg_attr(fuchsia_api_level_at_least = "HEAD", test_case(fdiagnostics::Format::LegacyFxt))]
+#[test_case(fdiagnostics::Format::Json)]
+#[fuchsia::test]
+async fn test_budget(format: fdiagnostics::Format) {
     let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
         puppets: Some(vec![
             test_topology::PuppetDeclBuilder::new("spammer").into(),
@@ -61,6 +66,7 @@ async fn test_budget() {
     let mut log_reader = ArchiveReader::logs();
     log_reader
         .with_archive(accessor)
+        .with_format(format)
         .with_minimum_schema_count(0) // we want this to return even when no log messages
         .retry(RetryConfig::never());
 

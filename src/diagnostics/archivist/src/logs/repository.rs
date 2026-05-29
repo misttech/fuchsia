@@ -11,6 +11,7 @@ use crate::logs::shared_buffer::{FilterCursor, FilterCursorStream, SharedBuffer}
 use crate::logs::stats::{GlobalAnalytics, LogStreamStats};
 use anyhow::format_err;
 use diagnostics_data::{LogsData, Severity};
+use diagnostics_log_encoding::ARCHIVIST_URL;
 use fidl_fuchsia_diagnostics::{
     ComponentSelector, LogInterestSelector, StreamMode, StringSelector,
 };
@@ -132,7 +133,7 @@ impl LogsRepository {
                 let archivist_container = mutable_state.create_log_container(
                     Arc::new(ComponentIdentity::new(
                         ExtendedMoniker::ComponentInstance(m.clone()),
-                        "fuchsia-boot:///archivist#meta/archivist.cm",
+                        ARCHIVIST_URL,
                     )),
                     &shared_buffer,
                     Weak::clone(me),

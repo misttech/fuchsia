@@ -41,6 +41,11 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  if (current_build_target_api_level == "PLATFORM" ||
+      current_build_target_api_level == "HEAD") {
+    deps += [ "//src/lib/fuchsia-sync" ]
+  }
+
   test_deps = [
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//src/lib/diagnostics/log/rust",

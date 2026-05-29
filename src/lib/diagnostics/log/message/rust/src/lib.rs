@@ -7,10 +7,13 @@ use byteorder::{ByteOrder, LittleEndian};
 use diagnostics_data::{
     BuilderArgs, ExtendedMoniker, LogsData, LogsDataBuilder, LogsField, LogsProperty, Severity,
 };
-use diagnostics_log_encoding::{Argument, Record, Value};
+use diagnostics_log_encoding::{
+    ARCHIVIST_URL, Argument, Header, LOG_CONTROL_BIT, MONIKER, ROLLED_OUT, Record, URL, Value,
+};
 use flyweights::FlyStr;
 use libc::{c_char, c_int};
 use moniker::Moniker;
+use std::collections::HashMap;
 use std::{mem, str};
 
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -53,10 +56,10 @@ pub fn from_logger(source: MonikerWithUrl, msg: LoggerMessage) -> LogsData {
     builder.build()
 }
 
+#[derive(Clone)]
 struct ExtendedMetadata {
     moniker: ExtendedMoniker,
     url: FlyStr,
-    rolled_out_logs: u64,
 }
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -107,13 +110,13 @@ fn parse_archivist_args<'a>(
 fn parse_logs_data<'a>(
     input: &'a Record<'a>,
     source: Option<ExtendedMetadata>,
+    rolled_out: u64,
 ) -> Result<LogsData, MessageError> {
     let (raw_severity, severity) = Severity::parse_exact(input.severity);
     let has_attribution = source.is_some();
 
-    let (maybe_moniker, maybe_url, maybe_rolled_out) = source
-        .map(|value| (Some(value.moniker), Some(value.url), Some(value.rolled_out_logs)))
-        .unwrap_or((None, None, None));
+    let (maybe_moniker, maybe_url) =
+        source.map(|value| (Some(value.moniker), Some(value.url))).unwrap_or((None, None));
 
     let mut builder = LogsDataBuilder::new(BuilderArgs {
         component_url: maybe_url,
@@ -124,9 +127,7 @@ fn parse_logs_data<'a>(
         timestamp: input.timestamp,
     });
 
-    if let Some(rolled_out) = maybe_rolled_out
-        && rolled_out > 0
-    {
+    if rolled_out > 0 {
         builder = builder.set_rolled_out(rolled_out);
     }
 
@@ -180,12 +181,124 @@ fn parse_logs_data<'a>(
     Ok(builder.build())
 }
 
+/// A stateful parser that reconstructs fully attributed `LogsData` records from a stream of
+/// FXT log packets.
+///
+/// # Background & Architecture
+///
+/// In the Fuchsia Trace Format (FXT) structured logging protocol, log attribution metadata is
+/// separated from the actual log payload to optimize transmission overhead. Instead of repeating
+/// the full moniker and component URL on every log record, the system transmits two distinct
+/// types of records:
+///
+/// 1. **Manifest/Control Records**: Sent with the `LOG_CONTROL_BIT` set. These records map a
+///    numeric base tag ID to component identity metadata (`ExtendedMoniker` and URL).
+/// 2. **Legacy Log Records**: Contain the message content, severity, timestamp, and
+///    arguments, along with a tag ID indicating which component produced the log.
+///
+/// # Stateful Parsing
+///
+/// `MessageParser` maintains an internal `tag_map` to track the active association between
+/// numeric tag IDs and their component identity (`ExtendedMetadata`).
+///
+/// - When parsing a manifest record (`is_control == true`), `MessageParser` updates its state
+///   mapping for the derived base tag. If the record also reports rolled out (dropped) logs, a
+///   `LogsData` payload representing those dropped logs is returned. Otherwise, it registers
+///   the attribution mapping and returns `Ok((None, remaining))`.
+/// - When parsing a legacy log record (`is_control == false`), `MessageParser` resolves the
+///   record's tag to retrieve the component's identity from the internal mapping, constructing
+///   a fully attributed `LogsData` containing the correct component moniker and URL.
+#[derive(Default)]
+pub struct MessageParser {
+    tag_map: HashMap<u32, ExtendedMetadata>,
+}
+
+impl MessageParser {
+    /// Parses the next log record from the given `bytes`.
+    ///
+    /// This function can handle both standard log records and "Archivist" manifest records.
+    /// Archivist records update an internal map used to attribute subsequent log records.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes`: A byte slice containing one or more log records.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing:
+    /// * `Ok((Option<LogsData>, &[u8]))`: A tuple where the first element is `Some(LogsData)`
+    ///   if a log message was parsed, or `None` if it was an Archivist manifest record. The
+    ///   second element is the remaining slice of bytes after parsing the record.
+    /// * `Err(MessageError)`: An error if parsing failed.
+    pub fn parse_next<'a>(
+        &mut self,
+        bytes: &'a [u8],
+    ) -> Result<(Option<LogsData>, &'a [u8]), MessageError> {
+        if bytes.len() < 8 {
+            return Err(MessageError::ShortRead { len: bytes.len() });
+        }
+        let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+        let header_val = u64::from_le_bytes(header_bytes);
+        let header = Header(header_val);
+        let tag = header.tag();
+        let base_tag = tag & !LOG_CONTROL_BIT;
+        let is_control = (tag & LOG_CONTROL_BIT) != 0;
+
+        let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
+
+        if is_control {
+            let mut moniker = None;
+            let mut url = None;
+            let mut rolled_out = None;
+            for arg in &input.arguments {
+                if arg.name() == MONIKER
+                    && let Value::Text(v) = arg.value()
+                {
+                    moniker = Some(v);
+                } else if arg.name() == URL
+                    && let Value::Text(v) = arg.value()
+                {
+                    url = Some(v);
+                } else if arg.name() == ROLLED_OUT
+                    && let Value::UnsignedInt(v) = arg.value()
+                {
+                    rolled_out = Some(v);
+                }
+            }
+            if let Some(count) = rolled_out {
+                let metadata =
+                    self.tag_map.get(&base_tag).cloned().unwrap_or_else(|| ExtendedMetadata {
+                        moniker: diagnostics_data::ExtendedMoniker::ComponentInstance(
+                            moniker::Moniker::parse_str("/UNKNOWN").unwrap(),
+                        ),
+                        url: flyweights::FlyStr::new(ARCHIVIST_URL),
+                    });
+                let data = parse_logs_data(&input, Some(metadata), count)?;
+                return Ok((Some(data), remaining));
+            }
+            if let (Some(m), Some(u)) = (moniker, url)
+                && let Ok(extended_moniker) = ExtendedMoniker::parse_str(&m)
+            {
+                self.tag_map.insert(
+                    base_tag,
+                    ExtendedMetadata { moniker: extended_moniker, url: FlyStr::new(u) },
+                );
+            }
+            Ok((None, remaining))
+        } else {
+            let metadata = self.tag_map.get(&base_tag).cloned();
+            let data = parse_logs_data(&input, metadata, 0)?;
+            Ok((Some(data), remaining))
+        }
+    }
+}
+
 /// Constructs a `LogsData` from the provided bytes, assuming the bytes
 /// are a a single FXT log record with a potentially extended metadata section.
 /// [log encoding] https://fuchsia.dev/fuchsia-src/reference/platform-spec/diagnostics/logs-encoding
 pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
-    let (source, new_remaining) = if remaining.len() >= 16 {
+    let (source, new_remaining, rolled_out_logs) = if remaining.len() >= 16 {
         let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
         let component_url_len = u32::from_le_bytes(remaining[4..8].try_into().unwrap()) as usize;
         let rolled_out_logs = u64::from_le_bytes(remaining[8..16].try_into().unwrap());
@@ -200,14 +313,14 @@ pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageEr
             Some(ExtendedMetadata {
                 moniker: ExtendedMoniker::parse_str(moniker)?,
                 url: FlyStr::new(url),
-                rolled_out_logs,
             }),
             &remaining[offset..],
+            rolled_out_logs,
         )
     } else {
-        (None, remaining)
+        (None, remaining, 0)
     };
-    let record = parse_logs_data(&input, source)?;
+    let record = parse_logs_data(&input, source, rolled_out_logs)?;
     Ok((record, new_remaining))
 }
 
@@ -219,7 +332,8 @@ pub fn from_structured(source: MonikerWithUrl, bytes: &[u8]) -> Result<LogsData,
     let (input, _remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
     let record = parse_logs_data(
         &input,
-        Some(ExtendedMetadata { moniker: source.moniker, url: source.url, rolled_out_logs: 0 }),
+        Some(ExtendedMetadata { moniker: source.moniker, url: source.url }),
+        0,
     )?;
     Ok(record)
 }

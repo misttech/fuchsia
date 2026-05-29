@@ -14,9 +14,14 @@ pub(crate) const LINE: &str = "line";
 pub const MONIKER: &str = "moniker";
 /// Argument name for the component URL in FXT manifest records.
 pub const URL: &str = "url";
+/// Rolled out count field for log records provided by the archivist.
+pub const ROLLED_OUT: &str = "rolled_out";
 
 /// Size of the FXT header.
 pub const FXT_HEADER_SIZE: usize = 8;
+
+/// The component URL of the archivist.
+pub const ARCHIVIST_URL: &str = "fuchsia-boot:///archivist#meta/archivist.cm";
 
 /// The tracing format supports many types of records, we're sneaking in as a log message.
 pub const TRACING_FORMAT_LOG_RECORD_TYPE: u8 = 9;

@@ -5,7 +5,10 @@ use crate::diagnostics::BatchIteratorConnectionStats;
 use crate::error::AccessorError;
 use crate::logs::servers::{ExtendRecordOpts, extend_fxt_record};
 use crate::logs::shared_buffer::FilterCursor;
-use diagnostics_log_encoding::Header;
+use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
+use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+use fidl_fuchsia_diagnostics_types::Severity;
+
 use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
@@ -15,6 +18,7 @@ use futures::{Stream, StreamExt};
 use log::warn;
 use pin_project::pin_project;
 use serde::Serialize;
+use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
@@ -228,6 +232,29 @@ impl SerializedVmo {
         vmo.write(&buffer, 0).unwrap();
         Ok(Self { vmo, size: buffer.len() as u64, format })
     }
+}
+
+pub fn encode_rolled_out(count: u64) -> Vec<u8> {
+    let mut encoder =
+        Encoder::new(Cursor::new(ResizableBuffer::from(Vec::new())), EncoderOpts::default());
+    let record = Record {
+        timestamp: zx::BootInstant::from_nanos(0),
+        severity: Severity::Info.into_primitive(),
+        arguments: vec![Argument::new(
+            "rolled_out",
+            diagnostics_log_encoding::Value::UnsignedInt(count),
+        )],
+    };
+    // This write should not fail as ResizableBuffer will grow as needed.
+    encoder.write_record(record).unwrap();
+
+    let mut buffer = encoder.take().into_inner().into_inner();
+    if buffer.len() >= 8 {
+        let mut header = Header::read_from_bytes(&buffer[0..8]).unwrap();
+        header.set_tag(LOG_CONTROL_BIT);
+        buffer[0..8].copy_from_slice(header.as_bytes());
+    }
+    buffer
 }
 
 impl From<SerializedVmo> for FormattedContent {
@@ -452,6 +479,11 @@ impl PacketFormat for FxtPacketFormat {
                         }
                     }
                 };
+
+                if message.dropped > 0 {
+                    let rolled_out_buffer = encode_rolled_out(message.dropped);
+                    buffer.extend_from_slice(&rolled_out_buffer);
+                }
 
                 if send_manifest {
                     use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};

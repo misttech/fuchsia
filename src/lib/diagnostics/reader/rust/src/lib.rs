@@ -20,6 +20,8 @@ use fidl_fuchsia_diagnostics::{
 };
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client;
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::sink::SinkExt;
@@ -396,7 +398,6 @@ impl<T: DiagnosticsDataType> ArchiveReader<T> {
         };
 
         let (iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
-
         let stream_parameters = StreamParameters {
             stream_mode: Some(mode),
             data_type: Some(D::DATA_TYPE),
@@ -460,11 +461,10 @@ impl ArchiveReader<Logs> {
     pub async fn snapshot(&self) -> Result<Vec<Data<Logs>>, Error> {
         loop {
             let iterator = self.batch_iterator::<Logs>(StreamMode::Snapshot, self.format())?;
-            let result = drain_batch_iterator_for_logs(Arc::new(iterator))
+            let result = drain_batch_iterator_for_logs(Arc::new(iterator), Some(self.format()))
                 .filter_map(|value| ready(value.ok()))
                 .collect::<Vec<_>>()
                 .await;
-
             if self.retry_config.should_retry(result.len()) {
                 fasync::Timer::new(fasync::MonotonicInstant::after(
                     zx::MonotonicDuration::from_millis(RETRY_DELAY_MS),
@@ -481,7 +481,7 @@ impl ArchiveReader<Logs> {
     pub fn snapshot_then_subscribe(&self) -> Result<Subscription, Error> {
         let iterator =
             self.batch_iterator::<Logs>(StreamMode::SnapshotThenSubscribe, self.format())?;
-        Ok(Subscription::new(iterator))
+        Ok(Subscription::new_with_format(iterator, self.format()))
     }
 }
 
@@ -642,8 +642,11 @@ where
 
 fn drain_batch_iterator_for_logs(
     iterator: Arc<BatchIteratorProxy>,
+    _format: Option<Format>,
 ) -> impl Stream<Item = Result<LogsData, Error>> {
-    stream_batch::<LogsData>(iterator, |formatted_content| match formatted_content {
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    let parser = Arc::new(Mutex::new(diagnostics_message::MessageParser::default()));
+    stream_batch::<LogsData>(iterator, move |formatted_content| match formatted_content {
         FormattedContent::Json(data) => {
             let mut buf = vec![0; data.size as usize];
             data.vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
@@ -653,18 +656,37 @@ fn drain_batch_iterator_for_logs(
         FormattedContent::Fxt(vmo) => {
             let mut buf = vec![0; vmo.get_content_size().expect("Always returns Ok") as usize];
             vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
-            let mut current_slice: &[u8] = buf.as_ref();
+            let mut current_slice: &[u8] = &buf;
             let mut items = vec![];
+            let mut parser = parser.lock();
+
             while !current_slice.is_empty() {
-                match from_extended_record(current_slice) {
-                    Ok((data, remaining)) => {
-                        items.push(data);
-                        current_slice = remaining;
+                if _format == Some(Format::Fxt) {
+                    match parser.parse_next(current_slice) {
+                        Ok((maybe_data, remaining)) => {
+                            assert!(remaining.len() < current_slice.len(), "Parser must advance");
+                            if let Some(data) = maybe_data {
+                                items.push(data);
+                            }
+                            current_slice = remaining;
+                        }
+                        Err(_) => {
+                            // This can happen if we are reading a truncated record.
+                            // Stop parsing this buffer.
+                            break;
+                        }
                     }
-                    Err(_) => {
-                        // This can happen if we are reading a truncated record.
-                        // Stop parsing this buffer.
-                        break;
+                } else {
+                    match from_extended_record(current_slice) {
+                        Ok((data, remaining)) => {
+                            items.push(data);
+                            current_slice = remaining;
+                        }
+                        Err(_) => {
+                            // This can happen if we are reading a truncated record.
+                            // Stop parsing this buffer.
+                            break;
+                        }
                     }
                 }
             }
@@ -695,7 +717,17 @@ impl Subscription {
     pub fn new(iterator: BatchIteratorProxy) -> Self {
         let iterator = Arc::new(iterator);
         Subscription {
-            recv: Box::pin(drain_batch_iterator_for_logs(iterator.clone()).fuse()),
+            recv: Box::pin(drain_batch_iterator_for_logs(iterator.clone(), None).fuse()),
+            iterator,
+        }
+    }
+
+    /// Creates a new subscription stream to a batch iterator.
+    /// The stream will return diagnostics data structures.
+    pub fn new_with_format(iterator: BatchIteratorProxy, format: Format) -> Self {
+        let iterator = Arc::new(iterator);
+        Subscription {
+            recv: Box::pin(drain_batch_iterator_for_logs(iterator.clone(), Some(format)).fuse()),
             iterator,
         }
     }
