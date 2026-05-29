@@ -1002,7 +1002,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1082,7 +1082,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
   ubsan = {
@@ -1741,7 +1741,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -6409,6 +6409,15 @@ package flavors.
 **Current value (from the default):** `[]`
 
 From //build/packages/prebuilt_package_with_flavors.gni:30
+
+### perfetto_amalgamated_sdk
+
+Set by the amalgamated SDK build. Defaults the optional zlib/re2 features
+to off; the consumer opts in via perfetto_sdk_config.h (see build_config.h).
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:478
 
 ### perfetto_build_with_android
 
