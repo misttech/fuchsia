@@ -3,22 +3,10 @@
 // found in the LICENSE file.
 
 use fdf_component::{
-    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceInstance, ServiceOffer,
-    driver_register,
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
 };
 use fdf_metadata::MetadataServer;
 use fidl::Serializable;
-
-use anyhow::Context;
-use fidl_fuchsia_hardware_platform_device as fpdev;
-use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
-use fidl_next::{Request, Responder, ServerEnd, fuchsia};
-use fidl_next_fuchsia_hardware_clock as fclock;
-use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
-use fidl_next_fuchsia_hardware_gpio as fgpio;
-use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
-use fidl_next_fuchsia_hardware_reset as freset;
-use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
 use fspi_businfo::SpiBusMetadata;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -28,6 +16,20 @@ use log::{error, info};
 use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
 use zx::Status;
+
+use fdf_power::PowerExt;
+use fdf_resource::{ClockExt, GpioExt, ResetExt};
+
+use fidl_next::{Request, Responder, ServerEnd};
+use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
+
+use fidl_fuchsia_hardware_platform_device as fpdev;
+
+use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
+use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
+
+use anyhow::Context;
+
 mod spi_device;
 use spi_device::{DwSpiDevice, SpiImplRequest};
 
@@ -181,23 +183,13 @@ impl Driver for DwSpiDriver {
     const NAME: &str = "dw-spi";
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
-        let powerdomain_service: ServiceInstance<fpowerdomain::Service> =
-            context.incoming.service().instance("power-domain").connect_next()?;
-        let (powerdomain_client, powerdomain_server) = fuchsia::create_channel();
-        powerdomain_service.domain(powerdomain_server)?;
-        let powerdomain = powerdomain_client.spawn();
-
+        let powerdomain = context.connect_to_powerdomain("power-domain")?;
         powerdomain.enable().await.context("Failed to enable power domain")?;
 
-        let clock_service: ServiceInstance<fclock::Service> =
-            context.incoming.service().instance("clock-bus").connect_next()?;
-        let (clock_client, clock_server) = fuchsia::create_channel();
-        clock_service.clock(clock_server)?;
-        let clock = clock_client.spawn();
+        let clock_bus = context.connect_to_clock("clock-bus")?;
+        clock_bus.enable().await.context("Failed to enable bus clock")?;
 
-        clock.enable().await.context("Failed to enable bus clock")?;
-
-        let parent_clock_hz = match clock.get_rate().await {
+        let parent_clock_hz = match clock_bus.get_rate().await {
             Ok(fidl_next::FlexibleResult::Ok(response)) => Ok(response),
             Ok(fidl_next::FlexibleResult::Err(e)) => Err(Status::from_raw(e)),
             _ => Err(Status::INTERNAL),
@@ -209,34 +201,21 @@ impl Driver for DwSpiDriver {
             .unwrap_or(ClockGetRateResponse { hz: 0 })
             .hz;
 
-        let clock_service: ServiceInstance<fclock::Service> =
-            context.incoming.service().instance("clock-registers").connect_next()?;
-        let (clock_client, clock_server) = fuchsia::create_channel();
-        clock_service.clock(clock_server)?;
-        let clock = clock_client.spawn();
+        let clock_regs = context.connect_to_clock("clock-registers")?;
+        clock_regs.enable().await.context("Failed to enable registers clock")?;
 
-        clock.enable().await.context("Failed to enable registers clock")?;
-
-        let reset_service: ServiceInstance<freset::Service> =
-            context.incoming.service().instance("reset").connect_next()?;
-        let (reset_client, reset_server) = fuchsia::create_channel();
-        reset_service.reset(reset_server)?;
-        let reset = reset_client.spawn();
-
+        let reset = context.connect_to_reset("reset")?;
         reset.toggle().await.context("Failed to toggle reset")?;
 
-        let cs_gpio_service: ServiceInstance<fgpio::Service> =
-            context.incoming.service().instance("gpio-cs-0").connect_next()?;
-        let (cs_gpio_client, cs_gpio_server) = fuchsia::create_channel();
-        cs_gpio_service.device(cs_gpio_server)?;
+        let cs_gpio = {
+            let cs_gpio = context.connect_to_gpio("gpio-cs-0")?;
 
-        let cs_gpio = cs_gpio_client.spawn();
-
-        // The chip select GPIO is optional. Make a call on it do determine whether or not it
-        // has been provided to us.
-        let cs_gpio = match cs_gpio.release_interrupt().await {
-            Ok(_) => Some(cs_gpio),
-            _ => None,
+            // The chip select GPIO is optional. Make a call on it do determine whether or not it
+            // has been provided to us.
+            match cs_gpio.release_interrupt().await {
+                Ok(_) => Some(cs_gpio),
+                _ => None,
+            }
         };
 
         let pdev = context.connect_to_pdev()?;

@@ -49,6 +49,8 @@ fuchsia_rust_driver("dw-spi-driver") {
     "//sdk/lib/driver/metadata/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
     "//sdk/lib/driver/platform-device/rust:pdev",
+    "//sdk/lib/driver/power/rust",
+    "//sdk/lib/driver/resource/rust:fdf_resource",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
