@@ -83,6 +83,10 @@ verify_atom_info(
     expected_atom_info = ":test_data_atom_golden_info",
 )
 
+# TODO(https://fxbug.dev/417305295): Add test coverage for `implementation_deps`
+# (and `fuchsia_implementation_deps`) for all three cc library types such that
+# the resulting atom info is validated.
+
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
 # * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
 #   * This file includes another_header.h, which is available via

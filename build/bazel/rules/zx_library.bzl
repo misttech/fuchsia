@@ -135,6 +135,8 @@ def apply_common_zx_library_modifications(kwargs):
     # Convert any ":<library>.as-needed" targets in the private deps to the
     # library target.
     kwargs["implementation_deps"] = _get_main_targets_for_as_needed(kwargs["implementation_deps"])
+    if "fuchsia_implementation_deps" in kwargs and kwargs["fuchsia_implementation_deps"] != None:
+        fail("The zx macros do not currently support `fuchsia_implementation_deps`.")
 
     # Convert any ":headers" or ":<library>.headers" targets in the public deps
     # to the library target.

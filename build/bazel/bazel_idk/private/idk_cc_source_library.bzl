@@ -99,6 +99,7 @@ def _idk_cc_source_library_impl(
         fuchsia_deps,
         non_fuchsia_deps,
         implementation_deps,
+        fuchsia_implementation_deps,
         include_base,
         api_file_path,
         testonly,
@@ -161,7 +162,7 @@ def _idk_cc_source_library_impl(
         deps = deps + select_for_fuchsia(fuchsia_deps, non_fuchsia_deps),
         # TODO(https://fxbug.dev/428229472): If we must support
         # `non_idk_implementation_deps`, include it below.
-        implementation_deps = implementation_deps,
+        implementation_deps = implementation_deps + select_for_fuchsia(fuchsia_implementation_deps),
         includes = [include_path],
         testonly = testonly,
         # Allow access from //sdk:all_underlying_source_libraries.
@@ -179,7 +180,7 @@ def _idk_cc_source_library_impl(
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
 
-    atom_idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps)
+    atom_idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps + fuchsia_implementation_deps)
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     # TODO(https://fxbug.dev/428229472): If we must support
@@ -275,8 +276,7 @@ graph depends on target `name`.
 
 The values of all deps args must be iterable. That means they cannot contain
 `select()` statements. Instead, use `fuchsia_deps` for public dependencies
-that only apply to Fuchsia. `hdrs`, `hdrs_for_internal_use`, and `srcs` have
-the same restriction and similar corresponding attributes.""",
+that only apply to Fuchsia.""",
     implementation = _idk_cc_source_library_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
@@ -351,7 +351,7 @@ GN equivalent: `public_deps`""",
 build time only when targeting Fuchsia.
 These labels must point to targets with corresponding `_create_idk_atom()` targets.
 GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement
-GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps.
+GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps`.
 This may require adding `# buildifier: leave-alone` above the target definition to
 disable reordering by the formatter.""",
             default = [],
@@ -369,6 +369,18 @@ GN equivalent: `public_deps +=` inside an `if (!is_fuchsia) {}` statement""",
             doc = """List of labels for other IDK elements this element depends on at build time.
 These labels must point to targets with corresponding `_create_idk_atom()` targets.
 GN equivalent: `deps`.""",
+            default = [],
+            configurable = False,
+        ),
+        "fuchsia_implementation_deps": attr.label_list(
+            doc = """List of labels for other IDK elements this element depends
+on at build time only when targeting Fuchsia.
+These labels must point to targets with corresponding `_create_idk_atom()` targets.
+GN equivalent: `deps +=` inside an `if (is_fuchsia) {}` statement
+GN note: If `bazel2gn` is run on the target, `fuchsia_implementation_deps` must
+come after `implementation_deps`. This may require adding
+`# buildifier: leave-alone` above the target definition to disable reordering by
+the formatter.""",
             default = [],
             configurable = False,
         ),

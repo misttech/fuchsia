@@ -659,6 +659,9 @@ idk_cc_source_library_zx(
 	non_fuchsia_deps = [
 		"//zircon/system/ulib/zx_host",
 	],
+	fuchsia_implementation_deps = [
+		"//zircon/system/ulib/zx_impl",
+	],
 )
 `,
 			wantGN: `sdk_source_set("foo") {
@@ -673,6 +676,11 @@ idk_cc_source_library_zx(
 	if (!is_fuchsia) {
 		public_deps += [
 			"//zircon/system/ulib/zx_host",
+		]
+	}
+	if (is_fuchsia) {
+		deps += [
+			"//zircon/system/ulib/zx_impl",
 		]
 	}
 }`,
