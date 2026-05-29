@@ -458,3 +458,91 @@ func TestOrchestrator_Run_EmulatorUnit(t *testing.T) {
 	}
 	runOrchestratorScenario(t, true, runInput, nil)
 }
+
+// TestInstantiateFfx_PathResolution verifies that instantiateFfx correctly resolves ffx_path.
+// Specifically, it ensures that:
+// 1. Absolute paths are preserved as-is (not corrupted by joining with CWD).
+// 2. Relative paths are correctly resolved to absolute paths relative to CWD.
+//
+// This test is critical because mock-based integration tests (like runOrchestratorScenario)
+// inject a mock FFX client beforehand, bypassing instantiateFfx's path resolution logic entirely.
+func TestInstantiateFfx_PathResolution(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", tmpDir)
+
+	// Create a fake ffx executable shell script that exits 0.
+	// ffx.New initialization runs 'config env set' command to set default configs,
+	// so the ffxPath MUST point to a valid executable that returns 0 when run.
+	fakeFfxName := "fake_ffx"
+	fakeFfxPath := filepath.Join(tmpDir, fakeFfxName)
+	if err := os.WriteFile(fakeFfxPath, []byte("#!/bin/bash\nexit 0"), 0755); err != nil {
+		t.Fatalf("failed to create fake ffx: %v", err)
+	}
+
+	// Calculate a relative path from the current working directory to our fake ffx binary
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	relFfxPath, err := filepath.Rel(wd, fakeFfxPath)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		inputFfxPath string
+		wantAbs      bool
+	}{
+		{
+			name:         "Absolute path remains absolute",
+			inputFfxPath: fakeFfxPath, // This is absolute since tmpDir is absolute
+			wantAbs:      true,
+		},
+		{
+			name:         "Relative path becomes absolute",
+			inputFfxPath: relFfxPath, // Use dynamically computed relative path
+			wantAbs:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+
+			// Instantiate orchestrator without any pre-injected mock FFX client
+			orchestrator := NewTestOrchestrator(nil)
+			runInput := &RunInput{
+				Emulator: TargetRunInput{
+					FfxPath: tc.inputFfxPath,
+				},
+			}
+
+			// This will trigger the actual ffxPath resolution and call ffx.New()
+			err = orchestrator.instantiateFfx(runInput)
+			if err != nil {
+				t.Fatalf("instantiateFfx failed: %v", err)
+			}
+
+			if orchestrator.ffx == nil {
+				t.Fatalf("orchestrator.ffx is nil")
+			}
+
+			// Instead of type-asserting to the private ffx.Ffx struct
+			// (which has private fields), we leverage FFXClient's Cmd method
+			// which returns an exec.Cmd pointing to the resolved binary path.
+			cmd, err := orchestrator.ffx.Cmd("version")
+			if err != nil {
+				t.Fatalf("ffx.Cmd failed: %v", err)
+			}
+			resolvedPath := cmd.Path
+			if tc.wantAbs && !filepath.IsAbs(resolvedPath) {
+				t.Errorf("expected absolute path, got: %s", resolvedPath)
+			}
+
+			// Verify that the resolved path actually exists on disk
+			if _, err := os.Stat(resolvedPath); err != nil {
+				t.Errorf("resolved path does not exist: %s, err: %v", resolvedPath, err)
+			}
+		})
+	}
+}
