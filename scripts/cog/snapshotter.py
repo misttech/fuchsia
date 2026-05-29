@@ -64,7 +64,7 @@ def snapshot_workspace(
         to_path_abs = cartfs_mount_point / to_path_rel
 
         if not from_path_abs.exists():
-            logger.log_info(
+            logger.log_debug(
                 f"Skipping {from_path_rel} because it does not exist."
             )
             continue
@@ -88,6 +88,10 @@ def snapshot_workspace(
             capture_output=True,
             text=True,
         )
+
+    logger.log_info(
+        f"Done snapshotting workspace '{workspace_to_snapshot_from}' to '{workspace_to_snapshot_to}'"
+    )
 
     # Delete the .fx/config/metrics file from the snapshot.
     metrics_file = to_path / "fuchsia" / ".fx" / "config" / "metrics"

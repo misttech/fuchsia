@@ -19,6 +19,7 @@ def check_gcert_status() -> bool:
     """Checks if the user has a valid gcert certificate."""
     try:
         subprocess.check_call(["gcertstatus", "-check_ssh=false", "-quiet"])
+        logger.log_debug("Gcert certificate is valid.")
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         logger.log_error("You do not have a valid gcert certificate.")
@@ -40,6 +41,7 @@ def check_git_citc_cogd() -> bool:
 
     try:
         workspace.Workspace.cogd_path()
+        logger.log_debug("Running in a Cog workspace.")
         return True
     except workspace.NotInCogWorkspaceError:
         logger.log_error(
@@ -65,6 +67,7 @@ def check_cartfs(require_grpc_cli: bool = True) -> bool:
 
     try:
         cartfs.Cartfs.cartfs_uid()
+        logger.log_debug("Cartfs uid found.")
     except cartfs.CartfsNotRunningError:
         logger.log_warn("Unable to find the uid for cartfs.")
         logger.log_error(
@@ -75,6 +78,7 @@ def check_cartfs(require_grpc_cli: bool = True) -> bool:
 
     try:
         cartfs.Cartfs.find_mount_point()
+        logger.log_debug("Cartfs mount point found.")
     except cartfs.CartfsNotRunningError:
         logger.log_warn("Unable to find the mount point for cartfs.")
         logger.log_error(
@@ -89,6 +93,8 @@ def check_cartfs(require_grpc_cli: bool = True) -> bool:
             "Please run `sudo apt install grpc-cli` and try again."
         )
         return False
+
+    logger.log_debug("Cartfs is installed and running.")
 
     return True
 

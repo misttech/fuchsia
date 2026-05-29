@@ -710,9 +710,20 @@ class Workspace:
         logger.emit_status("Updating jiri checkout...")
         logger.log_info(f"Running jiri update in {self.cartfs_fuchsia_dir}")
 
-        self._run(
-            [".jiri_root/bin/jiri", "update"],
+        cmd = (
+            [".jiri_root/bin/jiri", "-v", "update"]
+            if logger.get_log_level() <= logging.DEBUG
+            else [".jiri_root/bin/jiri", "update"]
+        )
+
+        env = os.environ.copy()
+        env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
+
+        subprocess.run(
+            cmd,
             cwd=self.cartfs_fuchsia_dir,
+            check=True,
+            env=env,
         )
 
     def _fetch_prebuilts(self) -> None:
