@@ -24,7 +24,7 @@ impl<T> Opaque<T> {
     }
 
     /// Returns a raw pointer to the opaque data.
-    pub fn get(&self) -> *mut T {
+    pub const fn get(&self) -> *mut T {
         let ptr = self.0.as_ptr();
         UnsafeCell::raw_get(ptr)
     }
