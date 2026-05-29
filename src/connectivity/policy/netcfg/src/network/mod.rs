@@ -56,6 +56,14 @@ impl NetworkId {
     pub fn delegated<I: Into<InterfaceId>>(id: I) -> Self {
         NetworkId::Delegated(id.into())
     }
+
+    pub fn is_fuchsia(&self) -> bool {
+        matches!(self, NetworkId::Fuchsia(_))
+    }
+
+    pub fn is_delegated(&self) -> bool {
+        matches!(self, NetworkId::Delegated(_))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -152,41 +160,90 @@ impl NetworkProperties {
 /// The current state of all networks sent to the NetworkRegistry.
 #[derive(Default, Clone)]
 struct RegisteredNetworks {
+    /// The current default network, determined by the priority rules in
+    /// `calculate_active_default`.
     default_network: Option<NetworkId>,
+    /// The Starnix default network, as determined by Starnix.
+    starnix_default: Option<NetworkId>,
     networks: HashMap<NetworkId, NetworkProperties>,
     dns_servers: Vec<fnet_name::DnsServer_>,
 }
 
 impl RegisteredNetworks {
+    // Determine the active default network based on the starnix_default and network registry.
+    // When one or more Fuchsia networks are present, they should be prioritized over Starnix
+    // networks. The 'most prioritized' Fuchsia network is the one with the lowest ID.
+    fn calculate_active_default(&self) -> Option<NetworkId> {
+        // Note: Fuchsia networks are only added to the NetworkRegistry if they meet
+        // certain criteria (ex: have a default route and are online).
+        let first_fuchsia = self.networks.keys().filter(|id| id.is_fuchsia()).cloned().min();
+        if let Some(fd) = first_fuchsia {
+            return Some(fd);
+        }
+
+        // Fallback to starnix_default. If it is unset, no default network is available.
+        if let Some(starnix_default) = self.starnix_default {
+            // Ensure that the network is present in the network registry.
+            assert!(self.networks.contains_key(&starnix_default));
+        }
+        self.starnix_default
+    }
+
+    // Handle updates to the active default network.
+    //
+    // Returns `Some(DefaultChangedEvent)` if the new default network
+    // is different from the old one, otherwise `None`.
+    fn handle_default_network_update(&mut self) -> Option<DefaultChangedEvent> {
+        let next_default = self.calculate_active_default();
+        if next_default != self.default_network {
+            let old_default = self.default_network;
+            self.default_network = next_default;
+            Some(DefaultChangedEvent { previous_default: old_default })
+        } else {
+            None
+        }
+    }
+
     fn apply(&mut self, update: PropertyUpdate) -> RegistryUpdateResult {
         match update {
-            PropertyUpdate::LoseDefaultNetwork => RegistryUpdateResult {
-                event: UpdateApplied::None,
-                default_changed: self.handle_default_network_update(None),
-            },
+            PropertyUpdate::LoseDefaultNetwork => {
+                // Handle Starnix unsetting its default network.
+                self.starnix_default = None;
+                RegistryUpdateResult {
+                    event: UpdateApplied::None,
+                    default_changed: self.handle_default_network_update(),
+                }
+            }
             PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
                 NetworkUpdate::Properties(event) => RegistryUpdateResult {
                     event: self.handle_changed_network(network_id, event),
-                    default_changed: None,
+                    default_changed: self.handle_default_network_update(),
                 },
                 NetworkUpdate::Remove => {
-                    let event = if self.default_network == Some(network_id) {
-                        error!("Cannot remove the default network. Update ignored.");
-                        UpdateApplied::None
-                    } else {
-                        if self.networks.remove(&network_id).is_some() {
-                            UpdateApplied::NetworkRemoved(network_id)
-                        } else {
-                            error!("Cannot remove a non-existent network. Update ignored.");
-                            UpdateApplied::None
+                    if self.starnix_default == Some(network_id) {
+                        error!("Cannot remove the default delegated network. Update ignored.");
+                        RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+                    } else if self.networks.remove(&network_id).is_some() {
+                        // Elect fallback default network internally.
+                        RegistryUpdateResult {
+                            event: UpdateApplied::NetworkRemoved(network_id),
+                            default_changed: self.handle_default_network_update(),
                         }
-                    };
-                    RegistryUpdateResult { event, default_changed: None }
+                    } else {
+                        error!("Cannot remove a non-existent network. Update ignored.");
+                        RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+                    }
                 }
-                NetworkUpdate::MakeDefault => RegistryUpdateResult {
-                    event: UpdateApplied::None,
-                    default_changed: self.handle_default_network_update(Some(network_id)),
-                },
+                NetworkUpdate::MakeDefault => {
+                    match network_id {
+                        // Fuchsia networks are always the default network when present. Netcfg
+                        // does not use this API to set a Fuchsia network as the default.
+                        NetworkId::Fuchsia(_) => {}
+                        NetworkId::Delegated(_) => self.starnix_default = Some(network_id),
+                    }
+                    let default_changed = self.handle_default_network_update();
+                    RegistryUpdateResult { event: UpdateApplied::None, default_changed }
+                }
             },
             PropertyUpdate::UpdateDns(dns_servers) => {
                 let event = if self.dns_servers != dns_servers {
@@ -198,25 +255,6 @@ impl RegisteredNetworks {
                 RegistryUpdateResult { event, default_changed: None }
             }
         }
-    }
-
-    // Handle the `default_network` argument in a `PropertyUpdate`, determining
-    // whether the network changed as a result of the update.
-    //
-    // Returns an `UpdateApplied::DefaultNetworkChanged` if the new default
-    // network is different from the old one.
-    fn handle_default_network_update(
-        &mut self,
-        new_default_network: Option<NetworkId>,
-    ) -> Option<DefaultChangedEvent> {
-        // We do not need to send an update applied if the network stayed the same.
-        if new_default_network == self.default_network {
-            return None;
-        }
-
-        let old_default_network = self.default_network;
-        self.default_network = new_default_network;
-        Some(DefaultChangedEvent { previous_default: old_default_network })
     }
 
     // Handle the `NetworkPropertiesChange` in a `PropertyUpdate`, determining
@@ -446,7 +484,7 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
 }
 
 /// An event representing the properties that changed for a network.
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct NetworkPropertiesChange {
     /// When true, this is a new network being added. Otherwise, this is an
     /// update to an existing network.
@@ -1244,6 +1282,16 @@ mod tests {
     const NAME_1: &str = "testif1";
     const NAME_2: &str = "testif2";
 
+    impl NetpolNetworksService {
+        pub(crate) fn default_network(&self) -> Option<NetworkId> {
+            self.network_registry.default_network
+        }
+
+        pub(crate) fn has_network(&self, id: NetworkId) -> bool {
+            self.network_registry.networks.contains_key(&id)
+        }
+    }
+
     #[test]
     fn test_handle_changed_network_delegated() {
         let mut networks = RegisteredNetworks::default();
@@ -1480,5 +1528,117 @@ mod tests {
         // Verify it was not removed
         assert!(networks.networks.contains_key(&network_id));
         assert_eq!(networks.default_network, Some(network_id));
+    }
+
+    #[test]
+    fn test_remove_fuchsia_network_fallback() {
+        let mut networks = RegisteredNetworks::default();
+        let fuchsia_id1 = NetworkId::Fuchsia(ID_1);
+        let fuchsia_id2 = NetworkId::Fuchsia(ID_2);
+        let delegated_id = NetworkId::Delegated(ID_1);
+
+        let marks = fnet::Marks { mark_1: Some(123), ..Default::default() };
+
+        // Add two Fuchsia networks and one Delegated network to the registry.
+        let fuchsia_added_network_change =
+            NetworkPropertiesChange { added: true, ..Default::default() };
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(
+                fuchsia_id1,
+                NetworkUpdate::Properties(fuchsia_added_network_change.clone())
+            )),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkChanged {
+                    network_id: fuchsia_id1,
+                    added: true,
+                    changed_marks: true,
+                    name: None,
+                    network_type: None,
+                },
+                default_changed: Some(DefaultChangedEvent { previous_default: None })
+            }
+        );
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(
+                fuchsia_id2,
+                NetworkUpdate::Properties(fuchsia_added_network_change)
+            )),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkChanged {
+                    network_id: fuchsia_id2,
+                    added: true,
+                    changed_marks: true,
+                    name: None,
+                    network_type: None,
+                },
+                default_changed: None
+            }
+        );
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(
+                delegated_id,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    marks: Some(marks),
+                    ..Default::default()
+                })
+            )),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkChanged {
+                    network_id: delegated_id,
+                    added: true,
+                    changed_marks: true,
+                    name: None,
+                    network_type: None,
+                },
+                default_changed: None
+            }
+        );
+
+        // Make the Delegated network default. Since Fuchsia networks are
+        // present, they are prioritized, so the active default network does
+        // not change.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(delegated_id, NetworkUpdate::MakeDefault)),
+            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+        );
+
+        // Verify the active default is Fuchsia's network with the lowest ID.
+        assert_eq!(networks.default_network, Some(fuchsia_id1));
+
+        // Remove the Fuchsia active default network directly (allowed
+        // statelessly for Fuchsia networks)
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(fuchsia_id1, NetworkUpdate::Remove)),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkRemoved(fuchsia_id1),
+                default_changed: Some(DefaultChangedEvent { previous_default: Some(fuchsia_id1) })
+            }
+        );
+
+        // Verify the fallback default is the next available Fuchsia network.
+        assert_eq!(networks.default_network, Some(fuchsia_id2));
+
+        // Remove the fallback Fuchsia network.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(fuchsia_id2, NetworkUpdate::Remove)),
+            RegistryUpdateResult {
+                event: UpdateApplied::NetworkRemoved(fuchsia_id2),
+                default_changed: Some(DefaultChangedEvent { previous_default: Some(fuchsia_id2) })
+            }
+        );
+
+        // Verify the fallback default is the Delegated network since there are
+        // no Fuchsia networks left.
+        assert_eq!(networks.default_network, Some(delegated_id));
+
+        // Remove the Delegated network directly. This must be rejected because
+        // it is the Starnix default.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(delegated_id, NetworkUpdate::Remove)),
+            RegistryUpdateResult { event: UpdateApplied::None, default_changed: None }
+        );
+        assert!(networks.networks.contains_key(&delegated_id));
+        assert_eq!(networks.default_network, Some(delegated_id));
     }
 }
