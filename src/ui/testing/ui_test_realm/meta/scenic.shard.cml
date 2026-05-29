@@ -58,6 +58,7 @@
                 "fuchsia.ui.composition.FlatlandDisplay",
                 "fuchsia.ui.compression.internal.ImageCompressor",
                 "fuchsia.ui.display.singleton.Info",
+                "fuchsia.ui.display.singleton.VsyncSource",
                 "fuchsia.ui.observation.scope.Registry",
                 "fuchsia.ui.observation.test.Registry",
                 "fuchsia.ui.pointer.augment.LocalHit",
