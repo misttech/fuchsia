@@ -854,6 +854,7 @@ template("bazel_action") {
         if (defined(invoker.metadata)) {
           forward_variables_from(invoker.metadata, "*")
         }
+        expect_includes_barrier = []
 
         # Hint to ninja that this action can take about a minute, so that it's
         # appropriately weighted in the calculation of the critical path for a
