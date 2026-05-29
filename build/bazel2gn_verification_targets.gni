@@ -25,6 +25,7 @@ bazel2gn_verification_targets = [
   "//sdk/lib/fidl_base:verify_bazel2gn",
   "//sdk/lib/fit-promise:verify_bazel2gn",
   "//sdk/lib/fit:verify_bazel2gn",
+  "//sdk/lib/fuchsia-loom:verify_bazel2gn",
   "//sdk/lib/magma_common:verify_bazel2gn",
   "//sdk/lib/media/cpp:verify_bazel2gn",
   "//sdk/lib/memory_barriers:verify_bazel2gn",
