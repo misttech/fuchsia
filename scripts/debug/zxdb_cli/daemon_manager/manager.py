@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import signal
+import socket
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,7 @@ from shared.protocol import (
     PROTOCOL_VERSION,
     HelloRequest,
     StartRequest,
+    StopRequest,
     serialize,
 )
 
@@ -46,13 +48,13 @@ class DaemonConnectionError(DaemonManagerError):
     """Raised when connecting to the daemon socket fails."""
 
 
-async def _send_signal_and_wait(
+def _send_signal_and_wait(
     proc: subprocess.Popen[bytes],
     sig: int,
     fallback_fn: Callable[[], None],
     timeout: float,
 ) -> None:
-    """Sends a terminating signal to the process group or calls a fallback function, then awaits exit.
+    """Sends a terminating signal to the process group or calls a fallback function, then waits for exit.
 
     Signals the entire process group if running in its own group (pgid != os.getpgrp()),
     otherwise calls the direct fallback function to prevent terminating the caller. Assumes
@@ -63,18 +65,18 @@ async def _send_signal_and_wait(
         os.killpg(pgid, sig)
     else:
         fallback_fn()
-    await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=timeout)
+    proc.wait(timeout=timeout)
 
 
-async def _cleanup_process(proc: subprocess.Popen[bytes]) -> None:
+def _cleanup_process(proc: subprocess.Popen[bytes]) -> None:
     """Cleans up the process by terminating it and killing it if it doesn't exit."""
     if proc.poll() is not None:
         return
     try:
-        await _send_signal_and_wait(proc, signal.SIGTERM, proc.terminate, 2.0)
+        _send_signal_and_wait(proc, signal.SIGTERM, proc.terminate, 3.0)
     except Exception:
         try:
-            await _send_signal_and_wait(proc, signal.SIGKILL, proc.kill, 1.0)
+            _send_signal_and_wait(proc, signal.SIGKILL, proc.kill, 2.0)
         except Exception:
             pass
 
@@ -93,6 +95,7 @@ class DaemonManager:
         self.connect_to_existing = connect_to_existing
         self.startup_timeout = startup_timeout
         self.spawn_fn = spawn_fn
+        self._proc: subprocess.Popen[bytes] | None = None
 
     async def do_handshake_and_connect(self) -> bool | None:
         """Attempts to connect to the UDS and perform handshake.
@@ -360,11 +363,12 @@ class DaemonManager:
                     pass
 
             startup_success = True
+            self._proc = proc
             return proc
 
         finally:
             if not startup_success and proc is not None:
-                await _cleanup_process(proc)
+                _cleanup_process(proc)
 
             if write_fd != -1:
                 try:
@@ -376,3 +380,51 @@ class DaemonManager:
                     os.close(read_fd)
                 except OSError:
                     pass
+
+    def stop_sync(self, timeout: float = 5.0) -> None:
+        """Encapsulates daemon process lifecycle, polling, waiting, and process group termination fallback.
+
+        If the socket file does not exist or the daemon is already stopped, this method
+        handles it cleanly and returns immediately.
+        """
+        graceful_ipc_succeeded = False
+
+        # 1. First attempt the graceful socket-based IPC StopRequest shutdown
+        if self.socket_path.exists():
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.settimeout(timeout)
+                    try:
+                        s.connect(str(self.socket_path))
+                        stop_req = StopRequest()
+                        s.sendall(serialize(stop_req).encode("utf-8"))
+                        # Read until EOF.
+                        while True:
+                            data = s.recv(4096)
+                            if not data:
+                                break
+                        graceful_ipc_succeeded = True
+                    except (ConnectionRefusedError, FileNotFoundError):
+                        pass
+            except Exception:
+                pass
+            finally:
+                self.socket_path.unlink(missing_ok=True)
+
+        # 2. If self._proc is not None, wait for it or fallback to killing it
+        if self._proc is not None:
+            if graceful_ipc_succeeded:
+                try:
+                    self._proc.wait(timeout=timeout)
+                except (subprocess.TimeoutExpired, Exception):
+                    pass
+            _cleanup_process(self._proc)
+            self._proc = None
+
+    async def stop(self, timeout: float = 5.0) -> None:
+        """Sends a StopRequest to the daemon, drains the connection, and waits for EOF.
+
+        If the socket file does not exist or the daemon is already stopped, this method
+        handles it cleanly and returns immediately.
+        """
+        await asyncio.to_thread(self.stop_sync, timeout)

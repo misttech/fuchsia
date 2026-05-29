@@ -20,6 +20,7 @@ from daemon_manager import (
     DaemonManager,
     DaemonStartupTimeoutError,
 )
+from daemon_manager.manager import _cleanup_process, _send_signal_and_wait
 from shared.protocol import PROTOCOL_VERSION
 
 
@@ -428,6 +429,251 @@ class TestDaemonManager(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(self.spawned_processes), 1)
             spawned_proc = self.spawned_processes[0]
             self.assertIsNotNone(spawned_proc.poll())
+
+    @patch("socket.socket")
+    @patch("daemon_manager.manager.UDS_PATH")
+    def test_stop_sync_socket_does_not_exist(
+        self, mock_uds_path: Mock, mock_socket_class: Mock
+    ) -> None:
+        """Tests that stop_sync() returns silently when the UDS socket file does not exist."""
+        mock_uds_path.exists.return_value = False
+        manager = DaemonManager(socket_path=mock_uds_path)
+        manager.stop_sync()
+        mock_uds_path.exists.assert_called_once()
+        mock_socket_class.assert_not_called()
+
+    @patch("socket.socket")
+    @patch("daemon_manager.manager.UDS_PATH")
+    def test_stop_sync_stale_socket(
+        self, mock_uds_path: Mock, mock_socket_class: Mock
+    ) -> None:
+        """Tests that stop_sync() unlinks the stale socket file and returns when connection is refused."""
+        mock_uds_path.exists.return_value = True
+        mock_socket = MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket_class.return_value = mock_socket
+        mock_socket.connect.side_effect = ConnectionRefusedError(
+            "Connection refused"
+        )
+
+        manager = DaemonManager(socket_path=mock_uds_path)
+        manager.stop_sync()
+
+        mock_socket_class.assert_called_once()
+        mock_socket.connect.assert_called_once_with(str(mock_uds_path))
+        mock_uds_path.unlink.assert_called_once_with(missing_ok=True)
+
+    @patch("socket.socket")
+    @patch("daemon_manager.manager.UDS_PATH")
+    def test_stop_sync_success(
+        self, mock_uds_path: Mock, mock_socket_class: Mock
+    ) -> None:
+        """Tests that stop_sync() successfully connects, sends StopRequest, reads response/EOF, and unlinks."""
+        mock_uds_path.exists.return_value = True
+        mock_socket = MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket_class.return_value = mock_socket
+
+        # Mock s.recv to return stop request response, then EOF (empty bytes)
+        mock_socket.recv.side_effect = [b'{"success": true}', b""]
+
+        manager = DaemonManager(socket_path=mock_uds_path)
+        manager.stop_sync(timeout=3.0)
+
+        mock_socket_class.assert_called_once()
+        mock_socket.settimeout.assert_called_once_with(3.0)
+        mock_socket.connect.assert_called_once_with(str(mock_uds_path))
+        mock_socket.sendall.assert_called_once()
+        self.assertEqual(mock_socket.recv.call_count, 2)
+        mock_uds_path.unlink.assert_called_once_with(missing_ok=True)
+
+    @patch("socket.socket")
+    @patch("daemon_manager.manager.UDS_PATH")
+    def test_stop_sync_timeout(
+        self, mock_uds_path: Mock, mock_socket_class: Mock
+    ) -> None:
+        """Tests that stop_sync() handles timeout cleanly without raising DaemonConnectionError, but still unlinks the socket."""
+        mock_uds_path.exists.return_value = True
+        mock_socket = MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket_class.return_value = mock_socket
+
+        mock_socket.recv.side_effect = TimeoutError("Timed out")
+
+        manager = DaemonManager(socket_path=mock_uds_path)
+        manager.stop_sync(timeout=2.0)
+
+        mock_socket_class.assert_called_once()
+        mock_socket.settimeout.assert_called_once_with(2.0)
+        mock_socket.connect.assert_called_once_with(str(mock_uds_path))
+        mock_socket.sendall.assert_called_once()
+        mock_socket.recv.assert_called_once()
+        mock_uds_path.unlink.assert_called_once_with(missing_ok=True)
+
+    @patch("daemon_manager.manager.DaemonManager.stop_sync")
+    async def test_stop_delegates_to_stop_sync(
+        self, mock_stop_sync: Mock
+    ) -> None:
+        """Tests that async stop() delegates stop_sync to asyncio.to_thread."""
+        manager = DaemonManager()
+        await manager.stop(timeout=3.0)
+        mock_stop_sync.assert_called_once_with(3.0)
+
+    @patch("daemon_manager.manager._cleanup_process")
+    def test_stop_sync_delegates_cleanup_when_proc_present(
+        self, mock_cleanup: Mock
+    ) -> None:
+        """Tests that stop_sync delegates cleanup to _cleanup_process when _proc is present."""
+        mock_socket_path = MagicMock()
+        mock_socket_path.exists.return_value = False
+        manager = DaemonManager(socket_path=mock_socket_path)
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        manager._proc = mock_proc
+
+        manager.stop_sync()
+
+        mock_cleanup.assert_called_once_with(mock_proc)
+        self.assertIsNone(manager._proc)
+
+    @patch("daemon_manager.manager._cleanup_process")
+    def test_stop_sync_does_not_delegate_cleanup_when_proc_absent(
+        self, mock_cleanup: Mock
+    ) -> None:
+        """Tests that stop_sync does not call _cleanup_process if _proc is None."""
+        mock_socket_path = MagicMock()
+        mock_socket_path.exists.return_value = False
+        manager = DaemonManager(socket_path=mock_socket_path)
+        manager._proc = None
+
+        manager.stop_sync()
+
+        mock_cleanup.assert_not_called()
+
+    @patch("daemon_manager.manager._send_signal_and_wait")
+    def test_cleanup_process_already_dead(self, mock_send_signal: Mock) -> None:
+        """Tests that _cleanup_process does nothing if the process is already dead."""
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.poll.return_value = 0
+        _cleanup_process(mock_proc)
+        mock_send_signal.assert_not_called()
+
+    @patch("daemon_manager.manager._send_signal_and_wait")
+    def test_cleanup_process_graceful_exit(
+        self, mock_send_signal: Mock
+    ) -> None:
+        """Tests that _cleanup_process tries SIGTERM first and succeeds."""
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.poll.return_value = None
+        _cleanup_process(mock_proc)
+        mock_send_signal.assert_called_once_with(
+            mock_proc, signal.SIGTERM, mock_proc.terminate, 3.0
+        )
+
+    @patch("daemon_manager.manager._send_signal_and_wait")
+    def test_cleanup_process_fallback_to_sigkill(
+        self, mock_send_signal: Mock
+    ) -> None:
+        """Tests that _cleanup_process falls back to SIGKILL if SIGTERM fails."""
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.poll.return_value = None
+        mock_send_signal.side_effect = [RuntimeError("Timeout"), None]
+        _cleanup_process(mock_proc)
+        self.assertEqual(mock_send_signal.call_count, 2)
+        mock_send_signal.assert_any_call(
+            mock_proc, signal.SIGTERM, mock_proc.terminate, 3.0
+        )
+        mock_send_signal.assert_any_call(
+            mock_proc, signal.SIGKILL, mock_proc.kill, 2.0
+        )
+
+    @patch("os.getpgid")
+    @patch("os.getpgrp")
+    @patch("os.killpg")
+    def test_send_signal_and_wait_separate_group(
+        self, mock_killpg: Mock, mock_getpgrp: Mock, mock_getpgid: Mock
+    ) -> None:
+        """Tests that _send_signal_and_wait kills process group if different PGID."""
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.pid = 123
+        mock_getpgid.return_value = 456
+        mock_getpgrp.return_value = 789
+        fallback = Mock()
+
+        _send_signal_and_wait(mock_proc, signal.SIGTERM, fallback, 3.0)
+
+        mock_killpg.assert_called_once_with(456, signal.SIGTERM)
+        fallback.assert_not_called()
+        mock_proc.wait.assert_called_once_with(timeout=3.0)
+
+    @patch("os.getpgid")
+    @patch("os.getpgrp")
+    @patch("os.killpg")
+    def test_send_signal_and_wait_same_group(
+        self, mock_killpg: Mock, mock_getpgrp: Mock, mock_getpgid: Mock
+    ) -> None:
+        """Tests that _send_signal_and_wait uses fallback if same PGID."""
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        mock_proc.pid = 123
+        mock_getpgid.return_value = 456
+        mock_getpgrp.return_value = 456
+        fallback = Mock()
+
+        _send_signal_and_wait(mock_proc, signal.SIGTERM, fallback, 3.0)
+
+        mock_killpg.assert_not_called()
+        fallback.assert_called_once()
+        mock_proc.wait.assert_called_once_with(timeout=3.0)
+
+    @patch("daemon_manager.manager._cleanup_process")
+    @patch("socket.socket")
+    def test_stop_sync_waits_on_proc_if_ipc_succeeded(
+        self, mock_socket_class: Mock, mock_cleanup: Mock
+    ) -> None:
+        """Tests that stop_sync waits on _proc if IPC cooperative shutdown succeeded."""
+        mock_socket = MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket_class.return_value = mock_socket
+        mock_socket.recv.return_value = b""  # EOF immediately
+
+        mock_socket_path = MagicMock()
+        mock_socket_path.exists.return_value = True
+
+        manager = DaemonManager(socket_path=mock_socket_path)
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        manager._proc = mock_proc
+
+        manager.stop_sync(timeout=4.0)
+
+        # Verify wait was called with correct timeout
+        mock_proc.wait.assert_called_once_with(timeout=4.0)
+        # Verify _cleanup_process was also called afterwards
+        mock_cleanup.assert_called_once_with(mock_proc)
+
+    @patch("daemon_manager.manager._cleanup_process")
+    @patch("socket.socket")
+    def test_stop_sync_does_not_wait_on_proc_if_ipc_fails(
+        self, mock_socket_class: Mock, mock_cleanup: Mock
+    ) -> None:
+        """Tests that stop_sync immediately falls back to _cleanup_process without waiting if IPC fails."""
+        mock_socket = MagicMock()
+        mock_socket.__enter__.return_value = mock_socket
+        mock_socket_class.return_value = mock_socket
+        # Simulate connection refused (stale socket/unresponsive daemon)
+        mock_socket.connect.side_effect = ConnectionRefusedError("refused")
+
+        mock_socket_path = MagicMock()
+        mock_socket_path.exists.return_value = True
+
+        manager = DaemonManager(socket_path=mock_socket_path)
+        mock_proc = MagicMock(spec=subprocess.Popen)
+        manager._proc = mock_proc
+
+        manager.stop_sync(timeout=4.0)
+
+        # Verify wait was NOT called (prevents double timeout delay)
+        mock_proc.wait.assert_not_called()
+        # Verify _cleanup_process was still called immediately
+        mock_cleanup.assert_called_once_with(mock_proc)
 
 
 if __name__ == "__main__":
