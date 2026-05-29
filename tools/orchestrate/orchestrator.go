@@ -79,16 +79,12 @@ func (r *TestOrchestrator) instantiateFfx(in *RunInput) error {
 	if r.ffx != nil {
 		return nil
 	}
-	ffxPath := in.Target().FfxPath
-	if !filepath.IsAbs(ffxPath) {
-		wd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("os.Getwd: %w", err)
-		}
-		ffxPath = filepath.Join(wd, ffxPath)
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("os.Getwd: %w", err)
 	}
 	ffxOpt := &ffx.Option{
-		ExePath: ffxPath,
+		ExePath: filepath.Join(wd, in.Target().FfxPath),
 		LogDir:  os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"),
 	}
 	f, err := ffx.New(ffxOpt)
