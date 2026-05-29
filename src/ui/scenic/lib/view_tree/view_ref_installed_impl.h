@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 namespace view_tree {
@@ -22,8 +23,10 @@ namespace view_tree {
 // Class that implements the ViewRefInstalled service.
 class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
  public:
-  // Publish the ViewRefInstalled service. Separate from constructor for easier testing.
-  void Publish(sys::ComponentContext* app_context);
+  explicit ViewRefInstalledImpl(
+      std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder = nullptr);
+
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request);
 
   // |fuchsia::ui::views::ViewRefInstalled|
   void Watch(fuchsia::ui::views::ViewRef view_ref,
@@ -32,7 +35,7 @@ class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
   // Called whenever a new snapshot of the ViewTree is generated.
   // When this happens we look through it to check if any of the waited on views have been installed
   // or any installed views have been removed entirely.
-  void OnNewViewTreeSnapshot(std::shared_ptr<const Snapshot> snapshot);
+  void OnNewViewTreeSnapshot();
 
  private:
   // Struct to track for when a view ref gets invalidated.
@@ -74,6 +77,8 @@ class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
   // The set of active views (i.e. extant in the latest snapshot, either in view_tree or
   // unconnected_views) that have at some point been installed in the view tree.
   std::unordered_set<zx_koid_t> installed_views_;
+  std::shared_ptr<SnapshotHolder> snapshot_holder_;
+  uint64_t latest_sequence_number_ = 0;
 };
 
 }  // namespace view_tree

@@ -165,21 +165,20 @@ void Injector::InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectReques
                             fdf::Arena& arena, InjectEventsCompleter::Sync& completer) {
   TRACE_DURATION("input", "Injector::InjectEvents");
 
-  view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
-  const auto& snapshot = *snapshot_ref;
+  auto snapshot = GetViewTreeSnapshot();
 
-  if (!snapshot.IsDescendant(settings_.target_koid, settings_.context_koid)) {
+  if (!snapshot->IsDescendant(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
                    << ") and Target (koid: " << settings_.target_koid
                    << ") making an invalid hierarchy.";
-    CloseChannel(ZX_ERR_BAD_STATE, snapshot);
+    CloseChannel(ZX_ERR_BAD_STATE, *snapshot);
     return;
   }
 
   auto& events = request->events;
   if (events.empty()) {
     FX_LOGS(ERROR) << "Inject() called without any events";
-    CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
+    CloseChannel(ZX_ERR_INVALID_ARGS, *snapshot);
     return;
   }
 
@@ -187,7 +186,7 @@ void Injector::InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectReques
     TRACE_DURATION("input", "Injector::InjectEvents[event]");
     if (!event.has_timestamp() || !event.has_data()) {
       FX_LOGS(ERROR) << "Inject() called with an incomplete event";
-      CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
+      CloseChannel(ZX_ERR_INVALID_ARGS, *snapshot);
       return;
     }
 
@@ -201,7 +200,7 @@ void Injector::InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectReques
         const zx_status_t result = IsValidViewport(new_viewport);
         if (result != ZX_OK) {
           // Errors printed inside IsValidViewport. Just close channel here.
-          CloseChannel(result, snapshot);
+          CloseChannel(result, *snapshot);
           return;
         }
       }
@@ -220,7 +219,7 @@ void Injector::InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectReques
 
       const auto [result, stream_id] = ValidatePointerSample(pointer_sample);
       if (result != ZX_OK) {
-        CloseChannel(result, snapshot);
+        CloseChannel(result, *snapshot);
         return;
       }
 
@@ -233,7 +232,7 @@ void Injector::InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectReques
       }
       TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", trace_flow_id);
 
-      ForwardEvent(event, stream_id, trace_flow_id, snapshot);
+      ForwardEvent(event, stream_id, trace_flow_id, *snapshot);
       continue;
     } else {
       // Should be unreachable.
@@ -317,8 +316,8 @@ void Injector::CloseChannel(zx_status_t epitaph, const view_tree::Snapshot& snap
 
 void Injector::OnFidlClose(fidl::UnbindInfo info) {
   if (!ongoing_streams_.empty()) {
-    view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
-    CancelOngoingStreams(*snapshot_ref);
+    auto snapshot = GetViewTreeSnapshot();
+    CancelOngoingStreams(*snapshot);
   }
   on_channel_closed_();
 }

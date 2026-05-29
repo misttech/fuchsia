@@ -9,6 +9,7 @@
 
 #include "src/ui/scenic/lib/input/mouse_injector.h"
 #include "src/ui/scenic/lib/input/touch_injector.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/math.h"
 
@@ -69,7 +70,7 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
 
 // LINT.IfChange
 PointerinjectorRegistry::PointerinjectorRegistry(
-    async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+    async_dispatcher_t* input_dispatcher,
     std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
     TouchInjectFunc inject_touch_exclusive, TouchInjectFunc inject_touch_hit_tested,
     MouseInjectFunc inject_mouse_exclusive, MouseInjectFunc inject_mouse_hit_tested,
@@ -80,12 +81,11 @@ PointerinjectorRegistry::PointerinjectorRegistry(
       inject_mouse_hit_tested_(std::move(inject_mouse_hit_tested)),
       cancel_mouse_stream_(std::move(cancel_mouse_stream)),
       snapshot_holder_(std::move(snapshot_holder)),
-      inspect_node_(std::move(inspect_node)) {
-  if (context) {
-    // Adding the service here is safe since the PointerinjectorRegistry instance in InputSystem is
-    // created at construction time..
-    context->outgoing()->AddPublicService(injector_registry_.GetHandler(this, input_dispatcher));
-  }
+      inspect_node_(std::move(inspect_node)) {}
+
+void PointerinjectorRegistry::Bind(
+    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
+  injector_registry_.AddBinding(this, std::move(request));
 }
 
 void PointerinjectorRegistry::Register(
@@ -96,6 +96,7 @@ void PointerinjectorRegistry::Register(
 
   if (!IsValidConfig(config)) {
     // Errors printed inside IsValidConfig. Just return here.
+    injector.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
@@ -105,14 +106,15 @@ void PointerinjectorRegistry::Register(
   if (context_koid == ZX_KOID_INVALID || target_koid == ZX_KOID_INVALID) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| or |config.target| "
                       "was invalid.";
+    injector.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
-  auto snapshot_ref = snapshot_holder_->GetSnapshot();
-  const auto& snapshot = *snapshot_ref;
+  auto snapshot = snapshot_holder_->GetSnapshot();
 
-  if (!snapshot.IsDescendant(target_koid, context_koid)) {
+  if (!snapshot->IsDescendant(target_koid, context_koid)) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| must be connected to "
                       "the Scene, and |config.target| must be a descendant of |config.context|";
+    injector.Close(ZX_ERR_BAD_STATE);
     return;
   }
 

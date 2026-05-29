@@ -18,8 +18,7 @@
 
 namespace scenic_impl::input {
 
-MouseSystem::MouseSystem(sys::ComponentContext* context, HitTester& hit_tester,
-                         RequestFocusFunc request_focus)
+MouseSystem::MouseSystem(HitTester& hit_tester, RequestFocusFunc request_focus)
     : hit_tester_(hit_tester), request_focus_(std::move(request_focus)) {}
 
 void MouseSystem::RegisterMouseSource(

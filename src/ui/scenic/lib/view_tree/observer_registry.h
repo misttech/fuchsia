@@ -27,7 +27,7 @@ class Registry : public fuchsia::ui::observation::test::Registry {
       fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> request,
       Registry::RegisterGlobalViewTreeWatcherCallback callback) override;
 
-  void Publish(sys::ComponentContext* app_context);
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request);
 
  private:
   fidl::BindingSet<fuchsia::ui::observation::test::Registry> bindings_;

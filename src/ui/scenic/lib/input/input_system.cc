@@ -16,14 +16,15 @@
 
 namespace scenic_impl::input {
 
-InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentContext *context,
+InputSystem::InputSystem(async_dispatcher_t *input_dispatcher,
                          std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
-                         inspect::Node &inspect_node, RequestFocusFunc request_focus)
+                         inspect::Node &inspect_node, RequestFocusFunc request_focus,
+                         sys::ComponentContext *context)
     : hit_tester_(inspect_node),
-      mouse_system_(context, hit_tester_, std::move(request_focus)),
-      touch_system_(input_dispatcher, context, hit_tester_, inspect_node),
+      mouse_system_(hit_tester_, std::move(request_focus)),
+      touch_system_(input_dispatcher, hit_tester_, inspect_node),
       pointerinjector_registry_(
-          input_dispatcher, context, snapshot_holder,
+          input_dispatcher, snapshot_holder,
           /*inject_touch_exclusive=*/
           [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id,
                                           const view_tree::Snapshot &snapshot) {
@@ -86,6 +87,24 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
 {
 }
 #endif
+
+void InputSystem::BindPointerinjectorRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
+  utils::CheckIsOnInputThread();
+  pointerinjector_registry_.Bind(std::move(request));
+}
+
+void InputSystem::BindLocalHit(
+    fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+  utils::CheckIsOnInputThread();
+  touch_system_.Bind(std::move(request));
+}
+
+void InputSystem::BindA11yPointerEventRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+  utils::CheckIsOnInputThread();
+  touch_system_.BindA11yPointerEventRegistry(std::move(request));
+}
 
 void InputSystem::RegisterTouchSource(
     fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,

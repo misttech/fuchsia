@@ -18,16 +18,14 @@ Registry::Registry(view_tree::GeometryProvider& geometry_provider)
 void Registry::RegisterGlobalViewTreeWatcher(
     fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> request,
     Registry::RegisterGlobalViewTreeWatcherCallback callback) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
   geometry_provider_.RegisterGlobalViewTreeWatcher(std::move(request));
 
   callback();
 }
 
-void Registry::Publish(sys::ComponentContext* app_context) {
-  // TODO(https://fxbug.dev/513889104): left for future work if we want this on the input thread.
-  utils::CheckIsOnMainThread();
-  app_context->outgoing()->AddPublicService<fuchsia::ui::observation::test::Registry>(
-      bindings_.GetHandler(this));
+void Registry::Bind(fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
+  utils::CheckIsOnInputThread();
+  bindings_.AddBinding(this, std::move(request));
 }
 }  // namespace view_tree

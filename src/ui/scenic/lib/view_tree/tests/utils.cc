@@ -43,11 +43,13 @@ std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshot() {
   return snapshot;
 }
 
-std::shared_ptr<const view_tree::Snapshot> SingleDepthViewTreeSnapshot(uint64_t total_nodes) {
+std::shared_ptr<const view_tree::Snapshot> SingleDepthViewTreeSnapshot(uint64_t total_nodes,
+                                                                       uint64_t sequence_number) {
   FX_DCHECK(total_nodes > 0) << "precondition";
   auto snapshot = std::make_shared<view_tree::Snapshot>();
   const float width = 1, height = 1;
   snapshot->root = kNodeA;
+  snapshot->sequence_number = sequence_number;
   auto& view_tree = snapshot->view_tree;
   view_tree[kNodeA] = ViewNode{.parent = ZX_KOID_INVALID, .children = {}};
   view_tree[kNodeA].bounding_box = {.min = {0, 0}, .max = {{width, height}}};

@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
+#include <lib/async_patterns/cpp/dispatcher_bound.h>
 
 #include <memory>
 #include <optional>
@@ -84,6 +85,8 @@ class App {
 
   void InitializeHeartbeat(display::Display& display);
 
+  void InitializeInput();
+
   async::Executor executor_;
   async_dispatcher_t* const flatland_dispatcher_;
   async_dispatcher_t* const input_dispatcher_;
@@ -130,7 +133,8 @@ class App {
   std::optional<screen_capture2::ScreenCapture2Manager> screen_capture2_manager_;
   std::optional<screenshot::ScreenshotManager> screenshot_manager_;
 
-  input::InputManager input_manager_;
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
+  async_patterns::DispatcherBound<input::InputManager> input_manager_;
 
   uint64_t flatland_frame_count_ = 0;
   uint64_t skipped_frame_count_ = 0;

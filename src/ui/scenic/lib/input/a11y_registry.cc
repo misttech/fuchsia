@@ -6,19 +6,22 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
+
 namespace scenic_impl::input {
 
 A11yPointerEventRegistry::A11yPointerEventRegistry(async_dispatcher_t* input_dispatcher,
-                                                   sys::ComponentContext* context,
                                                    fit::function<void()> on_register,
                                                    fit::function<void()> on_disconnect)
     : on_register_(std::move(on_register)), on_disconnect_(std::move(on_disconnect)) {
   FX_DCHECK(on_register_);
   FX_DCHECK(on_disconnect_);
-  // Adding the service here is safe since the A11yPointerEventRegistry instance in InputSystem is
-  // created at construction time.
-  context->outgoing()->AddPublicService(
-      accessibility_pointer_event_registry_.GetHandler(this, input_dispatcher));
+}
+
+void A11yPointerEventRegistry::Bind(
+    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+  utils::CheckIsOnInputThread();
+  accessibility_pointer_event_registry_.AddBinding(this, std::move(request));
 }
 
 void A11yPointerEventRegistry::Register(

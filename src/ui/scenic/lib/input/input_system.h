@@ -22,10 +22,17 @@ namespace scenic_impl::input {
 // Tracks and coordinates input APIs.
 class InputSystem {
  public:
-  InputSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+  InputSystem(async_dispatcher_t* input_dispatcher,
               std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
-              inspect::Node& inspect_node, RequestFocusFunc request_focus);
+              inspect::Node& inspect_node, RequestFocusFunc request_focus,
+              sys::ComponentContext* context = nullptr);
   ~InputSystem() = default;
+
+  void BindPointerinjectorRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+  void BindLocalHit(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
+  void BindA11yPointerEventRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 
   // Delegates to `touch_system_`.
   void RegisterTouchSource(

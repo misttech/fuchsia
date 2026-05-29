@@ -26,7 +26,7 @@ class ScopedRegistry : public fuchsia::ui::observation::scope::Registry {
       fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> request,
       ScopedRegistry::RegisterScopedViewTreeWatcherCallback callback) override;
 
-  void Publish(sys::ComponentContext* app_context);
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request);
 
  private:
   fidl::BindingSet<fuchsia::ui::observation::scope::Registry> bindings_;

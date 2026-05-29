@@ -22,8 +22,9 @@ namespace scenic_impl::input {
 //
 class InputManager {
  public:
-  explicit InputManager(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                        inspect::Node& parent_node, bool use_auto_focus);
+  explicit InputManager(async_dispatcher_t* input_dispatcher,
+                        std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                        inspect::Node parent_node, bool use_auto_focus);
   ~InputManager() = default;
 
   // Facades for registering view-bound FIDL protocol endpoints.
@@ -58,14 +59,25 @@ class InputManager {
                            zx_koid_t view_ref_koid);
 
   // Dispatches a newly generated, consistent scene graph snapshot to all input subsystems.
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
+  void OnNewViewTreeSnapshot();
+
+  // Binds FIDL protocol endpoints to the input thread.
+  void BindFocusChainListenerRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
+  void BindViewRefInstalled(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request);
+  void BindObserverRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request);
+  void BindScopedObserverRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request);
+  void BindPointerinjectorRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+  void BindLocalHit(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
+  void BindA11yPointerEventRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 
  private:
-  async_dispatcher_t* const input_dispatcher_;
+  inspect::Node inspect_node_;
   const bool use_auto_focus_;
-
-  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_ =
-      std::make_shared<view_tree::SnapshotHolder>();
 
   view_tree::GeometryProvider geometry_provider_;
   focus::FocusManager focus_manager_;

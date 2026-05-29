@@ -60,7 +60,7 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
   PointerinjectorRegistryTest()
       : snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
         registry_(
-            dispatcher(), /*context*/ nullptr, snapshot_holder_,
+            dispatcher(), snapshot_holder_,
             /*inject_touch_exclusive=*/[](auto...) {},
             /*inject_touch_hit_tested=*/[](auto...) {},
             /*inject_mouse_exclusive=*/[](auto...) {},
@@ -558,7 +558,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -597,7 +597,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -631,7 +631,7 @@ TEST_P(PointerinjectorRegistryTestP,
 
 TEST_F(PointerinjectorRegistryTest, MouseDevice_CanRegisterMouseWithoutButtons) {
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](const auto&...) {},
@@ -662,7 +662,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -702,7 +702,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -739,7 +739,7 @@ TEST_P(PointerinjectorRegistryTestP,
        MouseInjectorChannelDying_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = 0;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](auto...) {},
@@ -785,7 +785,7 @@ TEST_P(PointerinjectorRegistryTestP,
        MouseInjector_CancelEvent_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      dispatcher(), /*context*/ nullptr, snapshot_holder_,
+      dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](auto...) {},

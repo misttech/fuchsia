@@ -16,6 +16,7 @@ _scenic_bin = {
     ":base_deps",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
+    "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit-promise",
     "//sdk/lib/inspect/component/cpp",

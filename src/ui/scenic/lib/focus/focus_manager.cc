@@ -62,25 +62,16 @@ FocusManager::FocusManager(async_dispatcher_t* input_dispatcher,
   });
 }
 
-void FocusManager::Publish(sys::ComponentContext& component_context) {
-  component_context.outgoing()->AddPublicService<FocusChainListenerRegistry>(
-      focus_chain_listener_registry_.GetHandler(this, input_dispatcher_));
+void FocusManager::Bind(
+    fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
+  utils::CheckIsOnInputThread();
+  focus_chain_listener_registry_.AddBinding(this, std::move(request), input_dispatcher_);
 }
 
 void FocusManager::OnNewViewTreeSnapshot() {
-  // Post a task to eagerly update the focus state.  It's possible that this task will race with
-  // e.g. a FIDL request served on the input thread.  That's OK; `EnsureValidFocus()` is designed to
-  // be idempotent and not do work twice for the same view tree snapshot.
-  //
-  // Posting the task eagerly has two benefits:
-  // - *necessary* for hanging gets which wouldn't otherwise be be notified.
-  // - latency reduction for a FIDL request that arrives after `EnsureValidFocus()` has already been
-  //   run for the current snapshot.
-  async::PostTask(input_dispatcher_, [this]() {
-    TRACE_DURATION("input", "FocusManager::OnNewViewTreeSnapshot");
-    auto snapshot = snapshot_holder_->GetSnapshot();
-    EnsureValidFocus(*snapshot);
-  });
+  TRACE_DURATION("input", "FocusManager::OnNewViewTreeSnapshot");
+  auto snapshot = snapshot_holder_->GetSnapshot();
+  EnsureValidFocus(*snapshot);
 }
 
 FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requestor, zx_koid_t request,

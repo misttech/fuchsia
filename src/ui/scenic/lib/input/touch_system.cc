@@ -70,11 +70,11 @@ glm::vec2 GetViewportNDCPoint(const InternalTouchEvent& internal_event) {
 
 }  // namespace
 
-TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                         HitTester& hit_tester, inspect::Node& parent_node)
+TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_tester,
+                         inspect::Node& parent_node)
     : hit_tester_(hit_tester), contender_inspector_(parent_node.CreateChild("GestureContenders")) {
   a11y_pointer_event_registry_.emplace(
-      input_dispatcher, context,
+      input_dispatcher,
       /*on_register=*/
       [this] {
         FX_CHECK(!contenders_.contains(a11y_contender_id_))
@@ -125,8 +125,17 @@ TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentCon
         EraseContender(a11y_contender_id_, ZX_KOID_INVALID);
         FX_LOGS(INFO) << "A11yLegacyContender destroyed";
       });
-  context->outgoing()->AddPublicService(
-      local_hit_upgrade_registry_.GetHandler(this, input_dispatcher));
+}
+
+void TouchSystem::Bind(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+  utils::CheckIsOnInputThread();
+  local_hit_upgrade_registry_.AddBinding(this, std::move(request));
+}
+
+void TouchSystem::BindA11yPointerEventRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+  utils::CheckIsOnInputThread();
+  a11y_pointer_event_registry_->Bind(std::move(request));
 }
 
 zx_koid_t TouchSystem::FindViewRefKoidOfRelatedChannel(

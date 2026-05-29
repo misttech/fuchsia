@@ -23,6 +23,7 @@ using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId st
                                            const view_tree::Snapshot& snapshot)>;
 
 // Handles the registration and config validation of fuchsia::ui::pointerinjector_dso clients.
+// LINT.IfChange
 class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Registry> {
  public:
   PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
@@ -51,6 +52,7 @@ class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjecto
   async_dispatcher_t* const input_dispatcher_;
   inspect::Node inspect_node_;
 };
+// LINT.ThenChange(//src/ui/scenic/lib/input/pointerinjector_registry.h)
 
 }  // namespace scenic_impl::input_dso
 

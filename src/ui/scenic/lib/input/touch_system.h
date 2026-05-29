@@ -32,9 +32,13 @@ namespace scenic_impl::input {
 // The only exception is that `SnapshotHolder` can be updated from the main thread.
 class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
  public:
-  explicit TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                       HitTester& hit_tester, inspect::Node& parent_node);
+  explicit TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_tester,
+                       inspect::Node& parent_node);
   ~TouchSystem() = default;
+
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
+  void BindA11yPointerEventRegistry(
+      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 
   fuchsia::ui::input::accessibility::PointerEventListenerPtr&
   accessibility_pointer_event_listener() {

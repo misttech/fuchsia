@@ -44,7 +44,7 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   DispatchPolicyTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
         snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
-        input_system_(dispatcher(), context_provider_.context(), snapshot_holder_, inspect_node_,
+        input_system_(dispatcher(), snapshot_holder_, inspect_node_,
                       /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {

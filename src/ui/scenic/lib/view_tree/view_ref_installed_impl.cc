@@ -50,17 +50,20 @@ fuchsia::ui::views::ViewRefInstalled_Watch_Result InstalledMessage() {
 
 }  // namespace
 
-void ViewRefInstalledImpl::Publish(sys::ComponentContext* app_context) {
-  // TODO(https://fxbug.dev/513889104): left for future work if we want this on the input thread.
-  utils::CheckIsOnMainThread();
-  FX_DCHECK(app_context);
-  app_context->outgoing()->AddPublicService<ViewRefInstalled>(bindings_.GetHandler(this));
+ViewRefInstalledImpl::ViewRefInstalledImpl(
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder)
+    : snapshot_holder_(std::move(snapshot_holder)) {}
+
+void ViewRefInstalledImpl::Bind(
+    fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
+  utils::CheckIsOnInputThread();
+  bindings_.AddBinding(this, std::move(request));
 }
 
 // |ViewRefInstalled|
 void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
                                  ViewRefInstalled::WatchCallback callback) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
   if (!IsValidViewRef(view_ref)) {
     callback(InvalidMessage());
     return;
@@ -92,8 +95,17 @@ void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
   watched_views_.at(view_ref_koid).callbacks.emplace_back(std::move(callback));
 }
 
-void ViewRefInstalledImpl::OnNewViewTreeSnapshot(std::shared_ptr<const Snapshot> snapshot) {
-  utils::CheckIsOnMainThread();
+void ViewRefInstalledImpl::OnNewViewTreeSnapshot() {
+  utils::CheckIsOnInputThread();
+  FX_DCHECK(snapshot_holder_);
+
+  auto snapshot = snapshot_holder_->GetSnapshot();
+
+  if (snapshot->sequence_number <= latest_sequence_number_) {
+    FX_DCHECK(snapshot->sequence_number == latest_sequence_number_);
+    return;
+  }
+  latest_sequence_number_ = snapshot->sequence_number;
 
   // Remove any stale views from the installed_views_ set.
   for (auto it = installed_views_.begin(); it != installed_views_.end();) {

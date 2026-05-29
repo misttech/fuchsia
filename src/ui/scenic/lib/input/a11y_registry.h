@@ -16,8 +16,11 @@ namespace scenic_impl::input {
 // Implementation of PointerEventRegistry API.
 class A11yPointerEventRegistry : public fuchsia::ui::input::accessibility::PointerEventRegistry {
  public:
-  A11yPointerEventRegistry(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                           fit::function<void()> on_register, fit::function<void()> on_disconnect);
+  A11yPointerEventRegistry(async_dispatcher_t* input_dispatcher, fit::function<void()> on_register,
+                           fit::function<void()> on_disconnect);
+
+  void Bind(
+      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 
   // |fuchsia.ui.input.accessibility.PointerEventRegistry|
   void Register(fidl::InterfaceHandle<fuchsia::ui::input::accessibility::PointerEventListener>

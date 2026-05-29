@@ -65,7 +65,7 @@ class MouseTest : public gtest::TestLoopFixture {
   MouseTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
         hit_tester_(inspect_node_),
-        mouse_system_(context_provider_.context(), hit_tester_,
+        mouse_system_(hit_tester_,
                       /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {

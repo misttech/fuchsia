@@ -85,6 +85,7 @@ PointerinjectorRegistry::PointerinjectorRegistry(
 }
 
 void PointerinjectorRegistry::Bind(fdf::Channel channel) {
+  utils::CheckIsOnInputThread();
   injector_registry_.AddBinding(
       reinterpret_cast<fdf_dispatcher_t*>(input_dispatcher_),
       fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Registry>(std::move(channel)), this,
@@ -100,6 +101,7 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
 
   if (!IsValidConfig(config)) {
     // Errors printed inside IsValidConfig. Just return here.
+    injector.reset();  // no epitaph supported by driver transport
     return;
   }
 
@@ -109,14 +111,15 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
   if (context_koid == ZX_KOID_INVALID || target_koid == ZX_KOID_INVALID) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| or |config.target| "
                       "was invalid.";
+    injector.reset();  // no epitaph supported by driver transport
     return;
   }
-  auto snapshot_ref = snapshot_holder_->GetSnapshot();
-  const auto& snapshot = *snapshot_ref;
+  auto snapshot = snapshot_holder_->GetSnapshot();
 
-  if (!snapshot.IsDescendant(target_koid, context_koid)) {
+  if (!snapshot->IsDescendant(target_koid, context_koid)) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| must be connected to "
                       "the Scene, and |config.target| must be a descendant of |config.context|";
+    injector.reset();  // no epitaph supported by driver transport
     return;
   }
 

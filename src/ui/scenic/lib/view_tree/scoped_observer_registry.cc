@@ -17,16 +17,15 @@ void ScopedRegistry::RegisterScopedViewTreeWatcher(
     zx_koid_t context_view,
     fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> request,
     ScopedRegistry::RegisterScopedViewTreeWatcherCallback callback) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
   geometry_provider_.Register(std::move(request), context_view);
 
   callback();
 }
 
-void ScopedRegistry::Publish(sys::ComponentContext* app_context) {
-  // TODO(https://fxbug.dev/513889104): left for future work if we want this on the input thread.
-  utils::CheckIsOnMainThread();
-  app_context->outgoing()->AddPublicService<fuchsia::ui::observation::scope::Registry>(
-      bindings_.GetHandler(this));
+void ScopedRegistry::Bind(
+    fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request) {
+  utils::CheckIsOnInputThread();
+  bindings_.AddBinding(this, std::move(request));
 }
 }  // namespace view_tree

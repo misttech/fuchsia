@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "src/lib/fxl/macros.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 namespace view_tree {
@@ -22,7 +23,7 @@ namespace view_tree {
 // clients.
 class GeometryProvider {
  public:
-  GeometryProvider() = default;
+  explicit GeometryProvider(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder);
   // Adds a server side endpoint to |endpoints_| for lifecycle management.
   void Register(
       fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint,
@@ -34,10 +35,7 @@ class GeometryProvider {
   void RegisterGlobalViewTreeWatcher(
       fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint);
 
-  // Inject a new snapshot of the ViewTree. Adds the snapshot to each ProviderEndpoint's
-  // |view_tree_snapshots_| and send a response to the respective clients if the required conditions
-  // are met. See SendResponseMaybe() for more details on the required conditions.
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
+  void OnNewViewTreeSnapshot();
 
   // Generates a fuchsia.ui.observation.geometry.ViewTreeSnapshot from the |snapshot| by
   // extracting information about the |context_view| and its descendant views from
@@ -136,8 +134,9 @@ class GeometryProvider {
   // Incremented when Register() is called.
   ProviderEndpointId endpoint_counter_ = 0;
 
-  // Stashes the latest snapshot, so that we can provide it to newly-registered clients.
-  std::shared_ptr<const view_tree::Snapshot> latest_view_tree_;
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
+
+  uint64_t latest_sequence_number_ = 0;
 
   FXL_DISALLOW_COPY_ASSIGN_AND_MOVE(GeometryProvider);
 };

@@ -13,14 +13,17 @@
 
 namespace scenic_impl::input {
 
-InputManager::InputManager(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                           inspect::Node& parent_node, bool use_auto_focus)
-    : input_dispatcher_(input_dispatcher),
+InputManager::InputManager(async_dispatcher_t* input_dispatcher,
+                           std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                           inspect::Node parent_node, bool use_auto_focus)
+    : inspect_node_(std::move(parent_node)),
       use_auto_focus_(use_auto_focus),
-      focus_manager_(input_dispatcher, snapshot_holder_, parent_node.CreateChild("FocusManager")),
+      geometry_provider_(snapshot_holder),
+      focus_manager_(input_dispatcher, snapshot_holder, inspect_node_.CreateChild("FocusManager")),
       observer_registry_(geometry_provider_),
       scoped_observer_registry_(geometry_provider_),
-      input_(input_dispatcher, context, snapshot_holder_, parent_node,
+      view_ref_installed_impl_(snapshot_holder),
+      input_(input_dispatcher, snapshot_holder, inspect_node_,
              [this](zx_koid_t koid, const view_tree::Snapshot& snapshot) {
                if (!use_auto_focus_)
                  return;
@@ -32,67 +35,80 @@ InputManager::InputManager(async_dispatcher_t* input_dispatcher, sys::ComponentC
                  focus_manager_.RequestFocus(requestor, request, snapshot);
                }
              }) {
-  FX_DCHECK(context);
-  // Served on the input thread.  Note that we don't explicitly publish `InputSystem` or its
-  // sub-components; these are "view bound protocols" connected to via e.g. the Flatland API, not
-  // routed by Fuchsia's component manager.
-  focus_manager_.Publish(*context);
-
-  // These are served on the main thread, not for any good reason: they just haven't been moved to
-  // the input thread yet.
-  utils::CheckIsOnMainThread();
-  view_ref_installed_impl_.Publish(context);
-  observer_registry_.Publish(context);
-  scoped_observer_registry_.Publish(context);
+  // Constructed and executed entirely on the dedicated input thread.
+  // Note that we don't explicitly publish `InputSystem` or its sub-components; these are
+  // "view bound protocols" connected to via e.g. the Flatland API, not routed by Fuchsia's
+  // component manager.
+  utils::CheckIsOnInputThread();
 }
 
 void InputManager::RegisterViewFocuser(fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser,
                                        zx_koid_t view_ref_koid) {
-  async::PostTask(input_dispatcher_, [this, focuser = std::move(focuser), view_ref_koid]() mutable {
-    focus_manager_.RegisterViewFocuser(view_ref_koid, fidl::NaturalToHLCPP(std::move(focuser)));
-  });
+  focus_manager_.RegisterViewFocuser(view_ref_koid, fidl::NaturalToHLCPP(std::move(focuser)));
 }
 
 void InputManager::RegisterViewRefFocused(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf,
                                           zx_koid_t view_ref_koid) {
-  async::PostTask(input_dispatcher_, [this, vrf = std::move(vrf), view_ref_koid]() mutable {
-    focus_manager_.RegisterViewRefFocused(view_ref_koid, fidl::NaturalToHLCPP(std::move(vrf)));
-  });
+  focus_manager_.RegisterViewRefFocused(view_ref_koid, fidl::NaturalToHLCPP(std::move(vrf)));
 }
 
 void InputManager::RegisterTouchSource(
     fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source, zx_koid_t view_ref_koid) {
-  async::PostTask(
-      input_dispatcher_, [this, touch_source = std::move(touch_source), view_ref_koid]() mutable {
-        input_.RegisterTouchSource(fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
-      });
+  input_.RegisterTouchSource(fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
 }
 
 void InputManager::RegisterMouseSource(
     fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source, zx_koid_t view_ref_koid) {
-  async::PostTask(
-      input_dispatcher_, [this, mouse_source = std::move(mouse_source), view_ref_koid]() mutable {
-        input_.RegisterMouseSource(fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
-      });
+  input_.RegisterMouseSource(fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
 }
 
-void InputManager::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-  utils::CheckIsOnMainThread();
-
-  // There are dependencies between subsystems; `snapshot_holder_` is shared between them to
-  // guarantee that they all work with a consistent view tree snapshot.
-  snapshot_holder_->SetSnapshot(snapshot);
+void InputManager::OnNewViewTreeSnapshot() {
+  // All of these run on the dedicated input thread. Because they are updated synchronously
+  // here on the input thread, there is no risk of race conditions or thread synchronization
+  // overhead when a FIDL client observes a change and sends a subsequent message to another
+  // input or focus protocol served on this thread.
+  utils::CheckIsOnInputThread();
 
   // Poke FocusManager to eagerly respond to the new snapshot; it might have outstanding hanging
   // gets that otherwise wouldn't notice.
   focus_manager_.OnNewViewTreeSnapshot();
+  view_ref_installed_impl_.OnNewViewTreeSnapshot();
+  geometry_provider_.OnNewViewTreeSnapshot();
+}
 
-  // Keep both of these on the main thread for now.  If a FIDL client observes a change that results
-  // in another message being sent to a FIDL protocol served on the input thread, we already updated
-  // the snapshot visible to the input thread above in `snapshot_holder_->SetSnapshot(snapshot)`,
-  // so there is no race whereby the input thread could use a stale snapshot.
-  view_ref_installed_impl_.OnNewViewTreeSnapshot(snapshot);
-  geometry_provider_.OnNewViewTreeSnapshot(std::move(snapshot));
+void InputManager::BindFocusChainListenerRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
+  focus_manager_.Bind(std::move(request));
+}
+
+void InputManager::BindViewRefInstalled(
+    fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
+  view_ref_installed_impl_.Bind(std::move(request));
+}
+
+void InputManager::BindObserverRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
+  observer_registry_.Bind(std::move(request));
+}
+
+void InputManager::BindScopedObserverRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request) {
+  scoped_observer_registry_.Bind(std::move(request));
+}
+
+void InputManager::BindPointerinjectorRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
+  input_.BindPointerinjectorRegistry(std::move(request));
+}
+
+void InputManager::BindLocalHit(
+    fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+  input_.BindLocalHit(std::move(request));
+}
+
+void InputManager::BindA11yPointerEventRegistry(
+    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+  input_.BindA11yPointerEventRegistry(std::move(request));
 }
 
 }  // namespace scenic_impl::input

@@ -29,15 +29,18 @@ namespace fuog_measure_tape = measure_tape::fuchsia::ui::observation::geometry;
 const auto fuog_BUFFER_SIZE = fuchsia::ui::observation::geometry::BUFFER_SIZE;
 const auto fuog_MAX_VIEW_COUNT = fuchsia::ui::observation::geometry::MAX_VIEW_COUNT;
 
+GeometryProvider::GeometryProvider(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder)
+    : snapshot_holder_(std::move(snapshot_holder)) {}
+
 void GeometryProvider::Register(fidl::InterfaceRequest<fuog_ViewTreeWatcher> endpoint,
                                 zx_koid_t context_view) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
   RegisterViewTreeWatcherImpl(std::move(endpoint), context_view);
 }
 
 void GeometryProvider::RegisterGlobalViewTreeWatcher(
     fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
   RegisterViewTreeWatcherImpl(std::move(endpoint), std::nullopt);
 }
 
@@ -56,14 +59,35 @@ void GeometryProvider::RegisterViewTreeWatcherImpl(
                                                          FX_DCHECK(count > 0);
                                                        })});
   // Notify new endpoint of latest snapshot.
-  if (latest_view_tree_) {
-    it->second.AddViewTreeSnapshot(
-        ExtractObservationSnapshot(it->second.context_view(), *latest_view_tree_));
+  FX_DCHECK(snapshot_holder_);
+  bool needs_full_update = false;
+  {
+    auto snapshot = snapshot_holder_->GetSnapshot();
+    if (snapshot->sequence_number > 0) {
+      if (latest_sequence_number_ == snapshot->sequence_number) {
+        // Update only the new endpoint; the others are up to date.
+        it->second.AddViewTreeSnapshot(
+            ExtractObservationSnapshot(it->second.context_view(), *snapshot));
+      } else {
+        needs_full_update = true;
+      }
+    }
+  }
+  if (needs_full_update) {
+    OnNewViewTreeSnapshot();
   }
 }
 
-void GeometryProvider::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-  utils::CheckIsOnMainThread();
+void GeometryProvider::OnNewViewTreeSnapshot() {
+  utils::CheckIsOnInputThread();
+
+  FX_DCHECK(snapshot_holder_);
+  auto snapshot = snapshot_holder_->GetSnapshot();
+
+  if (snapshot->sequence_number <= latest_sequence_number_) {
+    return;
+  }
+  latest_sequence_number_ = snapshot->sequence_number;
 
   // Remove any dead endpoints.
   for (auto it = endpoints_.begin(); it != endpoints_.end();) {
@@ -78,9 +102,6 @@ void GeometryProvider::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Sn
   for (auto& [_, endpoint] : endpoints_) {
     endpoint.AddViewTreeSnapshot(ExtractObservationSnapshot(endpoint.context_view(), *snapshot));
   }
-
-  // Stash for later.
-  latest_view_tree_ = std::move(snapshot);
 }
 
 fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
@@ -118,14 +139,14 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
   std::unordered_set<zx_koid_t> visited;
   stack.push(context_view);
   while (!stack.empty()) {
-    auto view_node = stack.top();
+    auto view_ref_koid = stack.top();
     stack.pop();
-    FX_DCHECK(!visited.contains(view_node)) << "Cycle detected in the view tree";
-    visited.insert(view_node);
-    const auto& view = snapshot.view_tree.at(view_node);
+    FX_DCHECK(!visited.contains(view_ref_koid)) << "Cycle detected in the view tree";
+    visited.insert(view_ref_koid);
+    const auto& view = snapshot.view_tree.at(view_ref_koid);
 
     // Do not set a view vector in the |ViewTreeSnapshot| as the size of |views| will exceed
-    // fuog_MAX_VIEW_COUNT, since the number of |children| of the |view_node| exceeds
+    // fuog_MAX_VIEW_COUNT, since the number of |children| of the |view_ref_koid| exceeds
     // fuog_MAX_VIEW_COUNT.
     if (view.children.size() > fuog_MAX_VIEW_COUNT) {
       views_exceeded = true;
@@ -141,11 +162,11 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
     constexpr BoundingBox kZeroBoundingBox{};
     const bool is_sized_view = view.bounding_box != kZeroBoundingBox;
     if (is_sized_view) {
-      views.push_back(ExtractViewDescriptor(view_node, context_view, snapshot));
+      views.push_back(ExtractViewDescriptor(view_ref_koid, context_view, snapshot));
     } else {
       // TODO(https://fxbug.dev/42072167): Not obvious what the correct action is for 0x0 views.
       // For now, we skip them, fingers crossed.
-      FX_DLOGS(WARNING) << "found a 0x0 view in the view tree, skipping: " << view_node;
+      FX_DLOGS(WARNING) << "found a 0x0 view in the view tree, skipping: " << view_ref_koid;
     }
 
     // Do not set a view vector in the |ViewTreeSnapshot| as the size of |views| will exceed
@@ -285,7 +306,7 @@ GeometryProvider::ProviderEndpoint::ProviderEndpoint(ProviderEndpoint&& original
 
 void GeometryProvider::ProviderEndpoint::AddViewTreeSnapshot(
     fuog_ViewTreeSnapshotPtr view_tree_snapshot) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
 
   view_tree_snapshots_.push_back(std::move(view_tree_snapshot));
 
@@ -299,7 +320,7 @@ void GeometryProvider::ProviderEndpoint::AddViewTreeSnapshot(
 }
 
 void GeometryProvider::ProviderEndpoint::Watch(fuog_ViewTreeWatcher::WatchCallback callback) {
-  utils::CheckIsOnMainThread();
+  utils::CheckIsOnInputThread();
 
   // Check if there is an ongoing Watch call. If there is an in-flight Watch call, close the channel
   // and remove itself from |endpoints_|.

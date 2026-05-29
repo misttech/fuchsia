@@ -206,7 +206,11 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
   void BlockingPresent(fuc_FlatlandPtr& flatland) {
     bool presented = false;
     flatland.events().OnFramePresented = [&presented](auto) { presented = true; };
-    flatland->Present({});
+    fuchsia::ui::composition::PresentArgs args;
+    // Squashing frames can affect the number of view trees produced, which would make this test
+    // flaky.
+    args.set_unsquashable(true);
+    flatland->Present(std::move(args));
     RunLoopUntil([&presented] { return presented; });
     flatland.events().OnFramePresented = nullptr;
   }

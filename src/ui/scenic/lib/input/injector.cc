@@ -154,8 +154,8 @@ Injector::Injector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
   binding_.set_error_handler([this](zx_status_t) {
     // Clean up ongoing streams before calling the supplied error handler.
     if (!ongoing_streams_.empty()) {
-      view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
-      CancelOngoingStreams(*snapshot_ref);
+      auto snapshot = GetViewTreeSnapshot();
+      CancelOngoingStreams(*snapshot);
     }
     // NOTE: Triggers destruction of this object.
     on_channel_closed_();
@@ -179,20 +179,19 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
 void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   TRACE_DURATION("input", "Injector::InjectEvents");
 
-  view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
-  const auto& snapshot = *snapshot_ref;
+  auto snapshot = GetViewTreeSnapshot();
 
-  if (!snapshot.IsDescendant(settings_.target_koid, settings_.context_koid)) {
+  if (!snapshot->IsDescendant(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
                    << ") and Target (koid: " << settings_.target_koid
                    << ") making an invalid hierarchy.";
-    CloseChannel(ZX_ERR_BAD_STATE, snapshot);
+    CloseChannel(ZX_ERR_BAD_STATE, *snapshot);
     return;
   }
 
   if (events.empty()) {
     FX_LOGS(ERROR) << "Inject() called without any events";
-    CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
+    CloseChannel(ZX_ERR_INVALID_ARGS, *snapshot);
     return;
   }
 
@@ -200,7 +199,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
     TRACE_DURATION("input", "Injector::InjectEvents[event]");
     if (!event.has_timestamp() || !event.has_data()) {
       FX_LOGS(ERROR) << "Inject() called with an incomplete event";
-      CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
+      CloseChannel(ZX_ERR_INVALID_ARGS, *snapshot);
       return;
     }
 
@@ -214,7 +213,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
         const zx_status_t result = IsValidViewport(new_viewport);
         if (result != ZX_OK) {
           // Errors printed inside IsValidViewport. Just close channel here.
-          CloseChannel(result, snapshot);
+          CloseChannel(result, *snapshot);
           return;
         }
       }
@@ -228,7 +227,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
 
       const auto [result, stream_id] = ValidatePointerSample(pointer_sample);
       if (result != ZX_OK) {
-        CloseChannel(result, snapshot);
+        CloseChannel(result, *snapshot);
         return;
       }
 
@@ -239,7 +238,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
       }
       TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", event.trace_flow_id());
 
-      ForwardEvent(event, stream_id, snapshot);
+      ForwardEvent(event, stream_id, *snapshot);
       continue;
     } else {
       // Should be unreachable.

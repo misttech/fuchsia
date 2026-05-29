@@ -41,7 +41,7 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
                         inspect::Node inspect_node = inspect::Node());
   FocusManager(FocusManager&& other) = delete;  // Disallow moving.
 
-  void Publish(sys::ComponentContext& component_context);
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
 
   // Request focus transfer to the proposed ViewRef's KOID |request|, on the behalf of |requestor|.
   // Return kAccept if successful.

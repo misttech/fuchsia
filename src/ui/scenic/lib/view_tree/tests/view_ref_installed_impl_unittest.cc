@@ -14,6 +14,7 @@
 
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace view_tree::test {
 
@@ -25,7 +26,8 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
                                                         test_loop.dispatcher());
 
-  ViewRefInstalledImpl view_ref_installed_impl;
+  auto snapshot_holder = std::make_shared<SnapshotHolder>();
+  ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
 
   auto [control_ref, view_ref] = scenic::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
@@ -33,7 +35,9 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   // Koid is in the ViewTree.
   auto snapshot = std::make_shared<Snapshot>();
   (void)snapshot->view_tree[koid];
-  view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
+  snapshot->sequence_number = 1;
+  snapshot_holder->SetSnapshot(snapshot);
+  view_ref_installed_impl.OnNewViewTreeSnapshot();
 
   bool was_installed = false;
   view_ref_installed_impl.Watch(
@@ -49,7 +53,8 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
                                                         test_loop.dispatcher());
 
-  ViewRefInstalledImpl view_ref_installed_impl;
+  auto snapshot_holder = std::make_shared<SnapshotHolder>();
+  ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
 
   auto [control_ref, view_ref] = scenic::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
@@ -57,13 +62,17 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
   {  // Koid is in the ViewTree.
     auto snapshot = std::make_shared<Snapshot>();
     (void)snapshot->view_tree[koid];
-    view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
+    snapshot->sequence_number = 1;
+    snapshot_holder->SetSnapshot(snapshot);
+    view_ref_installed_impl.OnNewViewTreeSnapshot();
   }
 
   {  // Koid is unconnected.
     auto snapshot = std::make_shared<Snapshot>();
     snapshot->unconnected_views.emplace(koid);
-    view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
+    snapshot->sequence_number = 2;
+    snapshot_holder->SetSnapshot(snapshot);
+    view_ref_installed_impl.OnNewViewTreeSnapshot();
   }
 
   bool was_installed = false;
@@ -138,7 +147,8 @@ TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
                                                         test_loop.dispatcher());
 
-  ViewRefInstalledImpl view_ref_installed_impl;
+  auto snapshot_holder = std::make_shared<SnapshotHolder>();
+  ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
   auto [control_ref, view_ref] = scenic::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
 
@@ -155,7 +165,9 @@ TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
   // Submit a new snapshot where the koid is in the ViewTree.
   auto snapshot = std::make_shared<Snapshot>();
   (void)snapshot->view_tree[koid];
-  view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
+  snapshot->sequence_number = 1;
+  snapshot_holder->SetSnapshot(snapshot);
+  view_ref_installed_impl.OnNewViewTreeSnapshot();
 
   test_loop.RunUntilIdle();
   EXPECT_TRUE(has_fired);
@@ -167,7 +179,8 @@ TEST(ViewRefInstalledImplTest, OnViewRefInvalidated_ShouldFireCallbackWithError)
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
                                                         test_loop.dispatcher());
 
-  ViewRefInstalledImpl view_ref_installed_impl;
+  auto snapshot_holder = std::make_shared<SnapshotHolder>();
+  ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
 
   bool has_fired = false;
   bool was_error = false;
@@ -191,7 +204,8 @@ TEST(ViewRefInstalledImplTest, InstalledThenInvalidated) {
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
                                                         test_loop.dispatcher());
 
-  ViewRefInstalledImpl view_ref_installed_impl;
+  auto snapshot_holder = std::make_shared<SnapshotHolder>();
+  ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
   bool has_fired = false;
   bool was_error = false;
 
@@ -208,10 +222,12 @@ TEST(ViewRefInstalledImplTest, InstalledThenInvalidated) {
     EXPECT_FALSE(has_fired);
 
     // Submit a new snapshot where the koid is in the ViewTree.
-    async::PostTask(test_loop.dispatcher(), [&view_ref_installed_impl, koid] {
+    async::PostTask(test_loop.dispatcher(), [&view_ref_installed_impl, snapshot_holder, koid] {
       auto snapshot = std::make_shared<Snapshot>();
       (void)snapshot->view_tree[koid];
-      view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
+      snapshot->sequence_number = 1;
+      snapshot_holder->SetSnapshot(snapshot);
+      view_ref_installed_impl.OnNewViewTreeSnapshot();
     });
   }  // ViewRefControl goes out of scope, invalidating the passed in ViewRef.
 

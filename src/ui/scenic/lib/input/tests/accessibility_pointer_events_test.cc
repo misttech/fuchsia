@@ -113,7 +113,7 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   AccessibilityPointerEventsTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
         hit_tester_(inspect_node_),
-        touch_system_(dispatcher(), context_provider_.context(), hit_tester_, inspect_node_) {}
+        touch_system_(dispatcher(), hit_tester_, inspect_node_) {}
 
   void SetUp() override {
     ::testing::Test::SetUp();

@@ -28,7 +28,7 @@ using MouseInjectFunc = fit::function<void(InternalMouseEvent event, StreamId st
 // LINT.IfChange
 class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
  public:
-  PointerinjectorRegistry(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+  PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
                           std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                           TouchInjectFunc inject_touch_exclusive,
                           TouchInjectFunc inject_touch_hit_tested,
@@ -36,6 +36,8 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
                           MouseInjectFunc inject_mouse_hit_tested,
                           fit::function<void(StreamId stream_id)> cancel_mouse_stream,
                           inspect::Node inspect_node = inspect::Node());
+
+  void Bind(fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
 
   // |fuchsia.ui.pointerinjector.Registry|
   void Register(fuchsia::ui::pointerinjector::Config config,

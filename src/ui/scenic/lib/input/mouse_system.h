@@ -27,8 +27,7 @@ namespace scenic_impl::input {
 // lock.
 class MouseSystem {
  public:
-  explicit MouseSystem(sys::ComponentContext* context, HitTester& hit_tester,
-                       RequestFocusFunc request_focus);
+  explicit MouseSystem(HitTester& hit_tester, RequestFocusFunc request_focus);
   ~MouseSystem() = default;
 
   void RegisterMouseSource(

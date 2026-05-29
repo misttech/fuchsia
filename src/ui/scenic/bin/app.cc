@@ -220,8 +220,7 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
             FX_DCHECK(flatland_compositor_);
             return flatland_compositor_->SetMinimumRgb(minimum_rgb);
           })),
-      input_manager_(input_dispatcher_, app_context_.get(), inspect_node_,
-                     config_values_.pointer_auto_focus()),
+      input_manager_(input_dispatcher_),
       health_inspector_(display_manager_, display_power_manager_, root_node) {
   LogConfig(config_values_);
   pkg_dir_.Bind(std::move(pkg_dir));
@@ -342,6 +341,7 @@ void App::InitializeServices(escher::EscherUniquePtr escher,
 
   InitializeGraphics(display);
   InitializeHeartbeat(*display);
+  InitializeInput();
 }
 
 App::~App() {}
@@ -440,21 +440,25 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
         display, std::move(importers),
         /*register_view_focuser*/
         [this](fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser, zx_koid_t view_ref_koid) {
-          input_manager_.RegisterViewFocuser(std::move(focuser), view_ref_koid);
+          input_manager_.AsyncCall(&input::InputManager::RegisterViewFocuser, std::move(focuser),
+                                   view_ref_koid);
         },
         /*register_view_ref_focused*/
         [this](fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf, zx_koid_t view_ref_koid) {
-          input_manager_.RegisterViewRefFocused(std::move(vrf), view_ref_koid);
+          input_manager_.AsyncCall(&input::InputManager::RegisterViewRefFocused, std::move(vrf),
+                                   view_ref_koid);
         },
         /*register_touch_source*/
         [this](fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source,
                zx_koid_t view_ref_koid) {
-          input_manager_.RegisterTouchSource(std::move(touch_source), view_ref_koid);
+          input_manager_.AsyncCall(&input::InputManager::RegisterTouchSource,
+                                   std::move(touch_source), view_ref_koid);
         },
         /*register_mouse_source*/
         [this](fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source,
                zx_koid_t view_ref_koid) {
-          input_manager_.RegisterMouseSource(std::move(mouse_source), view_ref_koid);
+          input_manager_.AsyncCall(&input::InputManager::RegisterMouseSource,
+                                   std::move(mouse_source), view_ref_koid);
         });
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
@@ -620,6 +624,65 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   }
 }
 
+void App::InitializeInput() {
+  snapshot_holder_ = std::make_shared<view_tree::SnapshotHolder>();
+  input_manager_.emplace(async_patterns::PassDispatcher, snapshot_holder_,
+                         inspect_node_.CreateChild("input"), config_values_.pointer_auto_focus());
+
+  // sys::OutgoingDirectory is thread-hostile. To avoid thread-safety risks and races with
+  // outgoing()->Serve(), all public services must be registered synchronously on the main thread.
+  // Connection requests are then forwarded asynchronously to the input thread via
+  // `input_manager_.AsyncCall()`.
+
+  // Register FocusChainListenerRegistry
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::focus::FocusChainListenerRegistry>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindFocusChainListenerRegistry,
+                                 std::move(request));
+      });
+
+  // Register ViewRefInstalled
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::views::ViewRefInstalled>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindViewRefInstalled, std::move(request));
+      });
+
+  // Register test Observer Registry
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::observation::test::Registry>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindObserverRegistry, std::move(request));
+      });
+
+  // Register scoped Observer Registry
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::observation::scope::Registry>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindScopedObserverRegistry,
+                                 std::move(request));
+      });
+
+  // Register Pointerinjector Registry
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::pointerinjector::Registry>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,
+                                 std::move(request));
+      });
+
+  // Register LocalHit upgrade registry
+  app_context_->outgoing()->AddPublicService<fuchsia::ui::pointer::augment::LocalHit>(
+      [this](fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+        input_manager_.AsyncCall(&input::InputManager::BindLocalHit, std::move(request));
+      });
+
+  // Register Accessibility PointerEventRegistry
+  app_context_->outgoing()
+      ->AddPublicService<fuchsia::ui::input::accessibility::PointerEventRegistry>(
+          [this](fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry>
+                     request) {
+            input_manager_.AsyncCall(&input::InputManager::BindA11yPointerEventRegistry,
+                                     std::move(request));
+          });
+}
+
 void App::InitializeHeartbeat(display::Display& display) {
   TRACE_DURATION("gfx", "App::InitializeHeartbeat");
 
@@ -641,7 +704,12 @@ void App::InitializeHeartbeat(display::Display& display) {
     std::vector<view_tree::ViewTreeSnapshotter::Subscriber> subscribers;
 
     subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
-      input_manager_.OnNewViewTreeSnapshot(std::move(snapshot));
+      // The snapshot must be updated on the main thread because the dispatcher does not provide
+      // FIFO guarantees. Subsequent FIDL calls could be scheduled and processed on the input
+      // thread before the snapshot task is run on the input thread. Updating the snapshot
+      // synchronously on the main thread ensures consistency. See b/42155704 for more detail.
+      snapshot_holder_->SetSnapshot(snapshot);
+      input_manager_.AsyncCall(&input::InputManager::OnNewViewTreeSnapshot);
     }});
 
     if (enable_snapshot_dump_) {
