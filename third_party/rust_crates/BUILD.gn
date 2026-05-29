@@ -4413,6 +4413,7 @@ rustc_library("bitflags-v2_11_1") {
     "-Cextra-filename=-cf9261591daa322",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serde_core\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
