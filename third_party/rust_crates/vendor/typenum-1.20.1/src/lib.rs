@@ -14,13 +14,10 @@
 //! ```
 //!
 //! **Type operators** are traits that behave as functions at the type level. These are the meat of
-//! this library. Where possible, traits defined in libcore have been used, but their attached
-//! functions have not been implemented.
+//! this library. Where possible, traits defined in libcore have been used.
 //!
-//! For example, the `Add` trait is implemented for both unsigned and signed integers, but the
-//! `add` function is not. As there are never any objects of the types defined here, it wouldn't
-//! make sense to implement it. What is important is its associated type `Output`, which is where
-//! the addition happens.
+//! For example, the `Add` trait is implemented for both unsigned and signed integers, where its
+//! associated type `Output` represents the sum of the two integers.
 //!
 //! ```rust
 //! use std::ops::Add;
@@ -47,8 +44,8 @@
 #![warn(missing_docs)]
 #![cfg_attr(feature = "strict", deny(missing_docs))]
 #![cfg_attr(feature = "strict", deny(warnings))]
-#![doc(html_root_url = "https://docs.rs/typenum/1.18.0")]
-#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg))]
+#![doc(html_root_url = "https://docs.rs/typenum/1.20.1")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // For debugging macros:
 // #![feature(trace_macros)]
@@ -66,6 +63,7 @@ pub mod type_operators;
 pub mod uint;
 
 pub mod array;
+pub mod tuple;
 
 pub use crate::{
     array::{ATerm, TArr},

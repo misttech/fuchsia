@@ -80,6 +80,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
         "//third_party/rust_crates/vendor/rand_core-0.6.4:rand_core",
-        "//third_party/rust_crates/vendor/typenum-1.18.0:typenum",
+        "//third_party/rust_crates/vendor/typenum-1.20.1:typenum",
     ],
 )

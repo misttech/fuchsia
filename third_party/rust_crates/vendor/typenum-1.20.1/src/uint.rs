@@ -263,6 +263,101 @@ where
 }
 
 // ---------------------------------------------------------------------------------------
+// Formatting as binary
+
+impl core::fmt::Binary for UTerm {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "0")
+    }
+}
+
+impl core::fmt::Binary for UInt<UTerm, B0> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "0")
+    }
+}
+
+impl core::fmt::Binary for UInt<UTerm, B1> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "1")
+    }
+}
+
+impl<U: Unsigned, B: Bit> core::fmt::Binary for UInt<UInt<U, B>, B0>
+where
+    UInt<U, B>: core::fmt::Binary,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:b}0", UInt::<U, B>::new())
+    }
+}
+
+impl<U: Unsigned, B: Bit> core::fmt::Binary for UInt<UInt<U, B>, B1>
+where
+    UInt<U, B>: core::fmt::Binary,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:b}1", UInt::<U, B>::new())
+    }
+}
+
+#[cfg(test)]
+mod fmt_tests {
+    use super::*;
+    use crate::consts::*;
+    use core::fmt::Write;
+
+    struct LimitedString {
+        len: usize,
+        buffer: [u8; 64],
+    }
+
+    impl LimitedString {
+        fn new() -> Self {
+            Self {
+                len: 0,
+                buffer: [0u8; 64],
+            }
+        }
+
+        fn as_str(&self) -> &str {
+            core::str::from_utf8(&self.buffer[..self.len]).unwrap()
+        }
+    }
+
+    impl core::fmt::Write for LimitedString {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            self.buffer[self.len..self.len + s.len()].copy_from_slice(s.as_bytes());
+            self.len += s.len();
+            Ok(())
+        }
+    }
+
+    fn assert_binary_fmt<U: Unsigned + core::fmt::Binary>(expected: &str) {
+        let mut s = LimitedString::new();
+        write!(&mut s, "{:b}", U::default()).unwrap();
+        assert_eq!(s.as_str(), expected);
+    }
+
+    #[test]
+    fn binary() {
+        assert_binary_fmt::<U0>("0");
+        assert_binary_fmt::<U1>("1");
+        assert_binary_fmt::<U2>("10");
+        assert_binary_fmt::<U3>("11");
+        assert_binary_fmt::<U4>("100");
+        assert_binary_fmt::<U5>("101");
+        assert_binary_fmt::<U6>("110");
+        assert_binary_fmt::<U7>("111");
+        assert_binary_fmt::<U8>("1000");
+        assert_binary_fmt::<U9>("1001");
+        assert_binary_fmt::<U10>("1010");
+
+        assert_binary_fmt::<U2147483648>("10000000000000000000000000000000");
+    }
+}
+
+// ---------------------------------------------------------------------------------------
 // Adding bits to unsigned integers
 
 /// `UTerm + B0 = UTerm`
@@ -2360,6 +2455,23 @@ impl ToInt<i64> for UTerm {
     const INT: i64 = Self::I64;
 }
 
+impl ToInt<isize> for UTerm {
+    #[inline]
+    fn to_int() -> isize {
+        Self::ISIZE
+    }
+    const INT: isize = Self::ISIZE;
+}
+
+#[cfg(feature = "i128")]
+impl ToInt<i128> for UTerm {
+    #[inline]
+    fn to_int() -> i128 {
+        Self::I128
+    }
+    const INT: i128 = Self::I128;
+}
+
 impl ToInt<u8> for UTerm {
     #[inline]
     fn to_int() -> u8 {
@@ -2398,6 +2510,15 @@ impl ToInt<usize> for UTerm {
         Self::USIZE
     }
     const INT: usize = Self::USIZE;
+}
+
+#[cfg(feature = "i128")]
+impl ToInt<u128> for UTerm {
+    #[inline]
+    fn to_int() -> u128 {
+        Self::U128
+    }
+    const INT: u128 = Self::U128;
 }
 
 impl<U, B> ToInt<i8> for UInt<U, B>
@@ -2446,6 +2567,31 @@ where
         Self::I64
     }
     const INT: i64 = Self::I64;
+}
+
+impl<U, B> ToInt<isize> for UInt<U, B>
+where
+    U: Unsigned,
+    B: Bit,
+{
+    #[inline]
+    fn to_int() -> isize {
+        Self::ISIZE
+    }
+    const INT: isize = Self::ISIZE;
+}
+
+#[cfg(feature = "i128")]
+impl<U, B> ToInt<i128> for UInt<U, B>
+where
+    U: Unsigned,
+    B: Bit,
+{
+    #[inline]
+    fn to_int() -> i128 {
+        Self::I128
+    }
+    const INT: i128 = Self::I128;
 }
 
 impl<U, B> ToInt<u8> for UInt<U, B>
@@ -2506,6 +2652,19 @@ where
         Self::USIZE
     }
     const INT: usize = Self::USIZE;
+}
+
+#[cfg(feature = "i128")]
+impl<U, B> ToInt<u128> for UInt<U, B>
+where
+    U: Unsigned,
+    B: Bit,
+{
+    #[inline]
+    fn to_int() -> u128 {
+        Self::U128
+    }
+    const INT: u128 = Self::U128;
 }
 
 #[cfg(test)]
@@ -2607,6 +2766,33 @@ mod tests {
         assert_eq!(3_i64, U3::INT);
         assert_eq!(4_i64, U4::INT);
 
+        // isize
+        assert_eq!(0_isize, U0::to_int());
+        assert_eq!(1_isize, U1::to_int());
+        assert_eq!(2_isize, U2::to_int());
+        assert_eq!(3_isize, U3::to_int());
+        assert_eq!(4_isize, U4::to_int());
+        assert_eq!(0_isize, U0::INT);
+        assert_eq!(1_isize, U1::INT);
+        assert_eq!(2_isize, U2::INT);
+        assert_eq!(3_isize, U3::INT);
+        assert_eq!(4_isize, U4::INT);
+
+        // i128
+        #[cfg(feature = "i128")]
+        {
+            assert_eq!(0_i128, U0::to_int());
+            assert_eq!(1_i128, U1::to_int());
+            assert_eq!(2_i128, U2::to_int());
+            assert_eq!(3_i128, U3::to_int());
+            assert_eq!(4_i128, U4::to_int());
+            assert_eq!(0_i128, U0::INT);
+            assert_eq!(1_i128, U1::INT);
+            assert_eq!(2_i128, U2::INT);
+            assert_eq!(3_i128, U3::INT);
+            assert_eq!(4_i128, U4::INT);
+        }
+
         // u8
         assert_eq!(0_u8, U0::to_int());
         assert_eq!(1_u8, U1::to_int());
@@ -2666,5 +2852,20 @@ mod tests {
         assert_eq!(2_usize, U2::INT);
         assert_eq!(3_usize, U3::INT);
         assert_eq!(4_usize, U4::INT);
+
+        // u128
+        #[cfg(feature = "i128")]
+        {
+            assert_eq!(0_u128, U0::to_int());
+            assert_eq!(1_u128, U1::to_int());
+            assert_eq!(2_u128, U2::to_int());
+            assert_eq!(3_u128, U3::to_int());
+            assert_eq!(4_u128, U4::to_int());
+            assert_eq!(0_u128, U0::INT);
+            assert_eq!(1_u128, U1::INT);
+            assert_eq!(2_u128, U2::INT);
+            assert_eq!(3_u128, U3::INT);
+            assert_eq!(4_u128, U4::INT);
+        }
     }
 }
