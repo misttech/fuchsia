@@ -13,7 +13,7 @@
 
 #include <__config>
 
-#define _LIBCPP_UNREACHABLE() __builtin_unreachable()
+#pragma GCC system_header
 
 // This is used by the __libcpp_aligned_alloc inline.  Since it always fails
 // that inline will trivially always return nullptr.
