@@ -513,7 +513,7 @@ template("clang_toolchain") {
                                "rust_link_remote_dump_syms_prefix",
                              ])
       forward_variables_from(_rust_concurrent_jobs, "*")
-      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+      forward_variables_from(rust_toolchain_vars.tool_vars, "*")
 
       restat = restat_rust
       command_launcher = string_replace(string_join(" ", _rust_launcher),
@@ -660,7 +660,7 @@ template("clang_toolchain") {
 
     tool("rust_rlib") {
       forward_variables_from(_rust_concurrent_jobs, "*")
-      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+      forward_variables_from(rust_toolchain_vars.tool_vars, "*")
 
       rmeta = "{{output_dir}}/lib{{target_output_name}}.rmeta"
       rlib = "{{output_dir}}/lib{{target_output_name}}{{output_extension}}"
@@ -707,7 +707,7 @@ template("clang_toolchain") {
 
     tool("rust_staticlib") {
       forward_variables_from(_rust_concurrent_jobs, "*")
-      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+      forward_variables_from(rust_toolchain_vars.tool_vars, "*")
 
       _main_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
       depfile = "$_main_output.d"
@@ -779,7 +779,7 @@ template("clang_toolchain") {
 
     tool("rust_macro") {
       forward_variables_from(_rust_concurrent_jobs, "*")
-      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+      forward_variables_from(rust_toolchain_vars.tool_vars, "*")
 
       _main_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
       depfile = "$_main_output.d"
