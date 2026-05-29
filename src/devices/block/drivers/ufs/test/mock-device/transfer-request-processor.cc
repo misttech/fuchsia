@@ -33,7 +33,7 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
 
   UpiuHeader *response_upiu_header =
       reinterpret_cast<UpiuHeader *>(command_descriptor_data.response_upiu_base_addr);
-  std::memcpy(response_upiu_header, command_upiu_header, sizeof(UpiuHeader));
+  CustomMemCpy(response_upiu_header, command_upiu_header, sizeof(UpiuHeader));
   response_upiu_header->set_trans_code(command_upiu_header->trans_code() | (1 << 5));
 
   if (mock_device_.GetExceptionEventAlert()) {

@@ -532,6 +532,23 @@ class NopOutUpiu : public AbstractRequestUpiu<NopOutUpiuData, NopInUpiuData> {
   ~NopOutUpiu() override = default;
 };
 
+// Used to avoid std::memset() on uncacheable memory.
+inline void CustomMemSet(void* dest, int c, size_t count) {
+  volatile uint8_t* d = static_cast<volatile uint8_t*>(dest);
+  while (count--) {
+    *d++ = static_cast<uint8_t>(c);
+  }
+}
+
+// Used to avoid std::memcpy() on uncacheable memory.
+inline void CustomMemCpy(void* dest, const void* src, size_t count) {
+  volatile uint8_t* d = static_cast<volatile uint8_t*>(dest);
+  const volatile uint8_t* s = static_cast<const volatile uint8_t*>(src);
+  while (count--) {
+    *d++ = *s++;
+  }
+}
+
 }  // namespace ufs
 
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_UFS_UPIU_UPIU_TRANSACTIONS_H_

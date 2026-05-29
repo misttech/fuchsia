@@ -20,8 +20,10 @@ TEST_F(QueryRequestTest, DeviceDescriptor) {
   ReadDescriptorUpiu device_desc_upiu(DescriptorType::kDevice);
   auto response = dut_->GetTransferRequestProcessor().SendQueryRequestUpiu(device_desc_upiu);
   ASSERT_OK(response);
-  auto device_descriptor =
-      response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<DeviceDescriptor>();
+  DeviceDescriptor device_descriptor;
+  CustomMemCpy(&device_descriptor,
+               &response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<DeviceDescriptor>(),
+               sizeof(device_descriptor));
 
   ASSERT_EQ(device_descriptor.bLength, mock_device_.GetDeviceDesc().bLength);
   ASSERT_EQ(device_descriptor.bDescriptorIDN, mock_device_.GetDeviceDesc().bDescriptorIDN);
@@ -38,8 +40,10 @@ TEST_F(QueryRequestTest, GeometryDescriptor) {
   ReadDescriptorUpiu geometry_desc_upiu(DescriptorType::kGeometry);
   auto response = dut_->GetTransferRequestProcessor().SendQueryRequestUpiu(geometry_desc_upiu);
   ASSERT_OK(response);
-  auto geometry_desc =
-      response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<GeometryDescriptor>();
+  GeometryDescriptor geometry_desc;
+  CustomMemCpy(&geometry_desc,
+               &response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<GeometryDescriptor>(),
+               sizeof(geometry_desc));
 
   ASSERT_EQ(geometry_desc.bLength, mock_device_.GetGeometryDesc().bLength);
   ASSERT_EQ(geometry_desc.bDescriptorIDN, mock_device_.GetGeometryDesc().bDescriptorIDN);
@@ -51,7 +55,10 @@ TEST_F(QueryRequestTest, UnitDescriptor) {
   ReadDescriptorUpiu unit_desc_upiu(DescriptorType::kUnit, lun);
   auto response = dut_->GetTransferRequestProcessor().SendQueryRequestUpiu(unit_desc_upiu);
   ASSERT_OK(response);
-  auto unit_desc = response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<UnitDescriptor>();
+  UnitDescriptor unit_desc;
+  CustomMemCpy(&unit_desc,
+               &response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<UnitDescriptor>(),
+               sizeof(unit_desc));
 
   const auto& mock_desc = mock_device_.GetLogicalUnit(lun).GetUnitDesc();
   ASSERT_EQ(unit_desc.bLength, mock_desc.bLength);

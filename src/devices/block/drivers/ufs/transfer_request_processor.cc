@@ -59,7 +59,7 @@ std::tuple<uint16_t, uint32_t> TransferRequestProcessor::PreparePrdt<ScsiCommand
                       "Invalid UPIU size for prdt");
   auto prdt =
       request_list_.GetDescriptorBuffer<PhysicalRegionDescriptionTableEntry>(slot, prdt_offset);
-  memset(prdt, 0, prdt_length_in_bytes);
+  CustomMemSet(prdt, 0, prdt_length_in_bytes);
 
   FillPrdt(prdt, buffer_phys, prdt_entry_count, data_transfer_length);
 
@@ -254,10 +254,9 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
   const size_t length = static_cast<size_t>(response_offset) + response_length;
   ZX_DEBUG_ASSERT_MSG(length <= request_list_.GetDescriptorBufferSize(slot), "Invalid UPIU size");
 
-  memcpy(request_list_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
-  memset(request_list_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0, response_length);
-  zx_cache_flush(request_list_.GetDescriptorBuffer(slot), kUtpCommandDescriptorSize,
-                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  CustomMemCpy(request_list_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
+  CustomMemSet(request_list_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0,
+               response_length);
   auto response = request_list_.GetDescriptorBuffer(slot, response_offset);
 
   if (zx::result<> result =
@@ -449,7 +448,7 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
   zx_paddr_t paddr = request_list_.GetSlot(slot).command_descriptor_io->phys();
 
   // Fill up UTP Transfer Request Descriptor.
-  memset(descriptor, 0, sizeof(TransferRequestDescriptor));
+  CustomMemSet(descriptor, 0, sizeof(TransferRequestDescriptor));
   descriptor->set_interrupt(true);
   descriptor->set_data_direction(data_dir);
   descriptor->set_command_type(kCommandTypeUfsStorage);
@@ -463,9 +462,6 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
   descriptor->set_response_upiu_length(response_length / kDwordSize);
   descriptor->set_prdt_offset(prdt_offset / kDwordSize);
   descriptor->set_prdt_length(prdt_entry_count);
-
-  zx_cache_flush(descriptor, sizeof(TransferRequestDescriptor),
-                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 
   TRACE_DURATION("ufs", "RingRequestDoorbell", "slot", slot);
   if (zx::result<> result = controller_.Notify(NotifyEvent::kSetupTransferRequestList, slot);

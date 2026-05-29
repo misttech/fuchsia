@@ -135,8 +135,12 @@ zx::result<DescriptorReturnType> DeviceManager::ReadDescriptor(DescriptorType de
   if (query_response.is_error()) {
     return query_response.take_error();
   }
-  return zx::ok(
-      query_response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<DescriptorReturnType>());
+  DescriptorReturnType data;
+  CustomMemCpy(
+      &data,
+      &query_response->GetResponse<DescriptorResponseUpiu>().GetDescriptor<DescriptorReturnType>(),
+      sizeof(data));
+  return zx::ok(data);
 }
 
 zx::result<uint8_t> DeviceManager::ReadFlag(Flags type) {

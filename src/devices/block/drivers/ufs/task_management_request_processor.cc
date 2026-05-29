@@ -134,16 +134,14 @@ zx::result<> TaskManagementRequestProcessor::FillDescriptorAndSendRequest(
   auto descriptor = request_list_.GetRequestDescriptor<TaskManagementRequestDescriptor>(slot);
 
   // Fill up UTP task management request descriptor.
-  memset(descriptor, 0, sizeof(TaskManagementRequestDescriptor));
+  CustomMemSet(descriptor, 0, sizeof(TaskManagementRequestDescriptor));
   descriptor->set_interrupt(true);
   // If the command was successful, overwrite |overall_command_status| field with |kSuccess|.
   descriptor->set_overall_command_status(OverallCommandStatus::kInvalid);
 
   // Copy the UTP task management request UPIU to the descriptor.
-  memcpy(descriptor->GetRequestData(), request.GetData(), sizeof(TaskManagementRequestUpiuData));
-
-  zx_cache_flush(descriptor, sizeof(TaskManagementRequestDescriptor),
-                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  CustomMemCpy(descriptor->GetRequestData(), request.GetData(),
+               sizeof(TaskManagementRequestUpiuData));
 
   if (zx::result<> result = controller_.Notify(NotifyEvent::kSetupTaskManagementRequestList, slot);
       result.is_error()) {

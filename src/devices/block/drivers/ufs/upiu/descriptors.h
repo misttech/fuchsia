@@ -350,7 +350,7 @@ class WriteDescriptorUpiu : public QueryWriteRequestUpiu {
     ZX_ASSERT_MSG(length <= sizeof(GetData<QueryRequestUpiuData>()->command_data),
                   "Tried to copy %u bytes to a buffer of size %zu.", length,
                   sizeof(GetData<QueryRequestUpiuData>()->command_data));
-    std::memcpy(GetData<QueryRequestUpiuData>()->command_data.data(), descriptor_data, length);
+    CustomMemCpy(GetData<QueryRequestUpiuData>()->command_data.data(), descriptor_data, length);
     GetData<QueryRequestUpiuData>()->header.data_segment_length = htobe16(length);
   }
 };

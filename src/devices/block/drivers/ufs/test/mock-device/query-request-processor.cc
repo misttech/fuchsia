@@ -31,18 +31,18 @@ zx_status_t QueryRequestProcessor::DefaultReadDescriptorHandler(UfsMockDevice &m
   }
 
   if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kDevice)) {
-    std::memcpy(rsp_upiu.command_data.data(), &mock_device.GetDeviceDesc(),
-                sizeof(DeviceDescriptor));
+    CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetDeviceDesc(),
+                 sizeof(DeviceDescriptor));
   } else if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kGeometry)) {
-    std::memcpy(rsp_upiu.command_data.data(), &mock_device.GetGeometryDesc(),
-                sizeof(GeometryDescriptor));
+    CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetGeometryDesc(),
+                 sizeof(GeometryDescriptor));
   } else if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kUnit)) {
     uint8_t lun = req_upiu.index;
-    std::memcpy(rsp_upiu.command_data.data(), &mock_device.GetLogicalUnit(lun).GetUnitDesc(),
-                sizeof(UnitDescriptor));
+    CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetLogicalUnit(lun).GetUnitDesc(),
+                 sizeof(UnitDescriptor));
   } else if (req_upiu.idn == static_cast<uint8_t>(DescriptorType::kPower)) {
-    std::memcpy(rsp_upiu.command_data.data(), &mock_device.GetPowerDesc(),
-                sizeof(PowerParametersDescriptor));
+    CustomMemCpy(rsp_upiu.command_data.data(), &mock_device.GetPowerDesc(),
+                 sizeof(PowerParametersDescriptor));
   } else {
     fdf::error("UFS MOCK: read descriptor idn: 0x{:x} is not supported", req_upiu.idn);
     return ZX_ERR_NOT_SUPPORTED;

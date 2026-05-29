@@ -46,7 +46,7 @@ zx_status_t CopyBufferToPhysicalRegion(UfsMockDevice &mock_device,
 
     uint64_t data_buffer_size = prdt_upiu.data_byte_count() + 1;
     uint64_t transfer_count = std::min(data_buffer_size, buffer.size() - cur_pos);
-    std::memcpy(data_buffer.value(), buffer.data() + cur_pos, transfer_count);
+    CustomMemCpy(data_buffer.value(), buffer.data() + cur_pos, transfer_count);
 
     cur_pos += transfer_count;
   }
@@ -75,7 +75,7 @@ zx_status_t CopyPhysicalRegionToBuffer(
 
     uint64_t data_buffer_size = prdt_upiu.data_byte_count() + 1;
     uint64_t transfer_count = std::min(data_buffer_size, buffer.size() - cur_pos);
-    std::memcpy(buffer.data() + cur_pos, data_buffer.value(), transfer_count);
+    CustomMemCpy(buffer.data() + cur_pos, data_buffer.value(), transfer_count);
 
     cur_pos += transfer_count;
   }

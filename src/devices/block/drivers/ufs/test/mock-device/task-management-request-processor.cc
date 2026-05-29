@@ -20,7 +20,7 @@ void TaskManagementRequestProcessor::HandleTaskManagementRequest(
 
   UpiuHeader *response_upiu_header =
       reinterpret_cast<UpiuHeader *>(&descriptor.GetResponseData()->header);
-  std::memcpy(response_upiu_header, request_upiu_header, sizeof(UpiuHeader));
+  CustomMemCpy(response_upiu_header, request_upiu_header, sizeof(UpiuHeader));
   response_upiu_header->set_trans_code(request_upiu_header->trans_code() | (1 << 5));
 
   TaskManagementFunction function =

@@ -30,8 +30,8 @@ class ScsiCommandUpiu : public CommandUpiu {
       : CommandUpiu(UpiuCommandSetType::kScsi, data_direction), transfer_bytes_(transfer_bytes) {
     constexpr uint32_t kMaxCdbSize = sizeof(GetData<CommandUpiuData>()->cdb);
     ZX_DEBUG_ASSERT(cdb_length <= kMaxCdbSize);
-    std::memset(GetData<CommandUpiuData>()->cdb, 0, kMaxCdbSize);
-    std::memcpy(GetData<CommandUpiuData>()->cdb, cdb, cdb_length);
+    CustomMemSet(GetData<CommandUpiuData>()->cdb, 0, kMaxCdbSize);
+    CustomMemCpy(GetData<CommandUpiuData>()->cdb, cdb, cdb_length);
   }
 
   explicit ScsiCommandUpiu(const CommandUpiuData &data) : CommandUpiu(data) {}
