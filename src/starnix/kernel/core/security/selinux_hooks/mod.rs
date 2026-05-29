@@ -659,14 +659,14 @@ pub(super) struct SocketState {
 /// SID that the [`crate::task::Task`] that created the file object had.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct BpfMapState {
-    sid: SecurityId,
+    pub(super) sid: SecurityId,
 }
 
 /// Security state for a bpf [`starnix_core::bpf::program::Program`]. instance. This currently just
 /// holds the SID that the [`crate::task::Task`] that created the file object had.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct BpfProgState {
-    sid: SecurityId,
+    pub(super) sid: SecurityId,
 }
 
 /// Sets the cached security id associated with `fs_node` to `sid`. Storing the security id will

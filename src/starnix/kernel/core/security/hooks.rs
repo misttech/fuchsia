@@ -10,8 +10,6 @@ use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
     KernelState, PerfEventState, common_cap, selinux_hooks, yama,
 };
-use crate::bpf::map::BpfMap;
-use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
 use crate::security::selinux_hooks::current_task_state;
@@ -32,7 +30,7 @@ use linux_uapi::{
     perf_type_id_PERF_TYPE_HARDWARE, perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_RAW,
     perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
 };
-use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer, TaskAttrs};
+use selinux::{FileSystemMountOptions, SecurityId, SecurityPermission, SecurityServer, TaskAttrs};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::arc_key::WeakKey;
@@ -1946,22 +1944,26 @@ pub fn check_bpf_access<Attr: FromBytes>(
     })
 }
 
+pub fn current_task_sid(current_task: &CurrentTask) -> SecurityId {
+    current_task_state(current_task).current_sid
+}
+
 /// Checks whether `current_task` can create a bpf_map. This hook is called from the
 /// `sys_bpf()` syscall when the kernel tries to generate and return a file descriptor for maps.
 /// Corresponds to the `bpf_map()` LSM hook.
 pub fn check_bpf_map_access(
     current_task: &CurrentTask,
-    bpf_map: &BpfMap,
+    subject_sid: SecurityId,
+    target_sid: SecurityId,
     flags: PermissionFlags,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_bpf_map_access");
     if_selinux_else_default_ok(current_task, |security_server| {
-        let subject_sid = current_task_state(current_task).current_sid;
         selinux_hooks::bpf::check_bpf_map_access(
             security_server,
             current_task,
             subject_sid,
-            bpf_map,
+            target_sid,
             flags,
         )
     })
@@ -1973,16 +1975,16 @@ pub fn check_bpf_map_access(
 /// Corresponds to the `bpf_prog()` LSM hook.
 pub fn check_bpf_prog_access(
     current_task: &CurrentTask,
-    bpf_program: &Program,
+    subject_sid: SecurityId,
+    target_sid: SecurityId,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_bpf_prog_access");
     if_selinux_else_default_ok(current_task, |security_server| {
-        let subject_sid = current_task_state(current_task).current_sid;
         selinux_hooks::bpf::check_bpf_prog_access(
             security_server,
             current_task,
             subject_sid,
-            bpf_program,
+            target_sid,
         )
     })
 }
