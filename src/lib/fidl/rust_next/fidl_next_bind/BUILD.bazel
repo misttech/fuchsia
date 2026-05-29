@@ -1,0 +1,61 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+rustc_library(
+    name = "fidl_next_bind",
+    srcs = [
+        "src/client.rs",
+        "src/decoded.rs",
+        "src/endpoint.rs",
+        "src/error.rs",
+        "src/executor.rs",
+        "src/fuchsia_async.rs",
+        "src/future/mod.rs",
+        "src/future/send.rs",
+        "src/future/two_way.rs",
+        "src/lib.rs",
+        "src/protocol.rs",
+        "src/server.rs",
+        "src/service.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/fuchsia.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    crate_features = [
+        # Enables support for fuchsia-async.
+        # This feature _should_ be named `fuchsia_async`, but our cargo manifest
+        # generator doesn't support features with the same name as mandatory
+        # dependencies.
+        "fasync",
+    ] + select({
+        "@platforms//os:fuchsia": ["fuchsia"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    visibility = [
+        # NOTE: these bindings are currently in a phased rollout
+        # "//:developer_universe_packages",
+        "//sdk/lib/driver:__subpackages__",
+        "//src/lib/fidl/rust_next:__subpackages__",
+        "//tools/fidl/fidlc/testdata:__subpackages__",
+        "//tools/fidl/fidlgen_rust_next:__subpackages__",
+    ],
+    with_unit_tests = True,
+    deps = [
+        "//src/lib/fidl/rust_next/fidl_next_codec",
+        "//src/lib/fidl/rust_next/fidl_next_protocol",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:pin-project",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/rust/zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

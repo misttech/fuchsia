@@ -1,0 +1,71 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+# LINT.IfChange
+rustc_library(
+    name = "fidl_next_protocol",
+    srcs = [
+        "src/body.rs",
+        "src/endpoints/client.rs",
+        "src/endpoints/connection.rs",
+        "src/endpoints/lockers.rs",
+        "src/endpoints/mod.rs",
+        "src/endpoints/server.rs",
+        "src/error.rs",
+        "src/flexibility.rs",
+        "src/flexible.rs",
+        "src/flexible_result.rs",
+        "src/framework_error.rs",
+        "src/lib.rs",
+        "src/mpsc.rs",
+        "src/service.rs",
+        "src/testing.rs",
+        "src/transport.rs",
+        "src/wire/empty.rs",
+        "src/wire/epitaph.rs",
+        "src/wire/flexible.rs",
+        "src/wire/flexible_result.rs",
+        "src/wire/framework_error.rs",
+        "src/wire/message_header.rs",
+        "src/wire/mod.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/fuchsia/channel.rs",
+            "src/fuchsia/mod.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    crate_features = select({
+        "@platforms//os:fuchsia": [
+            "fuchsia",
+        ],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    test_deps = [
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates:futures",
+    ],
+    visibility = ["//visibility:public"],
+    with_unit_tests = True,
+    deps = [
+        "//sdk/lib/fuchsia-loom",
+        "//src/lib/fidl/rust_constants",
+        "//src/lib/fidl/rust_next/fidl_next_codec",
+        "//third_party/rust_crates/vendor:pin-project",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select(
+        {
+            "@platforms//os:fuchsia": [
+                "//sdk/rust/zx",
+                "//src/lib/fuchsia-async",
+            ],
+            "//conditions:default": [],
+        },
+    ),
+)
+# LINT.ThenChange(BUILD.gn)
