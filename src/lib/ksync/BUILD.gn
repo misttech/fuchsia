@@ -18,7 +18,12 @@ rustc_macro("ksync-macro") {
 
 rustc_library("ksync") {
   edition = "2024"
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/kcell.rs",
+    "src/kmutex.rs",
+    "src/lib.rs",
+    "src/lock_token.rs",
+  ]
   deps = [
     ":ksync-macro",
     "//src/lib/fuchsia-sync",
