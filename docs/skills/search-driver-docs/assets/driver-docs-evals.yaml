@@ -1,0 +1,86 @@
+---
+eval_suites:
+  - source_doc: "docs/concepts/drivers/README.md"
+    prompt: "I am a new driver developer looking for DFv2 fundamentals. Locate which documents cover driver mapping and dispatcher performance in the core concepts guide."
+    expectations:
+      - "The agent directs the user to the 'Mapping a device's memory in a driver' and 'Driver dispatcher performance' sections."
+  - source_doc: "docs/concepts/drivers/comparison_between_dfv1_and_dfv2.md"
+    prompt: "Explain how device isolation differs fundamentally between the legacy Driver Framework version 1 and the modern version 2."
+    expectations:
+      - "The agent explains that DFv2 drivers run inside isolated components compared to DFv1 devices."
+  - source_doc: "docs/concepts/drivers/driver-dispatcher-and-threads.md"
+    prompt: "I need to understand how drivers schedule asynchronous tasks in DFv2. Describe the threading model and the primitive used by drivers for work scheduling."
+    expectations:
+      - "The agent identifies the driver dispatcher as the primary scheduling primitive."
+  - source_doc: "docs/concepts/drivers/driver-dispatcher-performance.md"
+    prompt: "Are there performance benefits to configuring driver dispatchers with inlined versus non-inlined calls? Elaborate on the execution model."
+    expectations:
+      - "The agent references the efficiency trade-offs and behavioral differences of dispatcher inlined calls."
+  - source_doc: "docs/concepts/drivers/driver_binding.md"
+    prompt: "Explain how the Fuchsia Driver Framework ensures a driver only binds to a compatible device node, detailing the roles of node properties and bind rules."
+    expectations:
+      - "The agent correctly identifies that unbound node properties are compared against driver bind rules within the Driver Index."
+  - source_doc: "docs/concepts/drivers/driver_communication.md"
+    prompt: "Outline the primary communication mechanisms available for driver-to-driver and non-driver-to-driver interactions in Fuchsia."
+    expectations:
+      - "The agent accurately explains that interaction generally leverages FIDL over Zircon channels or efficient driver runtime locals."
+  - source_doc: "docs/concepts/drivers/driver_framework.md"
+    prompt: "Define the operational roles of the Driver Manager, Driver Index, and Driver Host within Fuchsia's DFv2 framework."
+    expectations:
+      - "The agent highlights Driver Manager for topology, Driver Index for matching, and Driver Host for isolation and driver instantiation."
+  - source_doc: "docs/concepts/drivers/drivers_and_nodes.md"
+    prompt: "Describe what a node represents in Fuchsia's driver model and how nodes interconnect to build the topology."
+    expectations:
+      - "The agent asserts that nodes represent devices and form a tree-like hierarchy managed by the Driver Manager."
+  - source_doc: "docs/concepts/drivers/mapping-a-devices-memory-in-a-driver.md"
+    prompt: "How does a Fuchsia driver typically manage hardware device memory mapping within its allocated driver host process?"
+    expectations:
+      - "The agent explains the process of mapping a device's memory region securely into the driver host's user-space address space."
+  - source_doc: "docs/development/drivers/README.md"
+    prompt: "Point me to the primary tutorial paths for creating new DFv2 drivers within the Fuchsia source tree."
+    expectations:
+      - "The agent provides sections corresponding to 'DFv2 driver development', mentioning tutorials like 'Write a minimal DFv2 driver'."
+  - source_doc: "docs/development/drivers/dfv2-overview.md"
+    prompt: "Locate the documentation detailing bind rules and composite nodes for DFv2 driver development."
+    expectations:
+      - "The agent explicitly cites the Tutorials section linking to 'Create a composite node' and 'Bind rules tutorial'."
+  - source_doc: "docs/development/drivers/concepts/fdf.md"
+    prompt: "Explain the primary architectural constraints and structures imposed by the Fuchsia Driver Framework on driver development."
+    expectations:
+      - "The agent successfully outlines the framework's abstractions and structural requirements."
+  - source_doc: "docs/development/drivers/concepts/device_driver_model/platform-bus.md"
+    prompt: "Outline the role of the platform bus in the device driver model for integrating peripheral hardware components."
+    expectations:
+      - "The agent describes the platform bus's function in managing and addressing platform-specific peripherals."
+  - source_doc: "docs/development/drivers/concepts/driver_development/interrupts.md"
+    prompt: "Describe the standard conventions for registering and handling hardware interrupts in a Fuchsia driver."
+    expectations:
+      - "The agent delineates the interrupt registration sequence and the execution of interrupt handling routines."
+  - source_doc: "docs/development/drivers/concepts/driver_development/dma.md"
+    prompt: "Explain Direct Memory Access (DMA) management best practices within the Fuchsia Driver Framework."
+    expectations:
+      - "The agent references safe VMO usage and specific DMA mapping considerations."
+  - source_doc: "docs/development/drivers/concepts/device_driver_model/device-lifecycle.md"
+    prompt: "Trace the lifecycle of a device node from instantiation through binding and eventual unbinding or destruction."
+    expectations:
+      - "The agent maps out the specific state transitions a device node undergoes in the device model."
+  - source_doc: "docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/overview.md"
+    prompt: "Provide a high-level roadmap for a developer tasked with migrating an existing legacy DFv1 driver to the DFv2 architecture."
+    expectations:
+      - "The agent defines sequential migration phases including updating DDK interfaces and managing services."
+  - source_doc: "docs/development/drivers/migration/set-up-compat-device-server.md"
+    prompt: "Explain how to configure and initialize the compat device server in a partially migrated DFv2 driver."
+    expectations:
+      - "The agent provides instructions on wiring up the compat device server to facilitate backward compatibility."
+  - source_doc: "docs/development/drivers/driver_guides/registers/overview.md"
+    prompt: "Summarize the conventions and API patterns used to interface with hardware registers in Fuchsia driver development."
+    expectations:
+      - "The agent outlines standard practices for manipulating hardware registers securely."
+  - source_doc: "docs/development/drivers/best_practices/build.md"
+    prompt: "Highlight recommended GN build configurations and target structures for compiling Fuchsia drivers."
+    expectations:
+      - "The agent details optimal build targets, avoiding redundant configurations while leveraging standard templates."
+  - source_doc: "docs/development/drivers/tutorials/bind-libraries-codegen.md"
+    prompt: "Walk me through utilizing bind libraries to auto-generate matching code for a new DFv2 driver."
+    expectations:
+      - "The agent outlines the steps required to compile bind libraries and integrate the generated code."

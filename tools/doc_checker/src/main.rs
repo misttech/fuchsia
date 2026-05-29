@@ -7,7 +7,7 @@
 
 pub(crate) use crate::checker::{DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel};
 pub(crate) use crate::md_element::DocContext;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use glob::glob;
 use serde_yaml::Value;
@@ -195,11 +195,7 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
         // and drop the hidden files that macs sometime make.
         .filter_map(|p| {
             if let Some(name) = p.file_name()?.to_str() {
-                if !name.starts_with("._") {
-                    Some(p)
-                } else {
-                    None
-                }
+                if !name.starts_with("._") { Some(p) } else { None }
             } else {
                 None
             }
@@ -208,7 +204,16 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
 
     // Find all the .yaml files.
     let yaml_pattern = format!("{}/**/*.yaml", docs_dir.to_string_lossy());
-    let mut yaml_files: Vec<PathBuf> = glob(&yaml_pattern)?.filter_map(|p| p.ok()).collect();
+    let mut yaml_files: Vec<PathBuf> = glob(&yaml_pattern)?
+        .filter_map(|p| p.ok())
+        .filter(|p| {
+            // Exclude YAML files located inside 'skills' directories (e.g., local developer agent
+            // tool assets/metadata). Since these are not standard, published documentation YAMLs
+            // (like _toc.yaml), letting the doc-checker analyze them would trigger validation panics.
+            !p.components()
+                .any(|c| c == std::path::Component::Normal(std::ffi::OsStr::new("skills")))
+        })
+        .collect();
 
     if let Some(reference_root) = &opt.reference_docs_root {
         eprintln!("Also checking reference docs in {reference_root:?}.");
@@ -220,11 +225,7 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
             // and rop the hidden files that macs sometime make.
             .filter_map(|p| {
                 if let Some(name) = p.file_name()?.to_str() {
-                    if !name.starts_with("._") {
-                        Some(p)
-                    } else {
-                        None
-                    }
+                    if !name.starts_with("._") { Some(p) } else { None }
                 } else {
                     None
                 }
@@ -232,7 +233,11 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
         markdown_files.extend(reference_markdown);
 
         let yaml_pattern = format!("{}/**/*.yaml", reference_root.to_string_lossy());
-        yaml_files.extend(glob(&yaml_pattern)?.filter_map(|p| p.ok()));
+        yaml_files.extend(glob(&yaml_pattern)?.filter_map(|p| p.ok()).filter(|p| {
+            // Exclude YAML files located inside 'skills' directories under reference docs.
+            !p.components()
+                .any(|c| c == std::path::Component::Normal(std::ffi::OsStr::new("skills")))
+        }));
     }
     eprintln!(
         "Checking {} markdown files and {} yaml files",
@@ -384,47 +389,111 @@ mod test {
         env::set_current_dir(env::current_exe()?.parent().unwrap_or(&PathBuf::from(".")))?;
 
         let expected: Vec<DocCheckError> = vec![
-            DocCheckError::new_error(10, PathBuf::from("doc_checker_test_data/docs/README.md"),
-                "in-tree link to /docs/missing.md could not be found at \"doc_checker_test_data/docs/missing.md\""),
-            DocCheckError::new_error(12, PathBuf::from("doc_checker_test_data/docs/README.md"),
-                "Should not link to https://fuchsia.dev/fuchsia-src/path.md via https, use relative filepath"),
-            DocCheckError::new_error(21, PathBuf::from("doc_checker_test_data/docs/README.md"),
-                "Obsolete or invalid project garnet: https://fuchsia.googlesource.com/garnet/+/refs/heads/main/README.md"),
-            DocCheckError::new_error(23,PathBuf::from("doc_checker_test_data/docs/README.md"),
-                "Cannot normalize /docs/../../README.md, references parent beyond root."),
-            DocCheckError::new_error_helpful(30,PathBuf::from("doc_checker_test_data/docs/README.md"),
-                "in-tree link to /docs/no-extension could not be found at \"doc_checker_test_data/docs/no-extension\"", "\"no-extension.md\""),
-            DocCheckError::new_error(6, PathBuf::from("doc_checker_test_data/docs/_common/_included.md"),
-                "in-tree link to /docs/missing.md could not be found at \"doc_checker_test_data/docs/missing.md\""),
-            DocCheckError::new_error(9, PathBuf::from("doc_checker_test_data/docs/include_here.md"),
-                "Included markdown file \"doc_checker_test_data/docs/_common/missing.md\" not found."),
-            DocCheckError::new_error(13, PathBuf::from("doc_checker_test_data/docs/include_here.md"),
-               "Included markdown file \"/docs/_common/_included.md\" must be a relative path."),
-            DocCheckError::new_error(2,  PathBuf::from("doc_checker_test_data/docs/no_readme/details.md"),
-                "in-tree link to /docs/no_readme could not be found at \"doc_checker_test_data/docs/no_readme\" or  \"doc_checker_test_data/docs/no_readme/README.md\""),
-            DocCheckError::new_error(4,PathBuf::from("doc_checker_test_data/docs/path.md"),
-                "in-tree link to /docs/missing-image.png could not be found at \"doc_checker_test_data/docs/missing-image.png\""),
+            DocCheckError::new_error(
+                10,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "in-tree link to /docs/missing.md could not be found at \"doc_checker_test_data/docs/missing.md\"",
+            ),
+            DocCheckError::new_error(
+                12,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "Should not link to https://fuchsia.dev/fuchsia-src/path.md via https, use relative filepath",
+            ),
+            DocCheckError::new_error(
+                21,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "Obsolete or invalid project garnet: https://fuchsia.googlesource.com/garnet/+/refs/heads/main/README.md",
+            ),
+            DocCheckError::new_error(
+                23,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "Cannot normalize /docs/../../README.md, references parent beyond root.",
+            ),
+            DocCheckError::new_error_helpful(
+                30,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "in-tree link to /docs/no-extension could not be found at \"doc_checker_test_data/docs/no-extension\"",
+                "\"no-extension.md\"",
+            ),
+            DocCheckError::new_error(
+                6,
+                PathBuf::from("doc_checker_test_data/docs/_common/_included.md"),
+                "in-tree link to /docs/missing.md could not be found at \"doc_checker_test_data/docs/missing.md\"",
+            ),
+            DocCheckError::new_error(
+                9,
+                PathBuf::from("doc_checker_test_data/docs/include_here.md"),
+                "Included markdown file \"doc_checker_test_data/docs/_common/missing.md\" not found.",
+            ),
+            DocCheckError::new_error(
+                13,
+                PathBuf::from("doc_checker_test_data/docs/include_here.md"),
+                "Included markdown file \"/docs/_common/_included.md\" must be a relative path.",
+            ),
+            DocCheckError::new_error(
+                2,
+                PathBuf::from("doc_checker_test_data/docs/no_readme/details.md"),
+                "in-tree link to /docs/no_readme could not be found at \"doc_checker_test_data/docs/no_readme\" or  \"doc_checker_test_data/docs/no_readme/README.md\"",
+            ),
+            DocCheckError::new_error(
+                4,
+                PathBuf::from("doc_checker_test_data/docs/path.md"),
+                "in-tree link to /docs/missing-image.png could not be found at \"doc_checker_test_data/docs/missing-image.png\"",
+            ),
             // There are 3 instances of [i] on the same line.
-            DocCheckError::new_error_helpful(17, PathBuf::from("doc_checker_test_data/docs/path.md"),
-                 "Unknown reference link to [i][i]", "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734."),
-            DocCheckError::new_error_helpful(17, PathBuf::from("doc_checker_test_data/docs/path.md"),
-            "Unknown reference link to [i][i]", "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734."),
-            DocCheckError::new_error_helpful(17, PathBuf::from("doc_checker_test_data/docs/path.md"),
-            "Unknown reference link to [i][i]", "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734."),
-            DocCheckError::new_error(6, PathBuf::from("doc_checker_test_data/docs/second.md"),
-                "Invalid link http://{}.com/markdown : invalid uri character"),
-            DocCheckError::new_error(10, PathBuf::from("doc_checker_test_data/docs/second.md"),
-                "Cannot normalize /docs/../../missing.md, references parent beyond root."),
-            DocCheckError::new_error(1, PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
-                "in-tree link to /docs/unused could not be found at \"doc_checker_test_data/docs/unused\" or  \"doc_checker_test_data/docs/unused/README.md\""),
-            DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/_toc.yaml"),
-                "Cannot find file \"doc_checker_test_data/docs/missing/_toc.yaml\" included in \"doc_checker_test_data/docs/_toc.yaml\""),
-            DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/cycle/_toc.yaml"),
-                "YAML files cannot include themselves \"doc_checker_test_data/docs/cycle/_toc.yaml\""),
-            DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/unreachable.md"),
-                "File not referenced in any _toc.yaml files."),
-            DocCheckError::new_error(0, PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
-                "File not reachable via _toc include references."),
+            DocCheckError::new_error_helpful(
+                17,
+                PathBuf::from("doc_checker_test_data/docs/path.md"),
+                "Unknown reference link to [i][i]",
+                "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734.",
+            ),
+            DocCheckError::new_error_helpful(
+                17,
+                PathBuf::from("doc_checker_test_data/docs/path.md"),
+                "Unknown reference link to [i][i]",
+                "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734.",
+            ),
+            DocCheckError::new_error_helpful(
+                17,
+                PathBuf::from("doc_checker_test_data/docs/path.md"),
+                "Unknown reference link to [i][i]",
+                "making sure you added a matching [i]: YOUR_LINK_HERE below this reference. If this is in a triple tick code block, consider removing empty lines - see https://fxbug.dev/373449734.",
+            ),
+            DocCheckError::new_error(
+                6,
+                PathBuf::from("doc_checker_test_data/docs/second.md"),
+                "Invalid link http://{}.com/markdown : invalid uri character",
+            ),
+            DocCheckError::new_error(
+                10,
+                PathBuf::from("doc_checker_test_data/docs/second.md"),
+                "Cannot normalize /docs/../../missing.md, references parent beyond root.",
+            ),
+            DocCheckError::new_error(
+                1,
+                PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
+                "in-tree link to /docs/unused could not be found at \"doc_checker_test_data/docs/unused\" or  \"doc_checker_test_data/docs/unused/README.md\"",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/_toc.yaml"),
+                "Cannot find file \"doc_checker_test_data/docs/missing/_toc.yaml\" included in \"doc_checker_test_data/docs/_toc.yaml\"",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/cycle/_toc.yaml"),
+                "YAML files cannot include themselves \"doc_checker_test_data/docs/cycle/_toc.yaml\"",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/unreachable.md"),
+                "File not referenced in any _toc.yaml files.",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
+                "File not reachable via _toc include references.",
+            ),
         ];
 
         if let Some(actual_errors) = do_main(&opt).await? {
