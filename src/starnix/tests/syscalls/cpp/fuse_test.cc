@@ -1,7 +1,6 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #include <dirent.h>
 #include <fcntl.h>
 #include <lib/fit/defer.h>
@@ -150,6 +149,11 @@ class Node {
     perms_ = perms;
   }
 
+  void SetSize(uint64_t size) {
+    std::lock_guard guard(mtx_);
+    size_ = size;
+  }
+
   void SetEntryValidDuration(uint64_t secs) {
     std::lock_guard guard(mtx_);
     entry_valid_secs_ = secs;
@@ -169,6 +173,7 @@ class Node {
   void PopulateAttrLocked(fuse_attr& attr) __TA_REQUIRES(mtx_) {
     attr = {
         .ino = id_,
+        .size = size_,
         .mode = type_ | perms_,
     };
   }
@@ -195,10 +200,11 @@ class Node {
   uint32_t type_;
 
   std::mutex mtx_;
-  uint64_t id_ __TA_GUARDED(mtx_);
+  uint64_t id_ __TA_GUARDED(mtx_) = 0;
   uint64_t generation_ __TA_GUARDED(mtx_) = 1;
   uint64_t entry_valid_secs_ __TA_GUARDED(mtx_) = 0;
   uint32_t perms_ __TA_GUARDED(mtx_) = S_IRWXU | S_IRWXG | S_IRWXO;
+  uint64_t size_ __TA_GUARDED(mtx_) = 0;
 };
 
 class Directory : public Node {
@@ -504,7 +510,12 @@ class FuseServer {
         OK_OR_RETURN(HandleFlush(node, in_header, &flush_in));
         break;
       }
-      case FUSE_READ:
+      case FUSE_READ: {
+        struct fuse_read_in read_in = {};
+        memcpy(&read_in, in_payload, sizeof(read_in));
+        OK_OR_RETURN(HandleRead(node, in_header, &read_in));
+        break;
+      }
       case FUSE_WRITE:
         OK_OR_RETURN(WriteDataFreeResponse(in_header, -ENOTSUP));
         break;
@@ -715,6 +726,19 @@ class FuseServer {
     return WriteResponse(response);
   }
 
+  testing::AssertionResult WriteDataResponse(const struct fuse_in_header& in_header,
+                                             const void* data, size_t size) {
+    struct fuse_out_header out_header = {};
+    uint32_t payload_len = static_cast<uint32_t>(size);
+    uint32_t response_len = payload_len + static_cast<uint32_t>(sizeof(out_header));
+    out_header.len = response_len;
+    out_header.unique = in_header.unique;
+    std::vector<std::byte> response(response_len);
+    memcpy(response.data(), &out_header, sizeof(out_header));
+    memcpy(response.data() + sizeof(out_header), data, size);
+    return WriteResponse(response);
+  }
+
   testing::AssertionResult WriteResponse(std::vector<std::byte> response) {
     ssize_t actual = HANDLE_EINTR(write(fuse_fd_.get(), response.data(), response.size()));
     if (actual != static_cast<ssize_t>(response.size())) {
@@ -782,6 +806,12 @@ class FuseServer {
   uint32_t want_init_flags_;
 
   FileSystem fs_;
+
+  virtual testing::AssertionResult HandleRead(std::shared_ptr<Node> node,
+                                              const struct fuse_in_header& in_header,
+                                              const struct fuse_read_in* read_in) {
+    return WriteDataFreeResponse(in_header, -ENOTSUP);
+  }
 };
 
 class FuseServerTest : public ::testing::Test {
@@ -2101,4 +2131,46 @@ TEST_F(FuseServerTest, ReadDir) {
   char buf[4096];
   ASSERT_EQ(read(fd.get(), buf, 4096), -1);
   ASSERT_EQ(errno, EISDIR);
+}
+
+// Custom FUSE server mock that disables PASSTHROUGH and handles standard FUSE_READ.
+class NonPassthroughReadServer : public FuseServer {
+ public:
+  NonPassthroughReadServer() : FuseServer() {}
+
+  testing::AssertionResult HandleRead(std::shared_ptr<Node> node,
+                                      const struct fuse_in_header& in_header,
+                                      const struct fuse_read_in* read_in) override {
+    // Respond with mock data filled with 'L' (matching our bounds check test)
+    std::string response_data(read_in->size, 'L');
+    return WriteDataResponse(in_header, response_data.data(), response_data.size());
+  }
+};
+
+// Test Case: Verify standard non-passthrough FUSE read caps target sizes at the EOF boundary.
+TEST_F(FuseServerTest, StandardReadEOFCapping) {
+  auto server = std::make_shared<NonPassthroughReadServer>();
+  ASSERT_TRUE(Mount(server));
+
+  // 1. Create a virtual regular file inside the mock VFS using native FileSystem methods.
+  std::shared_ptr<File> file = server->fs().AddFileAtRoot("witness");
+  ASSERT_TRUE(file);
+  file->SetSize(8589934592ULL);  // Set file size to 8 GB (Matches CTS largeFile)
+  file->SetPermissions(0600);
+
+  std::string file_path = GetMountDir() + "/witness";
+  fbl::unique_fd fd(open(file_path.c_str(), O_RDONLY));
+  ASSERT_TRUE(fd.is_valid());
+
+  // 2. positional read (pread64) 128 bytes at: 8GB - 64 bytes
+  char buffer[128];
+  ssize_t read_bytes = pread64(fd.get(), buffer, 128, 8589934528ULL);  // 8GB - 64
+
+  // 3. Expected Capping: Starnix must detect EOF boundary, cap read request size to 64 bytes
+  //    BEFORE sending to userspace, and return only 64 bytes!
+  ASSERT_EQ(read_bytes, 64) << strerror(errno);
+
+  for (int i = 0; i < 64; i++) {
+    EXPECT_EQ(buffer[i], 'L');
+  }
 }

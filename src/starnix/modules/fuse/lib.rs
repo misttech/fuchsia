@@ -845,6 +845,17 @@ impl FileOps for FuseFileObject {
         if let Some(file_object) = self.passthrough_file.upgrade() {
             return file_object.ops().read(locked, &file_object, current_task, offset, data);
         }
+
+        // EOF bounds capping to prevent reading past file limits.
+        let file_size = file.node().info().size;
+        if offset >= file_size {
+            return Ok(0);
+        }
+        let target_size = std::cmp::min(data.available(), file_size - offset);
+        if target_size == 0 {
+            return Ok(0);
+        }
+
         let node = Self::get_fuse_node(file);
         let response = self.connection.lock().execute_operation(
             locked,
@@ -853,7 +864,7 @@ impl FileOps for FuseFileObject {
             FuseOperation::Read(uapi::fuse_read_in {
                 fh: self.open_out.fh,
                 offset: offset.try_into().map_err(|_| errno!(EINVAL))?,
-                size: data.available().try_into().unwrap_or(u32::MAX),
+                size: target_size.try_into().unwrap_or(u32::MAX),
                 read_flags: 0,
                 lock_owner: 0,
                 flags: 0,
