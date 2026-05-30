@@ -109,6 +109,14 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     )
     remote_action.inherit_main_arg_parser_flags(parser)
 
+    # When using a custom Rust target, the build rules have to plumb this
+    # explicitly.
+    parser.add_argument(
+        "--clang-target",
+        default=None,
+        help="Clang --target switch corresponding to Rust --target in use",
+    )
+
     # There could be multiple variants of the standard C++ library to choose
     # from.  Use the one that corresponds to the compiler options.
     parser.add_argument(
@@ -340,6 +348,10 @@ class RustRemoteAction(object):
     @property
     def clang_cxx_stdlibdir(self) -> Optional[Path]:
         return self._main_args.cxx_stdlibdir
+
+    @property
+    def clang_target(self) -> Optional[str]:
+        return self._main_args.clang_target
 
     @property
     def local_only(self) -> bool:
@@ -1043,8 +1055,9 @@ class RustRemoteAction(object):
             yield from self._remote_linker_executables()
 
             if self.target:
-                clang_lib_triple = fuchsia.rustc_target_to_clang_target(
-                    self.target
+                clang_lib_triple = (
+                    self.clang_target
+                    or fuchsia.rustc_target_to_clang_target(self.target)
                 )
                 yield from self._remote_libcxx(clang_lib_triple)
                 yield from self._remote_clang_runtime_libs(clang_lib_triple)

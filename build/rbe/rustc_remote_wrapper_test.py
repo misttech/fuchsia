@@ -257,6 +257,28 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
 
         self.assertEqual(r.clang_cxx_stdlibdir, cxx_libdir)
 
+    def test_clang_target(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-here"
+        compiler = Path("../tools/bin/rustc")
+        shlib = Path("tools/lib/librusteze.so")
+        shlib_abs = exec_root / shlib
+        shlib_rel = cl_utils.relpath(shlib_abs, start=working_dir)
+        source = Path("../foo/src/lib.rs")
+        rlib = Path("obj/foo.rlib")
+        deps = [Path("../foo/src/other.rs")]
+        depfile_contents = [str(d) + ":" for d in deps]
+        command = _strs([compiler, source, "-o", rlib])
+        clang_target = "aarch64-unknown-fuchsia"
+        r = rustc_remote_wrapper.RustRemoteAction(
+            [f"--clang-target={clang_target}", "--", *command],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            auto_reproxy=False,
+        )
+
+        self.assertEqual(r.clang_target, clang_target)
+
     def test_prepare_with_rmeta_file_in_scanned_deps(self) -> None:
         exec_root = Path("/home/project")
         working_dir = exec_root / "build-here"
