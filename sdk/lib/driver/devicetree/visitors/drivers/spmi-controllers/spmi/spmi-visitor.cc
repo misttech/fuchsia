@@ -224,7 +224,26 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
     target.name() = reg_names[0];
   }
 
-  if (node.GetNode()->children().empty()) {
+  // SPMI target nodes might have children that are not SPMI sub-targets (register blocks), but are
+  // client devices on a child bus (I2C client devices, if SPMI target is also I2C controller).
+  //
+  // To support this, check if child nodes match the standard SPMI sub-target register cell format
+  // (this expects #address-cells = 1 and #size-cells = 1). If they do not match (e.g. I2C uses
+  // #address-cells = 1 and #size-cells = 0), assume children are non-SPMI client devices.
+  //
+  // In this case, treat the SPMI target as a SPMI leaf node. This allows the target to be parsed by
+  // the SPMI visitor, while its children are processed by other visitors (e.g. I2C visitor).
+  bool has_sub_targets = !node.GetNode()->children().empty();
+  if (has_sub_targets) {
+    const zx::result<std::pair<uint32_t, uint32_t>> cells = GetAddressAndSizeCells(node);
+    if (cells.is_error() || *cells != std::pair<uint32_t, uint32_t>{1, 1}) {
+      // The children are not SPMI sub-targets (e.g. they might be I2C/SPI clients).
+      // Treat this target as having no sub-targets at the SPMI level.
+      has_sub_targets = false;
+    }
+  }
+
+  if (!has_sub_targets) {
     // This target has no sub-target children, so add a node spec for it.
     fuchsia_driver_framework::ParentSpec2 target_spec{{
         .bind_rules =
@@ -249,13 +268,6 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
 
     node.GetNode()->AddNodeSpec(target_spec);
     return zx::ok(target);
-  }
-
-  const zx::result<std::pair<uint32_t, uint32_t>> cells = GetAddressAndSizeCells(node);
-  if (cells.is_error() || *cells != std::pair<uint32_t, uint32_t>{1, 1}) {
-    fdf::error("Invalid #address-cells or #size-cells for SPMI target \"{}\"", node.name());
-
-    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   std::vector<fuchsia_hardware_spmi::SubTargetInfo> sub_targets_info;

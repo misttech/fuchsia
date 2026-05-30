@@ -419,4 +419,74 @@ TEST(SpmiVisitorTest, ReferenceSubTargetHasCompatibleProperty) {
   EXPECT_FALSE(spmi_tester->manager()->Walk(visitors).is_ok());
 }
 
+TEST(SpmiVisitorTest, TargetWithNonSpmiChild) {
+  fdf_devicetree::VisitorRegistry visitors;
+  ASSERT_TRUE(
+      visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>()).is_ok());
+  ASSERT_TRUE(visitors.RegisterVisitor(std::make_unique<fdf_devicetree::MmioVisitor>()).is_ok());
+
+  SpmiVisitorTester* const spmi_tester =
+      new SpmiVisitorTester("/pkg/test-data/spmi-target-with-non-spmi-child.dtb");
+  ASSERT_TRUE(visitors.RegisterVisitor(std::unique_ptr<SpmiVisitorTester>{spmi_tester}).is_ok());
+
+  ASSERT_TRUE(spmi_tester->manager()->Walk(visitors).is_ok());
+  ASSERT_TRUE(spmi_tester->DoPublish().is_ok());
+
+  // Verify controller metadata is parsed
+  auto pbus_node_list = spmi_tester->GetPbusNodes("spmi-abcd0000");
+  ASSERT_EQ(1u, pbus_node_list.size());
+  const auto& pbus_node = pbus_node_list[0];
+
+  ASSERT_TRUE(pbus_node.metadata());
+  ASSERT_EQ(pbus_node.metadata()->size(), 1u);
+
+  const std::vector<uint8_t>& metadata = *(*pbus_node.metadata())[0].data();
+  const auto controller =
+      fidl::Unpersist<fuchsia_hardware_spmi::ControllerInfo>({metadata.data(), metadata.size()});
+  ASSERT_TRUE(controller.is_ok());
+
+  ASSERT_TRUE(controller->id());
+  const uint32_t controller_id = *controller->id();
+
+  // Verify the target is parsed, and has NO sub-targets (it is a leaf target in SPMI sense)
+  ASSERT_TRUE(controller->targets());
+  ASSERT_EQ(controller->targets()->size(), 1u);
+
+  const std::optional<fuchsia_hardware_spmi::TargetInfo> target = FindTargetById(2, *controller);
+  ASSERT_TRUE(target);
+  EXPECT_FALSE(target->sub_targets());
+
+  // Verify composite node spec for the target itself is added (with TARGETSERVICE)
+  const auto target_node_list = spmi_tester->GetCompositeNodeSpecs("i2c-controller-2");
+  ASSERT_EQ(1u, target_node_list.size());
+  const auto& target_node = target_node_list[0];
+
+  ASSERT_TRUE(target_node.parents2());
+  ASSERT_EQ(target_node.parents2()->size(), 2u);
+
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                                  bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 2u),
+      },
+      (*target_node.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                             bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 2u),
+      },
+      (*target_node.parents2())[1].properties(), false));
+
+  // eeprom@50 has a compatible string so the default BindPropertyVisitor creates a spec for it.
+  // Verify that the SPMI visitor did not add any SPMI parents to it.
+  const auto eeprom_list = spmi_tester->GetCompositeNodeSpecs("eeprom-50");
+  ASSERT_EQ(1u, eeprom_list.size());
+  const auto& eeprom = eeprom_list[0];
+  ASSERT_TRUE(eeprom.parents2());
+  ASSERT_EQ(1u, eeprom.parents2()->size());
+}
+
 }  // namespace spmi_dt
