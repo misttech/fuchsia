@@ -43,14 +43,14 @@ alias(
 )
 
 alias(
-    name = "aes-gcm-0.10.2",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.2:aes_gcm",
+    name = "aes-gcm-0.10.3",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.3:aes_gcm",
     tags = ["manual"],
 )
 
 alias(
     name = "aes-gcm",
-    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.2:aes_gcm",
+    actual = "//third_party/rust_crates/vendor/aes-gcm-0.10.3:aes_gcm",
     tags = ["manual"],
 )
 

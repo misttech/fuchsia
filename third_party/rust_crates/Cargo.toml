@@ -27,7 +27,7 @@ edition = "2024"
 [dependencies]
 # keep-sorted start
 aes = "0.8.4"
-aes-gcm = "0.10.1"
+aes-gcm = "0.10.3"
 aes-gcm-siv = { version = "0.11.1", features = ["std"] }
 ahash = "0.8.12"
 ansi_term = "0.12.0"

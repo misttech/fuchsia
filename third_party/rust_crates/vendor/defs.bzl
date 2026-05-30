@@ -294,7 +294,7 @@ _NORMAL_DEPENDENCIES = {
     "third_party/rust_crates": {
         _COMMON_CONDITION: {
             "aes": Label("//third_party/rust_crates/vendor/aes-0.8.4:aes"),
-            "aes-gcm": Label("//third_party/rust_crates/vendor/aes-gcm-0.10.2:aes_gcm"),
+            "aes-gcm": Label("//third_party/rust_crates/vendor/aes-gcm-0.10.3:aes_gcm"),
             "aes-gcm-siv": Label("//third_party/rust_crates/vendor/aes-gcm-siv-0.11.1:aes_gcm_siv"),
             "ahash": Label("//third_party/rust_crates/vendor/ahash-0.8.12:ahash"),
             "ansi_term": Label("//third_party/rust_crates/vendor/ansi_term-0.12.1:ansi_term"),
