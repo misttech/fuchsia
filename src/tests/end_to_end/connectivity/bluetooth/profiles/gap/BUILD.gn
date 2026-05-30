@@ -25,7 +25,10 @@ if (is_host) {
         }
       }
     }
-    environments = lacewing_bluetooth_envs
+    environments = [
+      bt_lacewing_sherlock_env,
+      bt_lacewing_vim3_env,
+    ]
   }
 }
 
