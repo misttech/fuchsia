@@ -7,9 +7,9 @@
 
 use crate::md_element::{CowStr, Element, LinkType};
 use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
-use fuchsia_hyper::{new_https_client_from_tcp_options, HttpsClient, TcpOptions};
+use fuchsia_hyper::{HttpsClient, TcpOptions, new_https_client_from_tcp_options};
 use http::uri::Uri;
 use http::{Request, StatusCode};
 use hyper::Body;
@@ -75,7 +75,7 @@ const VALID_PROJECTS: [&str; 22] = [
 const PUBLISHED_LINKS_ALLOWED: [&str; 3] = ["", "reference", "schema"];
 
 /// A link (URL, or file path) and it location in the markdown.
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub struct LinkReference {
     pub link: String,
     pub location: DocLine,
@@ -127,7 +127,10 @@ impl LinkChecker {
                     let encoded_link = format!("{}?{}", first_part, query);
                     link_to_check = encoded_link;
                 } else {
-                    bail!("Cannot parse {}. Appears to have query parameters, but no ? in the string?", link);
+                    bail!(
+                        "Cannot parse {}. Appears to have query parameters, but no ? in the string?",
+                        link
+                    );
                 }
             } else {
                 link_to_check = url.to_string();
@@ -359,11 +362,7 @@ impl DocCheck for LinkChecker {
             }
         }
 
-        if errors.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(errors))
-        }
+        if errors.is_empty() { Ok(None) } else { Ok(Some(errors)) }
     }
 
     /// At the end, check that the out of tree links work, if requested.
@@ -374,11 +373,7 @@ impl DocCheck for LinkChecker {
             errors.extend(link_errors);
         }
 
-        if !errors.is_empty() {
-            Ok(Some(errors))
-        } else {
-            Ok(None)
-        }
+        if !errors.is_empty() { Ok(Some(errors)) } else { Ok(None) }
     }
 }
 
@@ -421,7 +416,7 @@ pub(crate) fn do_in_tree_check(
                     doc_line.line_num,
                     doc_line.file_name.clone(),
                     &format!("Error canonicalizing path: {:?}: {}", filepath, e),
-                ))
+                ));
             }
         };
         if !cannonical_path.starts_with(root_dir) {
@@ -790,22 +785,25 @@ pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocC
     }
 
     let client: HttpsClient = new_https_client_from_tcp_options(tcp_options());
+    let mut domain_futures = vec![];
+
     for (authority, links) in domain_sorted_links {
-        let mut pending_requests = vec![];
-        eprintln!("checking {authority} {link_count} links", link_count = links.len());
-        for link in links {
-            let p = check_url_link(client.clone(), link);
-            pending_requests.push(p);
-        }
-        let results = futures::future::join_all(pending_requests);
-        (results.await).into_iter().flatten().for_each(|e| errors.push(e));
+        let client = client.clone();
+        domain_futures.push(async move {
+            let mut pending_requests = vec![];
+            eprintln!("checking {authority} {link_count} links", link_count = links.len());
+            for link in links {
+                let p = check_url_link(client.clone(), link);
+                pending_requests.push(p);
+            }
+            futures::future::join_all(pending_requests).await
+        });
     }
 
-    if errors.is_empty() {
-        None
-    } else {
-        Some(errors)
-    }
+    let results = futures::future::join_all(domain_futures).await;
+    errors.extend(results.into_iter().flatten().flatten());
+
+    if errors.is_empty() { None } else { Some(errors) }
 }
 
 /// Check that the URL is valid (200 or 301 or 302).
@@ -817,7 +815,7 @@ async fn check_url_link(client: HttpsClient, link: &LinkReference) -> Option<Doc
                 link.location.line_num,
                 link.location.file_name.clone(),
                 &format!("Error {} requesting {}", e, link.link),
-            ))
+            ));
         }
     };
 
@@ -964,22 +962,34 @@ mod tests {
         let docs_folder = PathBuf::from("docs");
 
         let test_cases = [
-    ("/docs/README.md", Some(PathBuf::from("/docs/README.md"))),
-    ("/docs/somewhere/file.md#header1", Some(PathBuf::from("/docs/somewhere/file.md"))),
-    ("https://google.com", None),
-    ("mailto:someone@email.com", None),
-    ("/src/to/a/program.cc", Some(PathBuf::from("/src/to/a/program.cc"))),
-    ("https://fuchsia.googlesource.com/fuchsia/+/HEAD/sdk/lib/fdio", None),
-    ("https://fuchsia.googlesource.com/fuchsia/docs/README.md", Some(PathBuf::from("/fuchsia/docs/README.md"))),
-    ("https://fuchsia.googlesource.com/fuchsia/+/7461d8882167e7a9d1b494e3b1734d2c063830fc/build/package.gni#604", None),
-    ("https://fuchsia.googlesource.com/fuchsia/+show/HEAD/docs/concepts/kernel/_toc.yaml", Some(PathBuf::from("/docs/concepts/kernel/_toc.yaml"))),
-    ("https://fuchsia.googlesource.com/fuchsia", None),
-    ("https://fuchsia.googlesource.com/fuchsia/", None),
-    // Since this is not to the /docs dir, it should not be an in-tree link.
-    ("https://fuchsia.googlesource.com/fuchsia/+log/d381548c6aef76926e6203a2ad2265dd510d1e9b", None),
-    // Exclude releases
-    ("https://fuchsia.googlesource.com/fuchsia/+/refs/heads/releases/f16", None),
-  ];
+            ("/docs/README.md", Some(PathBuf::from("/docs/README.md"))),
+            ("/docs/somewhere/file.md#header1", Some(PathBuf::from("/docs/somewhere/file.md"))),
+            ("https://google.com", None),
+            ("mailto:someone@email.com", None),
+            ("/src/to/a/program.cc", Some(PathBuf::from("/src/to/a/program.cc"))),
+            ("https://fuchsia.googlesource.com/fuchsia/+/HEAD/sdk/lib/fdio", None),
+            (
+                "https://fuchsia.googlesource.com/fuchsia/docs/README.md",
+                Some(PathBuf::from("/fuchsia/docs/README.md")),
+            ),
+            (
+                "https://fuchsia.googlesource.com/fuchsia/+/7461d8882167e7a9d1b494e3b1734d2c063830fc/build/package.gni#604",
+                None,
+            ),
+            (
+                "https://fuchsia.googlesource.com/fuchsia/+show/HEAD/docs/concepts/kernel/_toc.yaml",
+                Some(PathBuf::from("/docs/concepts/kernel/_toc.yaml")),
+            ),
+            ("https://fuchsia.googlesource.com/fuchsia", None),
+            ("https://fuchsia.googlesource.com/fuchsia/", None),
+            // Since this is not to the /docs dir, it should not be an in-tree link.
+            (
+                "https://fuchsia.googlesource.com/fuchsia/+log/d381548c6aef76926e6203a2ad2265dd510d1e9b",
+                None,
+            ),
+            // Exclude releases
+            ("https://fuchsia.googlesource.com/fuchsia/+/refs/heads/releases/f16", None),
+        ];
         for (link_to_check, expected) in test_cases {
             let result = is_intree_link(project, root_dir, &docs_folder, link_to_check)?;
             assert_eq!(result, expected);
@@ -1126,10 +1136,17 @@ mod tests {
         let docs_folder = PathBuf::from("docs");
 
         let test_data = [
-                   ("/docs/exists/something.md", "/docs/exists/something.md", None),
-               ("/docs/no_readme", "/docs/no_readme", Some(DocCheckError::new_error(
-                 1, PathBuf::from("some/file.md"),
-                  "in-tree link to /docs/no_readme could not be found at \"/path/to/fuchsia/docs/no_readme\" or  \"/path/to/fuchsia/docs/no_readme/README.md\"")))];
+            ("/docs/exists/something.md", "/docs/exists/something.md", None),
+            (
+                "/docs/no_readme",
+                "/docs/no_readme",
+                Some(DocCheckError::new_error(
+                    1,
+                    PathBuf::from("some/file.md"),
+                    "in-tree link to /docs/no_readme could not be found at \"/path/to/fuchsia/docs/no_readme\" or  \"/path/to/fuchsia/docs/no_readme/README.md\"",
+                )),
+            ),
+        ];
 
         for (link_to_check, in_tree_path, expected_error) in test_data {
             let result = do_in_tree_check(
@@ -1253,10 +1270,9 @@ mod tests {
         let mut checks = register_markdown_checks(&opt)?;
         assert_eq!(checks.len(), 1);
 
-        let test_data: Vec<(PathBuf, &str, Option<Vec<DocCheckError>>)> = vec![
-            (
-                PathBuf::from("/docs/README.md"),
-                "This is a link to fuchsia docs as external url [something](https://fuchsia.dev/fuchsia-src/README.md)",
+        let test_data: Vec<(PathBuf, &str, Option<Vec<DocCheckError>>)> = vec![(
+            PathBuf::from("/docs/README.md"),
+            "This is a link to fuchsia docs as external url [something](https://fuchsia.dev/fuchsia-src/README.md)",
             None,
         )];
         for (file, input, expected_errors) in test_data {

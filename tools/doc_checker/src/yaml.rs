@@ -214,6 +214,7 @@ pub(crate) struct YamlChecker {
     check_external_links: bool,
     allow_fuchsia_src_links: bool,
     reference_docs_root: Option<PathBuf>,
+    external_links: Vec<LinkReference>,
 }
 
 #[async_trait]
@@ -243,6 +244,7 @@ impl DocYamlCheck for YamlChecker {
                     filename,
                     yaml_value,
                     self.allow_fuchsia_src_links,
+                    &mut self.external_links,
                 ),
                 Some("_problems.yaml") => check_problems(filename, yaml_value),
                 Some("_redirects.yaml") => check_redirects(
@@ -261,13 +263,17 @@ impl DocYamlCheck for YamlChecker {
                     filename,
                     yaml_value,
                     self.allow_fuchsia_src_links,
+                    &mut self.external_links,
                 ),
                 Some("_supported_cpu_architecture.yaml") => {
                     check_supported_cpu_architecture(filename, yaml_value)
                 }
-                Some("_supported_sys_config.yaml") => {
-                    check_supported_sys_config(&self.root_dir, filename, yaml_value)
-                }
+                Some("_supported_sys_config.yaml") => check_supported_sys_config(
+                    &self.root_dir,
+                    filename,
+                    yaml_value,
+                    &mut self.external_links,
+                ),
                 Some("_toc.yaml") => toc_checker::check_toc(
                     &self.root_dir,
                     &self.docs_folder,
@@ -276,7 +282,9 @@ impl DocYamlCheck for YamlChecker {
                     yaml_value,
                     self.allow_fuchsia_src_links,
                 ),
-                Some("_tools.yaml") => check_tools(&self.root_dir, filename, yaml_value),
+                Some("_tools.yaml") => {
+                    check_tools(&self.root_dir, filename, yaml_value, &mut self.external_links)
+                }
                 Some(name) => todo!("Need to handle {} ({:?})", name, filename),
                 _ => panic!("No str avail for {:?}", filename),
             };
@@ -295,7 +303,7 @@ impl DocYamlCheck for YamlChecker {
         let mut visited: HashMap<PathBuf, IncludedYaml> = HashMap::new();
         let mut markdown_file_set: HashSet<&PathBuf> = HashSet::from_iter(_markdown_files.iter());
         let mut errors = vec![];
-        let mut external_links = vec![];
+        let mut external_links = self.external_links.clone();
 
         // Some special paths that are not in the //docs dir that need to be added
         let code_of_conduct_md = self.root_dir.join("CODE_OF_CONDUCT.md");
@@ -826,6 +834,16 @@ fn check_glossary(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckErr
     errors
 }
 
+fn normalize_external_link(p: &str) -> String {
+    if p.starts_with("/reference") {
+        format!("https://{}{}", PUBLISHED_DOCS_HOST, p)
+    } else if p.starts_with("//") {
+        format!("https:{}", p)
+    } else {
+        p.to_string()
+    }
+}
+
 fn check_metadata(
     root_dir: &Path,
     docs_folder: &Path,
@@ -833,6 +851,7 @@ fn check_metadata(
     filename: &Path,
     yaml_value: &Value,
     allow_fuchsia_src_links: bool,
+    external_links: &mut Vec<LinkReference>,
 ) -> Option<Vec<DocCheckError>> {
     let result = serde_yaml::from_value::<Metadata>(yaml_value.clone());
     match result {
@@ -911,7 +930,10 @@ fn check_metadata(
                                 }
                             }
                             Ok(None) if is_external_path(&guide.url) => {
-                                // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
+                                external_links.push(LinkReference {
+                                    link: normalize_external_link(&guide.url),
+                                    location: doc_line.clone(),
+                                });
                             }
                             Ok(None) => {
                                 errors.push(DocCheckError::new_error(
@@ -1143,6 +1165,7 @@ fn check_roadmap(
     filename: &Path,
     yaml_value: &Value,
     allow_fuchsia_src_links: bool,
+    external_links: &mut Vec<LinkReference>,
 ) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<RoadmapEntry>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
@@ -1182,8 +1205,18 @@ fn check_roadmap(
                                     errs.push(err);
                                 }
                             }
+                            Ok(None) if is_external_path(link) => {
+                                external_links.push(LinkReference {
+                                    link: normalize_external_link(link),
+                                    location: doc_line.clone(),
+                                });
+                            }
                             Ok(None) => {
-                                // TODO(https://fxbug.dev/500468244): Support checking external links in roadmap files.
+                                errs.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!("invalid path {}", link),
+                                ));
                             }
                             Err(e) => errs.push(DocCheckError::new_error(
                                 1,
@@ -1258,6 +1291,7 @@ fn check_supported_sys_config(
     root_dir: &Path,
     filename: &Path,
     yaml_value: &Value,
+    external_links: &mut Vec<LinkReference>,
 ) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<SysConfigEntry>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
@@ -1297,9 +1331,13 @@ fn check_supported_sys_config(
                 ));
             }
             // Check that manufacturer_link is a valid URL if present.
-            // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
             if let Some(link) = &config.manufacturer_link {
-                if !link.starts_with("http://") && !link.starts_with("https://") {
+                if link.starts_with("http://") || link.starts_with("https://") {
+                    external_links.push(LinkReference {
+                        link: normalize_external_link(link),
+                        location: DocLine { line_num: 1, file_name: filename.to_path_buf() },
+                    });
+                } else {
                     errs.push(DocCheckError::new_error(
                         1,
                         filename.to_path_buf(),
@@ -1323,7 +1361,12 @@ fn check_supported_sys_config(
     if errs.is_empty() { None } else { Some(errs) }
 }
 
-fn check_tools(root_dir: &Path, filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
+fn check_tools(
+    root_dir: &Path,
+    filename: &Path,
+    yaml_value: &Value,
+    external_links: &mut Vec<LinkReference>,
+) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<ToolsEntry>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
     if let Some(entries) = items {
@@ -1343,7 +1386,10 @@ fn check_tools(root_dir: &Path, filename: &Path, yaml_value: &Value) -> Option<V
                             ));
                         }
                     } else if link_str.starts_with("http://") || link_str.starts_with("https://") {
-                        // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
+                        external_links.push(LinkReference {
+                            link: normalize_external_link(link_str),
+                            location: DocLine { line_num: 1, file_name: filename.to_path_buf() },
+                        });
                     } else {
                         errs.push(DocCheckError::new_error(
                             1,
@@ -1425,6 +1471,7 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         check_external_links: !opt.local_links_only,
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
         reference_docs_root: opt.reference_docs_root.clone(),
+        external_links: vec![],
     };
 
     Ok(vec![Box::new(checker)])
@@ -1617,7 +1664,7 @@ mod test {
   area: ''
   category: []
   bug: ['https://invalid.com/123']
-          "#,
+           "#,
         )?;
 
         let result = check_roadmap(
@@ -1627,6 +1674,7 @@ mod test {
             &PathBuf::from(filename),
             &yaml_value,
             false,
+            &mut vec![],
         );
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -1641,6 +1689,27 @@ mod test {
             errors[3].message,
             "invalid bug link: https://invalid.com/123. Must start with 'https://fxbug.dev/'"
         );
+
+        let external_link_yaml: Value = serde_yaml::from_str(
+            r#"
+- workstream: 'Workstream <a href="https://external.com/guide">Link</a>'
+  area: 'Area'
+  category: []
+            "#,
+        )?;
+        let mut external_links = vec![];
+        let result = check_roadmap(
+            &PathBuf::from("."),
+            &PathBuf::from("docs"),
+            "fuchsia",
+            &PathBuf::from(filename),
+            &external_link_yaml,
+            false,
+            &mut external_links,
+        );
+        assert!(result.is_none());
+        assert_eq!(external_links.len(), 1);
+        assert_eq!(external_links[0].link, "https://external.com/guide");
 
         Ok(())
     }
@@ -1759,7 +1828,7 @@ redirects:
           "#,
         )?;
 
-        let result = check_supported_sys_config(&root_dir, &filename, &yaml_value);
+        let result = check_supported_sys_config(&root_dir, &filename, &yaml_value, &mut vec![]);
 
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -1773,6 +1842,26 @@ redirects:
             errors[2].message,
             "invalid architecture: bad_arch. Must be one of the supported architectures: [\"ARM\", \"x64\"]"
         );
+
+        let external_link_yaml: Value = serde_yaml::from_str(
+            r#"
+- name: 'Device'
+  description: 'A device'
+  architecture: 'x64'
+  board_driver_location: '/src/devices/board/drivers/vim3.md'
+  manufacturer_link: 'https://external.com/device'
+            "#,
+        )?;
+        let mut external_links = vec![];
+        let result = check_supported_sys_config(
+            &root_dir,
+            &filename,
+            &external_link_yaml,
+            &mut external_links,
+        );
+        assert!(result.is_none());
+        assert_eq!(external_links.len(), 1);
+        assert_eq!(external_links[0].link, "https://external.com/device");
 
         Ok(())
     }
@@ -1814,7 +1903,7 @@ redirects:
         )?;
 
         let root_dir = PathBuf::from(".");
-        let result = check_tools(&root_dir, &filename, &yaml_value);
+        let result = check_tools(&root_dir, &filename, &yaml_value, &mut vec![]);
 
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -1827,6 +1916,21 @@ redirects:
             errors[1].message,
             "link Bad: bad_prefix in tool Test Tool must start with '/docs/', 'http://', or 'https://'"
         );
+
+        let external_link_yaml: Value = serde_yaml::from_str(
+            r#"
+- name: Test Tool
+  team: Diagnostics
+  links:
+    External: https://external.com/tool
+  description: 'Testing'
+            "#,
+        )?;
+        let mut external_links = vec![];
+        let result = check_tools(&root_dir, &filename, &external_link_yaml, &mut external_links);
+        assert!(result.is_none());
+        assert_eq!(external_links.len(), 1);
+        assert_eq!(external_links[0].link, "https://external.com/tool");
 
         Ok(())
     }
@@ -1924,6 +2028,7 @@ guides:
             &filename,
             &valid_yaml,
             allow_fuchsia_src_links,
+            &mut vec![],
         );
         assert!(result.is_none());
 
@@ -1961,6 +2066,7 @@ guides:
             &filename,
             &invalid_yaml,
             allow_fuchsia_src_links,
+            &mut vec![],
         );
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -2000,6 +2106,7 @@ guides:
             &filename,
             &invalid_fields_yaml,
             allow_fuchsia_src_links,
+            &mut vec![],
         );
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -2039,6 +2146,7 @@ guides:
             &filename,
             &invalid_path_yaml,
             allow_fuchsia_src_links,
+            &mut vec![],
         );
         assert!(result.is_some());
         let errors = result.unwrap();
@@ -2073,6 +2181,7 @@ guides:
           "#,
         )?;
 
+        let mut external_links = vec![];
         let result = check_metadata(
             &root_dir,
             &docs_folder,
@@ -2080,8 +2189,11 @@ guides:
             &filename,
             &external_link_yaml,
             allow_fuchsia_src_links,
+            &mut external_links,
         );
         assert!(result.is_none());
+        assert_eq!(external_links.len(), 1);
+        assert_eq!(external_links[0].link, "https://external.com/guide");
 
         Ok(())
     }
