@@ -39,6 +39,11 @@ impl DriverError {
             }
         }
     }
+
+    /// Returns `DriverError::Status` of the given raw status.
+    pub fn from_raw_status(raw: i32) -> Self {
+        DriverError::Status(Status::from_raw(raw))
+    }
 }
 
 impl From<Status> for DriverError {
@@ -98,45 +103,6 @@ impl From<fidl_next::Error<Status>> for DriverError {
                     DriverError::Status(Status::INTERNAL)
                 }
             },
-        }
-    }
-}
-
-/// Extension trait for `fidl_next::FlexibleResult` to convert it into a `Result` with `DriverError`.
-pub trait FlexibleResultExt<T> {
-    /// Convert the flexible result into a `Result` with `DriverError`.
-    fn into_driver_result(self) -> Result<T, DriverError>;
-}
-
-impl<T> FlexibleResultExt<T> for fidl_next::FlexibleResult<T, i32> {
-    fn into_driver_result(self) -> Result<T, DriverError> {
-        match self {
-            fidl_next::FlexibleResult::Ok(t) => Ok(t),
-            fidl_next::FlexibleResult::Err(raw_status) => {
-                Err(DriverError::Status(Status::from_raw(raw_status)))
-            }
-            fidl_next::FlexibleResult::FrameworkErr(err) => {
-                log::error!("FIDL framework error: {:?}", err);
-                Err(DriverError::Status(Status::INTERNAL))
-            }
-        }
-    }
-}
-
-/// Extension trait for `fidl_next::Flexible` to convert it into a `Result` with `DriverError`.
-pub trait FlexibleExt<T> {
-    /// Convert the flexible response into a `Result` with `DriverError`.
-    fn into_driver_result(self) -> Result<T, DriverError>;
-}
-
-impl<T> FlexibleExt<T> for fidl_next::Flexible<T> {
-    fn into_driver_result(self) -> Result<T, DriverError> {
-        match self {
-            fidl_next::Flexible::Ok(t) => Ok(t),
-            fidl_next::Flexible::FrameworkErr(err) => {
-                log::error!("FIDL framework error: {:?}", err);
-                Err(DriverError::Status(Status::INTERNAL))
-            }
         }
     }
 }

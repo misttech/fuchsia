@@ -8,8 +8,7 @@ use core::ops::Deref;
 
 use fidl_next_codec::{Encode, Wire};
 use fidl_next_protocol::{
-    self as protocol, Body, Flexibility, LocalServerHandler, ProtocolError, ServerHandler,
-    Transport,
+    self as protocol, LocalServerHandler, Message, ProtocolError, ServerHandler, Transport,
 };
 
 use crate::{
@@ -72,17 +71,13 @@ pub trait DispatchLocalServerMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 
     /// Handles a received server two-way message with the given handler.
     fn on_two_way(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 }
@@ -92,17 +87,13 @@ pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received server two-way message with the given handler.
     fn on_two_way(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -129,21 +120,17 @@ where
 {
     fn on_one_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
-        P::on_one_way(&mut self.handler, ordinal, flexibility, body)
+        P::on_one_way(&mut self.handler, message)
     }
 
     fn on_two_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: fidl_next_protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
-        P::on_two_way(&mut self.handler, ordinal, flexibility, body, responder)
+        P::on_two_way(&mut self.handler, message, responder)
     }
 }
 
@@ -155,21 +142,17 @@ where
 {
     fn on_one_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_one_way(&mut self.handler, ordinal, flexibility, body)
+        P::on_one_way(&mut self.handler, message)
     }
 
     fn on_two_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_two_way(&mut self.handler, ordinal, flexibility, body, responder)
+        P::on_two_way(&mut self.handler, message, responder)
     }
 }
 

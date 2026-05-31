@@ -72,12 +72,7 @@ pub mod {{ module_name }} {
             impl ::fidl_next::TwoWayMethod for {{ method_name }} {
                 type Response =
                     {% if method.has_error %}
-                        {% if !method.is_strict %}
-                            ::fidl_next::wire::FlexibleResult
-                        {% else %}
-                            ::fidl_next::wire::Result
-                        {% endif %}
-                        <
+                        ::fidl_next::wire::Result<
                             'static,
                         {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
                             {{ self.static_wire_type(success) }},
@@ -126,7 +121,7 @@ pub mod {{ module_name }} {
 
                         fn respond(response: ___R) -> Self::Output {
                             {% if !method.is_strict %}
-                                ::fidl_next::Flexible::Ok(
+                                ::fidl_next::Flexible(
                                     {{ self.generic_id(response_struct.name) }} {
                                         {{ member.name.snake() }}: response,
                                     }
@@ -150,7 +145,7 @@ pub mod {{ module_name }} {
 
                         fn respond(response: ___R) -> Self::Output {
                             {% if !method.is_strict %}
-                                ::fidl_next::Flexible::Ok(response)
+                                ::fidl_next::Flexible(response)
                             {% else %}
                                 response
                             {% endif %}
@@ -163,47 +158,29 @@ pub mod {{ module_name }} {
 
                     impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
                         type Output =
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult
-                            {% else %}
-                                ::core::result::Result
-                            {% endif %}
-                            <
+                            ::core::result::Result<
                                 {{ self.generic_id(response_struct.name) }}<___R>,
                                 ::fidl_next::util::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult::Ok
-                            {% else %}
-                                ::core::result::Result::Ok
-                            {% endif %}
-                            ({{ self.generic_id(response_struct.name) }} {
-                                {{ member.name.snake() }}: response,
-                            })
+                            ::core::result::Result::Ok(
+                                {{ self.generic_id(response_struct.name) }} {
+                                    {{ member.name.snake() }}: response,
+                                }
+                            )
                         }
                     }
                 {% else %}
                     impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
                         type Output =
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult
-                            {% else %}
-                                ::core::result::Result
-                            {% endif %}
-                            <
+                            ::core::result::Result<
                                 ___R,
                                 ::fidl_next::util::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult::Ok
-                            {% else %}
-                                ::core::result::Result::Ok
-                            {% endif %}
-                            (response)
+                            ::core::result::Result::Ok(response)
                         }
                     }
                 {% endif %}
@@ -213,47 +190,29 @@ pub mod {{ module_name }} {
 
                     impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
                         type Output =
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult
-                            {% else %}
-                                ::core::result::Result
-                            {% endif %}
-                            <
+                            ::core::result::Result<
                                 ::fidl_next::util::Never,
                                 {{ self.generic_id(response_struct.name) }}<___R>,
                             >;
 
                         fn respond_err(response: ___R) -> Self::Output {
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult::Err
-                            {% else %}
-                                ::core::result::Result::Err
-                            {% endif %}
-                            ({{ self.generic_id(response_struct.name) }} {
-                                {{ member.name.snake() }}: response,
-                            })
+                            ::core::result::Result::Err(
+                                {{ self.generic_id(response_struct.name) }} {
+                                    {{ member.name.snake() }}: response,
+                                }
+                            )
                         }
                     }
                 {% else %}
                     impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
                         type Output =
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult
-                            {% else %}
-                                ::core::result::Result
-                            {% endif %}
-                            <
+                            ::core::result::Result<
                                 ::fidl_next::util::Never,
                                 ___R,
                             >;
 
                         fn respond_err(response: ___R) -> Self::Output {
-                            {% if !method.is_strict %}
-                                ::fidl_next::FlexibleResult::Err
-                            {% else %}
-                                ::core::result::Result::Err
-                            {% endif %}
-                            (response)
+                            ::core::result::Result::Err(response)
                         }
                     }
                 {% endif %}
@@ -564,17 +523,15 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::Event %}
                     {{ method.ordinal }} => {
                         {% if method.maybe_response_payload.is_some() %}
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -596,7 +553,7 @@ where
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 {% else %}
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -674,17 +631,15 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::OneWay %}
                     {{ method.ordinal }} => {
                         {% if let Some(request) = method.maybe_request_payload %}
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -706,7 +661,7 @@ where
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 {% else %}
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -718,19 +673,17 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::TwoWay %}
                     {{ method.ordinal }} => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
                         {% if let Some(request) = method.maybe_request_payload %}
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -756,13 +709,12 @@ where
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     {% when ProtocolOpenness::Open %}
                         handler.on_unknown_interaction(ordinal).await;
-                        if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                        if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                             Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                         } else {
-                            responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
+                            responder.respond_framework_error(
                                 ordinal,
-                                flexibility,
-                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
+                                ::fidl_next::FrameworkError::UnknownMethod,
                             )
                             .expect("encoding a framework error should never fail")
                             .await?;

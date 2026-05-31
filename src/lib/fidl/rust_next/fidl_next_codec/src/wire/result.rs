@@ -171,7 +171,7 @@ where
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<Result<'_, WT, WE>>,
+        out: &mut MaybeUninit<Result<'static, WT, WE>>,
         _: (),
     ) -> CoreResult<(), EncodeError> {
         munge!(let Result { raw, _phantom: _ } = out);

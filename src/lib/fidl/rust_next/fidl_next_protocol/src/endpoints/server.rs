@@ -5,22 +5,24 @@
 //! FIDL protocol servers.
 
 use core::future::Future;
-use core::mem::ManuallyDrop;
+use core::mem::{ManuallyDrop, MaybeUninit};
 use core::num::NonZeroU32;
 use core::pin::Pin;
 use core::ptr;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::{
-    AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt as _, Wire,
-};
+use fidl_next_codec::encoder::InternalHandleEncoder;
+use fidl_next_codec::{Encode, EncodeError, EncoderExt as _, Wire, wire};
 use fuchsia_loom::sync::Arc;
 use fuchsia_loom::sync::atomic::{AtomicI64, Ordering};
 use pin_project::pin_project;
 
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
 use crate::wire::MessageHeader;
-use crate::{Body, Flexibility, NonBlockingTransport, ProtocolError, SendFuture, Transport};
+use crate::{
+    Flexibility, FrameworkError, Message, NonBlockingTransport, ProtocolError, SendFuture,
+    Transport,
+};
 
 struct ServerInner<T: Transport> {
     connection: Connection<T>,
@@ -101,9 +103,7 @@ pub trait ServerHandler<T: Transport>: Send {
     /// long time, it should offload work to an async task and return.
     fn on_one_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received two-way server message.
@@ -113,9 +113,7 @@ pub trait ServerHandler<T: Transport>: Send {
     /// long time, it should offload work to an async task and return.
     fn on_two_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -130,9 +128,7 @@ pub trait LocalServerHandler<T: Transport> {
     /// See [`ServerHandler::on_one_way`] for more information.
     fn on_one_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 
     /// Handles a received two-way server message.
@@ -140,9 +136,7 @@ pub trait LocalServerHandler<T: Transport> {
     /// See [`ServerHandler::on_two_way`] for more information.
     fn on_two_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 }
@@ -159,22 +153,18 @@ where
     #[inline]
     fn on_one_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
-        self.0.on_one_way(ordinal, flexibility, body)
+        self.0.on_one_way(message)
     }
 
     #[inline]
     fn on_two_way(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<<T as Transport>::Error>>> {
-        self.0.on_two_way(ordinal, flexibility, body, responder)
+        self.0.on_two_way(message, responder)
     }
 }
 
@@ -278,20 +268,14 @@ impl<T: Transport> ServerDispatcher<T> {
         H: LocalServerHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
+        let buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
+        let mut message = Message::decode(buffer).map_err(ProtocolError::InvalidMessageHeader)?;
 
-        let header = buffer
-            .as_decoder()
-            .decode_prefix::<MessageHeader>()
-            .map_err(ProtocolError::InvalidMessageHeader)?;
-
-        if let Some(txid) = NonZeroU32::new(*header.txid) {
+        if let Some(txid) = NonZeroU32::new(*message.header().txid) {
             let responder = Responder { server: self.server(), txid };
-            handler
-                .on_two_way(*header.ordinal, header.flexibility(), Body::new(buffer), responder)
-                .await?;
+            handler.on_two_way(message, responder).await?;
         } else {
-            handler.on_one_way(*header.ordinal, header.flexibility(), Body::new(buffer)).await?;
+            handler.on_one_way(message).await?;
         }
 
         Ok(())
@@ -333,6 +317,37 @@ impl<T: Transport> Responder<T> {
         let server = unsafe { ptr::read(&this.server) };
 
         Ok(RespondFuture { server, state })
+    }
+
+    /// Send a framework error response to a two-way message.
+    pub fn respond_framework_error(
+        self,
+        ordinal: u64,
+        framework_error: FrameworkError,
+    ) -> Result<RespondFuture<T>, EncodeError> {
+        struct FlexibleResponse {
+            ordinal: u64,
+            framework_error: FrameworkError,
+        }
+
+        unsafe impl<E: InternalHandleEncoder> Encode<wire::Union, E> for FlexibleResponse {
+            fn encode(
+                self,
+                encoder: &mut E,
+                out: &mut MaybeUninit<wire::Union>,
+                _: (),
+            ) -> Result<(), EncodeError> {
+                wire::Union::encode_as_static(
+                    self.framework_error as i32,
+                    self.ordinal,
+                    encoder,
+                    out,
+                    (),
+                )
+            }
+        }
+
+        self.respond(ordinal, Flexibility::Flexible, FlexibleResponse { ordinal, framework_error })
     }
 }
 

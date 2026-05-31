@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_next::{
-    Client, ClientEnd, FlexibleResult, Request, Responder, Server, ServerEnd, Transport,
-};
+use fidl_next::{Client, ClientEnd, Request, Responder, Server, ServerEnd, Transport};
 use fidl_next_examples_calculator::calculator::prelude::*;
 
 struct MyCalculatorClient<T: Transport> {
@@ -60,12 +58,12 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
             let quotient = payload.dividend / payload.divisor;
             self.last_result = Some(quotient);
 
-            FlexibleResult::Ok(CalculatorDivideResponse {
+            Ok(CalculatorDivideResponse {
                 quotient: payload.dividend / payload.divisor,
                 remainder: payload.dividend % payload.divisor,
             })
         } else {
-            FlexibleResult::Err(DivisionError::DivideByZero)
+            Err(DivisionError::DivideByZero)
         };
 
         let _ = responder.respond_with(response).await;
@@ -95,7 +93,7 @@ fn create_endpoints() -> (ClientEnd<Calculator, Endpoint>, ServerEnd<Calculator,
 
 async fn add(client: &Client<Calculator, Endpoint>) {
     let result = client.add(16, 26).await.expect("failed to send or receive request");
-    let response = result.ok().expect("add request failed with an error");
+    let response = result.0;
 
     assert_eq!(response.sum, 42);
 }
@@ -277,12 +275,12 @@ mod tests {
                     let quotient = payload.dividend / payload.divisor;
                     self.last_result = Some(quotient);
 
-                    FlexibleResult::Ok(CalculatorDivideResponse {
+                    Ok(CalculatorDivideResponse {
                         quotient: payload.dividend / payload.divisor,
                         remainder: payload.dividend % payload.divisor,
                     })
                 } else {
-                    FlexibleResult::Err(DivisionError::DivideByZero)
+                    Err(DivisionError::DivideByZero)
                 };
 
                 let _ = responder.respond_with(response).await;

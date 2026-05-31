@@ -4,7 +4,6 @@
 
 use anyhow::{Context as _, Error};
 use config::Config;
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_supporttrees::{Item, NestedStore, Store, Value};
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 use std::{thread, time};
@@ -32,14 +31,10 @@ async fn main() -> Result<(), Error> {
                 key: key.clone(),
                 value: Some(Box::new(Value::Bytes(value.into_bytes()))),
             })
-            .await;
+            .await?;
         match res {
-            Ok(FlexibleResult::Ok(_)) => println!("WriteItem Success at key: {}", key),
-            Ok(FlexibleResult::Err(err)) => println!("WriteItem Error: {:?}", err),
-            Ok(FlexibleResult::FrameworkErr(err)) => {
-                println!("WriteItem Framework Error: {:?}", err)
-            }
-            Err(err) => println!("WriteItem Transport Error: {}", err),
+            Ok(_) => println!("WriteItem Success at key: {}", key),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 
@@ -67,26 +62,18 @@ async fn main() -> Result<(), Error> {
                 key: key.to_string(),
                 value: Some(Box::new(Value::Store(nested_store))),
             })
-            .await;
+            .await?;
         match res {
-            Ok(FlexibleResult::Ok(_)) => println!("WriteItem Success at key: {}", key),
-            Ok(FlexibleResult::Err(err)) => println!("WriteItem Error: {:?}", err),
-            Ok(FlexibleResult::FrameworkErr(err)) => {
-                println!("WriteItem Framework Error: {:?}", err)
-            }
-            Err(err) => println!("WriteItem Transport Error: {}", err),
+            Ok(_) => println!("WriteItem Success at key: {}", key),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 
     // Each entry in this list is a null value in the store.
     for key in config.write_null.into_iter() {
-        match store.write_item(&Item { key: key.to_string(), value: None }).await {
-            Ok(FlexibleResult::Ok(_)) => println!("WriteItem Success at key: {}", key),
-            Ok(FlexibleResult::Err(err)) => println!("WriteItem Error: {:?}", err),
-            Ok(FlexibleResult::FrameworkErr(err)) => {
-                println!("WriteItem Framework Error: {:?}", err)
-            }
-            Err(err) => println!("WriteItem Transport Error: {}", err),
+        match store.write_item(&Item { key: key.to_string(), value: None }).await? {
+            Ok(_) => println!("WriteItem Success at key: {}", key),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 

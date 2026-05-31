@@ -564,19 +564,14 @@ impl Driver {
         let start_args_next = convert_start_args(start_args);
         let start_result = client.start(start_args_next).await;
         match start_result {
-            Ok(fidl_next::FlexibleResult::Ok(())) => {}
-            Ok(fidl_next::FlexibleResult::Err(status)) => {
+            Ok(Ok(())) => {}
+            Ok(Err(status)) => {
                 warn!("Driver failed to start: {}", status);
                 self.shutdown(driver_request);
                 return Err(Status::from_raw(status));
             }
-            Ok(fidl_next::FlexibleResult::FrameworkErr(e)) => {
-                warn!("Driver start framework error: {:?}", e);
-                self.shutdown(driver_request);
-                return Err(Status::INTERNAL);
-            }
             Err(e) => {
-                warn!("Driver start transport error: {:?}", e);
+                warn!("Driver start FIDL error: {:?}", e);
                 self.shutdown(driver_request);
                 return Err(Status::INTERNAL);
             }

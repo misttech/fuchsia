@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Error};
 use config::Config;
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_usegenericvalues::{
     Item, Store, StoreWriteItemRequest, Value, WriteOptions,
 };
@@ -29,9 +28,8 @@ async fn write_next_item(
 
     // Send and async `WriteItem` request to the server.
     match store.write_item_with(&req).await.context("Error sending request")? {
-        FlexibleResult::Ok(value) => println!("WriteItem response received: {:?}", value),
-        FlexibleResult::Err(err) => println!("WriteItem Error: {:?}", err),
-        FlexibleResult::FrameworkErr(err) => println!("WriteItem Framework Error: {:?}", err),
+        Ok(value) => println!("WriteItem response received: {:?}", value),
+        Err(err) => println!("WriteItem Error: {:?}", err),
     }
     Ok(())
 }

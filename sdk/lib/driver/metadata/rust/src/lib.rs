@@ -46,12 +46,12 @@ impl MetadataServer {
         self,
         pdev: &fidl_next::Client<fdevice_next::Device>,
     ) -> Result<Self, zx::Status> {
-        let metadata_res = pdev.get_metadata(&self.name).await.map_err(|_| zx::Status::INTERNAL)?;
-        let data = match metadata_res {
-            fidl_next::FlexibleResult::Ok(resp) => resp.metadata,
-            fidl_next::FlexibleResult::Err(e) => return Err(zx::Status::from_raw(e)),
-            fidl_next::FlexibleResult::FrameworkErr(_) => return Err(zx::Status::INTERNAL),
-        };
+        let data = pdev
+            .get_metadata(&self.name)
+            .await
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|e| zx::Status::from_raw(e))?
+            .metadata;
         Ok(Self { data: Some(Arc::new(data)), name: self.name })
     }
 

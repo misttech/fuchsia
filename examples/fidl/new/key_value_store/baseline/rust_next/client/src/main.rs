@@ -5,7 +5,6 @@
 use anyhow::{Context as _, Error};
 use config::Config;
 
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_baseline::{Item, Store};
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 
@@ -31,9 +30,8 @@ async fn main() -> Result<(), Error> {
         let item = Item { key: key, value: value.into_bytes() };
 
         match client.write_item(&item).await? {
-            FlexibleResult::Ok(_) => println!("WriteItem Success"),
-            FlexibleResult::Err(err) => println!("WriteItem Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => println!("WriteItem Framework Error: {:?}", err),
+            Ok(_) => println!("WriteItem Success"),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 

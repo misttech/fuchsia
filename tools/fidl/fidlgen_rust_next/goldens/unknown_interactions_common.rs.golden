@@ -22240,11 +22240,11 @@ pub mod unknown_interactions_ajar_driver_protocol {
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::core::result::Result::Ok
-
-                            (crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse {
-                                some_field: response,
-                            })
+            ::core::result::Result::Ok(
+                                crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse {
+                                    some_field: response,
+                                }
+                            )
         }
     }
 
@@ -22501,14 +22501,15 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -22619,14 +22620,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             200845620698173917 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -22639,7 +22638,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -22650,15 +22652,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             523076268125513549 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -22747,14 +22747,15 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -22867,14 +22868,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             200845620698173917 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -22887,7 +22886,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -22898,15 +22900,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             523076268125513549 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -23975,11 +23975,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -24025,7 +24023,7 @@ where
 
                     5838220329633564521 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24043,7 +24041,7 @@ where
 
                     6303151946645602671 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24061,7 +24059,7 @@ where
 
                     659277224687564957 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24089,7 +24087,7 @@ where
 
                     4298964238728681570 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24107,7 +24105,7 @@ where
 
                     8950943792372972717 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24125,7 +24123,7 @@ where
 
                     705539350563403440 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24142,7 +24140,7 @@ where
             ordinal => {
 
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -24251,14 +24249,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             956561744635167883 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -24271,7 +24267,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -24282,15 +24281,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             364341676962177080 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -24505,11 +24502,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -24555,7 +24550,7 @@ where
 
                     5838220329633564521 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24573,7 +24568,7 @@ where
 
                     6303151946645602671 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24591,7 +24586,7 @@ where
 
                     659277224687564957 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24619,7 +24614,7 @@ where
 
                     4298964238728681570 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24637,7 +24632,7 @@ where
 
                     8950943792372972717 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24655,7 +24650,7 @@ where
 
                     705539350563403440 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -24672,7 +24667,7 @@ where
             ordinal => {
 
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -24782,14 +24777,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             956561744635167883 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -24802,7 +24795,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -24813,15 +24809,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             364341676962177080 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -25327,11 +25321,11 @@ pub mod unknown_interactions_closed_driver_protocol {
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::core::result::Result::Ok
-
-                            (crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse {
-                                some_field: response,
-                            })
+            ::core::result::Result::Ok(
+                                crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse {
+                                    some_field: response,
+                                }
+                            )
         }
     }
 
@@ -25579,11 +25573,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
@@ -25684,14 +25676,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             9111839835597799810 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -25703,15 +25693,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             2815690661228737027 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -25791,11 +25779,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
@@ -25893,14 +25879,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             9111839835597799810 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -25912,15 +25896,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             2815690661228737027 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -26761,11 +26743,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -26808,7 +26788,7 @@ where
 
                     6736355582617074292 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -26826,7 +26806,7 @@ where
 
                     4288682345454280036 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -26844,7 +26824,7 @@ where
 
                     2871682464255309246 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -26959,14 +26939,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             401526495318825508 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -26978,15 +26956,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             6834828562275693047 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -27137,11 +27113,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -27184,7 +27158,7 @@ where
 
                     6736355582617074292 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -27202,7 +27176,7 @@ where
 
                     4288682345454280036 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -27220,7 +27194,7 @@ where
 
                     2871682464255309246 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -27332,14 +27306,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             401526495318825508 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -27351,15 +27323,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             6834828562275693047 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -27931,7 +27901,7 @@ pub mod unknown_interactions_driver_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -27960,7 +27930,7 @@ pub mod unknown_interactions_driver_protocol {
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(
+            ::fidl_next::Flexible(
                 crate::generic::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse {
                     some_field: response,
                 },
@@ -27991,7 +27961,7 @@ pub mod unknown_interactions_driver_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -28018,7 +27988,7 @@ pub mod unknown_interactions_driver_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -28035,7 +28005,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse,
             ::fidl_next::wire::Int32,
@@ -28043,18 +28013,18 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -28071,7 +28041,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayFieldsErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse,
             ::fidl_next::wire::Int32,
@@ -28079,13 +28049,13 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::fidl_next::FlexibleResult<
+        type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<___R>,
             ::fidl_next::util::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(
+            ::core::result::Result::Ok(
                 crate::generic::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse {
                     some_field: response,
                 },
@@ -28094,10 +28064,10 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -28114,7 +28084,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayUnionErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'static>,
             ::fidl_next::wire::Int32,
@@ -28122,18 +28092,18 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -28150,7 +28120,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayTableErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'static>,
             ::fidl_next::wire::Int32,
@@ -28158,18 +28128,18 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTableErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayTableErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -28442,14 +28412,15 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -28629,14 +28600,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             6982839851953080288 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -28649,7 +28618,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -28660,15 +28632,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             1481114722667499972 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -28783,16 +28753,19 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
-                    responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
-                                ordinal,
-                                flexibility,
-                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
-                            )
-                            .expect("encoding a framework error should never fail")
-                            .await?;
+                    responder
+                        .respond_framework_error(
+                            ordinal,
+                            ::fidl_next::FrameworkError::UnknownMethod,
+                        )
+                        .expect("encoding a framework error should never fail")
+                        .await?;
                     Ok(())
                 }
             }
@@ -28824,14 +28797,15 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -29013,14 +28987,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             6982839851953080288 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -29033,7 +29005,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -29044,15 +29019,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             1481114722667499972 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -29167,16 +29140,19 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
-                    responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
-                                ordinal,
-                                flexibility,
-                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
-                            )
-                            .expect("encoding a framework error should never fail")
-                            .await?;
+                    responder
+                        .respond_framework_error(
+                            ordinal,
+                            ::fidl_next::FrameworkError::UnknownMethod,
+                        )
+                        .expect("encoding a framework error should never fail")
+                        .await?;
                     Ok(())
                 }
             }
@@ -29751,7 +29727,7 @@ pub mod unknown_interactions_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -29780,7 +29756,7 @@ pub mod unknown_interactions_protocol {
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(
+            ::fidl_next::Flexible(
                 crate::generic::UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
                     some_field: response,
                 },
@@ -29811,7 +29787,7 @@ pub mod unknown_interactions_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -29838,7 +29814,7 @@ pub mod unknown_interactions_protocol {
         type Output = ::fidl_next::Flexible<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::Flexible::Ok(response)
+            ::fidl_next::Flexible(response)
         }
     }
 
@@ -29855,7 +29831,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsProtocolFlexibleTwoWayErrResponse,
             ::fidl_next::wire::Int32,
@@ -29863,18 +29839,18 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -29891,7 +29867,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayFieldsErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse,
             ::fidl_next::wire::Int32,
@@ -29899,13 +29875,13 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::fidl_next::FlexibleResult<
+        type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<___R>,
             ::fidl_next::util::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(
+            ::core::result::Result::Ok(
                 crate::generic::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
                     some_field: response,
                 },
@@ -29914,10 +29890,10 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -29934,7 +29910,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayUnionErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'static>,
             ::fidl_next::wire::Int32,
@@ -29942,18 +29918,18 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -29970,7 +29946,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayTableErr {
-        type Response = ::fidl_next::wire::FlexibleResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'static>,
             ::fidl_next::wire::Int32,
@@ -29978,18 +29954,18 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTableErr {
-        type Output = ::fidl_next::FlexibleResult<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Ok(response)
+            ::core::result::Result::Ok(response)
         }
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayTableErr {
-        type Output = ::fidl_next::FlexibleResult<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
-            ::fidl_next::FlexibleResult::Err(response)
+            ::core::result::Result::Err(response)
         }
     }
 
@@ -30658,11 +30634,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -30732,7 +30706,7 @@ where
 
                     8896208255987935026 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30750,7 +30724,7 @@ where
 
                     3919175221694221274 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30768,7 +30742,7 @@ where
 
                     2711448698318579984 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30796,7 +30770,7 @@ where
 
                     3613822014516746241 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30814,7 +30788,7 @@ where
 
                     2499446536152409191 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30832,7 +30806,7 @@ where
 
                     5724881371349617120 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -30849,7 +30823,7 @@ where
             ordinal => {
 
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -31005,14 +30979,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             5652707722400962470 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -31025,7 +30997,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -31036,15 +31011,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             8308184097687583042 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -31159,16 +31132,19 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
-                    responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
-                                ordinal,
-                                flexibility,
-                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
-                            )
-                            .expect("encoding a framework error should never fail")
-                            .await?;
+                    responder
+                        .respond_framework_error(
+                            ordinal,
+                            ::fidl_next::FrameworkError::UnknownMethod,
+                        )
+                        .expect("encoding a framework error should never fail")
+                        .await?;
                     Ok(())
                 }
             }
@@ -31339,11 +31315,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -31413,7 +31387,7 @@ where
 
                     8896208255987935026 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31431,7 +31405,7 @@ where
 
                     3919175221694221274 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31449,7 +31423,7 @@ where
 
                     2711448698318579984 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.strict_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31477,7 +31451,7 @@ where
 
                     3613822014516746241 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_fields(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31495,7 +31469,7 @@ where
 
                     2499446536152409191 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_union(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31513,7 +31487,7 @@ where
 
                     5724881371349617120 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.flexible_event_table(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -31530,7 +31504,7 @@ where
             ordinal => {
 
                     handler.on_unknown_interaction(ordinal).await;
-                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    if ::core::matches!(message.header().flexibility(), ::fidl_next::protocol::Flexibility::Strict) {
                         Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                     } else {
                         Ok(())
@@ -31688,14 +31662,12 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             5652707722400962470 => {
                 handler.strict_one_way().await;
                 Ok(())
@@ -31708,7 +31680,10 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
                     Ok(())
@@ -31719,15 +31694,13 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             8308184097687583042 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
@@ -31842,16 +31815,19 @@ where
 
             ordinal => {
                 handler.on_unknown_interaction(ordinal).await;
-                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                if ::core::matches!(
+                    message.header().flexibility(),
+                    ::fidl_next::protocol::Flexibility::Strict
+                ) {
                     Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
                 } else {
-                    responder.respond::<::fidl_next::wire::Flexible<'_, ::fidl_next::wire::EmptyMessageBody>>(
-                                ordinal,
-                                flexibility,
-                                ::fidl_next::Flexible::<::fidl_next::util::Never>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
-                            )
-                            .expect("encoding a framework error should never fail")
-                            .await?;
+                    responder
+                        .respond_framework_error(
+                            ordinal,
+                            ::fidl_next::FrameworkError::UnknownMethod,
+                        )
+                        .expect("encoding a framework error should never fail")
+                        .await?;
                     Ok(())
                 }
             }

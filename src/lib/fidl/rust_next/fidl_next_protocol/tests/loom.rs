@@ -5,7 +5,7 @@
 use fidl_next_codec::AsDecoderExt as _;
 use fidl_next_protocol::mpsc::Mpsc;
 use fidl_next_protocol::{
-    Body, Client, ClientDispatcher, ClientHandler, Flexibility, ProtocolError, Responder,
+    Client, ClientDispatcher, ClientHandler, Flexibility, Message, ProtocolError, Responder,
     ServerDispatcher, ServerHandler, Transport,
 };
 use fuchsia_loom::loom::future::block_on;
@@ -14,12 +14,7 @@ use fuchsia_loom::loom::thread::spawn;
 struct IgnoreEvents;
 
 impl<T: Transport> ClientHandler<T> for IgnoreEvents {
-    async fn on_event(
-        &mut self,
-        _: u64,
-        _: Flexibility,
-        _: Body<T>,
-    ) -> Result<(), ProtocolError<T::Error>> {
+    async fn on_event(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
         Ok(())
     }
 }
@@ -96,26 +91,19 @@ fn close_on_drop() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(
-            &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
-        ) -> Result<(), ProtocolError<T::Error>> {
+        async fn on_one_way(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
         async fn on_two_way(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
-            assert_eq!(ordinal, 42);
-            assert_eq!(message.as_str(), "Ping");
+            assert_eq!(*message.header().ordinal, 42);
+            let request =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(request.as_str(), "Ping");
 
             responder
                 .respond(42, Flexibility::Strict, TestMessage::new("Pong"))
@@ -159,26 +147,19 @@ fn send_one_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(
-            &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
-        ) -> Result<(), ProtocolError<T::Error>> {
+        async fn on_one_way(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
         async fn on_two_way(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
-            assert_eq!(ordinal, 42);
-            assert_eq!(message.as_str(), "Ping");
+            assert_eq!(*message.header().ordinal, 42);
+            let request =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(request.as_str(), "Ping");
 
             responder
                 .respond(42, Flexibility::Strict, TestMessage::new("Pong"))
@@ -221,26 +202,19 @@ fn two_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(
-            &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
-        ) -> Result<(), ProtocolError<T::Error>> {
+        async fn on_one_way(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
         async fn on_two_way(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            assert_eq!(ordinal, 42);
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
-            assert_eq!(message.as_str(), "Ping");
+            assert_eq!(*message.header().ordinal, 42);
+            let request =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(request.as_str(), "Ping");
 
             responder
                 .respond(42, Flexibility::Strict, TestMessage::new("Pong"))
@@ -283,24 +257,18 @@ fn multiple_two_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(
-            &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
-        ) -> Result<(), ProtocolError<T::Error>> {
+        async fn on_one_way(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
         async fn on_two_way(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            let ordinal = *message.header().ordinal;
+            let request =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
 
             let response = match ordinal {
                 1 => "One",
@@ -309,7 +277,7 @@ fn multiple_two_way() {
                 x => panic!("unexpected request ordinal {x} from client"),
             };
 
-            assert_eq!(message.as_str(), response);
+            assert_eq!(request.as_str(), response);
 
             responder
                 .respond(ordinal, Flexibility::Strict, TestMessage::new(response))
@@ -384,14 +352,12 @@ fn event() {
     impl<T: Transport> ClientHandler<T> for TestClient<T> {
         async fn on_event(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            assert_eq!(ordinal, 10);
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
-            assert_eq!(message.as_str(), "Surprise!");
+            assert_eq!(*message.header().ordinal, 10);
+            let event =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(event.as_str(), "Surprise!");
 
             self.client.close();
 
@@ -402,20 +368,13 @@ fn event() {
     pub struct TestServer;
 
     impl<T: Transport> ServerHandler<T> for TestServer {
-        async fn on_one_way(
-            &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
-        ) -> Result<(), ProtocolError<T::Error>> {
+        async fn on_one_way(&mut self, _: Message<T>) -> Result<(), ProtocolError<T::Error>> {
             Ok(())
         }
 
         async fn on_two_way(
             &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
+            _: Message<T>,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             Ok(())
@@ -450,23 +409,19 @@ fn one_way_nonblocking() {
     impl<T: Transport> ServerHandler<T> for TestServer {
         async fn on_one_way(
             &mut self,
-            ordinal: u64,
-            _: Flexibility,
-            body: Body<T>,
+            mut message: Message<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            assert_eq!(ordinal, 42);
-            let message =
-                body.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
-            assert_eq!(message.as_str(), "Hello world");
+            assert_eq!(*message.header().ordinal, 42);
+            let request =
+                message.into_decoded::<wire::TestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(request.as_str(), "Hello world");
 
             Ok(())
         }
 
         async fn on_two_way(
             &mut self,
-            _: u64,
-            _: Flexibility,
-            _: Body<T>,
+            _: Message<T>,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected two-way message");

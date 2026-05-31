@@ -7,8 +7,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use fidl_next_protocol::{
-    self as protocol, Body, ClientHandler, Flexibility, LocalClientHandler, ProtocolError,
-    Transport,
+    self as protocol, ClientHandler, LocalClientHandler, Message, ProtocolError, Transport,
 };
 
 use crate::{ClientEnd, HasConnectionHandles, HasTransport};
@@ -63,9 +62,7 @@ pub trait DispatchLocalClientMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 }
 
@@ -74,9 +71,7 @@ pub trait DispatchClientMessage<H: Send, T: Transport>: Sized + 'static {
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
@@ -102,11 +97,9 @@ where
 {
     fn on_event(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> {
-        P::on_event(&mut self.handler, ordinal, flexibility, body)
+        P::on_event(&mut self.handler, message)
     }
 }
 
@@ -118,11 +111,9 @@ where
 {
     fn on_event(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_event(&mut self.handler, ordinal, flexibility, body)
+        P::on_event(&mut self.handler, message)
     }
 }
 

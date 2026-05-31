@@ -71,10 +71,7 @@ pub mod example_use_of_error_syntax {
     impl ::fidl_next::TwoWayMethod for ComposedCallWhichMayFail {
         type Response =
 
-
-                            ::fidl_next::wire::Result
-
-                        <
+                        ::fidl_next::wire::Result<
                             'static,
 
                             ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
@@ -89,20 +86,17 @@ pub mod example_use_of_error_syntax {
 
     impl<___R> ::fidl_next::Respond<___R> for ComposedCallWhichMayFail {
         type Output =
-
-                                ::core::result::Result
-
-                            <
+                            ::core::result::Result<
                                 ::fidl_next_test_errorsyntax_parent::generic::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse<___R>,
                                 ::fidl_next::util::Never,
                             >;
 
         fn respond(response: ___R) -> Self::Output {
-            ::core::result::Result::Ok
-
-                            (::fidl_next_test_errorsyntax_parent::generic::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse {
-                                value: response,
-                            })
+            ::core::result::Result::Ok(
+                                ::fidl_next_test_errorsyntax_parent::generic::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse {
+                                    value: response,
+                                }
+                            )
         }
     }
 
@@ -281,11 +275,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
@@ -340,33 +332,29 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             3565108794310607393 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                match ::fidl_next::AsDecoderExt::into_decoded(message) {
                     Ok(decoded) => {
                         handler
                             .composed_call_which_may_fail(
@@ -386,7 +374,7 @@ where
             3757408930698888354 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                match ::fidl_next::AsDecoderExt::into_decoded(message) {
                     Ok(decoded) => {
                         handler
                             .call_which_may_fail(
@@ -425,11 +413,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
@@ -480,33 +466,29 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
-        match ordinal {
+        match *message.header().ordinal {
             3565108794310607393 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                match ::fidl_next::AsDecoderExt::into_decoded(message) {
                     Ok(decoded) => {
                         handler
                             .composed_call_which_may_fail(
@@ -526,7 +508,7 @@ where
             3757408930698888354 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                match ::fidl_next::AsDecoderExt::into_decoded(message) {
                     Ok(decoded) => {
                         handler
                             .call_which_may_fail(

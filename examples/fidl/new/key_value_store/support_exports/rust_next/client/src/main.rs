@@ -6,7 +6,6 @@ use anyhow::{Context as _, Error};
 use config::Config;
 use fidl::unpersist;
 use fidl_examples_keyvaluestore_supportexports as fidl_legacy;
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_supportexports::{Item, Store};
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 use std::{thread, time};
@@ -32,9 +31,8 @@ async fn main() -> Result<(), Error> {
             .with_context(|| format!("Failed to load {path}"))?;
         let item = Item { key: key, value: value.into_bytes() };
         match client.write_item(&item).await? {
-            FlexibleResult::Ok(_) => println!("WriteItem Success"),
-            FlexibleResult::Err(err) => println!("WriteItem Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => println!("WriteItem Framework Error: {:?}", err),
+            Ok(_) => println!("WriteItem Success"),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 
@@ -47,13 +45,10 @@ async fn main() -> Result<(), Error> {
         // Send the VMO to the server, to be populated with the current state of the key-value
         // store.
         match client.export(vmo).await? {
-            FlexibleResult::Err(err) => {
+            Err(err) => {
                 println!("Export Error: {:?}", err);
             }
-            FlexibleResult::FrameworkErr(err) => {
-                println!("Export Framework Error: {:?}", err);
-            }
-            FlexibleResult::Ok(output) => {
+            Ok(output) => {
                 println!("Export Success");
 
                 // Read the exported data (encoded in byte form as persistent FIDL) from the

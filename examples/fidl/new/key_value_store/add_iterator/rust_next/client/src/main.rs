@@ -5,7 +5,6 @@
 use anyhow::{Context as _, Error};
 use config::Config;
 use fidl_next::fuchsia::create_channel;
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_additerator::{Item, Iterator, Store};
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 
@@ -24,9 +23,8 @@ async fn main() -> Result<(), Error> {
             .with_context(|| format!("Failed to load {path}"))?;
         let item = Item { key: key, value: value.into_bytes() };
         match store.write_item(&item).await? {
-            FlexibleResult::Ok(_) => println!("WriteItem Success"),
-            FlexibleResult::Err(err) => println!("WriteItem Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => println!("WriteItem Framework Error: {:?}", err),
+            Ok(_) => println!("WriteItem Success"),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 
@@ -36,7 +34,7 @@ async fn main() -> Result<(), Error> {
 
         let starting_at = Some(config.iterate_from);
         match store.iterate(starting_at.as_deref(), iterator_server_end).await? {
-            FlexibleResult::Ok(_) => {
+            Ok(_) => {
                 println!("Iterator Connection Success");
                 loop {
                     let entries = iterator.get().await?;
@@ -48,10 +46,7 @@ async fn main() -> Result<(), Error> {
                     }
                 }
             }
-            FlexibleResult::Err(err) => println!("Iterator Connection Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => {
-                println!("Iterator Connection Framework Error: {:?}", err)
-            }
+            Err(err) => println!("Iterator Connection Error: {:?}", err),
         }
     }
 

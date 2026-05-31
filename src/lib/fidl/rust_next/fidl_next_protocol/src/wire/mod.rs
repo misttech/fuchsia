@@ -9,13 +9,9 @@ use fidl_next_codec::wire::*;
 mod empty;
 mod epitaph;
 mod flexible;
-mod flexible_result;
-mod framework_error;
 mod message_header;
 
 pub use self::empty::*;
 pub use self::epitaph::*;
 pub use self::flexible::*;
-pub use self::flexible_result::*;
-pub use self::framework_error::*;
 pub use self::message_header::*;

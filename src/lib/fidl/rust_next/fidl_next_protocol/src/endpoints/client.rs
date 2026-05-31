@@ -11,18 +11,26 @@ use core::ptr;
 use core::task::{Context, Poll, ready};
 
 use fidl_constants::EPITAPH_ORDINAL;
-use fidl_next_codec::{AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt, Wire};
+use fidl_next_codec::{
+    AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt, Wire, wire,
+};
 use fuchsia_loom::sync::{Arc, Mutex};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::endpoints::connection::{Connection, SendFutureState};
 use crate::endpoints::lockers::{LockerError, Lockers};
 use crate::wire::{Epitaph, MessageHeader};
-use crate::{Body, Flexibility, NonBlockingTransport, ProtocolError, SendFuture, Transport};
+use crate::{
+    Flexibility, FrameworkError, Message, NonBlockingTransport, ProtocolError, SendFuture,
+    Transport,
+};
+
+const ORD_FRAMEWORK_ERR: u64 = 3;
+const ERR_UNKNOWN_METHOD: i32 = FrameworkError::UnknownMethod as i32;
 
 struct ClientInner<T: Transport> {
     connection: Connection<T>,
-    responses: Mutex<Lockers<Body<T>>>,
+    responses: Mutex<Lockers<Message<T>>>,
 }
 
 impl<T: Transport> ClientInner<T> {
@@ -131,8 +139,34 @@ impl<T: Transport> Drop for TwoWayResponseFuture<'_, T> {
     }
 }
 
+fn handle_flexible_response<T: Transport>(
+    mut message: Message<T>,
+) -> Result<Message<T>, ProtocolError<T::Error>> {
+    if matches!(message.header().flexibility(), Flexibility::Flexible) {
+        let mut decoder = message.as_decoder();
+        let mut union = decoder
+            .take_slot::<wire::Union>()
+            .map_err(|_| ProtocolError::InvalidFlexibleResponse)?;
+        let ordinal = wire::Union::encoded_ordinal(union.as_mut());
+        if ordinal == ORD_FRAMEWORK_ERR {
+            wire::Union::decode_as::<_, wire::Int32>(union.as_mut(), &mut decoder, ())
+                .map_err(|_| ProtocolError::InvalidFlexibleResponse)?;
+            let union = unsafe { union.deref_unchecked() };
+            let error = unsafe { union.get().read_unchecked::<wire::Int32>() };
+            match error.0 {
+                ERR_UNKNOWN_METHOD => {
+                    return Err(ProtocolError::FrameworkError(FrameworkError::UnknownMethod));
+                }
+                ordinal => return Err(ProtocolError::UnknownFrameworkError { ordinal }),
+            }
+        }
+    }
+
+    Ok(message)
+}
+
 impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
-    type Output = Result<Body<T>, ProtocolError<T::Error>>;
+    type Output = Result<Message<T>, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = Pin::into_inner(self);
@@ -141,8 +175,8 @@ impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
         };
 
         let mut responses = this.inner.responses.lock().unwrap();
-        let ready = if let Some(ready) = responses.get(index).unwrap().read(cx.waker()) {
-            Ok(ready)
+        let message = if let Some(message) = responses.get(index).unwrap().read(cx.waker()) {
+            handle_flexible_response(message)
         } else if let Some(termination_reason) = this.inner.connection.get_termination_reason() {
             Err(termination_reason)
         } else {
@@ -151,7 +185,8 @@ impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
 
         responses.free(index);
         this.index = None;
-        Poll::Ready(ready)
+
+        Poll::Ready(message)
     }
 }
 
@@ -233,9 +268,7 @@ pub trait LocalClientHandler<T: Transport> {
     /// See [`ClientHandler::on_event`] for more information.
     fn on_event(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>>;
 }
 
@@ -248,9 +281,7 @@ pub trait ClientHandler<T: Transport>: Send {
     /// long time, it should offload work to an async task and return.
     fn on_event(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
@@ -266,11 +297,9 @@ where
     #[inline]
     fn on_event(
         &mut self,
-        ordinal: u64,
-        flexibility: Flexibility,
-        body: Body<T>,
+        message: Message<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> {
-        self.0.on_event(ordinal, flexibility, body)
+        self.0.on_event(message)
     }
 }
 
@@ -376,7 +405,7 @@ impl<T: Transport> ClientDispatcher<T> {
         H: LocalClientHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
+        let buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
         // This expression is really awkward due to a limitation in rustc's
         // liveness analysis for local variables. We need to avoid holding
@@ -389,40 +418,34 @@ impl<T: Transport> ClientDispatcher<T> {
         // free of `.await`s.
         //
         // See https://github.com/rust-lang/rust/issues/63768 for more details.
-        let header = {
-            let mut decoder = buffer.as_decoder();
+        let mut message =
+            Message::<T>::decode(buffer).map_err(ProtocolError::InvalidMessageHeader)?;
+        let txid = *message.header().txid;
+        let ordinal = *message.header().ordinal;
 
-            let header = decoder
-                .decode_prefix::<MessageHeader>()
-                .map_err(ProtocolError::InvalidMessageHeader)?;
+        // Check if the ordinal is the epitaph so we can immediately decode and
+        // return it.
+        if ordinal == EPITAPH_ORDINAL {
+            let mut decoder = message.as_decoder();
+            let epitaph = decoder.decode::<Epitaph>().map_err(ProtocolError::InvalidEpitaphBody)?;
+            return Err(ProtocolError::PeerClosedWithEpitaph(*epitaph.error));
+        }
 
-            // Check if the ordinal is the epitaph so we can immediately decode
-            // and return it. We do this before dropping `decoder` so that we
-            // don't have to re-acquire it and wrap it in `Body`.
-            if header.ordinal == EPITAPH_ORDINAL {
-                let epitaph =
-                    decoder.decode::<Epitaph>().map_err(ProtocolError::InvalidEpitaphBody)?;
-                return Err(ProtocolError::PeerClosedWithEpitaph(*epitaph.error));
-            }
-
-            header
-        };
-
-        if header.txid == 0 {
-            handler.on_event(*header.ordinal, header.flexibility(), Body::new(buffer)).await?;
+        if txid == 0 {
+            handler.on_event(message).await?;
         } else {
             let mut responses = self.inner.responses.lock().unwrap();
             let locker = responses
-                .get(*header.txid - 1)
-                .ok_or_else(|| ProtocolError::UnrequestedResponse { txid: *header.txid })?;
+                .get(txid - 1)
+                .ok_or_else(|| ProtocolError::UnrequestedResponse { txid })?;
 
-            match locker.write(*header.ordinal, Body::new(buffer)) {
+            match locker.write(ordinal, message) {
                 // Reader didn't cancel
                 Ok(false) => (),
                 // Reader canceled, we can drop the entry
-                Ok(true) => responses.free(*header.txid - 1),
+                Ok(true) => responses.free(txid - 1),
                 Err(LockerError::NotWriteable) => {
-                    return Err(ProtocolError::UnrequestedResponse { txid: *header.txid });
+                    return Err(ProtocolError::UnrequestedResponse { txid });
                 }
                 Err(LockerError::MismatchedOrdinal { expected, actual }) => {
                     return Err(ProtocolError::InvalidResponseOrdinal { expected, actual });

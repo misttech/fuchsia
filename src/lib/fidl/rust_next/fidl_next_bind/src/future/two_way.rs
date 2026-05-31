@@ -11,7 +11,7 @@ use fidl_next_codec::{
     AsDecoder, AsDecoderExt as _, Constrained, Decode, Decoded, EncodeError, FromWire, IntoNatural,
     Wire,
 };
-use fidl_next_protocol::{Body, NonBlockingTransport, Transport};
+use fidl_next_protocol::{Message, NonBlockingTransport, Transport};
 use pin_project::pin_project;
 
 use crate::{Error, TwoWayMethod};
@@ -23,7 +23,7 @@ enum TwoWayFutureState<'a, T: Transport> {
     SendingRequest(#[pin] fidl_next_protocol::TwoWayRequestFuture<'a, T>),
     ReceiveResponse(fidl_next_protocol::TwoWayResponseFuture<'a, T>),
     ReceivingResponse(#[pin] fidl_next_protocol::TwoWayResponseFuture<'a, T>),
-    DecodeBuffer(Body<T>),
+    DecodeBuffer(Message<T>),
     Finished,
 }
 
@@ -60,7 +60,7 @@ impl_two_way_future_state! {
         => is_send_request unwrap_send_request,
     ReceiveResponse(fidl_next_protocol::TwoWayResponseFuture<'a, T>)
         => is_receive_response unwrap_receive_response,
-    DecodeBuffer(Body<T>) => is_decode_buffer unwrap_decode_buffer,
+    DecodeBuffer(Message<T>) => is_decode_buffer unwrap_decode_buffer,
 }
 
 impl<'a, T: Transport> TwoWayFutureState<'a, T> {
@@ -235,7 +235,7 @@ two_way_futures! {
     /// A future which receives a two-way FIDL method call as a `RecvBuffer`.
     ///
     /// This future returns the response buffer without decoding it first.
-    RecvBufferTwoWayFuture -> Body<T>
+    RecvBufferTwoWayFuture -> Message<T>
     where []
     {
         is_decode_buffer => |state| state.unwrap_decode_buffer()
@@ -246,7 +246,7 @@ two_way_futures! {
     /// A future which decodes a two-way FIDL method call as a wire type.
     ///
     /// This future returns the decoded response.
-    WireTwoWayFuture -> Decoded<M::Response, Body<T>>
+    WireTwoWayFuture -> Decoded<M::Response, Message<T>>
     where [
         M: TwoWayMethod,
         M::Response: Wire<Constraint = ()> + IntoNatural,

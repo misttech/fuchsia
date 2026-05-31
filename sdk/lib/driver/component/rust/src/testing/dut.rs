@@ -139,15 +139,11 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
     pub(crate) async fn start_driver(&mut self, start_args: DriverStartArgs) -> Result<(), Status> {
         let start_result = self.client.start(start_args).await.expect("start call success");
         match start_result {
-            fidl_next::FlexibleResult::Ok(_) => {
+            Ok(_) => {
                 self.started = true;
                 Ok(())
             }
-            fidl_next::FlexibleResult::Err(e) => Err(Status::from_raw(e)),
-            fidl_next::FlexibleResult::FrameworkErr(e) => {
-                log::error!("DriverUnderTest::start failed with framework error: {:?}", e);
-                Err(Status::INTERNAL)
-            }
+            Err(e) => Err(Status::from_raw(e)),
         }
     }
 

@@ -18,7 +18,7 @@ mod server;
 pub mod testing;
 
 pub use context::*;
-pub use error::{DriverError, FlexibleExt, FlexibleResultExt};
+pub use error::DriverError;
 pub use incoming::*;
 pub use node::*;
 

@@ -4,7 +4,6 @@
 
 use anyhow::{Context as _, Error};
 use config::Config;
-use fidl_next::protocol::FlexibleResult;
 use fidl_next_examples_keyvaluestore_addreaditem::{Item, Store};
 use fuchsia_component::client::fidl_next::connect_to_protocol;
 use std::{str, thread, time};
@@ -34,9 +33,8 @@ async fn main() -> Result<(), Error> {
         let item = Item { key: key, value: value.into_bytes() };
 
         match client.write_item(&item).await? {
-            FlexibleResult::Ok(_) => println!("WriteItem Success"),
-            FlexibleResult::Err(err) => println!("WriteItem Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => println!("WriteItem Framework Error: {:?}", err),
+            Ok(_) => println!("WriteItem Success"),
+            Err(err) => println!("WriteItem Error: {:?}", err),
         }
     }
 
@@ -45,13 +43,11 @@ async fn main() -> Result<(), Error> {
     // which is meant to be read from the key-value store. We iterate over these keys, attempting to
     // read them in turn.
     for key in config.read_items.into_iter() {
-        let res = client.read_item(&key).await?;
-        match res {
-            FlexibleResult::Ok(val) => {
+        match client.read_item(&key).await? {
+            Ok(val) => {
                 println!("ReadItem Success: key: {}, value: {}", key, str::from_utf8(&val.value)?)
             }
-            FlexibleResult::Err(err) => println!("ReadItem Error: {:?}", err),
-            FlexibleResult::FrameworkErr(err) => println!("ReadItem Framework Error: {:?}", err),
+            Err(err) => println!("ReadItem Error: {:?}", err),
         }
     }
     // [END diff_1]

@@ -6,6 +6,8 @@ use thiserror::Error;
 
 use fidl_next_codec::DecodeError;
 
+use crate::FrameworkError;
+
 /// Errors that can be produced by FIDL clients and servers.
 #[derive(Error, Clone, Debug)]
 pub enum ProtocolError<E> {
@@ -67,4 +69,20 @@ pub enum ProtocolError<E> {
         /// The error encountered while attempting to decode the message.
         error: DecodeError,
     },
+
+    /// The server responded to a flexible method with an invalid value.
+    #[error("invalid flexible response")]
+    InvalidFlexibleResponse,
+
+    /// The server responded to a flexible method with an unknown framework
+    /// error.
+    #[error("unknown framework error")]
+    UnknownFrameworkError {
+        /// The ordinal of the unknown framework error.
+        ordinal: i32,
+    },
+
+    /// The server responded to a flexible method with a framework error.
+    #[error("framework error: {0}")]
+    FrameworkError(#[from] FrameworkError),
 }

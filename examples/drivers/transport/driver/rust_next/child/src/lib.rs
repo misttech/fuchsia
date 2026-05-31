@@ -4,8 +4,7 @@
 
 use anyhow::Context as _;
 use fdf_component::{
-    Driver, DriverContext, DriverError, FlexibleResultExt, Node, NodeBuilder, ServiceInstance,
-    driver_register,
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceInstance, driver_register,
 };
 use fidl_next_fuchsia_hardware_i2cimpl as i2cimpl;
 use log::info;
@@ -32,7 +31,8 @@ impl Driver for DriverTransportChild {
         let node = context.take_node()?;
 
         let device = get_i2cimpl_device(&context)?.spawn();
-        let transfer_size = device.get_max_transfer_size().await?.into_driver_result()?.size;
+        let transfer_size =
+            device.get_max_transfer_size().await?.map_err(DriverError::from_raw_status)?.size;
         info!("i2cimpl max transfer size: {transfer_size}");
 
         info!("Adding child node with i2cimpl max transfer size as a property value");
@@ -41,7 +41,7 @@ impl Driver for DriverTransportChild {
             .build();
         node.add_child(child_node).await?;
 
-        device.set_bitrate(0x5u32).await?.into_driver_result()?;
+        device.set_bitrate(0x5u32).await?.map_err(DriverError::from_raw_status)?;
 
         Ok(Self { node })
     }

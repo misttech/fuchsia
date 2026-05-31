@@ -5004,12 +5004,10 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+        match *message.header().ordinal {
+            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -5020,7 +5018,7 @@ where
                 }),
             },
 
-            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -5147,17 +5145,15 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
                     7960710870216447007 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -5184,7 +5180,7 @@ where
 
                     1159174053475281336 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -5217,12 +5213,10 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -5232,7 +5226,7 @@ where
                     8107448265006659060 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5251,7 +5245,7 @@ where
                     5751989932125743144 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5276,7 +5270,7 @@ where
                     5022872388073111636 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5295,7 +5289,7 @@ where
                     4973436213756973807 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5357,12 +5351,10 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+        match *message.header().ordinal {
+            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -5373,7 +5365,7 @@ where
                 }),
             },
 
-            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -5496,17 +5488,15 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
                     7960710870216447007 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -5533,7 +5523,7 @@ where
 
                     1159174053475281336 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -5566,12 +5556,10 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -5581,7 +5569,7 @@ where
                     8107448265006659060 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5600,7 +5588,7 @@ where
                     5751989932125743144 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5625,7 +5613,7 @@ where
                     5022872388073111636 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -5644,7 +5632,7 @@ where
                     4973436213756973807 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -6514,12 +6502,10 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+        match *message.header().ordinal {
+            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -6530,7 +6516,7 @@ where
                 }),
             },
 
-            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -6541,7 +6527,7 @@ where
                 }),
             },
 
-            8208103053879750285 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            8208103053879750285 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_local(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -6552,7 +6538,7 @@ where
                 }),
             },
 
-            977183060572945300 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            977183060572945300 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -6769,17 +6755,15 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
                     7960710870216447007 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -6806,7 +6790,7 @@ where
 
                     1159174053475281336 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -6833,7 +6817,7 @@ where
 
                     4131125523789731521 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_local(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -6860,7 +6844,7 @@ where
 
                     8596232895075765804 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -6893,12 +6877,10 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -6908,7 +6890,7 @@ where
                     8107448265006659060 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -6927,7 +6909,7 @@ where
                     5751989932125743144 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -6952,7 +6934,7 @@ where
                     5022872388073111636 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -6971,7 +6953,7 @@ where
                     4973436213756973807 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -6996,7 +6978,7 @@ where
                     2781407403924167255 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_local(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7015,7 +6997,7 @@ where
                     5367158046384127463 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_local_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7040,7 +7022,7 @@ where
                     4600336371166510638 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7059,7 +7041,7 @@ where
                     2104032160763523653 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7141,12 +7123,10 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+        match *message.header().ordinal {
+            5307191872315199016 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -7157,7 +7137,7 @@ where
                 }),
             },
 
-            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            1712755118419701115 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -7168,7 +7148,7 @@ where
                 }),
             },
 
-            8208103053879750285 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            8208103053879750285 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_local(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -7179,7 +7159,7 @@ where
                 }),
             },
 
-            977183060572945300 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
+            977183060572945300 => match ::fidl_next::AsDecoderExt::into_decoded(message) {
                 Ok(decoded) => {
                     handler.on_anon(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -7392,17 +7372,15 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
                     7960710870216447007 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -7429,7 +7407,7 @@ where
 
                     1159174053475281336 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_named_composed(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -7456,7 +7434,7 @@ where
 
                     4131125523789731521 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_local(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -7483,7 +7461,7 @@ where
 
                     8596232895075765804 => {
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.one_way_anon(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -7516,12 +7494,10 @@ where
 
     async fn on_two_way(
         handler: &mut ___H,
-        ordinal: u64,
-        flexibility: ::fidl_next::protocol::Flexibility,
-        body: ::fidl_next::Body<___T>,
+        mut message: ::fidl_next::Message<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
-        match ordinal {
+        match *message.header().ordinal {
 
 
 
@@ -7531,7 +7507,7 @@ where
                     8107448265006659060 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7550,7 +7526,7 @@ where
                     5751989932125743144 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7575,7 +7551,7 @@ where
                     5022872388073111636 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7594,7 +7570,7 @@ where
                     4973436213756973807 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_named_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7619,7 +7595,7 @@ where
                     2781407403924167255 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_local(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7638,7 +7614,7 @@ where
                     5367158046384127463 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_local_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7663,7 +7639,7 @@ where
                     4600336371166510638 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())
@@ -7682,7 +7658,7 @@ where
                     2104032160763523653 => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(message) {
                                 Ok(decoded) => {
                                     handler.two_way_anon_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())

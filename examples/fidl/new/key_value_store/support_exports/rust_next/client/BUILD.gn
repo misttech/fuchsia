@@ -27,7 +27,6 @@ rustc_binary("bin") {
     "//examples/fidl/new/key_value_store/support_exports/fidl:examples.keyvaluestore.supportexports_rust_next",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

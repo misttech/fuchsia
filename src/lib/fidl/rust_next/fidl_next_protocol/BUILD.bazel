@@ -8,7 +8,6 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 rustc_library(
     name = "fidl_next_protocol",
     srcs = [
-        "src/body.rs",
         "src/endpoints/client.rs",
         "src/endpoints/connection.rs",
         "src/endpoints/lockers.rs",
@@ -17,9 +16,9 @@ rustc_library(
         "src/error.rs",
         "src/flexibility.rs",
         "src/flexible.rs",
-        "src/flexible_result.rs",
         "src/framework_error.rs",
         "src/lib.rs",
+        "src/message.rs",
         "src/mpsc.rs",
         "src/service.rs",
         "src/testing.rs",
@@ -27,8 +26,6 @@ rustc_library(
         "src/wire/empty.rs",
         "src/wire/epitaph.rs",
         "src/wire/flexible.rs",
-        "src/wire/flexible_result.rs",
-        "src/wire/framework_error.rs",
         "src/wire/message_header.rs",
         "src/wire/mod.rs",
     ] + select({

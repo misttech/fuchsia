@@ -5,11 +5,10 @@
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
 use fdf_component::inspect_publisher::ContentPublisher;
 use fdf_component::{
-    Driver, DriverContext, DriverError, FlexibleExt, Node, NodeBuilder, ServiceOffer,
-    driver_register,
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
 };
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
-use fidl_next::{Client, FlexibleResult, FrameworkError, ServerEnd};
+use fidl_next::{Client, ServerEnd};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::Inspector;
 use futures::channel::{mpsc, oneshot};
@@ -85,14 +84,11 @@ impl Child {
         })?;
 
         let response = match result {
-            FlexibleResult::Ok(response) => Ok(response),
-            FlexibleResult::Err(err) => {
+            Ok(response) => Ok(response),
+            Err(err) => {
                 let err = Status::from_raw(err);
                 error!("Failed to set bandwidth with {err}");
                 Err(err)
-            }
-            FlexibleResult::FrameworkErr(err) => {
-                panic!("Device does not implement `set_nodes_bandwidth`: {err:?}")
             }
         }?;
 
@@ -211,14 +207,11 @@ impl InterconnectDriver {
                 Err(err) => {
                     error!("Failed to set bandwidth with {err}");
                 }
-                Ok(FlexibleResult::Ok(result)) => {
+                Ok(Ok(result)) => {
                     sync_graph.borrow_mut().update_stats(result.aggregated_bandwidth);
                 }
-                Ok(FlexibleResult::Err(err)) => {
+                Ok(Err(err)) => {
                     error!("Failed to set bandwidth with {}", Status::from_raw(err));
-                }
-                Ok(FlexibleResult::FrameworkErr(FrameworkError::UnknownMethod)) => {
-                    panic!("Device does not implement set_nodes_bandwidth");
                 }
             };
         });
@@ -276,7 +269,7 @@ impl Driver for InterconnectDriver {
             .inspect_err(|err| {
                 error!("Failed to get node graph with {err}");
             })?
-            .into_driver_result()?;
+            .0;
         let mut graph = NodeGraph::new(node_graph.nodes, node_graph.edges)?;
 
         let path_endpoints = device
@@ -285,7 +278,7 @@ impl Driver for InterconnectDriver {
             .inspect_err(|err| {
                 error!("Failed to get path endpoints with {err}");
             })?
-            .into_driver_result()?; // Flexible::FrameworkErr means the method is not implemented
+            .0;
         let paths: Vec<_> = Result::from_iter(path_endpoints.paths.into_iter().map(|path| {
             let path_id = PathId(path.id.ok_or(Status::INVALID_ARGS)?);
             let path_name = path.name.ok_or(Status::INVALID_ARGS)?;

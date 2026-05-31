@@ -23,7 +23,7 @@
 pub use ::fidl_next_bind::*;
 pub use ::fidl_next_codec::*;
 pub use ::fidl_next_protocol::{
-    self as protocol, Body, ClientHandler, Flexible, FlexibleResult, FrameworkError, ProtocolError,
+    self as protocol, ClientHandler, Flexible, FrameworkError, Message, ProtocolError,
     ServerHandler, Transport,
 };
 
