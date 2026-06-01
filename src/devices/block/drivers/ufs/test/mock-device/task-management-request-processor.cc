@@ -60,7 +60,8 @@ void TaskManagementRequestProcessor::HandleTaskManagementRequest(
 zx_status_t TaskManagementRequestProcessor::DefaultAbortTaskHandler(
     UfsMockDevice &mock_device, TaskManagementRequestDescriptor &descriptor) {
   TaskManagementRequestUpiuData *request_upiu = descriptor.GetRequestData();
-  TaskManagementResponseUpiuData *response_upiu = descriptor.GetResponseData();
+  volatile TaskManagementResponseUpiuData *response_upiu =
+      reinterpret_cast<volatile TaskManagementResponseUpiuData *>(descriptor.GetResponseData());
 
   uint8_t lun = safemath::checked_cast<uint8_t>(request_upiu->input_param1);
   if (mock_device.GetLogicalUnit(lun).GetUnitDesc().bLUEnable == 0) {
@@ -89,7 +90,8 @@ zx_status_t TaskManagementRequestProcessor::DefaultAbortTaskHandler(
 zx_status_t TaskManagementRequestProcessor::DefaultQueryTaskHandler(
     UfsMockDevice &mock_device, TaskManagementRequestDescriptor &descriptor) {
   TaskManagementRequestUpiuData *request_upiu = descriptor.GetRequestData();
-  TaskManagementResponseUpiuData *response_upiu = descriptor.GetResponseData();
+  volatile TaskManagementResponseUpiuData *response_upiu =
+      reinterpret_cast<volatile TaskManagementResponseUpiuData *>(descriptor.GetResponseData());
 
   uint8_t lun = safemath::checked_cast<uint8_t>(request_upiu->input_param1);
   if (mock_device.GetLogicalUnit(lun).GetUnitDesc().bLUEnable == 0) {
@@ -117,7 +119,8 @@ zx_status_t TaskManagementRequestProcessor::DefaultQueryTaskHandler(
 zx_status_t TaskManagementRequestProcessor::DefaultLogicalUnitResetHandler(
     UfsMockDevice &mock_device, TaskManagementRequestDescriptor &descriptor) {
   TaskManagementRequestUpiuData *request_upiu = descriptor.GetRequestData();
-  TaskManagementResponseUpiuData *response_upiu = descriptor.GetResponseData();
+  volatile TaskManagementResponseUpiuData *response_upiu =
+      reinterpret_cast<volatile TaskManagementResponseUpiuData *>(descriptor.GetResponseData());
 
   uint8_t lun = safemath::checked_cast<uint8_t>(request_upiu->input_param1);
   if (mock_device.GetLogicalUnit(lun).GetUnitDesc().bLUEnable == 0) {
