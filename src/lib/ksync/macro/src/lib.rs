@@ -10,6 +10,7 @@ use syn::{Fields, GenericParam, Ident, ItemStruct, Type, TypePath, Visibility, p
 struct MutexField {
     ident: Ident,
     class_ident: Ident,
+    mutex_type: proc_macro2::TokenStream,
 }
 
 struct GuardedField {
@@ -32,20 +33,45 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             let mut is_mutex = false;
             let mut guarded_by = None;
             let mut attrs_to_remove = Vec::new();
+            let mut mutex_type = quote! { ::ksync::RawMutex };
 
             for (idx, attr) in field.attrs.iter().enumerate() {
                 if attr.path().is_ident("mutex") {
                     is_mutex = true;
                     attrs_to_remove.push(idx);
 
-                    if !attr.meta.require_path_only().is_ok() {
-                        errors.push(syn::Error::new(
-                            attr.meta.span(),
-                            "#[mutex] attribute does not accept any parameters",
-                        ));
+                    match &attr.meta {
+                        syn::Meta::Path(_) => {
+                            // Standard default mutex type
+                        }
+                        syn::Meta::List(meta_list) => {
+                            if let Ok(ident) = meta_list.parse_args::<Ident>() {
+                                if ident == "critical" {
+                                    mutex_type = quote! { ::ksync::RawCriticalMutex };
+                                } else if ident == "standard" {
+                                    mutex_type = quote! { ::ksync::RawMutex };
+                                } else {
+                                    errors.push(syn::Error::new(
+                                        ident.span(),
+                                        "Invalid mutex type. Expected 'standard' or 'critical'",
+                                    ));
+                                }
+                            } else {
+                                errors.push(syn::Error::new(
+                                    meta_list.span(),
+                                    "Expected 'standard' or 'critical' as the type argument",
+                                ));
+                            }
+                        }
+                        _ => {
+                            errors.push(syn::Error::new(
+                                attr.meta.span(),
+                                "Invalid #[mutex] attribute syntax",
+                            ));
+                        }
                     }
                 } else if attr.path().is_ident("guarded_by") {
-                    if let syn::Meta::List(ref meta_list) = attr.meta {
+                    if let syn::Meta::List(meta_list) = &attr.meta {
                         if let Ok(ident) = meta_list.parse_args::<Ident>() {
                             guarded_by = Some(ident);
                         }
@@ -66,7 +92,9 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         "Mutex field must be of type KMutex",
                     ));
                 }
-                mutex_fields.push(field.clone());
+                // Automatically prepend the #[pin] attribute for pin-init layout
+                field.attrs.push(syn::parse_quote!(#[pin]));
+                mutex_fields.push((field.clone(), mutex_type));
             } else if let Some(mutex_ident) = guarded_by {
                 guarded_fields.push(GuardedField {
                     ident: field.ident.clone().unwrap(),
@@ -83,13 +111,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         return quote! { #(#compile_errors)* }.into();
     }
 
+    // Automatically apply the #[::pin_init::pin_data] attribute to the parent struct
+    input_struct.attrs.push(syn::parse_quote!(#[::pin_init::pin_data]));
+
     let struct_ident = &input_struct.ident;
     let struct_vis = &input_struct.vis;
 
     let mut mutex_fields_processed = Vec::new();
     let mut generated_names = std::collections::HashSet::new();
 
-    for field in mutex_fields {
+    for (field, mutex_type) in mutex_fields {
         let field_ident = field.ident.clone().unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
@@ -110,7 +141,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         // Span Hygiene: Set the ZST class name span to the specific mutex field span
         class_ident.set_span(field_ident.span());
 
-        mutex_fields_processed.push(MutexField { ident: field_ident, class_ident });
+        mutex_fields_processed.push(MutexField { ident: field_ident, class_ident, mutex_type });
     }
 
     if !errors.is_empty() {
@@ -118,7 +149,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         return quote! { #(#compile_errors)* }.into();
     }
 
-    // Rewrite fields in the struct.
+    // Rewrite fields in the struct to be of type KMutex
     if let Fields::Named(ref mut fields) = input_struct.fields {
         for field in fields.named.iter_mut() {
             let field_ident = field.ident.as_ref().unwrap();
@@ -127,10 +158,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 mutex_fields_processed.iter().find(|m| m.ident == *field_ident)
             {
                 let class_ident = &mutex_field.class_ident;
+                let mutex_type = &mutex_field.mutex_type;
                 if let Type::Path(ref mut type_path) = field.ty {
                     if let Some(last_segment) = type_path.path.segments.last_mut() {
+                        last_segment.ident = format_ident!("KMutex");
                         last_segment.arguments = syn::PathArguments::AngleBracketed(
-                            syn::parse2(quote! { <#class_ident> }).unwrap(),
+                            syn::parse2(quote! { <#class_ident, #mutex_type> }).unwrap(),
                         );
                     }
                 }
@@ -182,6 +215,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     let ty_params: Vec<&Ident> = input_struct.generics.type_params().map(|p| &p.ident).collect();
 
+    // 1. ZST Lock Class structures are shared globally
     let mut marker_structs = quote! {};
     for mutex in &mutex_fields_processed {
         let class_ident = &mutex.class_ident;
@@ -196,6 +230,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     for mutex in &mutex_fields_processed {
         let mu_ident = &mutex.ident;
         let class_ident = &mutex.class_ident;
+        let mutex_type = &mutex.mutex_type;
 
         let mu_camel = to_camel_case(&mu_ident.to_string());
         let mut guard_ident = format_ident!("{}{}Guard", struct_ident, mu_camel);
@@ -213,6 +248,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *mu_ident).collect();
 
+        // Accessors generation (unified readers & pinned projection writers)
         let mut guard_accessors = quote! {};
         let mut fields_decl = quote! {};
         let mut fields_mut_decl = quote! {};
@@ -233,9 +269,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
-                #f_vis fn #f_mut_ident(&mut self) -> &mut #f_ty {
-                    // SAFETY: The token is from the same parent instance as the cell.
-                    unsafe { self.parent.#f_ident.get_mut(self.inner.token_mut()) }
+                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> &mut #f_ty {
+                    // SAFETY: Safe projection since target fields are non-address-sensitive
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
                 }
             });
 
@@ -253,12 +291,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             });
 
             fields_mut_init.extend(quote! {
-                // SAFETY:
-                // 1. We have exclusive access to the Guard (&mut self).
-                // 2. The fields in the struct are disjoint.
-                // 3. The returned references are bound to the lifetime 'b of the guard borrow,
-                //    preventing them from outliving the guard.
-                #f_ident: unsafe { &mut *self.parent.#f_ident.as_mut_ptr(token) },
+                // SAFETY: Safe projection inside dynamic stack-pinned context
+                #f_ident: unsafe { &mut *me.parent.#f_ident.as_mut_ptr(token) },
             });
         }
 
@@ -268,11 +302,46 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             quote! { <'_, #(#ty_params),*> }
         };
 
+        // Static registration names for the kernel lock classes (using uppercase names)
+        let struct_upper = struct_ident.to_string().to_ascii_uppercase();
+        let mu_upper = mu_camel.to_string().to_ascii_uppercase();
+        let reg_ident = format_ident!("{}_{}_REGISTRATION", struct_upper, mu_upper);
+        let string_reg_ident = format_ident!("{}_{}_STRING_REG", struct_upper, mu_upper);
+        let path_name = format!("{}::{}", struct_ident, mu_ident);
+
         generated_code.extend(quote! {
-            // Guard Struct
+            #struct_vis struct #fields_ident #fields_impl_generics #where_clause {
+                #fields_decl
+                _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
+            }
+
+            #struct_vis struct #fields_mut_ident #fields_impl_generics #where_clause {
+                #fields_mut_decl
+                _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
+            }
+
+            ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
+
+            #[unsafe(link_section = "rust_lock_classes")]
+            #[used]
+            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::new(&#string_reg_ident);
+
+            impl ::ksync::LockClass for #class_ident {
+                const ID: *mut ::core::ffi::c_void = #reg_ident.get();
+            }
+
+            #[pin_init::pin_data(PinnedDrop)]
             #struct_vis struct #guard_ident #guard_impl_generics #where_clause {
                 parent: &'a #struct_ident #ty_generics,
-                inner: ::ksync::KMutexGuard<'a, #class_ident>,
+                #[pin]
+                inner: ::ksync::KMutexGuard<'a, #class_ident, #mutex_type>,
+            }
+
+            #[pin_init::pinned_drop]
+            impl #guard_impl_generics pin_init::PinnedDrop for #guard_ident #guard_ty_generics #where_clause {
+                fn drop(self: ::core::pin::Pin<&mut Self>) {
+                    // Pinned drop handles inner sub-pins automatically
+                }
             }
 
             impl #guard_impl_generics #guard_ident #guard_ty_generics #where_clause {
@@ -287,8 +356,10 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
-                #struct_vis fn fields_mut<'b>(&'b mut self) -> #fields_mut_ident #fields_ty_generics {
-                    let token = self.inner.token_mut();
+                #struct_vis fn fields_mut<'b>(self: ::core::pin::Pin<&'b mut Self>) -> #fields_mut_ident #fields_ty_generics {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    let token = inner_pin.token_mut();
                     #fields_mut_ident {
                         #fields_mut_init
                         _marker: ::core::marker::PhantomData,
@@ -296,27 +367,13 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-
-            // Fields Struct (Shared)
-            #struct_vis struct #fields_ident #fields_impl_generics #where_clause {
-                #fields_decl
-                _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
-            }
-
-            // Fields Struct (Mut)
-            #struct_vis struct #fields_mut_ident #fields_impl_generics #where_clause {
-                #fields_mut_decl
-                _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
-            }
-
-            // Lock method on parent struct
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #[inline]
-                #struct_vis fn #lock_method_ident(&self) -> #guard_ident #return_ty_generics {
-                    #guard_ident {
+                #struct_vis fn #lock_method_ident(&self) -> impl pin_init::PinInit<#guard_ident #return_ty_generics, ::core::convert::Infallible> {
+                    pin_init::pin_init!(#guard_ident {
                         parent: self,
-                        inner: self.#mu_ident.lock(),
-                    }
+                        inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
+                    })
                 }
             }
         });

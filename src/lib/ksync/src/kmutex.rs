@@ -2,90 +2,138 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::lock_token::LockToken;
 use core::marker::PhantomData;
-use lock_api::RawMutex as _;
+use core::pin::Pin;
+use pin_init::{PinInit, pin_data, pin_init, pin_init_from_closure, pinned_drop};
 
-/// A token-based Mutex.
+use crate::{LockToken, RawLock, RawMutex};
+use lockdep::LockClass;
+
+/// A safe, Zircon-compatible mutual exclusion lock supporting compile-time order validation.
 ///
-/// This mutex does not contain the data it protects. Instead, it protects fields wrapped in `KCell`
-/// that are associated with the same `Class`.
-#[repr(transparent)]
-pub struct KMutex<Class = ()> {
-    inner: fuchsia_sync::RawMutex,
+/// `KMutex` wraps a platform-specific `RawLock` abstraction. It is pinned in memory to support FFI
+/// loop-detector active list registrations safely under the lock class `Class`.
+#[pin_data]
+pub struct KMutex<Class: LockClass, M: RawLock = RawMutex> {
+    #[pin]
+    mutex: M,
     _marker: PhantomData<Class>,
 }
 
-impl<Class> KMutex<Class> {
-    /// Create a new `KMutex`.
-    #[inline]
-    pub const fn new() -> Self {
-        Self { inner: fuchsia_sync::RawMutex::INIT, _marker: PhantomData }
+impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
+    /// Safe dynamic initialization of the validation lock inside pin context.
+    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+        pin_init!(Self {
+            mutex <- M::init(),
+            _marker: PhantomData,
+        })
     }
 
-    /// Lock the mutex and return a guard containing the lock token.
+    /// Acquires the lock and registers the active loop node.
     #[inline]
-    pub fn lock(&self) -> KMutexGuard<'_, Class> {
-        self.inner.lock();
-        // SAFETY: We have just successfully acquired the mutual exclusion lock,
-        // so it is safe to create a token proving the lock is held.
-        let token = unsafe { LockToken::new() };
-        KMutexGuard { mutex: self, token }
+    pub fn lock(&self) -> impl PinInit<KMutexGuard<'_, Class, M>, core::convert::Infallible> {
+        KMutexGuard::new(self)
     }
 }
 
-impl<Class> Default for KMutex<Class> {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<Class> core::fmt::Debug for KMutex<Class> {
+impl<Class: LockClass, M: RawLock> core::fmt::Debug for KMutex<Class, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("KMutex").field("class", &core::any::type_name::<Class>()).finish()
     }
 }
 
-/// A guard that keeps the underlying mutex locked and provides access to the lock token.
-#[repr(transparent)]
-pub struct KMutexGuard<'a, Class> {
-    mutex: &'a KMutex<Class>,
+/// A validation guard representing exclusive lock ownership and active list participation.
+///
+/// The guard is pinned in memory to ensure that its `lock_entry` pointer remains safe and valid
+/// inside the C++ loop detector active thread list.
+#[repr(C)]
+#[pin_data(PinnedDrop)]
+pub struct KMutexGuard<'a, Class: LockClass, M: RawLock = RawMutex> {
+    mutex: &'a KMutex<Class, M>,
+
+    #[pin]
+    lock_entry: M::LockEntry,
+
+    state: M::GuardState,
+
     token: LockToken<'a, Class>,
 }
 
-impl<'a, Class> KMutexGuard<'a, Class> {
-    /// Get a reference to the lock token.
+impl<'a, Class: LockClass, M: RawLock> KMutexGuard<'a, Class, M> {
+    /// Creates a new stack-pinned validation guard initialization block.
+    pub fn new(mutex: &'a KMutex<Class, M>) -> impl PinInit<Self, core::convert::Infallible> {
+        // SAFETY: The closure correctly initializes all fields of the allocated `KMutexGuard`
+        // and satisfies all safety requirements of `pin_init_from_closure`.
+        unsafe {
+            pin_init_from_closure(move |this: *mut Self| -> Result<(), core::convert::Infallible> {
+                // SAFETY: `this` is a valid pointer to uninitialized memory allocated for
+                // `KMutexGuard`.
+
+                let mutex_addr = core::ptr::addr_of_mut!((*this).mutex);
+                core::ptr::write(mutex_addr, mutex);
+
+                let entry_addr = core::ptr::addr_of_mut!((*this).lock_entry);
+                core::ptr::write(entry_addr, M::LockEntry::default());
+
+                let state = mutex.mutex.acquire(Class::ID, entry_addr);
+
+                let state_addr = core::ptr::addr_of_mut!((*this).state);
+                core::ptr::write(state_addr, state);
+
+                let token_addr = core::ptr::addr_of_mut!((*this).token);
+                core::ptr::write(token_addr, LockToken::new());
+
+                Ok(())
+            })
+        }
+    }
+
+    /// Returns a shared reference to the lock proof `LockToken`.
     #[inline]
     pub fn token(&self) -> &LockToken<'a, Class> {
         &self.token
     }
 
-    /// Get a mutable reference to the lock token.
+    /// Returns a mutable reference to the lock proof `LockToken` inside this pinned projection.
     #[inline]
-    pub fn token_mut(&mut self) -> &mut LockToken<'a, Class> {
-        &mut self.token
+    pub fn token_mut(self: Pin<&mut Self>) -> &mut LockToken<'a, Class> {
+        // SAFETY: Modifying the non-pinned raw `token` field does not violate pinning invariants
+        // since the token has no drop logic or pointer-location sensitivity.
+        let me = unsafe { self.get_unchecked_mut() };
+        &mut me.token
     }
 }
 
-impl<'a, Class> Drop for KMutexGuard<'a, Class> {
-    #[inline]
-    fn drop(&mut self) {
-        // SAFETY: We hold the guard, so we locked it, and we are now unlocking it.
+#[pinned_drop]
+impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> {
+    // SAFETY: The stack slot `lock_entry` remains valid and pinned on the stack until this drop
+    // block completes. Accessing the fields directly to release the raw lock and remove the
+    // active list node is safe and correct under the current thread context.
+    fn drop(self: Pin<&mut Self>) {
         unsafe {
-            self.mutex.inner.unlock();
+            let me = self.get_unchecked_mut();
+            let entry_addr = &mut me.lock_entry as *mut _;
+            me.mutex.mutex.release(entry_addr, me.state);
         }
     }
 }
 
+#[cfg(not(feature = "kernel"))]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KCell, guarded};
+    use crate::KCell;
+    use lockdep::LockClass;
+    use pin_init::{pin_init, stack_pin_init};
 
     struct MyClass;
+    impl LockClass for MyClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
 
+    #[pin_init::pin_data]
     struct MyStruct {
+        #[pin]
         mu: KMutex<MyClass>,
         data1: KCell<u32, MyClass>,
         data2: KCell<i32, MyClass>,
@@ -93,86 +141,88 @@ mod tests {
 
     #[test]
     fn test_basic_token_access() {
-        let s = MyStruct { mu: KMutex::new(), data1: KCell::new(10), data2: KCell::new(-5) };
+        stack_pin_init!(let s = pin_init!(MyStruct {
+            mu <- KMutex::init(),
+            data1: KCell::new(10),
+            data2: KCell::new(-5),
+        }));
 
-        let mut guard = s.mu.lock();
+        stack_pin_init!(let guard_pinned = s.mu.lock());
+        let mut guard = guard_pinned;
 
-        // Immutable access
-        // SAFETY: The token is obtained from the same struct instance `s` that contains the cells,
-        // satisfying the safe instance-bound invariant.
         unsafe {
             assert_eq!(*s.data1.get(guard.token()), 10);
             assert_eq!(*s.data2.get(guard.token()), -5);
         }
-
-        // Mutable access (one at a time)
-        // SAFETY: The token is obtained from the same struct instance `s` that contains the cells,
-        // satisfying the safe instance-bound invariant.
         unsafe {
-            *s.data1.get_mut(guard.token_mut()) = 20;
+            let token_mut = guard.as_mut().token_mut();
+            *s.data1.get_mut(token_mut) = 20;
             assert_eq!(*s.data1.get(guard.token()), 20);
         }
-
-        // Disjoint mutable access using raw pointers (simulating what the macro will do)
-        // SAFETY: This is safe because:
-        // 1. We have exclusive access to the LockToken (via &mut LockToken).
-        // 2. The fields data1 and data2 are disjoint in MyStruct.
-        // 3. The raw pointers are only dereferenced while the lock is held.
-        // 4. The token is obtained from the same struct instance `s` that contains the cells.
         unsafe {
-            let token_mut = guard.token_mut();
+            let token_mut = guard.as_mut().token_mut();
             let p1 = s.data1.as_mut_ptr(token_mut);
             let p2 = s.data2.as_mut_ptr(token_mut);
             *p1 = 30;
             *p2 = -10;
         }
-
-        // SAFETY: The token is from the same instance `s` as the cells.
         unsafe {
             assert_eq!(*s.data1.get(guard.token()), 30);
             assert_eq!(*s.data2.get(guard.token()), -10);
         }
     }
 
+    #[test]
+    fn test_kmutex_init() {
+        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        stack_pin_init!(let _guard = mu.lock());
+    }
+
+    #[test]
+    fn test_kmutex_debug() {
+        extern crate std;
+        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        let debug_str = std::format!("{:?}", mu);
+        assert!(debug_str.contains("KMutex"));
+    }
+
+    use crate::guarded;
+
     #[guarded]
     struct MyGuardedStruct {
         #[mutex]
         mu: KMutex,
-
         #[guarded_by(mu)]
         data1: u32,
-
         #[guarded_by(mu)]
         data2: i32,
     }
 
     #[test]
     fn test_macro_guarded() {
-        let s = MyGuardedStruct { mu: Default::default(), data1: 100.into(), data2: (-50).into() };
+        stack_pin_init!(let s = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 100.into(),
+            data2: (-50).into(),
+        }));
 
-        let mut guard = s.lock_mu();
+        stack_pin_init!(let guard = s.lock_mu());
 
-        // Individual accessors
         assert_eq!(*guard.data1(), 100);
         assert_eq!(*guard.data2(), -50);
 
-        *guard.data1_mut() = 200;
+        *guard.as_mut().data1_mut() = 200;
         assert_eq!(*guard.data1(), 200);
-
-        // Split accessors (shared)
         {
             let fields = guard.fields();
             assert_eq!(*fields.data1, 200);
             assert_eq!(*fields.data2, -50);
         }
-
-        // Split accessors (mut)
         {
-            let fields = guard.fields_mut();
+            let fields = guard.as_mut().fields_mut();
             *fields.data1 = 300;
             *fields.data2 = -100;
         }
-
         assert_eq!(*guard.data1(), 300);
         assert_eq!(*guard.data2(), -100);
     }
@@ -183,44 +233,32 @@ mod tests {
         mu1: KMutex,
         #[mutex]
         mu2: KMutex,
-
         #[guarded_by(mu1)]
         data1: u32,
-
         #[guarded_by(mu2)]
         data2: i32,
     }
 
     #[test]
     fn test_macro_multi_guarded() {
-        let s = MyMultiGuardedStruct {
-            mu1: Default::default(),
-            mu2: Default::default(),
+        stack_pin_init!(let s = pin_init!(MyMultiGuardedStruct {
+            mu1 <- KMutex::init(),
+            mu2 <- KMutex::init(),
             data1: 10.into(),
             data2: 20.into(),
-        };
+        }));
 
-        let mut guard1 = s.lock_mu1();
-        let mut guard2 = s.lock_mu2();
+        stack_pin_init!(let guard1 = s.lock_mu1());
+        stack_pin_init!(let guard2 = s.lock_mu2());
 
         assert_eq!(*guard1.data1(), 10);
         assert_eq!(*guard2.data2(), 20);
-
-        *guard1.data1_mut() = 15;
-        *guard2.data2_mut() = 25;
-
+        *guard1.as_mut().data1_mut() = 15;
+        *guard2.as_mut().data2_mut() = 25;
         assert_eq!(*guard1.data1(), 15);
         assert_eq!(*guard2.data2(), 25);
     }
 
-    #[test]
-    fn test_kmutex_default() {
-        let mu: KMutex<MyClass> = KMutex::default();
-        let guard = mu.lock();
-        let _token = guard.token();
-    }
-
-    #[derive(Default)]
     #[guarded]
     struct MyDefaultGuardedStruct {
         #[mutex]
@@ -231,12 +269,14 @@ mod tests {
 
     #[test]
     fn test_derive_default_guarded() {
-        let s: MyDefaultGuardedStruct = Default::default();
-        let guard = s.lock_mu();
+        stack_pin_init!(let s = pin_init!(MyDefaultGuardedStruct {
+            mu <- KMutex::init(),
+            data: 0.into(),
+        }));
+        stack_pin_init!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 0);
     }
 
-    #[derive(Default)]
     #[guarded]
     struct MyGenericGuardedStruct<T> {
         #[mutex]
@@ -247,83 +287,67 @@ mod tests {
 
     #[test]
     fn test_macro_generic_guarded() {
-        let s: MyGenericGuardedStruct<u32> = Default::default();
-        let mut guard = s.lock_mu();
-
-        // Test safe target accessor (read)
+        stack_pin_init!(let s = pin_init!(MyGenericGuardedStruct::<u32> {
+            mu <- KMutex::init(),
+            data: 0.into(),
+        }));
+        stack_pin_init!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 0);
 
-        // Test safe target accessor (write)
-        *guard.data_mut() = 42;
+        *guard.as_mut().data_mut() = 42;
         assert_eq!(*guard.data(), 42);
 
-        // Test split accessors (mut)
-        let fields = guard.fields_mut();
+        let fields = guard.as_mut().fields_mut();
         *fields.data = 100;
 
-        // Test split accessors (shared)
         let fields_shared = guard.fields();
         assert_eq!(*fields_shared.data, 100);
     }
 
-    #[test]
-    fn test_kmutex_debug() {
-        extern crate std;
-        let mu: KMutex<MyClass> = KMutex::default();
-        let debug_str = std::format!("{:?}", mu);
-
-        assert!(debug_str.contains("KMutex"));
-        assert!(debug_str.contains("MyClass"));
-    }
-
-    #[derive(Default)]
     #[guarded]
     struct MyExplicitParentGuardedStruct {
         #[mutex]
         mu: KMutex,
         #[guarded_by(mu)]
         data: u32,
-
-        // Un-guarded field
         pub label: &'static str,
     }
 
     impl MyExplicitParentGuardedStruct {
-        // Lock-free parent method
         pub fn has_label(&self) -> bool {
             !self.label.is_empty()
         }
     }
 
     impl<'a> MyExplicitParentGuardedStructMuGuard<'a> {
-        pub fn process_with_context(&mut self) {
-            // Explicitly read un-guarded field and call parent method via self.parent.
-            let has_label = self.parent.has_label();
-            let label = self.parent.label;
-
+        pub fn process_with_context(self: Pin<&mut Self>) {
+            let me = unsafe { self.get_unchecked_mut() };
+            let has_label = me.parent.has_label();
+            let label = me.parent.label;
             if has_label && label == "apply_update" {
-                let fields = self.fields_mut();
-                *fields.data = 100;
+                unsafe {
+                    let mut_self = Pin::new_unchecked(me);
+                    let fields = mut_self.fields_mut();
+                    *fields.data = 100;
+                }
             }
         }
     }
 
     #[test]
     fn test_macro_guard_explicit_parent_access() {
-        let s = MyExplicitParentGuardedStruct {
-            mu: Default::default(),
+        stack_pin_init!(let s = pin_init!(MyExplicitParentGuardedStruct {
+            mu <- KMutex::init(),
             data: 0.into(),
             label: "apply_update",
-        };
+        }));
 
-        let mut guard = s.lock_mu();
-        guard.process_with_context();
+        {
+            stack_pin_init!(let guard = s.lock_mu());
+            guard.as_mut().process_with_context();
+        }
 
-        // Drop guard to unlock
-        drop(guard);
-
-        // Verify updates
-        let guard = s.lock_mu();
+        stack_pin_init!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 100);
     }
 }

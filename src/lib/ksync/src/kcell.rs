@@ -3,82 +3,82 @@
 // found in the LICENSE file.
 
 use crate::lock_token::LockToken;
-use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 
-/// A cell that guards a value of type `T` behind a lock of type `Class`.
+/// A container cell that safe-guards data of type `T` using type-level lock class tracking.
 ///
-/// To access the value, a `LockToken` for the correct `Class` must be presented.
+/// `KCell` holds data that can only be safely accessed (read or written) by proving that the
+/// corresponding mutual exclusion lock of class `Class` is currently held by the current thread
+/// via a `LockToken`.
 #[repr(transparent)]
 pub struct KCell<T, Class> {
-    value: UnsafeCell<T>,
+    value: core::cell::UnsafeCell<T>,
     _marker: PhantomData<Class>,
 }
 
-// SAFETY: KCell is Sync if T is Send, because access is exclusive via the lock token.
 unsafe impl<T: Send, Class> Sync for KCell<T, Class> {}
-
-// SAFETY: KCell is Send if T is Send.
 unsafe impl<T: Send, Class> Send for KCell<T, Class> {}
 
 impl<T, Class> KCell<T, Class> {
-    /// Create a new `KCell`.
+    /// Creates a new `KCell` containing the specified `value`.
     #[inline]
     pub const fn new(value: T) -> Self {
-        Self { value: UnsafeCell::new(value), _marker: PhantomData }
+        Self { value: core::cell::UnsafeCell::new(value), _marker: PhantomData }
     }
 
-    /// Access the value immutably using a shared lock token.
+    /// Access the guarded value immutably using a shared lock token.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the presented `token` was obtained from the specific `KMutex`
-    /// instance that logically protects this specific `KCell` instance (usually the mutex field in
-    /// the same parent structure).
+    /// The caller must guarantee that:
+    /// 1. The provided `LockToken` belongs to the specific lock instance that guards this `KCell`
+    ///    (rather than a different lock of the same lock class `Class`).
+    /// 2. The lock is held continuously for the lifetime of the returned reference `'b`.
     #[inline]
     pub unsafe fn get<'b>(&self, _token: &'b LockToken<'_, Class>) -> &'b T {
-        // SAFETY: The safety invariant of this function guarantees that the token is from the
-        // correct mutex instance for this cell, meaning the associated lock is held.
-        // The lifetime of the returned reference is tied to the token borrow, preventing
-        // concurrent mutable access on this thread.
+        // SAFETY: The caller guarantees that the correct lock instance is held continuously
+        // for the duration of the reference lifetime `'b`, ensuring safe immutable access to
+        // the inner value without data races.
         unsafe { &*self.value.get() }
     }
 
-    /// Access the value mutably using a mutable lock token.
+    /// Access the guarded value mutably using a mutable lock token.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the presented `token` was obtained from the specific `KMutex`
-    /// instance that logically protects this specific `KCell` instance (usually the mutex field in
-    /// the same parent structure).
+    /// The caller must guarantee that:
+    /// 1. The provided `LockToken` belongs to the specific lock instance that guards this `KCell`
+    ///    (rather than a different lock of the same lock class `Class`).
+    /// 2. The lock is held continuously for the lifetime of the returned reference `'b`.
     #[inline]
     pub unsafe fn get_mut<'b>(&self, _token: &'b mut LockToken<'_, Class>) -> &'b mut T {
-        // SAFETY: The safety invariant of this function guarantees that the token is from the
-        // correct mutex instance for this cell, meaning the associated lock is held exclusively.
+        // SAFETY: The caller guarantees that the correct lock instance is held continuously for the
+        // duration of the reference lifetime `'b`, and the exclusive mutable borrow of the
+        // `LockToken` ensures that no other active borrows of the same cell can co-exist,
+        // permitting safe mutable projection from the inner `UnsafeCell` without aliasing or data
+        // races.
         unsafe { &mut *self.value.get() }
     }
 
-    /// Get a mutable raw pointer to the value.
+    /// Returns a mutable raw pointer to the guarded value.
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that the presented `token` was obtained from the specific `KMutex`
-    /// instance that logically protects this specific `KCell` instance (usually the mutex field in
-    /// the same parent structure).
-    ///
-    /// This is also unsafe because it returns a raw pointer without lifetime guarantees.
+    /// The caller must guarantee that the lock instance guarding this `KCell` is held continuously
+    /// while dereferencing or accessing the returned raw pointer.
     #[inline]
     pub unsafe fn as_mut_ptr(&self, _token: &mut LockToken<'_, Class>) -> *mut T {
         self.value.get()
     }
 
-    /// Access the value mutably without a token if you have exclusive access to the cell.
+    /// Accesses the inner value mutably by bypassing the locking requirements using unique borrow
+    /// ownership.
     #[inline]
     pub fn get_inner_mut(&mut self) -> &mut T {
         self.value.get_mut()
     }
 
-    /// Consume the cell and return the inner value safely.
+    /// Unwraps the cell, returning the inner value.
     #[inline]
     pub fn into_inner(self) -> T {
         self.value.into_inner()
@@ -115,11 +115,16 @@ impl<T, Class> core::fmt::Debug for KCell<T, Class> {
     }
 }
 
+#[cfg(not(feature = "kernel"))]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lockdep::LockClass;
 
     struct MyClass;
+    impl LockClass for MyClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
 
     #[test]
     fn test_kcell_default() {

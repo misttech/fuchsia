@@ -11,6 +11,7 @@ rustc_macro("ksync-macro") {
   source_root = "macro/src/lib.rs"
   sources = [ "macro/src/lib.rs" ]
   deps = [
+    "//third_party/rust_crates:proc-macro2",
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",
   ]
@@ -23,13 +24,19 @@ rustc_library("ksync") {
     "src/kmutex.rs",
     "src/lib.rs",
     "src/lock_token.rs",
+    "src/raw_lock.rs",
+    "src/raw_userspace_mutex.rs",
   ]
+  with_unit_tests = true
+
   deps = [
     ":ksync-macro",
     "//src/lib/fuchsia-sync",
+    "//src/lib/kstring",
+    "//src/lib/lockdep/rust:lockdep",
     "//third_party/rust_crates:lock_api",
+    "//third_party/rust_crates:pin-init",
   ]
-  with_unit_tests = true
 }
 
 fuchsia_unittest_package("ksync-tests") {
