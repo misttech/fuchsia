@@ -10,6 +10,7 @@ group("power") {
     "cpu-manager",
     "power-manager",
     "shutdown-shim",
+    "thermal-sensor-manager-cli",
   ]
 }
 

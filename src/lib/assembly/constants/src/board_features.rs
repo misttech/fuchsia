@@ -23,6 +23,8 @@ pub enum BoardFeature {
     CpuPowerBoost,
     /// Use a custom audio core component instead of the default.
     CustomAudioCore,
+    /// Eager startup for power-manager component.
+    EagerPowerManager,
     /// Fake battery driver for testing or emulators.
     FakeBattery,
     /// Fake power sensor driver for testing.
@@ -117,6 +119,7 @@ impl AsRef<str> for BoardFeature {
             Self::BusPci => "fuchsia::bus_pci",
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",
             Self::CustomAudioCore => "fuchsia::custom_audio_core",
+            Self::EagerPowerManager => "fuchsia::eager_power_manager",
             Self::FakeBattery => "fuchsia::fake_battery",
             Self::FakePowerSensor => "fuchsia::fake_power_sensor",
             Self::Fan => "fuchsia::fan",

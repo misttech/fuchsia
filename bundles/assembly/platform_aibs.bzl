@@ -31,6 +31,7 @@ bringup_platform_aib_names = [
 
     # Power
     "legacy_power_framework",
+    "power_framework_eager_shard",
     "cpu_manager",
     "power_driver",
     "pwm_driver",

@@ -890,6 +890,7 @@ assembly_input_bundle(
     bootfs_files_package = "//bundles/assembly/bazel_inputs:bootstrap_eng.bootfs_files_package",
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg",
+        "//bundles/assembly/bazel_inputs/src/power/thermal-sensor-manager-cli:thermal-sensor-manager-cli",
     ],
 )
 
@@ -4446,6 +4447,14 @@ assembly_input_bundle(
     ],
     bootstrap_shards = [
         "//src/power:meta/power-framework.shard.cml",
+    ],
+)
+
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "power_framework_eager_shard",
+    bootstrap_shards = [
+        "//src/power:meta/power-framework-eager.shard.cml",
     ],
 )
 

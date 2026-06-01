@@ -230,6 +230,10 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             builder.platform_bundle("registers_driver")?;
         }
 
+        if context.board_config.provides_feature(BoardFeature::EagerPowerManager) {
+            builder.platform_bundle("power_framework_eager_shard")?;
+        }
+
         Ok(())
     }
 }

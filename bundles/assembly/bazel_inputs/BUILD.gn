@@ -404,6 +404,7 @@ group("bootstrap_eng") {
   deps = [
     ":bootstrap_eng.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg",
+    "//bundles/assembly/bazel_inputs/src/power/thermal-sensor-manager-cli",
   ]
 }
 
@@ -1549,6 +1550,10 @@ group("brightness_manager") {
 
 group("legacy_power_framework") {
   deps = [ "//bundles/assembly/bazel_inputs/src/power/power-manager:package" ]
+}
+
+group("power_framework_eager_shard") {
+  deps = []
 }
 
 group("cpu_manager") {

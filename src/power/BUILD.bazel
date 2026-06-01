@@ -5,6 +5,7 @@
 exports_files(
     [
         "meta/cpu-manager.bootstrap_shard.cml",
+        "meta/power-framework-eager.shard.cml",
         "meta/power-framework.shard.cml",
         "meta/sag.shard.cml",
     ],
