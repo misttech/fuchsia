@@ -53,7 +53,7 @@ fit::function<std::string(int32_t, const std::string&)> FormatFn(
 }  // namespace
 
 std::string Format(const fuchsia::logger::LogMessage& message) {
-  auto format = FormatFn(message);
+  fit::function<std::string(int32_t, const std::string&)> format = FormatFn(message);
 
   std::string log;
   if (message.dropped_logs == 1) {

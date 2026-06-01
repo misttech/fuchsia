@@ -56,7 +56,7 @@ void FeedbackData::ShutdownImminent(::fit::deferred_callback stop_respond) {
 
 void FeedbackData::SpawnSystemLogRecorder() {
   zx::channel lifecycle_client, lifecycle_server;
-  if (const auto status = zx::channel::create(0, &lifecycle_client, &lifecycle_server);
+  if (const zx_status_t status = zx::channel::create(0, &lifecycle_client, &lifecycle_server);
       status != ZX_OK) {
     FX_PLOGS(ERROR, status)
         << "Failed to create system log recorder lifecycle channel, logs will not be persisted";

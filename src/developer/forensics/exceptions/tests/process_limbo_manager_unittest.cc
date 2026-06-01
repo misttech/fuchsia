@@ -133,7 +133,7 @@ TEST(ProcessLimboManagerTest, ProcessLimboHandler) {
   ProcessLimboManager limbo_manager;
 
   // Use the handler interface.
-  auto handler = CreateHandler(&limbo_manager);
+  std::unique_ptr<ProcessLimboHandler> handler = CreateHandler(&limbo_manager);
 
   // A disabled limbo should return an error.
   {
@@ -189,10 +189,11 @@ TEST(ProcessLimboManagerTest, ProcessLimboHandler) {
     // ListProcessesWaitingOnException should succeed.
     bool called = false;
     ProcessLimbo_ListProcessesWaitingOnException_Result result;
-    handler->ListProcessesWaitingOnException([&called, &result](auto res) {
-      called = true;
-      result = std::move(res);
-    });
+    handler->ListProcessesWaitingOnException(
+        [&called, &result](ProcessLimbo_ListProcessesWaitingOnException_Result res) {
+          called = true;
+          result = std::move(res);
+        });
 
     ASSERT_TRUE(called);
     ASSERT_TRUE(result.is_response()) << zx_status_get_string(result.err());
@@ -340,7 +341,7 @@ TEST(ProcessLimboManagerTest, FromExceptionBroker) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
 
   inspect::Inspector inspector;
-  auto broker =
+  std::unique_ptr<ExceptionBroker> broker =
       ExceptionBroker::Create(loop.dispatcher(), &inspector.GetRoot(), /*max_num_handlers=*/1u,
                               /*exception_ttl=*/zx::hour(1), /*suspend_enabled=*/false);
   ASSERT_TRUE(broker);
@@ -367,7 +368,7 @@ TEST(ProcessLimboManagerTest, FromExceptionBroker) {
   broker->OnException(std::move(excps[2].exception), infos[2], [&cb_call2]() { cb_call2 = true; });
 
   // There should be 3 exceptions on the limbo.
-  auto& limbo = broker->limbo_manager().limbo();
+  const std::map<zx_koid_t, ProcessException>& limbo = broker->limbo_manager().limbo();
   ValidateException(excps[0], limbo.find(excps[0].process_koid)->second);
   ValidateException(excps[1], limbo.find(excps[1].process_koid)->second);
   ValidateException(excps[2], limbo.find(excps[2].process_koid)->second);
@@ -384,7 +385,7 @@ TEST(ProcessLimboManagerTest, FromExceptionBroker) {
 
 TEST(ProcessLimboManagerTest, WatchActiveCalls) {
   ProcessLimboManager limbo_manager;
-  auto handler = CreateHandler(&limbo_manager);
+  std::unique_ptr<ProcessLimboHandler> handler = CreateHandler(&limbo_manager);
 
   // As no hanging get has been made there should be no change.
   ASSERT_TRUE(limbo_manager.SetActive(true));
@@ -498,7 +499,7 @@ TEST(ProcessLimboManagerTest, ManyHandlers) {
   handlers.push_back(CreateHandler(&limbo_manager));
 
   // Calling each handler should be call the callback immediatelly.
-  for (auto& handler : handlers) {
+  for (std::unique_ptr<ProcessLimboHandler>& handler : handlers) {
     bool called = false;
     std::optional<bool> result;
     handler->WatchActive([&called, &result](bool active) {
@@ -513,7 +514,7 @@ TEST(ProcessLimboManagerTest, ManyHandlers) {
 
   // Calling again should not return.
   std::vector<bool> active_callbacks;
-  for (auto& handler : handlers) {
+  for (std::unique_ptr<ProcessLimboHandler>& handler : handlers) {
     handler->WatchActive([&active_callbacks](bool active) { active_callbacks.push_back(active); });
   }
   ASSERT_EQ(active_callbacks.size(), 0u);
@@ -550,7 +551,7 @@ TEST(ProcessLimboManagerTest, Filters) {
   limbo_manager.AddToLimbo(GetFakeException(kProcessKoid1));
 
   // It should've added the exception.
-  auto& limbo = limbo_manager.limbo();
+  const std::map<zx_koid_t, ProcessException>& limbo = limbo_manager.limbo();
   ASSERT_EQ(limbo.size(), 1u);
   ASSERT_TRUE(limbo.contains(kProcessKoid1));
 
@@ -577,7 +578,7 @@ TEST(ProcessLimboManagerTest, Filters) {
 
 TEST(ProcessLimboManagerTest, FiltersGetSet) {
   ProcessLimboManager limbo_manager;
-  auto handler = CreateHandler(&limbo_manager);
+  std::unique_ptr<ProcessLimboHandler> handler = CreateHandler(&limbo_manager);
 
   // We add some initial filters.
   limbo_manager.AppendFiltersForTesting({"filter-1", "filter-2"});
@@ -654,7 +655,7 @@ TEST(ProcessLimboManagerTest, FiltersGetSet) {
 
 TEST(ProcessLimboManagerTest, DisablingFrees) {
   ProcessLimboManager limbo_manager;
-  auto handler = CreateHandler(&limbo_manager);
+  std::unique_ptr<ProcessLimboHandler> handler = CreateHandler(&limbo_manager);
 
   limbo_manager.SetActive(true);
 

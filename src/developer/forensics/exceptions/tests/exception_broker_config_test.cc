@@ -23,7 +23,7 @@ constexpr char kTestConfigFile[] = "/pkg/data/enable_jitd_on_startup.json";
 TEST(ExceptionBrokerConfig, NonExistanceShouldNotActivate) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   inspect::Inspector inspector;
-  auto broker =
+  std::unique_ptr<ExceptionBroker> broker =
       ExceptionBroker::Create(loop.dispatcher(), &inspector.GetRoot(), /*max_num_handlers=*/1u,
                               /*exception_ttl=*/zx::hour(1), /*suspend_enabled=*/false);
 
@@ -33,14 +33,14 @@ TEST(ExceptionBrokerConfig, NonExistanceShouldNotActivate) {
 TEST(ExceptionBrokerConfig, ExistanceShouldActivate) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   inspect::Inspector inspector;
-  auto broker = ExceptionBroker::Create(
+  std::unique_ptr<ExceptionBroker> broker = ExceptionBroker::Create(
       loop.dispatcher(), &inspector.GetRoot(), /*max_num_handlers=*/
       1u, /*exception_ttl=*/zx::hour(1), /*suspend_enabled=*/false, kTestConfigFile);
 
   ASSERT_TRUE(broker->limbo_manager().active());
 
   {
-    auto& filters = broker->limbo_manager().filters();
+    const std::set<std::string>& filters = broker->limbo_manager().filters();
     ASSERT_EQ(filters.size(), 0u);
   }
 }
@@ -50,14 +50,14 @@ constexpr char kFilterConfigFile[] = "/pkg/data/filter_jitd_config.json";
 TEST(ExceptionBrokerConfig, FilterArray) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   inspect::Inspector inspector;
-  auto broker = ExceptionBroker::Create(
+  std::unique_ptr<ExceptionBroker> broker = ExceptionBroker::Create(
       loop.dispatcher(), &inspector.GetRoot(), /*max_num_handlers=*/1u,
       /*exception_ttl=*/zx::hour(1), /*suspend_enabled=*/false, kFilterConfigFile);
 
   ASSERT_TRUE(broker->limbo_manager().active());
 
   {
-    auto& filters = broker->limbo_manager().filters();
+    const std::set<std::string>& filters = broker->limbo_manager().filters();
     ASSERT_EQ(filters.size(), 3u);
     auto it = filters.begin();
     EXPECT_EQ(*it++, "filter-1");

@@ -17,24 +17,25 @@ namespace last_reboot {
 namespace {
 
 using feedback::FinalShutdownReason;
+using ::fuchsia::feedback::LastReboot;
 
-fuchsia::feedback::LastReboot MakeLastReboot(
-    const FinalShutdownReason reason, const std::optional<zx::duration> uptime = std::nullopt,
-    const std::optional<zx::duration> runtime = std::nullopt) {
+LastReboot MakeLastReboot(const FinalShutdownReason reason,
+                          const std::optional<zx::duration> uptime = std::nullopt,
+                          const std::optional<zx::duration> runtime = std::nullopt) {
   const feedback::FinalShutdownInfo final_shutdown_info(reason, uptime, runtime,
                                                         /*critical_process=*/std::nullopt);
 
-  fuchsia::feedback::LastReboot out_last_reboot;
+  LastReboot out_last_reboot;
 
   LastRebootInfoProvider last_reboot_info_provider(final_shutdown_info);
   last_reboot_info_provider.Get(
-      [&](fuchsia::feedback::LastReboot last_reboot) { out_last_reboot = std::move(last_reboot); });
+      [&](LastReboot last_reboot) { out_last_reboot = std::move(last_reboot); });
 
   return out_last_reboot;
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_Graceful) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kGenericGraceful);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kGenericGraceful);
 
   ASSERT_TRUE(last_reboot.has_graceful());
   EXPECT_TRUE(last_reboot.graceful());
@@ -43,7 +44,7 @@ TEST(LastRebootInfoProviderTest, Succeed_Graceful) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotGraceful) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kKernelPanic);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kKernelPanic);
 
   ASSERT_TRUE(last_reboot.has_graceful());
   EXPECT_FALSE(last_reboot.graceful());
@@ -53,7 +54,7 @@ TEST(LastRebootInfoProviderTest, Succeed_NotGraceful) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_Planned) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kSystemUpdate);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kSystemUpdate);
 
   ASSERT_TRUE(last_reboot.has_planned());
   EXPECT_TRUE(last_reboot.planned());
@@ -63,7 +64,7 @@ TEST(LastRebootInfoProviderTest, Succeed_Planned) {
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotPlanned) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest);
 
   ASSERT_TRUE(last_reboot.has_planned());
   EXPECT_FALSE(last_reboot.planned());
@@ -75,15 +76,15 @@ TEST(LastRebootInfoProviderTest, Succeed_NotPlanned) {
 TEST(LastRebootInfoProviderTest, Succeed_HasUptime) {
   const zx::duration uptime = zx::msec(100);
 
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest, uptime);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest, uptime);
 
   ASSERT_TRUE(last_reboot.has_uptime());
   EXPECT_EQ(last_reboot.uptime(), uptime.to_nsecs());
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_DoesNotHaveUptime) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
-                                          /*uptime=*/std::nullopt);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
+                                                /*uptime=*/std::nullopt);
 
   EXPECT_FALSE(last_reboot.has_uptime());
 }
@@ -91,23 +92,23 @@ TEST(LastRebootInfoProviderTest, Succeed_DoesNotHaveUptime) {
 TEST(LastRebootInfoProviderTest, Succeed_HasRuntime) {
   const zx::duration runtime = zx::msec(78);
 
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
-                                          /*uptime=*/std::nullopt, runtime);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
+                                                /*uptime=*/std::nullopt, runtime);
 
   ASSERT_TRUE(last_reboot.has_runtime());
   EXPECT_EQ(last_reboot.runtime(), runtime.to_nsecs());
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_DoesNotHaveRuntime) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
-                                          /*uptime=*/std::nullopt,
-                                          /*runtime=*/std::nullopt);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kUserRequest,
+                                                /*uptime=*/std::nullopt,
+                                                /*runtime=*/std::nullopt);
 
   EXPECT_FALSE(last_reboot.has_runtime());
 }
 
 TEST(LastRebootInfoProviderTest, Succeed_NotParseable) {
-  const auto last_reboot = MakeLastReboot(FinalShutdownReason::kNotParseable);
+  const LastReboot last_reboot = MakeLastReboot(FinalShutdownReason::kNotParseable);
 
   EXPECT_FALSE(last_reboot.has_graceful());
   EXPECT_FALSE(last_reboot.has_reason());

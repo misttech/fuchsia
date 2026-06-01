@@ -40,7 +40,7 @@ PreviousBootFile::PreviousBootFile(const bool is_first_instance, const std::stri
   }
 
   // Create the directory in /tmp the file is in.
-  auto split_previous_boot_path =
+  std::vector<std::string> split_previous_boot_path =
       fxl::SplitStringCopy(previous_boot_path_, "/", fxl::WhiteSpaceHandling::kKeepWhitespace,
                            fxl::SplitResult::kSplitWantNonEmpty);
 

@@ -70,7 +70,7 @@ void InspectDataBudget::UpdateBudget(
   data_budget_ = std::clamp(new_budget, kMinInspectDataBudgetInBytes, kMaxInspectDataBudgetInBytes);
 
   // Add new budget data to Inspect.
-  auto entry =
+  inspect::UintArray entry =
       inspect_node_->Get("/inspect_budget/last_ten_input_budget_previous_snapshot_size_bytes")
           .CreateUintArray(std::to_string(next_reading_idx_++), 2);
   entry.Set(0, data_budget_.value());

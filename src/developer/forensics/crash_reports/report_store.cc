@@ -62,7 +62,7 @@ void RemoveEmptyDirectories(const std::string& root) {
     return;
   }
 
-  for (const auto& content : contents) {
+  for (const std::string& content : contents) {
     const std::string path = files::JoinPath(root, content);
     if (files::IsDirectory(path)) {
       RemoveEmptyDirectories(path);
@@ -172,7 +172,7 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
     return std::nullopt;
   }
 
-  for (const auto& key : kReservedAttachmentNames) {
+  for (const std::string& key : kReservedAttachmentNames) {
     if (report.Attachments().contains(key)) {
       FX_LOGST(ERROR, tags_->Get(report.Id())) << "Attachment is using reserved key: " << key;
       return std::nullopt;
@@ -182,7 +182,7 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
   const std::string annotations_json = FormatAnnotationsAsJson(report.Annotations());
 
   // Organize the report attachments.
-  auto attachments = std::move(report.Attachments());
+  std::map<std::string, SizedData> attachments = std::move(report.Attachments());
   attachments.emplace(kAnnotationsFilename,
                       SizedData(annotations_json.begin(), annotations_json.end()));
   attachments.emplace(kSnapshotUuidFilename,
@@ -197,12 +197,14 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
     report_size += StorageSize::Bytes(data.size());
   }
 
-  auto& root_metadata = PickRootForStorage(report.Id(), report_size);
+  ReportStoreMetadata& root_metadata = PickRootForStorage(report.Id(), report_size);
 
-  const auto report_location = AddToRoot(report.Id(), report.ProgramShortname(), report_size,
-                                         attachments, root_metadata, garbage_collected_reports);
+  const std::optional<ItemLocation> report_location =
+      AddToRoot(report.Id(), report.ProgramShortname(), report_size, attachments, root_metadata,
+                garbage_collected_reports);
 
-  auto snapshot_location = snapshot_store_.SnapshotLocation(report.SnapshotUuid());
+  std::optional<ItemLocation> snapshot_location =
+      snapshot_store_.SnapshotLocation(report.SnapshotUuid());
   if (report_location.has_value() && snapshot_location == ItemLocation::kMemory) {
     // Moving the associated snapshot to persistence for the first time - do not put the snapshot in
     // /cache if the report was put in /tmp. Doing so could cause a stranded snapshot if the
@@ -242,7 +244,7 @@ std::optional<ItemLocation> ReportStore::AddToRoot(
       return std::nullopt;
     }
 
-    auto& fallback_root = FallbackRoot(store_root);
+    ReportStoreMetadata& fallback_root = FallbackRoot(store_root);
     FX_LOGST(INFO, tags_->Get(report_id)) << "Using fallback root: " << fallback_root.RootDir();
 
     return AddToRoot(report_id, program_shortname, report_size, attachments, fallback_root,
@@ -283,8 +285,9 @@ std::optional<ItemLocation> ReportStore::AddToRoot(
 void ReportStore::AddAnnotation(ReportId id, const std::string& key, const std::string& value) {
   FX_CHECK(Contains(id)) << "Contains() should be called before any AddAnnotation()";
 
-  auto& root_metadata = RootFor(id);
-  const auto annotations_path = root_metadata.ReportAttachmentPath(id, "annotations.json");
+  ReportStoreMetadata& root_metadata = RootFor(id);
+  const std::optional<std::string> annotations_path =
+      root_metadata.ReportAttachmentPath(id, "annotations.json");
 
   if (!annotations_path.has_value()) {
     FX_LOGST(ERROR, tags_->Get(id)) << "annotations.json doesn't exist";
@@ -318,10 +321,11 @@ std::optional<Report> ReportStore::Get(const ReportId report_id) {
     return std::nullopt;
   }
 
-  auto& root_metadata = RootFor(report_id);
-  auto attachment_files = root_metadata.ReportAttachments(report_id, /*absolute_paths=*/
-                                                          false);
-  auto attachment_paths = root_metadata.ReportAttachments(report_id, /*absolute_paths=*/true);
+  ReportStoreMetadata& root_metadata = RootFor(report_id);
+  std::vector<std::string> attachment_files =
+      root_metadata.ReportAttachments(report_id, /*absolute_paths=*/false);
+  std::vector<std::string> attachment_paths =
+      root_metadata.ReportAttachments(report_id, /*absolute_paths=*/true);
 
   AnnotationMap annotations;
   std::map<std::string, SizedData> attachments;
@@ -357,8 +361,8 @@ std::optional<Report> ReportStore::Get(const ReportId report_id) {
 }
 
 std::vector<ReportId> ReportStore::GetReports() const {
-  auto all_reports = tmp_metadata_.Reports();
-  const auto cache_reports = cache_metadata_.Reports();
+  std::vector<ReportId> all_reports = tmp_metadata_.Reports();
+  const std::vector<ReportId> cache_reports = cache_metadata_.Reports();
   all_reports.insert(all_reports.end(), cache_reports.begin(), cache_reports.end());
 
   return all_reports;
@@ -371,10 +375,11 @@ std::string ReportStore::GetSnapshotUuid(const ReportId id) {
     return kNoUuidSnapshotUuid;
   }
 
-  auto& root_metadata = RootFor(id);
-  auto attachment_files = root_metadata.ReportAttachments(id, /*absolute_paths=*/
-                                                          false);
-  auto attachment_paths = root_metadata.ReportAttachments(id, /*absolute_paths=*/true);
+  ReportStoreMetadata& root_metadata = RootFor(id);
+  std::vector<std::string> attachment_files =
+      root_metadata.ReportAttachments(id, /*absolute_paths=*/false);
+  std::vector<std::string> attachment_paths =
+      root_metadata.ReportAttachments(id, /*absolute_paths=*/true);
 
   std::string snapshot_uuid;
   for (size_t i = 0; i < attachment_files.size(); ++i) {
@@ -412,7 +417,7 @@ bool ReportStore::Remove(const ReportId report_id) {
     return false;
   }
 
-  auto& root_metadata = RootFor(report_id);
+  ReportStoreMetadata& root_metadata = RootFor(report_id);
 
   //  The report is stored under /{cache, tmp}/store/<program shortname>/$id.
   //  We first delete /tmp/store/<program shortname>/$id and then if $id was the only report
@@ -423,7 +428,7 @@ bool ReportStore::Remove(const ReportId report_id) {
   }
 
   // If this was the last report for a program, delete the directory for the program.
-  const auto& program = root_metadata.ReportProgramShortname(report_id);
+  const std::string& program = root_metadata.ReportProgramShortname(report_id);
   if (root_metadata.ProgramReports(program).size() == 1 &&
       !DeletePath(root_metadata.ProgramDirectory(program))) {
     FX_LOGST(ERROR, tags_->Get(report_id))
@@ -455,7 +460,7 @@ void ReportStore::RemoveAll() {
 
 bool ReportStore::RecreateFromFilesystem(ReportStoreMetadata& store_root) {
   const bool success = store_root.RecreateFromAndCleanupFilesystem();
-  for (const auto report_id : store_root.Reports()) {
+  for (const ReportId report_id : store_root.Reports()) {
     const std::optional<ProgramShortname> program_shortname =
         ProgramShortname::Create(store_root.ReportProgramShortname(report_id));
 
@@ -542,8 +547,8 @@ bool ReportStore::MakeFreeSpace(const ReportStoreMetadata& root_metadata,
 
   // Create the garbage collection metadata for the reports.
   std::deque<GCMetadata> gc_order;
-  for (const auto& program : root_metadata.Programs()) {
-    const auto& report_ids = root_metadata.ProgramReports(program);
+  for (const std::string& program : root_metadata.Programs()) {
+    const std::deque<ReportId>& report_ids = root_metadata.ProgramReports(program);
 
     for (size_t i = 0; i < report_ids.size(); ++i) {
       gc_order.push_back(GCMetadata{

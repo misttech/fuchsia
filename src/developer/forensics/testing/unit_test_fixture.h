@@ -57,7 +57,7 @@ class UnitTestFixture : public gtest::TestLoopFixture {
   inspect::Node& InspectRoot() const { return inspector_.GetRoot(); }
 
   inspect::Hierarchy InspectTree() {
-    auto result = inspect::ReadFromVmo(inspector_.DuplicateVmo());
+    ::fpromise::result<inspect::Hierarchy> result = inspect::ReadFromVmo(inspector_.DuplicateVmo());
     FX_CHECK(result.is_ok());
     return result.take_value();
   }

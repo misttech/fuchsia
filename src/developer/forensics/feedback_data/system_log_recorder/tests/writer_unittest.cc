@@ -40,15 +40,15 @@ namespace {
 }
 
 // Only change "X" for one character. i.e. X -> 12 is not allowed.
-const auto kMaxLogLineSize =
+const StorageSize kMaxLogLineSize =
     StorageSize::Bytes(Format(BuildLogMessage(FUCHSIA_LOG_INFO, "line X").value()).size());
 
-const auto kMaxDecompressedSize = StorageSize::Kilobytes(256);
+const StorageSize kMaxDecompressedSize = StorageSize::Kilobytes(256);
 
-constexpr auto kRootDirectory = "/root";
-constexpr auto kWriteDirectory = "/root/write";
-constexpr auto kReadDirectory = "/read";
-constexpr auto kOutputFile = "/read/output.txt";
+constexpr const char* kRootDirectory = "/root";
+constexpr const char* kWriteDirectory = "/root/write";
+constexpr const char* kReadDirectory = "/read";
+constexpr const char* kOutputFile = "/read/output.txt";
 
 class EncoderStub : public Encoder {
  public:
@@ -160,7 +160,7 @@ TEST(WriterTest, VerifyEncoderInput) {
   const StorageSize kBufferSize = kMaxLogLineSize * 2;
 
   auto encoder = std::unique_ptr<EncoderStub>(new EncoderStub());
-  auto encoder_ptr = encoder.get();
+  EncoderStub* encoder_ptr = encoder.get();
   LogMessageStore store(kBlockSize, kBufferSize, MakeIdentityRedactor(), std::move(encoder));
   store.TurnOnRateLimiting();
   SystemLogWriter writer(kWriteDirectory, 2u, &store);

@@ -140,7 +140,7 @@ std::optional<fuchsia::net::http::Request> BuildRequest(const std::string_view m
   while (true) {
     // Copy the body in 32 kb chunks.
     std::array<uint8_t, 32 * 1024> buf;
-    const auto result = body.GetBytesBuffer(buf.data(), buf.max_size());
+    const crashpad::FileOperationResult result = body.GetBytesBuffer(buf.data(), buf.max_size());
 
     FX_CHECK(result >= 0);
     if (result == 0) {
@@ -228,7 +228,7 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
   // Add the snapshot archive (only relevant for ManagedSnapshots).
   if (std::holds_alternative<ManagedSnapshot>(snapshot)) {
     const auto& s = std::get<ManagedSnapshot>(snapshot);
-    if (const auto archive = s.LockArchive(); archive) {
+    if (const std::shared_ptr<const ManagedSnapshot::Archive> archive = s.LockArchive(); archive) {
       attachment_readers.emplace_back(archive->value);
       file_readers.emplace(archive->key, &attachment_readers.back());
     }
@@ -241,7 +241,7 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
   crashpad::HTTPHeaders headers;
   http_multipart_builder.PopulateContentHeaders(&headers);
 
-  auto request =
+  std::optional<::fuchsia::net::http::Request> request =
       BuildRequest("POST", url, zx::min(3), headers, *http_multipart_builder.GetBodyStream());
 
   auto complete = [&cobalt, callback = std::move(callback)](
@@ -349,7 +349,7 @@ std::map<std::string, std::string> CrashServer::PrepareAnnotations(
   //
   // If |snapshot| is a MissingSnapshot, they contain potentially new information about why the
   // underlying data was dropped by the SnapshotManager.
-  auto annotations = report.Annotations();
+  AnnotationMap annotations = report.Annotations();
 
   if (std::holds_alternative<MissingSnapshot>(snapshot)) {
     const auto& s = std::get<MissingSnapshot>(snapshot);

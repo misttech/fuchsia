@@ -31,11 +31,11 @@ namespace {
 constexpr zx::duration kTimeWaitForLimitedLogs = zx::sec(60);
 
 // Only change "X" for one character. i.e. X -> 12 is not allowed.
-const auto kMaxLogLineSize =
+const StorageSize kMaxLogLineSize =
     StorageSize::Bytes(std::string("[15604.000][07559][07687][] INFO: line X\n").size());
-const auto kDroppedFormatStrSize =
+const StorageSize kDroppedFormatStrSize =
     StorageSize::Bytes(std::string("!!! DROPPED X MESSAGES !!!\n").size());
-const auto kMaxDecompressedSize = StorageSize::Kilobytes(256);
+const StorageSize kMaxDecompressedSize = StorageSize::Kilobytes(256);
 
 TEST(Encoding, VerifyProductionEncoderDecoderVersion) {
   // Verify that the production decoder and encoder always have the same version.

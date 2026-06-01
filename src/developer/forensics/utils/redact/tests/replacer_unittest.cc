@@ -49,7 +49,7 @@ INSTANTIATE_TEST_SUITE_P(TextReplacement, TextReplacerTest,
                          GetTestName<RegexpTestParam>);
 
 TEST_P(TextReplacerTest, ReplaceWithText) {
-  auto param = GetParam();
+  RegexpTestParam param = GetParam();
 
   RedactionIdCache cache(inspect::UintProperty{});
   Replacer replacer = ReplaceWithText(param.pattern, param.replacement);
@@ -108,7 +108,7 @@ INSTANTIATE_TEST_SUITE_P(IdReplacement, IdReplacerTest,
                          GetTestName<RegexpTestParam>);
 
 TEST_P(IdReplacerTest, ReplaceWithIdFormatString) {
-  auto param = GetParam();
+  RegexpTestParam param = GetParam();
 
   RedactionIdCache cache(inspect::UintProperty{});
   Replacer replacer =
@@ -293,7 +293,7 @@ INSTANTIATE_TEST_SUITE_P(IPv4Replacement, IPv4ReplacerTest,
                          GetTestName<IpTestParam>);
 
 TEST_P(IPv4ReplacerTest, ReplaceIPv4) {
-  auto param = GetParam();
+  IpTestParam param = GetParam();
 
   RedactionIdCache cache(inspect::UintProperty{});
   Replacer replacer = ReplaceIPv4();
@@ -409,7 +409,7 @@ INSTANTIATE_TEST_SUITE_P(IPv6Replacement, IPv6ReplacerTest,
                          GetTestName<IpTestParam>);
 
 TEST_P(IPv6ReplacerTest, ReplaceIPv6) {
-  auto param = GetParam();
+  IpTestParam param = GetParam();
 
   RedactionIdCache cache(inspect::UintProperty{});
   Replacer replacer = ReplaceIPv6();

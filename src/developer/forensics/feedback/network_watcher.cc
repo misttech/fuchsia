@@ -24,7 +24,8 @@ NetworkWatcher::NetworkWatcher(async_dispatcher_t* dispatcher,
 
   watcher_ = std::make_unique<net::interfaces::ReachabilityWatcher>(
       std::move(watcher),
-      [this](auto reachable) {
+      [this](
+          ::fpromise::result<bool, net::interfaces::ReachabilityWatcher::ErrorVariant> reachable) {
         if (reachable.is_error()) {
           FX_LOGS(ERROR) << "Network reachability watcher encountered unrecoverable error: "
                          << net::interfaces::ReachabilityWatcher::error_get_string(
@@ -32,7 +33,7 @@ NetworkWatcher::NetworkWatcher(async_dispatcher_t* dispatcher,
           return;
         }
         reachable_ = reachable.value();
-        for (const auto& on_reachable : callbacks_) {
+        for (const ::fit::function<void(bool)>& on_reachable : callbacks_) {
           on_reachable(reachable_.value());
         }
       },

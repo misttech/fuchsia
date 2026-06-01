@@ -29,7 +29,7 @@ PreviousBootLog::PreviousBootLog(async_dispatcher_t* dispatcher, timekeeper::Clo
 
   // The previous boot logs will eventually be lazily deleted, but we should still try to
   // proactively delete them to save space.
-  auto self = weak_factory_.GetWeakPtr();
+  fxl::WeakPtr<PreviousBootLog> self = weak_factory_.GetWeakPtr();
   async::PostDelayedTask(
       dispatcher_,
       [self] {

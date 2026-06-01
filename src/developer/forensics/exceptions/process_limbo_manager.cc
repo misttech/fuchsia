@@ -23,7 +23,7 @@ using fuchsia::exception::ProcessExceptionMetadata;
 void PruneStaleHandlers(std::vector<fxl::WeakPtr<ProcessLimboHandler>>* handlers) {
   // We only move active handlers to the new list.
   std::vector<fxl::WeakPtr<ProcessLimboHandler>> new_handlers;
-  for (auto& handler : *handlers) {
+  for (fxl::WeakPtr<ProcessLimboHandler>& handler : *handlers) {
     if (handler)
       new_handlers.push_back(std::move(handler));
   }
@@ -45,7 +45,7 @@ std::vector<std::string> CreateFilterVector(const std::set<std::string>& filter_
   std::vector<std::string> filters;
   filters.reserve(filter_set.size());
 
-  for (auto& filter : filter_set) {
+  for (const std::string& filter : filter_set) {
     filters.emplace_back(filter);
   }
 
@@ -67,13 +67,13 @@ fxl::WeakPtr<ProcessLimboManager> ProcessLimboManager::GetWeakPtr() {
 
 void ProcessLimboManager::AddToLimbo(ProcessException process_exception) {
   // Check filters.
-  auto process_name = obtain_process_name_fn_(process_exception.process().get());
+  const std::string process_name = obtain_process_name_fn_(process_exception.process().get());
 
   // Empty names will be stored within the limbo.
   if (!process_name.empty() && !filters_.empty()) {
     // Search for a partial match over the filters.
     bool filter_found = false;
-    for (auto& filter : filters_) {
+    for (const std::string& filter : filters_) {
       if (cpp23::contains(process_name, filter)) {
         filter_found = true;
         break;
@@ -93,8 +93,8 @@ void ProcessLimboManager::AddToLimbo(ProcessException process_exception) {
 void ProcessLimboManager::NotifyLimboChanged() {
   // Notify the handlers of the new list of processes in limbo.
   PruneStaleHandlers(&handlers_);
-  for (auto& handler : handlers_) {
-    auto limbo_list = ListProcessesInLimbo();
+  for (fxl::WeakPtr<ProcessLimboHandler>& handler : handlers_) {
+    std::vector<ProcessExceptionMetadata> limbo_list = ListProcessesInLimbo();
     handler->LimboChanged(std::move(limbo_list));
   }
 }
@@ -104,7 +104,7 @@ void ProcessLimboManager::AddHandler(fxl::WeakPtr<ProcessLimboHandler> handler) 
 }
 
 void ProcessLimboManager::AppendFiltersForTesting(const std::vector<std::string>& filters) {
-  for (auto& filter : filters) {
+  for (const std::string& filter : filters) {
     filters_.insert(filter);
   }
 }
@@ -122,13 +122,13 @@ std::vector<ProcessExceptionMetadata> ProcessLimboManager::ListProcessesInLimbo(
     ProcessExceptionMetadata metadata = {};
 
     zx::process process;
-    if (auto res = limbo_exception.process().duplicate(rights, &process); res != ZX_OK) {
+    if (zx_status_t res = limbo_exception.process().duplicate(rights, &process); res != ZX_OK) {
       FX_PLOGS(ERROR, res) << "Could not duplicate process handle.";
       continue;
     }
 
     zx::thread thread;
-    if (auto res = limbo_exception.thread().duplicate(rights, &thread); res != ZX_OK) {
+    if (zx_status_t res = limbo_exception.thread().duplicate(rights, &thread); res != ZX_OK) {
       FX_PLOGS(ERROR, res) << "Could not duplicate thread handle.";
       continue;
     }
@@ -158,7 +158,7 @@ bool ProcessLimboManager::SetActive(bool active) {
 
   // Notify the handlers of the new activa state.
   PruneStaleHandlers(&handlers_);
-  for (auto& handler : handlers_) {
+  for (fxl::WeakPtr<ProcessLimboHandler>& handler : handlers_) {
     handler->ActiveStateChanged(active);
   }
 
@@ -247,14 +247,14 @@ void ProcessLimboHandler::ListProcessesWaitingOnException(
     info.set_info(limbo_exception.info());
 
     char name[ZX_MAX_NAME_LEN];
-    if (auto res = limbo_exception.process().get_property(ZX_PROP_NAME, name, sizeof(name));
+    if (zx_status_t res = limbo_exception.process().get_property(ZX_PROP_NAME, name, sizeof(name));
         res != ZX_OK) {
       FX_PLOGS(ERROR, res) << "Could not get process name.";
       continue;
     }
     info.set_process_name(name);
 
-    if (auto res = limbo_exception.thread().get_property(ZX_PROP_NAME, name, sizeof(name));
+    if (zx_status_t res = limbo_exception.thread().get_property(ZX_PROP_NAME, name, sizeof(name));
         res != ZX_OK) {
       FX_PLOGS(ERROR, res) << "Could not get thread name.";
       continue;
@@ -284,7 +284,7 @@ void ProcessLimboHandler::WatchProcessesWaitingOnException(
       return;
     }
 
-    auto processes = limbo_manager_->ListProcessesInLimbo();
+    std::vector<ProcessExceptionMetadata> processes = limbo_manager_->ListProcessesInLimbo();
     cb(fpromise::ok(std::move(processes)));
     return;
   }
@@ -299,7 +299,7 @@ void ProcessLimboHandler::RetrieveException(zx_koid_t process_koid, RetrieveExce
 
   fuchsia::exception::ProcessLimbo_RetrieveException_Result result;
 
-  auto& limbo = limbo_manager_->limbo_;
+  std::map<zx_koid_t, ProcessException>& limbo = limbo_manager_->limbo_;
 
   auto it = limbo.find(process_koid);
   if (it == limbo.end()) {
@@ -319,7 +319,7 @@ void ProcessLimboHandler::ReleaseProcess(zx_koid_t process_koid, ReleaseProcessC
   if (!VerifyState(limbo_manager_, &cb))
     return;
 
-  auto& limbo = limbo_manager_->limbo_;
+  std::map<zx_koid_t, ProcessException>& limbo = limbo_manager_->limbo_;
 
   auto it = limbo.find(process_koid);
   if (it == limbo.end()) {
@@ -346,9 +346,9 @@ void ProcessLimboHandler::AppendFilters(std::vector<std::string> new_filters,
   if (!VerifyState(limbo_manager_, &cb))
     return;
 
-  auto current_filters = limbo_manager_->filters_;
+  std::set<std::string> current_filters = limbo_manager_->filters_;
 
-  for (auto& filter : new_filters) {
+  for (const std::string& filter : new_filters) {
     current_filters.insert(filter);
     if (current_filters.size() >= ProcessLimboManager::kMaxFilters) {
       cb(fpromise::error(ZX_ERR_NO_RESOURCES));
@@ -365,7 +365,7 @@ void ProcessLimboHandler::RemoveFilters(std::vector<std::string> filters,
   if (!VerifyState(limbo_manager_, &cb))
     return;
 
-  for (auto& filter : filters) {
+  for (const std::string& filter : filters) {
     limbo_manager_->filters_.erase(filter);
   }
 

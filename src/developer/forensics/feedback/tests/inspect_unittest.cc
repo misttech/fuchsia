@@ -111,7 +111,8 @@ TEST_F(InspectTest, DataBudget) {
   RunLoopUntilIdle();
 
   ASSERT_TRUE(parameters.has_performance_configuration());
-  const auto& performance = parameters.performance_configuration();
+  const ::fuchsia::diagnostics::PerformanceConfiguration& performance =
+      parameters.performance_configuration();
   ASSERT_TRUE(performance.has_max_aggregate_content_size_bytes());
   ASSERT_EQ(performance.max_aggregate_content_size_bytes(), kBudget);
 }
@@ -139,7 +140,7 @@ TEST_F(InspectTest, Get) {
       }))));
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(1234));
+  const AttachmentValue attachment = Run(inspect.Get(1234));
 
   EXPECT_THAT(attachment, AttachmentValueIs(R"([
 foo1,
@@ -155,7 +156,7 @@ TEST_F(InspectTest, GetTerminatesDueToForceCompletion) {
           std::vector<std::string>({"foo1", "foo2"}))));
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(kTicket));
+  const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   // Giving some time to actually collect some inspect data
   RunLoopUntilIdle();
@@ -182,7 +183,7 @@ TEST_F(InspectTest, ForceCompletionCalledAfterTermination) {
       }))));
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(kTicket));
+  const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   inspect.ForceCompletion(kTicket, Error::kDefault);
 
@@ -200,8 +201,8 @@ TEST_F(InspectTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const auto attachment1 = inspect.Get(kTicket);
-        const auto attachment2 = inspect.Get(kTicket);
+        const ::fpromise::promise<AttachmentValue> attachment1 = inspect.Get(kTicket);
+        const ::fpromise::promise<AttachmentValue> attachment2 = inspect.Get(kTicket);
       },
       "Ticket used twice: ");
 }
@@ -211,7 +212,7 @@ TEST_F(InspectTest, GetConnectionError) {
   SetUpInspectServer(std::make_unique<stubs::DiagnosticsArchiveClosesIteratorConnection>());
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(kTicket));
+  const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kConnectionError));
 }
@@ -222,7 +223,7 @@ TEST_F(InspectTest, GetIteratorReturnsError) {
       std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>()));
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(kTicket));
+  const AttachmentValue attachment = Run(inspect.Get(kTicket));
 
   EXPECT_THAT(attachment.Error(), AttachmentValueIs(Error::kMissingValue));
 }
@@ -268,7 +269,7 @@ TEST_F(InspectTest, RedactsWithJsonReplacers) {
   SetRedactor(std::make_unique<Redactor>(0, inspect::UintProperty(), std::move(redaction_enabled)));
 
   Inspect inspect(dispatcher(), services(), MonotonicBackoff::Make(), DataBudget(), GetRedactor());
-  const auto attachment = Run(inspect.Get(1234));
+  const AttachmentValue attachment = Run(inspect.Get(1234));
   EXPECT_EQ(attachment.Value(), R"([
 ["<REDACTED-IPV4: 1>",
 "<REDACTED-IPV4: 2>",

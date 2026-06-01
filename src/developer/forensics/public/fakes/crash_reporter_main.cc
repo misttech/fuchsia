@@ -19,7 +19,8 @@ int main(int argc, const char** argv) {
 
   FX_LOGS(INFO) << "Starting FakeCrashReporter";
 
-  auto context = sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  std::unique_ptr<sys::ComponentContext> context =
+      sys::ComponentContext::CreateAndServeOutgoingDirectory();
 
   ::forensics::fakes::CrashReporter crash_reporter;
 

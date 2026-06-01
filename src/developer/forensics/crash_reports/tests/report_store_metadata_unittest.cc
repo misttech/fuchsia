@@ -286,7 +286,7 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystemAttachmentNotFile) {
 TEST_F(ReportStoreMetadataTest, ReportAttachmentPath_AttachmentExists) {
   metadata().Add(0, "program 1", {"key 1", "key 2"}, StorageSize::Bytes(10));
 
-  const auto path = metadata().ReportAttachmentPath(0, "key 1");
+  const std::optional<std::string> path = metadata().ReportAttachmentPath(0, "key 1");
   const std::string expected_path = files::JoinPath(ReportPath("program 1", 0), "key 1");
 
   EXPECT_EQ(path, expected_path);
@@ -295,7 +295,7 @@ TEST_F(ReportStoreMetadataTest, ReportAttachmentPath_AttachmentExists) {
 TEST_F(ReportStoreMetadataTest, ReportAttachmentPath_AttachmentDoesNotExist) {
   metadata().Add(0, "program 1", {"key 1", "key 2"}, StorageSize::Bytes(10));
 
-  const auto path = metadata().ReportAttachmentPath(0, "key 3");
+  const std::optional<std::string> path = metadata().ReportAttachmentPath(0, "key 3");
   EXPECT_FALSE(path.has_value());
 }
 

@@ -32,13 +32,13 @@ namespace {
 }
 
 // Only change "X" for one character. i.e. X -> 12 is not allowed.
-const auto kMaxLogLineSize =
+const StorageSize kMaxLogLineSize =
     StorageSize::Bytes(Format(BuildLogMessage(FUCHSIA_LOG_INFO, "line X").value()).size());
-const auto kRepeatedFormatStrSize =
+const StorageSize kRepeatedFormatStrSize =
     StorageSize::Bytes(std::string("!!! MESSAGE REPEATED X MORE TIMES !!!\n").size());
 // We set the block size to an arbitrary large numbers for test cases where the block logic does
 // not matter.
-const auto kVeryLargeBlockSize = kMaxLogLineSize * 100;
+const StorageSize kVeryLargeBlockSize = kMaxLogLineSize * 100;
 
 std::unique_ptr<Encoder> MakeIdentityEncoder() {
   return std::unique_ptr<Encoder>(new IdentityEncoder());

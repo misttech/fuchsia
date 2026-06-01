@@ -50,9 +50,9 @@ bool InspectNodeManager::ManagedNodeBase::RemoveChild(const std::string& child) 
 Node& InspectNodeManager::Get(const std::string& path) {
   ManagedNodeBase* node = &root_;
 
-  const auto split_path = SplitAndDesanitize(path);
+  const std::vector<std::string> split_path = SplitAndDesanitize(path);
 
-  for (auto child : split_path) {
+  for (const std::string& child : split_path) {
     // Create the child if it doesn't exist, then get the child.
     node = &node->GetChild(child);
   }
@@ -63,7 +63,7 @@ Node& InspectNodeManager::Get(const std::string& path) {
 bool InspectNodeManager::Remove(const std::string& path) {
   ManagedNodeBase* node = &root_;
 
-  const auto split_path = SplitAndDesanitize(path);
+  const std::vector<std::string> split_path = SplitAndDesanitize(path);
 
   // Find the parent node.
   for (size_t i = 0; i < split_path.size() - 1; ++i) {
@@ -86,7 +86,7 @@ std::vector<std::string> InspectNodeManager::SplitAndDesanitize(const std::strin
   std::vector<std::string> split_path =
       SplitStringCopy(path, "/", kTrimWhitespace, kSplitWantNonEmpty);
 
-  for (auto& part : split_path) {
+  for (std::string& part : split_path) {
     ReplaceCharInString(kBackslashReplacement, '/', &part);
   }
 

@@ -109,12 +109,14 @@ Annotations UIStateProvider::Get() {
   }
 
   const auto& time = std::get<zx::time_monotonic>(last_transition_time_);
-  const auto formatted_duration = FormatDuration(clock_->MonotonicNow() - time);
+  const std::optional<std::string> formatted_duration =
+      FormatDuration(clock_->MonotonicNow() - time);
 
   // FormatDuration returns std::nullopt if duration was negative- if so, send Error::kBadValue as
   // annotation value
-  const auto duration = formatted_duration.has_value() ? ErrorOrString(formatted_duration.value())
-                                                       : ErrorOrString(Error::kBadValue);
+  const ErrorOrString duration = formatted_duration.has_value()
+                                     ? ErrorOrString(formatted_duration.value())
+                                     : ErrorOrString(Error::kBadValue);
 
   return {{kSystemUserActivityCurrentDurationKey, duration}};
 }

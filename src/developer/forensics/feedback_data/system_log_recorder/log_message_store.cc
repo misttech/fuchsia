@@ -64,10 +64,11 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
 
   std::lock_guard<std::mutex> lk(mtx_);
 
-  const auto& log_msg =
+  const std::string& log_msg =
       (message.is_ok()) ? redactor_->Redact(message.value().msg) : message.error();
-  const auto& log_severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
-  const auto& log_tags = (message.is_ok()) ? message.value().tags : kDefaultTags;
+  const int32_t& log_severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
+  const std::vector<std::string>& log_tags =
+      (message.is_ok()) ? message.value().tags : kDefaultTags;
 
   // 1. Early return if the incoming message, severity and tags are the same as last time.
   if (last_pushed_message_ == log_msg && last_pushed_severity_ == log_severity &&

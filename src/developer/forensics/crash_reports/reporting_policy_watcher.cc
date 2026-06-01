@@ -37,7 +37,7 @@ void ReportingPolicyWatcher::SetPolicy(const ReportingPolicy policy) {
                 << ToString(policy);
   policy_ = policy;
 
-  for (const auto& on_change : callbacks_) {
+  for (const ::fit::function<void(ReportingPolicy)>& on_change : callbacks_) {
     on_change(policy_);
   }
 }

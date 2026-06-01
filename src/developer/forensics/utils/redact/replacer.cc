@@ -120,10 +120,10 @@ Replacer FunctionBasedReplacer(
 
   return [regexp = std::move(regexp), build_redacted = std::move(build_redacted), ignore_prefixes](
              RedactionIdCache& cache, std::string& text) mutable -> std::string& {
-    const auto redactions = BuildRedactions(text, *regexp, ignore_prefixes,
-                                            [&cache, &build_redacted](const std::string& match) {
-                                              return build_redacted(cache, match);
-                                            });
+    const std::vector<Redaction> redactions = BuildRedactions(
+        text, *regexp, ignore_prefixes, [&cache, &build_redacted](const std::string& match) {
+          return build_redacted(cache, match);
+        });
     ApplyRedactions(redactions, text);
     return text;
   };

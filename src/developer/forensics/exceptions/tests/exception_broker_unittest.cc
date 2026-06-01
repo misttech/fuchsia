@@ -41,8 +41,9 @@ size_t NumSubprocesses() {
 using ExceptionBrokerTest = UnitTestFixture;
 
 TEST_F(ExceptionBrokerTest, IsActive) {
-  auto broker = ExceptionBroker::Create(dispatcher(), &InspectRoot(), 0, zx::sec(0),
-                                        /*suspend_enabled=*/false);
+  std::unique_ptr<ExceptionBroker> broker =
+      ExceptionBroker::Create(dispatcher(), &InspectRoot(), 0, zx::sec(0),
+                              /*suspend_enabled=*/false);
 
   bool called{false};
   broker->IsActive([&called] { called = true; });

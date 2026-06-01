@@ -315,7 +315,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
   }
   std::vector<std::string> reason_strings;
   reason_strings.reserve(reasons.size());
-  for (const auto& reason : reasons) {
+  for (const GracefulShutdownReason& reason : reasons) {
     std::string reason_string;
     switch (reason) {
       case GracefulShutdownReason::kUserRequest:
@@ -392,7 +392,7 @@ std::string ToRawStrings(const std::vector<GracefulShutdownReason>& reasons) {
   }
   std::vector<std::string> reason_strings;
   reason_strings.reserve(reasons.size());
-  for (const auto& reason : reasons) {
+  for (const GracefulShutdownReason& reason : reasons) {
     reason_strings.push_back(ToString(reason));
   }
   return fxl::JoinStrings(reason_strings, kDeliminator);
@@ -414,7 +414,7 @@ std::vector<GracefulShutdownReason> FromLegacyTxtFile(const std::string_view con
                        fxl::SplitResult::kSplitWantNonEmpty);
   std::vector<GracefulShutdownReason> graceful_reasons;
   graceful_reasons.reserve(reason_strings.size());
-  for (const auto& reason : reason_strings) {
+  for (const std::string_view& reason : reason_strings) {
     graceful_reasons.push_back(GracefulShutdownReasonFromString(reason));
   }
   return graceful_reasons;
@@ -509,7 +509,7 @@ std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
 
   std::vector<GracefulShutdownReason> reasons;
   reasons.reserve(options.reasons().size());
-  for (const auto& reason : options.reasons()) {
+  for (const fuchsia::hardware::power::statecontrol::ShutdownReason& reason : options.reasons()) {
     reasons.push_back(FromReason(reason));
   }
   return reasons;

@@ -21,15 +21,18 @@ LastRebootInfoProvider::LastRebootInfoProvider(
     last_reboot_.set_runtime(final_shutdown_info.Runtime()->get());
   }
 
-  if (const auto graceful = final_shutdown_info.OptionallyGraceful(); graceful.has_value()) {
+  if (const std::optional<bool> graceful = final_shutdown_info.OptionallyGraceful();
+      graceful.has_value()) {
     last_reboot_.set_graceful(graceful.value());
   }
 
-  if (const auto planned = final_shutdown_info.OptionallyPlanned(); planned.has_value()) {
+  if (const std::optional<bool> planned = final_shutdown_info.OptionallyPlanned();
+      planned.has_value()) {
     last_reboot_.set_planned(planned.value());
   }
 
-  if (const auto fidl_reboot_reason = final_shutdown_info.ToFidlRebootReason();
+  if (const std::optional<::fuchsia::feedback::RebootReason> fidl_reboot_reason =
+          final_shutdown_info.ToFidlRebootReason();
       fidl_reboot_reason.has_value()) {
     last_reboot_.set_reason(fidl_reboot_reason.value());
   }
@@ -38,7 +41,7 @@ LastRebootInfoProvider::LastRebootInfoProvider(
 void LastRebootInfoProvider::Get(GetCallback callback) {
   fuchsia::feedback::LastReboot last_reboot;
 
-  if (const auto status = last_reboot_.Clone(&last_reboot); status != ZX_OK) {
+  if (const zx_status_t status = last_reboot_.Clone(&last_reboot); status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Error cloning |last_reboot_|";
   }
 

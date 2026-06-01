@@ -179,14 +179,14 @@ void ExtractZirconRebootInfo(const std::string& path, HwShutdownReason* out_hw_r
   // We expect the critical process to look like:
   //
   // ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: <PROCESS> (<KOID>)
-  for (auto line : lines) {
+  for (std::string_view line : lines) {
     if (line.substr(0, kCriticalProcessPrefix.size()) != kCriticalProcessPrefix) {
       continue;
     }
 
     line.remove_prefix(kCriticalProcessPrefix.size());
 
-    if (const auto r_paren = line.find_last_of('('); r_paren == line.npos) {
+    if (const size_t r_paren = line.find_last_of('('); r_paren == line.npos) {
       continue;
     } else {
       line.remove_suffix(line.size() - r_paren);
@@ -391,7 +391,7 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       hw_reason, zircon_reason, graceful_info, not_a_fdr, supports_user_initiated_poweroffs,
       last_boot_uptime, last_boot_runtime, critical_process);
-  const auto reboot_log =
+  const std::string reboot_log =
       MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info.ToRebootReasonString(),
                     fallback_uptime, fallback_runtime);
 

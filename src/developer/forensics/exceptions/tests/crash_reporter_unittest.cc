@@ -108,7 +108,7 @@ class StubCrashIntrospect : public fuchsia::sys2::CrashIntrospect {
       fuchsia::component::Error err{fuchsia::component::Error::RESOURCE_NOT_FOUND};
       callback(CrashIntrospect_FindComponentByThreadKoid_Result::WithErr(std::move(err)));
     } else {
-      const auto& info = tids_to_component_infos_[thread_koid];
+      const ComponentInfo& info = tids_to_component_infos_[thread_koid];
 
       ComponentCrashInfo crash_info;
       crash_info.set_url(info.url).set_moniker(info.moniker);
@@ -379,7 +379,7 @@ TEST_F(HandlerTest, NoException) {
   EXPECT_EQ(out_moniker.value(), "realm/path/component_name");
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kComponentUrl, process_name, process_koid, thread_name, thread_koid,
                       {{kCrashProcessStateKey, "in exception"}});
@@ -427,7 +427,7 @@ TEST_F(HandlerTest, ProcessTerminated) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kComponentUrl, process_name, process_koid, "", thread_koid,
                       {
@@ -471,7 +471,7 @@ TEST_F(HandlerTest, DelayForFeedbackCrash) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kComponentUrl, process_name, process_koid, thread_name, thread_koid,
                       {
@@ -519,7 +519,7 @@ TEST_F(HandlerTest, DriverHostCrash) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kDriverUrl, process_name, process_koid, thread_name, thread_koid,
                       {
@@ -570,7 +570,7 @@ TEST_F(HandlerTest, DriverHostCrashFallback) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kComponentUrl, process_name, process_koid, thread_name, thread_koid,
                       {
@@ -621,7 +621,7 @@ TEST_F(HandlerTest, DriverHostCrashNoDriverIntrospect) {
   ASSERT_TRUE(called);
 
   ASSERT_EQ(crash_reporter().reports().size(), 1u);
-  auto& report = crash_reporter().reports().front();
+  const ::fuchsia::feedback::CrashReport& report = crash_reporter().reports().front();
 
   ValidateCrashReport(report, kComponentUrl, process_name, process_koid, thread_name, thread_koid,
                       {

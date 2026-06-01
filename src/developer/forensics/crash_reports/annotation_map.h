@@ -94,7 +94,7 @@ class AnnotationMap {
 
   // Vectors of FIDL annotations.
   AnnotationMap& Set(const std::vector<::fuchsia::feedback::Annotation>& annotations) {
-    for (const auto& annotation : annotations) {
+    for (const ::fuchsia::feedback::Annotation& annotation : annotations) {
       Set(annotation);
     }
     return *this;

@@ -32,7 +32,7 @@ TEST_F(CrashReportBuilderTest, SetsMinidump) {
 
   builder_.SetMinidump(std::move(minidump_vmo.vmo()));
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_specific_report());
   ASSERT_TRUE(crash_report.specific_report().is_native());
 
@@ -53,7 +53,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_ChannelOverflow) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kChannelOverflow);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-unknown_process-channel-overflow");
 }
@@ -65,7 +65,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PortObserverOverflow) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kPortObserverOverflow);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-unknown_process-port-observer-overflow");
 }
@@ -77,7 +77,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PortPacketOverflow) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kPortPacketOverflow);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-unknown_process-port-packet-overflow");
 }
@@ -89,7 +89,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PageFaultIo) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kPageFaultIo);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-io");
 }
@@ -101,7 +101,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PageFaultIoDataIntegrity) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kPageFaultIoDataIntegrity);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-io_data_integrity");
 }
@@ -113,7 +113,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PageFaultBadState) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kPageFaultBadState);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-bad_state");
 }
@@ -149,7 +149,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_Arm64UnknownException) {
   builder_.SetMinidump(std::move(minidump_vmo.vmo()))
       .SetExceptionReason(ExceptionReason::kArm64UnknownException);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-arm64-unknown-exception");
 }
@@ -157,7 +157,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_Arm64UnknownException) {
 TEST_F(CrashReportBuilderTest, ProcessTerminated) {
   builder_.SetProcessTerminated();
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_specific_report());
 
   ASSERT_TRUE(crash_report.has_program_name());
@@ -179,7 +179,7 @@ TEST_F(CrashReportBuilderTest, ProcessTerminated) {
 TEST_F(CrashReportBuilderTest, ExpiredException) {
   builder_.SetExceptionExpired();
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_specific_report());
 
   ASSERT_TRUE(crash_report.specific_report().is_native());
@@ -193,7 +193,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReasonOverwritesExceptionExpired) {
   builder_.SetExceptionExpired();
   builder_.SetExceptionReason(ExceptionReason::kPageFaultIo);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-io");
 }
@@ -202,7 +202,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReasonOverwritesProcessTerminated) {
   builder_.SetProcessTerminated();
   builder_.SetExceptionReason(ExceptionReason::kPageFaultIo);
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_crash_signature());
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-io");
 }
@@ -210,7 +210,7 @@ TEST_F(CrashReportBuilderTest, ExceptionReasonOverwritesProcessTerminated) {
 TEST_F(CrashReportBuilderTest, IsFatal) {
   builder_.SetExceptionExpired();
 
-  auto crash_report = builder_.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder_.Consume();
   ASSERT_TRUE(crash_report.has_is_fatal());
   EXPECT_TRUE(crash_report.is_fatal());
 }
@@ -231,7 +231,7 @@ TEST(ReportBuilderTest, TestUptime) {
   builder.SetProcess(process).SetThread(thread);
   builder.SetProcessTerminated();
 
-  auto crash_report = builder.Consume();
+  ::fuchsia::feedback::CrashReport crash_report = builder.Consume();
   ASSERT_TRUE(crash_report.has_program_name());
   ASSERT_EQ(crash_report.program_name(), "crasher");
   ASSERT_TRUE(crash_report.has_program_uptime());

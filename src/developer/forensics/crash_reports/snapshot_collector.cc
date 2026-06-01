@@ -55,7 +55,7 @@ SnapshotCollector::SnapshotCollector(async_dispatcher_t* dispatcher, timekeeper:
       shared_request_window_(shared_request_window) {}
 
 feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const std::string& uuid) {
-  const auto missing_snapshot = snapshot_store_->GetMissingSnapshot(uuid);
+  const MissingSnapshot missing_snapshot = snapshot_store_->GetMissingSnapshot(uuid);
 
   feedback::Annotations combined_annotations = missing_snapshot.Annotations();
   for (const auto& [key, val] : missing_snapshot.PresenceAnnotations()) {
@@ -98,7 +98,7 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const std
     uuid = MakeNewSnapshotRequest(current_time, timeout);
   }
 
-  auto* request = FindSnapshotRequest(uuid);
+  SnapshotRequest* request = FindSnapshotRequest(uuid);
   FX_CHECK(request);
   request->promise_ids.insert(report_id);
 
@@ -145,7 +145,7 @@ void SnapshotCollector::Shutdown() {
 
 std::string SnapshotCollector::MakeNewSnapshotRequest(const zx::time_monotonic start_time,
                                                       const zx::duration timeout) {
-  const auto uuid = uuid::Generate();
+  const std::string uuid = uuid::Generate();
   snapshot_requests_.emplace_back(std::unique_ptr<SnapshotRequest>(new SnapshotRequest{
       .uuid = uuid,
       .promise_ids = {},
@@ -175,7 +175,7 @@ void SnapshotCollector::CompleteWithSnapshot(const std::string& uuid,
     return;
   }
 
-  auto* request = FindSnapshotRequest(uuid);
+  SnapshotRequest* request = FindSnapshotRequest(uuid);
   FX_CHECK(request);
 
   // Add annotations about the snapshot. These are not "presence" annotations because
@@ -190,7 +190,7 @@ void SnapshotCollector::CompleteWithSnapshot(const std::string& uuid,
   // The snapshot request is completed and unblock all promises that need |annotations| and
   // |archive|.
   const auto shared_annotations = std::make_shared<feedback::Annotations>(std::move(annotations));
-  for (auto id : request->promise_ids) {
+  for (uint64_t id : request->promise_ids) {
     report_results_[id] = ReportResults{
         .uuid = uuid,
         .annotations = shared_annotations,

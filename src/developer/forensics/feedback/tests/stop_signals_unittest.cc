@@ -254,7 +254,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, WaitForRebootReasonParamete
                          });
 
 TEST_P(WaitForRebootReasonParameterizedTest, CompletionWithExpectedAction) {
-  const auto& param = GetParam();
+  const TestParam& param = GetParam();
   async::Executor executor(dispatcher());
 
   std::optional<GracefulShutdownInfoSignal> signal;

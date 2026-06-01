@@ -36,8 +36,8 @@ AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
   // Remove any providers that return attachments not in |allowlist_|.
   EraseNotAllowlisted(providers_, allowlist);
 
-  for (const auto& k : allowlist) {
-    const auto num_providers = providers_.count(k);
+  for (const std::string& k : allowlist) {
+    const size_t num_providers = providers_.count(k);
 
     FX_CHECK(num_providers == 1) << "Attachment \"" << k << "\" collected by " << num_providers
                                  << " providers";
@@ -55,7 +55,7 @@ AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
   }
 
   // Complete the collection after |timeout| elapses
-  auto self = weak_factory_.GetWeakPtr();
+  fxl::WeakPtr<AttachmentManager> self = weak_factory_.GetWeakPtr();
   async::PostDelayedTask(
       dispatcher_,
       [ticket, self] {
@@ -78,7 +78,7 @@ AttachmentManager::AttachmentManager(async_dispatcher_t* dispatcher,
       attachments.insert({keys[i], results[i].take_value()});
 
       // Consider any attachments without content as missing attachments.
-      if (auto& attachment = attachments.at(keys[i]);
+      if (AttachmentValue& attachment = attachments.at(keys[i]);
           attachment.HasValue() && attachment.Value().empty()) {
         attachment = attachment.HasError() ? attachment.Error() : Error::kMissingValue;
       }

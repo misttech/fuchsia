@@ -64,7 +64,7 @@ TEST_F(UtcTimeProviderTest, Check_CurrentUtcBootDifference) {
   timekeeper::time_utc utc;
   ASSERT_EQ(clock_.UtcNow(&utc), ZX_OK);
 
-  const auto utc_boot_difference = utc_provider_->CurrentUtcBootDifference();
+  const std::optional<zx::duration> utc_boot_difference = utc_provider_->CurrentUtcBootDifference();
   ASSERT_TRUE(utc_boot_difference.has_value());
   EXPECT_EQ(boot.get() + utc_boot_difference.value().get(), utc.get());
 }
@@ -78,7 +78,8 @@ TEST_F(UtcTimeProviderTest, Check_ReadsPreviousBootUtcBootDifference) {
       PreviousBootFile::FromCache(/*is_first_instance=*/true,
                                   "current_utc_monotonic_difference.txt"));
 
-  const auto previous_utc_boot_difference = utc_provider_->PreviousBootUtcBootDifference();
+  const std::optional<zx::duration> previous_utc_boot_difference =
+      utc_provider_->PreviousBootUtcBootDifference();
 
   ASSERT_TRUE(previous_utc_boot_difference.has_value());
   EXPECT_EQ(previous_utc_boot_difference.value().get(), 1234);
@@ -98,7 +99,7 @@ TEST_F(UtcTimeProviderTest, Check_WritesPreviousBootUtcBootDifference) {
                                   "current_utc_monotonic_difference.txt"));
   RunLoopUntilIdle();
 
-  const auto utc_boot_difference = utc_provider_->CurrentUtcBootDifference();
+  const std::optional<zx::duration> utc_boot_difference = utc_provider_->CurrentUtcBootDifference();
   ASSERT_TRUE(utc_boot_difference.has_value());
 
   std::string content;

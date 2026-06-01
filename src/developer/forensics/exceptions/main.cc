@@ -20,7 +20,7 @@ void LogProcessLimboStatus(const ::forensics::exceptions::ProcessLimboManager& l
     return;
   }
 
-  auto filters = fxl::JoinStrings(limbo.filters(), ", ");
+  const std::string filters = fxl::JoinStrings(limbo.filters(), ", ");
   FX_LOGS(INFO) << "Process limbo is active at startup with the following filters: " << filters;
 }
 
@@ -32,7 +32,7 @@ int main() {
   builder.WithTags({"forensics", "exception"}).BuildAndInitialize();
 
   const exceptions_config::Config config = exceptions_config::Config::TakeFromStartupHandle();
-  auto broker =
+  std::unique_ptr<ExceptionBroker> broker =
       ExceptionBroker::Create(component.Dispatcher(), component.InspectRoot(),
                               kMaxNumExceptionHandlers, kExceptionTtl, config.suspend_enabled());
 
@@ -46,7 +46,7 @@ int main() {
   // Crete a new handler for each connection.
   fidl::BindingSet<fuchsia::exception::ProcessLimbo, std::unique_ptr<ProcessLimboHandler>>
       limbo_bindings;
-  auto& limbo_manager = broker->limbo_manager();
+  ProcessLimboManager& limbo_manager = broker->limbo_manager();
 
   // Everytime a new request comes for this service, we create a new handler. This permits us to
   // track per-connection state.

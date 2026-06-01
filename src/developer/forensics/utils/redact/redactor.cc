@@ -139,14 +139,14 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
 }
 
 std::string& Redactor::Redact(std::string& text) {
-  for (const auto& replacer : replacers_) {
+  for (const Replacer& replacer : replacers_) {
     replacer(cache_, text);
   }
   return text;
 }
 
 std::string& Redactor::RedactJson(std::string& text) {
-  for (const auto& replacer : json_replacers_) {
+  for (const Replacer& replacer : json_replacers_) {
     replacer(cache_, text);
   }
   return text;
@@ -159,7 +159,7 @@ Redactor& Redactor::Add(Replacer replacer) {
 }
 
 Redactor& Redactor::AddTextReplacer(std::string_view pattern, std::string_view replacement) {
-  auto replacer = ReplaceWithText(pattern, replacement);
+  Replacer replacer = ReplaceWithText(pattern, replacement);
   FX_CHECK(replacer != nullptr) << "Failed to build replacer for " << pattern << " " << replacement;
 
   return Add(std::move(replacer));
@@ -167,7 +167,7 @@ Redactor& Redactor::AddTextReplacer(std::string_view pattern, std::string_view r
 
 Redactor& Redactor::AddIdReplacer(std::string_view pattern, std::string_view format,
                                   const std::vector<std::string>& ignore_prefixes) {
-  auto replacer = ReplaceWithIdFormatString(pattern, format, ignore_prefixes);
+  Replacer replacer = ReplaceWithIdFormatString(pattern, format, ignore_prefixes);
   FX_CHECK(replacer != nullptr) << "Failed to build replacer for " << pattern << " " << format;
 
   return Add(std::move(replacer));

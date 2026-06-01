@@ -147,8 +147,8 @@ class SystemLogTest : public UnitTestFixture {
     log_buffer_.Add(::fpromise::ok(std::move(log_message)));
   }
 
-  static constexpr auto kActivePeriod = zx::hour(1);
-  static constexpr auto kLogTimestamp = zx::sec(1234);
+  static constexpr zx::duration kActivePeriod = zx::hour(1);
+  static constexpr zx::duration kLogTimestamp = zx::sec(1234);
 
   timekeeper::Clock* Clock() { return &clock_; }
   const stubs::DiagnosticsArchiveBase& LogServer() const { return *log_server_; }
@@ -167,7 +167,7 @@ class SystemLogTest : public UnitTestFixture {
 TEST_F(SystemLogTest, GetTerminatesDueToLogTimestamp) {
   SetUpLogServer(Messages());
 
-  const auto log = CollectSystemLog();
+  const AttachmentValue log = CollectSystemLog();
   EXPECT_THAT(log, AttachmentValueIs(R"([01234.000][00200][00300][tag_1] INFO: Message 1
 [01234.000][00200][00300][tag_2] INFO: Message 2
 [01234.000][00200][00300][tag_3] INFO: Message 3
@@ -463,8 +463,8 @@ TEST_F(SystemLogTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const auto log1 = CollectSystemLog(kTicket);
-        const auto log2 = CollectSystemLog(kTicket);
+        const ::fpromise::promise<AttachmentValue> log1 = CollectSystemLog(kTicket);
+        const ::fpromise::promise<AttachmentValue> log2 = CollectSystemLog(kTicket);
       },
       "Ticket used twice: ");
 }

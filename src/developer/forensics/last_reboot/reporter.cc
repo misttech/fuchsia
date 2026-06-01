@@ -94,7 +94,8 @@ fuchsia::feedback::CrashReport CreateCrashReport(
 ::fpromise::promise<void> Reporter::FileCrashReport(
     const feedback::RebootLog& reboot_log, const zx::duration delay,
     feedback::SpontaneousRebootReason spontaneous_reboot_reason) {
-  auto report = CreateCrashReport(reboot_log, redactor_, spontaneous_reboot_reason);
+  ::fuchsia::feedback::CrashReport report =
+      CreateCrashReport(reboot_log, redactor_, spontaneous_reboot_reason);
 
   ::fpromise::bridge<void, Error> bridge;
 

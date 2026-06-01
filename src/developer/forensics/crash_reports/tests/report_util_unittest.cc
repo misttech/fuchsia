@@ -39,10 +39,11 @@ TEST(MakeReport, AddsSnapshotAnnotations) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
-                                 /*report_id=*/0, "snapshot_uuid", annotations,
-                                 /*current_time=*/std::nullopt, std::move(product),
-                                 /*is_hourly_report=*/false);
+  const ::fpromise::result<Report> report =
+      MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                 /*report_id=*/0, "snapshot_uuid", annotations,
+                 /*current_time=*/std::nullopt, std::move(product),
+                 /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());
   EXPECT_EQ(report.value().Annotations().Get("snapshot_annotation_key"),
             "snapshot_annotation_value");
@@ -112,10 +113,11 @@ TEST(MakeReport, AddsRequiredAnnotations) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
-                                 /*report_id=*/0, "snapshot_uuid", {},
-                                 /*current_time=*/std::nullopt, std::move(product),
-                                 /*is_hourly_report=*/false);
+  const ::fpromise::result<Report> report =
+      MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                 /*report_id=*/0, "snapshot_uuid", {},
+                 /*current_time=*/std::nullopt, std::move(product),
+                 /*is_hourly_report=*/false);
 
   ASSERT_TRUE(report.is_ok());
   EXPECT_EQ(report.value().Annotations().Get(feedback::kOSNameKey), "Fuchsia");
@@ -188,10 +190,11 @@ TEST(MakeReport, AddsWeight) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
-                                 /*report_id=*/0, "snapshot_uuid", /*snapshot_annotations=*/{},
-                                 /*current_time=*/std::nullopt, std::move(product),
-                                 /*is_hourly_report=*/false);
+  const ::fpromise::result<Report> report =
+      MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                 /*report_id=*/0, "snapshot_uuid", /*snapshot_annotations=*/{},
+                 /*current_time=*/std::nullopt, std::move(product),
+                 /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());
   EXPECT_EQ(report.value().Annotations().Get("weight"), "5");
 }

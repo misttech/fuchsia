@@ -64,7 +64,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<ExpectedMetric>& info) { return info.param.name; });
 
 TEST_P(AttachmentMetricsTest, IndividualKeysTimeout) {
-  const auto param = GetParam();
+  const ExpectedMetric& param = GetParam();
 
   AttachmentMetrics metrics(Cobalt());
   metrics.LogMetrics(ToAttachments({
@@ -76,7 +76,7 @@ TEST_P(AttachmentMetricsTest, IndividualKeysTimeout) {
 }
 
 TEST_P(AttachmentMetricsTest, IndividualKeysNonTimeout) {
-  const auto param = GetParam();
+  const ExpectedMetric& param = GetParam();
 
   AttachmentMetrics metrics(Cobalt());
   metrics.LogMetrics(ToAttachments({

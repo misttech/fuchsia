@@ -54,7 +54,7 @@ feedback::Annotations AllAnnotations(const std::set<std::string>& default_snapsh
                                      const feedback::Annotations& annotations) {
   feedback::Annotations all_annotations = annotations;
 
-  for (const auto& key : default_snapshot_annotations) {
+  for (const std::string& key : default_snapshot_annotations) {
     if (!all_annotations.contains(key)) {
       // There is an annotation in the default list that was not produced by any provider.
       // Annotations that are excluded by a product should be marked as "not available in product,"
@@ -87,7 +87,7 @@ feedback::Attachments AllAttachments(const feedback::AttachmentKeys& allowlist,
     }
   }
 
-  for (const auto& key : allowlist) {
+  for (const feedback::AttachmentKey& key : allowlist) {
     if (!all_attachments.contains(key)) {
       all_attachments.insert({key, feedback::AttachmentValue(Error::kLogicError)});
     }

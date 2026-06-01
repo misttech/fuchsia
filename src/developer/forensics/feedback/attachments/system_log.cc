@@ -36,9 +36,10 @@ constexpr int32_t kDefaultLogSeverity = 0;
 const std::vector<std::string> kDefaultTags = {};
 
 size_t AppendRepeated(const size_t last_msg_repeated, std::string& append_to) {
-  auto repeated_str = last_msg_repeated == 1
-                          ? feedback_data::kRepeatedOnceFormatStr
-                          : fxl::StringPrintf(feedback_data::kRepeatedFormatStr, last_msg_repeated);
+  const std::string repeated_str =
+      last_msg_repeated == 1
+          ? feedback_data::kRepeatedOnceFormatStr
+          : fxl::StringPrintf(feedback_data::kRepeatedFormatStr, last_msg_repeated);
 
   append_to.append(repeated_str);
   return repeated_str.size();
@@ -67,9 +68,9 @@ bool LogBuffer::Add(LogSink::MessageOr message) {
   // Assume timestamp 0 if no messages have been added yet.
   const zx::time_boot last_timestamp =
       (messages_.empty()) ? zx::time_boot(0) : messages_.back().timestamp;
-  const auto& msg = (message.is_ok()) ? message.value().msg : message.error();
-  const auto& severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
-  const auto& tags = (message.is_ok()) ? message.value().tags : kDefaultTags;
+  const std::string& msg = (message.is_ok()) ? message.value().msg : message.error();
+  const int32_t& severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
+  const std::vector<std::string>& tags = (message.is_ok()) ? message.value().tags : kDefaultTags;
 
   // Adds a new message to |messages_| and updates internal accounting.
   auto AddNew = [this, &message, &msg, &severity, &tags, last_timestamp] {
@@ -129,7 +130,7 @@ std::string LogBuffer::ToString() {
 
   std::string out;
   out.reserve(size_);
-  for (const auto& message : messages_) {
+  for (const Message& message : messages_) {
     out.append(message.msg);
   }
 
@@ -158,8 +159,9 @@ void LogBuffer::Sort() {
     size_ += AppendRepeated(last_msg_repeated_, messages_.back().msg);
   }
 
-  std::stable_sort(messages_.begin(), messages_.end(),
-                   [](const auto& lhs, const auto& rhs) { return lhs.timestamp < rhs.timestamp; });
+  std::stable_sort(messages_.begin(), messages_.end(), [](const Message& lhs, const Message& rhs) {
+    return lhs.timestamp < rhs.timestamp;
+  });
   is_sorted_ = true;
 
   // Reset the message last added.
@@ -267,7 +269,7 @@ auto CompletesAndConsume() {
   // Cancel the outstanding |make_inactive_| because logs are being requested.
   make_inactive_.Cancel();
 
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<SystemLog> self = ptr_factory_.GetWeakPtr();
 
   buffer_->ExecuteAfter(clock_->BootNow(), std::move(complete_ok));
 
@@ -287,7 +289,7 @@ auto CompletesAndConsume() {
     self->make_inactive_.Cancel();
     self->make_inactive_.PostDelayed(self->dispatcher_, self->active_period_);
 
-    auto system_log = self->buffer_->ToString();
+    std::string system_log = self->buffer_->ToString();
 
     // ToString sorts the logs, so we can assume the platform's log buffer is at capacity if the
     // first log has a timestamp > 0. Note that this is not referring to Feedback's buffer's

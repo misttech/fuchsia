@@ -36,7 +36,7 @@ IntlProvider::IntlProvider(async_dispatcher_t* dispatcher,
 
     FX_PLOGS(WARNING, status) << "Lost connection to fuchsia.intl.PropertyProvider";
 
-    auto self = ptr_factory_.GetWeakPtr();
+    fxl::WeakPtr<IntlProvider> self = ptr_factory_.GetWeakPtr();
     async::PostDelayedTask(
         dispatcher_,
         [self] {

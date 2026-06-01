@@ -32,7 +32,7 @@ fpromise::promise<AttachmentValue> StubAttachmentProvider::Get(const uint64_t ti
 
   completers_[ticket] = complete.share();
 
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<StubAttachmentProvider> self = ptr_factory_.GetWeakPtr();
 
   return consume
       .and_then([self, ticket](std::string& success_value) {

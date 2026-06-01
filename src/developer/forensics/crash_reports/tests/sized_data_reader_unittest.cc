@@ -63,8 +63,8 @@ TEST(SizedDataReaderTest, CheckReadStringConformance) {
     std::string data_reader_str(i, '\0');
     std::string string_file_str(i, '\0');
 
-    const auto data_result = data_reader.Read(data_reader_str.data(), i);
-    const auto string_result = string_file.Read(string_file_str.data(), i);
+    const crashpad::FileOperationResult data_result = data_reader.Read(data_reader_str.data(), i);
+    const crashpad::FileOperationResult string_result = string_file.Read(string_file_str.data(), i);
 
     EXPECT_EQ(data_reader_str, string_file_str);
 
@@ -93,8 +93,10 @@ TEST(SizedDataReaderTest, CheckReadZipConformance) {
     std::string data_reader_str(read_size, '\0');
     std::string string_file_str(read_size, '\0');
 
-    const auto data_result = data_reader.Read(data_reader_str.data(), read_size);
-    const auto string_result = string_file.Read(string_file_str.data(), read_size);
+    const crashpad::FileOperationResult data_result =
+        data_reader.Read(data_reader_str.data(), read_size);
+    const crashpad::FileOperationResult string_result =
+        string_file.Read(string_file_str.data(), read_size);
 
     EXPECT_EQ(data_reader_str, string_file_str);
 

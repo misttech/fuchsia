@@ -49,7 +49,7 @@ class StartupAnnotationsTest : public ::testing::Test {
 TEST_F(StartupAnnotationsTest, Keys) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
@@ -106,7 +106,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
@@ -142,7 +142,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
 TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
@@ -186,7 +186,7 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
@@ -210,7 +210,7 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 

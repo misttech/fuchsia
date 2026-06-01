@@ -185,7 +185,7 @@ TEST_F(DataProviderTest, GetSnapshot_SmokeTest) {
 
   ASSERT_TRUE(snapshot.has_archive());
 
-  const auto archive_size = snapshot.archive().value.size;
+  const uint64_t archive_size = snapshot.archive().value.size;
   ASSERT_TRUE(archive_size > 0);
 
   EXPECT_THAT(ReceivedCobaltEvents(),
@@ -310,7 +310,7 @@ TEST_F(DataProviderTest, GetSnapshot_AnnotationsAsAttachment) {
   SetUpDataProvider();
 
   Snapshot snapshot = GetSnapshot();
-  auto unpacked_attachments = UnpackSnapshot(snapshot);
+  std::map<std::string, std::string> unpacked_attachments = UnpackSnapshot(snapshot);
 
   // There should be an "annotations.json" attachment present in the snapshot.
   ASSERT_NE(unpacked_attachments.find(kAttachmentAnnotations), unpacked_attachments.end());
@@ -358,7 +358,7 @@ TEST_F(DataProviderTest, GetSnapshot_ManifestAsAttachment) {
   SetUpDataProvider();
 
   Snapshot snapshot = GetSnapshot();
-  auto unpacked_attachments = UnpackSnapshot(snapshot);
+  const std::map<std::string, std::string> unpacked_attachments = UnpackSnapshot(snapshot);
 
   // There should be a "metadata.json" attachment present in the snapshot.
   ASSERT_NE(unpacked_attachments.find(kAttachmentMetadata), unpacked_attachments.end());
@@ -368,7 +368,7 @@ TEST_F(DataProviderTest, GetSnapshot_SingleAttachmentOnEmptyAttachmentAllowlist)
   SetUpDataProvider(kDefaultAnnotations, /*attachment_allowlist=*/{});
 
   Snapshot snapshot = GetSnapshot();
-  auto unpacked_attachments = UnpackSnapshot(snapshot);
+  const std::map<std::string, std::string> unpacked_attachments = UnpackSnapshot(snapshot);
   EXPECT_EQ(unpacked_attachments.count(kAttachmentAnnotations), 1u);
 }
 

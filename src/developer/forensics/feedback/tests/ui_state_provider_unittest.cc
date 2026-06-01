@@ -31,7 +31,7 @@ using ::testing::UnorderedElementsAreArray;
 class MonotonicBackoff : public backoff::Backoff {
  public:
   zx::duration GetNext() override {
-    const auto backoff = backoff_;
+    const zx::duration backoff = backoff_;
     backoff_ = backoff + zx::sec(1);
     return backoff;
   }

@@ -78,7 +78,7 @@ TEST_F(CollectKernelLogTest, Succeed_BasicCase) {
       fxl::StringPrintf("<<GetLogTest_Succeed_BasicCase: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const auto log = GetKernelLog();
+  const AttachmentValue log = GetKernelLog();
 
   ASSERT_TRUE(log.HasValue());
   EXPECT_THAT(log.Value(), testing::HasSubstr(output));
@@ -138,8 +138,8 @@ TEST_F(CollectKernelLogTest, GetCalledWithSameTicket) {
   // Expect a crash because a ticket cannot be reused.
   ASSERT_DEATH(
       {
-        const auto log1 = kernel_log.Get(kTicket);
-        const auto log2 = kernel_log.Get(kTicket);
+        const ::fpromise::promise<AttachmentValue> log1 = kernel_log.Get(kTicket);
+        const ::fpromise::promise<AttachmentValue> log2 = kernel_log.Get(kTicket);
       },
       "Ticket used twice: ");
 }
@@ -151,12 +151,12 @@ TEST_F(CollectKernelLogTest, Succeed_TwoRetrievals) {
       fxl::StringPrintf("<<GetLogTest_Succeed_TwoRetrievals: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const auto log1 = GetKernelLog();
+  const AttachmentValue log1 = GetKernelLog();
 
   ASSERT_TRUE(log1.HasValue());
   EXPECT_THAT(log1.Value(), testing::HasSubstr(output));
 
-  const auto log2 = GetKernelLog();
+  const AttachmentValue log2 = GetKernelLog();
 
   ASSERT_TRUE(log2.HasValue());
   EXPECT_THAT(log2.Value(), testing::HasSubstr(output));
@@ -183,7 +183,7 @@ TEST_F(CollectKernelLogTest, Succeed_Redacts) {
       fxl::StringPrintf("<<GetLogTest_Succeed_BasicCase: %zu>>", zx_clock_get_monotonic()));
   SendToKernelLog(output);
 
-  const auto log = GetKernelLog();
+  const AttachmentValue log = GetKernelLog();
 
   ASSERT_TRUE(log.HasValue());
   EXPECT_THAT(log.Value(), testing::HasSubstr("<REDACTED>"));

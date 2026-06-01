@@ -85,9 +85,9 @@ DataProvider::DataProvider(async_dispatcher_t* dispatcher,
 
 void DataProvider::GetAnnotations(fuchsia::feedback::GetAnnotationsParameters params,
                                   GetAnnotationsCallback callback) {
-  const auto timeout = (params.has_collection_timeout_per_annotation())
-                           ? zx::duration(params.collection_timeout_per_annotation())
-                           : kDefaultDataTimeout;
+  const zx::duration timeout = params.has_collection_timeout_per_annotation()
+                                   ? zx::duration(params.collection_timeout_per_annotation())
+                                   : kDefaultDataTimeout;
 
   // TODO(https://fxbug.dev/42153749): Track how long GetAnnotations took via Cobalt.
   executor_.schedule_task(GetAnnotations(timeout).and_then(
@@ -157,12 +157,12 @@ void DataProvider::GetSnapshotInternal(
         FX_CHECK(std::get<0>(results).is_ok()) << "Impossible annotation collection failure";
         FX_CHECK(std::get<1>(results).is_ok()) << "Impossible attachment collection failure";
 
-        const auto& annotations = std::get<0>(results).value();
-        const auto& attachments = std::get<1>(results).value();
+        const feedback::Annotations& annotations = std::get<0>(results).value();
+        const feedback::Attachments& attachments = std::get<1>(results).value();
         std::map<std::string, std::string> snapshot_files;
 
         // Add the annotations to |snapshot_files|
-        auto file = feedback::Encode<std::string>(annotations);
+        std::string file = feedback::Encode<std::string>(annotations);
         snapshot_files[kAttachmentAnnotations] = std::move(file);
 
         // Add the attachments to |snapshot_files|
@@ -216,13 +216,14 @@ bool ServedArchive::Serve(fidl::ServerEnd<fuchsia_io::File> file_server,
                           async_dispatcher_t* dispatcher, std::function<void()> completed) {
   channel_closed_observer_ =
       std::make_unique<async::WaitOnce>(file_server.channel().get(), ZX_CHANNEL_PEER_CLOSED);
-  if (const auto status = file_.Serve(fuchsia_io::wire::kPermReadable, std::move(file_server));
+  if (const zx_status_t status =
+          file_.Serve(fuchsia_io::wire::kPermReadable, std::move(file_server));
       status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Cannot serve archive";
     return false;
   }
 
-  if (const auto status = channel_closed_observer_->Begin(
+  if (const zx_status_t status = channel_closed_observer_->Begin(
           dispatcher, [completed = std::move(completed)](...) { completed(); });
       status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Cannot attach observer to server end";

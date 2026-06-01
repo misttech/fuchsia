@@ -47,7 +47,7 @@ void UtcClockReadyWatcher::OnClockLoggingQuality(async_dispatcher_t* dispatcher,
   // any of them use IsUtcClockReady.
   is_utc_clock_ready_ = true;
 
-  for (auto& callback : callbacks_) {
+  for (::fit::callback<void()>& callback : callbacks_) {
     callback();
   }
   callbacks_.clear();

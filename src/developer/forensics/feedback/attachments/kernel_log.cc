@@ -35,7 +35,7 @@ KernelLog::KernelLog(async_dispatcher_t* dispatcher,
       }
     }
 
-    auto self = ptr_factory_.GetWeakPtr();
+    fxl::WeakPtr<KernelLog> self = ptr_factory_.GetWeakPtr();
     async::PostDelayedTask(
         dispatcher_,
         [self] {
@@ -72,7 +72,7 @@ KernelLog::KernelLog(async_dispatcher_t* dispatcher,
 
   completers_[ticket] = complete.share();
 
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<KernelLog> self = ptr_factory_.GetWeakPtr();
 
   read_only_log_->Get([complete = complete.share()](zx::debuglog debuglog) mutable {
     if (complete != nullptr) {

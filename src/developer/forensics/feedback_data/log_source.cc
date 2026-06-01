@@ -103,14 +103,15 @@ void LogSource::GetNext() {
       return;
     }
 
-    for (auto& content : result.response().batch) {
+    for (::fuchsia::diagnostics::FormattedContent& content : result.response().batch) {
       auto formatted = ConvertFormattedContentToLogMessages(std::move(content));
       if (formatted.is_error()) {
         sink_->Add(::fpromise::error(std::move(formatted.error())));
         continue;
       }
 
-      for (auto& message : formatted.value()) {
+      for (::fpromise::result<fuchsia::logger::LogMessage, std::string>& message :
+           formatted.value()) {
         sink_->Add(std::move(message));
       }
     }

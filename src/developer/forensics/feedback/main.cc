@@ -112,7 +112,7 @@ int main() {
     delete_previous_boot_logs_time = zx::hour(24);
   }
 
-  const auto startup_annotations =
+  const Annotations startup_annotations =
       GetStartupAnnotations(reboot_log.GetFinalShutdownInfo(),
                             feedback_config->spontaneous_reboot_reason, kBuildCompilationModePath);
   zx::channel lifecycle_channel(zx_take_startup_handle(PA_LIFECYCLE));

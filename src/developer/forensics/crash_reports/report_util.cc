@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/crash_reports/report_util.h"
 
+#include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/mem/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
@@ -95,7 +96,7 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
   if (report.has_specific_report() && report.specific_report().is_dart()) {
     annotations->Set(kDartTypeKey, kDartTypeValue);
 
-    const auto& dart_report = report.specific_report().dart();
+    const ::fuchsia::feedback::RuntimeCrashReport& dart_report = report.specific_report().dart();
     if (dart_report.has_exception_type()) {
       annotations->Set(kDartExceptionRuntimeTypeKey, dart_report.exception_type());
     } else {
@@ -121,7 +122,7 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
 
   // Native-specific annotations.
   if (report.has_specific_report() && report.specific_report().is_native()) {
-    const auto& native_report = report.specific_report().native();
+    const ::fuchsia::feedback::NativeCrashReport& native_report = report.specific_report().native();
     if (native_report.has_process_name()) {
       annotations->Set(kProcessNameKey, native_report.process_name());
     }
@@ -140,14 +141,15 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
 
   // Default attachments common to all crash reports.
   if (report.has_attachments()) {
-    for (auto& attachment : *(report.mutable_attachments())) {
+    for (::fuchsia::feedback::Attachment& attachment : *(report.mutable_attachments())) {
       (*attachments)[attachment.key] = std::move(attachment.value);
     }
   }
 
   // Native-specific attachment (minidump).
   if (report.has_specific_report() && report.specific_report().is_native()) {
-    auto& native_report = report.mutable_specific_report()->native();
+    ::fuchsia::feedback::NativeCrashReport& native_report =
+        report.mutable_specific_report()->native();
     if (native_report.has_minidump()) {
       *minidump = std::move(*native_report.mutable_minidump());
     } else {
@@ -160,7 +162,7 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
 
   // Dart-specific attachment (text stack trace).
   if (report.has_specific_report() && report.specific_report().is_dart()) {
-    auto& dart_report = report.mutable_specific_report()->dart();
+    ::fuchsia::feedback::RuntimeCrashReport& dart_report = report.mutable_specific_report()->dart();
     if (dart_report.has_exception_stack_trace()) {
       (*attachments)[kDartExceptionStackTraceKey] =
           std::move(*dart_report.mutable_exception_stack_trace());

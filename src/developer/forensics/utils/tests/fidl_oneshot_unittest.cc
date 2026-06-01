@@ -55,9 +55,10 @@ TEST_F(OneShotCallTest, Check_Success) {
   });
   SetUpChannelProviderServer(std::move(channel_provider));
 
-  const auto result = Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
-                                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
-      dispatcher(), services(), kTimeout));
+  const ::fpromise::result<std::string, Error> result =
+      Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
+                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
+          dispatcher(), services(), kTimeout));
   ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(result.value(), kChannel);
 }
@@ -65,9 +66,10 @@ TEST_F(OneShotCallTest, Check_Success) {
 TEST_F(OneShotCallTest, Fail_ConnectionClosed) {
   SetUpChannelProviderServer(nullptr);
 
-  const auto result = Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
-                                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
-      dispatcher(), services(), kTimeout));
+  const ::fpromise::result<std::string, Error> result =
+      Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
+                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
+          dispatcher(), services(), kTimeout));
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error(), Error::kConnectionError);
 }
@@ -75,9 +77,10 @@ TEST_F(OneShotCallTest, Fail_ConnectionClosed) {
 TEST_F(OneShotCallTest, Fail_Timeout) {
   SetUpChannelProviderServer(std::make_unique<stubs::ChannelControlNeverReturns>());
 
-  const auto result = Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
-                                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
-      dispatcher(), services(), kTimeout));
+  const ::fpromise::result<std::string, Error> result =
+      Run(OneShotCall<fuchsia::update::channelcontrol::ChannelControl,
+                      &fuchsia::update::channelcontrol::ChannelControl::GetCurrent>(
+          dispatcher(), services(), kTimeout));
 
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error(), Error::kTimeout);

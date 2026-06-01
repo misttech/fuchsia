@@ -53,7 +53,7 @@ TEST(GracefulShutdownInfoTest, VerifyLegacyContentConversion) {
       GracefulShutdownReason::kNetstackMigration,
   };
 
-  for (const auto reason : reasons) {
+  for (const GracefulShutdownReason reason : reasons) {
     EXPECT_THAT(FromLegacyTxtFile(ToLegacyFileContentForTesting({reason})),
                 testing::ElementsAre(reason));
   }
@@ -113,7 +113,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kSuspensionFailure,
   };
 
-  for (const auto reason : reasons) {
+  for (const GracefulShutdownReason reason : reasons) {
     EXPECT_THAT(FromJson(ToJson(GracefulShutdownAction::kReboot, {reason})).reasons,
                 testing::ElementsAre(reason));
   }
@@ -425,7 +425,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                          });
 
 TEST_P(WriteGracefulShutdownReasonsTest, WritesReasons) {
-  const auto& param = GetParam();
+  const ReasonTestParam& param = GetParam();
 
   WriteGracefulShutdownInfo(GracefulShutdownAction::kReboot, {param.input_shutdown_reason}, Path());
 

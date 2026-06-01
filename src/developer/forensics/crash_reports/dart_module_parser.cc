@@ -125,20 +125,21 @@ std::pair<bool, std::optional<std::string>> ParseDartModulesFromStackTrace(
     return {false, std::nullopt};
   }
 
-  std ::optional<std::string> build_id;
+  std::optional<std::string> build_id;
   std::optional<uint64_t> isolate_dso_base;
   std::optional<uint64_t> max_address;
-  for (const auto& line : lines) {
-    if (const auto build_id_match = TryMatchBuildId(line); build_id_match.has_value()) {
+  for (const std::string& line : lines) {
+    if (const std::optional<std::string> build_id_match = TryMatchBuildId(line);
+        build_id_match.has_value()) {
       build_id = build_id_match;
     }
 
-    if (const auto isolate_dso_base_match = TryMatchIsolateDsoBase(line);
+    if (const std::optional<uint64_t> isolate_dso_base_match = TryMatchIsolateDsoBase(line);
         isolate_dso_base_match.has_value()) {
       isolate_dso_base = isolate_dso_base_match;
     }
 
-    if (const auto stack_address_match = TryMatchStackAddress(line);
+    if (const std::optional<uint64_t> stack_address_match = TryMatchStackAddress(line);
         stack_address_match.has_value()) {
       if (!max_address.has_value() || *stack_address_match > *max_address) {
         max_address = stack_address_match;
@@ -150,7 +151,7 @@ std::pair<bool, std::optional<std::string>> ParseDartModulesFromStackTrace(
     return {true, std::nullopt};
   }
 
-  const auto identifier = FormatBuildId(build_id.value());
+  const std::optional<std::string> identifier = FormatBuildId(build_id.value());
   if (!identifier.has_value()) {
     return {true, std::nullopt};
   }

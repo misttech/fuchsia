@@ -21,7 +21,7 @@ using namespace fuchsia::feedback;
 
 std::string AnnotationsToJSON(const std::vector<Annotation>& annotations) {
   std::string json = "{\n";
-  for (const auto& annotation : annotations) {
+  for (const Annotation& annotation : annotations) {
     json +=
         fxl::StringPrintf("\t\"%s\": \"%s\"\n", annotation.key.c_str(), annotation.value.c_str());
   }

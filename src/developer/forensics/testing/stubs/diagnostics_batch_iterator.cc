@@ -19,7 +19,7 @@ std::vector<fuchsia::diagnostics::FormattedContent> ToVmo(
     const std::vector<std::string>& json_batch) {
   std::vector<fuchsia::diagnostics::FormattedContent> json_batch_vmo;
   json_batch_vmo.reserve(json_batch.size());
-  for (const auto& json_chunk : json_batch) {
+  for (const std::string& json_chunk : json_batch) {
     fsl::SizedVmo vmo;
     FX_CHECK(fsl::VmoFromString(json_chunk, &vmo));
     fuchsia::diagnostics::FormattedContent content;

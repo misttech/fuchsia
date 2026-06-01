@@ -19,7 +19,8 @@ int main(int argc, const char** argv) {
 
   FX_LOGS(INFO) << "Starting FakeDataProvider";
 
-  auto context = sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  std::unique_ptr<sys::ComponentContext> context =
+      sys::ComponentContext::CreateAndServeOutgoingDirectory();
 
   ::forensics::fakes::DataProvider data_provider;
 

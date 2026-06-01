@@ -34,7 +34,7 @@ bool MakeSnapshot(std::shared_ptr<sys::ServiceDirectory> services, const char* o
     return false;
   }
 
-  const auto size = snapshot.archive().value.size;
+  const uint64_t size = snapshot.archive().value.size;
   auto data = std::make_unique<uint8_t[]>(snapshot.archive().value.size);
   if (const zx_status_t status = snapshot.archive().value.vmo.read(data.get(), 0u, size);
       status != ZX_OK) {

@@ -323,7 +323,7 @@ TEST_F(SnapshotCollectorTest, Check_Shutdown) {
   RunLoopUntilIdle();
 
   ASSERT_TRUE(report.has_value());
-  auto snapshot = AsMissing(GetSnapshot(report->SnapshotUuid()));
+  MissingSnapshot snapshot = AsMissing(GetSnapshot(report->SnapshotUuid()));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               IsSupersetOf({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("system shutdown")),
@@ -365,7 +365,7 @@ TEST_F(SnapshotCollectorTest, Check_ShutdownDuringSnapshotCollection) {
   RunLoopUntilIdle();
 
   ASSERT_TRUE(report.has_value());
-  auto snapshot = AsMissing(GetSnapshot(report->SnapshotUuid()));
+  MissingSnapshot snapshot = AsMissing(GetSnapshot(report->SnapshotUuid()));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               IsSupersetOf({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("system shutdown")),

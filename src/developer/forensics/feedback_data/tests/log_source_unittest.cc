@@ -71,8 +71,8 @@ bool operator==(const std::vector<LogSink::MessageOr>& lhs,
     if (lhs[i].is_error()) {
       return lhs[i].error() == rhs[i].error();
     }
-    const auto& l = lhs[i].value();
-    const auto& r = rhs[i].value();
+    const ::fuchsia::logger::LogMessage& l = lhs[i].value();
+    const ::fuchsia::logger::LogMessage& r = rhs[i].value();
 
     if (!(l.pid == r.pid) && (l.tid == r.tid) && (l.time == r.time) && (l.severity == r.severity) &&
         (l.dropped_logs == r.dropped_logs) && (l.tags == r.tags) && (l.msg == r.msg)) {
@@ -163,13 +163,13 @@ TEST_F(LogSourceTest, WritesToSink) {
   RunLoopFor(kTimeWaitForLimitedLogs);
 
   std::vector<LogSink::MessageOr> expected;
-  for (const auto& batch : batches) {
+  for (const std::vector<std::string>& batch : batches) {
     // Break to prevent |source| from fetching more messages.
     if (batch.empty()) {
       break;
     }
 
-    for (const auto& msg : batch) {
+    for (const std::string& msg : batch) {
       expected.push_back(BuildOutputLogMessage(msg));
     }
     EXPECT_TRUE(sink.Messages() == expected);
@@ -225,13 +225,13 @@ TEST_F(LogSourceTest, NotifyInterruptionOnStop) {
   RunLoopFor(kTimeWaitForLimitedLogs);
 
   std::vector<LogSink::MessageOr> expected;
-  for (const auto& batch : batches) {
+  for (const std::vector<std::string>& batch : batches) {
     // Break to prevent |source| from fetching more messages.
     if (batch.empty()) {
       break;
     }
 
-    for (const auto& msg : batch) {
+    for (const std::string& msg : batch) {
       expected.push_back(BuildOutputLogMessage(msg));
     }
     EXPECT_TRUE(sink.Messages() == expected);

@@ -40,12 +40,12 @@ bool SnapshotPersistenceMetadata::RecreateFromFilesystem() {
     return false;
   }
 
-  for (const auto& snapshot_dir : fs::directory_iterator(snapshot_store_root_)) {
-    const auto& snapshot_path = snapshot_dir.path();
+  for (const fs::directory_entry& snapshot_dir : fs::directory_iterator(snapshot_store_root_)) {
+    const fs::path& snapshot_path = snapshot_dir.path();
     const std::string uuid = snapshot_path.filename();
 
-    for (const auto& file : fs::directory_iterator(snapshot_dir)) {
-      const auto& filename = file.path().filename();
+    for (const fs::directory_entry& file : fs::directory_iterator(snapshot_dir)) {
+      const fs::path filename = file.path().filename();
       if (filename == ".") {
         continue;
       }

@@ -44,7 +44,7 @@ fpromise::result<Report> Report::MakeReport(const ReportId report_id,
       return fpromise::error();
     }
 
-    auto attachment = MakeAttachment(v);
+    std::optional<SizedData> attachment = MakeAttachment(v);
     if (!attachment) {
       return fpromise::error();
     }

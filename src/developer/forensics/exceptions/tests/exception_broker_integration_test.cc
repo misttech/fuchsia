@@ -47,11 +47,12 @@ TEST(ExceptionBrokerIntegrationTest, OnExceptionSmokeTest) {
 
   fuchsia::exception::HandlerSyncPtr exception_handler;
 
-  auto environment_services = sys::ServiceDirectory::CreateFromNamespace();
+  std::shared_ptr<sys::ServiceDirectory> environment_services =
+      sys::ServiceDirectory::CreateFromNamespace();
   environment_services->Connect(exception_handler.NewRequest());
 
   for (size_t i = 0; i < kNumExceptions; ++i) {
-    auto& exception = exceptions[i];
+    ExceptionContext& exception = exceptions[i];
     ASSERT_TRUE(GetExceptionContext(&exception));
 
     ASSERT_EQ(exception_handler->OnException(std::move(exception.exception),
@@ -74,7 +75,7 @@ TEST(ExceptionBrokerIntegrationTest, OnExceptionSmokeTest) {
 
   EXPECT_EQ(num_crashreports, kNumExceptions);
 
-  for (auto& exception : exceptions) {
+  for (ExceptionContext& exception : exceptions) {
     // Kill the job so that the exception that will be freed here doesn't bubble out of the test
     // environment.
     exception.job.kill();
@@ -87,7 +88,8 @@ TEST(ExceptionBrokerIntegrationTest, GetProcessesOnExceptionSmokeTest) {
 
   fuchsia::exception::ProcessLimboSyncPtr limbo;
 
-  auto environment_services = sys::ServiceDirectory::CreateFromNamespace();
+  std::shared_ptr<sys::ServiceDirectory> environment_services =
+      sys::ServiceDirectory::CreateFromNamespace();
   environment_services->Connect(limbo.NewRequest());
 
   fuchsia::exception::ProcessLimbo_WatchProcessesWaitingOnException_Result result;

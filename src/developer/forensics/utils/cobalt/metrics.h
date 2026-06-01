@@ -10,8 +10,8 @@
 namespace forensics {
 namespace cobalt {
 
-constexpr auto kProjectId = cobalt_registry::kProjectId;
-constexpr auto kInspectBudgetMetricId = cobalt_registry::kMaxInputInspectBudgetMigratedMetricId;
+constexpr uint32_t kProjectId = cobalt_registry::kProjectId;
+constexpr uint32_t kInspectBudgetMetricId = cobalt_registry::kMaxInputInspectBudgetMigratedMetricId;
 
 enum class CrashState {
   kUnknown = cobalt_registry::CrashMigratedMetricDimensionState::Unknown,

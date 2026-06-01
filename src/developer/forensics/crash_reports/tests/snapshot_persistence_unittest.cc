@@ -47,7 +47,7 @@ bool Read(const fs::path& root_dir, const std::string& uuid, StringAttachment& a
     return false;
   }
 
-  for (const auto& file : files) {
+  for (const std::string& file : files) {
     if (file == feedback_data::kSnapshotFilename) {
       std::string file_content;
       if (!files::ReadFileToString(files::JoinPath(path, file), &file_content)) {
@@ -190,7 +190,7 @@ TEST_F(SnapshotPersistenceTest, Succeed_Get) {
 
   ASSERT_TRUE(AddArchive(kTestUuid, kArchiveValue));
 
-  const auto archive = persistence_->Get(kTestUuid);
+  const std::optional<ManagedSnapshot::Archive> archive = persistence_->Get(kTestUuid);
 
   ASSERT_TRUE(archive.has_value());
   EXPECT_EQ(archive->key, feedback_data::kSnapshotFilename);
@@ -201,7 +201,7 @@ TEST_F(SnapshotPersistenceTest, Check_FailGet) {
   const std::string kTestUuid = "test uuid";
 
   // Attempt to get snapshot that doesn't exist.
-  const auto archive = persistence_->Get(kTestUuid);
+  const std::optional<ManagedSnapshot::Archive> archive = persistence_->Get(kTestUuid);
   EXPECT_FALSE(archive.has_value());
 }
 
@@ -216,7 +216,7 @@ TEST_F(SnapshotPersistenceTest, Check_RebuildsMetadata) {
 
   ASSERT_TRUE(persistence_->Contains(kTestUuid));
 
-  const auto archive = persistence_->Get(kTestUuid);
+  const std::optional<ManagedSnapshot::Archive> archive = persistence_->Get(kTestUuid);
 
   ASSERT_TRUE(archive.has_value());
   EXPECT_EQ(archive->key, feedback_data::kSnapshotFilename);

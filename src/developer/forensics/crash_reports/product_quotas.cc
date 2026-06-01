@@ -72,7 +72,7 @@ ProductQuotas::ProductQuotas(timekeeper::Clock* clock, const std::optional<uint6
   // This lambda could execute immediately if the UTC clock is already ready. Registering this
   // callback with UtcClockReadyWatcherBase must be the last thing done in the constructor because
   // OnClockStart requires initialization performed earlier in the constructor.
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<ProductQuotas> self = ptr_factory_.GetWeakPtr();
   utc_clock_ready_watcher->OnClockReady([self] {
     if (self) {
       self->OnClockStart();
@@ -90,7 +90,7 @@ bool ProductQuotas::HasQuotaRemaining(const Product& product) {
   // check if quotas should have been reset.
   ResetIfPastDeadline();
 
-  const auto key = Key(product);
+  const std::string key = Key(product);
   if (!remaining_quotas_.contains(key)) {
     remaining_quotas_[key] = quota_.value();
     UpdateJson(key, quota_.value());
@@ -105,7 +105,7 @@ void ProductQuotas::DecrementRemainingQuota(const Product& product) {
     return;
   }
 
-  const auto key = Key(product);
+  const std::string key = Key(product);
   FX_CHECK(remaining_quotas_.contains(key));
   FX_CHECK(remaining_quotas_[key] > 0);
 

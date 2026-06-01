@@ -32,7 +32,7 @@ std::optional<std::string> ReadDeviceId(const std::string& path) {
 // The id is a 128-bit (pseudo) random UUID in the form of version 4 as described in RFC 4122,
 // section 4.4.
 std::string InitializeDeviceId(const std::string& path) {
-  if (const auto read_id = ReadDeviceId(path);
+  if (const std::optional<std::string> read_id = ReadDeviceId(path);
       read_id.has_value() && uuid::IsValid(read_id.value())) {
     return read_id.value();
   }

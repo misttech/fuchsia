@@ -16,7 +16,7 @@ int main(int argc, const char** argv) {
   // For sub-processes, argv[0] is the process name.
   FX_CHECK(argc >= 1);
 
-  const auto argv0 = std::string(argv[0]);
+  const std::string argv0 = std::string(argv[0]);
   if (argv0 == "/pkg/bin/exceptions") {
     return ::forensics::exceptions::main();
   }

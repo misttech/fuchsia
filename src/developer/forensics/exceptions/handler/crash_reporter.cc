@@ -144,8 +144,8 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
           ? wake_lease_->Acquire(kWakeLeaseAcquisitionTimeout)
           : fpromise::make_result_promise<LeaseToken, Error>(fpromise::ok(LeaseToken()));
 
-  const auto thread_koid = fsl::GetKoid(crashed_thread.get());
-  const auto process_koid = fsl::GetKoid(crashed_process.get());
+  const zx_koid_t thread_koid = fsl::GetKoid(crashed_thread.get());
+  const zx_koid_t process_koid = fsl::GetKoid(crashed_process.get());
 
   auto join = fpromise::join_promises(
       std::move(wake_lease_promise),

@@ -16,7 +16,6 @@
 #include "src/developer/forensics/crash_reports/snapshot.h"
 #include "src/developer/forensics/feedback/annotations/annotation_manager.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
-#include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/storage_size.h"
@@ -39,18 +38,6 @@ ManagedSnapshot AsManaged(Snapshot snapshot) {
 MissingSnapshot AsMissing(Snapshot snapshot) {
   FX_CHECK(std::holds_alternative<MissingSnapshot>(snapshot));
   return std::get<MissingSnapshot>(snapshot);
-}
-
-template <typename K, typename V>
-auto Vector(const std::map<K, V>& annotations) {
-  std::vector matchers{Pair(K(), V())};
-  matchers.clear();
-
-  for (const auto& [k, v] : annotations) {
-    matchers.push_back(Pair(k, v));
-  }
-
-  return matchers;
 }
 
 const std::string kDefaultArchiveKey = "snapshot.key";
@@ -117,7 +104,7 @@ using SnapshotStoreDeathTest = SnapshotStoreTest;
 TEST_F(SnapshotStoreTest, Check_GetSnapshot) {
   snapshot_store_->AddSnapshot(kTestUuid, GetDefaultAttachment());
 
-  auto snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
+  ManagedSnapshot snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
   ASSERT_TRUE(snapshot.LockArchive());
   EXPECT_EQ(snapshot.LockArchive()->key, kDefaultArchiveKey);
 }
@@ -132,7 +119,7 @@ TEST_F(SnapshotStoreTest, Check_GetSnapshotFromPersistence) {
             ItemLocation::kCache);
   ASSERT_EQ(snapshot_store_->SnapshotLocation(kTestUuid), ItemLocation::kCache);
 
-  auto snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
+  ManagedSnapshot snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
   ASSERT_TRUE(snapshot.LockArchive());
   EXPECT_EQ(snapshot.LockArchive()->key, kDefaultArchiveKey);
 }
@@ -188,13 +175,13 @@ TEST_F(SnapshotStoreTest, Check_Delete) {
   AddDefaultSnapshot();
 
   {
-    auto snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
+    ManagedSnapshot snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
     ASSERT_TRUE(snapshot.LockArchive());
   }
 
   snapshot_store_->DeleteSnapshot(kTestUuid);
   {
-    auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
+    MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
     EXPECT_THAT(snapshot.PresenceAnnotations(),
                 UnorderedElementsAreArray({
                     Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("garbage collected")),
@@ -228,7 +215,7 @@ TEST_F(SnapshotStoreTest, Check_DeleteAll) {
 }
 
 TEST_F(SnapshotStoreTest, Check_GarbageCollected) {
-  auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kGarbageCollectedSnapshotUuid));
+  MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kGarbageCollectedSnapshotUuid));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               UnorderedElementsAreArray({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("garbage collected")),
@@ -237,7 +224,7 @@ TEST_F(SnapshotStoreTest, Check_GarbageCollected) {
 }
 
 TEST_F(SnapshotStoreTest, Check_NotPersisted) {
-  auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kNotPersistedSnapshotUuid));
+  MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kNotPersistedSnapshotUuid));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               UnorderedElementsAreArray({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("not persisted")),
@@ -246,7 +233,7 @@ TEST_F(SnapshotStoreTest, Check_NotPersisted) {
 }
 
 TEST_F(SnapshotStoreTest, Check_Shutdown) {
-  auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kShutdownSnapshotUuid));
+  MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kShutdownSnapshotUuid));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               UnorderedElementsAreArray({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("system shutdown")),
@@ -255,7 +242,7 @@ TEST_F(SnapshotStoreTest, Check_Shutdown) {
 }
 
 TEST_F(SnapshotStoreTest, Check_UuidForNoSnapshotUuid) {
-  auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kNoUuidSnapshotUuid));
+  MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kNoUuidSnapshotUuid));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               UnorderedElementsAreArray({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("missing uuid")),
@@ -265,7 +252,7 @@ TEST_F(SnapshotStoreTest, Check_UuidForNoSnapshotUuid) {
 
 TEST_F(SnapshotStoreTest, Check_DefaultToNotPersisted) {
   const std::string uuid("UNKNOWN");
-  auto snapshot = AsMissing(snapshot_store_->GetSnapshot(uuid));
+  MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(uuid));
   EXPECT_THAT(snapshot.PresenceAnnotations(),
               UnorderedElementsAreArray({
                   Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("not persisted")),
@@ -276,13 +263,13 @@ TEST_F(SnapshotStoreTest, Check_DefaultToNotPersisted) {
 TEST_F(SnapshotStoreTest, Check_ReadPreviouslyGarbageCollected) {
   AddDefaultSnapshot();
   {
-    auto snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
+    ManagedSnapshot snapshot = AsManaged(snapshot_store_->GetSnapshot(kTestUuid));
     ASSERT_TRUE(snapshot.LockArchive());
   }
 
   snapshot_store_->DeleteSnapshot(kTestUuid);
   {
-    auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
+    MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
     EXPECT_THAT(snapshot.PresenceAnnotations(),
                 UnorderedElementsAreArray({
                     Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("garbage collected")),
@@ -295,7 +282,7 @@ TEST_F(SnapshotStoreTest, Check_ReadPreviouslyGarbageCollected) {
 
   SetUpSnapshotStore(StorageSize::Megabytes(1u));
   {
-    auto snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
+    MissingSnapshot snapshot = AsMissing(snapshot_store_->GetSnapshot(kTestUuid));
     EXPECT_THAT(snapshot.PresenceAnnotations(),
                 UnorderedElementsAreArray({
                     Pair(feedback::kDebugSnapshotErrorKey, ErrorOrString("garbage collected")),

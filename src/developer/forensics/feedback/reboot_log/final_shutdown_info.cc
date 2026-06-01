@@ -822,7 +822,7 @@ std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
 
 ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationUptime() const {
   if (Uptime().has_value()) {
-    const auto uptime = FormatDuration(*Uptime());
+    const std::optional<std::string> uptime = FormatDuration(*Uptime());
     if (uptime.has_value()) {
       return ErrorOrString(*uptime);
     }
@@ -833,7 +833,7 @@ ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationUptime() const {
 
 ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationRuntime() const {
   if (Runtime().has_value()) {
-    const auto runtime = FormatDuration(*Runtime());
+    const std::optional<std::string> runtime = FormatDuration(*Runtime());
     if (runtime.has_value()) {
       return ErrorOrString(*runtime);
     }

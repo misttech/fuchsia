@@ -43,7 +43,8 @@ Logger::Logger(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirec
     RetryConnectingToLogger();
   });
 
-  auto logger_request = logger_.NewRequest();
+  ::fidl::InterfaceRequest<fuchsia::metrics::MetricEventLogger> logger_request =
+      logger_.NewRequest();
   ConnectToLogger(std::move(logger_request));
 }
 
@@ -87,7 +88,8 @@ void Logger::RetryConnectingToLogger() {
 
   // Bind |logger_| and immediately send the events that were not acknowledged by the server on the
   // previous connection.
-  auto logger_request = logger_.NewRequest();
+  ::fidl::InterfaceRequest<fuchsia::metrics::MetricEventLogger> logger_request =
+      logger_.NewRequest();
   SendAllPendingEvents();
 
   reconnect_task_.Reset([this, request = std::move(logger_request)]() mutable {
@@ -141,14 +143,19 @@ void Logger::SendEvent(uint64_t event_id) {
 
   switch (event.type) {
     case EventType::kInteger:
-      logger_->LogInteger(
-          event.metric_id, event.count, event.dimensions,
-          [callback = std::move(callback)](auto result) { callback(std::move(result)); });
+      logger_->LogInteger(event.metric_id, event.count, event.dimensions,
+                          [callback = std::move(callback)](
+                              ::fuchsia::metrics::MetricEventLogger_LogInteger_Result result) {
+                            callback(std::move(result));
+                          });
       break;
     case EventType::kOccurrence:
       logger_->LogOccurrence(
           event.metric_id, event.count, event.dimensions,
-          [callback = std::move(callback)](auto result) { callback(std::move(result)); });
+          [callback = std::move(callback)](
+              ::fuchsia::metrics::MetricEventLogger_LogOccurrence_Result result) {
+            callback(std::move(result));
+          });
       break;
   }
 }

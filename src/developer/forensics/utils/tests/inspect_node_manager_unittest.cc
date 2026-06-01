@@ -173,7 +173,7 @@ TEST_F(InspectNodeManagerTest, Check_SanitizedPath) {
   };
 
   std::string name_with_backslashes = "program/n//a///m/////e";
-  auto sanitized_name = InspectNodeManager::SanitizeString(name_with_backslashes);
+  const std::string sanitized_name = InspectNodeManager::SanitizeString(name_with_backslashes);
 
   EXPECT_EQ(sanitized_name, expected_sanitized_name);
 

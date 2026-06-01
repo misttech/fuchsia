@@ -54,9 +54,9 @@ constexpr zx::duration kSnapshotTimeout = zx::min(1);
 ReportId SeedReportId() {
   // The next ReportId will be one more than the largest in the report store. We're just taking
   // stock of what's already there, so we pass in very large max size.
-  auto all_report_ids =
+  std::vector<ReportId> all_report_ids =
       ReportStoreMetadata(kReportStoreTmpPath, /*max_size=*/StorageSize::Megabytes(100)).Reports();
-  const auto all_cache_report_ids =
+  const std::vector<ReportId> all_cache_report_ids =
       ReportStoreMetadata(kReportStoreCachePath, /*max_size=*/StorageSize::Megabytes(100))
           .Reports();
   all_report_ids.insert(all_report_ids.end(), all_cache_report_ids.begin(),
@@ -132,7 +132,7 @@ CrashReporter::CrashReporter(
   // If crash reports won't be uploaded, there shouldn't be a quota in the config.
   if (build_type_config.crash_report_upload_policy ==
       feedback::CrashReportUploadPolicy::kDisabled) {
-    const auto quota = build_type_config.daily_per_product_crash_report_quota;
+    const std::optional<uint64_t> quota = build_type_config.daily_per_product_crash_report_quota;
     FX_CHECK(!quota.has_value()) << "Can't have quota when upload policy is disabled: quota is "
                                  << *quota;
   }
@@ -194,14 +194,14 @@ void CrashReporter::File(fuchsia::feedback::CrashReport report, ProgramShortname
     return;
   }
 
-  const auto program_name = report.program_name();
-  const auto report_id = next_report_id_++;
+  const std::string program_name = report.program_name();
+  const ReportId report_id = next_report_id_++;
 
   // Fetch the product as close to the crash as possible. The product may be re-registered / changed
   // after the crash and getting it now is an attempt to mitigate that race.
-  const auto product = crash_register_->HasProduct(program_name)
-                           ? crash_register_->GetProduct(program_name)
-                           : Product::DefaultPlatformProduct();
+  const Product product = crash_register_->HasProduct(program_name)
+                              ? crash_register_->GetProduct(program_name)
+                              : Product::DefaultPlatformProduct();
 
   tags_->Register(report_id, {program_shortname.Logname()});
 
@@ -221,7 +221,7 @@ void CrashReporter::File(fuchsia::feedback::CrashReport report, ProgramShortname
     FX_LOGST(INFO, tags_->Get(report_id)) << "Generating report";
   }
 
-  const auto current_time = utc_provider_.CurrentTime();
+  const std::optional<timekeeper::time_utc> current_time = utc_provider_.CurrentTime();
 
   auto p = snapshot_collector_
                .GetReport(kSnapshotTimeout, std::move(report), std::move(program_shortname),
@@ -236,7 +236,8 @@ void CrashReporter::File(fuchsia::feedback::CrashReport report, ProgramShortname
                  }
 
                  // Logs a cobalt event and error message on why filing |report| didn't succeed.
-                 auto record_failure = [this, report_id](const auto cobalt_error, const auto log) {
+                 auto record_failure = [this, report_id](const cobalt::CrashState cobalt_error,
+                                                         const std::string_view log) {
                    FX_LOGST(ERROR, tags_->Get(report_id)) << log;
                    info_.LogCrashState(cobalt_error);
                    tags_->Unregister(report_id);

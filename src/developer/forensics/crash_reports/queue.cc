@@ -45,7 +45,7 @@ Queue::Queue(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirecto
 void Queue::InitFromStore() {
   // Note: The upload attempt data is lost when the component stops and all reports start with
   // upload attempts of 0.
-  for (const auto& report_id : report_store_->GetReports()) {
+  for (const ReportId& report_id : report_store_->GetReports()) {
     const std::string uuid = report_store_->GetSnapshotUuid(report_id);
 
     // It could technically be an hourly snapshot, but either a) the snapshot has not been persisted
@@ -155,13 +155,13 @@ void Queue::StopUploading() {
 
   // Re-add all active reports so they're put in the store (if need be) and not uploaded
   // immediately.
-  for (auto& report : ready_reports_) {
+  for (PendingReport& report : ready_reports_) {
     const bool add_to_store = report.HasReport();
     Add(std::move(report), /*consider_eager_upload=*/false, add_to_store);
   }
   ready_reports_.clear();
 
-  for (auto& report : blocked_reports_) {
+  for (PendingReport& report : blocked_reports_) {
     Retire(std::move(report), RetireReason::kArchive);
   }
   blocked_reports_.clear();
@@ -240,13 +240,13 @@ std::optional<ItemLocation> Queue::AddToStore(Report report) {
       report_store_->Add(std::move(report), &garbage_collected_reports);
 
   // Retire each pending report that is garbage collected by the store.
-  for (auto& pending_report : ready_reports_) {
+  for (PendingReport& pending_report : ready_reports_) {
     if (std::find(garbage_collected_reports.cbegin(), garbage_collected_reports.cend(),
                   pending_report.report_id) != garbage_collected_reports.end()) {
       Retire(std::move(pending_report), RetireReason::kGarbageCollected);
     }
   }
-  for (auto& pending_report : blocked_reports_) {
+  for (PendingReport& pending_report : blocked_reports_) {
     if (std::find(garbage_collected_reports.cbegin(), garbage_collected_reports.cend(),
                   pending_report.report_id) != garbage_collected_reports.end()) {
       Retire(std::move(pending_report), RetireReason::kGarbageCollected);
@@ -381,7 +381,7 @@ void Queue::Upload(const bool set_network_reachable_on_success) {
 void Queue::Retire(PendingReport pending_report, const Queue::RetireReason reason,
                    const std::optional<FilingResult> filing_result,
                    const std::optional<std::string>& server_report_id) {
-  auto tags = tags_->Get(pending_report.report_id);
+  const char* tags = tags_->Get(pending_report.report_id);
   switch (reason) {
     case RetireReason::kArchive:
       FX_LOGST(INFO, tags) << "Archived local report. Located under /tmp/reports or /cache/reports";
@@ -444,7 +444,8 @@ size_t Queue::NumReportsUsingSnapshot(const std::string& uuid) {
 }
 
 void Queue::PreventStrandedSnapshot(const std::string& uuid) {
-  const auto snapshot_location = report_store_->GetSnapshotStore()->SnapshotLocation(uuid);
+  const std::optional<ItemLocation> snapshot_location =
+      report_store_->GetSnapshotStore()->SnapshotLocation(uuid);
 
   if (!snapshot_location.has_value() || *snapshot_location != ItemLocation::kCache ||
       SuggestedSnapshotLocation(uuid) != ItemLocation::kTmp) {
@@ -487,7 +488,7 @@ ItemLocation Queue::SuggestedSnapshotLocation(const std::string& uuid) {
 void Queue::BlockAll() {
   // Move all ready reports to blocked and add all reports to the store that haven't been
   // added yet.
-  for (auto& pending_report : ready_reports_) {
+  for (PendingReport& pending_report : ready_reports_) {
     const bool add_to_store = pending_report.HasReport();
     Add(std::move(pending_report), /*consider_eager_upload=*/false, add_to_store);
   }
@@ -509,13 +510,13 @@ void Queue::DeleteAll() {
   FX_LOGS(INFO) << fxl::StringPrintf("Deleting all %zu pending reports and associated snapshots",
                                      Size());
 
-  for (auto& pending_report : ready_reports_) {
+  for (PendingReport& pending_report : ready_reports_) {
     Retire(std::move(pending_report), RetireReason::kDelete,
            FilingResult::kReportNotFiledUserOptedOut);
   }
   ready_reports_.clear();
 
-  for (auto& pending_report : blocked_reports_) {
+  for (PendingReport& pending_report : blocked_reports_) {
     // |blocked_reports_| are in persistence; FilingResultCallback was already called.
     Retire(std::move(pending_report), RetireReason::kDelete);
   }
@@ -590,7 +591,7 @@ void Queue::UnblockAllEveryFifteenMinutes() {
     UnblockAll();
   }
 
-  if (const auto status =
+  if (const zx_status_t status =
           unblock_all_every_fifteen_minutes_task_.PostDelayed(dispatcher_, zx::min(15));
       status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Error posting periodic upload task to async loop. Won't retry.";
@@ -623,7 +624,7 @@ void Queue::PendingReport::SetReport(Report r) { report = std::move(r); }
 
 Report Queue::PendingReport::TakeReport() {
   FX_CHECK(report);
-  auto r = std::move(*report);
+  Report r = std::move(*report);
   report = std::nullopt;
   return r;
 }
@@ -667,7 +668,7 @@ void Queue::UploadMetrics::Retire(const PendingReport& pending_report,
 
 std::string Queue::ReportIdsStr(const std::deque<PendingReport>& reports) const {
   std::vector<std::string> report_id_strs;
-  for (const auto& pending_report : reports) {
+  for (const PendingReport& pending_report : reports) {
     report_id_strs.push_back(std::to_string(pending_report.report_id));
   }
 

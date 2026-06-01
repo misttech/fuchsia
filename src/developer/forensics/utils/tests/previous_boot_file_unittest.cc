@@ -31,7 +31,8 @@ inline auto WriteCacheFile() { return WriteFile("/cache"); }
 
 TEST(PreviousBootFileTest, MoveCacheFile) {
   WriteCacheFile();
-  auto previous_boot_file = PreviousBootFile::FromCache(/*is_first_instance=*/true, kFileName);
+  const PreviousBootFile previous_boot_file =
+      PreviousBootFile::FromCache(/*is_first_instance=*/true, kFileName);
 
   std::string read_file_content;
   ASSERT_TRUE(files::ReadFileToString(previous_boot_file.PreviousBootPath(), &read_file_content));
@@ -43,7 +44,8 @@ TEST(PreviousBootFileTest, MoveCacheFile) {
 }
 
 TEST(PreviousBootFileTest, CacheFileDoesNotExist) {
-  auto previous_boot_file = PreviousBootFile::FromCache(/*is_first_instance=*/true, kFileName);
+  const PreviousBootFile previous_boot_file =
+      PreviousBootFile::FromCache(/*is_first_instance=*/true, kFileName);
 
   ASSERT_FALSE(files::IsFile(previous_boot_file.PreviousBootPath()));
 
@@ -55,7 +57,8 @@ TEST(PreviousBootFileTest, CreateTmpDir) {
   ASSERT_TRUE(files::CreateDirectory("/cache/dir"));
   ASSERT_TRUE(files::WriteFile("/cache/dir/file.txt", kFileContent));
 
-  auto previous_boot_file = PreviousBootFile::FromCache(/*is_first_instance=*/true, "dir/file.txt");
+  const PreviousBootFile previous_boot_file =
+      PreviousBootFile::FromCache(/*is_first_instance=*/true, "dir/file.txt");
 
   std::string read_file_content;
   ASSERT_TRUE(files::ReadFileToString(previous_boot_file.PreviousBootPath(), &read_file_content));
@@ -70,7 +73,8 @@ TEST(PreviousBootFileTest, TmpFileAlreadyExists) {
   ASSERT_TRUE(files::WriteFile(files::JoinPath("/tmp", kFileName), "OTHER STUFF"));
 
   WriteCacheFile();
-  auto previous_boot_file = PreviousBootFile::FromCache(/*is_first_instance=*/false, kFileName);
+  const PreviousBootFile previous_boot_file =
+      PreviousBootFile::FromCache(/*is_first_instance=*/false, kFileName);
 
   std::string read_file_content;
   ASSERT_TRUE(files::ReadFileToString(previous_boot_file.PreviousBootPath(), &read_file_content));
@@ -83,7 +87,8 @@ TEST(PreviousBootFileTest, TmpFileAlreadyExists) {
 
 TEST(PreviousBootFileTest, TmpFileDoesNotExist) {
   WriteCacheFile();
-  auto previous_boot_file = PreviousBootFile::FromCache(/*is_first_instance=*/false, kFileName);
+  const PreviousBootFile previous_boot_file =
+      PreviousBootFile::FromCache(/*is_first_instance=*/false, kFileName);
 
   ASSERT_FALSE(files::IsFile(previous_boot_file.PreviousBootPath()));
 

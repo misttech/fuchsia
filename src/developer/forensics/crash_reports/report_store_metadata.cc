@@ -42,7 +42,7 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
   }
 
   std::vector<fs::path> invalid_paths;
-  for (const auto& program_dir : fs::directory_iterator(report_store_root_)) {
+  for (const fs::directory_entry& program_dir : fs::directory_iterator(report_store_root_)) {
     if (!files::IsDirectory(program_dir.path())) {
       FX_LOGS(WARNING) << "Unexpectedly not a program directory. Deleting: " << program_dir.path();
       invalid_paths.push_back(program_dir.path());
@@ -58,7 +58,7 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
       continue;
     }
 
-    for (const auto& report_dir : fs::directory_iterator(program_dir)) {
+    for (const fs::directory_entry& report_dir : fs::directory_iterator(program_dir)) {
       if (!files::IsDirectory(report_dir.path())) {
         FX_LOGS(WARNING) << "Unexpectedly not a report directory. Deleting: " << report_dir.path();
         invalid_paths.push_back(report_dir.path());
@@ -75,7 +75,7 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
 
       std::vector<std::string> attachments;
       StorageSize report_size = StorageSize::Bytes(0);
-      for (const auto& attachment : fs::directory_iterator(report_dir)) {
+      for (const fs::directory_entry& attachment : fs::directory_iterator(report_dir)) {
         if (!files::IsFile(attachment.path())) {
           FX_LOGS(WARNING) << "Attachment file unexpectedly not a file. Deleting: "
                            << attachment.path();
@@ -104,7 +104,7 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
     }
   }
 
-  for (const auto& path : invalid_paths) {
+  for (const fs::path& path : invalid_paths) {
     if (!files::DeletePath(path, /*recursive=*/true)) {
       FX_LOGS(WARNING) << "Failed to delete: " << path;
     }
@@ -154,8 +154,8 @@ void ReportStoreMetadata::Delete(const ReportId report_id) {
   FX_CHECK(IsDirectoryUsable());
   FX_CHECK(Contains(report_id));
 
-  const auto& program = ReportProgramShortname(report_id);
-  auto& report_ids = program_metadata_[program].report_ids;
+  const std::string program = ReportProgramShortname(report_id);
+  std::deque<ReportId>& report_ids = program_metadata_[program].report_ids;
   report_ids.erase(std::find(report_ids.begin(), report_ids.end(), report_id));
 
   current_size_ -= report_metadata_[report_id].size;
@@ -220,14 +220,14 @@ std::vector<std::string> ReportStoreMetadata::ReportAttachments(ReportId report_
                                                                 const bool absolute_paths) const {
   FX_CHECK(Contains(report_id));
 
-  auto& report_metadata = report_metadata_.at(report_id);
+  const ReportMetadata& report_metadata = report_metadata_.at(report_id);
   if (!absolute_paths) {
     return report_metadata.attachments;
   }
 
   std::vector<std::string> attachments;
   attachments.reserve(report_metadata.attachments.size());
-  for (const auto& attachment : report_metadata.attachments) {
+  for (const std::string& attachment : report_metadata.attachments) {
     attachments.push_back(fs::path(report_metadata.dir) / attachment);
   }
 
@@ -238,7 +238,7 @@ std::optional<std::string> ReportStoreMetadata::ReportAttachmentPath(
     ReportId report_id, const std::string& attachment_name) const {
   FX_CHECK(Contains(report_id));
 
-  auto& report_metadata = report_metadata_.at(report_id);
+  const ReportMetadata& report_metadata = report_metadata_.at(report_id);
   if (std::find(report_metadata.attachments.begin(), report_metadata.attachments.end(),
                 attachment_name) == report_metadata.attachments.end()) {
     return std::nullopt;

@@ -38,7 +38,7 @@ SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_fil
 
   // Get the numbers the previous writer assigned to the files – there should only be previous
   // files in case of a component restart.
-  for (const auto& fname : current_log_files) {
+  for (const std::string& fname : current_log_files) {
     file_queue_.push_back(std::strtoull(fname.c_str(), nullptr, /*base=*/10));
   }
 

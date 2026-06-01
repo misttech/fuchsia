@@ -36,7 +36,7 @@ Inspect::Inspect(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDir
       redactor_(redactor) {
   archive_accessor_.set_error_handler([this](const zx_status_t status) {
     FX_LOGS(WARNING) << "Lost connection to " << feedback_data::kArchiveAccessorName;
-    auto self = ptr_factory_.GetWeakPtr();
+    fxl::WeakPtr<Inspect> self = ptr_factory_.GetWeakPtr();
     async::PostDelayedTask(
         dispatcher_,
         [self] {
@@ -112,7 +112,7 @@ void InspectCollector::Run() {
       return;
     }
 
-    const auto& batch = result.response().batch;
+    const std::vector<::fuchsia::diagnostics::FormattedContent>& batch = result.response().batch;
 
     // All of the Inspect data has been collected.
     if (batch.empty()) {
@@ -121,7 +121,7 @@ void InspectCollector::Run() {
       return;
     }
 
-    for (const auto& chunk : batch) {
+    for (const ::fuchsia::diagnostics::FormattedContent& chunk : batch) {
       if (!chunk.is_json()) {
         FX_LOGS(WARNING) << "Invalid JSON Inspect chunk, skipping";
         continue;
@@ -170,7 +170,7 @@ void InspectCollector::Run() {
       .set_client_selector_configuration(
           fuchsia::diagnostics::ClientSelectorConfiguration::WithSelectAll(true));
 
-  if (const auto budget = data_budget_->SizeInBytes(); budget.has_value()) {
+  if (const std::optional<size_t> budget = data_budget_->SizeInBytes(); budget.has_value()) {
     fuchsia::diagnostics::PerformanceConfiguration performance;
     performance.set_max_aggregate_content_size_bytes(*budget);
     params.set_performance_configuration(std::move(performance));
@@ -178,7 +178,7 @@ void InspectCollector::Run() {
 
   archive_accessor_->StreamDiagnostics(std::move(params), collector->NewRequest(dispatcher_));
 
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<Inspect> self = ptr_factory_.GetWeakPtr();
 
   collector->Run();
 
@@ -186,7 +186,7 @@ void InspectCollector::Run() {
   return consume.then([self, ticket, collector = std::move(collector)](
                           const ::fpromise::result<void, Error>& result) mutable
                           -> ::fpromise::result<AttachmentValue> {
-    auto& inspect = collector->Inspect();
+    const std::vector<std::string>& inspect = collector->Inspect();
     if (inspect.empty()) {
       FX_LOGS(WARNING) << "Inspect data was empty";
       return ::fpromise::ok(result.is_ok() ? Error::kMissingValue : result.error());

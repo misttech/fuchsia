@@ -177,8 +177,8 @@ class MetadataTest : public UnitTestFixture {
                                      const feedback::Attachments& attachments,
                                      const bool missing_non_platform_annotations = false) {
     FX_CHECK(metadata_);
-    const auto metadata_str = metadata_->MakeMetadata(annotations, attachments, kSnapshotUuid,
-                                                      missing_non_platform_annotations);
+    const std::string metadata_str = metadata_->MakeMetadata(
+        annotations, attachments, kSnapshotUuid, missing_non_platform_annotations);
 
     rapidjson::Document json;
     FX_CHECK(!json.Parse(metadata_str.c_str()).HasParseError());
@@ -214,7 +214,7 @@ TEST_F(MetadataTest, Check_AddsMissingAnnotationsOnNoAnnotations) {
 
   SetUpMetadata(annotation_allowlist, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport({}, {});
+  const rapidjson::Document metadata_json = MakeJsonReport({}, {});
   HAS_MISSING_ANNOTATION(metadata_json, "annotation 1", "feedback logic error");
 }
 
@@ -225,7 +225,7 @@ TEST_F(MetadataTest, Check_AddsMissingAnnotationsOnEmptyAnnotations) {
 
   SetUpMetadata(annotation_allowlist, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport({}, {});
+  const rapidjson::Document metadata_json = MakeJsonReport({}, {});
   HAS_MISSING_ANNOTATION(metadata_json, "annotation 1", "feedback logic error");
 }
 
@@ -236,7 +236,7 @@ TEST_F(MetadataTest, Check_AddsMissingAttachmentsOnNoAttachments) {
 
   SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
 
-  const auto metadata_json = MakeJsonReport({}, {});
+  const rapidjson::Document metadata_json = MakeJsonReport({}, {});
   HAS_MISSING_ATTACHMENT(metadata_json, "attachment 1", "feedback logic error");
 }
 
@@ -247,7 +247,7 @@ TEST_F(MetadataTest, Check_AddsMissingAttachmentsOnEmptyAttachments) {
 
   SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
 
-  const auto metadata_json = MakeJsonReport({}, {});
+  const rapidjson::Document metadata_json = MakeJsonReport({}, {});
   HAS_MISSING_ATTACHMENT(metadata_json, "attachment 1", "feedback logic error");
 }
 
@@ -268,7 +268,7 @@ TEST_F(MetadataTest, Check_FormatAnnotationsProperly) {
 
   SetUpMetadata(annotation_allowlist, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), {});
+  const rapidjson::Document metadata_json = MakeJsonReport(std::move(annotations), {});
 
   ANNOTATIONS_JSON_STATE_IS(metadata_json, "partial");
 
@@ -296,7 +296,7 @@ TEST_F(MetadataTest, Check_FormatAttachmentsProperly) {
 
   SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
 
-  const auto metadata_json = MakeJsonReport({}, std::move(attachments));
+  const rapidjson::Document metadata_json = MakeJsonReport({}, std::move(attachments));
 
   HAS_COMPLETE_ATTACHMENT(metadata_json, "complete attachment 1");
   HAS_COMPLETE_ATTACHMENT(metadata_json, "complete attachment 2");
@@ -315,7 +315,7 @@ TEST_F(MetadataTest, Check_NonPlatformAnnotationsComplete) {
 
   SetUpMetadata(/*annotation_allowlist=*/{}, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), {});
+  const rapidjson::Document metadata_json = MakeJsonReport(std::move(annotations), {});
 
   HAS_PRESENT_ANNOTATION(metadata_json, "non-platform annotations");
 }
@@ -327,8 +327,9 @@ TEST_F(MetadataTest, Check_NonPlatformAnnotationsPartial) {
 
   SetUpMetadata(/*annotation_allowlist=*/{}, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), {},
-                                            /*missing_non_platform_annotations=*/true);
+  const rapidjson::Document metadata_json =
+      MakeJsonReport(std::move(annotations), {},
+                     /*missing_non_platform_annotations=*/true);
 
   HAS_MISSING_ANNOTATION(metadata_json, "non-platform annotations",
                          "too many non-platfrom annotations added");
@@ -337,8 +338,9 @@ TEST_F(MetadataTest, Check_NonPlatformAnnotationsPartial) {
 TEST_F(MetadataTest, Check_NonPlatformAnnotationsMissing) {
   SetUpMetadata(/*annotation_allowlist=*/{}, /*attachment_allowlist=*/{});
 
-  const auto metadata_json = MakeJsonReport({}, {},
-                                            /*missing_non_platform_annotations=*/true);
+  const rapidjson::Document metadata_json =
+      MakeJsonReport({}, {},
+                     /*missing_non_platform_annotations=*/true);
 
   HAS_MISSING_ANNOTATION(metadata_json, "non-platform annotations",
                          "too many non-platfrom annotations added");
@@ -374,8 +376,9 @@ TEST_F(MetadataTest, Check_SmokeTest) {
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), std::move(attachments),
-                                            /*missing_non_platform_annotations=*/true);
+  const rapidjson::Document metadata_json =
+      MakeJsonReport(std::move(annotations), std::move(attachments),
+                     /*missing_non_platform_annotations=*/true);
 
   HAS_COMPLETE_ATTACHMENT(metadata_json, "complete attachment 1");
   HAS_COMPLETE_ATTACHMENT(metadata_json, "complete attachment 2");
@@ -403,8 +406,8 @@ TEST_F(MetadataTest, Check_SmokeTest) {
 TEST_F(MetadataTest, Check_EmptySnapshot) {
   SetUpMetadata(/*annotation_allowlist=*/{}, /*attachment_allowlist=*/{});
 
-  auto metadata_str = metadata_->MakeMetadata({}, {}, kSnapshotUuid,
-                                              /*missing_non_platform_annotations=*/false);
+  std::string metadata_str = metadata_->MakeMetadata({}, {}, kSnapshotUuid,
+                                                     /*missing_non_platform_annotations=*/false);
 
   rapidjson::Document json;
   ASSERT_TRUE(!json.Parse(metadata_str.c_str()).HasParseError());
@@ -465,7 +468,8 @@ TEST_F(MetadataTest, Check_UtcBootDifference) {
   boot = clock_.BootNow();
   ASSERT_EQ(clock_.UtcNow(&utc), ZX_OK);
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), std::move(attachments));
+  const rapidjson::Document metadata_json =
+      MakeJsonReport(std::move(annotations), std::move(attachments));
 
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentInspect, utc_boot_difference);
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentLogKernel, utc_boot_difference);
@@ -498,7 +502,8 @@ TEST_F(MetadataTest, Check_NoUtcMontonicDifferenceAvailable) {
 
   SetUpMetadata(annotation_allowlist, attachment_allowlist);
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), std::move(attachments));
+  const rapidjson::Document metadata_json =
+      MakeJsonReport(std::move(annotations), std::move(attachments));
 
   ASSERT_TRUE(metadata_json["files"].HasMember(kAttachmentAnnotations));
   ASSERT_FALSE(
@@ -544,7 +549,8 @@ TEST_F(MetadataTest, Check_NoUtcBootDifferenceMissingFile) {
   boot = clock_.BootNow();
   ASSERT_EQ(clock_.UtcNow(&utc), ZX_OK);
 
-  const auto metadata_json = MakeJsonReport(std::move(annotations), std::move(attachments));
+  const rapidjson::Document metadata_json =
+      MakeJsonReport(std::move(annotations), std::move(attachments));
 
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentInspect, utc_boot_difference);
   UTC_BOOT_DIFFERENCE_IS(metadata_json, kAttachmentLogKernel, utc_boot_difference);
@@ -679,10 +685,10 @@ INSTANTIATE_TEST_SUITE_P(WithVariousAnnotations, AnnotationsJsonStateTest,
                            return info.param.test_name;
                          });
 TEST_P(AnnotationsJsonStateTest, Succeed) {
-  const auto param = GetParam();
+  const TestParam& param = GetParam();
   SetUpMetadata(param.annotation_allowlist, /*attachment_allowlist=*/{});
 
-  const auto metadata_json =
+  const rapidjson::Document metadata_json =
       MakeJsonReport(param.annotations, {}, param.missing_non_platform_annotations);
   ANNOTATIONS_JSON_STATE_IS(metadata_json, param.state.c_str());
 }

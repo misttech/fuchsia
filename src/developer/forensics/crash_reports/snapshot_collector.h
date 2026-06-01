@@ -60,7 +60,7 @@ class SnapshotCollector {
   // SnapshotRequest exists, it is implicitly pending.
   struct SnapshotRequest {
     ~SnapshotRequest() {
-      for (auto& blocked_promise : blocked_promises) {
+      for (::fpromise::suspended_task& blocked_promise : blocked_promises) {
         if (blocked_promise) {
           blocked_promise.resume_task();
         }

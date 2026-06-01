@@ -301,7 +301,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<RebootReasonTestParam>& info) { return info.param.test_name; });
 
 TEST_P(RebootLogReasonTest, Succeed) {
-  const auto param = GetParam();
+  const RebootReasonTestParam& param = GetParam();
   if (param.zircon_reboot_log.has_value()) {
     WriteZirconRebootLogContents(param.zircon_reboot_log.value());
   }
@@ -591,7 +591,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, RebootLogMultiReasonTest,
                          });
 
 TEST_P(RebootLogMultiReasonTest, Succeed) {
-  const auto param = GetParam();
+  const RebootMultiReasonTestParam& param = GetParam();
 
   WriteZirconRebootLogContents(
       "HW REBOOT REASON (UNKNOWN)\n\n"
@@ -698,7 +698,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<TimeTestParam>& info) { return info.param.test_name; });
 
 TEST_P(RebootLogTimeTest, Succeed) {
-  const auto param = GetParam();
+  const TimeTestParam& param = GetParam();
   if (param.zircon_reboot_log.has_value()) {
     WriteZirconRebootLogContents(param.zircon_reboot_log.value());
   }
@@ -879,7 +879,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<RebootLogStrTestParam>& info) { return info.param.test_name; });
 
 TEST_P(RebootLogStrTest, Succeed) {
-  const auto param = GetParam();
+  const RebootLogStrTestParam& param = GetParam();
   if (param.zircon_reboot_log.has_value()) {
     WriteZirconRebootLogContents(param.zircon_reboot_log.value());
   }

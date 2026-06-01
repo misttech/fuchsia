@@ -195,7 +195,7 @@ class QueueTest : public UnitTestFixture {
     std::vector<std::string> program_shortnames;
     files::ReadDirContents(report_store_->GetCacheReportsPath(), &program_shortnames);
     RemoveCurDir(&program_shortnames);
-    for (const auto& program_shortname : program_shortnames) {
+    for (const std::string& program_shortname : program_shortnames) {
       const std::string path =
           files::JoinPath(report_store_->GetCacheReportsPath(), program_shortname);
 
@@ -229,7 +229,7 @@ TEST_F(QueueTest, Add_ReportingPolicyUndecided) {
   SetUpQueue();
 
   reporting_policy_watcher_.Set(ReportingPolicy::kUndecided);
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(*report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
@@ -239,7 +239,7 @@ TEST_F(QueueTest, Add_ReportingPolicyUndecided_HourlyReports) {
   SetUpQueue();
 
   reporting_policy_watcher_.Set(ReportingPolicy::kUndecided);
-  const auto report_id_1 = AddNewReport(/*is_hourly_report=*/true);
+  const std::optional<ReportId> report_id_1 = AddNewReport(/*is_hourly_report=*/true);
 
   ASSERT_TRUE(*report_id_1);
   EXPECT_TRUE(queue_->Contains(*report_id_1));
@@ -346,7 +346,7 @@ TEST_F(QueueTest, Add_ReportingPolicyDoNotFileAndDelete) {
   SetUpQueue();
 
   reporting_policy_watcher_.Set(ReportingPolicy::kDoNotFileAndDelete);
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(*report_id);
   EXPECT_FALSE(queue_->Contains(*report_id));
@@ -361,7 +361,7 @@ TEST_F(QueueTest, Add_ReportingPolicyArchive) {
   SetUpQueue();
 
   reporting_policy_watcher_.Set(ReportingPolicy::kArchive);
-  auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(*report_id);
   EXPECT_FALSE(queue_->Contains(*report_id));
@@ -382,7 +382,7 @@ TEST_F(QueueTest, Add_ReportingPolicyUpload) {
   SetUpQueue({kUploadSuccessful});
 
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
-  auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(*report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
@@ -403,7 +403,7 @@ TEST_F(QueueTest, Add_ReportingPolicyUpload) {
 TEST_F(QueueTest, ReportingPolicyChangedToDoNotFileAndDelete_DeletesSnapshots) {
   SetUpQueue();
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   fuchsia::feedback::Attachment snapshot;
   snapshot.key = kAttachmentKey;
@@ -432,7 +432,7 @@ TEST_F(QueueTest, ReportingPolicyChangedToDoNotFileAndDelete_DuringUploadFromSto
   });
   reporting_policy_watcher_.Set(ReportingPolicy::kUndecided);
 
-  auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
@@ -454,8 +454,8 @@ TEST_F(QueueTest, ReportingPolicyChangedToArchive_ArchivesReports) {
   // Add a second report while |report_id| is being uploaded. This will keep |report_id2| in the
   // Queue, letting us test that a change to |kArchive| results in |report_id2| being moved to the
   // report store.
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
-  const auto report_id2 = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id2 = AddNewReport(/*is_hourly_report=*/false);
 
   ASSERT_TRUE(report_id);
   ASSERT_TRUE(report_id2);
@@ -474,7 +474,7 @@ TEST_F(QueueTest, Upload) {
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
   std::vector<ReportId> report_ids;
   for (size_t i = 0; i < 4; ++i) {
-    const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+    const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
     ASSERT_TRUE(report_id);
     ASSERT_TRUE(queue_->Contains(*report_id));
     report_ids.push_back(*report_id);
@@ -685,7 +685,8 @@ TEST_F(QueueTest, SkipEmptyAnnotationUpload) {
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
   std::vector<ReportId> report_ids;
   for (size_t i = 0; i < 4; ++i) {
-    const auto report_id = AddNewReport(/*is_hourly_report=*/false, /*empty_annotations=*/true);
+    const std::optional<ReportId> report_id =
+        AddNewReport(/*is_hourly_report=*/false, /*empty_annotations=*/true);
     ASSERT_TRUE(report_id);
     ASSERT_FALSE(queue_->Contains(*report_id));
     report_ids.push_back(*report_id);
@@ -708,7 +709,7 @@ TEST_F(QueueTest, StopUploading) {
 
   std::vector<ReportId> report_ids;
   for (size_t i = 0; i < 3; ++i) {
-    const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+    const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
     ASSERT_TRUE(*report_id);
     EXPECT_TRUE(queue_->Contains(*report_id));
     report_ids.push_back(*report_id);
@@ -718,7 +719,7 @@ TEST_F(QueueTest, StopUploading) {
   RunLoopFor(kUploadResponseDelay);
 
   EXPECT_FALSE(queue_->IsPeriodicUploadScheduled());
-  for (const auto& report_id : report_ids) {
+  for (const ReportId& report_id : report_ids) {
     EXPECT_FALSE(queue_->Contains(report_id));
   }
   EXPECT_THAT(ReceivedCobaltEvents(),
@@ -729,7 +730,7 @@ TEST_F(QueueTest, StopUploading) {
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
 
   EXPECT_FALSE(queue_->IsPeriodicUploadScheduled());
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(*report_id);
   EXPECT_FALSE(queue_->Contains(*report_id));
   RunLoopUntilIdle();
@@ -752,7 +753,7 @@ TEST_F(QueueTest, PeriodicUpload) {
 
   std::vector<ReportId> report_ids;
   for (size_t i = 0; i < 3; ++i) {
-    auto report_id = AddNewReport(/*is_hourly_upload=*/false);
+    std::optional<ReportId> report_id = AddNewReport(/*is_hourly_upload=*/false);
 
     ASSERT_TRUE(report_id);
     EXPECT_TRUE(queue_->Contains(*report_id));
@@ -765,7 +766,7 @@ TEST_F(QueueTest, PeriodicUpload) {
   RunLoopFor(kUploadResponseDelay * report_ids.size());
 
   RunLoopFor(kPeriodicUploadDuration);
-  for (const auto& report_id : report_ids) {
+  for (const ReportId& report_id : report_ids) {
     EXPECT_FALSE(queue_->Contains(report_id));
   }
 
@@ -835,7 +836,7 @@ TEST_F(QueueTest, UploadOnNetworkReachable) {
 
   std::vector<ReportId> report_ids;
   for (size_t i = 0; i < 3; ++i) {
-    auto report_id = AddNewReport(/*is_hourly_upload=*/false);
+    std::optional<ReportId> report_id = AddNewReport(/*is_hourly_upload=*/false);
 
     ASSERT_TRUE(report_id);
     EXPECT_TRUE(queue_->Contains(*report_id));
@@ -849,7 +850,7 @@ TEST_F(QueueTest, UploadOnNetworkReachable) {
 
   queue_->SetNetworkIsReachable(true);
   RunLoopFor(kUploadResponseDelay * report_ids.size());
-  for (const auto& report_id : report_ids) {
+  for (const ReportId& report_id : report_ids) {
     EXPECT_FALSE(queue_->Contains(report_id));
   }
 
@@ -954,7 +955,7 @@ TEST_F(QueueTest, UploadThrottled) {
 
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
 
-  auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
@@ -983,7 +984,7 @@ TEST_F(QueueTest, kUploadTimedOut) {
 
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
 
-  auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
@@ -1014,7 +1015,7 @@ TEST_F(QueueTest, InitializeFromStore) {
   SetUpQueue();
   reporting_policy_watcher_.Set(ReportingPolicy::kUndecided);
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
@@ -1026,7 +1027,7 @@ TEST_F(QueueTest, ReportDeletedByStore) {
   SetUpQueue();
   reporting_policy_watcher_.Set(ReportingPolicy::kUndecided);
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
@@ -1053,11 +1054,11 @@ TEST_F(QueueTest, SnapshotKeptAllReportsAdded) {
   GetSnapshotStore()->AddSnapshot(kSnapshotUuidValue, std::move(snapshot));
   ASSERT_TRUE(GetSnapshotStore()->SnapshotExists(kSnapshotUuidValue));
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
-  const auto report_id2 = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id2 = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id2);
   EXPECT_TRUE(queue_->Contains(*report_id2));
 
@@ -1089,7 +1090,7 @@ TEST_F(QueueTest, SnapshotKeptNotAllReportsAdded) {
   GetSnapshotStore()->AddSnapshot(kSnapshotUuidValue, std::move(snapshot));
   ASSERT_TRUE(GetSnapshotStore()->SnapshotExists(kSnapshotUuidValue));
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
@@ -1099,7 +1100,7 @@ TEST_F(QueueTest, SnapshotKeptNotAllReportsAdded) {
   ASSERT_FALSE(queue_->Contains(*report_id));
   ASSERT_TRUE(GetSnapshotStore()->SnapshotExists(kSnapshotUuidValue));
 
-  const auto report_id2 = AddNewReport(/*is_hourly_report=*/false);
+  const std::optional<ReportId> report_id2 = AddNewReport(/*is_hourly_report=*/false);
   ASSERT_TRUE(report_id2);
   EXPECT_TRUE(queue_->Contains(*report_id2));
 
@@ -1156,13 +1157,13 @@ TEST_F(QueueTest, PreventStrandedSnapshot) {
   });
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/
-                                      false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/
+                                                         false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
-  const auto report_id2 = AddNewReport(/*is_hourly_report=*/
-                                       false);
+  const std::optional<ReportId> report_id2 = AddNewReport(/*is_hourly_report=*/
+                                                          false);
   ASSERT_TRUE(report_id2);
   EXPECT_TRUE(queue_->Contains(*report_id2));
 
@@ -1203,13 +1204,13 @@ TEST_F(QueueTest, PreventStrandedSnapshot_FailedMove) {
   });
   reporting_policy_watcher_.Set(ReportingPolicy::kUpload);
 
-  const auto report_id = AddNewReport(/*is_hourly_report=*/
-                                      false);
+  const std::optional<ReportId> report_id = AddNewReport(/*is_hourly_report=*/
+                                                         false);
   ASSERT_TRUE(report_id);
   EXPECT_TRUE(queue_->Contains(*report_id));
 
-  const auto report_id2 = AddNewReport(/*is_hourly_report=*/
-                                       false);
+  const std::optional<ReportId> report_id2 = AddNewReport(/*is_hourly_report=*/
+                                                          false);
   ASSERT_TRUE(report_id2);
   EXPECT_TRUE(queue_->Contains(*report_id2));
 

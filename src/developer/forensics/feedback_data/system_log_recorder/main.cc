@@ -57,7 +57,8 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  auto context = sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  std::unique_ptr<sys::ComponentContext> context =
+      sys::ComponentContext::CreateAndServeOutgoingDirectory();
 
   SystemLogRecorder recorder(
       main_loop.dispatcher(), write_loop.dispatcher(), context->svc(),

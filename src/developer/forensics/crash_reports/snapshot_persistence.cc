@@ -57,7 +57,7 @@ void RemoveEmptyDirectories(const std::string& root) {
     return;
   }
 
-  for (const auto& content : contents) {
+  for (const std::string& content : contents) {
     const std::string path = files::JoinPath(root, content);
     if (files::IsDirectory(path)) {
       RemoveEmptyDirectories(path);
@@ -132,7 +132,7 @@ std::optional<ItemLocation> SnapshotPersistence::AddToRoot(const std::string& uu
       return std::nullopt;
     }
 
-    auto& fallback_root = FallbackRoot(root);
+    SnapshotPersistenceMetadata& fallback_root = FallbackRoot(root);
     FX_LOGS(INFO) << "Using fallback root: " << fallback_root.RootDir();
 
     return AddToRoot(uuid, archive, archive_size, fallback_root);
@@ -168,7 +168,7 @@ void SnapshotPersistence::MoveToTmp(const std::string& uuid) {
   FX_CHECK(SnapshotLocation(uuid) == ItemLocation::kCache)
       << "MoveToTmp() will only move snapshots from /cache to /tmp";
 
-  const auto snapshot = Get(uuid);
+  const std::optional<ManagedSnapshot::Archive> snapshot = Get(uuid);
   const StorageSize snapshot_size = cache_metadata_->SnapshotSize(uuid);
 
   // Delete copy of snapshot from /cache before adding to /tmp to avoid the possibility of having
@@ -218,9 +218,9 @@ std::optional<ManagedSnapshot::Archive> SnapshotPersistence::Get(const std::stri
     return std::nullopt;
   }
 
-  const auto& root_metadata = RootFor(uuid);
-  const auto snapshot_dir = root_metadata.SnapshotDirectory(uuid);
-  const auto snapshot_filename = root_metadata.SnapshotKey(uuid);
+  const SnapshotPersistenceMetadata& root_metadata = RootFor(uuid);
+  const std::string snapshot_dir = root_metadata.SnapshotDirectory(uuid);
+  const std::string snapshot_filename = root_metadata.SnapshotKey(uuid);
 
   SizedData archive;
   if (!ReadSnapshot(files::JoinPath(snapshot_dir, snapshot_filename), &archive)) {
@@ -236,9 +236,9 @@ std::vector<std::string> SnapshotPersistence::GetSnapshotUuids() const {
     return {};
   }
 
-  auto all_uuids =
+  std::vector<std::string> all_uuids =
       tmp_metadata_.has_value() ? tmp_metadata_->SnapshotUuids() : std::vector<std::string>();
-  const auto cache_uuids =
+  const std::vector<std::string> cache_uuids =
       cache_metadata_.has_value() ? cache_metadata_->SnapshotUuids() : std::vector<std::string>();
 
   all_uuids.insert(all_uuids.end(), cache_uuids.begin(), cache_uuids.end());
@@ -249,7 +249,7 @@ bool SnapshotPersistence::Delete(const std::string& uuid) {
   FX_CHECK(SnapshotPersistenceEnabled()) << "Snapshot persistence not enabled";
   FX_CHECK(Contains(uuid)) << "Contains() should be called before any Delete()";
 
-  auto& root_metadata = RootFor(uuid);
+  SnapshotPersistenceMetadata& root_metadata = RootFor(uuid);
   if (!DeletePath(root_metadata.SnapshotDirectory(uuid))) {
     FX_LOGS(ERROR) << "Failed to delete snapshot at " << root_metadata.SnapshotDirectory(uuid);
     return false;

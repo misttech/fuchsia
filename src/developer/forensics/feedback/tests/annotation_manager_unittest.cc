@@ -195,7 +195,7 @@ class SimpleCachedAsync : public CachedAsyncAnnotationProvider {
           const std::string value = "value" + std::to_string(++count_);
 
           Annotations annotations;
-          for (const auto& key : keys_) {
+          for (const std::string& key : keys_) {
             annotations.insert_or_assign(key, ErrorOrString(value));
           }
           callback_(annotations);
@@ -349,7 +349,7 @@ class SimpleDynamicAsync : public DynamicAsyncAnnotationProvider {
           const std::string value = "call" + std::to_string(++count_);
 
           Annotations annotations;
-          for (const auto& key : keys_) {
+          for (const std::string& key : keys_) {
             annotations.insert_or_assign(key, ErrorOrString(value));
           }
           cb(annotations);

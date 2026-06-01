@@ -64,7 +64,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<ExpectedMetric>& info) { return info.param.name; });
 
 TEST_P(AnnotationMetricsTest, IndividualKeysTimeout) {
-  const auto param = GetParam();
+  const ExpectedMetric& param = GetParam();
 
   AnnotationMetrics metrics(Cobalt());
   metrics.LogMetrics({
@@ -76,7 +76,7 @@ TEST_P(AnnotationMetricsTest, IndividualKeysTimeout) {
 }
 
 TEST_P(AnnotationMetricsTest, IndividualKeysNonTimeout) {
-  const auto param = GetParam();
+  const ExpectedMetric& param = GetParam();
 
   AnnotationMetrics metrics(Cobalt());
   metrics.LogMetrics({

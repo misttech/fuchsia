@@ -59,7 +59,7 @@ fuchsia::net::interfaces::Event NetworkReachabilityProvider::FakeWatcherImpl::Ex
     bool reachable) {
   fuchsia::net::interfaces::Event event;
 
-  auto& properties = event.existing();
+  ::fuchsia::net::interfaces::Properties& properties = event.existing();
   properties.set_id(kID);
   properties.set_name(kName);
   properties.set_device_class(fuchsia::net::interfaces::DeviceClass::WithDevice(
@@ -69,14 +69,16 @@ fuchsia::net::interfaces::Event NetworkReachabilityProvider::FakeWatcherImpl::Ex
   properties.set_online(reachable);
 
   properties.mutable_addresses()->reserve(2);
-  auto& v4_interfaces_addr = properties.mutable_addresses()->emplace_back();
+  ::fuchsia::net::interfaces::Address& v4_interfaces_addr =
+      properties.mutable_addresses()->emplace_back();
   v4_interfaces_addr.set_addr(fuchsia::net::Subnet{
       .addr = fuchsia::net::IpAddress::WithIpv4(fuchsia::net::Ipv4Address{
           .addr = kIPv4Address,
       }),
       .prefix_len = kIPv4PrefixLength,
   });
-  auto& v6_interfaces_addr = properties.mutable_addresses()->emplace_back();
+  ::fuchsia::net::interfaces::Address& v6_interfaces_addr =
+      properties.mutable_addresses()->emplace_back();
   v6_interfaces_addr.set_addr(fuchsia::net::Subnet{
       .addr = fuchsia::net::IpAddress::WithIpv6(fuchsia::net::Ipv6Address{
           .addr = kIPv6Address,
@@ -91,7 +93,7 @@ fuchsia::net::interfaces::Event NetworkReachabilityProvider::FakeWatcherImpl::Ch
     bool reachable) {
   fuchsia::net::interfaces::Event event;
 
-  auto& properties = event.changed();
+  ::fuchsia::net::interfaces::Properties& properties = event.changed();
   properties.set_id(kID);
   properties.set_online(reachable);
 

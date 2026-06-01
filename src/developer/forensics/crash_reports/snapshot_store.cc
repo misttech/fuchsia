@@ -84,14 +84,15 @@ Snapshot SnapshotStore::GetSnapshot(const std::string& uuid) {
     return BuildMissing(no_uuid_snapshot_);
   }
 
-  auto* data = FindSnapshotData(uuid);
+  SnapshotData* data = FindSnapshotData(uuid);
 
   if (!data) {
     if (garbage_collected_snapshots_.contains(uuid)) {
       return BuildMissing(garbage_collected_snapshot_);
     }
 
-    if (auto snapshot = persistence_.Get(uuid); snapshot.has_value()) {
+    if (std::optional<ManagedSnapshot::Archive> snapshot = persistence_.Get(uuid);
+        snapshot.has_value()) {
       return ManagedSnapshot::StoreShared(MakeShared(std::move(*snapshot)));
     }
 
@@ -106,7 +107,7 @@ std::vector<std::string> SnapshotStore::GetSnapshotUuids() const {
 }
 
 MissingSnapshot SnapshotStore::GetMissingSnapshot(const std::string& uuid) {
-  const auto snapshot = GetSnapshot(uuid);
+  const Snapshot snapshot = GetSnapshot(uuid);
   FX_CHECK(std::holds_alternative<MissingSnapshot>(snapshot));
 
   return std::get<MissingSnapshot>(snapshot);
@@ -118,7 +119,7 @@ void SnapshotStore::DeleteSnapshot(const std::string& uuid) {
     return;
   }
 
-  auto* data = FindSnapshotData(uuid);
+  SnapshotData* data = FindSnapshotData(uuid);
 
   // The snapshot was likely dropped due to size constraints.
   if (!data) {
@@ -148,7 +149,7 @@ void SnapshotStore::DeleteAll() {
 void SnapshotStore::AddSnapshot(const std::string& uuid, fuchsia::feedback::Attachment archive) {
   FX_CHECK(!SnapshotExists(uuid)) << "Duplicate snapshot uuid '" << uuid << "' added to store";
 
-  auto& data = data_[uuid];
+  SnapshotData& data = data_[uuid];
 
   if (!archive.key.empty() && archive.value.vmo.is_valid()) {
     data.archive_size += StorageSize::Bytes(archive.key.size());
@@ -181,7 +182,7 @@ void SnapshotStore::AddSnapshot(const std::string& uuid, fuchsia::feedback::Atta
 }
 
 void SnapshotStore::EnforceSizeLimits(const std::string& uuid) {
-  auto* data = FindSnapshotData(uuid);
+  SnapshotData* data = FindSnapshotData(uuid);
   FX_CHECK(data);
 
   // Drop |data| if necessary.
@@ -194,10 +195,10 @@ void SnapshotStore::EnforceSizeLimits(const std::string& uuid) {
 
 ItemLocation SnapshotStore::MoveToPersistence(const std::string& uuid,
                                               const bool only_consider_tmp) {
-  auto* data = FindSnapshotData(uuid);
+  SnapshotData* data = FindSnapshotData(uuid);
   FX_CHECK(data);
 
-  const auto location =
+  const std::optional<ItemLocation> location =
       persistence_.Add(uuid, *data->archive, data->archive_size, only_consider_tmp);
 
   if (!location.has_value()) {

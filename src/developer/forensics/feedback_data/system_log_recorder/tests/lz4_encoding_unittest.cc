@@ -29,7 +29,7 @@ class Lz4ChunkDecoder : public Lz4Decoder {
 
 auto MakeEncodeDecodeChunk = [](Lz4Encoder* encoder, Lz4ChunkDecoder* decoder) {
   return [encoder, decoder](const std::string& input) -> std::string {
-    auto chunk = encoder->Encode(input);
+    std::string chunk = encoder->Encode(input);
     return decoder->DecodeWithoutReset(chunk);
   };
 };
@@ -46,8 +46,8 @@ TEST(EncodingSizeTest, TestEncodeDecodeSize) {
 
 TEST(EncodingTest, TestEncodeDecode_IncompleteData_NoContent) {
   // Choose encoder and decoder.
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4Decoder();
+  Lz4Encoder encoder;
+  Lz4Decoder decoder;
 
   // Setup encoded data.
   const std::string str_orig = "[0.0] Fuchsia lz4 encoding test log line 1\n";
@@ -62,8 +62,8 @@ TEST(EncodingTest, TestEncodeDecode_IncompleteData_NoContent) {
 
 TEST(EncodingTest, TestEncodeDecode_IncompleteData_MissingData) {
   // Choose encoder and decoder.
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4Decoder();
+  Lz4Encoder encoder;
+  Lz4Decoder decoder;
 
   // Setup encoded data.
   const std::string str_orig = "[0.0] Fuchsia lz4 encoding test log line 1\n";
@@ -78,7 +78,7 @@ TEST(EncodingTest, TestEncodeDecode_IncompleteData_MissingData) {
 
 TEST(EncodingTest, TestDecodeInvalidData) {
   // Test the lz4 decoder by passing it an invalid encoded chunk.
-  auto decoder = Lz4ChunkDecoder();
+  Lz4ChunkDecoder decoder;
 
   const uint16_t encoded_size = 10;
   const std::string encoded_data = EncodeSize(encoded_size) + std::string(encoded_size, '\0');
@@ -89,8 +89,8 @@ TEST(EncodingTest, TestDecodeInvalidData) {
 
 TEST(EncodingTest, TestEncodeDecodeChunk) {
   // Choose encoder and decoder.
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4ChunkDecoder();
+  Lz4Encoder encoder;
+  Lz4ChunkDecoder decoder;
   auto EncodeDecodeChunk = MakeEncodeDecodeChunk(&encoder, &decoder);
 
   // Setup data.
@@ -124,8 +124,8 @@ TEST(EncodingTest, EncodeDecodeChunk_RecallTest) {
   // more than the LZ4 buffer size = 64KB.
   const uint16_t chunk_size = 32;
   const uint16_t chunk_num = 2048;
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4ChunkDecoder();
+  Lz4Encoder encoder;
+  Lz4ChunkDecoder decoder;
   auto EncodeDecodeChunk = MakeEncodeDecodeChunk(&encoder, &decoder);
 
   // Set data
@@ -149,8 +149,8 @@ TEST(EncodingTest, EncodeDecodeChunk_RecallTest) {
 
 TEST(EncodingTest, TestEncodeDecodeMsgBlock) {
   // Choose encoder and decoder.
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4Decoder();
+  Lz4Encoder encoder;
+  Lz4Decoder decoder;
 
   // Setup data.
   const std::string str1_orig = "[0.0] Fuchsia lz4 encoding test log line 1\n";
@@ -163,7 +163,7 @@ TEST(EncodingTest, TestEncodeDecodeMsgBlock) {
   block += encoder.Encode(str2_orig);
   block += encoder.Encode(str3_orig);
 
-  auto decoded = decoder.Decode(block);
+  const std::string decoded = decoder.Decode(block);
 
   // Test contents.
   EXPECT_EQ(decoded, original_message);
@@ -171,16 +171,16 @@ TEST(EncodingTest, TestEncodeDecodeMsgBlock) {
 
 TEST(EncodingTest, TestLargeStrings) {
   // Choose encoder and decoder.
-  auto encoder = Lz4Encoder();
-  auto decoder = Lz4Decoder();
+  Lz4Encoder encoder;
+  Lz4Decoder decoder;
 
   constexpr size_t kExtraBytes = 32;
-  const auto str_orig = GenerateRandomData(0, kMaxChunkSize + kExtraBytes);
+  const std::string str_orig = GenerateRandomData(0, kMaxChunkSize + kExtraBytes);
 
   std::string block;
   block += encoder.Encode(str_orig);
 
-  auto decoded = decoder.Decode(block);
+  const std::string decoded = decoder.Decode(block);
 
   // Test contents.
   EXPECT_EQ(decoded, std::string(str_orig.data(), kMaxEncodeSize));

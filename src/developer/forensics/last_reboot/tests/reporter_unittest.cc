@@ -108,7 +108,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   void SetAsFdr() { not_a_fdr_ = false; }
 
   void ReportOnRebootLog() {
-    const auto reboot_log = feedback::RebootLog::ParseRebootLog(
+    const feedback::RebootLog reboot_log = feedback::RebootLog::ParseRebootLog(
         zircon_reboot_log_path_, graceful_shutdown_info_path_, legacy_graceful_reboot_log_path_,
         /*previous_system_time_path=*/"", /*previous_boot_kernel_log_path=*/"",
         /*final_shutdown_info_path=*/"", not_a_fdr_,
@@ -453,7 +453,7 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(UngracefulReporterTest, Succeed) {
-  const auto param = GetParam();
+  const UngracefulShutdownTestParam& param = GetParam();
 
   WriteZirconRebootLogContents(param.zircon_reboot_log);
   SetUpCrashReporterServer(
@@ -504,7 +504,7 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(GracefulReporterTest, Succeed) {
-  const auto param = GetParam();
+  const GracefulShutdownTestParam& param = GetParam();
 
   WriteZirconRebootLogContents(
       "HW REBOOT REASON (WARM BOOT)\n\n"
@@ -664,7 +664,7 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(GracefulWithCrashReporterTest, Succeed) {
-  const auto param = GetParam();
+  const GracefulShutdownWithCrashTestParam& param = GetParam();
 
   const std::string zircon_reboot_log = fxl::StringPrintf(
       "HW REBOOT REASON (WARM BOOT)\n\n"

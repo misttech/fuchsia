@@ -421,7 +421,7 @@ TEST_F(RedactorTest, RedactedJsonStillValid) {
   ASSERT_EQ(unredacted_parser.HasError(), false) << unredacted_parser.error_str();
 
   json_parser::JSONParser redacted_parser;
-  auto redacted_json = RedactJson(json);
+  const std::string redacted_json = RedactJson(json);
   redacted_parser.ParseFromString(redacted_json, "redacted");
   ASSERT_EQ(redacted_parser.HasError(), false) << redacted_parser.error_str();
 

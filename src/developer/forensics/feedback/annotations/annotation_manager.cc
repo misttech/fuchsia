@@ -38,7 +38,7 @@ void InsertUnique(const Annotations& annotations, Annotations* out) {
 // value.
 void InsertMissing(const std::set<std::string>& keys, const Error error,
                    const std::set<std::string>& allowlist, Annotations* out) {
-  for (const auto& key : keys) {
+  for (const std::string& key : keys) {
     if (!allowlist.contains(key) || out->contains(key)) {
       continue;
     }
@@ -85,7 +85,7 @@ AnnotationManager::AnnotationManager(
       static_async_providers_(static_async_providers),
       dynamic_async_providers_(dynamic_async_providers),
       cached_async_providers_(cached_async_providers) {
-  for (const auto& k : allowlist_) {
+  for (const std::string& k : allowlist_) {
     // Count the number of providers in |providers| that collect |k|.
     // Because a provider can be more than one type of Provider, only count
     // keys from providers we have not seen yet.
@@ -103,9 +103,9 @@ AnnotationManager::AnnotationManager(
       return count;
     };
 
-    const auto num_providers = static_annotations.count(k) + Count(dynamic_sync_providers_) +
-                               Count(static_async_providers_) + Count(dynamic_async_providers_) +
-                               Count(cached_async_providers_);
+    const size_t num_providers = static_annotations.count(k) + Count(dynamic_sync_providers_) +
+                                 Count(static_async_providers_) + Count(dynamic_async_providers_) +
+                                 Count(cached_async_providers_);
 
     FX_CHECK(num_providers == 1) << "Annotation \"" << k << "\" collected by " << num_providers
                                  << " providers";
@@ -119,11 +119,11 @@ AnnotationManager::AnnotationManager(
   }
 
   // Create a weak pointer because |this| isn't guaranteed to outlive providers.
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<AnnotationManager> self = ptr_factory_.GetWeakPtr();
 
   // Iterate over a copy of the container so that we can safely modify the actual container during
   // the for loop
-  for (auto* provider : static_async_providers) {
+  for (StaticAsyncAnnotationProvider* provider : static_async_providers) {
     provider->GetOnce([self, provider](const Annotations annotations) {
       if (!self) {
         return;
@@ -138,7 +138,7 @@ AnnotationManager::AnnotationManager(
       }
 
       // No static async providers remain so complete all calls to WaitForStaticAsync.
-      for (auto& waiting : self->waiting_for_static_) {
+      for (std::function<void()>& waiting : self->waiting_for_static_) {
         waiting();
         waiting = nullptr;
       }
@@ -149,7 +149,7 @@ AnnotationManager::AnnotationManager(
 
   // Iterate over a copy of the container so that we can safely modify the actual container during
   // the for loop
-  for (auto* provider : cached_async_providers) {
+  for (CachedAsyncAnnotationProvider* provider : cached_async_providers) {
     provider->GetOnUpdate(
         [self, provider, keys = provider->GetKeys()](const Annotations annotations) {
           if (!self) {
@@ -157,7 +157,7 @@ AnnotationManager::AnnotationManager(
           }
 
           // Clear the last collected annotations.
-          for (const auto& key : keys) {
+          for (const std::string& key : keys) {
             self->cached_annotations_.erase(key);
           }
 
@@ -171,7 +171,7 @@ AnnotationManager::AnnotationManager(
           }
 
           // No cached async providers remain so complete all calls to WaitForCachedAsync.
-          for (auto& waiting : self->waiting_for_cached_) {
+          for (std::function<void()>& waiting : self->waiting_for_cached_) {
             waiting();
             waiting = nullptr;
           }
@@ -183,7 +183,7 @@ AnnotationManager::AnnotationManager(
 
 ::fpromise::promise<Annotations> AnnotationManager::GetAll(const zx::duration timeout) {
   // Create a weak pointer because |this| isn't guaranteed to outlive providers.
-  auto self = ptr_factory_.GetWeakPtr();
+  fxl::WeakPtr<AnnotationManager> self = ptr_factory_.GetWeakPtr();
 
   return ::fpromise::join_promises(WaitForStaticAsync(timeout), WaitForCachedAsync(timeout),
                                    WaitForDynamicAsync(timeout))
@@ -195,15 +195,15 @@ AnnotationManager::AnnotationManager(
         InsertUnique(std::get<2>(results).value(), &annotations);
 
         // Any async annotations not collected timed out.
-        for (const auto& p : self->static_async_providers_) {
+        for (const StaticAsyncAnnotationProvider* p : self->static_async_providers_) {
           InsertMissing(p->GetKeys(), Error::kTimeout, self->allowlist_, &annotations);
         }
 
-        for (const auto& p : self->cached_async_providers_) {
+        for (const CachedAsyncAnnotationProvider* p : self->cached_async_providers_) {
           InsertMissing(p->GetKeys(), Error::kTimeout, self->allowlist_, &annotations);
         }
 
-        for (const auto& p : self->dynamic_async_providers_) {
+        for (const DynamicAsyncAnnotationProvider* p : self->dynamic_async_providers_) {
           InsertMissing(p->GetKeys(), Error::kTimeout, self->allowlist_, &annotations);
         }
 
@@ -216,7 +216,7 @@ Annotations AnnotationManager::ImmediatelyAvailable() const {
 
   InsertUnique(cached_annotations_, allowlist_, &annotations);
 
-  for (auto* provider : dynamic_sync_providers_) {
+  for (DynamicSyncAnnotationProvider* provider : dynamic_sync_providers_) {
     InsertUnique(provider->Get(), allowlist_, &annotations);
   }
 
@@ -293,8 +293,8 @@ struct AsyncAnnotations {
   });
 
   // Create a weak pointer because |this| isn't guaranteed to outlive providers.
-  auto self = ptr_factory_.GetWeakPtr();
-  for (auto* provider : async_state->providers) {
+  fxl::WeakPtr<AnnotationManager> self = ptr_factory_.GetWeakPtr();
+  for (DynamicAsyncAnnotationProvider* provider : async_state->providers) {
     provider->Get([self, provider, async_state](const Annotations annotations) {
       if (!self) {
         return;

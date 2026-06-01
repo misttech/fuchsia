@@ -29,7 +29,7 @@ void AttachmentMetrics::LogMetrics(const Attachments& attachments) {
     }
   }
 
-  for (const auto metric : to_log) {
+  for (const cobalt::TimedOutData metric : to_log) {
     cobalt_->LogOccurrence(metric);
   }
 }

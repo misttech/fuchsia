@@ -44,7 +44,7 @@ void AnnotationMetrics::LogMetrics(const Annotations& annotations) {
     }
   }
 
-  for (const auto metric : to_log) {
+  for (const cobalt::TimedOutData metric : to_log) {
     cobalt_->LogOccurrence(metric);
   }
 }
