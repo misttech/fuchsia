@@ -313,6 +313,24 @@ fn record_nat64_mapping_in_inspect_node(nat64_mapping_node: &Node, mapping: Nat6
     }
 }
 
+fn record_msg_queue_in_inspect_node(
+    node: &Node,
+    queue_name: &str,
+    queue_info: &fidl_fuchsia_lowpan_experimental::MessageQueueInfo,
+) {
+    node.record_child(queue_name, |sub_child| {
+        if let Some(val) = queue_info.num_messages {
+            sub_child.record_uint("messages", val.into());
+        }
+        if let Some(val) = queue_info.num_buffers {
+            sub_child.record_uint("buffers", val.into());
+        }
+        if let Some(val) = queue_info.total_bytes {
+            sub_child.record_uint("bytes", val.into());
+        }
+    });
+}
+
 const ONE_DAY_IN_MSEC: u64 = 24 * 60 * 60 * 1000;
 const OT_HISTORY_TRACKER_MAX_AGE: u64 = 49 * ONE_DAY_IN_MSEC;
 
@@ -2774,6 +2792,53 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                     }
                                 }
                             );
+                        }
+                        if let Some(ref csl_info) = telemetry_data.csl_info {
+                            inspector.root().record_child("csl_info", |child| {
+                                if let Some(x) = csl_info.csl_accuracy {
+                                    child.record_uint("csl_accuracy", x.into());
+                                }
+                                if let Some(x) = csl_info.csl_uncertainty {
+                                    child.record_uint("csl_uncertainty", x.into());
+                                }
+                            });
+                        }
+                        if let Some(ref buffer_info) = telemetry_data.buffer_info {
+                            inspector.root().record_child("buffer_info", |child| {
+                                if let Some(x) = buffer_info.msg_total_buffers {
+                                    child.record_uint("total", x.into());
+                                }
+                                if let Some(x) = buffer_info.msg_free_buffers {
+                                    child.record_uint("free", x.into());
+                                }
+                                if let Some(x) = buffer_info.msg_max_used_buffers {
+                                    child.record_uint("max_used", x.into());
+                                }
+                                if let Some(ref x) = buffer_info.msg_6lo_send_queue {
+                                    record_msg_queue_in_inspect_node(child, "6lo_send", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_6lo_reassembly_queue {
+                                    record_msg_queue_in_inspect_node(child, "6lo_reassembly", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_ip6_queue {
+                                    record_msg_queue_in_inspect_node(child, "ip6", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_mpl_queue {
+                                    record_msg_queue_in_inspect_node(child, "mpl", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_mle_queue {
+                                    record_msg_queue_in_inspect_node(child, "mle", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_coap_queue {
+                                    record_msg_queue_in_inspect_node(child, "coap", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_coap_secure_queue {
+                                    record_msg_queue_in_inspect_node(child, "coap_secure", x);
+                                }
+                                if let Some(ref x) = buffer_info.msg_application_coap_queue {
+                                    record_msg_queue_in_inspect_node(child, "application_coap", x);
+                                }
+                            });
                         }
                     }
                     Err(e) => {
