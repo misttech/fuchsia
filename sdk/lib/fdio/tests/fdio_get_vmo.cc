@@ -4,8 +4,10 @@
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/wire_test_base.h>
+#include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/io.h>
 #include <lib/fidl/cpp/wire/vector_view.h>
@@ -169,7 +171,13 @@ void create_context_vmo(size_t size, zx::vmo* out_vmo) {
   ASSERT_OK(zx::vmo::create(size, 0, &vmo));
   ASSERT_OK(
       vmo.replace(ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_MAP | ZX_RIGHT_GET_PROPERTY, &vmo));
-  ASSERT_OK(vmo.replace_as_executable(zx::resource(), out_vmo));
+
+  zx::result client = component::Connect<fuchsia_kernel::VmexResource>();
+  ASSERT_OK(client.status_value());
+  fidl::WireResult result = fidl::WireCall(client.value())->Get();
+  ASSERT_TRUE(result.ok());
+
+  ASSERT_OK(vmo.replace_as_executable(result.value().resource, out_vmo));
 }
 
 TEST(GetVMOTest, Remote) {

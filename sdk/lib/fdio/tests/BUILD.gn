@@ -11,6 +11,7 @@ fuchsia_unittest_component("fdio-gtest-component") {
 
 fuchsia_unittest_component("fdio-zxtest-component") {
   manifest = "meta/fdio_test.cml"
+  test_type = "system"
   deps = [
     ":accept-child",
     ":chroot-child",
@@ -108,11 +109,13 @@ test("fdio-test") {
       "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
       "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_testing",
+      "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
       "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_testing",
       "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
       "//sdk/lib/async:async-cpp",
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/async-loop:async-loop-default",
+      "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/driver_test_realm/simple",
       "//sdk/lib/fdio",
       "//sdk/lib/zxio",
