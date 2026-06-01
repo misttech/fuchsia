@@ -10,22 +10,14 @@
 
 use pin_project::pin_project;
 use starnix_sync::RwLock;
+use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]
 pub struct ThreadLockupDetector;
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct AtomicPtr(*const AtomicU64);
-
-// SAFETY: Access to the pointers in the global REGISTRY is protected by a RwLock,
-// ensuring that a thread cannot free its data while another thread is reading it.
-unsafe impl Send for AtomicPtr {}
-// SAFETY: Same as above.
-unsafe impl Sync for AtomicPtr {}
 
 /// Thread-local state that registers the thread in the global registry on creation
 /// and removes it on drop.
@@ -33,24 +25,32 @@ struct ThreadState {
     /// Pointer to the atomic u64 used to store the start time of the current operation.
     /// This is boxed to ensure its address remains stable while registered.
     atomic: Box<AtomicU64>,
+    /// The KOID of the thread, used as the key for removal in `Drop`.
+    koid: zx::Koid,
 }
 
 impl ThreadState {
     /// Creates a new `ThreadState`, registering the current thread in the global `REGISTRY`.
     fn new() -> Self {
+        let handle = fuchsia_runtime::with_thread_self(|thread| thread.raw_handle());
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
         let atomic = Box::new(AtomicU64::new(0));
         let ptr = &*atomic as *const AtomicU64;
-        REGISTRY.write().insert(AtomicPtr(ptr), koid);
-        Self { atomic }
+        let registered = RegisteredThread {
+            // SAFETY: The handle is valid as long as the thread is registered.
+            thread: unsafe { zx::Unowned::from_raw_handle(handle) },
+            koid,
+            atomic: ptr,
+        };
+        REGISTRY.write().insert(registered);
+        Self { atomic, koid }
     }
 }
 
 impl Drop for ThreadState {
     /// Removes the thread from the global `REGISTRY` when the thread exits.
     fn drop(&mut self) {
-        let ptr = &*self.atomic as *const AtomicU64;
-        REGISTRY.write().remove(&AtomicPtr(ptr));
+        REGISTRY.write().remove(&self.koid);
     }
 }
 
@@ -58,8 +58,53 @@ thread_local! {
     static THREAD_STATE: RefCell<Option<ThreadState>> = const { RefCell::new(None) };
 }
 
-static REGISTRY: LazyLock<RwLock<HashMap<AtomicPtr, zx::Koid>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+/// The information stored in the global registry for each tracked thread.
+#[derive(Clone)]
+struct RegisteredThread {
+    /// An unowned handle to the thread, used for inspection.
+    thread: zx::Unowned<'static, zx::Thread>,
+    /// The KOID of the thread.
+    koid: zx::Koid,
+    /// Pointer to the atomic u64 in the thread's `ThreadState`.
+    atomic: *const AtomicU64,
+}
+
+// We only hash and compare by `koid` to allow lookup and removal by `koid`
+// in the `HashSet`.
+impl std::hash::Hash for RegisteredThread {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.koid.hash(state);
+    }
+}
+
+impl PartialEq for RegisteredThread {
+    fn eq(&self, other: &Self) -> bool {
+        self.koid == other.koid
+    }
+}
+
+impl Eq for RegisteredThread {}
+
+impl Borrow<zx::Koid> for RegisteredThread {
+    fn borrow(&self) -> &zx::Koid {
+        &self.koid
+    }
+}
+
+// SAFETY: Access to the pointers in the global REGISTRY is protected by a RwLock,
+// ensuring that a thread cannot free its data while another thread is reading it.
+unsafe impl Send for RegisteredThread {}
+// SAFETY: Same as above.
+unsafe impl Sync for RegisteredThread {}
+
+pub struct ThreadLockupInfo {
+    pub thread: zx::Unowned<'static, zx::Thread>,
+    pub koid: zx::Koid,
+}
+
+/// Global registry of all tracked threads.
+static REGISTRY: LazyLock<RwLock<HashSet<RegisteredThread>>> =
+    LazyLock::new(|| RwLock::new(HashSet::new()));
 
 impl ThreadLockupDetector {
     /// Starts an operation by storing the current time in the thread-local atomic.
@@ -81,17 +126,17 @@ impl ThreadLockupDetector {
     }
 
     /// Iterates over the registry, finds threads that have been running longer than the threshold,
-    /// resets their timer, and returns their KOIDs.
-    pub fn get_long_running_koids(threshold: zx::MonotonicDuration) -> Vec<zx::Koid> {
+    /// resets their timer, and returns their `ThreadLockupInfo`.
+    pub fn get_long_running_threads(threshold: zx::MonotonicDuration) -> Vec<ThreadLockupInfo> {
         let now = zx::MonotonicInstant::get();
         let registry = REGISTRY.read();
         registry
             .iter()
-            .filter_map(|(&AtomicPtr(ptr), &koid)| {
+            .filter_map(|registered| {
                 // SAFETY: We hold the read lock on REGISTRY. Any thread exiting must
                 // acquire the write lock to remove its pointer before freeing the memory.
                 // So the pointer is valid as long as we hold the read lock.
-                let atomic = unsafe { &*ptr };
+                let atomic = unsafe { &*registered.atomic };
                 let start_nanos = atomic.load(Ordering::Relaxed);
                 if start_nanos == 0 {
                     return None;
@@ -99,7 +144,10 @@ impl ThreadLockupDetector {
                 let start_time = zx::MonotonicInstant::from_nanos(start_nanos as i64);
                 if now - start_time > threshold {
                     atomic.store(0, Ordering::Relaxed);
-                    Some(koid)
+                    Some(ThreadLockupInfo {
+                        thread: registered.thread.clone(),
+                        koid: registered.koid,
+                    })
                 } else {
                     None
                 }
@@ -209,6 +257,13 @@ impl<T> LockupDetectorReceiver<T> {
 mod tests {
     use super::*;
 
+    fn get_long_running_koids() -> Vec<zx::Koid> {
+        ThreadLockupDetector::get_long_running_threads(zx::MonotonicDuration::from_nanos(0))
+            .iter()
+            .map(|r| r.koid)
+            .collect()
+    }
+
     #[test]
     fn test_lockup_detector() {
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
@@ -217,20 +272,14 @@ mod tests {
             let _guard = ThreadLockupDetector::track();
 
             // Exceed threshold immediately with zero duration.
-            let long_running =
-                ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-            assert!(long_running.contains(&koid));
+            assert!(get_long_running_koids().contains(&koid));
 
-            // After triggering, it resets to 0, so should be empty for this thread now.
-            let long_running =
-                ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-            assert!(!long_running.contains(&koid));
+            // After triggering, it resets to 0.
+            assert!(get_long_running_koids().is_empty());
         }
 
-        // Guard dropped, operation stopped.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&koid));
+        // Guard dropped.
+        assert!(get_long_running_koids().is_empty());
     }
 
     #[test]
@@ -239,15 +288,11 @@ mod tests {
 
         {
             let _guard = ThreadLockupDetector::track();
-            let long_running =
-                ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-            assert!(long_running.contains(&koid));
+            assert!(get_long_running_koids().contains(&koid));
         }
 
-        // Guard dropped, operation stopped.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&koid));
+        // Guard dropped.
+        assert!(get_long_running_koids().is_empty());
     }
 
     #[test]
@@ -259,15 +304,11 @@ mod tests {
         {
             let _waiting_guard = ThreadLockupDetector::pause_tracking();
             // Operation stopped during wait.
-            let long_running =
-                ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-            assert!(!long_running.contains(&koid));
+            assert!(get_long_running_koids().is_empty());
         }
 
         // Guard dropped, operation restarted.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(long_running.contains(&koid));
+        assert!(get_long_running_koids().contains(&koid));
     }
 
     #[test]
@@ -294,9 +335,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Check that spawned_koid is NOT in long running koids.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&spawned_koid));
+        assert!(!get_long_running_koids().contains(&spawned_koid));
 
         // Now signal to unblock it.
         signal_tx.send(()).unwrap();
@@ -309,22 +348,16 @@ mod tests {
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
 
         // Before polling, should not be found.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&koid));
+        assert!(!get_long_running_koids().contains(&koid));
 
         let fut = ThreadLockupDetector::track_future(async {
-            let long_running =
-                ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-            assert!(long_running.contains(&koid));
+            assert!(get_long_running_koids().contains(&koid));
         });
 
         fuchsia_async::LocalExecutor::default().run_singlethreaded(fut);
 
         // After polling, should not be found.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&koid));
+        assert!(!get_long_running_koids().contains(&koid));
     }
 
     #[test]
@@ -350,9 +383,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Check that spawned_koid is NOT in long running koids.
-        let long_running =
-            ThreadLockupDetector::get_long_running_koids(zx::MonotonicDuration::from_nanos(0));
-        assert!(!long_running.contains(&spawned_koid));
+        assert!(!get_long_running_koids().contains(&spawned_koid));
 
         // Now send data to unblock it.
         tx.send(()).unwrap();

@@ -171,6 +171,49 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_wait_for_init();
     trace_instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
+    // We use `inspector_print_debug_info` directly instead of `backtrace_request_thread` because
+    // `backtrace_request_thread` relies on the exception mechanism (crashsvc). If we use
+    // exceptions, the exception is attributed to the main Starnix kernel process (which detects the
+    // lockup), not the process containing the locked-up thread. This would prevent crashsvc from
+    // accessing the correct thread state and stack. By holding the thread handle directly, we can
+    // inspect it regardless of its process.
+    // SAFETY: This declares external C symbols from the Zircon inspector library.
+    unsafe extern "C" {
+        fn inspector_print_debug_info(
+            out: *mut std::ffi::c_void,
+            process: zx::sys::zx_handle_t,
+            thread: zx::sys::zx_handle_t,
+        );
+        static stderr: *mut std::ffi::c_void;
+    }
+
+    async fn dump_thread_backtrace(thread: &zx::Thread) {
+        use zx::Task;
+
+        let _suspend_token = match thread.suspend() {
+            Ok(token) => token,
+            Err(e) => {
+                log_error!("Failed to suspend thread: {:?}", e);
+                return;
+            }
+        };
+
+        // Wait for suspended signal asynchronously.
+        match fuchsia_async::OnSignals::new(thread, zx::Signals::THREAD_SUSPENDED).await {
+            Ok(_signals) => (),
+            Err(e) => {
+                log_error!("Failed to wait for thread suspension: {:?}", e);
+                return;
+            }
+        }
+
+        // SAFETY: Calling FFI is safe when passing valid handles.
+        unsafe {
+            let process_self = fuchsia_runtime::process_self().raw_handle();
+            inspector_print_debug_info(stderr, process_self, thread.raw_handle());
+        }
+    }
+
     const LOCKUP_DETECTOR_INTERVAL_MINUTES: i64 = 2;
     let _lockup_detector_task = fasync::Task::spawn(async {
         loop {
@@ -179,10 +222,11 @@ async fn main() -> Result<(), Error> {
             )))
             .await;
             let _waiting_guard = starnix_core::task::ThreadLockupDetector::pause_tracking();
-            let koids = starnix_core::task::ThreadLockupDetector::get_long_running_koids(
+            let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
                 zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
             );
-            if !koids.is_empty() {
+            if !long_running.is_empty() {
+                let koids: Vec<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
                 log_error!(
                     "Detected threads locked up for more than {} minutes: {:?}",
                     LOCKUP_DETECTOR_INTERVAL_MINUTES,
@@ -190,8 +234,8 @@ async fn main() -> Result<(), Error> {
                 );
                 #[cfg(all(target_os = "fuchsia", not(doc)))]
                 {
-                    for koid in &koids {
-                        ::debug::backtrace_request_thread(koid.raw_koid());
+                    for registered in &long_running {
+                        dump_thread_backtrace(&registered.thread).await;
                     }
 
                     let reporter = fuchsia_component::client::connect_to_protocol::<
