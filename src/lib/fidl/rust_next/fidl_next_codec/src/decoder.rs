@@ -154,9 +154,11 @@ impl<'de, D: Decoder<'de> + ?Sized> DecoderExt<'de> for D {
              higher than {CHUNK_SIZE}",
         );
 
-        let slice_byte_length = size_of::<T>() * len;
+        let slice_byte_length =
+            size_of::<T>().checked_mul(len).ok_or(DecodeError::InsufficientData)?;
         let chunk_count = slice_byte_length.div_ceil(CHUNK_SIZE);
-        let chunk_length = CHUNK_SIZE * chunk_count;
+        let chunk_length =
+            chunk_count.checked_mul(CHUNK_SIZE).ok_or(DecodeError::InsufficientData)?;
         let padding_length = chunk_length - slice_byte_length;
         let chunks_ptr = self.take_chunks(chunk_count)?.as_mut_ptr();
         let padding: &[u8] = unsafe {
@@ -210,5 +212,23 @@ impl<'de, D: Decoder<'de> + ?Sized> DecoderExt<'de> for D {
         let result = self.decode_prefix_with_constraint(constraint)?;
         self.finish()?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_take_slice_slot_integer_overflow() {
+        let mut chunks = [Chunk::default(); 4];
+        let mut decoder: &mut [Chunk] = &mut chunks;
+
+        // A ridiculously large length that would cause overflow when multiplied by size_of::<u64>() (which is 8)
+        let len = usize::MAX / 4;
+
+        // This should return an Err containing DecodeError::InsufficientData instead of overflowing or panicking.
+        let result = decoder.take_slice_slot::<u64>(len);
+        assert!(matches!(result, Err(DecodeError::InsufficientData)));
     }
 }
