@@ -473,11 +473,18 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
     }
 
+    uber_struct->local_image_sample_regions.reserve(image_sample_regions_.size());
     uber_struct->local_image_sample_regions.insert(image_sample_regions_.begin(),
                                                    image_sample_regions_.end());
+
+    uber_struct->local_opacity_values.reserve(opacity_values_.size());
     uber_struct->local_opacity_values.insert(opacity_values_.begin(), opacity_values_.end());
+
+    uber_struct->local_clip_regions.reserve(clip_regions_.size());
     uber_struct->local_clip_regions.insert(clip_regions_.begin(), clip_regions_.end());
 
+    // + 1 for optional full screen hit region
+    uber_struct->local_hit_regions_map.reserve(hit_regions_.size() + 1);
     for (const auto& [handle, regions] : hit_regions_) {
       uber_struct->local_hit_regions_map[handle].assign(regions.begin(), regions.end());
     }
@@ -489,6 +496,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
     }
 
+    uber_struct->images.reserve(image_metadatas_.size());
     uber_struct->images.insert(image_metadatas_.begin(), image_metadatas_.end());
 
     if (link_to_parent_.has_value()) {
