@@ -33,4 +33,5 @@ cc_library(
         "//src/lib/fxl:strings",
         "//zircon/system/ulib/fbl",
     ],
+    alwayslink = True,
 )

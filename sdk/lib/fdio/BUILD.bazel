@@ -17,6 +17,7 @@ cc_library(
     ],
     visibility = [":__subpackages__"],
     deps = ["//zircon/system/ulib/fbl"],
+    alwayslink = True,
 )
 
 idk_cc_shared_library_zx(

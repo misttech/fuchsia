@@ -17,4 +17,5 @@ cc_library(
         "-Wno-conversion",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
+    alwayslink = True,
 )

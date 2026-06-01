@@ -17,6 +17,7 @@ fx_cc_library(
     includes = ["include"],
     public_configs = [":fidl_base.config"],  # For bazel2gn.
     deps = ["//src/zircon/lib/zircon"],
+    alwayslink = True,
 )
 
 # Base library used by both Fuchsia and host

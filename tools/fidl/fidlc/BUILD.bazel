@@ -125,6 +125,7 @@ cc_library(
         "//zircon/system/ulib/cmdline",
         "@re2",
     ],
+    alwayslink = True,
 )
 
 cc_library(
@@ -140,6 +141,7 @@ cc_library(
     # support bazel2gn.
     # TODO: Remove this once GN is no longer building fidlc.
     deps = [":gen-json-schema"],
+    alwayslink = True,
 )
 
 genrule(

@@ -71,6 +71,7 @@ fx_cc_library(
     visibility = [
         "//sdk/lib/zxio:__subpackages__",
     ],
+    alwayslink = True,
 )
 
 fx_cc_library(
@@ -136,4 +137,5 @@ fx_cc_library(
     deps = [
         ":headers",
     ],
+    alwayslink = True,
 )

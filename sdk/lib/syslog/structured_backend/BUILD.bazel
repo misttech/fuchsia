@@ -41,4 +41,5 @@ cc_library(
         "fuchsia_syslog.h",
     ],
     visibility = ["//visibility:public"],
+    alwayslink = True,
 )

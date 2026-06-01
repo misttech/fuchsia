@@ -840,7 +840,7 @@ func TestCCConversion(t *testing.T) {
 	],
 )
 `,
-			wantGN: `source_set("foo") {
+			wantGN: `static_library("foo") {
 	sources = [
 		"path/to/bar.cc",
 		"path/to/bar.h",
@@ -877,7 +877,7 @@ func TestCCConversion(t *testing.T) {
 	],
 )
 `,
-			wantGN: `source_set("fdio") {
+			wantGN: `static_library("fdio") {
 	ldflags = [
 		"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir),
 	]
@@ -893,7 +893,7 @@ func TestCCConversion(t *testing.T) {
 	}),
 )
 `,
-			wantGN: `source_set("foo") {
+			wantGN: `static_library("foo") {
 	if (is_fuchsia) {
 		configs += [
 			"//build/config:Wno-implicit-fallthrough",
@@ -908,7 +908,7 @@ func TestCCConversion(t *testing.T) {
 	copts = [],
 )
 `,
-			wantGN: `source_set("configs_append") {
+			wantGN: `static_library("configs_append") {
 	configs += [
 	]
 }`,
@@ -920,7 +920,7 @@ func TestCCConversion(t *testing.T) {
 	copts = [], # @bazel2gn:clear
 )
 `,
-			wantGN: `source_set("empty_configs") {
+			wantGN: `static_library("empty_configs") {
 	configs = [
 	]
 }`,
@@ -932,7 +932,7 @@ func TestCCConversion(t *testing.T) {
 	copts = [], # this comment does NOT affect bazel2gn
 )
 `,
-			wantGN: `source_set("empty_configs") {
+			wantGN: `static_library("empty_configs") {
 	configs += [
 	]
 }`,
@@ -945,7 +945,7 @@ func TestCCConversion(t *testing.T) {
 	copts = [],
 )
 `,
-			wantGN: `source_set("comment_above") {
+			wantGN: `static_library("comment_above") {
 	configs += [
 	]
 }`,
@@ -959,7 +959,7 @@ func TestCCConversion(t *testing.T) {
 	] + fuchsia_api_level_copts(),
 )
 `,
-			wantGN: `source_set("foo") {
+			wantGN: `static_library("foo") {
 	configs += [
 		"//build/config:Wno-vla-cxx-extension",
 	]
@@ -972,7 +972,47 @@ func TestCCConversion(t *testing.T) {
 	copts = fuchsia_api_level_copts(),
 )
 `,
+			wantGN: `static_library("foo") {
+}`,
+		},
+		{
+			name: "alwayslink = True converts to source_set",
+			bazel: `cc_library(
+	name = "foo",
+	alwayslink = True,
+)
+`,
 			wantGN: `source_set("foo") {
+}`,
+		},
+		{
+			name: "alwayslink = False converts to static_library",
+			bazel: `cc_library(
+	name = "foo",
+	alwayslink = False,
+)
+`,
+			wantGN: `static_library("foo") {
+}`,
+		},
+		{
+			name: "fx_cc_library alwayslink = True converts to source_set",
+			bazel: `fx_cc_library(
+	name = "foo",
+	alwayslink = True,
+)
+`,
+			wantGN: `source_set("foo") {
+}`,
+		},
+		{
+			name: "fx_cc_library alwayslink = False converts to static_library",
+			bazel: `fx_cc_library(
+	name = "foo",
+	alwayslink = False,
+)
+`,
+			wantGN: `static_library("foo") {
 }`,
 		},
 	} {
@@ -1162,7 +1202,7 @@ cc_library(
 	],
 )
 `,
-			wantGN: `source_set("foo") {
+			wantGN: `static_library("foo") {
 	copt = [
 		"-Wno-vla-cxx-extension",
 	]
@@ -1179,7 +1219,7 @@ cc_library(
 	],
 )
 `,
-			wantGN: `source_set("foo") {
+			wantGN: `static_library("foo") {
 	copt = [
 		"-Wno-vla-cxx-extension",
 	]

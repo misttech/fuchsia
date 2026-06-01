@@ -274,6 +274,15 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 			}
 			continue
 		}
+		isCCLibrary := bazelRule == "cc_library" || bazelRule == "fx_cc_library"
+		if isCCLibrary && ident.Name == "alwayslink" {
+			// Convert `cc_library` or `fx_cc_library` with `alwayslink = True` to `source_set`.
+			if rhsIdent, ok := binaryExpr.Y.(*syntax.Ident); ok && rhsIdent.Name == "True" {
+				gnTemplateName = "source_set"
+			}
+			// Regardless of its value, `alwayslink` is not field in GN, so ignore it.
+			continue
+		}
 		remainingArgs = append(remainingArgs, binaryExpr)
 	}
 	if name == "" {

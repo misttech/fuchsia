@@ -17,4 +17,5 @@ cc_library(
     deps = [
         "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
     ],
+    alwayslink = True,
 )

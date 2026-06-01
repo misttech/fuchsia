@@ -291,7 +291,7 @@ func TestLdflagsConversion(t *testing.T) {
 		"-Wl,--another",
 	],
 )`,
-			wantGN: `source_set("test") {
+			wantGN: `static_library("test") {
 	ldflags = [
 		"-Wl,--something_overwritten",
 		"-Wl,--another",
