@@ -1,14 +1,17 @@
 ---
-name: ctorustportingpatternsinzircon
+name: cpp-to-rust-porting
 description: >
   Patterns and guidelines for porting Zircon C++ code to Rust, ensuring memory
-  layout matching, fallible allocation, and ergonomic design.
+  layout matching, fallible allocation, intrusive containers, Ghost Token
+  synchronization, and ergonomic cross-language ABI compatibility.
 ---
 
 # C++ to Rust Porting Patterns in Zircon
 
 This skill documents the patterns and guidelines applied when porting Zircon
-kernel and library code from C++ to Rust.
+kernel and library code from C++ to Rust. It details the core principles,
+cross-language ABI compatibility tricks, and the custom in-tree machinery
+developed to support this migration.
 
 ## Core Principles
 
@@ -17,24 +20,50 @@ kernel and library code from C++ to Rust.
 2.  **Memory Layout Parity**: The memory layout of Rust structs must match
     corresponding C++ objects exactly.
 3.  **Test Parity**: Test coverage for Rust code must match C++ code exactly.
-    Always cross-check Rust test coverage against the corresponding C++ tests
-    and close any gaps by adding more tests to the Rust side.
-4.  **Ergonomic Design**: The Rust code should be ergonomic and follow Rust best
-    practices where they don't conflict with layout or behavior requirements.
+    Always cross-check Rust test coverage against C++ tests and close any gaps.
+4.  **Ergonomic Design**: Rust code should follow Rust best practices where they
+    don't conflict with layout or behavior requirements.
 5.  **DRY Principle**: Apply "Don't Repeat Yourself" to minimize duplication.
 6.  **Fallible Allocation**: All allocations in kernel mode must be explicit and
     fallible. Panics on OOM are unacceptable.
 7.  **Locking and Synchronization**: The locking strategies and concurrency
-    control protocols must match the C++ code.
+    control protocols must match C++ code and integrate with standard validation
+    frameworks (e.g., lockdep).
 
-## Patterns
+---
 
-### 1. Memory Layout Matching
+## The Rust Porting Machinery
 
-To ensure Rust structs can be shared with or replace C++ objects:
-- Use `#[repr(C)]` on structs.
+We have built a suite of custom Rust crates in Fuchsia specifically to
+facilitate porting low-level Zircon structures.
+
+```mermaid
+graph TD
+    subgraph "Zircon Porting Machinery"
+        ZR[zr: Zero-Dependency Core]
+        KAlloc[kalloc: Fallible Allocator & Box]
+        KSync[ksync: Ghost Token Synchronization]
+        FBL[fbl: Intrusive Containers & RefCounting]
+    end
+
+    FBL --> KAlloc
+    FBL --> ZR
+    KSync --> ZR
+```
+
+---
+
+## Patterns & Guidelines
+
+### 1. Memory Layout Matching & Verification
+
+To ensure Rust structs can safely replace C++ objects or be shared across the
+FFI boundary:
+- Always use `#[repr(C)]` on structs shared with C++.
 - Use compile-time assertions to verify size and alignment.
 - Use the `zr::static_assert!` macro from the `zr` crate.
+- Add matching static asserts on the C++ side (e.g., using `static_assert`) in
+  test files to double check compatibility.
 
 Example:
 ```rust
@@ -47,38 +76,210 @@ zr::static_assert!(core::mem::size_of::<Canary<0>>() == 4);
 zr::static_assert!(core::mem::align_of::<Canary<0>>() == 4);
 ```
 
-Also add matching static asserts in C++ test files to double check
-compatibility.
+### 2. Fallible Allocation (`kalloc`)
 
-### 2. Fallible Allocation
+Standard Rust collections and `alloc::boxed::Box` panic on Out-Of-Memory (OOM)
+conditions, which is unacceptable in the Zircon kernel.
+- **Do not** use the standard Rust `alloc` crate directly in kernel code.
+- Use `kalloc::Box` for fallible allocation of sized types and slices.
+- `kalloc` defines an `Allocator` trait similar to `core::alloc::Allocator`.
+- `DefaultAllocator` delegates to standard `alloc` in userspace/tests and kernel
+  `malloc`/`calloc`/`realloc` when compiling with `--cfg=is_kernel`.
 
-For collections or structures that allocate memory:
-- Do not use the standard Rust `alloc` crate directly in kernel mode, as it
-  panics on OOM.
-- Use the fallible allocation functions provided by `kalloc` to ensure OOM
-  conditions are handled without panicking.
-- `kalloc` delegates to kernel `malloc`/`free` in kernel mode and standard
-  `alloc` in userspace/tests.
-- Use `kalloc::Box` for fallible allocation of sized types and slices when
-  ownership management is needed.
+#### Allocating Sized Values & Slices:
+```rust
+// Allocating a single value fallibly
+let my_box = kalloc::Box::try_new(42u32)?;
 
-### 3. Zero-Dependency Core (`zr`)
+// Allocating a zeroed slice fallibly
+let mut uninit_slice = kalloc::Box::<[u32]>::try_new_zeroed_slice(10)?;
+// SAFETY: Guarantee that values are initialized (zeroed is valid for u32)
+let mut slice = unsafe { uninit_slice.assume_init() };
+```
 
-Foundational primitives that do not depend on other crates should be placed in
-the `zr` crate (e.g., `static_assert`).
+#### Growing and Shrinking Slices:
+```rust
+let mut slice = kalloc::Box::<[u32]>::try_new_zeroed_slice(5)?;
+// Grow the slice to a size of 10
+kalloc::Box::try_grow(&mut slice, 10)?;
 
-### 4. Cross-Language Testing
+// Shrink the slice back to a size of 2 (requires unsafe because discarded elements are dropped)
+unsafe {
+    kalloc::Box::try_shrink(&mut slice, 2)?;
+}
+```
 
-To verify that Rust implementations are compatible with C++:
-- Write FFI helpers in C++ tests to verify Rust objects.
-- Example: A C++ function that takes a pointer to a Rust-created object and
-  calls a C++ method on it to verify state.
+### 3. ABI Compatibility & Opaque Storage (`zr`)
 
-### 5. Unsafe Code and SAFETY Comments
+When a C++ object cannot be fully ported to Rust yet, but needs to reside inside
+a Rust structure:
+- Use `zr::Opaque<T>` to wrap C++ types, indicating to the compiler that the
+  type possesses interior mutability (`UnsafeCell`) and might be uninitialized
+  (`MaybeUninit`).
+- Use `zr::OpaqueBytes<SIZE>` as a generic transparent container with an exact
+  compile-time size constraint.
+- **Do not** attempt to pass an alignment parameter to `OpaqueBytes` as a
+  generic. Instead, enforce the correct alignment by wrapping `OpaqueBytes` in a
+  **newtype struct** annotated with standard Rust `#[repr(C, align(N))]`
+  annotations. This guarantees the underlying memory exactly matches the
+  alignment of the corresponding C++ object.
+- Use `zr::pin_init_ffi!` to initialize complex pinned C++ structures in-place
+  via a raw FFI constructor.
 
-When using `unsafe` blocks, always add a `// SAFETY:` comment explaining why the
-block is safe. This is especially important when porting C++ code where memory
-safety depends on invariants not checked by the compiler.
+```rust
+// Match the size (64 bytes) and alignment (8-byte aligned) of the corresponding C++ type exactly
+#[repr(C, align(8))]
+pub struct CppStateStorage(pub zr::OpaqueBytes<64>);
+
+#[repr(C)]
+pub struct RustWrapperStruct {
+    pub cpp_state: CppStateStorage,
+    pub rust_val: u32,
+}
+
+// In-place FFI initialization of a pinned struct
+let pinned_init = zr::pin_init_ffi!(extern_cpp_constructor_fn);
+```
+
+### 4. Token-Based "Ghost Token" Synchronization (`ksync`)
+
+Instead of encapsulating data inside a Mutex (like `std::sync::Mutex<T>`),
+Zircon's concurrency control separates the lock state (`KMutex`) from data
+storage (`KCell<T, Class>`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Thread
+    participant KMutex as KMutex<Class>
+    participant KCell as KCell<T, Class>
+
+    Thread->>KMutex: lock()
+    activate KMutex
+    KMutex-->>Thread: KMutexGuard (holds LockToken)
+    deactivate KMutex
+    Note over Thread: Safe Mutability proof established
+    Thread->>KCell: get_mut(token)
+    KCell-->>Thread: &mut T
+```
+
+- **`LockToken<'a, Class>`**: A zero-sized compile-time proof that the exclusive
+  lock is held.
+- **`KMutex<Class>`**: The lock state. Pinned in memory to support safe FFI
+  active-list registration for loop-detector validation.
+- **`KCell<T, Class>`**: A wrapper around `UnsafeCell<T>` accessible only by
+  proving ownership of a matching `LockToken`.
+
+#### The `#[guarded]` Procedural Macro:
+Annotate structures to automatically rewrite fields into `KMutex` and `KCell`
+wrappers, generating safe Guard and Split Accessor structures.
+
+```rust
+use ksync::{guarded, KMutex};
+
+#[guarded]
+pub struct NetworkDevice {
+    #[mutex]
+    mu: KMutex,
+
+    #[guarded_by(mu)]
+    pub tx_packets: u64,
+
+    #[guarded_by(mu)]
+    pub rx_packets: u64,
+}
+```
+
+#### Usage & Disjoint Borrows:
+To access fields, stack-pin both the structure and the guard, then utilize
+generated helper projections like `fields()` or `fields_mut()` to resolve
+borrows.
+
+```rust
+use pin_init::{pin_init, stack_pin_init};
+
+stack_pin_init!(let dev = pin_init!(NetworkDevice {
+    mu <- KMutex::init(),
+    tx_packets: 0.into(),
+    rx_packets: 0.into(),
+}));
+
+// Pin-initialize the mutex guard
+stack_pin_init!(let mut guard = dev.lock_mu());
+
+// Access individual fields mutably
+*guard.as_mut().tx_packets_mut() += 1;
+
+// Access disjoint borrows simultaneously
+let fields = guard.as_mut().fields_mut();
+*fields.tx_packets += 1;
+*fields.rx_packets += 1;
+```
+
+### 5. Intrusive Containers & Reference Counting (`fbl`)
+
+Low-level Zircon kernel structures heavily use intrusive reference counting and
+intrusive collections (`fbl`).
+
+#### Intrusive Reference Counting (`#[ref_counted]` & `RefPtr`):
+- Annotate structs with `#[fbl::ref_counted]` (requires `#[repr(C)]`).
+- This automatically injects a thread-safe `ref_count: fbl::RefCounted` at
+  **offset 0** (enforced via a compile-time offset assertion) and
+  `__fbl_ref_counted_guard: ()`.
+- Use `fbl::RefPtr<T>` and the `fbl::make_ref_counted!` macro to manage
+  lifecycle.
+
+```rust
+#[fbl::ref_counted]
+#[repr(C)]
+pub struct ProcessNode {
+    pub pid: u64,
+}
+
+// Allocate and construct a reference-counted object
+let node = fbl::make_ref_counted!(ProcessNode { pid: 1001 }).unwrap();
+let node_clone = node.clone(); // increments ref count
+```
+
+#### Cross-Language Lifecycle & `Recyclable`:
+When sharing ref-counted objects with C++, objects must be deallocated by the
+language that allocated them to prevent allocator mismatches.
+- Implement the `fbl::Recyclable` trait (automatically implemented by
+  `#[derive(Recyclable)]` using `kalloc::Box` under the hood).
+- Provide a `rust_recycle_...` FFI callback on the C++ side that calls
+  `Recyclable::recycle_ffi`.
+
+```rust
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_recycle_process_node(ptr: *mut core::ffi::c_void) {
+    // SAFETY: The caller must ensure ptr is a valid, unique pointer to a ProcessNode
+    unsafe { ProcessNode::recycle_ffi(ptr) }
+}
+```
+
+#### Intrusive Containers (`DoublyLinkedList`, `SinglyLinkedList`, `WavlTree`):
+- Derive containable traits: `DoublyLinkedListContainable`,
+  `SinglyLinkedListContainable`, or `WavlTreeContainable`.
+- Annotate the intrusive node fields with `#[dll_node]`, `#[sll_node]`, or
+  `#[wavl_node]`.
+- For objects participating in multiple containers, use the `tag` attribute to
+  declare disjoint paths.
+
+```rust
+use fbl::{DoublyLinkedListContainable, SinglyLinkedListContainable};
+
+#[derive(DoublyLinkedListContainable, SinglyLinkedListContainable)]
+#[repr(C)]
+pub struct Task {
+    #[dll_node]
+    global_link: fbl::DoublyLinkedListNode<Task>,
+
+    #[sll_node(tag = ActiveQueue)]
+    active_link: fbl::SinglyLinkedListNode<Task>,
+}
+
+pub struct ActiveQueue; // marker tag class
+```
 
 ### 6. Workaround for Generic Const Expressions
 
