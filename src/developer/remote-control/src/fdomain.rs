@@ -127,8 +127,32 @@ pub async fn serve_fdomain_connection(
                         error!("Tried to send too-large packet (size {})", outgoing.len());
                         return Poll::Ready(());
                     };
-                    out_queue.extend(size.to_le_bytes().iter().copied());
-                    out_queue.extend(outgoing.iter().copied());
+                    let size = size.to_le_bytes();
+                    let offset = out_queue.len();
+                    let new_len = out_queue.len() + size.len() + outgoing.len();
+                    out_queue.resize(new_len, 0);
+
+                    let (a, b) = out_queue.as_mut_slices();
+
+                    let (a, b) = if a.len() >= offset {
+                        (&mut a[offset..], b)
+                    } else {
+                        (&mut [][..], &mut b[offset - a.len()..])
+                    };
+
+                    let a_size_portion = std::cmp::min(a.len(), size.len());
+                    a[..a_size_portion].copy_from_slice(&size[..a_size_portion]);
+                    let a = &mut a[a_size_portion..];
+                    let size = &size[a_size_portion..];
+
+                    if a.is_empty() {
+                        b[..size.len()].copy_from_slice(size);
+                        b[size.len()..].copy_from_slice(outgoing.as_ref());
+                    } else {
+                        a.copy_from_slice(&outgoing[..a.len()]);
+                        let outgoing = &outgoing[a.len()..];
+                        b[..outgoing.len()].copy_from_slice(outgoing);
+                    }
                 }
                 Err(err) => {
                     error!(err:?; "FDomain encountered an internal error");
