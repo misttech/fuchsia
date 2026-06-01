@@ -10,7 +10,7 @@ use fidl_fuchsia_hardware_qualcomm_fastrpc as frpc;
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::task::{CurrentTask, ThreadGroupKey};
+use starnix_core::task::{CurrentTask, ThreadGroupKey, ThreadLockupDetector};
 use starnix_core::vfs::{
     Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
     call_fidl_and_await_close, default_ioctl,
@@ -347,15 +347,18 @@ impl FastRPCFile {
         };
 
         let session = self.get_session(locked)?;
-        let invoke_res = session.invoke(
-            current_task.get_tid(),
-            info.handle,
-            scalar.method_id() as u32,
-            payload_buffer_id,
-            payload.input_args,
-            payload.output_args,
-            zx::MonotonicInstant::INFINITE,
-        );
+        let invoke_res = {
+            let _waiting_guard = ThreadLockupDetector::pause_tracking();
+            session.invoke(
+                current_task.get_tid(),
+                info.handle,
+                scalar.method_id() as u32,
+                payload_buffer_id,
+                payload.input_args,
+                payload.output_args,
+                zx::MonotonicInstant::INFINITE,
+            )
+        };
 
         let buffer_after_invoke = |success: bool| -> Result<(), Errno> {
             if success {

@@ -519,6 +519,7 @@ impl CurrentTask {
             state.set_run_state(run_state.clone());
         }
 
+        let _waiting_guard = crate::task::ThreadLockupDetector::pause_tracking();
         let result = callback();
 
         {

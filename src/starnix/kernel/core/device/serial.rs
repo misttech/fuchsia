@@ -7,7 +7,7 @@ use crate::device::terminal::{Terminal, TtyState};
 use crate::device::{DeviceMode, DeviceOps};
 use crate::fs::devpts::{TtyFile, new_pts_fs_with_state};
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, EventHandler, Kernel, Waiter};
+use crate::task::{CurrentTask, EventHandler, Kernel, ThreadLockupDetector, Waiter};
 use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuffer};
 use anyhow::Error;
 use fidl::endpoints::ClientEnd;
@@ -47,9 +47,12 @@ impl ForwardTask {
                         waiter.wait(locked, current_task)?;
                     }
 
-                    let data = serial_proxy
-                        .read(zx::MonotonicInstant::INFINITE)?
-                        .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
+                    let data = {
+                        let _waiting_guard = ThreadLockupDetector::pause_tracking();
+                        serial_proxy
+                            .read(zx::MonotonicInstant::INFINITE)?
+                            .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?
+                    };
                     terminal.main_write(locked, &mut VecInputBuffer::from(data))?;
                 }
             }();

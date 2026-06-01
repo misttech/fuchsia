@@ -10,7 +10,7 @@ use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{CurrentTask, Kernel, LockupDetectorReceiver, ThreadLockupDetector};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_nonseekable,
@@ -23,7 +23,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::Sender;
 use zerocopy::IntoBytes;
 
 /// Initializes the boot notifier device.
@@ -34,7 +34,7 @@ pub fn booted_device_init(
 ) {
     let kernel = system_task.kernel();
 
-    let (booted_sender, booted_receiver) = channel::<bool>();
+    let (booted_sender, booted_receiver) = ThreadLockupDetector::tracked_channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
     let device = BootedDevice::new(system_task.kernel(), booted_sender, node, cpu_boost_duration)
         .expect("must be able to initialize booted device");
@@ -116,7 +116,7 @@ impl BootedDevice {
             .expect("can register booted device");
     }
 
-    pub fn start_relay(&self, kernel: &Kernel, booted_receiver: Receiver<bool>) {
+    pub fn start_relay(&self, kernel: &Kernel, booted_receiver: LockupDetectorReceiver<bool>) {
         let this = self.inner.clone();
         let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
             let mut prev_booted = false;

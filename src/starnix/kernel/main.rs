@@ -171,6 +171,63 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_wait_for_init();
     trace_instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
+    const LOCKUP_DETECTOR_INTERVAL_MINUTES: i64 = 2;
+    let _lockup_detector_task = fasync::Task::spawn(async {
+        loop {
+            fasync::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_minutes(
+                LOCKUP_DETECTOR_INTERVAL_MINUTES,
+            )))
+            .await;
+            let _waiting_guard = starnix_core::task::ThreadLockupDetector::pause_tracking();
+            let koids = starnix_core::task::ThreadLockupDetector::get_long_running_koids(
+                zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
+            );
+            if !koids.is_empty() {
+                log_error!(
+                    "Detected threads locked up for more than {} minutes: {:?}",
+                    LOCKUP_DETECTOR_INTERVAL_MINUTES,
+                    koids
+                );
+                #[cfg(all(target_os = "fuchsia", not(doc)))]
+                {
+                    for koid in &koids {
+                        ::debug::backtrace_request_thread(koid.raw_koid());
+                    }
+
+                    let reporter = fuchsia_component::client::connect_to_protocol::<
+                        fidl_fuchsia_feedback::CrashReporterMarker,
+                    >();
+                    match reporter {
+                        Ok(reporter) => {
+                            let report = fidl_fuchsia_feedback::CrashReport {
+                                program_name: Some("starnix_kernel".to_string()),
+                                crash_signature: Some("thread_lockup_detector".to_string()),
+                                is_fatal: Some(false),
+                                annotations: Some(vec![fidl_fuchsia_feedback::Annotation {
+                                    key: "lockup_koids".to_string(),
+                                    value: format!("{:?}", koids),
+                                }]),
+                                ..Default::default()
+                            };
+                            match reporter.file_report(report).await {
+                                Ok(Ok(_)) => log_debug!("Filed crash report for thread lockup."),
+                                Ok(Err(e)) => {
+                                    log_warn!(e:?; "Failed to file crash report for thread lockup.")
+                                }
+                                Err(e) => {
+                                    log_warn!(e:?; "Failed to call file_report for thread lockup.")
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log_warn!(e:?; "Failed to connect to CrashReporter");
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     starnix_kernel_runner::initialize();
     let container = Rc::new(OnceCell::<Container>::new());
     let _lifecycle_task = maybe_serve_lifecycle(container.clone());

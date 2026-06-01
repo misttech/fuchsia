@@ -4,7 +4,7 @@
 
 use starnix_core::device::DeviceOps;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{CurrentTask, Kernel, LockupDetectorReceiver};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_nonseekable,
@@ -17,7 +17,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Sender;
 use zerocopy::IntoBytes;
 
 #[derive(Clone)]
@@ -47,7 +47,11 @@ impl TouchPowerPolicyDevice {
             .expect("can register touch_standby device");
     }
 
-    pub fn start_relay(&self, kernel: &Kernel, touch_standby_receiver: Receiver<bool>) {
+    pub fn start_relay(
+        &self,
+        kernel: &Kernel,
+        touch_standby_receiver: LockupDetectorReceiver<bool>,
+    ) {
         let slf = self.clone();
         let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
             let mut prev_enabled = true;

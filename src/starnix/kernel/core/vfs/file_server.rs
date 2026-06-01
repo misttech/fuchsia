@@ -13,6 +13,7 @@ use crate::vfs::{
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fuchsia_runtime::UtcInstant;
+use futures::StreamExt;
 use futures::future::BoxFuture;
 use itertools::Either;
 use starnix_logging::{log_error, track_stub};
@@ -242,7 +243,7 @@ async fn handle_file(
     locked_and_task: LockedAndTask<'_>,
     credentials: Arc<Credentials>,
     file: FileHandle,
-    receiver: std::sync::mpsc::Receiver<Box<dyn Work>>,
+    mut receiver: futures::channel::mpsc::UnboundedReceiver<Box<dyn Work>>,
 ) {
     // Run with the correct credentials
     locked_and_task
@@ -261,7 +262,7 @@ async fn handle_file(
                     return;
                 }
             };
-            while let Ok(w) = receiver.recv() {
+            while let Some(w) = receiver.next().await {
                 w.run(&mut locked_and_task.unlocked(), locked_and_task.current_task(), &file).await;
             }
         })
@@ -321,7 +322,7 @@ fn to_open_flags(flags: &impl ProtocolsExt) -> OpenFlags {
 struct StarnixNodeConnection {
     is_dir: bool,
     credentials: Arc<Credentials>,
-    work_sender: std::sync::mpsc::Sender<Box<dyn Work>>,
+    work_sender: futures::channel::mpsc::UnboundedSender<Box<dyn Work>>,
     stats: Arc<FileServerStats>,
 }
 
@@ -347,7 +348,7 @@ impl StarnixNodeConnection {
         credentials: Arc<Credentials>,
         stats: Arc<FileServerStats>,
     ) -> Arc<Self> {
-        let (work_sender, receiver) = std::sync::mpsc::channel();
+        let (work_sender, receiver) = futures::channel::mpsc::unbounded();
         let is_dir = file.node().is_dir();
         let closure = {
             let credentials = credentials.clone();
@@ -371,7 +372,7 @@ impl StarnixNodeConnection {
     {
         let (sender, receiver) = std::sync::mpsc::channel();
         self.work_sender
-            .send(Box::new(WorkWrapper { f, sender: sender.into() }))
+            .unbounded_send(Box::new(WorkWrapper { f, sender: sender.into() }))
             .map_err(|_| errno!(EIO))?;
         Ok(receiver.recv().map_err(|_| errno!(EIO))??)
     }
@@ -387,7 +388,7 @@ impl StarnixNodeConnection {
     {
         let (sender, receiver) = futures::channel::oneshot::channel();
         self.work_sender
-            .send(Box::new(WorkWrapper { f, sender: sender.into() }))
+            .unbounded_send(Box::new(WorkWrapper { f, sender: sender.into() }))
             .map_err(|_| errno!(EIO))?;
         Ok(receiver.await.map_err(|_| errno!(EIO))??)
     }

@@ -4,7 +4,9 @@
 
 use crate::security;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
+use crate::task::{
+    CurrentTask, EventHandler, ThreadLockupDetector, WaitCallback, WaitCanceler, WaitQueue, Waiter,
+};
 use crate::vfs::OutputBuffer;
 use diagnostics_data::{Data, Logs, LogsData, Severity};
 use estimate_timeline::{DefaultFetcher, TimeFetcher, TimelineEstimator};
@@ -445,11 +447,13 @@ impl LogIterator {
                     }
                 }
             }
-            let next_batch = self
-                .iterator
-                .get_next(zx::MonotonicInstant::INFINITE)
-                .map_err(|_| errno!(ENOENT))?
-                .map_err(|_| errno!(ENOENT))?;
+            let next_batch = {
+                let _waiting_guard = ThreadLockupDetector::pause_tracking();
+                self.iterator
+                    .get_next(zx::MonotonicInstant::INFINITE)
+                    .map_err(|_| errno!(ENOENT))?
+                    .map_err(|_| errno!(ENOENT))?
+            };
             if next_batch.is_empty() {
                 return Ok(None);
             }

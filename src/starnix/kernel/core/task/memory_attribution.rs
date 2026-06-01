@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::{Arc, Weak, mpsc};
 
-use crate::task::{Kernel, ThreadGroup};
+use crate::task::{Kernel, LockupDetectorReceiver, ThreadGroup, ThreadLockupDetector};
 
 /// If the PID table updates multiple times within this interval, we only send an update once, to
 /// reduce overhead.
@@ -92,7 +92,7 @@ impl MemoryAttributionManager {
                 initial_state_tx.send(InitialState { processes }).unwrap();
                 let weak_kernel = weak_kernel.clone();
 
-                let (pid_sender, pid_receiver) = std::sync::mpsc::channel();
+                let (pid_sender, pid_receiver) = ThreadLockupDetector::tracked_channel();
 
                 pids.set_thread_group_notifier(pid_sender);
                 drop(pids);
@@ -138,7 +138,7 @@ impl MemoryAttributionManager {
         kernel: Weak<Kernel>,
         publisher: mpsc::Receiver<attribution_server::Publisher>,
         initial_state: mpsc::Receiver<InitialState>,
-        pid_receiver: mpsc::Receiver<MemoryAttributionLifecycleEvent>,
+        pid_receiver: LockupDetectorReceiver<MemoryAttributionLifecycleEvent>,
     ) {
         let publisher = publisher.recv().unwrap();
         let initial_state = initial_state.recv().unwrap();

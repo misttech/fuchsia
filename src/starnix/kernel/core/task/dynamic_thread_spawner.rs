@@ -9,7 +9,8 @@
 
 use crate::execution::create_kernel_thread;
 use crate::task::{
-    CurrentTask, DelayedReleaser, LockedAndTask, Task, WrappedFuture, with_new_current_task,
+    CurrentTask, DelayedReleaser, LockedAndTask, Task, ThreadLockupDetector, WrappedFuture,
+    with_new_current_task,
 };
 use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
@@ -239,8 +240,12 @@ where
         let locked_and_task = LockedAndTask::new(locked, current_task);
 
         let locked_and_task_clone = locked_and_task.clone();
-        let wrapped_future =
-            WrappedSpawnedFuture::new(locked_and_task, f(locked_and_task_clone), name);
+        let wrapped_future = WrappedSpawnedFuture::new(
+            locked_and_task,
+            ThreadLockupDetector::track_future(f(locked_and_task_clone)),
+            name,
+        );
+        let _waiting_guard = ThreadLockupDetector::pause_tracking();
         exec.run_singlethreaded(wrapped_future)
     }
 }
@@ -394,6 +399,7 @@ impl RunningThread {
                         debug_task_name,
                         |locked, current_task| {
                             while let Ok(f) = receiver.recv() {
+                                let _guard = ThreadLockupDetector::track();
                                 f(locked, &current_task);
                                 // Apply any delayed releasers.
                                 current_task.trigger_delayed_releaser(locked);
@@ -458,6 +464,7 @@ impl RunningThread {
                     };
                     release_after!(current_task, locked, {
                         while let Ok(f) = receiver.recv() {
+                            let _guard = ThreadLockupDetector::track();
                             f(locked, &current_task);
 
                             // Apply any delayed releasers.

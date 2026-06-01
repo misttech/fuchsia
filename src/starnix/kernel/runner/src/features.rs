@@ -12,7 +12,7 @@ use starnix_consent_sync::init as consent_sync_init;
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
-use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits};
+use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits, ThreadLockupDetector};
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
@@ -40,7 +40,6 @@ use starnix_modules_wakeup_test::register_wakeup_test_device;
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
-use std::sync::mpsc::channel;
 
 /// A collection of parsed features, and their arguments.
 #[derive(Default, Debug)]
@@ -602,7 +601,8 @@ pub fn run_container_features(
         register_uinput_device(locked, &kernel.kthreads.system_task(), input_events_relay_handle)?;
 
         // Channel we use to inform the relay of changes to `touch_standby`
-        let (touch_standby_sender, touch_standby_receiver) = channel::<bool>();
+        let (touch_standby_sender, touch_standby_receiver) =
+            ThreadLockupDetector::tracked_channel::<bool>();
         let touch_policy_device = TouchPowerPolicyDevice::new(touch_standby_sender);
         touch_policy_device.clone().register(locked, &kernel.kthreads.system_task());
         touch_policy_device.start_relay(&kernel, touch_standby_receiver);

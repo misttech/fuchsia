@@ -9,7 +9,9 @@ use fidl_fuchsia_hardware_adb as fadb;
 use fuchsia_async as fasync;
 use futures_util::StreamExt;
 use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_message_handled};
-use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
+use starnix_core::task::{
+    CurrentTask, EventHandler, Kernel, ThreadLockupDetector, WaitCanceler, WaitQueue, Waiter,
+};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     CacheMode, DirectoryEntryType, FileObject, FileObjectState, FileOps, FileSystem,
@@ -527,7 +529,7 @@ impl FunctionFsRootDir {
     ) -> Result<Vec<u8>, Errno> {
         self.wait_until_online(locked, current_task, file)?;
 
-        let (response_sender, receiver) = std::sync::mpsc::channel();
+        let (response_sender, receiver) = ThreadLockupDetector::tracked_channel();
         if let Some(channel) = self.state.lock().adb_read_channel.as_ref() {
             channel.send_blocking(ReadCommand { response_sender }).map_err(|_| errno!(EINVAL))?;
         } else {

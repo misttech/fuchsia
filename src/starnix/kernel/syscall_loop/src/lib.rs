@@ -351,6 +351,7 @@ pub fn execute_syscall(
 
     log_syscall!(current_task, "{syscall:?}");
 
+    let _lockup_detector_guard = starnix_core::task::ThreadLockupDetector::track();
     let result: Result<SyscallResult, Errno> =
         if current_task.seccomp_filter_state.get() != SeccompStateValue::None {
             // Inlined fast path for seccomp, so that we don't incur the cost
