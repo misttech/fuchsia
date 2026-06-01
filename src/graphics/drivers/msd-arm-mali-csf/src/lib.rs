@@ -18,9 +18,8 @@ use crate::device::{DeviceClient, DeviceInterrupts, DeviceState};
 use crate::device_task::CompletionEvent;
 use crate::utils::LogError;
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
-use fidl_fuchsia_hardware_platform_device as pdev_fidl;
 use mmio::ReadableRegister;
-use pdev::PlatformDevice;
+use pdev::{PdevExt as _, PlatformDevice};
 
 struct MsdArmMaliCsf {
     device_client: DeviceClient,
@@ -36,31 +35,18 @@ impl Driver for MsdArmMaliCsf {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         log::info!("Starting driver");
         let node = context.take_node()?;
-        let pdev = context
-            .incoming
-            .service_marker(pdev_fidl::ServiceMarker)
-            .connect()?
-            .connect_to_device()
-            .log_err("Failed to connect to pdev service")?;
+        let pdev = context.connect_to_pdev()?;
 
         let mmio = pdev.map_mmio_by_id(0).await?;
         log::info!("GPU id: 0x{:x}", regs::GpuId::read(&mmio).0);
         log::info!("GPU coherency: {:?}", regs::CoherencyFeatures::read(&mmio));
 
-        let bti: zx::Bti = pdev
-            .get_bti_by_id(0)
-            .await
-            .log_err("Failed to get BTI")?
-            .log_err("Failed to get BTI")
-            .map_err(|_| zx::Status::INTERNAL)?
-            .into_handle()
-            .into();
+        let bti = pdev.get_bti_by_id(0).await?.map_err(DriverError::from_raw_status)?.bti;
         let smc: zx::NullableHandle = pdev
             .get_smc_by_id(0)
-            .await
-            .log_err("Failed to get SMC")?
-            .log_err("Failed to get SMC")
-            .map_err(|_| zx::Status::INTERNAL)?
+            .await?
+            .map_err(DriverError::from_raw_status)?
+            .smc
             .into_handle()
             .into();
         let mapper = mem::CrosVmMapper::new(bti, smc);

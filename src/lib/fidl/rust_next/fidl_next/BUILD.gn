@@ -63,7 +63,7 @@ rustc_library("fidl_next") {
     "//sdk/lib/driver/*",
     "//src/connectivity/wlan/*",
     "//src/devices/*",
-    "//src/graphics/display/*",
+    "//src/graphics/*",
     "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",
     "//src/lib/fuchsia-component/*",

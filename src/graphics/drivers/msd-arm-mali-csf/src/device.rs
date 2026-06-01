@@ -7,12 +7,12 @@ use crate::device_task::{CompletionEvent, DeviceTask, DeviceTaskReceiver, Device
 use crate::mem::BusMapper;
 use crate::utils::LogError;
 use crate::{context, firmware, hardware, interfaces, mem, regs, utils};
-use fidl_fuchsia_hardware_platform_device as pdev_fidl;
+use fdf_component::DriverError;
+use fidl_next_fuchsia_hardware_platform_device as fpdev;
 use futures::StreamExt;
 use mmio::{ReadableRegister, WritableRegister};
 use std::cell::RefCell;
 use std::sync::Mutex;
-use zx::Status;
 
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
@@ -305,32 +305,26 @@ pub struct DeviceInterrupts {
 }
 
 impl DeviceInterrupts {
-    pub async fn new(pdev: &pdev_fidl::DeviceProxy) -> Result<Self, Status> {
+    pub async fn new(pdev: &fidl_next::Client<fpdev::Device>) -> Result<Self, DriverError> {
         const JOB_IRQ_ID: u32 = 0;
         const MMU_IRQ_ID: u32 = 1;
         const GPU_IRQ_ID: u32 = 2;
         Ok(DeviceInterrupts {
             job: pdev
                 .get_interrupt_by_id(JOB_IRQ_ID, 0)
-                .await
-                .log_err("Pdev JOB IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?
-                .log_err("Pdev JOB IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?,
+                .await?
+                .map_err(DriverError::from_raw_status)?
+                .irq,
             mmu: pdev
                 .get_interrupt_by_id(MMU_IRQ_ID, 0)
-                .await
-                .log_err("Pdev MMU IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?
-                .log_err("Pdev MMU IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?,
+                .await?
+                .map_err(DriverError::from_raw_status)?
+                .irq,
             gpu: pdev
                 .get_interrupt_by_id(GPU_IRQ_ID, 0)
-                .await
-                .log_err("Pdev GPU IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?
-                .log_err("Pdev GPU IRQ called failed")
-                .map_err(|_| Status::INTERNAL)?,
+                .await?
+                .map_err(DriverError::from_raw_status)?
+                .irq,
         })
     }
 }

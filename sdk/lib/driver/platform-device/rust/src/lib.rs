@@ -4,8 +4,9 @@
 #![deny(missing_docs)]
 //! PlatformDevice interface.
 
+use fdf_component::DriverError;
 use fidl::{Persistable, Serializable};
-use fidl_fuchsia_hardware_platform_device as fpdev;
+use fidl_next_fuchsia_hardware_platform_device as fpdev;
 use log::error;
 use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
@@ -18,83 +19,58 @@ pub trait PlatformDevice {
     type Mmio;
 
     /// Maps an MMIO region by its id.
-    fn map_mmio_by_id(&self, id: u32) -> impl Future<Output = Result<Self::Mmio, Status>>;
+    fn map_mmio_by_id(&self, id: u32) -> impl Future<Output = Result<Self::Mmio, DriverError>>;
 
     /// Maps MMIO memory by its name.
-    fn map_mmio_by_name(&self, name: &str) -> impl Future<Output = Result<Self::Mmio, Status>>;
+    fn map_mmio_by_name(&self, name: &str)
+    -> impl Future<Output = Result<Self::Mmio, DriverError>>;
 
     /// Gets typed metadata associated with this platform device.
     fn get_typed_metadata<T: Persistable + Serializable>(
         &self,
-    ) -> impl Future<Output = Result<T, Status>>;
+    ) -> impl Future<Output = Result<T, DriverError>>;
 
     /// Gets deserialized metadata associated with this platform device using default ID.
     fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(
         &self,
-    ) -> impl Future<Output = Result<T, Status>>;
+    ) -> impl Future<Output = Result<T, DriverError>>;
 }
 
-impl PlatformDevice for fpdev::DeviceProxy {
+impl PlatformDevice for fidl_next::Client<fpdev::Device> {
     type Mmio = MmioRegion<VmoMemory>;
 
-    async fn map_mmio_by_id(&self, id: u32) -> Result<Self::Mmio, Status> {
-        let mmio = self
-            .get_mmio_by_id(id)
-            .await
-            .map_err(|err| {
-                error!("Could not get mmio for id {id}: {err}");
-                Status::INTERNAL
-            })?
-            .map_err(Status::from_raw)?;
-        map_mmio(mmio)
+    async fn map_mmio_by_id(&self, id: u32) -> Result<Self::Mmio, DriverError> {
+        let mmio = self.get_mmio_by_id(id).await?.map_err(DriverError::from_raw_status)?;
+        Ok(map_mmio(mmio)?)
     }
 
-    async fn map_mmio_by_name(&self, name: &str) -> Result<Self::Mmio, Status> {
-        let mmio = self
-            .get_mmio_by_name(name)
-            .await
-            .map_err(|err| {
-                error!("Could not get mmio for name {name}: {err}");
-                Status::INTERNAL
-            })?
-            .map_err(Status::from_raw)?;
-        map_mmio(mmio)
+    async fn map_mmio_by_name(&self, name: &str) -> Result<Self::Mmio, DriverError> {
+        let mmio = self.get_mmio_by_name(name).await?.map_err(DriverError::from_raw_status)?;
+        Ok(map_mmio(mmio)?)
     }
 
-    async fn get_typed_metadata<T: Persistable + Serializable>(&self) -> Result<T, Status> {
+    async fn get_typed_metadata<T: Persistable + Serializable>(&self) -> Result<T, DriverError> {
         let name = T::SERIALIZABLE_NAME;
-        let metadata = self
-            .get_metadata(name)
-            .await
-            .map_err(|err| {
-                error!("Failed to get metadata from pdev: {name} {err}");
-                Status::INTERNAL
-            })?
-            .map_err(Status::from_raw)?;
-        fidl::unpersist(&metadata).map_err(|err| {
+        let metadata_res = self.get_metadata(name).await?.map_err(DriverError::from_raw_status)?;
+        fidl::unpersist(&metadata_res.metadata).map_err(|err| {
             error!("Failed to parse pdev metadata: {err}");
-            Status::INVALID_ARGS
+            DriverError::Status(Status::INVALID_ARGS)
         })
     }
 
-    async fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(&self) -> Result<T, Status> {
+    async fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(
+        &self,
+    ) -> Result<T, DriverError> {
         let name = "fuchsia.driver.metadata.Dictionary";
-        let metadata = self
-            .get_metadata(name)
-            .await
-            .map_err(|err| {
-                error!("Failed to get metadata from pdev: {name} {err}");
-                Status::INTERNAL
-            })?
-            .map_err(Status::from_raw)?;
+        let metadata_res = self.get_metadata(name).await?.map_err(DriverError::from_raw_status)?;
         let dict: fidl_fuchsia_driver_metadata::Dictionary =
-            fidl::unpersist(&metadata).map_err(|err| {
+            fidl::unpersist(&metadata_res.metadata).map_err(|err| {
                 error!("Failed to unpersist dictionary: {err}");
-                Status::INVALID_ARGS
+                DriverError::Status(Status::INVALID_ARGS)
             })?;
         fdf_metadata::from_dictionary(dict).map_err(|err| {
             error!("Failed to deserialize config from dictionary: {err:?}");
-            Status::INVALID_ARGS
+            DriverError::Status(Status::INVALID_ARGS)
         })
     }
 }
@@ -103,17 +79,19 @@ impl PlatformDevice for fpdev::DeviceProxy {
 /// start routine.
 pub trait PdevExt {
     /// Connects to the platform device ("pdev") in the incoming namespace.
-    fn connect_to_pdev(&self) -> Result<fpdev::DeviceProxy, fdf_component::DriverError>;
+    fn connect_to_pdev(&self) -> Result<fidl_next::Client<fpdev::Device>, DriverError>;
 }
 
 impl PdevExt for fdf_component::DriverContext {
-    fn connect_to_pdev(&self) -> Result<fpdev::DeviceProxy, fdf_component::DriverError> {
-        Ok(self
+    fn connect_to_pdev(&self) -> Result<fidl_next::Client<fpdev::Device>, DriverError> {
+        let service = self
             .incoming
-            .service_marker(fpdev::ServiceMarker)
+            .service::<fdf_component::ServiceInstance<fpdev::Service>>()
             .instance("pdev")
-            .connect()?
-            .connect_to_device()?)
+            .connect_next()?;
+        let (client_end, server_end) = fidl_next::fuchsia::create_channel();
+        service.device(server_end)?;
+        Ok(client_end.spawn())
     }
 }
 
@@ -135,9 +113,9 @@ fn map_mmio(mmio: fpdev::Mmio) -> Result<MmioRegion<VmoMemory>, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_next::{Request, Responder};
     use fidl_test_metadata::{IntMetadata, Metadata};
     use fuchsia_async::Task;
-    use futures_util::TryStreamExt;
     use mmio::Mmio;
     use std::collections::HashMap;
     use zx::{Vmo, VmoOp};
@@ -159,7 +137,6 @@ mod tests {
                     offset: Some(offset as u64),
                     size: Some(size as u64),
                     vmo: Some(vmo),
-                    ..Default::default()
                 }),
             ));
         }
@@ -167,29 +144,6 @@ mod tests {
         fn set_typed_metadata<T: Persistable + Serializable>(&mut self, metadata: &T) {
             let bytes = fidl::persist(metadata).unwrap();
             self.metadata.insert(T::SERIALIZABLE_NAME, bytes);
-        }
-
-        async fn handle_requests(
-            &mut self,
-            mut requests: fpdev::DeviceRequestStream,
-        ) -> Result<(), fidl::Error> {
-            while let Some(req) = requests.try_next().await? {
-                match req {
-                    fpdev::DeviceRequest::GetMmioById { index, responder } => {
-                        responder.send(self.take_mmio_by_id(index).map_err(Status::into_raw))?;
-                    }
-                    fpdev::DeviceRequest::GetMmioByName { name, responder } => {
-                        responder.send(self.take_mmio_by_name(&name).map_err(Status::into_raw))?;
-                    }
-                    fpdev::DeviceRequest::GetMetadata { id, responder } => {
-                        responder.send(self.get_metadata(&id).map_err(Status::into_raw))?;
-                    }
-                    _ => {
-                        unreachable!("not used by tests")
-                    }
-                }
-            }
-            Ok(())
         }
 
         fn take_mmio_by_id(&mut self, id: u32) -> Result<fpdev::Mmio, Status> {
@@ -211,14 +165,139 @@ mod tests {
                 .ok_or(Status::ALREADY_BOUND)
         }
 
-        fn get_metadata(&self, id: &str) -> Result<&[u8], Status> {
+        fn read_metadata(&self, id: &str) -> Result<&[u8], Status> {
             self.metadata.get(id).map(|v| v.as_slice()).ok_or(Status::NOT_FOUND)
         }
 
-        fn run(mut self) -> (fpdev::DeviceProxy, Task<Result<(), fidl::Error>>) {
-            let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fpdev::DeviceMarker>();
-            let server = Task::local(async move { self.handle_requests(stream).await });
-            (proxy, server)
+        fn run(
+            self,
+        ) -> (
+            fidl_next::Client<fpdev::Device>,
+            Task<Result<(), fidl_next::ProtocolError<zx::Status>>>,
+        ) {
+            let (client_end, server_end) = fidl_next::fuchsia::create_channel::<fpdev::Device>();
+            let client = client_end.spawn();
+            let server = Task::local(async move {
+                let dispatcher = fidl_next::ServerDispatcher::new(server_end);
+                dispatcher.run_local(self).await.map(|_| ())
+            });
+            (client, server)
+        }
+    }
+
+    impl fpdev::DeviceLocalServerHandler for TestServer {
+        async fn get_mmio_by_id(
+            &mut self,
+            request: Request<fpdev::device::GetMmioById>,
+            responder: Responder<fpdev::device::GetMmioById>,
+        ) {
+            let index = request.payload().index;
+            match self.take_mmio_by_id(index) {
+                Ok(mmio) => {
+                    let _ = responder.respond(mmio).await;
+                }
+                Err(status) => {
+                    let _ = responder.respond_err(status.into_raw()).await;
+                }
+            }
+        }
+
+        async fn get_mmio_by_name(
+            &mut self,
+            request: Request<fpdev::device::GetMmioByName>,
+            responder: Responder<fpdev::device::GetMmioByName>,
+        ) {
+            let name = &request.payload().name;
+            match self.take_mmio_by_name(name) {
+                Ok(mmio) => {
+                    let _ = responder.respond(mmio).await;
+                }
+                Err(status) => {
+                    let _ = responder.respond_err(status.into_raw()).await;
+                }
+            }
+        }
+
+        async fn get_interrupt_by_id(
+            &mut self,
+            _request: Request<fpdev::device::GetInterruptById>,
+            _responder: Responder<fpdev::device::GetInterruptById>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_interrupt_by_name(
+            &mut self,
+            _request: Request<fpdev::device::GetInterruptByName>,
+            _responder: Responder<fpdev::device::GetInterruptByName>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_bti_by_id(
+            &mut self,
+            _request: Request<fpdev::device::GetBtiById>,
+            _responder: Responder<fpdev::device::GetBtiById>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_bti_by_name(
+            &mut self,
+            _request: Request<fpdev::device::GetBtiByName>,
+            _responder: Responder<fpdev::device::GetBtiByName>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_smc_by_id(
+            &mut self,
+            _request: Request<fpdev::device::GetSmcById>,
+            _responder: Responder<fpdev::device::GetSmcById>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_smc_by_name(
+            &mut self,
+            _request: Request<fpdev::device::GetSmcByName>,
+            _responder: Responder<fpdev::device::GetSmcByName>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_power_configuration(
+            &mut self,
+            _responder: Responder<fpdev::device::GetPowerConfiguration>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_node_device_info(
+            &mut self,
+            _responder: Responder<fpdev::device::GetNodeDeviceInfo>,
+        ) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_board_info(&mut self, _responder: Responder<fpdev::device::GetBoardInfo>) {
+            unimplemented!("not used by tests");
+        }
+
+        async fn get_metadata(
+            &mut self,
+            request: Request<fpdev::device::GetMetadata>,
+            responder: Responder<fpdev::device::GetMetadata>,
+        ) {
+            let id = &request.payload().id;
+            match self.read_metadata(id) {
+                Ok(metadata) => {
+                    let _ = responder.respond(metadata).await;
+                }
+                Err(status) => {
+                    let _ = responder.respond_err(status.into_raw()).await;
+                }
+            }
         }
     }
 
@@ -245,9 +324,18 @@ mod tests {
         let (client, server) = server.run();
 
         let mmio = client.map_mmio_by_id(1).await.unwrap();
-        assert_eq!(client.map_mmio_by_id(1).await.err(), Some(Status::ALREADY_BOUND));
-        assert_eq!(client.map_mmio_by_id(2).await.err(), Some(Status::NOT_FOUND));
-        assert_eq!(client.map_mmio_by_name("dev").await.err(), Some(Status::ALREADY_BOUND));
+        assert_eq!(
+            client.map_mmio_by_id(1).await.err().map(|e| e.log_to_status()),
+            Some(Status::ALREADY_BOUND)
+        );
+        assert_eq!(
+            client.map_mmio_by_id(2).await.err().map(|e| e.log_to_status()),
+            Some(Status::NOT_FOUND)
+        );
+        assert_eq!(
+            client.map_mmio_by_name("dev").await.err().map(|e| e.log_to_status()),
+            Some(Status::ALREADY_BOUND)
+        );
 
         assert_eq!(mmio.load32(0), 32);
 
@@ -260,7 +348,10 @@ mod tests {
             Metadata { test_field: Some("foo".to_string()), ..Default::default() }
         );
 
-        assert_eq!(client.get_typed_metadata::<IntMetadata>().await.err(), Some(Status::NOT_FOUND));
+        assert_eq!(
+            client.get_typed_metadata::<IntMetadata>().await.err().map(|e| e.log_to_status()),
+            Some(Status::NOT_FOUND)
+        );
 
         let _ = server.abort().await;
     }

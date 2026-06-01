@@ -23,7 +23,7 @@ use fdf_resource::{ClockExt, GpioExt, ResetExt};
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
 
-use fidl_fuchsia_hardware_platform_device as fpdev;
+use fidl_next_fuchsia_hardware_platform_device as fpdev;
 
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
@@ -169,7 +169,7 @@ struct DwSpiDriver {
 driver_register!(DwSpiDriver);
 
 impl DwSpiDriver {
-    async fn get_max_bus_clock(pdev: &fpdev::DeviceProxy) -> u64 {
+    async fn get_max_bus_clock(pdev: &fidl_next::Client<fpdev::Device>) -> u64 {
         if let Ok(metadata) = pdev.get_typed_metadata::<SpiBusMetadata>().await {
             let channels = metadata.channels.unwrap_or(vec![]);
             channels.into_iter().filter_map(|c| c.max_frequency_hz).min().unwrap_or(0) as u64
@@ -264,8 +264,9 @@ impl Driver for DwSpiDriver {
 
         let mut node_args = NodeBuilder::new(Self::NAME).add_offer(offer);
 
-        let businfo_server =
-            MetadataServer::new(SpiBusMetadata::SERIALIZABLE_NAME).forward_from_pdev(&pdev).await;
+        let businfo_server = MetadataServer::new(SpiBusMetadata::SERIALIZABLE_NAME)
+            .forward_from_pdev_next(&pdev)
+            .await;
         match businfo_server {
             Ok(ref server) => {
                 if let Some(offer) = server.serve(&mut outgoing, scope.to_handle(), "default") {

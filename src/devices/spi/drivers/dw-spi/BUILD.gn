@@ -40,7 +40,7 @@ fuchsia_rust_driver("dw-spi-driver") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust_next",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust_next",
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_rust_next",
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust_next",
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_rust",

@@ -18,7 +18,7 @@ rustc_library(
         "//sdk/lib/driver:__subpackages__",
         "//src/connectivity/wlan:__subpackages__",
         "//src/devices:__subpackages__",
-        "//src/graphics/display:__subpackages__",
+        "//src/graphics:__subpackages__",
         "//src/lib/fdomain:__subpackages__",
         "//src/lib/fidl/rust_next:__subpackages__",
         "//src/lib/fuchsia-component:__subpackages__",

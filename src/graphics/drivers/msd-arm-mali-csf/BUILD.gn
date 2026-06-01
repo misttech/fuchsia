@@ -38,7 +38,7 @@ fuchsia_rust_driver("driver") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
@@ -47,6 +47,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/rust/zx",
     "//src/devices/bind/fuchsia.test:fuchsia.test_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",

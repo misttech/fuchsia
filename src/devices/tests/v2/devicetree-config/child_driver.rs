@@ -6,7 +6,6 @@ use fdf_component::{Driver, DriverContext, DriverError, driver_register};
 use log::info;
 use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
-use zx::Status;
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct MyConfig {
@@ -34,7 +33,7 @@ impl Driver for ChildDriver {
 
         let config: MyConfig = pdev.get_deserialized_metadata().await.map_err(|e| {
             log::error!("Failed to get deserialized metadata: {:?}", e);
-            Status::INTERNAL
+            e
         })?;
 
         log::info!("Config: {:?}", config);

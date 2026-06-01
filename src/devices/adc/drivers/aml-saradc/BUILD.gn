@@ -33,7 +33,7 @@ fuchsia_rust_driver("aml-saradc-driver") {
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_next",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_rust",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_rust_next",
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/metadata/rust",
     "//sdk/lib/driver/mmio/rust:mmio",

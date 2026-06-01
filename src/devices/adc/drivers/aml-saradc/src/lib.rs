@@ -247,7 +247,7 @@ impl Driver for AmlSaradc {
         let adc_mmio = pdev.map_mmio_by_id(0).await?;
         let ao_mmio = pdev.map_mmio_by_id(1).await?;
 
-        let irq = pdev.get_interrupt_by_id(0, 0).await?.map_err(Status::from_raw)?;
+        let irq = pdev.get_interrupt_by_id(0, 0).await?.map_err(DriverError::from_raw_status)?.irq;
 
         let mut device = AmlSaradcDevice {
             adc_regs: AdcRegsBlock::new(adc_mmio),
@@ -262,7 +262,7 @@ impl Driver for AmlSaradc {
         let scope = fasync::Scope::new_with_name("driver");
 
         let metadata_server = MetadataServer::new("fuchsia.hardware.adcimpl.Metadata")
-            .forward_from_pdev(&pdev)
+            .forward_from_pdev_next(&pdev)
             .await?;
 
         let mut outgoing = ServiceFs::new();

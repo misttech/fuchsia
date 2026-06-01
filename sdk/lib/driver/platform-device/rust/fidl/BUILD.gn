@@ -8,4 +8,5 @@ import("//build/test.gni")
 
 fidl("test.metadata") {
   sources = [ "metadata.test.fidl" ]
+  enable_rust_next = true
 }
