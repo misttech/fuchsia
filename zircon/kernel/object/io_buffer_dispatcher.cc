@@ -240,7 +240,7 @@ IoBufferDispatcher::IoBufferDispatcher(fbl::RefPtr<PeerHolder<IoBufferDispatcher
 zx_rights_t IoBufferDispatcher::GetMapRights(zx_rights_t iob_rights, size_t region_index) const {
   zx_rights_t region_rights =
       shared_state_->GetRegion<>(region_index)->GetMapRights(GetEndpointId());
-  region_rights &= (iob_rights | ZX_RIGHT_MAP);
+  region_rights &= iob_rights;
   return region_rights;
 }
 

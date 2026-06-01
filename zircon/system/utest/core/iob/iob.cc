@@ -285,11 +285,13 @@ TEST(Iob, MappingRights) {
   // If the iorb handle doesn't have the correct rights, we shouldn't be able to map it
   zx::iob no_write_ep_handle;
   zx::iob no_read_write_ep_handle;
+  zx::iob no_map_ep_handle;
   zx::unowned_vmar vmar = zx::vmar::root_self();
 
   ASSERT_OK(ep0.duplicate(ZX_DEFAULT_IOB_RIGHTS & ~ZX_RIGHT_WRITE, &no_write_ep_handle));
   ASSERT_OK(ep0.duplicate(ZX_DEFAULT_IOB_RIGHTS & ~ZX_RIGHT_WRITE & ~ZX_RIGHT_READ,
                           &no_read_write_ep_handle));
+  ASSERT_OK(ep0.duplicate(ZX_DEFAULT_IOB_RIGHTS & ~ZX_RIGHT_MAP, &no_map_ep_handle));
 
   // We shouldn't be able to map a region that didn't set map permissions.
   zx::result<MappingHelper> map1 = MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0,
@@ -308,6 +310,11 @@ TEST(Iob, MappingRights) {
   zx::result<MappingHelper> map4 =
       MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, onlyEp0Idx, 0, page_size);
   EXPECT_EQ(ZX_OK, map4.status_value());
+
+  // If the handle lacks ZX_RIGHT_MAP, mapping should fail even if the region allows it.
+  zx::result<MappingHelper> map_no_map = MappingHelper::Create(
+      ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, no_map_ep_handle, onlyEp0Idx, 0, page_size);
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, map_no_map.status_value());
 
   // We shouldn't be able to request more rights than the region has
   zx::result<MappingHelper> map5 =
