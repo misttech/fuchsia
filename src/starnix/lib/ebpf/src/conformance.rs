@@ -1147,6 +1147,7 @@ pub mod test {
     #[test_case(local_test_data!("write_only_helper.data"))]
     #[test_case(local_test_data!("context_parameter.data"))]
     #[test_case(local_test_data!("err_context_parameter.data"))]
+    #[test_case(local_test_data!("err_packet_oob.data"))]
     fn test_ebpf_conformance(content: &str) {
         let Some(mut test_case) = TestCase::parse(content) else {
             // Special case that only test the test framework.

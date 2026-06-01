@@ -978,7 +978,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
             register_offset.map(|r| self.reg(r).as_i32()).unwrap_or(0).checked_add(offset as i32)
         else {
             // Offset overflowed. Exit.
-            self.result = Some(self.reg(0).as_u64());
+            self.result = Some(0);
             return Ok(());
         };
         let src_reg = self.reg(src_reg);
@@ -987,7 +987,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         if let Some(value) = packet.load(offset, width) {
             self.set_reg(dst_reg, value.into());
         } else {
-            self.result = Some(self.reg(0).as_u64());
+            self.result = Some(0);
         }
         Ok(())
     }

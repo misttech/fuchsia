@@ -65,6 +65,7 @@ rustc_library("ebpf") {
     "src/tests/div_by_range_with_zero.data",
     "src/tests/err_context_parameter.data",
     "src/tests/err_offset_overflow.data",
+    "src/tests/err_packet_oob.data",
     "src/tests/err_read_only_helper.data",
     "src/tests/err_write_r10.data",
     "src/tests/exponential_verification.data",
