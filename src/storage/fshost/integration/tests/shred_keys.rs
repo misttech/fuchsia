@@ -148,7 +148,7 @@ async fn shred_data_volume_when_mounted_keymint() {
     );
 
     // We expect crash reports because fshost thought that the data was corrupted.
-    fixture.wait_for_crash_reports(1, "fxfs", "fuchsia-fxfs-corruption").await;
+    fixture.wait_for_crash_reports(1, "fxfs", "fuchsia-fxfs-unseal-error").await;
 
     fixture.tear_down().await;
 }

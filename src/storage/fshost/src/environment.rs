@@ -707,9 +707,22 @@ impl FilesystemLauncher {
             device snapshot collected with `ffx target snapshot` if possible.",
         );
 
+        // If a keymint unseal error occurred, the problem is likely key invalidation
+        // as part of FDR (see shred_keys.rs). We want to be able to differentiate these
+        // from filesystem or device level corruption so we report them as
+        // `fuchsia-fxfs-unseal-error`.
+        let is_unseal_error =
+            error.root_cause().downcast_ref::<kms_stateless::SealingKeysError>().is_some();
+
+        let crash_signature = Some(if is_unseal_error {
+            format!("fuchsia-{format}-unseal-error")
+        } else {
+            format!("fuchsia-{format}-corruption")
+        });
+
         let report = fidl_fuchsia_feedback::CrashReport {
             program_name: Some(format.to_string()),
-            crash_signature: Some(format!("fuchsia-{format}-corruption")),
+            crash_signature,
             is_fatal: Some(false),
             ..Default::default()
         };

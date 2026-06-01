@@ -62,6 +62,7 @@ rustc_binary("fshost") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
+    "//src/security/lib/kms-stateless/rust",
     "//src/storage/crypt/policy",
     "//src/storage/crypt/zxcrypt",
     "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
