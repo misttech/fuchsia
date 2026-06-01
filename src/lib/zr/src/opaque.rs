@@ -29,3 +29,9 @@ impl<T> Opaque<T> {
         UnsafeCell::raw_get(ptr)
     }
 }
+
+impl<T> Default for Opaque<T> {
+    fn default() -> Self {
+        Self::uninit()
+    }
+}

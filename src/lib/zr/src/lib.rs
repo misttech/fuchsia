@@ -5,11 +5,11 @@
 #![no_std]
 
 mod opaque;
-mod opaque_storage;
+mod opaque_bytes;
 mod pin_init;
 mod static_assert;
 mod string;
 
 pub use opaque::Opaque;
-pub use opaque_storage::{AlignSelector, OpaqueStorage, OpaqueStorageBytes};
+pub use opaque_bytes::OpaqueBytes;
 pub use string::{parse_usize, to_array};
