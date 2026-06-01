@@ -79,6 +79,7 @@ if (is_host) {
         "//src/developer/ffx/tools/power:ffx_power_tool_test_data",
         "//src/lib/diagnostics/data",
         "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
         "//third_party/rust_crates:serde_json",
       ]
     }

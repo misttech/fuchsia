@@ -12,15 +12,17 @@ async fn taking_lease_adds_lease_to_broker_inspect() {
     emu.ffx(&["power", "system-activity", "application-activity", "start"]).await.unwrap();
 
     // Wait until application_activity level changing to active.
-    loop {
-        if get_application_activity_level(&emu).await == 1 {
-            break;
+    let mut retries = 30;
+    while get_application_activity_level(&emu).await != Some(1) {
+        if retries == 0 {
+            panic!("Timed out waiting for application_activity level to become active (1)");
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        retries -= 1;
+        fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
     }
 }
 
-async fn get_application_activity_level(emu: &IsolatedEmulator) -> i64 {
+async fn get_application_activity_level(emu: &IsolatedEmulator) -> Option<i64> {
     let sag_inspect_json = emu
         .ffx_output(&[
             "--machine",
@@ -30,20 +32,17 @@ async fn get_application_activity_level(emu: &IsolatedEmulator) -> i64 {
             "/bootstrap/system-activity-governor",
         ])
         .await
-        .unwrap();
-    let data: Vec<InspectData> = serde_json::from_str(&sag_inspect_json).unwrap();
-    assert_eq!(data.len(), 1, "only one component's inspect should be returned");
+        .ok()?;
+    let data: Vec<InspectData> = serde_json::from_str(&sag_inspect_json).ok()?;
+    if data.len() != 1 {
+        return None;
+    }
     data[0]
         .payload
-        .as_ref()
-        .unwrap()
-        .get_child("power_elements")
-        .unwrap()
-        .get_child("application_activity")
-        .unwrap()
-        .get_property("power_level")
-        .unwrap()
+        .as_ref()?
+        .get_child("power_elements")?
+        .get_child("application_activity")?
+        .get_property("power_level")?
         .clone()
         .number_as_int()
-        .unwrap()
 }
