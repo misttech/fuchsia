@@ -128,9 +128,9 @@ def _verify_supported_configuration_for_atom(ctx):
              (ctx.attr.target_compatible_with))
     if type in _HOST_TYPES:
         if str(ctx.attr.target_compatible_with[0].label) != ("@" + HOST_OS_CONSTRAINTS[0]):
-            fail("`target_compatible_with` for host tools must be `%s`." % (HOST_OS_CONSTRAINTS))
+            fail("`target_compatible_with` for host tools must be `HOST_OS_CONSTRAINTS`.")
     elif str(ctx.attr.target_compatible_with[0].label) != "@@platforms//os:fuchsia":
-        fail("`target_compatible_with` must be `%s`." % ["@platforms//os:fuchsia"])
+        fail('`target_compatible_with` must be `["@platforms//os:fuchsia"]`.')
 
     # Verify the atom is being built at an appropriate API level.
     if type in _TYPES_BUILT_ONLY_AT_PLATFORM:
