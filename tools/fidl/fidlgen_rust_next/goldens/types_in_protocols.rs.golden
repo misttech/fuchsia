@@ -1635,14 +1635,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayBasic {
-        type Response = crate::wire::Basic<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::Basic<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayBasic {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -1719,14 +1719,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayCompound {
-        type Response = crate::wire::Compound<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::Compound<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayCompound {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -1803,14 +1803,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayArrayBasic {
-        type Response = crate::wire::ArrayBasic<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ArrayBasic<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayBasic {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -1887,14 +1887,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayArrayCompound {
-        type Response = crate::wire::ArrayCompound<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ArrayCompound<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayCompound {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -1971,14 +1971,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayVectorBasic {
-        type Response = crate::wire::VectorBasic<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::VectorBasic<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorBasic {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -2055,14 +2055,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayVectorCompound {
-        type Response = crate::wire::VectorCompound<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::VectorCompound<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorCompound {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -2139,14 +2139,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayVectorOptional {
-        type Response = crate::wire::VectorOptional<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::VectorOptional<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorOptional {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -2223,14 +2223,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayArrayVectorNested {
-        type Response = crate::wire::ArrayVectorNested<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ArrayVectorNested<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayVectorNested {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -2307,14 +2307,14 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayResource {
-        type Response = crate::wire::Resource<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::Resource<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayResource {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 

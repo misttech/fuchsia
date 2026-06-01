@@ -95,11 +95,13 @@ pub mod {{ module_name }} {
                         {% endif %}
                         >
                     {% else %}
+                        ::fidl_next::wire::Strict<
                         {% if let Some(response) = method.maybe_response_payload.as_ref() %}
                             {{ self.static_wire_type(response) }}
                         {% else %}
                             ::fidl_next::wire::EmptyMessageBody
                         {% endif %}
+                        >
                     {% endif %}
                     ;
             }
@@ -112,12 +114,12 @@ pub mod {{ module_name }} {
 
                     impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
                         type Output =
-                            {% if !method.is_strict %}
-                                ::fidl_next::Flexible<{{ self.generic_id(response_struct.name) }}<___R>>
-                            {% else %}
-                                {{ self.generic_id(response_struct.name) }}<___R>
-                            {% endif %}
-                        ;
+                        {% if !method.is_strict %}
+                            ::fidl_next::Flexible
+                        {% else %}
+                            ::fidl_next::Strict
+                        {% endif %}
+                            <{{ self.generic_id(response_struct.name) }}<___R>>;
 
                         fn respond(response: ___R) -> Self::Output {
                             {% if !method.is_strict %}
@@ -127,9 +129,11 @@ pub mod {{ module_name }} {
                                     }
                                 )
                             {% else %}
-                                {{ self.generic_id(response_struct.name) }} {
-                                    {{ member.name.snake() }}: response,
-                                }
+                                ::fidl_next::Strict(
+                                    {{ self.generic_id(response_struct.name) }} {
+                                        {{ member.name.snake() }}: response,
+                                    }
+                                )
                             {% endif %}
                         }
                     }
@@ -139,7 +143,7 @@ pub mod {{ module_name }} {
                             {% if !method.is_strict %}
                                 ::fidl_next::Flexible<___R>
                             {% else %}
-                                ___R
+                                ::fidl_next::Strict<___R>
                             {% endif %}
                         ;
 
@@ -147,7 +151,7 @@ pub mod {{ module_name }} {
                             {% if !method.is_strict %}
                                 ::fidl_next::Flexible(response)
                             {% else %}
-                                response
+                                ::fidl_next::Strict(response)
                             {% endif %}
                         }
                     }

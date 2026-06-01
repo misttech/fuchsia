@@ -4651,14 +4651,16 @@ pub mod composed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnonComposed {
-        type Response = crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -4735,14 +4737,14 @@ pub mod composed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayNamedComposed {
-        type Response = crate::wire::TablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::TablePayload<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayNamedComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -5831,14 +5833,16 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnonComposed {
-        type Response = crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::ComposedProtocolTwoWayAnonComposedResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -5915,14 +5919,14 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayNamedComposed {
-        type Response = crate::wire::TablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::TablePayload<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayNamedComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -5999,14 +6003,14 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayLocal {
-        type Response = crate::wire::TablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::TablePayload<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayLocal {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -6083,14 +6087,15 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnon {
-        type Response = crate::wire::MainProtocolTwoWayAnonResponse<'static>;
+        type Response =
+            ::fidl_next::wire::Strict<crate::wire::MainProtocolTwoWayAnonResponse<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnon {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 

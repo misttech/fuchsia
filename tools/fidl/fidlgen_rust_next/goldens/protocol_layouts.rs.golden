@@ -112,18 +112,20 @@ pub mod main_protocol {
     impl ::fidl_next::TwoWayMethod for TwoWayAnonComposed {
         type Response =
 
+                        ::fidl_next::wire::Strict<
 
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedResponse<'static>
 
+                        >
 
                     ;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -215,15 +217,16 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayNamedComposed {
-        type Response =
-            ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayNamedComposed {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -300,15 +303,16 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayImport {
-        type Response =
-            ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayImport {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -385,14 +389,14 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayLocal {
-        type Response = crate::wire::LocalTablePayload<'static>;
+        type Response = ::fidl_next::wire::Strict<crate::wire::LocalTablePayload<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayLocal {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -469,14 +473,15 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnon {
-        type Response = crate::wire::MainProtocolTwoWayAnonResponse<'static>;
+        type Response =
+            ::fidl_next::wire::Strict<crate::wire::MainProtocolTwoWayAnonResponse<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnon {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -3017,9 +3022,9 @@ pub mod open_protocol {
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayNoError {
         type Output =
 
-                                ::fidl_next::Flexible<::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolFlexibleTwoWayNoErrorResponse<___R>>
+                            ::fidl_next::Flexible
 
-                        ;
+                            <::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolFlexibleTwoWayNoErrorResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
             ::fidl_next::Flexible(
@@ -3145,9 +3150,11 @@ pub mod open_protocol {
     impl ::fidl_next::TwoWayMethod for StrictTwoWayNoError {
         type Response =
 
+                        ::fidl_next::wire::Strict<
 
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolStrictTwoWayNoErrorResponse
 
+                        >
 
                     ;
     }
@@ -3155,14 +3162,16 @@ pub mod open_protocol {
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayNoError {
         type Output =
 
-                                ::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolStrictTwoWayNoErrorResponse<___R>
+                            ::fidl_next::Strict
 
-                        ;
+                            <::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolStrictTwoWayNoErrorResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolStrictTwoWayNoErrorResponse {
-                                    value: response,
-                                }
+            ::fidl_next::Strict(
+                                    ::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolStrictTwoWayNoErrorResponse {
+                                        value: response,
+                                    }
+                                )
         }
     }
 

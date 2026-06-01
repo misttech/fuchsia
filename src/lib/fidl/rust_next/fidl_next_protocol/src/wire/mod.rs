@@ -10,8 +10,10 @@ mod empty;
 mod epitaph;
 mod flexible;
 mod message_header;
+mod strict;
 
 pub use self::empty::*;
 pub use self::epitaph::*;
 pub use self::flexible::*;
 pub use self::message_header::*;
+pub use self::strict::*;

@@ -22086,14 +22086,14 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -22110,18 +22110,22 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response =
-            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output =
-            crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -22138,15 +22142,16 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response =
-            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -22163,15 +22168,16 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response =
-            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -23178,14 +23184,14 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -23202,17 +23208,22 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response = crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output =
-            crate::generic::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -23229,15 +23240,16 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response =
-            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -23254,15 +23266,16 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response =
-            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -25167,14 +25180,14 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -25191,18 +25204,22 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response =
-            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output =
-            crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -25219,15 +25236,16 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response =
-            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -25244,15 +25262,16 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response =
-            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -26140,14 +26159,14 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -26164,17 +26183,22 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response = crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output =
-            crate::generic::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -26191,15 +26215,16 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response =
-            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -26216,15 +26241,16 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response =
-            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -27639,14 +27665,14 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -27663,17 +27689,22 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response = crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output =
-            crate::generic::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -27690,15 +27721,16 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response =
-            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -27715,15 +27747,16 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response =
-            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -29468,14 +29501,14 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWay {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWay {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -29492,16 +29525,22 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayFields {
-        type Response = crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFields {
-        type Output = crate::generic::UnknownInteractionsProtocolStrictTwoWayFieldsResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::UnknownInteractionsProtocolStrictTwoWayFieldsResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::UnknownInteractionsProtocolStrictTwoWayFieldsResponse {
-                some_field: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::UnknownInteractionsProtocolStrictTwoWayFieldsResponse {
+                    some_field: response,
+                },
+            )
         }
     }
 
@@ -29518,14 +29557,16 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayUnion {
-        type Response = crate::wire::UnknownInteractionsProtocolStrictTwoWayUnionResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsProtocolStrictTwoWayUnionResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnion {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -29542,14 +29583,16 @@ pub mod unknown_interactions_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for StrictTwoWayTable {
-        type Response = crate::wire::UnknownInteractionsProtocolStrictTwoWayTableResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::UnknownInteractionsProtocolStrictTwoWayTableResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTable {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 

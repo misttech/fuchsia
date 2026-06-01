@@ -30,6 +30,7 @@ if (is_host) {
       "src/message.rs",
       "src/mpsc.rs",
       "src/service.rs",
+      "src/strict.rs",
       "src/testing.rs",
       "src/transport.rs",
       "src/wire/empty.rs",
@@ -37,6 +38,7 @@ if (is_host) {
       "src/wire/flexible.rs",
       "src/wire/message_header.rs",
       "src/wire/mod.rs",
+      "src/wire/strict.rs",
     ]
     deps = [
       "//src/lib/fidl/rust_constants",
@@ -124,6 +126,7 @@ rustc_library("fidl_next_protocol") {
     "src/message.rs",
     "src/mpsc.rs",
     "src/service.rs",
+    "src/strict.rs",
     "src/testing.rs",
     "src/transport.rs",
     "src/wire/empty.rs",
@@ -131,6 +134,7 @@ rustc_library("fidl_next_protocol") {
     "src/wire/flexible.rs",
     "src/wire/message_header.rs",
     "src/wire/mod.rs",
+    "src/wire/strict.rs",
   ]
   if (is_fuchsia) {
     sources += [

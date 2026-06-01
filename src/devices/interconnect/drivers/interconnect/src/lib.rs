@@ -263,22 +263,14 @@ impl Driver for InterconnectDriver {
         })?;
         let device = device_client.spawn();
 
-        let node_graph = device
-            .get_node_graph()
-            .await
-            .inspect_err(|err| {
-                error!("Failed to get node graph with {err}");
-            })?
-            .0;
+        let node_graph = device.get_node_graph().await.inspect_err(|err| {
+            error!("Failed to get node graph with {err}");
+        })?;
         let mut graph = NodeGraph::new(node_graph.nodes, node_graph.edges)?;
 
-        let path_endpoints = device
-            .get_path_endpoints()
-            .await
-            .inspect_err(|err| {
-                error!("Failed to get path endpoints with {err}");
-            })?
-            .0;
+        let path_endpoints = device.get_path_endpoints().await.inspect_err(|err| {
+            error!("Failed to get path endpoints with {err}");
+        })?;
         let paths: Vec<_> = Result::from_iter(path_endpoints.paths.into_iter().map(|path| {
             let path_id = PathId(path.id.ok_or(Status::INVALID_ARGS)?);
             let path_name = path.name.ok_or(Status::INVALID_ARGS)?;

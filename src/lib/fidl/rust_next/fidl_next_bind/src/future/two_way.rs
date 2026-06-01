@@ -14,7 +14,7 @@ use fidl_next_codec::{
 use fidl_next_protocol::{Message, NonBlockingTransport, Transport};
 use pin_project::pin_project;
 
-use crate::{Error, TwoWayMethod};
+use crate::{Error, Response, TwoWayMethod};
 
 #[pin_project(project = TwoWayFutureStateProj, project_replace = TwoWayFutureStateOwn)]
 enum TwoWayFutureState<'a, T: Transport> {
@@ -171,15 +171,16 @@ two_way_futures! {
     // `foo().await`
 
     /// A future which performs a two-way FIDL method call.
-    TwoWayFuture -> <M::Response as IntoNatural>::Natural
+    TwoWayFuture -> <<M::Response as Response>::Payload as IntoNatural>::Natural
     where [
         M: TwoWayMethod,
-        M::Response: Wire<Constraint = ()> + IntoNatural,
+        M::Response: Wire<Constraint = ()>,
         for<'de> <M::Response as Wire>::Narrowed<'de>: Decode<<T::RecvBuffer as AsDecoder<'de>>::Decoder, Constraint = <M::Response as Constrained>::Constraint>,
-        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Narrowed<'de>>,
+        <M::Response as Response>::Payload: Wire + IntoNatural,
+        <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().into_decoded::<M::Response>()?.take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
     },
 
     // `foo().encode()?.await`
@@ -188,15 +189,16 @@ two_way_futures! {
     ///
     /// This future has already been successfully encoded. It still needs to be
     /// sent and a response needs to be received.
-    EncodedTwoWayFuture -> <M::Response as IntoNatural>::Natural
+    EncodedTwoWayFuture -> <<M::Response as Response>::Payload as IntoNatural>::Natural
     where [
         M: TwoWayMethod,
-        M::Response: Wire<Constraint = ()> + IntoNatural,
+        M::Response: Wire<Constraint = ()>,
         for<'de> <M::Response as Wire>::Narrowed<'de>: Decode<<T::RecvBuffer as AsDecoder<'de>>::Decoder, Constraint = <M::Response as Constrained>::Constraint>,
-        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Narrowed<'de>>,
+        <M::Response as Response>::Payload: Wire + IntoNatural,
+        <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().into_decoded::<M::Response>()?.take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
     },
 
     // `foo().send().await`
@@ -219,15 +221,16 @@ two_way_futures! {
     ///
     /// This future has already been successfully encoded and sent. A response
     /// still needs to be received.
-    SentTwoWayFuture -> <M::Response as IntoNatural>::Natural
+    SentTwoWayFuture -> <<M::Response as Response>::Payload as IntoNatural>::Natural
     where [
         M: TwoWayMethod,
-        M::Response: Wire<Constraint = ()> + IntoNatural,
+        M::Response: Wire<Constraint = ()>,
         for<'de> <M::Response as Wire>::Narrowed<'de>: Decode<<T::RecvBuffer as AsDecoder<'de>>::Decoder, Constraint = <M::Response as Constrained>::Constraint>,
-        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Narrowed<'de>>,
+        <M::Response as Response>::Payload: Wire + IntoNatural,
+        <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().into_decoded::<M::Response>()?.take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
     },
 
     // `foo().recv_buffer().await`
@@ -246,15 +249,16 @@ two_way_futures! {
     /// A future which decodes a two-way FIDL method call as a wire type.
     ///
     /// This future returns the decoded response.
-    WireTwoWayFuture -> Decoded<M::Response, Message<T>>
+    WireTwoWayFuture -> Decoded<<M::Response as Response>::Payload, Message<T>>
     where [
         M: TwoWayMethod,
-        M::Response: Wire<Constraint = ()> + IntoNatural,
+        M::Response: Wire<Constraint = ()>,
         for<'de> <M::Response as Wire>::Narrowed<'de>: Decode<<T::RecvBuffer as AsDecoder<'de>>::Decoder, Constraint = <M::Response as Constrained>::Constraint>,
-        <M::Response as IntoNatural>::Natural: for<'de> FromWire<<M::Response as Wire>::Narrowed<'de>>,
+        <M::Response as Response>::Payload: Wire + IntoNatural,
+        <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| state.unwrap_decode_buffer().into_decoded()?
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?)
     }
 }
 

@@ -4,11 +4,11 @@
 
 use core::ops::Deref;
 
-/// A flexible FIDL response.
+/// A strict FIDL response.
 #[derive(Clone, Debug)]
-pub struct Flexible<T>(pub T);
+pub struct Strict<T>(pub T);
 
-impl<T> Deref for Flexible<T> {
+impl<T> Deref for Strict<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -16,7 +16,7 @@ impl<T> Deref for Flexible<T> {
     }
 }
 
-impl<T> AsRef<T> for Flexible<T> {
+impl<T> AsRef<T> for Strict<T> {
     fn as_ref(&self) -> &T {
         &self.0
     }

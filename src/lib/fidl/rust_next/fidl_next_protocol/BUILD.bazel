@@ -21,6 +21,7 @@ rustc_library(
         "src/message.rs",
         "src/mpsc.rs",
         "src/service.rs",
+        "src/strict.rs",
         "src/testing.rs",
         "src/transport.rs",
         "src/wire/empty.rs",
@@ -28,6 +29,7 @@ rustc_library(
         "src/wire/flexible.rs",
         "src/wire/message_header.rs",
         "src/wire/mod.rs",
+        "src/wire/strict.rs",
     ] + select({
         "@platforms//os:fuchsia": [
             "src/fuchsia/channel.rs",

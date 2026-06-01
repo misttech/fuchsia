@@ -3538,14 +3538,14 @@ pub mod channel_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for MethodB {
-        type Response = crate::wire::ChannelProtocolMethodBResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ChannelProtocolMethodBResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for MethodB {
-        type Output = crate::generic::ChannelProtocolMethodBResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::ChannelProtocolMethodBResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ChannelProtocolMethodBResponse { result: response }
+            ::fidl_next::Strict(crate::generic::ChannelProtocolMethodBResponse { result: response })
         }
     }
 
@@ -3562,14 +3562,14 @@ pub mod channel_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TakeHandle {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TakeHandle {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -3586,14 +3586,15 @@ pub mod channel_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for MutateSocket {
-        type Response = crate::wire::ChannelProtocolMutateSocketResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ChannelProtocolMutateSocketResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for MutateSocket {
-        type Output = crate::generic::ChannelProtocolMutateSocketResponse<___R>;
+        type Output =
+            ::fidl_next::Strict<crate::generic::ChannelProtocolMutateSocketResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ChannelProtocolMutateSocketResponse { b: response }
+            ::fidl_next::Strict(crate::generic::ChannelProtocolMutateSocketResponse { b: response })
         }
     }
 
@@ -4304,14 +4305,18 @@ pub mod handle_rights_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ResponseMethod {
-        type Response = crate::wire::HandleRightsProtocolResponseMethodResponse;
+        type Response =
+            ::fidl_next::wire::Strict<crate::wire::HandleRightsProtocolResponseMethodResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ResponseMethod {
-        type Output = crate::generic::HandleRightsProtocolResponseMethodResponse<___R>;
+        type Output =
+            ::fidl_next::Strict<crate::generic::HandleRightsProtocolResponseMethodResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::HandleRightsProtocolResponseMethodResponse { h: response }
+            ::fidl_next::Strict(crate::generic::HandleRightsProtocolResponseMethodResponse {
+                h: response,
+            })
         }
     }
 
@@ -5371,14 +5376,16 @@ pub mod with_protocol_ends {
     }
 
     impl ::fidl_next::TwoWayMethod for ClientEnds {
-        type Response = crate::wire::WithProtocolEndsClientEndsResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::WithProtocolEndsClientEndsResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ClientEnds {
-        type Output = crate::generic::WithProtocolEndsClientEndsResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::WithProtocolEndsClientEndsResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::WithProtocolEndsClientEndsResponse { out: response }
+            ::fidl_next::Strict(crate::generic::WithProtocolEndsClientEndsResponse {
+                out: response,
+            })
         }
     }
 
@@ -5395,14 +5402,16 @@ pub mod with_protocol_ends {
     }
 
     impl ::fidl_next::TwoWayMethod for ServerEnds {
-        type Response = crate::wire::WithProtocolEndsServerEndsResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::WithProtocolEndsServerEndsResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ServerEnds {
-        type Output = crate::generic::WithProtocolEndsServerEndsResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::WithProtocolEndsServerEndsResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::WithProtocolEndsServerEndsResponse { out: response }
+            ::fidl_next::Strict(crate::generic::WithProtocolEndsServerEndsResponse {
+                out: response,
+            })
         }
     }
 
@@ -5419,14 +5428,18 @@ pub mod with_protocol_ends {
     }
 
     impl ::fidl_next::TwoWayMethod for StructContainingEnds {
-        type Response = crate::wire::WithProtocolEndsStructContainingEndsResponse;
+        type Response =
+            ::fidl_next::wire::Strict<crate::wire::WithProtocolEndsStructContainingEndsResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StructContainingEnds {
-        type Output = crate::generic::WithProtocolEndsStructContainingEndsResponse<___R>;
+        type Output =
+            ::fidl_next::Strict<crate::generic::WithProtocolEndsStructContainingEndsResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::WithProtocolEndsStructContainingEndsResponse { out: response }
+            ::fidl_next::Strict(crate::generic::WithProtocolEndsStructContainingEndsResponse {
+                out: response,
+            })
         }
     }
 

@@ -537,14 +537,14 @@ pub mod super_ {
     }
 
     impl ::fidl_next::TwoWayMethod for Foo {
-        type Response = crate::wire::SuperFooResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::SuperFooResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for Foo {
-        type Output = crate::generic::SuperFooResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::SuperFooResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::SuperFooResponse { y: response }
+            ::fidl_next::Strict(crate::generic::SuperFooResponse { y: response })
         }
     }
 
@@ -863,14 +863,14 @@ pub mod sub {
     }
 
     impl ::fidl_next::TwoWayMethod for Foo {
-        type Response = crate::wire::SuperFooResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::SuperFooResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for Foo {
-        type Output = crate::generic::SuperFooResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::SuperFooResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::SuperFooResponse { y: response }
+            ::fidl_next::Strict(crate::generic::SuperFooResponse { y: response })
         }
     }
 

@@ -92,8 +92,7 @@ fn create_endpoints() -> (ClientEnd<Calculator, Endpoint>, ServerEnd<Calculator,
 }
 
 async fn add(client: &Client<Calculator, Endpoint>) {
-    let result = client.add(16, 26).await.expect("failed to send or receive request");
-    let response = result.0;
+    let response = client.add(16, 26).await.expect("failed to send or receive request");
 
     assert_eq!(response.sum, 42);
 }

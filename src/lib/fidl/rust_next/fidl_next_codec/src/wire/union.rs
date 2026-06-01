@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use core::mem::MaybeUninit;
+use core::ptr::addr_of_mut;
 
 use munge::munge;
 
@@ -162,6 +163,16 @@ impl Union {
     #[inline]
     pub fn ordinal(&self) -> u64 {
         *self.ordinal
+    }
+
+    /// Gets a raw pointer to the envelope underlying the union.
+    ///
+    /// # Safety
+    ///
+    /// `this` must be non-null, properly aligned, and valid for reads.
+    #[inline]
+    pub unsafe fn get_raw(this: *mut Self) -> *mut wire::Envelope {
+        unsafe { addr_of_mut!((*this).envelope) }
     }
 
     /// Gets a reference to the envelope underlying the union.

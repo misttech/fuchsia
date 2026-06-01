@@ -56,14 +56,18 @@ pub mod top {
     }
 
     impl ::fidl_next::TwoWayMethod for GetFoo {
-        type Response = ::fidl_next_test_bottom::wire::BottomGetFooResponse;
+        type Response =
+            ::fidl_next::wire::Strict<::fidl_next_test_bottom::wire::BottomGetFooResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for GetFoo {
-        type Output = ::fidl_next_test_bottom::generic::BottomGetFooResponse<___R>;
+        type Output =
+            ::fidl_next::Strict<::fidl_next_test_bottom::generic::BottomGetFooResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            ::fidl_next_test_bottom::generic::BottomGetFooResponse { foo: response }
+            ::fidl_next::Strict(::fidl_next_test_bottom::generic::BottomGetFooResponse {
+                foo: response,
+            })
         }
     }
 

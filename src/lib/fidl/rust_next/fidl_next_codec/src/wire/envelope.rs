@@ -388,8 +388,13 @@ impl Envelope {
         Ok(())
     }
 
+    /// Returns a pointer to the value contained in the envelope.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid envelope that was successfully decoded.
     #[inline]
-    unsafe fn as_ptr<T>(this: *mut Self) -> *mut T {
+    pub unsafe fn as_ptr<T>(this: *mut Self) -> *mut T {
         if size_of::<T>() <= INLINE_SIZE {
             let inline = unsafe { addr_of_mut!((*this).decoded_inline) };
             inline.cast()

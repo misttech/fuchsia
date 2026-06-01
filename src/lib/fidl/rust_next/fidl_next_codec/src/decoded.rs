@@ -120,6 +120,16 @@ impl<T: ?Sized, D> Drop for Decoded<T, D> {
 }
 
 impl<T: ?Sized, D> Decoded<T, D> {
+    /// Returns a new `Decoded` of the given pointer and decoder.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must point to a valid value and remain valid as long as `decoder`
+    /// is not dropped.
+    pub unsafe fn new_unchecked(ptr: *mut T, decoder: D) -> Self {
+        Self { ptr: unsafe { NonNull::new_unchecked(ptr) }, decoder: ManuallyDrop::new(decoder) }
+    }
+
     /// Returns the raw pointer and decoder used to create this `Decoded`.
     pub fn into_raw_parts(mut self) -> (*mut T, D) {
         let ptr = self.ptr.as_ptr();

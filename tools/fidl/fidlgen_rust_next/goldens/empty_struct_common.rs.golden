@@ -1156,14 +1156,15 @@ pub mod empty_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for SendAndReceive {
-        type Response = crate::wire::EmptyProtocolSendAndReceiveResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::EmptyProtocolSendAndReceiveResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for SendAndReceive {
-        type Output = crate::generic::EmptyProtocolSendAndReceiveResponse<___R>;
+        type Output =
+            ::fidl_next::Strict<crate::generic::EmptyProtocolSendAndReceiveResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::EmptyProtocolSendAndReceiveResponse { e: response }
+            ::fidl_next::Strict(crate::generic::EmptyProtocolSendAndReceiveResponse { e: response })
         }
     }
 

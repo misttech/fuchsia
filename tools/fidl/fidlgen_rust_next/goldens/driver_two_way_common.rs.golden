@@ -601,14 +601,14 @@ pub mod two_way {
     }
 
     impl ::fidl_next::TwoWayMethod for Add {
-        type Response = crate::wire::TwoWayAddResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::TwoWayAddResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for Add {
-        type Output = crate::generic::TwoWayAddResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::TwoWayAddResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::TwoWayAddResponse { sum: response }
+            ::fidl_next::Strict(crate::generic::TwoWayAddResponse { sum: response })
         }
     }
 

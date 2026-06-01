@@ -2012,14 +2012,20 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for RequestStrictResponseFlexible {
-        type Response = crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for RequestStrictResponseFlexible {
-        type Output = crate::generic::ProtocolRequestStrictResponseFlexibleResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::ProtocolRequestStrictResponseFlexibleResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ProtocolRequestStrictResponseFlexibleResponse { f: response }
+            ::fidl_next::Strict(crate::generic::ProtocolRequestStrictResponseFlexibleResponse {
+                f: response,
+            })
         }
     }
 
@@ -2036,14 +2042,20 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for RequestFlexibleResponseStrict {
-        type Response = crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for RequestFlexibleResponseStrict {
-        type Output = crate::generic::ProtocolRequestFlexibleResponseStrictResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::ProtocolRequestFlexibleResponseStrictResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ProtocolRequestFlexibleResponseStrictResponse { f: response }
+            ::fidl_next::Strict(crate::generic::ProtocolRequestFlexibleResponseStrictResponse {
+                f: response,
+            })
         }
     }
 

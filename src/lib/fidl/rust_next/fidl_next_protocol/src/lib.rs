@@ -96,6 +96,7 @@ pub mod fuchsia;
 mod message;
 pub mod mpsc;
 mod service;
+mod strict;
 #[cfg(test)]
 mod testing;
 mod transport;
@@ -108,4 +109,5 @@ pub use self::flexible::*;
 pub use self::framework_error::*;
 pub use self::message::*;
 pub use self::service::*;
+pub use self::strict::*;
 pub use self::transport::*;

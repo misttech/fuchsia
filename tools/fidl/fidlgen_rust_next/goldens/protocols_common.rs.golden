@@ -6073,14 +6073,15 @@ pub mod method_with_union {
     }
 
     impl ::fidl_next::TwoWayMethod for UnionMethod {
-        type Response = crate::wire::MethodWithUnionUnionMethodResponse<'static>;
+        type Response =
+            ::fidl_next::wire::Strict<crate::wire::MethodWithUnionUnionMethodResponse<'static>>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for UnionMethod {
-        type Output = crate::generic::MethodWithUnionUnionMethodResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::MethodWithUnionUnionMethodResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::MethodWithUnionUnionMethodResponse { u: response }
+            ::fidl_next::Strict(crate::generic::MethodWithUnionUnionMethodResponse { u: response })
         }
     }
 
@@ -6636,14 +6637,14 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for NoRequestEmptyResponse {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for NoRequestEmptyResponse {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -6660,18 +6661,22 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for NoRequestWithResponse {
-        type Response =
-            crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for NoRequestWithResponse {
-        type Output =
-            crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
-                ret: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
+                    ret: response,
+                },
+            )
         }
     }
 
@@ -6702,14 +6707,14 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for WithRequestEmptyResponse {
-        type Response = ::fidl_next::wire::EmptyMessageBody;
+        type Response = ::fidl_next::wire::Strict<::fidl_next::wire::EmptyMessageBody>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for WithRequestEmptyResponse {
-        type Output = ___R;
+        type Output = ::fidl_next::Strict<___R>;
 
         fn respond(response: ___R) -> Self::Output {
-            response
+            ::fidl_next::Strict(response)
         }
     }
 
@@ -6727,18 +6732,22 @@ pub mod with_and_without_request_response {
     }
 
     impl ::fidl_next::TwoWayMethod for WithRequestWithResponse {
-        type Response =
-            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>;
+        type Response = ::fidl_next::wire::Strict<
+            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for WithRequestWithResponse {
-        type Output =
-            crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse<___R>;
+        type Output = ::fidl_next::Strict<
+            crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse<___R>,
+        >;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
-                ret: response,
-            }
+            ::fidl_next::Strict(
+                crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
+                    ret: response,
+                },
+            )
         }
     }
 

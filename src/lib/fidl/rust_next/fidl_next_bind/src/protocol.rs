@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_next_protocol::{Flexibility, Transport};
+use fidl_next_codec::{Decoded, wire as codec_wire};
+use fidl_next_protocol::{Flexibility, Transport, wire as protocol_wire};
 
 /// A FIDL protocol which has associated connection handles.
 ///
@@ -43,8 +44,55 @@ pub trait Method {
 
 /// A protocol method which has a response.
 pub trait TwoWayMethod: Method {
-    /// The response payload for the method.
-    type Response;
+    /// The response message for the method.
+    type Response: Response;
+}
+
+/// A protocol response message.
+///
+/// Two-way FIDL responses can be strict or flexible, and flexible responses
+/// wrap their responses in a FIDL union. This means that strict and flexible
+/// FIDL responses have different wire formats even though we treat flexible
+/// errors as protocol errors. So the protocol and bind layers get a little
+/// mixed up here.
+///
+/// To solve this, FIDL response types implement this `Response` trait and
+/// define how to "unwrap" themselves into their decoded `Payload` types. This
+/// eliminates an unnecessary `.0` field access that we'd have to do otherwise.
+pub trait Response {
+    /// The payload of the response.
+    type Payload;
+
+    /// Converts a `Decoded` of this type to a `Decoded` of its payload type.
+    fn into_payload<D>(decoded: Decoded<Self, D>) -> Decoded<Self::Payload, D>;
+}
+
+impl<T, E> Response for codec_wire::Result<'_, T, E> {
+    type Payload = Self;
+
+    fn into_payload<D>(decoded: Decoded<Self, D>) -> Decoded<Self::Payload, D> {
+        decoded
+    }
+}
+
+impl<T> Response for protocol_wire::Flexible<'_, T> {
+    type Payload = T;
+
+    fn into_payload<D>(decoded: Decoded<Self, D>) -> Decoded<Self::Payload, D> {
+        let (ptr, decoder) = Decoded::into_raw_parts(decoded);
+        let envelope = unsafe { codec_wire::Union::get_raw(ptr.cast()) };
+        let inner = unsafe { codec_wire::Envelope::as_ptr(envelope) };
+        unsafe { Decoded::new_unchecked(inner, decoder) }
+    }
+}
+
+impl<T> Response for protocol_wire::Strict<T> {
+    type Payload = T;
+
+    fn into_payload<D>(decoded: Decoded<Self, D>) -> Decoded<Self::Payload, D> {
+        let (ptr, decoder) = Decoded::into_raw_parts(decoded);
+        unsafe { Decoded::new_unchecked(ptr.cast(), decoder) }
+    }
 }
 
 /// A method which can be responded to with a single value.

@@ -2274,14 +2274,14 @@ pub mod simple_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for Add {
-        type Response = crate::wire::SimpleProtocolAddResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::SimpleProtocolAddResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for Add {
-        type Output = crate::generic::SimpleProtocolAddResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::SimpleProtocolAddResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::SimpleProtocolAddResponse { sum: response }
+            ::fidl_next::Strict(crate::generic::SimpleProtocolAddResponse { sum: response })
         }
     }
 

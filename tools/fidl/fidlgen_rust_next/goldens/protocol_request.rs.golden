@@ -872,14 +872,14 @@ pub mod parent {
     }
 
     impl ::fidl_next::TwoWayMethod for GetChild {
-        type Response = crate::wire::ParentGetChildResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ParentGetChildResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for GetChild {
-        type Output = crate::generic::ParentGetChildResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::ParentGetChildResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ParentGetChildResponse { c: response }
+            ::fidl_next::Strict(crate::generic::ParentGetChildResponse { c: response })
         }
     }
 
@@ -896,14 +896,14 @@ pub mod parent {
     }
 
     impl ::fidl_next::TwoWayMethod for GetChildRequest {
-        type Response = crate::wire::ParentGetChildRequestResponse;
+        type Response = ::fidl_next::wire::Strict<crate::wire::ParentGetChildRequestResponse>;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for GetChildRequest {
-        type Output = crate::generic::ParentGetChildRequestResponse<___R>;
+        type Output = ::fidl_next::Strict<crate::generic::ParentGetChildRequestResponse<___R>>;
 
         fn respond(response: ___R) -> Self::Output {
-            crate::generic::ParentGetChildRequestResponse { r: response }
+            ::fidl_next::Strict(crate::generic::ParentGetChildRequestResponse { r: response })
         }
     }
 
