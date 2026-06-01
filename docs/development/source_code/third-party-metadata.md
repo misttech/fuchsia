@@ -39,6 +39,19 @@ NONBLANK              := any non-whitespace, non-EOL character
 ANYCHAR               := any character but EOL
 ```
 
+## Requirements
+
+Directive keywords and their definitions are defined below. This sections serves as synthesis of what each README.fuchsia needs to have and keep updated as time goes on:
+
+* For vulnerability scanning purposes, each README.fuchsia needs to keep updated information on:
+  * `URL` and `Revision`: This is the required option if it is a git repository.
+  OR
+  * `CPEPrefix` and `Version`
+This information gives vulnerability scanners enough information to accurately scan these dependencies.
+
+* For licensing purposes, each README.fuchsia needs to keep updated information on:
+  * `License` and `License File`
+
 ## Common directive keywords
 
 Common directive keywords include:
@@ -61,7 +74,7 @@ Common directive keywords include:
 
 * `URL`
 
-  *(Required)* The URL where the package lives i.e. a clonable url for git repositories, a package manager url for packages from package managers, etc. If there is no upstream, use 'This is the canonical public repository'. For packages coming from Google internal repositories, use 'Google Internal'.
+  *(REQUIRED)* The URL where the package lives i.e. a clonable url for git repositories, a package manager url for packages from package managers, or [a URL type listed here as per AutoVM's metadata proto](https://source.corp.google.com/piper///depot/google3/third_party/metadata.proto;l=165;rcl=670837485). If there is no upstream, use 'This is the canonical public repository'. For packages coming from Google internal repositories, use 'Google Internal'.
   This directive may be repeated to include multiple URLs if necessary.
 
   Examples:
@@ -80,17 +93,9 @@ Common directive keywords include:
   Revision: 8950d99ba1ba67280fbd1e5445214d2cebe966bb
   ```
 
-* `Version`
-
-  A searchable version number for the package (if the package does not version or is versioned by date or revision this field should be "N/A" and the revision, or date should be enumerated in the appropriate field). If the dependency is managed by an autoroller or a script, you must ensure the uprev process also updates the `README.fuchsia` file with the correct Version.
-
-  ```
-  Version: 7.6
-  ```
-
 * `Date`
 
-  *(OPTIONAL if Revision is supplied)* The date that the package was updated, in format YYYY-MM-DD.
+  * The date that the package was updated, in format YYYY-MM-DD.
 
   ```
   Date: 2018-02-14
@@ -144,7 +149,15 @@ Common directive keywords include:
 
 * `CPEPrefix`
 
-  *(Optional, but required if URL and Revision are not provided)* A 'common platform enumeration' version 2.3 (preferred) or 2.2, as per [search](https://nvd.nist.gov/products/cpe/search), which represents the upstream package. This will be used to report known vulnerabilities in the upstream software package, such that we can be sure to merge fixes for those vulnerabilities. Please ensure you're using the closest applicable upstream version, according to the standard format for the CPE for that package. For example, `cpe:/a:xmlsoft:libxslt:1.0.10`. If no CPE is available for the package, please specify "unknown". If you're using a patched or modified version which is halfway between two public versions, please "round downwards" to the lower of the public versions.
+  *(Optional, but REQUIRED if URL and Revision are not provided)* A 'common platform enumeration' version 2.3 (preferred) or 2.2, as per [search](https://nvd.nist.gov/products/cpe/search), which represents the upstream package. This will be used to report known vulnerabilities in the upstream software package, such that we can be sure to merge fixes for those vulnerabilities. Please ensure you're using the closest applicable upstream version, according to the standard format for the CPE for that package. For example, `cpe:/a:xmlsoft:libxslt:1.0.10`. If no CPE is available for the package, please specify "unknown". If you're using a patched or modified version which is halfway between two public versions, please "round downwards" to the lower of the public versions.
+
+* `Version`
+
+  *(REQUIRED if using CPEPrefix for vuln scanning)* A searchable version number for the package (if the package does not version or is versioned by date or revision this field should be "N/A" and the revision, or date should be enumerated in the appropriate field). If the dependency is managed by an autoroller or a script, you must ensure the uprev process also updates the `README.fuchsia` file with the correct Version.
+
+  ```
+  Version: 7.6
+  ```
 
 * `Description`
 
