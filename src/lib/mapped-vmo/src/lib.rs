@@ -13,6 +13,9 @@ use std::ops::{Deref, DerefMut};
 mod immutable;
 pub use immutable::{Error as ImmutableMappingError, ImmutableMapping};
 
+mod truncated_immutable;
+pub use truncated_immutable::{Error as TruncatedImmutableMappingError, TruncatedImmutableMapping};
+
 /// A safe wrapper around a mapped region of memory.
 ///
 /// Note: this type implements `Deref`/`DerefMut` to the `SharedBuffer`

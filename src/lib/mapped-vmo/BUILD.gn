@@ -23,6 +23,7 @@ rustc_library("mapped-vmo") {
   sources = [
     "src/immutable.rs",
     "src/lib.rs",
+    "src/truncated_immutable.rs",
   ]
 }
 

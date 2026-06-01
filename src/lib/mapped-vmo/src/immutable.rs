@@ -5,10 +5,12 @@
 use std::ptr::NonNull;
 
 /// Provides a safe byte slice view of a VMO through a `Deref<Target=[u8]>` implementation.
+#[derive(Debug)]
 pub struct ImmutableMapping {
     inner: Inner,
 }
 
+#[derive(Debug)]
 enum Inner {
     Empty,
     Vmar { addr: NonNull<u8>, size: usize },
