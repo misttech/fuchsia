@@ -13,13 +13,6 @@ $ fx set core.x64 --with //examples --with //examples:tests
 $ fx build
 ```
 
-If you do not already have one running, start a package server so the example
-components can be resolved from your device:
-
-```bash
-$ fx serve
-```
-
 ## Running
 
 To run one of the example components defined here, provide the full component
