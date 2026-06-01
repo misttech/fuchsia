@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/fuzz.gni")
 import("//build/test.gni")
 import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/testing/boot_tests/zbi_test_executable.gni")
@@ -18,6 +19,7 @@ group("test") {
 group("tests") {
   testonly = true
   deps = [
+    ":libc-fuzzers",
     ":libc-tests",
     "sanitizer:tests",
 
@@ -357,6 +359,40 @@ foreach(test_label, libc_component_tests) {
 fuchsia_test_package("libc-tests") {
   test_components = libc_test_components
   test_specs = libc_test_specs
+}
+
+libc_cpp_fuzzer_targets = [ "../threads:thread-storage-fuzzer" ]
+
+libc_cpp_fuzzer_components = []
+foreach(fuzzer_label, libc_cpp_fuzzer_targets) {
+  fuzzer = get_label_info(fuzzer_label, "name")
+  libc_cpp_fuzzer_components += [ ":libc-$fuzzer" ]
+
+  fuchsia_fuzzer_component("libc-$fuzzer") {
+    deps = [
+      ":libc-$fuzzer.cml",
+      fuzzer_label,
+    ]
+    manifest = "$target_gen_dir/$target_name.cml"
+  }
+
+  generated_file("libc-$fuzzer.cml") {
+    visibility = [ ":*" ]
+    testonly = true
+    outputs = [ "$target_gen_dir/$target_name" ]
+    output_conversion = "json"
+    contents = {
+      include = [ "//src/sys/fuzzing/libfuzzer/default.shard.cml" ]
+      program = {
+        args = [ "test/$fuzzer" ]
+      }
+    }
+  }
+}
+
+fuchsia_fuzzer_package("libc-fuzzers") {
+  # Note we can add rust fuzzers here but we don't have any at the moment.
+  cpp_fuzzer_components = libc_cpp_fuzzer_components
 }
 
 template("executable_with_backtrace") {

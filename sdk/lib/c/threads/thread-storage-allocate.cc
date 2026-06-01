@@ -4,6 +4,7 @@
 
 #include <lib/elfldltl/machine.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/result.h>
 
 #include <cassert>
 #include <concepts>
@@ -190,7 +191,7 @@ struct ThreadBlockSize {
 
 template <class TlsTraits = elfldltl::TlsTraits<>>
   requires(TlsTraits::kTlsNegative)
-zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
+fit::result<fit::failed, ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // This layout is used only on x86 (both EM_386 and EM_X86_64).  To be
   // pedantic, the ABI requirement kTpSelfPointer indicates is orthogonal;
   // but it's related, and also unique to x86.  kTlsLocalExecOffset is also
@@ -249,11 +250,11 @@ zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) 
   std::optional<PageRoundedSize> allocation_size_opt =
       PageRoundedSize::From(tls_size) + aligned_thread_size;
   if (!allocation_size_opt.has_value()) [[unlikely]] {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+    return fit::error(fit::failed());
   }
 
   const PageRoundedSize allocation_size = *allocation_size_opt;
-  return zx::ok(ThreadBlockSize{
+  return fit::ok(ThreadBlockSize{
       .size = allocation_size,
       .tp_offset = allocation_size.get() - aligned_thread_size,
   });
@@ -261,7 +262,7 @@ zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) 
 
 template <class TlsTraits = elfldltl::TlsTraits<>>
   requires(!TlsTraits::kTlsNegative)
-zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
+fit::result<fit::failed, ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // This style of layout is used on all machines other than x86.
   // The kTlsLocalExecOffset value differs by machine.
   //
@@ -342,7 +343,7 @@ zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) 
 
   size_t block_size;
   if (add_overflow(aligned_tcb_allocation_size, tls_size, block_size)) [[unlikely]] {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+    return fit::error(fit::failed());
   }
 
   // Check fundamental invariants: whatever block size we use, it must always
@@ -352,9 +353,9 @@ zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) 
 
   std::optional<PageRoundedSize> allocation_size_opt = PageRoundedSize::From(block_size);
   if (!allocation_size_opt.has_value()) [[unlikely]] {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+    return fit::error(fit::failed());
   }
-  return zx::ok(ThreadBlockSize{
+  return fit::ok(ThreadBlockSize{
       .size = *allocation_size_opt,
 
       // The location of $tp relative to the start of this thread block is simply
@@ -390,11 +391,17 @@ zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_fr
     return zx::error{ZX_ERR_INVALID_ARGS};
   }
 
+  const auto tls_layout = GetTlsLayout();
+
+  // We cannot guarantee larger alignments without over-allocating or using
+  // special VMAR flags.
+  assert(tls_layout.alignment() <= PageRoundedSize::Page().get());
+
   // The thread block size is a complex calculation, while the others depend
   // only on the stack and guard sizes.
-  zx::result<ThreadBlockSize> block_size_result = ComputeThreadBlockSize(GetTlsLayout());
+  auto block_size_result = ComputeThreadBlockSize(tls_layout);
   if (block_size_result.is_error()) [[unlikely]] {
-    return block_size_result.take_error();
+    return zx::error(ZX_ERR_NO_RESOURCES);
   }
   auto [thread_block_size, tp_offset] = *block_size_result;
 
@@ -473,6 +480,12 @@ zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_fr
   if (zx::result<> result = allocate_blocks(  //
           ThreadBlock{}, MachineStackBlock{}, UnsafeStackBlock{}, ShadowCallStackBlock{});
       result.is_error()) [[unlikely]] {
+    // ZX_ERR_OUT_OF_RANGE can be yielded while attempting to map individual blocks
+    // at different vmo_offsets. Large enough stacks or TCBs mapped in succession
+    // can vause the vmo_offset + len to overflow yielding this error when mapping.
+    if (result.error_value() == ZX_ERR_OUT_OF_RANGE) {
+      return zx::error(ZX_ERR_NO_RESOURCES);
+    }
     return result.take_error();
   }
 

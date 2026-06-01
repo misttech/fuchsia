@@ -21,6 +21,7 @@
 
 #include "../test/safe-zero-construction.h"
 #include "stack-abi.h"
+#include "thread-storage-test-utils.h"
 #include "thread-storage.h"
 #include "threads_impl.h"
 #include "tls-dep.h"
@@ -72,14 +73,9 @@ class LibcThreadTests : public ::zxtest::Test {
   // end of the test, just in case.
   static inline const PageRoundedSize kTestVmarSize = *PageRoundedSize::From(1 << 30);
 
-  // Tests can set these so ThreadStorage::Allocate will use them.
-  // They're reset for each test.
-  static inline TlsLayout gTlsLayout;
-  static inline fit::function<InitializeTlsFn> gInitializeTls;
-
   void SetUp() override {
-    gTlsLayout = {};
-    gInitializeTls = {};
+    LibcThreadTestScopedTlsGlobals::gTlsLayout = {};
+    LibcThreadTestScopedTlsGlobals::gInitializeTls = {};
   }
 
   // Get the test VMAR, setting it up if need be.
@@ -384,12 +380,13 @@ TEST_F(LibcThreadTests, ThreadStorageTls) {
       static_cast<ptrdiff_t>(kTlsStart) -
       (TlsTraits::kTlsNegative ? static_cast<ptrdiff_t>(kTrivialLayout.size_bytes()) : 0);
 
-  gTlsLayout = kTrivialLayout;
+  LibcThreadTestScopedTlsGlobals::gTlsLayout = kTrivialLayout;
 
   // This both initializes that "variable" and checks that it all started
   // zero-initialized so InitializeTls doesn't need to zero the tbss space.
   constexpr uint32_t kInitValue = 123467890;
-  gInitializeTls = [](std::span<std::byte> thread_block, size_t tp_offset) {
+  LibcThreadTestScopedTlsGlobals::gInitializeTls = [](std::span<std::byte> thread_block,
+                                                      size_t tp_offset) {
     ASSERT_LT(tp_offset + kTlsBias, thread_block.size_bytes())
         << " tp_offset " << tp_offset << " + bias " << kTlsBias;
     std::span segment = thread_block.subspan(tp_offset + kTlsBias, sizeof(uint32_t));
@@ -424,19 +421,20 @@ TEST_F(LibcThreadTests, ThreadStorageTlsAlignment) {
   };
   const size_t kAlignedSize = aligned_big(kBigAlignmentLayout.size_bytes());
 
-  gTlsLayout = kBigAlignmentLayout;
-  gInitializeTls = [tls_bias =  // Compute the $tp bias for the first module.
-                    static_cast<ptrdiff_t>(aligned_big(TlsTraits::kTlsLocalExecOffset)) -
-                    static_cast<ptrdiff_t>(TlsTraits::kTlsNegative ? kAlignedSize : 0)](
-                       std::span<std::byte> thread_block, size_t tp_offset) {
-    uintptr_t tp = reinterpret_cast<uintptr_t>(thread_block.data() + tp_offset);
-    EXPECT_EQ(0u, (tp + tls_bias) % kOnePage.get())
-        << std::hex << std::showbase << "\n    $tp " << tp << " from ["
-        << static_cast<void*>(thread_block.data()) << ","
-        << static_cast<void*>(thread_block.data() + thread_block.size()) << ") + " << tp_offset
-        << "\n        + TLS bias " << tls_bias << " = " << tp + tls_bias << "\n    not aligned to "
-        << kOnePage.get();
-  };
+  LibcThreadTestScopedTlsGlobals::gTlsLayout = kBigAlignmentLayout;
+  LibcThreadTestScopedTlsGlobals::gInitializeTls =
+      [tls_bias =  // Compute the $tp bias for the first module.
+       static_cast<ptrdiff_t>(aligned_big(TlsTraits::kTlsLocalExecOffset)) -
+       static_cast<ptrdiff_t>(TlsTraits::kTlsNegative ? kAlignedSize : 0)](
+          std::span<std::byte> thread_block, size_t tp_offset) {
+        uintptr_t tp = reinterpret_cast<uintptr_t>(thread_block.data() + tp_offset);
+        EXPECT_EQ(0u, (tp + tls_bias) % kOnePage.get())
+            << std::hex << std::showbase << "\n    $tp " << tp << " from ["
+            << static_cast<void*>(thread_block.data()) << ","
+            << static_cast<void*>(thread_block.data() + thread_block.size()) << ") + " << tp_offset
+            << "\n        + TLS bias " << tls_bias << " = " << tp + tls_bias
+            << "\n    not aligned to " << kOnePage.get();
+      };
 
   ThreadStorage storage;
   auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
@@ -452,8 +450,9 @@ TEST_F(LibcThreadTests, ThreadStorageTlsReal) {
   const ptrdiff_t kLeOffset = ld::TpRelativeToOffset(&localexec_initial_data);
   const ptrdiff_t kIeOffset = ld::TpRelativeToOffset(&tls_dep_data);
 
-  gTlsLayout = ld::testing::gStartupLdAbi.static_tls_layout;
-  gInitializeTls = [](std::span<std::byte> thread_block, size_t tp_offset) {
+  LibcThreadTestScopedTlsGlobals::gTlsLayout = ld::testing::gStartupLdAbi.static_tls_layout;
+  LibcThreadTestScopedTlsGlobals::gInitializeTls = [](std::span<std::byte> thread_block,
+                                                      size_t tp_offset) {
     ld::TlsInitialExecDataInit(ld::testing::gStartupLdAbi, thread_block, tp_offset, true);
   };
 
@@ -466,7 +465,8 @@ TEST_F(LibcThreadTests, ThreadStorageTlsReal) {
     ASSERT_EQ(kLeOffset, ld::TpRelativeToOffset(&localexec_initial_data));
     ASSERT_EQ(kIeOffset, ld::TpRelativeToOffset(&tls_dep_data));
 
-    ASSERT_GE(gTlsLayout.size_bytes(), std::abs(kIeOffset) + sizeof(uint32_t));
+    ASSERT_GE(LibcThreadTestScopedTlsGlobals::gTlsLayout.size_bytes(),
+              std::abs(kIeOffset) + sizeof(uint32_t));
 
     ThreadStorage storage;
     auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
@@ -546,11 +546,11 @@ TEST_F(LibcThreadTests, ThreadStorageCreateHandles) {
 }
 
 void CheckThreadBlockForLayout(const TlsLayout& layout, thrd_zx_create_handles_t handles) {
-  LibcThreadTests::gTlsLayout = layout;
+  LibcThreadTestScopedTlsGlobals::gTlsLayout = layout;
 
   std::span<std::byte> found_thread_block;
   size_t found_tp_offset;
-  LibcThreadTests::gInitializeTls =  //
+  LibcThreadTestScopedTlsGlobals::gInitializeTls =  //
       [&found_thread_block, &found_tp_offset](std::span<std::byte> thread_block, size_t tp_offset) {
         // Just record the resulting thread block calculations.
         found_thread_block = thread_block;
@@ -560,6 +560,7 @@ void CheckThreadBlockForLayout(const TlsLayout& layout, thrd_zx_create_handles_t
   ThreadStorage storage;
   auto result = storage.Allocate(handles, kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
+  CheckStorage(kOnePage, kOnePage, storage, *result);
 
   // The entire block should be valid. CheckStorage eventually checks the TCB portion.
   // The TLS portion should be readable and zero.
@@ -570,8 +571,6 @@ void CheckThreadBlockForLayout(const TlsLayout& layout, thrd_zx_create_handles_t
       found_thread_block.subspan(found_tp_offset + kTlsBias, layout.size_bytes());
   EXPECT_TRUE(std::all_of(tls_portion.begin(), tls_portion.end(),
                           [](std::byte b) { return b == std::byte{0}; }));
-
-  CheckStorage(kOnePage, kOnePage, storage, *result);
 
   EXPECT_EQ(ld::TpRelative(-found_tp_offset, pthread_to_tp(*result)), found_thread_block.data())
       << "Expected the tp offset to point to the start of the thread block";
@@ -654,20 +653,5 @@ TEST_F(LibcThreadTests, SizeOverflow) {
 }
 
 }  // namespace
-
-// This is defined in the non-test code to get the real layout from the dynamic
-// linking state and such.  In test code, it's set to a synthetic layout.
-TlsLayout ThreadStorage::GetTlsLayout() {
-  // Tests just set this variable beforehand.
-  return LibcThreadTests::gTlsLayout;
-}
-
-// This is defined in the non-test code to fill the real layout with all the
-// actual PT_TLS segments.  In test code, it's a callback set by the test.
-void ThreadStorage::InitializeTls(std::span<std::byte> thread_block, size_t tp_offset) {
-  if (LibcThreadTests::gInitializeTls) {
-    LibcThreadTests::gInitializeTls(thread_block, tp_offset);
-  }
-}
 
 }  // namespace LIBC_NAMESPACE_DECL
