@@ -15,6 +15,7 @@ python_library("openwrt_access_point") {
     "lib/capabilities.py",
     "lib/dhcp_config.py",
     "lib/dhcp_controller.py",
+    "lib/extended_capabilities.py",
     "lib/hostapd_options.py",
     "lib/profiles/actiontec.py",
     "lib/profiles/asus.py",

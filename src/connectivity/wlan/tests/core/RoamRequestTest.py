@@ -34,7 +34,7 @@ from mobly.asserts import (
     assert_true,
     fail,
 )
-from openwrt_access_point import OpenWrtAP
+from openwrt_access_point import OpenWrtAP, StationStatus
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -222,6 +222,17 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             test_params.target_security_mode.uci_encryption
         )
         return f"test_roam_request_{dut_security_mode}_dut_from_{origin_security_mode}_{test_params.origin_band.name}_to_{target_security_mode}_{test_params.target_band.name}_{expected_result}"
+
+    def get_single_sta_status(self, mac: str, band: Band) -> StationStatus:
+        """Gets station status and asserts there is only one interface."""
+        assert isinstance(
+            self.test_kit.access_point, OpenWrtAP
+        ), "Expected OpenWrtAP"
+        sta_dict = self.test_kit.access_point.get_sta_status(mac, band)
+        assert (
+            len(sta_dict) == 1
+        ), f"Expected station on exactly one interface, but found: {list(sta_dict.keys())}"
+        return list(sta_dict.values())[0]
 
     async def setup_aps(self, test_params: TestParams) -> RoamTestParameters:
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
@@ -556,19 +567,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             elif isinstance(self.test_kit.access_point, OpenWrtAP):
                 client_mac = await self._get_client_mac()
 
-                sta_status_dict = self.test_kit.access_point.get_sta_status(
-                    client_mac
+                sta_status = self.get_single_sta_status(
+                    client_mac, band=origin_band
                 )
-                try:
-                    sta_status = next(
-                        s.status
-                        for s in sta_status_dict.values()
-                        if s.band == origin_band
-                    )
-                except StopIteration:
-                    raise signals.TestError(
-                        f"DUT is not in status list for the {test_params.origin_band} band: {sta_status_dict}"
-                    )
                 if not sta_status.auth:
                     raise signals.TestError(
                         f"DUT is not authenticated on the {test_params.origin_band} band"
@@ -666,21 +667,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                             elif isinstance(
                                 self.test_kit.access_point, OpenWrtAP
                             ):
-                                sta_status_dict = (
-                                    self.test_kit.access_point.get_sta_status(
-                                        client_mac
-                                    )
+                                status = self.get_single_sta_status(
+                                    client_mac, band=target_band
                                 )
-                                try:
-                                    status = next(
-                                        s.status
-                                        for s in sta_status_dict.values()
-                                        if s.band == target_band
-                                    )
-                                except StopIteration:
-                                    raise signals.TestError(
-                                        f"DUT is not in status list for the {test_params.target_band} band: {sta_status_dict}"
-                                    )
                                 assert_true(
                                     status.auth,
                                     f"DUT is not authenticated on the {test_params.target_band} band",

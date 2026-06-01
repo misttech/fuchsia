@@ -40,3 +40,9 @@ class UciBssOptions(TypedDict, total=False):
 
     rrm_neighbor_report: bool
     """Enable neighbor report via radio measurements"""
+
+    bss_transition: bool
+    """BSS Transition Management"""
+
+    wnm_sleep_mode: bool
+    """WNM-Sleep Mode (extended sleep mode for stations)"""

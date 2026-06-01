@@ -31,3 +31,5 @@ targets:
       - chan_util_avg_period
       - rrm_beacon_report
       - rrm_neighbor_report
+      - bss_transition
+      - wnm_sleep_mode

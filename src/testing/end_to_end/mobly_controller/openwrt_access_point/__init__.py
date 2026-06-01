@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any, Dict, List
 
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
+from honeydew.typing.custom_types import MacAddress
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
@@ -28,6 +29,7 @@ from openwrt_access_point.lib.dhcp_config import DhcpConfig as DhcpConfig
 from openwrt_access_point.lib.dhcp_config import Dnsmasq as Dnsmasq
 from openwrt_access_point.lib.dhcp_config import Lan as Lan
 from openwrt_access_point.lib.dhcp_controller import DhcpController
+from openwrt_access_point.lib.extended_capabilities import ExtendedCapabilities
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -108,14 +110,6 @@ class StationStatus:
     auth: bool
     assoc: bool
     authorized: bool
-
-
-@dataclass
-class InterfaceStatus:
-    """Represents the status of a station on a specific interface."""
-
-    band: Band
-    status: StationStatus
 
 
 class OpenWrtAP:
@@ -320,20 +314,26 @@ class OpenWrtAP:
         except Exception:
             return []
 
+    def _get_hostapd_interfaces(self, band: Band) -> list[str]:
+        """Gets all hostapd interface names for a specific band."""
+        match band:
+            case Band.BAND_2G:
+                phy = PHY_2G
+            case Band.BAND_5G:
+                phy = PHY_5G
+            case _:
+                raise ValueError(f"Unsupported band: {band}")
+        res = self.ssh.run(f"ubus list hostapd.{phy}*")
+        return [
+            iface.strip() for iface in res.stdout.decode("utf-8").splitlines()
+        ]
+
     def _is_ap_enabled(
         self, band: Band, expected_ssids: list[str] | None = None
     ) -> bool:
         """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status."""
         try:
-            match band:
-                case Band.BAND_2G:
-                    phy = PHY_2G
-                case Band.BAND_5G:
-                    phy = PHY_5G
-                case _:
-                    raise ValueError(f"Unsupported band: {band}")
-            res = self.ssh.run(f"ubus list hostapd.{phy}*")
-            interfaces = res.stdout.decode("utf-8").splitlines()
+            interfaces = self._get_hostapd_interfaces(band)
             if not interfaces:
                 return False
             for iface in interfaces:
@@ -350,33 +350,27 @@ class OpenWrtAP:
         except Exception:
             return False
 
-    def get_sta_status(self, mac: str) -> Dict[str, InterfaceStatus]:
-        """Get station status for all interfaces on OpenWrt."""
-        result = {}
-        for band in [Band.BAND_2G, Band.BAND_5G]:
-            phy = PHY_2G if band == Band.BAND_2G else PHY_5G
-            try:
-                res = self.ssh.run(f"ubus list hostapd.{phy}*")
-                interfaces = res.stdout.decode("utf-8").splitlines()
-                for iface in interfaces:
-                    iface = iface.strip()
-                    clients_res = self.ssh.run(
-                        f"ubus call {iface} get_clients"
-                    ).stdout.decode()
-                    clients_data = json.loads(clients_res)
-                    clients = clients_data.get("clients", {})
-                    for client_mac, status in clients.items():
-                        if client_mac.lower() == mac.lower():
-                            result[iface] = InterfaceStatus(
-                                band=band,
-                                status=StationStatus(
-                                    auth=status.get("auth", False),
-                                    assoc=status.get("assoc", False),
-                                    authorized=status.get("authorized", False),
-                                ),
-                            )
-            except Exception as e:
-                _LOGGER.error(f"Failed to get status for band {band}: {e}")
+    def get_sta_status(self, mac: str, band: Band) -> dict[str, StationStatus]:
+        """Get station status for a specific band on OpenWrt."""
+        result: dict[str, StationStatus] = {}
+        try:
+            interfaces = self._get_hostapd_interfaces(band)
+            for iface in interfaces:
+                clients_res = self.ssh.run(
+                    f"ubus call {iface} get_clients"
+                ).stdout.decode()
+                clients_data = json.loads(clients_res)
+                clients = clients_data.get("clients", {})
+                for client_mac, status in clients.items():
+                    if client_mac.lower() == mac.lower():
+                        result[iface] = StationStatus(
+                            auth=status.get("auth", False),
+                            assoc=status.get("assoc", False),
+                            authorized=status.get("authorized", False),
+                        )
+        except Exception as e:
+            _LOGGER.error(f"Failed to get status for band {band}: {e}")
+            raise
         return result
 
     def _is_ap_broadcasting(
@@ -393,6 +387,121 @@ class OpenWrtAP:
             return False
         except Exception:
             return False
+
+    def get_bssid_from_ssid(self, ssid: str, band: Band) -> str:
+        """Gets the BSSID for a given SSID and band."""
+        if band == Band.BAND_2G:
+            ifname = self.wlan_2g_interface
+        else:
+            ifname = self.wlan_5g_interface
+
+        iw = self.ssh.run(f"iw dev {ifname} info")
+        iw_out = iw.stdout.decode("utf-8")
+        iw_lines = iw_out.splitlines()
+
+        for line in iw_lines:
+            if "ssid" in line and ssid in line:
+                for line in iw_lines:
+                    if "addr" in line:
+                        tokens = line.split()
+                        bssid = tokens[1]
+                        try:
+                            MacAddress(bssid).bytes()
+                        except ValueError as e:
+                            raise AssertionError(
+                                f"Invalid BSSID format: {bssid}"
+                            ) from e
+                        return bssid
+                raise RuntimeError(
+                    f"iw dev info contained ssid but not addr: \n{iw_out}"
+                )
+        raise RuntimeError(f'iw dev did not contain ssid "{ssid}"')
+
+    def get_sta_extended_capabilities(
+        self, mac: str, band: Band
+    ) -> dict[str, ExtendedCapabilities]:
+        """Gets the extended capabilities of a station for all interfaces."""
+        result: dict[str, ExtendedCapabilities] = {}
+        try:
+            interfaces = self._get_hostapd_interfaces(band)
+            for iface_full in interfaces:
+                iface = iface_full.replace("hostapd.", "")
+                cmd = f"hostapd_cli -i {iface} sta {mac}"
+                try:
+                    res = self.ssh.run(cmd)
+                    output = res.stdout.decode("utf-8")
+                    m = re.search(
+                        r"ext_capab=([0-9A-Faf]+)", output, re.MULTILINE
+                    )
+                    if m:
+                        raw_ext_capab = m.group(1)
+                        result[iface] = ExtendedCapabilities(
+                            bytearray.fromhex(raw_ext_capab)
+                        )
+                except Exception:
+                    # Station might not be associated with this specific interface
+                    continue
+        except Exception as e:
+            raise RuntimeError(f"Failed to run hostapd_cli on OpenWrt: {e}")
+        return result
+
+    def send_bss_transition_management_req(
+        self, mac: str, band: Band, btm_req: Any
+    ) -> None:
+        """Sends a BSS Transition Management request to a station.
+
+        Note:
+            This implementation is derived from Antlion's `hostapd.py`
+            (`antlion.controllers.ap_lib.hostapd._bss_tm_req`) to construct
+            the command for `hostapd_cli`.
+        """
+        from antlion.controllers.ap_lib.wireless_network_management import (
+            BssTransitionManagementRequest,
+        )
+
+        phy = "phy0" if band == Band.BAND_2G else "phy1"
+        try:
+            res = self.ssh.run(f"ubus list hostapd.{phy}*")
+            interfaces = res.stdout.decode("utf-8").splitlines()
+            if not interfaces:
+                raise RuntimeError(f"No hostapd interface found for {phy}")
+            iface = interfaces[0].strip().replace("hostapd.", "")
+
+            bss_tm_req_cmd = f"bss_tm_req {mac}"
+            if btm_req.abridged:
+                bss_tm_req_cmd += " abridged=1"
+            if (
+                btm_req.bss_termination_included
+                and btm_req.bss_termination_duration
+            ):
+                bss_tm_req_cmd += (
+                    f" bss_term={btm_req.bss_termination_duration.duration}"
+                )
+            if btm_req.disassociation_imminent:
+                bss_tm_req_cmd += " disassoc_imminent=1"
+            if btm_req.disassociation_timer is not None:
+                bss_tm_req_cmd += (
+                    f" disassoc_timer={btm_req.disassociation_timer}"
+                )
+            if btm_req.preferred_candidate_list_included:
+                bss_tm_req_cmd += " pref=1"
+            if btm_req.session_information_url:
+                bss_tm_req_cmd += f" url={btm_req.session_information_url}"
+            if btm_req.validity_interval:
+                bss_tm_req_cmd += f" valid_int={btm_req.validity_interval}"
+            if btm_req.candidate_list is not None:
+                for neighbor in btm_req.candidate_list:
+                    bssid = neighbor.bssid
+                    bssid_info = hex(neighbor.bssid_information)
+                    op_class = neighbor.operating_class
+                    chan_num = neighbor.channel_number
+                    phy_type = int(neighbor.phy_type)
+                    bss_tm_req_cmd += f" neighbor={bssid},{bssid_info},{op_class},{chan_num},{phy_type}"
+
+            cmd = f"hostapd_cli -i {iface} {bss_tm_req_cmd}"
+            self.ssh.run(cmd)
+        except Exception as e:
+            raise RuntimeError(f"Failed to send BTM request on OpenWrt: {e}")
 
     # TODO(https://fxbug.dev/487804746): Use async functions in this file.
     def verify_wifi_status(
