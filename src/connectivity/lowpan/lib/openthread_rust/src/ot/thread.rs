@@ -151,14 +151,21 @@ pub trait Thread {
         }
     }
 
-    /// Functional equivalent of [`otsys::otThreadSetVendorName`](crate::otsys::otThreadSetVendorName).
+    /// Functional equivalent of
+    /// [`otsys::otThreadSetVendorName`](crate::otsys::otThreadSetVendorName).
     fn set_vendor_name(&self, name: &str) -> Result;
 
-    /// Functional equivalent of [`otsys::otThreadSetVendorModel`](crate::otsys::otThreadSetVendorModel).
+    /// Functional equivalent of
+    /// [`otsys::otThreadSetVendorModel`](crate::otsys::otThreadSetVendorModel).
     fn set_vendor_model(&self, model: &str) -> Result;
 
-    /// Functional equivalent of [`otsys::otThreadSetVendorSwVersion`](crate::otsys::otThreadSetVendorSwVersion).
+    /// Functional equivalent of
+    /// [`otsys::otThreadSetVendorSwVersion`](crate::otsys::otThreadSetVendorSwVersion).
     fn set_vendor_sw_version(&self, version: &str) -> Result;
+
+    /// Functional equivalent of
+    /// [`otsys::otThreadGetMleCounters`](crate::otsys::otThreadGetMleCounters).
+    fn get_mle_counters(&self) -> &MleCounters;
 }
 
 impl<T: Thread + Boxable> Thread for ot::Box<T> {
@@ -279,6 +286,10 @@ impl<T: Thread + Boxable> Thread for ot::Box<T> {
 
     fn set_vendor_sw_version(&self, version: &str) -> Result {
         self.as_ref().set_vendor_sw_version(version)
+    }
+
+    fn get_mle_counters(&self) -> &MleCounters {
+        self.as_ref().get_mle_counters()
     }
 }
 
@@ -470,5 +481,9 @@ impl Thread for Instance {
             )
         })
         .into_result()
+    }
+
+    fn get_mle_counters(&self) -> &MleCounters {
+        unsafe { MleCounters::ref_from_ot_ptr(otThreadGetMleCounters(self.as_ot_ptr())) }.unwrap()
     }
 }

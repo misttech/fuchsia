@@ -644,6 +644,7 @@ where
 
         ret.update_from(driver_state.ot_instance.link_get_counters());
         ret.update_from(driver_state.ot_instance.get_ip6_counters());
+        ret.update_from(driver_state.ot_instance.get_mle_counters());
 
         if let Ok(coex_metrics) = driver_state.ot_instance.get_coex_metrics() {
             ret.update_from(&coex_metrics);

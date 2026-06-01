@@ -557,6 +557,30 @@ impl FromExt<&ot::message::BufferInfo> for fidl_fuchsia_lowpan_experimental::Buf
     }
 }
 
+impl AllCountersUpdate<ot::MleCounters> for AllCounters {
+    fn update_from(&mut self, data: &ot::MleCounters) {
+        self.mle = Some(MleCounters {
+            disabled_role: Some(data.disabled_role()),
+            detached_role: Some(data.detached_role()),
+            child_role: Some(data.child_role()),
+            router_role: Some(data.router_role()),
+            leader_role: Some(data.leader_role()),
+            attach_attempts: Some(data.attach_attempts()),
+            partition_id_changes: Some(data.partition_id_changes()),
+            better_partition_attach_attempts: Some(data.better_partition_attach_attempts()),
+            better_parent_attach_attempts: Some(data.better_parent_attach_attempts()),
+            disabled_time: Some(data.disabled_time()),
+            detached_time: Some(data.detached_time()),
+            child_time: Some(data.child_time()),
+            router_time: Some(data.router_time()),
+            leader_time: Some(data.leader_time()),
+            tracked_time: Some(data.tracked_time()),
+            parent_changes: Some(data.parent_changes()),
+            ..Default::default()
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

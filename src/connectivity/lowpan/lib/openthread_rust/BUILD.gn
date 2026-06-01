@@ -90,6 +90,7 @@ rustc_library("openthread") {
     "src/ot/types/lowpan_context_info.rs",
     "src/ot/types/mac_counters.rs",
     "src/ot/types/message_queue_info.rs",
+    "src/ot/types/mle_counters.rs",
     "src/ot/types/mod.rs",
     "src/ot/types/multi_radio_neighbor_info.rs",
     "src/ot/types/nat64.rs",
