@@ -132,6 +132,7 @@ gpt = "3.0.0"
 half = "2.7.1"
 handlebars = "4.3.5"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
+heapless = { version = "0.9.3", default-features = false }
 heck = { package = "heck", version = "0.5" }
 heck-0_3 = { package = "heck", version = "0.3.1" }
 hex = { version = "0.4.3", features = ["serde"] }
@@ -654,6 +655,9 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.handlebars."4.3.5"]
 # pest relies on this being set to find the grammar file
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
+
+[gn.package.heapless."0.9.3"]
+# Has build script but no config needed.
 
 [gn.package.heck."0.3.1"]
 group_name = "heck-0_3"

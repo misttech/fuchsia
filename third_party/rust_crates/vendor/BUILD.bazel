@@ -1219,6 +1219,18 @@ alias(
 )
 
 alias(
+    name = "heapless-0.9.3",
+    actual = "//third_party/rust_crates/vendor/heapless-0.9.3:heapless",
+    tags = ["manual"],
+)
+
+alias(
+    name = "heapless",
+    actual = "//third_party/rust_crates/vendor/heapless-0.9.3:heapless",
+    tags = ["manual"],
+)
+
+alias(
     name = "heck-0.3.1",
     actual = "//third_party/rust_crates/vendor/heck-0.3.1:heck",
     tags = ["manual"],

@@ -849,6 +849,14 @@ group("hashbrown-0.17.1") {
   public_deps = [ ":hashbrown-v0_17_1" ]
 }
 
+group("heapless") {
+  public_deps = [ ":heapless-v0_9_3" ]
+}
+
+group("heapless-0.9.3") {
+  public_deps = [ ":heapless-v0_9_3" ]
+}
+
 group("heck-0_3") {
   public_deps = [ ":heck-v0_3_1" ]
 }
@@ -9722,6 +9730,39 @@ rustc_library("handlebars-v4_3_5") {
   applicable_licenses = [ ":handlebars-v4_3_5.license" ]
 }
 
+license("hash32-v0_3_1.license") {
+  public_package_name = "hash32"
+  license_files = [
+    "//third_party/rust_crates/vendor/hash32-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hash32-0.3.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hash32-v0_3_1") {
+  crate_name = "hash32"
+  source_root = "//third_party/rust_crates/vendor/hash32-0.3.1/src/lib.rs"
+  output_name = "hash32-c794e193167b001f"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":byteorder-v1_5_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=c794e193167b001f",
+    "-Cextra-filename=-c794e193167b001f",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hash32-v0_3_1.license" ]
+}
+
 license("hashbrown-v0_12_3.license") {
   public_package_name = "hashbrown"
   license_files = [
@@ -9825,6 +9866,43 @@ rustc_library("hashbrown-v0_17_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":hashbrown-v0_17_1.license" ]
+}
+
+license("heapless-v0_9_3.license") {
+  public_package_name = "heapless"
+  license_files = [
+    "//third_party/rust_crates/vendor/heapless-0.9.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/heapless-0.9.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("heapless-v0_9_3") {
+  crate_name = "heapless"
+  source_root = "//third_party/rust_crates/vendor/heapless-0.9.3/src/lib.rs"
+  output_name = "heapless-3034a000e0df031d"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":hash32-v0_3_1" ]
+  if (false || (current_cpu == "riscv32" || current_cpu == "arm") ||
+      (current_cpu == "x64" || current_cpu == "arm64")) {
+    deps += [ ":stable_deref_trait-v1_2_1" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3034a000e0df031d",
+    "-Cextra-filename=-3034a000e0df031d",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":heapless-v0_9_3.license" ]
 }
 
 license("heck-v0_3_1.license") {
@@ -19888,6 +19966,39 @@ rustc_library("splines-v5_0_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":splines-v5_0_0.license" ]
+}
+
+license("stable_deref_trait-v1_2_1.license") {
+  public_package_name = "stable_deref_trait"
+  license_files = [
+    "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("stable_deref_trait-v1_2_1") {
+  crate_name = "stable_deref_trait"
+  source_root =
+      "//third_party/rust_crates/vendor/stable_deref_trait-1.2.1/src/lib.rs"
+  output_name = "stable_deref_trait-390259eba24a080d"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=390259eba24a080d",
+    "-Cextra-filename=-390259eba24a080d",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":stable_deref_trait-v1_2_1.license" ]
 }
 
 license("static_assertions-v1_1_0.license") {

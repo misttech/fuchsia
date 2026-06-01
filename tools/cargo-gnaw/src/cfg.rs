@@ -147,6 +147,10 @@ pub fn cfg_to_gn_conditional(cfg: &str) -> Result<String> {
     } else if cfg == "windows" || cfg == "target_family = \"windows\"" {
         // don't support host builds on windows right now
         Ok(String::from("false"))
+    } else if cfg == "target_pointer_width = \"64\"" {
+        Ok(String::from("(current_cpu == \"x64\" || current_cpu == \"arm64\")"))
+    } else if cfg == "target_pointer_width = \"32\"" {
+        Ok(String::from("(current_cpu == \"riscv32\" || current_cpu == \"arm\")"))
 
     // Everything below is random cfgs that we don't know anything about
     } else if cfg.starts_with("target_os") {
