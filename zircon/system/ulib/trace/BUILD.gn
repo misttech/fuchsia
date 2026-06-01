@@ -20,10 +20,12 @@ template("trace_library") {
     ]
 
     # Header dependencies, not including the trace engine.
-    # <trace/internal/event_internal.h> has #include <trace-engine/instrumentation.h>.
+    # <trace/internal/event_internal.h> has #include
+    # <trace-engine/instrumentation.h>.
     public_deps += [
-      # <trace/observer.h> has #include <trace-engine/instrumentation.h> (already
-      # covered, <lib/async/cpp/wait.h>, <fit/function.h>, and <lib/zx/event.h>.
+      # <trace/observer.h> has #include <trace-engine/instrumentation.h>
+      # (already covered, <lib/async/cpp/wait.h>, <fit/function.h>, and
+      # <lib/zx/event.h>.
       ":trace-headersonly",
       "//sdk/lib/async:async-cpp",
       "//sdk/lib/fit",
@@ -96,8 +98,10 @@ trace_library("trace") {
   public_deps = [ "//zircon/system/ulib/trace-engine" ]
 }
 
-# A stripped down version of trace engine indented to be statically linked into magma. See the
-# comment on //zircon/system/ulib/trace-provider:trace-provider-with-static-engine for details.
+# A stripped down version of trace engine indented to be statically linked into
+# magma. See the comment on
+# //zircon/system/ulib/trace-provider:trace-provider-with-static-engine for
+# details.
 trace_library("trace-with-static-engine") {
   sdk = "static"
   public_deps = [ "//zircon/system/ulib/trace-engine:trace-engine-static" ]

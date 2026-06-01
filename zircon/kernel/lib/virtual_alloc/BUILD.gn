@@ -32,14 +32,15 @@ source_set("virtual_alloc") {
   ]
 
   if (is_host) {
-    # Building for the host implies we are running tests and so we want to force the assert level
-    # high to ensure any internal debug checks are enabled.
+    # Building for the host implies we are running tests and so we want to force
+    # the assert level high to ensure any internal debug checks are enabled.
     defines = [
       "ZX_ASSERT_LEVEL=2",
       "HOST_PAGE_SIZE_SHIFT=$virtual_alloc_host_size_shift",
     ]
   } else if (is_kernel) {
-    # Crypto headers are needed as a transitive dependency on being able to include vm_aspace.h
+    # Crypto headers are needed as a transitive dependency on being able to
+    # include vm_aspace.h
     public_deps += [ "//zircon/kernel/lib/crypto:headers" ]
   }
 }

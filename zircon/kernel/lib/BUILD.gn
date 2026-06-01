@@ -103,7 +103,8 @@ group("tests") {
   }
 }
 
-# This reaches unittest code for the kernel proper only, in the kernel toolchain.
+# This reaches unittest code for the kernel proper only, in the kernel
+# toolchain.
 group("kernel-tests") {
   testonly = true
   deps = []

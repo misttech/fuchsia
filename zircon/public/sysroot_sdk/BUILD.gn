@@ -221,9 +221,9 @@ sdk_atom("sysroot_sdk") {
   files = sdk_files
 }
 
-# This target is used to generate the platform sysroot files with Ninja, and write
-# a JSON file that describes how to copy them to an external platform sysroot. This
-# will be used to configure the Bazel fuchsia_platform toolchain.
+# This target is used to generate the platform sysroot files with Ninja, and
+# write a JSON file that describes how to copy them to an external platform
+# sysroot. This will be used to configure the Bazel fuchsia_platform toolchain.
 #
 # The output is a JSON array of objects, each one with the following schema:
 #

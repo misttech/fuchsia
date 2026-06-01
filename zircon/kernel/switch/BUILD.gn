@@ -154,9 +154,10 @@ config("headers") {
 kernel_defines = [ "SMP_MAX_CPUS=$smp_max_cpus" ]
 
 config("instrumented-stack-size") {
-  # Note: Using this extra variable to capture whether the stack size should
-  # be increased or not, is due to GN's limitation on treating unevaluated parts
-  # of an expression as unused (e.g. a || b, would flag `b` as unused if `a` is true).
+  # Note: Using this extra variable to capture whether the stack size should be
+  # increased or not, is due to GN's limitation on treating unevaluated parts of
+  # an expression as unused (e.g. a || b, would flag `b` as unused if `a` is
+  # true).
   increase_stack_size = false
 
   # Lockdep enabled.
@@ -325,9 +326,10 @@ config("persistent_ram_config") {
   defines = [ "PERSISTENT_RAM_ALLOCATION_GRANULARITY=$persistent_ram_allocation_granularity" ]
 }
 
-# In architectures where it is necessary, determined the number of boot pages to be preallocated
-# from BSS to map the kernel in the higher address space for enabling the MMU when booting.
-# See `start.S` of the relevant architectures for more information.
+# In architectures where it is necessary, determined the number of boot pages to
+# be preallocated from BSS to map the kernel in the higher address space for
+# enabling the MMU when booting. See `start.S` of the relevant architectures for
+# more information.
 config("kernel_image_max_size") {
   if (target_cpu == "arm64" || target_cpu == "riscv64") {
     if (toolchain_variant.tags + [ "coverage" ] - [ "coverage" ] !=

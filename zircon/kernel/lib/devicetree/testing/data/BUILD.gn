@@ -8,11 +8,12 @@ import("//build/components.gni")
 import("//build/devicetree/devicetree.gni")
 import("//build/testing/host_test_data.gni")
 
-# Real device produced device tree binary format files. These files are the blobs obtained from such devices.
-# Reconstructed 'dts' files live along the 'dtb' files but are not exported.
+# Real device produced device tree binary format files. These files are the
+# blobs obtained from such devices. Reconstructed 'dts' files live along the
+# 'dtb' files but are not exported.
 #
-# NOTE: Do NOT regenerate 'dtb' files from the dts file, this might change the structure of the blob obtained
-# from the device.
+# NOTE: Do NOT regenerate 'dtb' files from the dts file, this might change the
+# structure of the blob obtained from the device.
 dtb_real = [
   "banana-pi-f3.dtb",
   "crosvm-arm.dtb",
@@ -25,7 +26,8 @@ dtb_real = [
   "khadas-vim3.dtb",
 ]
 
-# Synthetic devicetree source files meant for testing, they are not required to reflect any real node.
+# Synthetic devicetree source files meant for testing, they are not required to
+# reflect any real node.
 dts_synthetic = [
   "synthetic/arm_gic2_no_msi.dts",
   "synthetic/arm_gic3_stride.dts",
@@ -100,7 +102,8 @@ foreach(dts_file, dts_synthetic) {
 
 dtb_all = dtb_real + dtb_synthetic
 
-# Check for no overlapping files, so we guarantee that they all fit in the same subdirectory.
+# Check for no overlapping files, so we guarantee that they all fit in the same
+# subdirectory.
 filenames = []
 foreach(dtb, dtb_all) {
   curr = [ get_path_info(dtb, "file") ]

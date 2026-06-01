@@ -44,7 +44,8 @@ if (is_fuchsia) {
       "//zircon/system/ulib/zxtest",
     ]
 
-    # This test needs to run as a 'boot' program, such that it is handed the SvcStash handle.
+    # This test needs to run as a 'boot' program, such that it is handed the
+    # SvcStash handle.
     userboot_entry_type = "boot"
     userboot_next_is_test = true
   }
@@ -60,7 +61,8 @@ if (is_fuchsia) {
       "//zircon/system/ulib/zxtest",
     ]
 
-    # This test needs to run as a 'boot' program, such that it is handed the SvcStash handle.
+    # This test needs to run as a 'boot' program, such that it is handed the
+    # SvcStash handle.
     userboot_entry_type = "boot"
     userboot_next_is_test = true
   }
@@ -76,7 +78,8 @@ if (is_fuchsia) {
       "//zircon/system/ulib/zxtest",
     ]
 
-    # This test needs to run as a 'boot' program, such that it is handed the SvcStash handle.
+    # This test needs to run as a 'boot' program, such that it is handed the
+    # SvcStash handle.
     userboot_entry_type = "boot"
     userboot_next_is_test = true
   }

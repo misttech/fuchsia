@@ -5,16 +5,16 @@
 import("//build/config/fuchsia/platform_version.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 
-# This target exist solely to ensure that the test file builds without error.
-# It is never actually linked into anything or included in the IDK.
-# To improve test coverage, the IDK builds it at both PLATFORM and supported
-# API levels with different expected results based on a preprocessor define.
-# It cannot be marked testonly for the reasons described in //sdk:fuchsia_idk_atoms.
+# This target exist solely to ensure that the test file builds without error. It
+# is never actually linked into anything or included in the IDK. To improve test
+# coverage, the IDK builds it at both PLATFORM and supported API levels with
+# different expected results based on a preprocessor define. It cannot be marked
+# testonly for the reasons described in //sdk:fuchsia_idk_atoms.
 static_library("availability_test") {
   visibility = [ "//sdk/*" ]
 
-  # `current_build_target_api_level` may be a string or integer. The following only
-  # applies to integers.
+  # `current_build_target_api_level` may be a string or integer. The following
+  # only applies to integers.
   if (current_build_target_api_level != "$current_build_target_api_level") {
     # Define values used by the test.
 

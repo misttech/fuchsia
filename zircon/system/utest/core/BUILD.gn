@@ -59,8 +59,8 @@ core_tests = [
   "version",
 ]
 
-# Requires use_next_vdso in the manifest. Build as a package and unified bootfs test, but not a
-# standalone bootfs test.
+# Requires use_next_vdso in the manifest. Build as a package and unified bootfs
+# test, but not a standalone bootfs test.
 # TODO(https://fxbug.dev/42170954): Remove this once standalone bootfs tests can access the next vDSO.
 requires_next_vdso = [
   "pager-writeback",
@@ -102,11 +102,12 @@ bootfs_only = [
   # x86_64 fail when run as a component due to DR6 containing unexpected values.
   "threads",
 
-  # The pager tests rely on being able to check for test threads blocking on user pagers created
-  # by the test. They do this by verifying that the thread state is ZX_THREAD_STATE_BLOCKED_PAGER
-  # which only captures that the thread is blocked against *some* user pager, not any specific one.
-  # So they cannot run in an environment where test threads can block on pagers created outside of
-  # the test, e.g. when the test is run as a component.
+  # The pager tests rely on being able to check for test threads blocking on
+  # user pagers created by the test. They do this by verifying that the thread
+  # state is ZX_THREAD_STATE_BLOCKED_PAGER which only captures that the thread
+  # is blocked against *some* user pager, not any specific one. So they cannot
+  # run in an environment where test threads can block on pagers created outside
+  # of the test, e.g. when the test is run as a component.
   #
   # TODO(https://fxbug.dev/42170954): pager-writeback should be moved here too once standalone bootfs tests
   # can access the next vDSO.

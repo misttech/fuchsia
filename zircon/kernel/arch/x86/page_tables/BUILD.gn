@@ -19,7 +19,8 @@ library_headers("headers") {
     # <arch/x86/page_tables/page_tables.h> has #include <hwreg/bitfields.h>.
     "//zircon/system/ulib/hwreg:headers",
 
-    # <arch/x86/page_tables/constants.h> has #include <page_tables/x86/constants.h>.
+    # <arch/x86/page_tables/constants.h> has #include
+    # <page_tables/x86/constants.h>.
     "//zircon/system/ulib/page_tables:headers",
   ]
 }

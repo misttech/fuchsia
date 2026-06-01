@@ -9,7 +9,8 @@ import("//build/cpp/library_headers.gni")
 library_headers("headers") {
   headers = [ "lib/cmpctmalloc.h" ]
   public_deps = [
-    # <lib/cmpctmalloc.h> has `#include <lib/zircon-internal/thread_annotations.h>`.
+    # <lib/cmpctmalloc.h> has `#include
+    # <lib/zircon-internal/thread_annotations.h>`.
     "//zircon/system/ulib/zircon-internal",
 
     # <lib/cmpctmalloc.h> has `#include <fbl/enum_bits.h>'.

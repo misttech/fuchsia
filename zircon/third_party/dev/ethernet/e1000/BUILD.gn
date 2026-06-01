@@ -55,8 +55,8 @@ source_set("e1000_osdep") {
   ]
 }
 
-# Generate two source sets, one for the driver and one for tests. The tests need a define to mock
-# certain behavior.
+# Generate two source sets, one for the driver and one for tests. The tests need
+# a define to mock certain behavior.
 e1000_variants = [
   {
     variant_name = "e1000_core"

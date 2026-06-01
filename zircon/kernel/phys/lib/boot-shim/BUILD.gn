@@ -43,8 +43,9 @@ library_headers("headers") {
     # <lib/boot-shim/efi.h> #include <efi/system-table.h>
     "//zircon/kernel/lib/efi",
 
-    # <lib/boot-shim/devicetree-boot-shim> has #include <lib/devictree/matcher.h>
-    # <lib/boot-shim/devicetree-boot-shim> has #include <lib/devicetree/devicetree.h>
+    # <lib/boot-shim/devicetree-boot-shim> has #include
+    # <lib/devictree/matcher.h> <lib/boot-shim/devicetree-boot-shim> has
+    # #include <lib/devicetree/devicetree.h>
     "//zircon/kernel/lib/devicetree",
 
     # <lib/boot-shim/devicetree-boot-shim> has #include <fbl/macros.h>

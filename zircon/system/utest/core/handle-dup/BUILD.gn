@@ -11,8 +11,8 @@ source_set("handle-dup") {
     "//zircon/system/ulib/zxtest",
   ]
 
-  # Need to disable null checks as we are going to pass nullptrs to functions that say they don't
-  # take nullptrs
+  # Need to disable null checks as we are going to pass nullptrs to functions
+  # that say they don't take nullptrs
   public_configs = [ ":no_nonnull" ]
 }
 

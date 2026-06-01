@@ -27,8 +27,8 @@ import("phys_zbi_test.gni")
 import("physload_binary_test.gni")
 import("turducken_zbi_test.gni")
 
-# Used for turducken_cuckoo_test(), instructing tuducken tests, when the tests finishes successfully
-# it should boot the next kernel item in the boot zbi.
+# Used for turducken_cuckoo_test(), instructing tuducken tests, when the tests
+# finishes successfully it should boot the next kernel item in the boot zbi.
 kernel_cmdline("turducken-boot-next") {
   testonly = true
   args = [ "turducken.boot-next=true" ]
@@ -61,8 +61,8 @@ source_set("qemu-test-main") {
   ]
 }
 
-# This provides an environment that is bootstrapped from an input devicetree. Appropriate for
-# environments where devicetree is the boot protocol.
+# This provides an environment that is bootstrapped from an input devicetree.
+# Appropriate for environments where devicetree is the boot protocol.
 source_set("devicetree-test-main") {
   testonly = true
   sources = [ "devicetree-test-main.cc" ]
@@ -330,9 +330,8 @@ phys_zbi_test("zbi-decompress-test") {
   data_deps = [ ":decompress-test-data" ]
 }
 
-# Test BootZbi::Load.
-# We need a valid bootable ZBI to be handed off to the test. The contents of the ZBI are otherwise
-# unimportant.
+# Test BootZbi::Load. We need a valid bootable ZBI to be handed off to the test.
+# The contents of the ZBI are otherwise unimportant.
 zbi_executable("boot-zbi-load-test") {
   testonly = true
   sources = [ "boot-zbi-load-test.cc" ]

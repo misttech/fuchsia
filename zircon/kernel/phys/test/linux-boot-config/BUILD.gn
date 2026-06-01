@@ -12,25 +12,26 @@ import("//zircon/kernel/phys/boot-shim/devicetree.gni")
 import("//zircon/kernel/phys/devicetree_boot_test.gni")
 import("//zircon/kernel/phys/zbi_executable.gni")
 
-# Regfers to `testdata/$boot_config_filenames.txt` such that a test is generated for
-# each entry.
+# Regfers to `testdata/$boot_config_filenames.txt` such that a test is generated
+# for each entry.
 boot_config_filenames = [
   "empty",
   "valid",
 ]
 
-# Generates an `initrd` with a `BOOTCONFIG` payload appended. The generated artifact
-# generates the proper trailer. It is OK to attach a BOOTCONFIG payload to an artifact
-# that already contains one. Existing trailer is stripped, new payload is appended and
-# a new trailer is added. Note that padding bytes may be appended to the payload to meet
-# the alignment requirements.
+# Generates an `initrd` with a `BOOTCONFIG` payload appended. The generated
+# artifact generates the proper trailer. It is OK to attach a BOOTCONFIG payload
+# to an artifact that already contains one. Existing trailer is stripped, new
+# payload is appended and a new trailer is added. Note that padding bytes may be
+# appended to the payload to meet the alignment requirements.
 #
-# This target is compatible with 'assembled_system`'s' `kernel_aib_input` protocol, BUT
-# since the tail contains a special payload it must be treated as a ramdisk, that is,
-# assembly WILL NOT append ZBI items or anything to this artifact.
+# This target is compatible with 'assembled_system`'s' `kernel_aib_input`
+# protocol, BUT since the tail contains a special payload it must be treated as
+# a ramdisk, that is, assembly WILL NOT append ZBI items or anything to this
+# artifact.
 #
-# This template will produce two additional subtargets (testonly=true), for the purpose
-# of validation.
+# This template will produce two additional subtargets (testonly=true), for the
+# purpose of validation.
 #
 # Subtargets:
 #  * $target_name.cpp: header only `source_set` providing an inline `std::string_view` constant
@@ -103,9 +104,9 @@ template("boot_config") {
     include_dirs = [ files.output_header_dir ]
   }
 
-  # Library that just exposes a header file containing `kExpectecBootConfigContents"
-  # such that tests can verify that things are extracted correctly.
-  # Can be included through <boot-config-contents.h>
+  # Library that just exposes a header file containing
+  # `kExpectecBootConfigContents" such that tests can verify that things are
+  # extracted correctly. Can be included through <boot-config-contents.h>
   source_set(labels.boot_config_cpp) {
     forward_variables_from(invoker, [ "visibility" ])
     testonly = true

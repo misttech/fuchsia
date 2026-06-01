@@ -18,8 +18,8 @@ supported_paging_configurations_by_cpu = {
 }
 
 if (is_host) {
-  # In the host toolchain, of interest only to testing (where no MMUs are harmed),
-  # we limit the supported configurations to the x86 4-level paging.
+  # In the host toolchain, of interest only to testing (where no MMUs are
+  # harmed), we limit the supported configurations to the x86 4-level paging.
   supported_paging_configurations = [ "4level" ]
 } else {
   supported_paging_configurations =

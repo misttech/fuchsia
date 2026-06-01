@@ -72,7 +72,8 @@ if (current_toolchain == default_toolchain) {
     cflags = [ "-Wno-builtin-macro-redefined" ]
 
     if (is_win) {
-      # Don't set MSVC predefines which are set by the compiler when Windows target triples are used.
+      # Don't set MSVC predefines which are set by the compiler when Windows
+      # target triples are used.
       cflags += [
         "-U_MSC_VER",
         "-U_MSC_FULL_VER",

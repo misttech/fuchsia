@@ -32,8 +32,9 @@ library_headers("headers") {
     # <lib/userabi/vdso.h> has #include <lib/fasttime/internal/abi.h>.
     "//zircon/kernel/lib/fasttime:headers",
 
-    # <lib/userabi.vdso.h> has #include <lib/instrumentation/kernel-mapped-vmo.h>, and
-    # <lib/userabi/userboot.h> has #include <lib/instrumentation/vmo.h>.
+    # <lib/userabi.vdso.h> has #include
+    # <lib/instrumentation/kernel-mapped-vmo.h>, and <lib/userabi/userboot.h>
+    # has #include <lib/instrumentation/vmo.h>.
     "//zircon/kernel/lib/instrumentation:headers",
 
     # <lib/userabi/userboot.h> has #include <phys/handoff.h>

@@ -35,7 +35,8 @@ cc_test_executable("arm_smmu_tests_binary") {
     "//zircon/system/ulib/zxtest",
   ]
 
-  # This causes our local mock headers to be found before the actual kernel headers.
+  # This causes our local mock headers to be found before the actual kernel
+  # headers.
   include_dirs = [
     "mocks/include",  # mocks first
     "//zircon/kernel/dev/iommu/arm_smmu/include",  # arm_smmu headers next

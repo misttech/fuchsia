@@ -17,7 +17,8 @@ declare_args() {
   # Enable kernel lock dependency tracking.
   enable_lock_dep = false
 
-  # Enable kernel lock dependency metadata only (ignored if enable_lock_dep is true).
+  # Enable kernel lock dependency metadata only (ignored if enable_lock_dep is
+  # true).
   enable_lock_dep_metadata_only = false
 
   # Enable lock names in durations emitted by the kernel:contention category.
@@ -113,13 +114,16 @@ declare_args() {
   # in development and not yet ready for use in production.
   enable_rust_in_zircon = false
 
-  # Include a mechanism for the kernel to sample threads and write the results to a buffer
+  # Include a mechanism for the kernel to sample threads and write the results
+  # to a buffer
   experimental_thread_sampler_enabled = false
 
-  # Add in-kernel support for querying a per-VMO populated bytes high-water mark.
+  # Add in-kernel support for querying a per-VMO populated bytes high-water
+  # mark.
   experimental_continuous_per_vmo_attribution_enabled = false
 
-  # Propagate bandwidth and enable run queue promotion for threads making channel calls.
+  # Propagate bandwidth and enable run queue promotion for threads making
+  # channel calls.
   experimental_channel_call_propagation_enabled = true
 
   # Force new scheduler wakeup accounting to be enabled, ignoring the boot

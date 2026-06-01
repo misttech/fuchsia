@@ -43,8 +43,8 @@ if (is_phys_toolchain) {
   }
 }
 
-# In order for the assembly and product bundle to be generated, this must be instantiated
-# in the default_toolchain.
+# In order for the assembly and product bundle to be generated, this must be
+# instantiated in the default_toolchain.
 zbi_test("uart-input-test-zbi") {
   # TODO(https://fxbug.dev/42066527): This ZBI is not actually a ZBI test, but relies
   # on the specification just for the `images` metadata implicitly set by

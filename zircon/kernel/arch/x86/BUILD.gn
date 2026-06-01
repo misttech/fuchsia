@@ -134,7 +134,8 @@ config("retpoline") {
   defines = [ "KERNEL_RETPOLINE=1" ]
 }
 
-# Mitigate errata in Intel Skylake family of CPUs that cause control transfer instructions to
+# Mitigate errata in Intel Skylake family of CPUs that cause control transfer
+# instructions to
 # execute incorrectly when they end at or cross 32-byte boundaries. (https://fxbug.dev/42120593)
 config("skylake_jcc") {
   visibility = [ ":*" ]
@@ -164,7 +165,8 @@ config("kernel") {
     # <hwreg/mmio.h> has #include <lib//mmio-ptr/mmio-ptr.h>.
     "//zircon/system/ulib/mmio-ptr/include",
 
-    # <arch/x86/page_tables/page_tables.h> has #include <page_tables/x86/constants.h>.
+    # <arch/x86/page_tables/page_tables.h> has #include
+    # <page_tables/x86/constants.h>.
     "//zircon/system/ulib/page_tables/include",
 
     # <arch/x86/idle_states.h> has #include <ktl/atomic.h>.

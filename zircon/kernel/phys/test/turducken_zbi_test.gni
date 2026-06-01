@@ -124,8 +124,8 @@ template("mobius_turducken_test") {
   }
 }
 
-# Creates a cuckoo zbi from a turducken test. That is a zbi that will boot into |next_zbi|
-# after the tuducken based zbi |boot_zbi| is done.
+# Creates a cuckoo zbi from a turducken test. That is a zbi that will boot into
+# |next_zbi| after the tuducken based zbi |boot_zbi| is done.
 #
 # Parameters
 #

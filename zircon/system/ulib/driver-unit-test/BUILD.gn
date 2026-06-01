@@ -15,7 +15,8 @@ zx_library("driver-unit-test") {
     "utils.cc",
   ]
   public_deps = [
-    # <lib/driver-unit-test/logger.h> has #include <fidl/fuchsia.driver.test.logger/cpp/fidl.h>
+    # <lib/driver-unit-test/logger.h> has #include
+    # <fidl/fuchsia.driver.test.logger/cpp/fidl.h>
     "//sdk/fidl/fuchsia.driver.test.logger:fuchsia.driver.test.logger_cpp",
   ]
   deps = [
