@@ -68,176 +68,176 @@
             ]
         },
         {
-            "name": "BpfMapCreateTestSuite/BpfMapCreateTest.Create/0",
+            "name": "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:bpf_map_create_t:s0 tcontext=test_u:test_r:bpf_map_create_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:bpf_map_create_t:s0 tcontext=test_u:test_r:bpf_map_create_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "BpfMapCreateTestSuite/BpfMapCreateTest.Create/1",
+            "name": "BpfMapCreateTestSuite/BpfMapCreateTest.Create/none",
             "audit_expectations": [
                 "avc:  denied  { map_create } scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=test_u:test_r:bpf_map_none_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/0",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_NONE",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/1",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_RO",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/10",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_WO",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/11",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_RW",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/2",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_WO",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/3",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_RW",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/4",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_NONE",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/5",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_RO",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/6",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_WO",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/7",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_RW",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/8",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_NONE",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/9",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_RO",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/0",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RO",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=968 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/10",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_WO",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/11",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_RW",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/2",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RW",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=982 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/4",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_WO",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=996 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/5",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_RW",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1003 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/6",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_read_RO",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_pin_no_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/8",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_read_RW",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_pin_no_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/0",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_read_RO",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=1094 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/12",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_RO",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/13",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_WO",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/14",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_RW",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/2",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_read_RW",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=1108 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/4",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_write_WO",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1122 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/5",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_write_RW",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1129 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]

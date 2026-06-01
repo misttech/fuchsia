@@ -5,6 +5,7 @@
 #include "third_party/android/platform/bionic/libc/kernel/uapi/linux/bpf.h"
 
 #include <fcntl.h>
+#include <stdlib.h>
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <syscall.h>
@@ -22,6 +23,42 @@ namespace {
 constexpr char kContextLackingLockPermission[] = "test_u:test_r:bpf_map_read_write_t:s0";
 
 int bpf(int cmd, union bpf_attr* attr) { return (int)syscall(__NR_bpf, cmd, attr, sizeof(*attr)); }
+
+std::string MakeLabel(const std::string& short_domain) {
+  return "test_u:test_r:bpf_map_" + short_domain + "_t:s0";
+}
+
+std::string ProtToString(int prot) {
+  switch (prot) {
+    case PROT_NONE:
+      return "NONE";
+    case PROT_READ:
+      return "RO";
+    case PROT_WRITE:
+      return "WO";
+    case PROT_READ | PROT_WRITE:
+      return "RW";
+    default:
+      abort();
+  }
+}
+
+std::string MakePinLabel(const std::string& short_domain) {
+  return "test_u:test_r:bpf_pin_" + short_domain + "_t:s0";
+}
+
+std::string BpfFlagsToString(uint32_t flags) {
+  switch (flags) {
+    case BPF_F_RDONLY:
+      return "RO";
+    case BPF_F_WRONLY:
+      return "WO";
+    case 0:
+      return "RW";
+    default:
+      abort();
+  }
+}
 
 int BpfGetMapId(const int fd) {
   struct bpf_map_info info = {};
@@ -86,29 +123,31 @@ fbl::unique_fd LoadProgram() {
 }
 
 struct BpfMapTestParam {
-  const char* label;
+  const char* short_domain;
   int map_flags;
   bool should_succeed;
 
-  BpfMapTestParam(const char* label, int map_flags, bool should_succeed)
-      : label(label), map_flags(map_flags), should_succeed(should_succeed) {}
+  BpfMapTestParam(const char* short_domain, int map_flags, bool should_succeed)
+      : short_domain(short_domain), map_flags(map_flags), should_succeed(should_succeed) {}
 };
 
 struct BpfMapCreateTestParam {
-  const char* label;
+  const char* short_domain;
   bool should_succeed;
 
-  BpfMapCreateTestParam(const char* label, bool should_succeed)
-      : label(label), should_succeed(should_succeed) {}
+  BpfMapCreateTestParam(const char* short_domain, bool should_succeed)
+      : short_domain(short_domain), should_succeed(should_succeed) {}
 };
 
 class BpfMapCreateTest : public ::testing::TestWithParam<BpfMapCreateTestParam> {};
 
 TEST_P(BpfMapCreateTest, Create) {
-  auto [label, should_succeed] = GetParam();
+  auto [short_domain, should_succeed] = GetParam();
   auto enforce = ScopedEnforcement::SetEnforcing();
 
-  ASSERT_TRUE(RunSubprocessAs(label, [&] {
+  std::string label = MakeLabel(short_domain);
+
+  ASSERT_TRUE(RunSubprocessAs(label.c_str(), [&] {
     fbl::unique_fd fd = CreateArrayMap();
     if (should_succeed) {
       EXPECT_THAT(fd.get(), SyscallSucceeds());
@@ -118,21 +157,25 @@ TEST_P(BpfMapCreateTest, Create) {
   }));
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    BpfMapCreateTestSuite, BpfMapCreateTest,
-    ::testing::Values(BpfMapCreateTestParam("test_u:test_r:bpf_map_create_t:s0", true),
-                      BpfMapCreateTestParam("test_u:test_r:bpf_map_none_t:s0", false)));
+INSTANTIATE_TEST_SUITE_P(BpfMapCreateTestSuite, BpfMapCreateTest,
+                         ::testing::Values(BpfMapCreateTestParam("create", true),
+                                           BpfMapCreateTestParam("none", false)),
+                         [](const ::testing::TestParamInfo<BpfMapCreateTestParam>& info) {
+                           return std::string(info.param.short_domain);
+                         });
 
 class BpfMapTest : public ::testing::TestWithParam<BpfMapTestParam> {};
 
 TEST_P(BpfMapTest, Map) {
-  auto [label, map_flags, should_succeed] = GetParam();
+  auto [short_domain, map_flags, should_succeed] = GetParam();
   auto enforce = ScopedEnforcement::SetEnforcing();
   // Create a mappable array map.
   fbl::unique_fd mappable_map_fd = CreateArrayMap();
   ASSERT_TRUE(mappable_map_fd.is_valid()) << strerror(errno);
 
-  ASSERT_TRUE(RunSubprocessAs(label, [&] {
+  std::string label = MakeLabel(short_domain);
+
+  ASSERT_TRUE(RunSubprocessAs(label.c_str(), [&] {
     intptr_t result = reinterpret_cast<intptr_t>(
         mmap(nullptr, getpagesize(), map_flags, MAP_SHARED, mappable_map_fd.get(), 0));
     if (should_succeed) {
@@ -143,35 +186,38 @@ TEST_P(BpfMapTest, Map) {
   }));
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    BpfMapTestSuite, BpfMapTest,
-    ::testing::Values(
-        BpfMapTestParam("test_u:test_r:bpf_map_none_t:s0", PROT_NONE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_none_t:s0", PROT_READ, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_none_t:s0", PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_none_t:s0", PROT_READ | PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_t:s0", PROT_NONE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_t:s0", PROT_READ, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_t:s0", PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_t:s0", PROT_READ | PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_write_t:s0", PROT_NONE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_write_t:s0", PROT_READ, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_write_t:s0", PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_write_t:s0", PROT_READ | PROT_WRITE, false),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_write_t:s0", PROT_NONE, true),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_write_t:s0", PROT_READ, true),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_write_t:s0", PROT_WRITE, true),
-        BpfMapTestParam("test_u:test_r:bpf_map_read_write_t:s0", PROT_READ | PROT_WRITE, true)));
+INSTANTIATE_TEST_SUITE_P(BpfMapTestSuite, BpfMapTest,
+                         ::testing::Values(BpfMapTestParam("none", PROT_NONE, false),
+                                           BpfMapTestParam("none", PROT_READ, false),
+                                           BpfMapTestParam("none", PROT_WRITE, false),
+                                           BpfMapTestParam("none", PROT_READ | PROT_WRITE, false),
+                                           BpfMapTestParam("read", PROT_NONE, false),
+                                           BpfMapTestParam("read", PROT_READ, false),
+                                           BpfMapTestParam("read", PROT_WRITE, false),
+                                           BpfMapTestParam("read", PROT_READ | PROT_WRITE, false),
+                                           BpfMapTestParam("write", PROT_NONE, false),
+                                           BpfMapTestParam("write", PROT_READ, false),
+                                           BpfMapTestParam("write", PROT_WRITE, false),
+                                           BpfMapTestParam("write", PROT_READ | PROT_WRITE, false),
+                                           BpfMapTestParam("read_write", PROT_NONE, true),
+                                           BpfMapTestParam("read_write", PROT_READ, true),
+                                           BpfMapTestParam("read_write", PROT_WRITE, true),
+                                           BpfMapTestParam("read_write", PROT_READ | PROT_WRITE,
+                                                           true)),
+                         [](const ::testing::TestParamInfo<BpfMapTestParam>& info) {
+                           return std::string(info.param.short_domain) + "_" +
+                                  ProtToString(info.param.map_flags);
+                         });
 
 struct BpfPinTestParam {
-  const char* label;
+  const char* short_domain;
   uint32_t flags;
   bool map_should_succeed;
   bool prog_should_succeed;
 
-  BpfPinTestParam(const char* label, uint32_t flags, bool map_should_succeed,
+  BpfPinTestParam(const char* short_domain, uint32_t flags, bool map_should_succeed,
                   bool prog_should_succeed)
-      : label(label),
+      : short_domain(short_domain),
         flags(flags),
         map_should_succeed(map_should_succeed),
         prog_should_succeed(prog_should_succeed) {}
@@ -181,7 +227,8 @@ const char PIN_PATH[] = "/sys/fs/bpf/foo";
 class BpfPinTest : public ::testing::TestWithParam<BpfPinTestParam> {};
 
 TEST_P(BpfPinTest, PinnedMap) {
-  auto [label, flags, map_should_succeed, prog_should_succeed] = GetParam();
+  auto [short_domain, flags, map_should_succeed, prog_should_succeed] = GetParam();
+  std::string label = MakePinLabel(short_domain);
 
   {
     auto enforce = ScopedEnforcement::SetEnforcing();
@@ -196,7 +243,7 @@ TEST_P(BpfPinTest, PinnedMap) {
     };
     EXPECT_THAT(bpf(BPF_OBJ_PIN, &attr), SyscallSucceeds());
 
-    EXPECT_TRUE(RunSubprocessAs(label, [&] {
+    EXPECT_TRUE(RunSubprocessAs(label.c_str(), [&] {
       bpf_attr attr = {
           .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
           .file_flags = flags,
@@ -217,7 +264,8 @@ TEST_P(BpfPinTest, PinnedMap) {
 }
 
 TEST_P(BpfPinTest, PinnedProg) {
-  auto [label, flags, map_should_succeed, prog_should_succeed] = GetParam();
+  auto [short_domain, flags, map_should_succeed, prog_should_succeed] = GetParam();
+  std::string label = MakePinLabel(short_domain);
 
   {
     auto enforce = ScopedEnforcement::SetEnforcing();
@@ -232,7 +280,7 @@ TEST_P(BpfPinTest, PinnedProg) {
     };
     EXPECT_THAT(bpf(BPF_OBJ_PIN, &attr), SyscallSucceeds());
 
-    EXPECT_TRUE(RunSubprocessAs(label, [&] {
+    EXPECT_TRUE(RunSubprocessAs(label.c_str(), [&] {
       bpf_attr attr = {
           .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
           .file_flags = flags,
@@ -258,25 +306,27 @@ TEST_P(BpfPinTest, PinnedProg) {
 // needed unless the access is readonly or writeonly.
 INSTANTIATE_TEST_SUITE_P(
     BpfPinTestSuite, BpfPinTest,
-    ::testing::Values(
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_read_t:s0", BPF_F_RDONLY, false, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_read_t:s0", BPF_F_WRONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_read_t:s0", 0, false, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_write_t:s0", BPF_F_RDONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_write_t:s0", BPF_F_WRONLY, false, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_write_t:s0", 0, false, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_read_t:s0", BPF_F_RDONLY, false, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_read_t:s0", BPF_F_WRONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_read_t:s0", 0, false, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_write_t:s0", BPF_F_RDONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_write_t:s0", BPF_F_WRONLY, false, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_map_write_t:s0", 0, false, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_prog_run_t:s0", BPF_F_RDONLY, true, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_prog_run_t:s0", BPF_F_WRONLY, true, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_no_prog_run_t:s0", 0, true, false),
-        BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", BPF_F_RDONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", BPF_F_WRONLY, true, true),
-        BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", 0, true, true)));
+    ::testing::Values(BpfPinTestParam("no_read", BPF_F_RDONLY, false, false),
+                      BpfPinTestParam("no_read", BPF_F_WRONLY, true, true),
+                      BpfPinTestParam("no_read", 0, false, false),
+                      BpfPinTestParam("no_write", BPF_F_RDONLY, true, true),
+                      BpfPinTestParam("no_write", BPF_F_WRONLY, false, false),
+                      BpfPinTestParam("no_write", 0, false, false),
+                      BpfPinTestParam("no_map_read", BPF_F_RDONLY, false, true),
+                      BpfPinTestParam("no_map_read", BPF_F_WRONLY, true, true),
+                      BpfPinTestParam("no_map_read", 0, false, true),
+                      BpfPinTestParam("no_map_write", BPF_F_RDONLY, true, true),
+                      BpfPinTestParam("no_map_write", BPF_F_WRONLY, false, true),
+                      BpfPinTestParam("no_map_write", 0, false, true),
+                      BpfPinTestParam("no_prog_run", BPF_F_RDONLY, true, false),
+                      BpfPinTestParam("no_prog_run", BPF_F_WRONLY, true, false),
+                      BpfPinTestParam("no_prog_run", 0, true, false),
+                      BpfPinTestParam("all_rights", BPF_F_RDONLY, true, true),
+                      BpfPinTestParam("all_rights", BPF_F_WRONLY, true, true),
+                      BpfPinTestParam("all_rights", 0, true, true)),
+    [](const ::testing::TestParamInfo<BpfPinTestParam>& info) {
+      return std::string(info.param.short_domain) + "_" + BpfFlagsToString(info.param.flags);
+    });
 
 struct BpfFcntlLockTestParam {
   int cmd;

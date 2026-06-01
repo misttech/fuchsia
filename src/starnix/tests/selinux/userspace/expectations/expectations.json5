@@ -70,10 +70,6 @@
                 "IoUringTest.IoUringSqpollAllowed",
                 "IoUringTest.IoUringSqpollDenied",
 
-                // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
-                // demonstrated in this test.
-                "BpfMapCreateTestSuite/BpfMapCreateTest.Create/0",
-
                 // TODO: https://fxbug.dev/514690213 - Make Starnix check SELinux capability permissions.
                 "PtraceTest.PtraceAttachDeniedWithoutSelinuxCapSysPtrace",
 

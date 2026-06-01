@@ -1,5 +1,9 @@
 {
     "audit_failure": [
+        // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
+        // demonstrated in this test.
+        "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
+
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
