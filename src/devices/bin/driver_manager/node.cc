@@ -1781,6 +1781,14 @@ void Node::StartDriver(
     return;
   }
 
+  if (colocate && !driver_host_name_for_colocation_.empty() && driver_host() &&
+      driver_host()->name_for_colocation() != driver_host_name_for_colocation_) {
+    fdf_log::warn(
+        "Driver '{}' requested 'colocate: true' with a custom colocation group '{}' that does not "
+        "match the parent. Ignoring this custom name; placing driver in parent group '{}'",
+        url, driver_host_name_for_colocation_, driver_host()->name_for_colocation());
+  }
+
   bool found_driver_host = colocate;
 
   fidl::ClientEnd<fuchsia_io::Directory> svc_dir;

@@ -95,6 +95,8 @@ class DriverHost {
 
   virtual bool IsDynamicLinkingEnabled() const { return false; }
 
+  virtual std::string_view name_for_colocation() const { return ""; }
+
   virtual void TriggerStackTrace() const {}
 };
 
@@ -138,7 +140,7 @@ class DriverHostComponent final
 
   zx::result<> InstallLoader(fidl::ClientEnd<fuchsia_ldsvc::Loader> loader_client) const;
 
-  std::string_view name_for_colocation() const { return name_for_colocation_; }
+  std::string_view name_for_colocation() const override { return name_for_colocation_; }
 
  private:
   void InitializeElfDir();
