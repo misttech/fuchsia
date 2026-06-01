@@ -113,6 +113,12 @@ mod tests {
     }
 
     #[test]
+    fn test_magic_runtime() {
+        let m = magic(b"abcd");
+        assert_eq!(m, 0x61626364);
+    }
+
+    #[test]
     fn test_canary() {
         let canary = canary!(b"test");
         assert!(canary.valid());

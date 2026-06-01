@@ -57,3 +57,58 @@ impl SizeTracker for TrackingSize {
         core::mem::swap(&mut self.0, &mut other.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Cannot get the size if we are not tracking the size.")]
+    fn test_non_tracking_size_get_panics() {
+        let tracker = NonTrackingSize;
+        let _ = tracker.get();
+    }
+
+    #[test]
+    fn test_non_tracking_size_set_swap() {
+        let mut tracker1 = NonTrackingSize;
+        let mut tracker2 = NonTrackingSize;
+        tracker1.increment();
+        tracker1.decrement();
+        tracker1.set(10);
+        tracker1.swap(&mut tracker2);
+        assert!(!NonTrackingSize::IS_TRACKING);
+    }
+
+    #[test]
+    fn test_tracking_size_increment_decrement() {
+        let mut tracker = TrackingSize::INIT;
+        assert!(TrackingSize::IS_TRACKING);
+        assert_eq!(tracker.get(), 0);
+        tracker.increment();
+        assert_eq!(tracker.get(), 1);
+        tracker.increment();
+        assert_eq!(tracker.get(), 2);
+        tracker.decrement();
+        assert_eq!(tracker.get(), 1);
+    }
+
+    #[test]
+    fn test_tracking_size_set() {
+        let mut tracker = TrackingSize::INIT;
+        tracker.set(100);
+        assert_eq!(tracker.get(), 100);
+    }
+
+    #[test]
+    fn test_tracking_size_swap() {
+        let mut tracker1 = TrackingSize::INIT;
+        tracker1.set(100);
+        let mut tracker2 = TrackingSize::INIT;
+        tracker2.set(50);
+
+        tracker1.swap(&mut tracker2);
+        assert_eq!(tracker1.get(), 50);
+        assert_eq!(tracker2.get(), 100);
+    }
+}

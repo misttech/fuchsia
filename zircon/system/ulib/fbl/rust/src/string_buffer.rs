@@ -277,6 +277,13 @@ mod tests {
     }
 
     #[test]
+    fn test_default() {
+        let sb: StringBuffer<11> = Default::default();
+        assert_eq!(sb.len(), 0);
+        assert_eq!(sb.capacity(), 10);
+    }
+
+    #[test]
     fn test_constructor_zero() {
         let sb: StringBuffer<1> = StringBuffer::new(); // Capacity 0
         assert_eq!(sb.len(), 0);

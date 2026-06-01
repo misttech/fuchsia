@@ -285,4 +285,34 @@ mod tests {
         assert_eq!(CONSTRUCT_COUNT.load(Ordering::Relaxed), 5);
         assert_eq!(DESTRUCT_COUNT.load(Ordering::Relaxed), 5);
     }
+
+    #[test]
+    fn test_ring_buffer_capacity() {
+        assert_eq!(RingBuffer::<u8, 5>::capacity(), 5);
+    }
+
+    #[test]
+    fn test_ring_buffer_mut_accessors() {
+        let mut buffer = RingBuffer::<u8, 5>::new();
+        buffer.push(10);
+        buffer.push(20);
+        *buffer.front_mut() = 15;
+        *buffer.back_mut() = 25;
+        assert_eq!(*buffer.front(), 15);
+        assert_eq!(*buffer.back(), 25);
+    }
+
+    #[test]
+    #[should_panic(expected = "Calling front_mut on an empty RingBuffer")]
+    fn empty_front_mut_assert() {
+        let mut buffer = RingBuffer::<u8, 10>::new();
+        let _ = buffer.front_mut();
+    }
+
+    #[test]
+    #[should_panic(expected = "Calling back_mut on an empty RingBuffer")]
+    fn empty_back_mut_assert() {
+        let mut buffer = RingBuffer::<u8, 10>::new();
+        let _ = buffer.back_mut();
+    }
 }

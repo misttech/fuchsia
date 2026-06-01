@@ -286,4 +286,77 @@ mod tests {
             assert_eq!(a[i].value, 42);
         }
     }
+
+    #[test]
+    fn test_array_new_in() {
+        let state = TestState::default();
+        let alloc = TestAllocator { state: &state };
+        let a = Array::<u32, TestAllocator<'_>>::new_in(alloc.clone());
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn test_array_default() {
+        let a_def: Array<u32> = Default::default();
+        assert!(a_def.is_empty());
+    }
+
+    #[test]
+    fn test_array_into_box() {
+        let a_try = Array::<u32>::try_new(3).unwrap();
+        let b = a_try.into_box();
+        assert_eq!(b.len(), 3);
+    }
+
+    #[test]
+    fn test_array_test_allocator_happy() {
+        use kalloc::Allocator;
+        let state = TestState::default();
+        let alloc = TestAllocator { state: &state };
+        let layout = core::alloc::Layout::new::<u32>();
+        let ptr = alloc.allocate_zeroed(layout).unwrap();
+
+        let ptr = unsafe {
+            alloc.grow(ptr.cast(), layout, core::alloc::Layout::array::<u32>(2).unwrap()).unwrap()
+        };
+
+        let ptr = unsafe {
+            alloc.shrink(ptr.cast(), core::alloc::Layout::array::<u32>(2).unwrap(), layout).unwrap()
+        };
+
+        unsafe {
+            alloc.deallocate(ptr.cast(), layout);
+        }
+    }
+
+    #[test]
+    fn test_array_test_allocator_failure() {
+        use kalloc::Allocator;
+        let state = TestState::default();
+        let alloc = TestAllocator { state: &state };
+        let layout = core::alloc::Layout::new::<u32>();
+
+        // Set fail threshold to fail immediately
+        state.fail_threshold.set(0);
+
+        assert!(alloc.allocate_zeroed(layout).is_err());
+
+        let dummy_ptr = core::ptr::NonNull::<u8>::dangling();
+        assert!(
+            unsafe {
+                alloc.grow(dummy_ptr.cast(), layout, core::alloc::Layout::array::<u32>(2).unwrap())
+            }
+            .is_err()
+        );
+        assert!(
+            unsafe {
+                alloc.shrink(
+                    dummy_ptr.cast(),
+                    core::alloc::Layout::array::<u32>(2).unwrap(),
+                    layout,
+                )
+            }
+            .is_err()
+        );
+    }
 }

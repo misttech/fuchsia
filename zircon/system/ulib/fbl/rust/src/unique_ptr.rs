@@ -177,4 +177,28 @@ mod tests {
             assert!(destroyed.load(Ordering::Relaxed));
         }
     }
+
+    #[test]
+    fn test_unique_ptr_as_mut_ptr() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        let mut unique_ptr =
+            UniquePtr::try_new(TestRustObject { destroyed: destroyed.clone() }).unwrap();
+        let mut_ptr = UniquePtr::as_mut_ptr(&mut unique_ptr);
+        assert!(!mut_ptr.is_null());
+    }
+
+    #[test]
+    fn test_unique_ptr_deref_mut() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        let mut unique_ptr =
+            UniquePtr::try_new(TestRustObject { destroyed: destroyed.clone() }).unwrap();
+        let _deref_mut: &mut TestRustObject = &mut unique_ptr;
+    }
+
+    #[test]
+    fn test_unique_ptr_cpp_alloc_fail() {
+        let dummy_val = Opaque::uninit();
+        let res = Opaque::<TestCppObject>::allocate(dummy_val);
+        assert!(res.is_err());
+    }
 }

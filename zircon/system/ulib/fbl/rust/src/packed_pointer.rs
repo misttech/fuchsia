@@ -315,4 +315,71 @@ mod tests {
         assert_eq!(packed.ptr(), raw_ptr);
         assert_eq!(packed.data(), 5);
     }
+
+    #[test]
+    fn test_packed_pointer_clone() {
+        let mut val = Align8(42);
+        let raw_ptr = &mut val as *mut Align8;
+        let packed = PackedPointer::<Align8, 3>::new(raw_ptr, 5);
+        let cloned = packed.clone();
+        assert_eq!(cloned, packed);
+    }
+
+    #[test]
+    fn test_packed_pointer_partial_eq_const_ptr() {
+        let mut val = Align8(42);
+        let raw_ptr = &mut val as *mut Align8;
+        let packed = PackedPointer::<Align8, 3>::new(raw_ptr, 5);
+        let const_ptr: *const Align8 = raw_ptr as *const Align8;
+        assert!(packed == const_ptr);
+    }
+
+    #[test]
+    fn test_packed_pointer_from_mut_ptr() {
+        let mut val = Align8(42);
+        let raw_ptr = &mut val as *mut Align8;
+        let from_ptr = PackedPointer::<Align8, 3>::from(raw_ptr);
+        assert_eq!(from_ptr.ptr(), raw_ptr);
+        assert_eq!(from_ptr.data(), 0);
+    }
+
+    #[test]
+    fn test_packed_pointer_debug_fmt() {
+        extern crate alloc;
+        let mut val = Align8(42);
+        let raw_ptr = &mut val as *mut Align8;
+        let packed = PackedPointer::<Align8, 3>::new(raw_ptr, 5);
+        let debug_str = alloc::format!("{:?}", packed);
+        assert!(debug_str.contains("PackedPointer"));
+        assert!(debug_str.contains("ptr"));
+        assert!(debug_str.contains("data"));
+    }
+
+    #[test]
+    fn test_packed_pointer_from_data() {
+        let from_d = PackedPointer::<Align8, 3>::from_data(6);
+        assert!(from_d.is_null());
+        assert_eq!(from_d.data(), 6);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "is not aligned")]
+    fn test_unaligned_pointer_panics() {
+        let mut val = Align8(42);
+        let raw_ptr = &mut val as *mut Align8;
+        let unaligned_ptr = raw_ptr.with_addr(raw_ptr.addr() | 1);
+        let _ = PackedPointer::<Align8, 3>::new(unaligned_ptr, 0);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "is not aligned")]
+    fn test_unaligned_set_ptr_panics() {
+        let mut val = Align8(42);
+        let mut packed = PackedPointer::<Align8, 3>::from_ptr(&mut val);
+        let raw_ptr = &mut val as *mut Align8;
+        let unaligned_ptr = raw_ptr.with_addr(raw_ptr.addr() | 1);
+        packed.set_ptr(unaligned_ptr);
+    }
 }

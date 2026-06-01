@@ -79,4 +79,11 @@ mod tests {
             assert!(destroyed.load(Ordering::Relaxed));
         }
     }
+
+    #[test]
+    fn test_opaque_ref_counted_allocate_fails() {
+        let val = OpaqueRefCounted(Opaque::uninit());
+        let res = OpaqueRefCounted::<TestCppRefCountedObject>::allocate(val);
+        assert!(res.is_err());
+    }
 }
