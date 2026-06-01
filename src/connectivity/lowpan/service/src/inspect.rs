@@ -608,6 +608,64 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 }
                             }
                         });
+                        // Log mle counters
+                        if let Some(mle_counter) = all_counters.mle {
+                            inspector.root().record_child("mle_counters", |mle_counters_child| {
+                                if let Some(val) = mle_counter.disabled_role {
+                                    mle_counters_child.record_uint("disabled_role", val.into());
+                                }
+                                if let Some(val) = mle_counter.detached_role {
+                                    mle_counters_child.record_uint("detached_role", val.into());
+                                }
+                                if let Some(val) = mle_counter.child_role {
+                                    mle_counters_child.record_uint("child_role", val.into());
+                                }
+                                if let Some(val) = mle_counter.router_role {
+                                    mle_counters_child.record_uint("router_role", val.into());
+                                }
+                                if let Some(val) = mle_counter.leader_role {
+                                    mle_counters_child.record_uint("leader_role", val.into());
+                                }
+                                if let Some(val) = mle_counter.attach_attempts {
+                                    mle_counters_child.record_uint("attach_attempts", val.into());
+                                }
+                                if let Some(val) = mle_counter.partition_id_changes {
+                                    mle_counters_child
+                                        .record_uint("partition_id_changes", val.into());
+                                }
+                                if let Some(val) = mle_counter.better_partition_attach_attempts {
+                                    mle_counters_child.record_uint(
+                                        "better_partition_attach_attempts",
+                                        val.into(),
+                                    );
+                                }
+                                if let Some(val) = mle_counter.better_parent_attach_attempts {
+                                    mle_counters_child
+                                        .record_uint("better_parent_attach_attempts", val.into());
+                                }
+                                if let Some(val) = mle_counter.disabled_time {
+                                    mle_counters_child.record_uint("disabled_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.detached_time {
+                                    mle_counters_child.record_uint("detached_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.child_time {
+                                    mle_counters_child.record_uint("child_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.router_time {
+                                    mle_counters_child.record_uint("router_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.leader_time {
+                                    mle_counters_child.record_uint("leader_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.tracked_time {
+                                    mle_counters_child.record_uint("tracked_time", val.into());
+                                }
+                                if let Some(val) = mle_counter.parent_changes {
+                                    mle_counters_child.record_uint("parent_changes", val.into());
+                                }
+                            });
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging counters. Error: {}", e);
