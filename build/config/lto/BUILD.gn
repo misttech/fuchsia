@@ -197,7 +197,7 @@ variant("lto") {
 config("lto-if-compatible") {
   # Do not enable LTO for the instrumented variants.
   # Do not enable LTO (here) for the lto or thinlto variants.
-  if (!is_instrumented && !is_lto_variant) {
+  if (!is_instrumented && !is_lto_variant && !is_gcc) {
     configs = [ ":lto" ]
   }
 }
@@ -282,7 +282,7 @@ variant("thinlto") {
 config("thinlto-if-compatible") {
   # Do not enable ThinLTO for the instrumented variants.
   # Do not enable ThinLTO (here) for the lto or thinlto variants.
-  if (!is_instrumented && !is_lto_variant) {
+  if (!is_instrumented && !is_lto_variant && !is_gcc) {
     configs = [ ":thinlto" ]
   }
 }
