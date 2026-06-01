@@ -8,12 +8,12 @@ use fidl_fuchsia_bluetooth_affordances::{
     CentralControllerRequest, CentralControllerRequestStream,
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
-    HostControllerSetDeviceClassRequest, HostControllerSetDiscoverabilityRequest,
-    HostControllerStartPairingDelegateRequest, HostSelector, PeerControllerPairRequest,
-    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
-    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
-    PeripheralControllerRequest, PeripheralControllerRequestStream,
-    ScanResultListenerOnPeersDiscoveredRequest,
+    HostControllerSetConnectabilityRequest, HostControllerSetDeviceClassRequest,
+    HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
+    HostSelector, PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
+    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
+    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
+    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -200,6 +200,24 @@ async fn handle_single_host_request(
                 }
                 Err(err) => {
                     error!("SetDiscoverability encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        HostControllerRequest::SetConnectability { payload, responder } => {
+            let HostControllerSetConnectabilityRequest { connectable: Some(connectable), .. } =
+                payload
+            else {
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
+                return Ok(());
+            };
+            match worker.set_connectability(connectable).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetConnectability encountered error: {err}");
                     responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
                 }
             }

@@ -78,6 +78,15 @@ open protocol HostController {
         1: discoverable bool;
     }) -> () error Error;
 
+    /// Set connection policy.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `connectable` is missing.
+    flexible SetConnectability(table {
+        /// Required. Set to true if making connectable or false if revoking connectability.
+        1: connectable bool;
+    }) -> () error Error;
+
     /// Set the active host.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).

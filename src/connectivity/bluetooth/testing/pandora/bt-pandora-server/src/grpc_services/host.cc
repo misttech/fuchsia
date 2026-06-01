@@ -62,6 +62,15 @@ HostService::HostService(async_dispatcher_t* dispatcher) {
     FX_LOGS(ERROR) << "Error connecting to CentralController service: "
                    << central_controller_client_end.status_string();
   }
+
+  // Connect to fuchsia.bluetooth.sys.Access
+  zx::result access_sync_client_end = component::Connect<fuchsia_bluetooth_sys::Access>();
+  if (access_sync_client_end.is_ok()) {
+    access_sync_client_.Bind(std::move(*access_sync_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to Access service: "
+                   << access_sync_client_end.status_string();
+  }
 }
 
 Status HostService::FactoryReset(grpc::ServerContext* context,
@@ -423,10 +432,37 @@ Status HostService::SetDiscoverabilityMode(::grpc::ServerContext* context,
 Status HostService::SetConnectabilityMode(::grpc::ServerContext* context,
                                           const ::pandora::SetConnectabilityModeRequest* request,
                                           ::google::protobuf::Empty* response) {
-  if (set_connectability(request->mode() == ::pandora::ConnectabilityMode::CONNECTABLE) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  bool connectable = request->mode() == ::pandora::ConnectabilityMode::CONNECTABLE;
+  if (connectable) {
+    if (suppress_connections_token_.is_valid()) {
+      suppress_connections_token_ = {};
+      return Status::OK;
+    }
+  } else {
+    if (!suppress_connections_token_.is_valid()) {
+      auto endpoints = fidl::CreateEndpoints<fuchsia_bluetooth_sys::ProcedureToken>();
+      if (endpoints.is_error()) {
+        FX_LOGS(ERROR) << "Failed to create ProcedureToken endpoints: "
+                       << endpoints.status_string();
+        return Status(StatusCode::INTERNAL, "Failed to create ProcedureToken endpoints");
+      }
+
+      fuchsia_bluetooth_sys::AccessSetConnectionPolicyRequest set_connection_policy_request;
+      set_connection_policy_request.suppress_bredr_connections() = std::move(endpoints->server);
+
+      auto result =
+          access_sync_client_->SetConnectionPolicy(std::move(set_connection_policy_request));
+      if (result.is_error()) {
+        return Status(StatusCode::INTERNAL,
+                      "fuchsia.bluetooth.sys.Access/SetConnectionPolicy error: " +
+                          result.error_value().FormatDescription());
+      }
+
+      suppress_connections_token_ = std::move(endpoints->client);
+    }
   }
-  return {/*OK*/};
+
+  return Status::OK;
 }
 
 std::vector<fuchsia_bluetooth_sys::Peer>::const_iterator HostService::WaitForPeer(
@@ -437,7 +473,7 @@ std::vector<fuchsia_bluetooth_sys::Peer>::const_iterator HostService::WaitForPee
   do {
     if (!peer_watching_) {
       peer_watching_ = true;
-      access_client_->WatchPeers().Then(
+      access_shared_client_->WatchPeers().Then(
           [this](fidl::Result<fuchsia_bluetooth_sys::Access::WatchPeers>& watch_peers) {
             if (watch_peers.is_error()) {
               fidl::Error err = watch_peers.error_value();

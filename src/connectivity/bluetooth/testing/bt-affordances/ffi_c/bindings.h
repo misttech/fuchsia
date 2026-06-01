@@ -77,11 +77,6 @@ int32_t disconnect_l2cap();
 /// The caller must ensure that `data` points to a valid buffer of `len` bytes.
 int32_t write_l2cap(const uint8_t *data, uintptr_t len);
 
-/// Set connection policy.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t set_connectability(bool connectable);
-
 /// Publish a local GATT service with one characteristic. GATT requests to the service are logged.
 ///
 /// Returns ZX_STATUS_INVALID_ARGS if UUID or `characteristic_properties` are invalid (check logs).

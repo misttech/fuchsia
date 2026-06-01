@@ -76,7 +76,8 @@ class HostService : public pandora::Host::Service {
   std::vector<fuchsia_bluetooth_sys::Peer>::const_iterator WaitForPeer(
       const std::string& addr, bool enforce_connected = false);
 
-  fidl::SharedClient<fuchsia_bluetooth_sys::Access> access_client_;
+  fidl::SharedClient<fuchsia_bluetooth_sys::Access> access_shared_client_;
+  fidl::SyncClient<fuchsia_bluetooth_sys::Access> access_sync_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::PeripheralController>
       peripheral_controller_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::HostController> host_controller_client_;
@@ -87,6 +88,8 @@ class HostService : public pandora::Host::Service {
   std::mutex m_access_;
   std::vector<fuchsia_bluetooth_sys::Peer> peers_;
   bool peer_watching_{false};
+
+  fidl::ClientEnd<fuchsia_bluetooth_sys::ProcedureToken> suppress_connections_token_;
 };
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_HOST_H_

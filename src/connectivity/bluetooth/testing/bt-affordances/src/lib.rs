@@ -157,18 +157,6 @@ pub unsafe extern "C" fn write_l2cap(data: *const u8, len: usize) -> i32 {
     zx::Status::OK.into_raw()
 }
 
-/// Set connection policy.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn set_connectability(connectable: bool) -> i32 {
-    if let Err(err) = block_on(STATE.worker.set_connectability(connectable)) {
-        eprintln!("set_connectability encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 // Copied from SL4F `GattServerFacade`.
 fn permissions_from_raw(properties: u16, permissions: u16) -> AttributePermissions {
     bitfield! {
