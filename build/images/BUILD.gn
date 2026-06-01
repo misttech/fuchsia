@@ -31,9 +31,9 @@ group("images") {
     # Always include the qemu kernel so we can use the emulator.
     labels.qemu_kernel,
 
-    # updates always needs to be included so that universe/discoverable can be published, even
-    # when there isn't a _single_ product bundle, but a multi-product build that includes test
-    # packages.
+    # updates always needs to be included so that universe/discoverable can be
+    # published, even when there isn't a _single_ product bundle, but a
+    # multi-product build that includes test packages.
     "//build/images/updates",
   ]
 
@@ -41,9 +41,9 @@ group("images") {
     deps += [
       labels.images,
 
-      # Needed so that 'gerrit_size_reports' and 'detailed_size_checker_data' metadata
-      # can be properly collected form the default-images target.  These are empty
-      # groups for bazel product bundles that don't provide them.
+      # Needed so that 'gerrit_size_reports' and 'detailed_size_checker_data'
+      # metadata can be properly collected form the default-images target. These
+      # are empty groups for bazel product bundles that don't provide them.
       "${bazel_product_bundle_target}_elf_sizes",
       "${bazel_product_bundle_target}_size_targets",
     ]

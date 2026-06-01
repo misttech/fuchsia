@@ -10,9 +10,10 @@ declare_args() {
   # gate the import of //build/rust/config.gni in
   # //build/rust/rust_auxiliary.gni
 
-  # Turns rust targets into a group with both the normal target and clippy target. This
-  # causes clippy targets to get included in the build. This gets enabled by default with
-  # `fx set`, but is defaulted off in GN so it won't be on in infra.
+  # Turns rust targets into a group with both the normal target and clippy
+  # target. This causes clippy targets to get included in the build. This gets
+  # enabled by default with `fx set`, but is defaulted off in GN so it won't be
+  # on in infra.
   include_clippy = false
 
   # Opt-in switch for .rustdoc subtargets. If `true`, respect per-target

@@ -10,8 +10,8 @@ import("//tools/configc/build/config.gni")
 
 # Defines a configuration value file for a Fuchsia component.
 #
-# A config value file is produced from a component manifest that contains a schema
-# and a JSON5 file with concrete configuration values.
+# A config value file is produced from a component manifest that contains a
+# schema and a JSON5 file with concrete configuration values.
 #
 # For example, if a component manifest defines the `enable_foo` flag:
 #
@@ -119,7 +119,8 @@ template("fuchsia_structured_config_values") {
     }
 
     if (defined(invoker.component_name)) {
-      # we have the component name which means we can infer the output location ourselves
+      # we have the component name which means we can infer the output location
+      # ourselves
       component_name = invoker.component_name
       _cm_out_dir = get_label_info(invoker.cm_label, "target_out_dir")
       _cm_target_name = get_label_info(invoker.cm_label, "name")
@@ -131,7 +132,8 @@ template("fuchsia_structured_config_values") {
           segments[0] == "",
           "component_name must be provided if cm_label is in a different module")
 
-      # now we can call get_target_outputs without creating unactionable error messages
+      # now we can call get_target_outputs without creating unactionable error
+      # messages
       component_outputs = get_target_outputs(invoker.cm_label)
       compiled_manifest = component_outputs[0]
       component_name = get_path_info(compiled_manifest, "name")
@@ -175,9 +177,10 @@ template("fuchsia_structured_config_values") {
       outputs = [ "meta/$cvf_output_name.cvf" ]
 
       if (defined(visibility)) {
-        # The group we create below for the non-default toolchains needs to depend on this target.
-        # We can't explicitly list all of the toolchain suffixes that might dep on this, because not
-        # all of them have variable shortcuts defined.
+        # The group we create below for the non-default toolchains needs to
+        # depend on this target. We can't explicitly list all of the toolchain
+        # suffixes that might dep on this, because not all of them have variable
+        # shortcuts defined.
         visibility += [ ":${resource_target}" ]
       }
 
@@ -187,7 +190,8 @@ template("fuchsia_structured_config_values") {
       }
     }
   } else {
-    # need to have a nop target that can be depended upon by host toolchain targets
+    # need to have a nop target that can be depended upon by host toolchain
+    # targets
     group(target_name) {
       forward_variables_from(invoker,
                              [
@@ -203,13 +207,14 @@ template("fuchsia_structured_config_values") {
 # Defines a configuration value manifest that provides configuration values.
 #
 # This accepts a component manifest that `uses` configuration capabilities. It
-# produces a component manifest that defines each of these configuration capabilities
-# and exposes those capabilities to its parent.
+# produces a component manifest that defines each of these configuration
+# capabilities and exposes those capabilities to its parent.
 #
-# A config value manifest is produced from a component manifest that contains a schema
-# and a JSON5 file with concrete configuration values.
+# A config value manifest is produced from a component manifest that contains a
+# schema and a JSON5 file with concrete configuration values.
 #
-# For example, if a component manifest use the `fuchsia.component.EnableFoo` flag:
+# For example, if a component manifest use the `fuchsia.component.EnableFoo`
+# flag:
 #
 # ```
 # // ./meta/my_component.cml
@@ -333,7 +338,8 @@ template("fuchsia_structured_config_values2") {
     }
 
     if (defined(invoker.component_name)) {
-      # we have the component name which means we can infer the output location ourselves
+      # we have the component name which means we can infer the output location
+      # ourselves
       component_name = invoker.component_name
       _cm_out_dir = get_label_info(invoker.cm_label, "target_out_dir")
       _cm_target_name = get_label_info(invoker.cm_label, "name")
@@ -345,7 +351,8 @@ template("fuchsia_structured_config_values2") {
           segments[0] == "",
           "component_name must be provided if cm_label is in a different module")
 
-      # now we can call get_target_outputs without creating unactionable error messages
+      # now we can call get_target_outputs without creating unactionable error
+      # messages
       component_outputs = get_target_outputs(invoker.cm_label)
       compiled_manifest = component_outputs[0]
       component_name = get_path_info(compiled_manifest, "name")
@@ -388,9 +395,10 @@ template("fuchsia_structured_config_values2") {
       outputs = [ "meta/$output_component_name.cm" ]
 
       if (defined(visibility)) {
-        # The group we create below for the non-default toolchains needs to depend on this target.
-        # We can't explicitly list all of the toolchain suffixes that might dep on this, because not
-        # all of them have variable shortcuts defined.
+        # The group we create below for the non-default toolchains needs to
+        # depend on this target. We can't explicitly list all of the toolchain
+        # suffixes that might dep on this, because not all of them have variable
+        # shortcuts defined.
         visibility += [ ":${resource_target}" ]
       }
 
@@ -400,7 +408,8 @@ template("fuchsia_structured_config_values2") {
       }
     }
   } else {
-    # need to have a nop target that can be depended upon by host toolchain targets
+    # need to have a nop target that can be depended upon by host toolchain
+    # targets
     group(target_name) {
       forward_variables_from(invoker,
                              [
@@ -415,7 +424,8 @@ template("fuchsia_structured_config_values2") {
 
 # Defines a Rust configuration client library for a Fuchsia ELF component.
 #
-# A config client library is produced from a component manifest that contains a schema.
+# A config client library is produced from a component manifest that contains a
+# schema.
 #
 # For example, if a component manifest defines the `enable_foo` flag:
 #
@@ -494,8 +504,8 @@ template("fuchsia_structured_config_rust_lib") {
   rust_library_name = string_replace(rust_library_name, ".", "_")
   rust_library_name = string_replace(rust_library_name, "-", "_")
 
-  # The library name is a string that is also used internally by configc when generating
-  # FIDL and Rust source files. It is not visible to the end user.
+  # The library name is a string that is also used internally by configc when
+  # generating FIDL and Rust source files. It is not visible to the end user.
   fidl_library_name = string_replace(rust_library_name, "_", "")
   fidl_library_name = "cf.sc.internal.${fidl_library_name}"
 
@@ -545,8 +555,8 @@ template("fuchsia_structured_config_rust_lib") {
     not_needed(invoker, "*")
   }
 
-  # Cannot call get_target_outputs on `client_lib_source`, so we must get the path to the
-  # generated source files manually.
+  # Cannot call get_target_outputs on `client_lib_source`, so we must get the
+  # path to the generated source files manually.
   source_gen_dir =
       get_label_info(":anything($default_toolchain)", "target_out_dir")
   fidl_source_file = "${source_gen_dir}/${fidl_source_target}.fidl"
@@ -592,7 +602,8 @@ template("fuchsia_structured_config_rust_lib") {
 
 # Defines a C++ configuration client library for a Fuchsia ELF component.
 #
-# A config client library is produced from a component manifest that contains a schema.
+# A config client library is produced from a component manifest that contains a
+# schema.
 #
 # For example, if a component manifest defines the `enable_foo` flag:
 #
@@ -672,8 +683,8 @@ template("fuchsia_structured_config_cpp_elf_lib") {
     namespace = invoker.namespace
   }
 
-  # The library name is a string that is also used internally by configc when generating
-  # FIDL and C++ source files. It is not visible to the end user.
+  # The library name is a string that is also used internally by configc when
+  # generating FIDL and C++ source files. It is not visible to the end user.
   if (defined(invoker.fidl_library_name)) {
     fidl_library_name = invoker.fidl_library_name
   } else {
@@ -721,8 +732,8 @@ template("fuchsia_structured_config_cpp_elf_lib") {
     not_needed(invoker, "*")
   }
 
-  # Cannot call get_target_outputs on `client_lib_source`, so we must get the path to the
-  # generated source files manually.
+  # Cannot call get_target_outputs on `client_lib_source`, so we must get the
+  # path to the generated source files manually.
   source_gen_dir =
       get_label_info(":anything($default_toolchain)", "target_out_dir")
   fidl_source_file = "${source_gen_dir}/${fidl_source_target}.fidl"

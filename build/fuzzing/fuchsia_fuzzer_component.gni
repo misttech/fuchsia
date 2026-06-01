@@ -6,8 +6,8 @@ import("//build/components/fuchsia_test_component.gni")
 
 # Creates a component for a library fuzzer.
 #
-# The component created by this template correspond to the binary created by an invocation of
-# `fuchsia_library_fuzzer`.
+# The component created by this template correspond to the binary created by an
+# invocation of `fuchsia_library_fuzzer`.
 #
 # Parameters:
 #   Same as `fuchsia_test_component`, except for `manifest`:

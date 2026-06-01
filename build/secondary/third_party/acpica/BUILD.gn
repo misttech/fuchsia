@@ -42,9 +42,10 @@ config("disable_warnings") {
 }
 
 config("avoid_linux_init") {
-  # When building for Linux hosts, we use the aclinux.h header in ACPICA.
-  # This has the fun side effect of defining __init, which is used in the C++ standard
-  # library headers. To avoid the ACPICA definition, we define __init to __init here.
+  # When building for Linux hosts, we use the aclinux.h header in ACPICA. This
+  # has the fun side effect of defining __init, which is used in the C++
+  # standard library headers. To avoid the ACPICA definition, we define __init
+  # to __init here.
   defines = [ "__init=__init" ]
 }
 

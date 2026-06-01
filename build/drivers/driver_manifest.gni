@@ -4,11 +4,11 @@
 
 import("//build/dist/distribution_manifest.gni")
 
-# Creates a driver manifest which is a JSON file that describes how drivers can be found
-# in the system.
+# Creates a driver manifest which is a JSON file that describes how drivers can
+# be found in the system.
 #
-# This target uses GN metadata to collect all drivers included in its dependencies into
-# the manifest file.
+# This target uses GN metadata to collect all drivers included in its
+# dependencies into the manifest file.
 #
 # By default, this template generates a manifest file, and ensures that
 # it will be installed under config/ into any package, boot or system

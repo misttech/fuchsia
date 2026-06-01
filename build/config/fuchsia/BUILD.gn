@@ -109,9 +109,9 @@ linker_config("compiler") {
   rustflags = [
     "-Clinker=$rebased_clang_prefix/lld",
 
-    # These could alternatively come from clang's '--print-search-dirs', but that would require an
-    # exec_script and post-processing of the output or a JSON file generated during the toolchain
-    # build.
+    # These could alternatively come from clang's '--print-search-dirs', but
+    # that would require an exec_script and post-processing of the output or a
+    # JSON file generated during the toolchain build.
     "-Clink-arg=-L${_libcxx_dir}",
     "-Clink-arg=-L${_clang_resource_dir}/lib/${current_target_tuple}",
     "-Clink-arg=--pack-dyn-relocs=relr",
@@ -186,9 +186,10 @@ config("executable_config") {
 }
 
 config("enable_zircon_asserts") {
-  # BAZEL_MIGRATION_NOTE: A Bazel C++ target that wants to force this feature should
-  # use `features = [ "enable_zircon_asserts" ]` in its definition. Likewise, to disable
-  # the feature, use `features = [ "-enable_zircon_asserts" ]`.
+  # BAZEL_MIGRATION_NOTE: A Bazel C++ target that wants to force this feature
+  # should use `features = [ "enable_zircon_asserts" ]` in its definition.
+  # Likewise, to disable the feature, use `features = [ "-enable_zircon_asserts"
+  # ]`.
   #
   # LINT.IfChange(enable_zircon_asserts_flags)
   defines = [ "ZX_ASSERT_LEVEL=2" ]

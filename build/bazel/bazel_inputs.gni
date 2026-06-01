@@ -114,7 +114,8 @@ template("_bazel_input_entry") {
 
   _licenses_spdx_target = "${target_name}.licenses_spdx"
 
-  # IMPORTANT: This must end in `.spdx.json` for license classification to work correctly!
+  # IMPORTANT: This must end in `.spdx.json` for license classification to work
+  # correctly!
   _licenses_spdx_file = "$target_out_dir/${target_name}.licenses.spdx.json"
 
   # Generate the SPDX file for the generated outputs.
@@ -262,7 +263,8 @@ template("bazel_input_file") {
   assert(defined(invoker.generator),
          "bazel_input_file() requires a generator argument!")
 
-  # Auto-compute 'outputs' value if not provided, and the right conditions are checked.
+  # Auto-compute 'outputs' value if not provided, and the right conditions are
+  # checked.
   if (!defined(invoker.outputs)) {
     _target_dir = get_label_info(":$target_name", "dir")
     _generator_dir = get_label_info(invoker.generator, "dir")

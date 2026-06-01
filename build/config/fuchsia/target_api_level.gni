@@ -37,8 +37,9 @@ _API_LEVEL_PLATFORM_AS_INTEGER = 4293918720
 
 if (current_build_target_api_level == "NEXT") {
   # The numerical value for `current_build_target_api_level`, which may be a
-  # string. Use when API level comparisons are necessary or for tools, such as Clang, that do not
-  # support string API levels. Prefer using `current_build_target_api_level` when possible.
+  # string. Use when API level comparisons are necessary or for tools, such as
+  # Clang, that do not support string API levels. Prefer using
+  # `current_build_target_api_level` when possible.
   current_build_target_api_level_as_integer = _API_LEVEL_NEXT_AS_INTEGER
 } else if (current_build_target_api_level == "HEAD") {
   current_build_target_api_level_as_integer = _API_LEVEL_HEAD_AS_INTEGER

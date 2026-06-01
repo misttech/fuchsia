@@ -119,8 +119,8 @@ compilation_settings = {
   }
 }
 
-# Validate that the configured 'foo_optimize' values set above are one of the valid
-# optimization modes:
+# Validate that the configured 'foo_optimize' values set above are one of the
+# valid optimization modes:
 _optimize_valid = [
   "none",
   "debug",

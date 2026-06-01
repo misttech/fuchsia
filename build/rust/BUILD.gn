@@ -175,10 +175,10 @@ generated_file("api_level_cfg_flags") {
   }
 }
 
-# Multiple integration tests rely on having a Rust toolchain available on the host test
-# runner, and host_test_data does not appear to support multiple definitions of the
-# same output path in the same build, so we provide a central target here to be used
-# by integration tests that need cargo or rustc.
+# Multiple integration tests rely on having a Rust toolchain available on the
+# host test runner, and host_test_data does not appear to support multiple
+# definitions of the same output path in the same build, so we provide a central
+# target here to be used by integration tests that need cargo or rustc.
 if (is_host) {
   action("make_toolchain_host_binaries") {
     script = "//build/copy_tree.py"
@@ -204,7 +204,8 @@ if (is_host) {
     ]
   }
 
-  # This target adds a "rustdoc-link" tool to be consumed by the infra doc builder.
+  # This target adds a "rustdoc-link" tool to be consumed by the infra doc
+  # builder.
   group("tool_paths.rustdoc-link") {
     metadata = {
       tool_paths = [

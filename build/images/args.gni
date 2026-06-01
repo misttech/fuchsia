@@ -31,9 +31,10 @@ declare_args() {
   # Arguments to `fx flash` script (along with any `firmware_prebuilts` which
   # specify a partition).
   #
-  # If (exactly one of) `fvm_partition` or `fxfs_partition` is provided, the flash script will flash
-  # the full OS, recovery + Zircon + FVM (or Fxfs) + SSH keys. In this case, the bootloader must
-  # also support `fastboot oem add-staged-bootloader-file ssh.authorized_keys`.
+  # If (exactly one of) `fvm_partition` or `fxfs_partition` is provided, the
+  # flash script will flash the full OS, recovery + Zircon + FVM (or Fxfs) + SSH
+  # keys. In this case, the bootloader must also support `fastboot oem
+  # add-staged-bootloader-file ssh.authorized_keys`.
   #
   # Otherwise, the script will flash the recovery image to all slots, which
   # doesn't require the FVM or SSH keys.
@@ -126,8 +127,8 @@ declare_args() {
   # useful for including verification and other Bazel assembly specific targets.
   extra_bazel_assembly_targets = []
 
-  # Label pointing to the main product bundle to work with if the default product in a multi-product
-  # build is not desired.
+  # Label pointing to the main product bundle to work with if the default
+  # product in a multi-product build is not desired.
   main_pb_label = ""
 }
 
@@ -154,16 +155,17 @@ if (main_pb_label != "") {
 }
 
 declare_args() {
-  # The build is configured as a multi-product build.
-  # This is any product.gni that is bazel-only, but doesn't specify a default PB.
-  # If this is bazel-only, and a main_pb_label is provided, we are also multi-product.
+  # The build is configured as a multi-product build. This is any product.gni
+  # that is bazel-only, but doesn't specify a default PB. If this is bazel-only,
+  # and a main_pb_label is provided, we are also multi-product.
   is_multi_product_build =
       use_bazel_images_only &&
       (bazel_product_bundle_target == "" || main_pb_label != "")
 }
 
 declare_args() {
-  # The netboot zbi has been deprecated.  This GN arg is now used to generate a warning.
+  # The netboot zbi has been deprecated. This GN arg is now used to generate a
+  # warning.
   enable_netboot = false
 }
 assert(

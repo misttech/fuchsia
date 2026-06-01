@@ -44,13 +44,16 @@ template("library_fuzzer") {
       configs = invoker.target_configs
     }
     if (is_fuzzer) {
-      # Use libFuzzer via clang. This expects a sanitizer runtime to be available.
+      # Use libFuzzer via clang. This expects a sanitizer runtime to be
+      # available.
       configs += [ "//build/config/fuzzer:engine" ]
     } else if (is_host) {
-      # Use the gTest harness. This produces a standalone test that does not depend on any runtimes.
+      # Use the gTest harness. This produces a standalone test that does not
+      # depend on any runtimes.
       deps += [ "//src/lib/fuzzing/cpp:fuzzer_test" ]
     } else {
-      # Use libFuzzer directly. This links the runtime without needing any sanitizer runtimes.
+      # Use libFuzzer directly. This links the runtime without needing any
+      # sanitizer runtimes.
       configs += [ "//src/sys/fuzzing/libfuzzer/testing:libfuzzer" ]
     }
   }

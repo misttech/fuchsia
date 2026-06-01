@@ -10,9 +10,10 @@ if (is_host) {
   import("//build/testing/host_test_data.gni")
 
   host_test_data("default_product_bundle_for_emulator.go") {
-    # No tests should be assuming this product bundle target, but //tools/emulator/emulator.go
-    # finds the images in this product bundle via images.json, and uses them for its tests.
-    # They should explicitly use a product bundle instead.
+    # No tests should be assuming this product bundle target, but
+    # //tools/emulator/emulator.go finds the images in this product bundle via
+    # images.json, and uses them for its tests. They should explicitly use a
+    # product bundle instead.
     # TODO(https://fxbug.dev/495904502)
     visibility = [
       "//src/bringup/bin/console-launcher/qemu-tests:*",

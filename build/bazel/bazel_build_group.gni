@@ -233,25 +233,25 @@ template("bazel_build_group") {
     directory_outputs = _directory_outputs
     package_outputs = _package_outputs
 
-    forward_variables_from(
-        invoker,
-        "*",
-        [
-          # These bazel_action() arguments are forbidden here.
-          "bazel_targets",
-          "bazel_inputs",
-          "command",
-          "copy_outputs",
-          "directory_outputs",
-          "package_outputs",
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             # These bazel_action() arguments are forbidden
+                             # here.
+                             "bazel_targets",
+                             "bazel_inputs",
+                             "command",
+                             "copy_outputs",
+                             "directory_outputs",
+                             "package_outputs",
 
-          # These arguments are handled above.
-          "deps",
+                             # These arguments are handled above.
+                             "deps",
 
-          # These arguments are specific to this template, and not
-          # passed to bazel_action().
-          "subtargets",
-        ])
+                             # These arguments are specific to this template,
+                             # and not passed to bazel_action().
+                             "subtargets",
+                           ])
   }
 
   # Create subtarget actions
@@ -280,11 +280,12 @@ template("bazel_build_group") {
         }
 
         # This action cannot be hermetic in the presence of directory outputs.
-        # While it would be possible to modify the script to generate an hermetic_inputs_file,
-        # this would only work for unknown inputs (e.g SRC_DIR/file), but not unknown
-        # outputs (e.g. DST_DIR/file).
+        # While it would be possible to modify the script to generate an
+        # hermetic_inputs_file, this would only work for unknown inputs (e.g
+        # SRC_DIR/file), but not unknown outputs (e.g. DST_DIR/file).
         #
-        # TODO(digit): Change bazel_action() to use hermetic_action_ignored_prefixes.
+        # TODO(digit): Change bazel_action() to use
+        # hermetic_action_ignored_prefixes.
         _hermetic_deps = false
       }
     }
@@ -338,8 +339,9 @@ template("bazel_build_group") {
       args = _action_args
       hermetic_deps = _hermetic_deps
 
-      # Disable leak scanner since this action can copy very large product bundle directories
-      # (over 6 GiB) with takes dozens of seconds to verify for no practical benefit.
+      # Disable leak scanner since this action can copy very large product
+      # bundle directories (over 6 GiB) with takes dozens of seconds to verify
+      # for no practical benefit.
       check_for_output_dir_leaks = false
 
       forward_variables_from(subtarget, [ "metadata" ])
@@ -359,9 +361,9 @@ template("bazel_build_group") {
       archive = "$target_out_dir/$package_name.far"
       deps = [ ":${_prebuilt.bazel_output_action}" ]
 
-      # Add the fuchsia driver label metadata such that it can be found correctly by
-      # check_included_drivers(), while _also_ NOT being found by assert_driver_components(),
-      # so that both checks work correctly.
+      # Add the fuchsia driver label metadata such that it can be found
+      # correctly by check_included_drivers(), while _also_ NOT being found by
+      # assert_driver_components(), so that both checks work correctly.
       deps += [ ":${driver_label_metadata_target}" ]
       metadata = {
         driver_component_barrier = []

@@ -49,7 +49,8 @@ all_variant_tags = [
   # as well.
   "asan",
 
-  # The `hwasan` tag is used for variants that use Hardware-assisted AddressSanitizer.
+  # The `hwasan` tag is used for variants that use Hardware-assisted
+  # AddressSanitizer.
   "hwasan",
 
   # The `tsan` tag is used for variants that implement thread-sanitizers.

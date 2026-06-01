@@ -329,7 +329,8 @@ template("fuchsia_package") {
 
       visibility = [ ":${_labels.build_target}" ]
 
-      # Include the meta/package file in the set of resources to include in the package
+      # Include the meta/package file in the set of resources to include in the
+      # package
       if (!defined(deps)) {
         deps = []
       }
@@ -360,7 +361,8 @@ template("fuchsia_package") {
       binary_label =
           "//build/components:package_creation_wrapper($host_toolchain)"
 
-      # These are the base deps/inputs/outputs/args for all package creation calls
+      # These are the base deps/inputs/outputs/args for all package creation
+      # calls
       deps = [
         ":${_labels.dist_manifest}",
         ":${metadata_target_name}",
@@ -442,12 +444,13 @@ template("fuchsia_package") {
           forward_variables_from(invoker.metadata, "*")
         }
 
-        # Only report this package's metadata (and not say, any subpackage's metadata)
+        # Only report this package's metadata (and not say, any subpackage's
+        # metadata)
         package_barrier = [ ":${metadata_target_name}" ]
 
         # Installing a Fuchsia package into another one should not also install
-        # its content to the root install location, which is why this metadata key
-        # is set to an empty list.
+        # its content to the root install location, which is why this metadata
+        # key is set to an empty list.
         distribution_entries_barrier = []
 
         component_id_index_barrier = []

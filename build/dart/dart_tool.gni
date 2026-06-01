@@ -233,9 +233,10 @@ template("dart_tool") {
 
     main_uri = rebase_path(invoker.main_dart, root_build_dir)
 
-    # If we have sources defined we can check to see if the main file is included
-    # in the source list. If so, we want to call the snapshot generation with
-    # the `package:foo/main.dart` style. If not we want to pass in a file uri.
+    # If we have sources defined we can check to see if the main file is
+    # included in the source list. If so, we want to call the snapshot
+    # generation with the `package:foo/main.dart` style. If not we want to pass
+    # in a file uri.
     if (defined(invoker.sources)) {
       package_relative = rebase_path(invoker.main_dart, source_dir)
 

@@ -63,16 +63,16 @@ if (current_toolchain == default_toolchain) {
   # Generate the top-level manifest and its sub-manifests.
   generate_ninja_implicit_inputs_manifest("manifest") {
     root_labels = ninja_implicit_inputs_root_labels + [
-                    # TODO(digit): Ensure only compile and link targets for host Linux binaries
-                    # depend on this.
+                    # TODO(digit): Ensure only compile and link targets for host
+                    # Linux binaries depend on this.
                     ":linux_sysroot",
 
-                    # TODO(digit): Ensure only compile and link targets for C++ binaries
-                    # depend on this.
+                    # TODO(digit): Ensure only compile and link targets for C++
+                    # binaries depend on this.
                     ":clang_toolchain",
 
-                    # TODO(digit): Ensure only compile and link targets for Go host binaries
-                    # depend on this.
+                    # TODO(digit): Ensure only compile and link targets for Go
+                    # host binaries depend on this.
                     ":go_toolchain",
                   ]
   }

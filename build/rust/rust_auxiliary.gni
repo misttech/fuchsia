@@ -34,8 +34,8 @@ template("rust_aux_deps") {
     outputs = [ _deps_output ]
     visibility = [ ":*" ]
 
-    # rust_aux_externs is a list of `--extern` flags [0] following the format expected
-    # by rustc. For example:
+    # rust_aux_externs is a list of `--extern` flags [0] following the format
+    # expected by rustc. For example:
     #
     #   --extern=foo=path/to/libfoo.rmeta
     #
@@ -99,13 +99,14 @@ template("rust_aux_deps") {
 # rustc_artifact.gni. The group declared in rustc_artifact is needed to enable
 # building first party .aux and .actual targets in parallel. The group in this
 # file is to associate the related .clippy and .rustdoc targets. Here's an
-# example for a library named "foo" defined in in-tree or as a third_party crate:
+# example for a library named "foo" defined in in-tree or as a third_party
+# crate:
 #
 #     in-tree rustc_library                   third_party rust_library
 #     ---------------------                   ------------------------
-# <:foo> (group)                          <:foo> (alias)
-# ├───<:foo.actual> (rust_library)        ╰───<:foo-v0_1_0> (rust_library)
-# ╰───<:foo.aux> (group)                      ╰───<:foo.aux.deps> (group)
+# <:foo> (group) <:foo> (alias) ├───<:foo.actual> (rust_library)
+# ╰───<:foo-v0_1_0> (rust_library) ╰───<:foo.aux> (group)
+# ╰───<:foo.aux.deps> (group)
 #     ├───<:foo.clippy>
 #     ╰───<:foo.rustdoc>
 #
@@ -186,8 +187,9 @@ template("rust_auxiliary") {
 
   if (_define_clippy) {
     action(_clippy_name) {
-      # Some clippy targets leak the output dir, but these aren't run remotely, nor are they depended
-      # on by anything which does. So just opt out all clippy targets.
+      # Some clippy targets leak the output dir, but these aren't run remotely,
+      # nor are they depended on by anything which does. So just opt out all
+      # clippy targets.
       # TODO(b/42084027): plug output dir leaks for remote clippy
       check_for_output_dir_leaks = false
       forward_variables_from(invoker,
@@ -269,12 +271,13 @@ template("rust_auxiliary") {
         args += [ "-${_level}clippy::all" ]
       }
       args += [
-        # Additional metadata to differentiate the clippy target from the actual target.
+        # Additional metadata to differentiate the clippy target from the actual
+        # target.
         "-Cmetadata=clippy",
       ]
 
-      # this has to go after the `-<level>clippy::all` flags to prevent accidentally
-      # silencing some lints
+      # this has to go after the `-<level>clippy::all` flags to prevent
+      # accidentally silencing some lints
       args += [ "{{rustflags}}" ]
       args += invoker.rustflags
 
@@ -283,15 +286,16 @@ template("rust_auxiliary") {
       }
 
       metadata = {
-        # Don't allow clippy targets' dependencies to control which libraries get packaged.
-        # Clippy targets don't get the same variant of their non-Rust deps as the actual build
-        # targets, which causes conflicts without this metadata.
+        # Don't allow clippy targets' dependencies to control which libraries
+        # get packaged. Clippy targets don't get the same variant of their
+        # non-Rust deps as the actual build targets, which causes conflicts
+        # without this metadata.
         distribution_entries_barrier = []
       }
     }
   } else {
-    # these variables are used by the target, but since it's conditionally defined,
-    # we use not_needed here
+    # these variables are used by the target, but since it's conditionally
+    # defined, we use not_needed here
     not_needed([ "_invoker_deps" ])
     not_needed(invoker,
                [
@@ -427,7 +431,8 @@ template("rust_auxiliary") {
         # to generate an index page. Proactively request it anyway.
         "--enable-index-page",
 
-        # Do not attempt to append to existing files in the documentation destination.
+        # Do not attempt to append to existing files in the documentation
+        # destination.
         "--merge=none",
 
         # Output information to be consumed by `fx rustdoc-link`.
@@ -447,8 +452,8 @@ template("rust_auxiliary") {
       }
     }
   } else {
-    # these variables are used by the target, but since it's conditionally defined,
-    # we use not_needed here
+    # these variables are used by the target, but since it's conditionally
+    # defined, we use not_needed here
     not_needed(invoker,
                [
                  "rustflags",

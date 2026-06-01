@@ -4,10 +4,10 @@
 
 import("//build/python/python_action.gni")
 
-# Creates JSON with documentation from all drivers.
-# Every driver can optionally provide a ${target_name}-driver-info.json in its folder.
-# Documentation from this JSON file is aggregated into a global documentation file.
-# If a driver does not supply this file, an entry in the global documentation file is still
+# Creates JSON with documentation from all drivers. Every driver can optionally
+# provide a ${target_name}-driver-info.json in its folder. Documentation from
+# this JSON file is aggregated into a global documentation file. If a driver
+# does not supply this file, an entry in the global documentation file is still
 # generated.
 #
 # Parameters

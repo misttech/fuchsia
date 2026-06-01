@@ -168,9 +168,9 @@ template("zbi") {
     }
 
     metadata = {
-      # Provide metadata for possible inclusion as an input ZBI for a `kernel_aib`.
-      # Assembly will pick the top level metadata entry from a `zbi` target by
-      # using the `kernel_aib_input_barrier`.
+      # Provide metadata for possible inclusion as an input ZBI for a
+      # `kernel_aib`. Assembly will pick the top level metadata entry from a
+      # `zbi` target by using the `kernel_aib_input_barrier`.
       kernel_aib_input_barrier = []
       kernel_aib_input = [
         {

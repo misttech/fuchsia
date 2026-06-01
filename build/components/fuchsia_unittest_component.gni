@@ -55,8 +55,8 @@ fuchsia_unittest_component_parameters = [
 # }
 # ```
 #
-# The above will generate a manifest for each test and include both components in a single package,
-# which can be run with the launch URLs:
+# The above will generate a manifest for each test and include both components
+# in a single package, which can be run with the launch URLs:
 # fuchsia-pkg://fuchsia.com/rot13-tests#meta/rot13-encoder-test.cm
 # fuchsia-pkg://fuchsia.com/rot13-tests#meta/rot13-decoder-test.cm
 #

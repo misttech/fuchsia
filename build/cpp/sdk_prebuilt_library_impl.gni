@@ -211,7 +211,8 @@ template("sdk_prebuilt_library_impl") {
     # Ensure `runtime_deps` entries do not end in "_sdk".
     _new_runtime_deps = []
     foreach(dep, invoker.runtime_deps) {
-      # Handle targets in third-party repos that still specify the "_sdk" target.
+      # Handle targets in third-party repos that still specify the "_sdk"
+      # target.
       if (dep == "//sdk/lib/fdio:fdio_sdk") {
         dep = "//sdk/lib/fdio:fdio"
       } else if (dep == "//zircon/system/ulib/trace-engine:trace-engine_sdk") {

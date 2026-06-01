@@ -324,10 +324,11 @@ template("rustc_artifact") {
       configs = invoker.configs
     }
 
-    # By default, only the "2024" edition is allowed. To use an older edition, the target must be
-    # included in the `edition_legacy_allowlist`. However, if `allow_legacy_edition` is true, this
-    # specific target is explicitly permitted to use a legacy edition, bypassing the need to be in
-    # the global allowlist.
+    # By default, only the "2024" edition is allowed. To use an older edition,
+    # the target must be included in the `edition_legacy_allowlist`. However, if
+    # `allow_legacy_edition` is true, this specific target is explicitly
+    # permitted to use a legacy edition, bypassing the need to be in the global
+    # allowlist.
     if (invoker.edition != "2024" && (!defined(invoker.allow_legacy_edition) ||
                                       !invoker.allow_legacy_edition)) {
       deps += [ "//build/rust:edition_legacy_allowlist" ]
@@ -352,8 +353,9 @@ template("rustc_artifact") {
     } else {
       not_needed(invoker, [ "sources" ])
 
-      # This is a hack to workaround the fact that a GN `tool` invocation can't receive arbitrary input.
-      # Add a sentinel value so that enforcement is skipped.
+      # This is a hack to workaround the fact that a GN `tool` invocation can't
+      # receive arbitrary input. Add a sentinel value so that enforcement is
+      # skipped.
       sources = [ "//build/rust/__SKIP_ENFORCEMENT__.rs" ]
 
       # Opting out of strict sources check requires that the package is present

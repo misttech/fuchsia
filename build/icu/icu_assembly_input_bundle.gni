@@ -8,7 +8,8 @@ import("config.gni")  # icu_flavors
 #
 # It creates a group for each icu flavor, which deps on the general 'deps' arg,
 # plus the icu version of each of the icu_dependencies, adding the appropriate
-# suffix for the flavor and commit id:  .icu_${icu_flavor.name}_${icu_flavor.commit_id}
+# suffix for the flavor and commit id:
+# .icu_${icu_flavor.name}_${icu_flavor.commit_id}
 #
 template("icu_aib_bazel_inputs") {
   foreach(icu_flavor, icu_flavors) {

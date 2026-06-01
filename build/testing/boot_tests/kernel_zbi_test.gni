@@ -12,18 +12,20 @@ import("//build/testing/boot_tests/zbi_test.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 
 declare_args() {
-  # Defines the default value of `kernel_zbi_test()` template `generate_cuckoo` parameters.
-  # When true, all instances of `kernel_zbi_tests()` will default to generating a `cuckoo_zbi_test()`
-  # which is a full system image generated for exfiltrating instrumentation data from a target system.
+  # Defines the default value of `kernel_zbi_test()` template `generate_cuckoo`
+  # parameters. When true, all instances of `kernel_zbi_tests()` will default to
+  # generating a `cuckoo_zbi_test()` which is a full system image generated for
+  # exfiltrating instrumentation data from a target system.
   generate_cuckoo_tests = false
 
   # Default value for `disabled` parameter for generated `cuckoo_test()`.
   # TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
   disable_cuckoo_tests = false
 
-  # Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided list of kernel
-  # images; this list unconditionally extends that selection. This enables devs and builders to
-  # introduce more kinds of tests in the GN graph without affecting gen times by default.
+  # Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided
+  # list of kernel images; this list unconditionally extends that selection.
+  # This enables devs and builders to introduce more kinds of tests in the GN
+  # graph without affecting gen times by default.
   extra_kernel_test_images = []
 }
 
@@ -43,8 +45,8 @@ template("_cuckoo_product_bundle") {
 
   assembled_system_namespace = assembled_system_target
 
-  # This creates the target test to run against the cuckoo images, the purpose of
-  # this test is to trigger coverage collection.
+  # This creates the target test to run against the cuckoo images, the purpose
+  # of this test is to trigger coverage collection.
   fuchsia_unittest_package(stub_test_target) {
     deps = [
       "//src/sys/early_boot_instrumentation/test:early-boot-collector-stub",

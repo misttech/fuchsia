@@ -78,8 +78,9 @@ template("third_party_icu_headers") {
     icu_assembly = invoker.icu_assembly
   }
 
-  # Separate source targets, one for each ICU flavor supported.  All built from
-  # the same file, which has different FUCHSIA_ICU_VARIANT env variables defined.
+  # Separate source targets, one for each ICU flavor supported. All built from
+  # the same file, which has different FUCHSIA_ICU_VARIANT env variables
+  # defined.
   if (icu_assembly) {
     foreach(icu_flavor, icu_flavors) {
       source_set(

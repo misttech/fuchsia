@@ -282,8 +282,9 @@ template("variant_toolchain_suite") {
         "Unknown toolchain_tags ${_unknown_tags} in toolchain suite definition ${target_name}")
   }
 
-  # As a special case, always ensure that 'kernel-excluded' or 'kernel-only' is part of
-  # exclude_tags, based on whether 'kernel' appears in invoker.toolchain_tags.
+  # As a special case, always ensure that 'kernel-excluded' or 'kernel-only' is
+  # part of exclude_tags, based on whether 'kernel' appears in
+  # invoker.toolchain_tags.
   _is_kernel = _toolchain_tags + [ "kernel" ] - [ "kernel" ] != _toolchain_tags
   if (_is_kernel) {
     _kernel_exclude_tags = [ "kernel-excluded" ]
@@ -294,12 +295,13 @@ template("variant_toolchain_suite") {
   exclude_tags -= _kernel_exclude_tags
   exclude_tags += _kernel_exclude_tags
 
-  # Ensure that `fuchsia-only` xor `excluded` are part or exclude_tags based on whether
-  # the `toolchain_os` is fuchsia.
+  # Ensure that `fuchsia-only` xor `excluded` are part or exclude_tags based on
+  # whether the `toolchain_os` is fuchsia.
   if (defined(invoker.toolchain_os)) {
     _is_fuchsia = invoker.toolchain_os == "fuchsia"
   } else if (defined(invoker.os)) {
-    # Note that the zircon toolchain doesn't define `toolchain_os`. Instead they use `os`.
+    # Note that the zircon toolchain doesn't define `toolchain_os`. Instead they
+    # use `os`.
     _is_fuchsia = invoker.os == "fuchsia"
   } else {
     assert(false,
@@ -382,8 +384,8 @@ template("variant_toolchain_suite") {
     i = i + 1
   }
 
-  # Handle `enable_variants` here. First ensure that the list of names corresponds
-  # to known variant names.
+  # Handle `enable_variants` here. First ensure that the list of names
+  # corresponds to known variant names.
   enabled_variant_names = []
   if (defined(invoker.enable_variants) && invoker.enable_variants != []) {
     _all_variant_names = []

@@ -161,8 +161,9 @@ all_package_manifests_list = root_build_dir + "/all_package_manifests.list"
 all_package_manifests_deps = []
 all_package_manifests_inputs = []
 
-# The ':package_lists', and bundle-dependent package lists all require a product bundle,
-# so we only create them if there's a product bundle to create them from.
+# The ':package_lists', and bundle-dependent package lists all require a product
+# bundle, so we only create them if there's a product bundle to create them
+# from.
 if (use_bazel_images_only && bazel_product_bundle_target != "") {
   # These package lists are used by `fx list-packages`, and while
   # workflows remain that use those, they need to be created.
@@ -179,11 +180,13 @@ if (use_bazel_images_only && bazel_product_bundle_target != "") {
     ]
   }
 
-  # No inputs, just here to trigger a dep edge so that these files are all generated
+  # No inputs, just here to trigger a dep edge so that these files are all
+  # generated
   all_package_manifests_deps += [ ":package_lists" ]
 
-  # These are the various package sets as determined from the product assembly operation in bazel.
-  # These actually depend on the "product assembly" sub-target, not the overall product bundle.
+  # These are the various package sets as determined from the product assembly
+  # operation in bazel. These actually depend on the "product assembly"
+  # sub-target, not the overall product bundle.
   packages_from_product_assembler("base_package_manifests.list") {
     package_set = "base"
     assembly_label = labels.images
@@ -208,10 +211,10 @@ if (use_bazel_images_only && bazel_product_bundle_target != "") {
   all_package_manifests_inputs +=
       [ "${target_out_dir}/ondemand_package_manifests.list" ]
 
-  # The above base packages list is created by product assembly, and _doesn't_ contain either
-  # the base (system_image) or update package, so to get a full list of packages to publish,
-  # we need a full set of packages from the product bundle.  We'll copy it here to ease things
-  # elsewhere
+  # The above base packages list is created by product assembly, and _doesn't_
+  # contain either the base (system_image) or update package, so to get a full
+  # list of packages to publish, we need a full set of packages from the product
+  # bundle. We'll copy it here to ease things elsewhere
   copy("bundle_package_manifests.list") {
     testonly = true
     deps = [ labels.bazel_package_manifests_list ]
@@ -242,7 +245,8 @@ if (use_bazel_images_only && bazel_product_bundle_target != "") {
     ]
   }
 
-  # Create a list of the names of all cache packages.  This is used by fx list-packages
+  # Create a list of the names of all cache packages. This is used by fx
+  # list-packages
   action("cache_packages.list") {
     testonly = true
     script = "package_names_list.py"
@@ -295,8 +299,9 @@ group("universe_packages") {
   ]
 }
 
-# These groups exist regardless of if there's a product bundle set or not, and packages
-# could be published from them, so always create the universe packages list.
+# These groups exist regardless of if there's a product bundle set or not, and
+# packages could be published from them, so always create the universe packages
+# list.
 generate_package_metadata("universe_packages.list") {
   testonly = true
   visibility = [ ":*" ]
@@ -378,8 +383,8 @@ devhost_repository_publish("publish") {
   }
 }
 
-# Allow the incremental publisher to stage the repository keys and root metadata so it can publish
-# without needing to do a full build.
+# Allow the incremental publisher to stage the repository keys and root metadata
+# so it can publish without needing to do a full build.
 group("prepare_publish") {
   testonly = true
   deps = [ ":publish_repo_deps" ]

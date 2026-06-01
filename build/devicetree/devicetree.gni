@@ -63,7 +63,8 @@ template("_preprocessed_dts") {
   }
 }
 
-# Defines a devicetree source file that can be included by other devicetree files.
+# Defines a devicetree source file that can be included by other devicetree
+# files.
 #
 # Parameters
 #
@@ -178,7 +179,8 @@ template("dtb") {
     rebase = root_build_dir
   }
 
-  # This passes the DTS files through the preprocessor to handle any C constants.
+  # This passes the DTS files through the preprocessor to handle any C
+  # constants.
   _preprocessed_dts(processed_dts_target) {
     forward_variables_from(invoker,
                            [
@@ -209,7 +211,8 @@ template("dtb") {
     depfile = "$target_gen_dir/$source_name.d"
     includes_file = get_target_outputs(":$dts_include_dirs_target")
 
-    # Inform the build that we will be accessing the compiler and .includes.txt for the target
+    # Inform the build that we will be accessing the compiler and .includes.txt
+    # for the target
     inputs = [
       dtc_path,
       includes_file[0],
@@ -442,9 +445,9 @@ template("devicetree") {
 
 # Defines a parsed devicetree output and verifies it against a golden file.
 #
-# This template runs the devicetree-parsed-dump tool on a compiled devicetree blob
-# (DTB) along with a set of visitor shared libraries to produce a text-based
-# parsed output. This output is then compared against a golden file.
+# This template runs the devicetree-parsed-dump tool on a compiled devicetree
+# blob (DTB) along with a set of visitor shared libraries to produce a
+# text-based parsed output. This output is then compared against a golden file.
 #
 # Parameters
 #

@@ -10,9 +10,10 @@ if (is_host) {
   import("//build/testing/host_test_data.gni")
 
   host_test_data("default_product_bundle_for_emulator.go") {
-    # No tests should be assuming this product bundle target, but //tools/emulator/emulator.go
-    # finds the images in this product bundle via images.json, and uses them for its tests.
-    # They should explicitly use a product bundle instead.
+    # No tests should be assuming this product bundle target, but
+    # //tools/emulator/emulator.go finds the images in this product bundle via
+    # images.json, and uses them for its tests. They should explicitly use a
+    # product bundle instead.
     # TODO(https://fxbug.dev/495904502)
     visibility = [
       "//src/devices/block/drivers/ufs/test/e2e:*",
@@ -32,8 +33,8 @@ if (is_host) {
   }
 
   host_test_data("fuchsia_zbi_for_host_tests") {
-    # No tests should be directly using this zbi, they should be using product bundles instead.
-    # This test hardcodes the path to the fuchsia.zbi file
+    # No tests should be directly using this zbi, they should be using product
+    # bundles instead. This test hardcodes the path to the fuchsia.zbi file
     # TODO(https://fxbug.dev/495904502)
     # TODO(https://fxbug.dev/496264014)
     visibility = [ "//src/devices/block/drivers/ufs/test/e2e:*" ]

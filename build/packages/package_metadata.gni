@@ -106,8 +106,8 @@ template("generate_package_metadata") {
 
 # Defines package metadata.
 #
-# This metadata is collected by `generate_package_metadata`.
-# The caller should add a dep on the given target name for the metadata to take effect.
+# This metadata is collected by `generate_package_metadata`. The caller should
+# add a dep on the given target name for the metadata to take effect.
 #
 # Parameters (see `generate_package_metadata` for full definitions)
 #

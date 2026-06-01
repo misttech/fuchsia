@@ -115,15 +115,15 @@ template("rustc_macro") {
   # Compiling procedural macros is... a bit awkward.
   #
   # Even though they're provided to crates that use them as if they were normal
-  # external crates, they're actually '.so'/'.dylib's that are compiled for the host machine
-  # and then linked into the compiler, so they and all their dependencies should
-  # be built for the host target.
+  # external crates, they're actually '.so'/'.dylib's that are compiled for the
+  # host machine and then linked into the compiler, so they and all their
+  # dependencies should be built for the host target.
   #
-  # Once this is done, the resulting artifacts are copied into the Fuchsia target
-  # directories to act as if they had been built for Fuchsia. In order to avoid
-  # conflicts, the outputs of the original (host) artifact are built with a
-  # `_proc_macro` suffix added onto the end, which is removed when they're copied
-  # into the final target directory.
+  # Once this is done, the resulting artifacts are copied into the Fuchsia
+  # target directories to act as if they had been built for Fuchsia. In order to
+  # avoid conflicts, the outputs of the original (host) artifact are built with
+  # a `_proc_macro` suffix added onto the end, which is removed when they're
+  # copied into the final target directory.
   forward_variables_from(invoker, [ "visibility" ])
 
   proc_macro_target = "${target_name}_proc_macro"

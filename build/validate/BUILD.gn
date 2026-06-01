@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Add this tag to deps of non_production GN labels (packages/configs).
-# This dependency is disallowed in Assembly Input Bundles (AIBs) for _user images.
+# Add this tag to deps of non_production GN labels (packages/configs). This
+# dependency is disallowed in Assembly Input Bundles (AIBs) for _user images.
 group("non_production_tag") {
 }
 

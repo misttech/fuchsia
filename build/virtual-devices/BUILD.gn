@@ -15,7 +15,8 @@ if (board_is_emu) {
   if (need_more_memory) {
     recommended_memory = 8192
   } else if (is_coverage && target_cpu == "x64") {
-    # The max amount of memory supported on arm64 in infra is 8GB so only use this larger memory for x64.
+    # The max amount of memory supported on arm64 in infra is 8GB so only use
+    # this larger memory for x64.
     recommended_memory = 16384
   }
 
@@ -59,7 +60,8 @@ if (board_is_emu) {
     cpu = {
       arch = target_cpu
 
-      # The 1cpu environment depends on this device spec having a cpu count of 1.
+      # The 1cpu environment depends on this device spec having a cpu count of
+      # 1.
       # LINT.IfChange
       count = 1
 

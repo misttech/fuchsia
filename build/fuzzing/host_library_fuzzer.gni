@@ -38,8 +38,8 @@ template("host_library_fuzzer") {
       target_configs = invoker.configs
     }
 
-    # Always build a test that runs via `fx test`. This tests the fuzzer with fixed inputs, whether
-    # the toolchain variant supports fuzzing or not.
+    # Always build a test that runs via `fx test`. This tests the fuzzer with
+    # fixed inputs, whether the toolchain variant supports fuzzing or not.
     test_inputs = [ "//src/lib/fuzzing/test_data/empty_input" ]
     if (defined(invoker.test_inputs)) {
       test_inputs += invoker.test_inputs
@@ -71,8 +71,8 @@ template("host_library_fuzzer") {
     }
     group_deps += [ ":$test_target" ]
 
-    # If the toolchain variant supports fuzzing, also register the fuzzer binary as a host tool and
-    # allow users to fuzz by calling it via `fx host-tool`
+    # If the toolchain variant supports fuzzing, also register the fuzzer binary
+    # as a host tool and allow users to fuzz by calling it via `fx host-tool`
     if (is_fuzzer) {
       tool_target = "${fuzzer_name}_tool"
       install_host_tools(tool_target) {

@@ -227,8 +227,8 @@ template("intl_strings") {
     public_deps = group_deps
 
     metadata = {
-      # Used by distribution_manifest() template. Ensure that the resources,
-      # but not the library is installed in a package that depends on this target.
+      # Used by distribution_manifest() template. Ensure that the resources, but
+      # not the library is installed in a package that depends on this target.
       distribution_entries_barrier = resource_deps
     }
   }

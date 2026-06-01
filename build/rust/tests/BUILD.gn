@@ -7,8 +7,9 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/testing/host_test_data.gni")
 
-# Note that all of the Rust targets in this module pass quiet_clippy=true. This prevents the lints
-# produced by these targets from failing the build when deny_warnings=true or from being printed
+# Note that all of the Rust targets in this module pass quiet_clippy=true. This
+# prevents the lints produced by these targets from failing the build when
+# deny_warnings=true or from being printed
 # when deny_warnings=false.
 
 group("tests") {

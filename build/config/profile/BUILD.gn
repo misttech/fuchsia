@@ -22,9 +22,10 @@ foreach(file, dont_profile_source_files) {
   # See https://clang.llvm.org/docs/UsersManual.html#cmdoption-fprofile-list
   # for supported prefixes and categories.
 
-  # When the "source:path=skip" format is used, Clang excludes the files that are
-  # under the provided path from instrumentation and adds the `skipprofile`
-  # attribute, which only prevents instrumentation, but does not restrict inlining
+  # When the "source:path=skip" format is used, Clang excludes the files that
+  # are under the provided path from instrumentation and adds the `skipprofile`
+  # attribute, which only prevents instrumentation, but does not restrict
+  # inlining
   # between functions in the same way that the `noprofile` attribute does.
 
   # Clang uses a glob pattern matcher described in:
@@ -37,8 +38,9 @@ foreach(file, profile_source_files) {
   # See https://clang.llvm.org/docs/UsersManual.html#cmdoption-fprofile-list
   # for supported prefixes and categories.
 
-  # When the "source:path" format is used without any of the supported categories
-  # (`allow`, `skip`, and `forbid`), Clang chooses the `allow` category as default
+  # When the "source:path" format is used without any of the supported
+  # categories (`allow`, `skip`, and `forbid`), Clang chooses the `allow`
+  # category as default
   # to instrument the files that are under the provided path.
 
   # Clang uses a glob pattern matcher described in:
@@ -182,11 +184,12 @@ variant("coverage-cts") {
   }
 }
 
-# Only enable either "coverage-rust" or clang coverage (variant("profile") or variant("coverage")),
-# not both.
+# Only enable either "coverage-rust" or clang coverage (variant("profile") or
+# variant("coverage")), not both.
 #
-# DO NOT NAME THIS WITH PREFIX `rust-`. The prefix will be stripped in some cases, and fail to
-# work with other cases that do not expect the stripped prefix.
+# DO NOT NAME THIS WITH PREFIX `rust-`. The prefix will be stripped in some
+# cases, and fail to work with other cases that do not expect the stripped
+# prefix.
 variant("coverage-rust") {
   configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]

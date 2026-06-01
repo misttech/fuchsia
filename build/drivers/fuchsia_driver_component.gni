@@ -49,8 +49,8 @@ template("fuchsia_driver_component") {
     base_folder = splitted_path[2]  # after removing "//"
     create_driver_doc = false
     if (base_folder == "src" || base_folder == "zircon") {
-      # Public drivers (defined as drivers in //src and //zircon) must provide an 'info' field with
-      # a driver information file.
+      # Public drivers (defined as drivers in //src and //zircon) must provide
+      # an 'info' field with a driver information file.
       assert(defined(invoker.info), "Must include driver info")
       create_driver_doc = true
     } else {

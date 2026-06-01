@@ -24,15 +24,17 @@ declare_args() {
     #"//third_party/*",
   ]
 
-  # When clang_prefix is provided, it might be installed somewhere other than //prebuilt.
-  # This ensures that we don't profile source files that are under clang_prefix directory.
+  # When clang_prefix is provided, it might be installed somewhere other than
+  # //prebuilt. This ensures that we don't profile source files that are under
+  # clang_prefix directory.
   if (clang_prefix != default_clang_prefix) {
     clang_dir = get_path_info(clang_prefix, "dir")
     dont_profile_source_files += [ "$clang_dir/*" ]
   }
 
-  # When target_sysroot is provided, it might be installed somewhere other than //prebuilt.
-  # This ensures that we don't profile source files that are under target_sysroot directory.
+  # When target_sysroot is provided, it might be installed somewhere other than
+  # //prebuilt. This ensures that we don't profile source files that are under
+  # target_sysroot directory.
   if (target_sysroot != "") {
     dont_profile_source_files += [ "$target_sysroot/*" ]
   }

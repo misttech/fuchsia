@@ -303,10 +303,10 @@ template("fidl") {
     not_needed(invoker, fidl_only)
   }
 
-  # The check here is to prevent builds using different host toolchain bases from causing build
-  # conflicts.
-  # TODO(b/346586023): This is only really used for Fuchsia Controller, which should instead be
-  # packaging this as a Python data resource.
+  # The check here is to prevent builds using different host toolchain bases
+  # from causing build conflicts.
+  # TODO(b/346586023): This is only really used for Fuchsia Controller, which
+  # should instead be packaging this as a Python data resource.
   if (is_host && current_toolchain == toolchain_variant.base) {
     _fidl_ir_root_target = "${target_name}_ir_root"
     _fidl_ir_root_base = get_label_info(":anything($fidl_toolchain)",
@@ -337,10 +337,11 @@ template("fidl") {
       _host_test_marker_category = "allowed-for-host-test"
     }
 
-    # This is intended as an alternative easily-searchable setup to all_fidl_json.txt
-    # The only caveat is that this will fail if there are FIDL libraries with duplicate names as
-    # dependencies. A future step may be to create this directory structure in a given package's
-    # gen dir rather than the root FIDL gen dir.
+    # This is intended as an alternative easily-searchable setup to
+    # all_fidl_json.txt The only caveat is that this will fail if there are FIDL
+    # libraries with duplicate names as dependencies. A future step may be to
+    # create this directory structure in a given package's gen dir rather than
+    # the root FIDL gen dir.
     action(_fidl_ir_root_target) {
       forward_variables_from(invoker, [ "testonly" ])
 
@@ -506,8 +507,8 @@ template("fidl") {
 
     if (enable_rust_next &&
         (is_fidl_toolchain || toolchain_variant.supports_rust)) {
-      # Only import the fidl_rust_next() template if in a rust-capable toolchain and
-      # rust bindings are to be defined.
+      # Only import the fidl_rust_next() template if in a rust-capable toolchain
+      # and rust bindings are to be defined.
       import("//build/rust/fidl_rust_next.gni")
       _common_name = "${target_name}_rust_next_common"
 

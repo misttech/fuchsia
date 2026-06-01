@@ -4,13 +4,15 @@
 
 import("//build/packages/prebuilt_test_package.gni")
 
-# Defines prebuilt package tests based on the contents in a prebuilt test manifest.
+# Defines prebuilt package tests based on the contents in a prebuilt test
+# manifest.
 #
-# Vendors are required to upload one or more test manifest JSON files in the same
-# CIPD package as their prebuilt FAR tests. We use these manifests for determining
-# which test packages to enable and how each test package is run.
+# Vendors are required to upload one or more test manifest JSON files in the
+# same CIPD package as their prebuilt FAR tests. We use these manifests for
+# determining which test packages to enable and how each test package is run.
 #
-# The test manifest should contain a JSON list of objects. Each object's schema is:
+# The test manifest should contain a JSON list of objects. Each object's schema
+# is:
 #
 #   package (required)
 #     The name of the Fuchsia package

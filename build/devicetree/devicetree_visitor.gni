@@ -160,8 +160,8 @@ template("devicetree_visitor") {
 
 # Defines a collection of devicetree visitors.
 #
-# Creates a GN group target for use in GN builds as well as a sdk molecule `${target_name}_sdk` that
-# can be used to export the visitors to the SDK.
+# Creates a GN group target for use in GN builds as well as a sdk molecule
+# `${target_name}_sdk` that can be used to export the visitors to the SDK.
 #
 # Parameters
 #

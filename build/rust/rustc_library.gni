@@ -311,7 +311,8 @@ template("rustc_library") {
       deps += invoker.non_rust_deps
     }
 
-    # Avoid walking into data_deps when checking component manifest expected includes.
+    # Avoid walking into data_deps when checking component manifest expected
+    # includes.
     metadata = {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")

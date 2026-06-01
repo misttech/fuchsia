@@ -202,8 +202,8 @@ template("rustc_cdylib") {
     }
 
     # The rust_dylib toolchain always sets the lib prefix by default regardless
-    # of target type, set `output_prefix_override` to true to remove it if either
-    # the user requested it or this is a loadable_module.
+    # of target type, set `output_prefix_override` to true to remove it if
+    # either the user requested it or this is a loadable_module.
     output_prefix_override = !_use_lib_prefix
 
     crate_root = source_root

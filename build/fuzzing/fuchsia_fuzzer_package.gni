@@ -8,10 +8,12 @@ import("//build/fuzzing/fuchsia_fuzzer_component.gni")
 
 # Defines a package of fuzzers
 #
-# This template is used to bundle several fuzzers or fuzzer tests and their associated data into a
-# single Fuchsia package. See //examples/fuzzers/BUILD.gn for examples.
+# This template is used to bundle several fuzzers or fuzzer tests and their
+# associated data into a single Fuchsia package. See //examples/fuzzers/BUILD.gn
+# for examples.
 #
-# Parameters: Same as `fuchsia_test_package`, but with `test_components` replaced one or more of the
+# Parameters: Same as `fuchsia_test_package`, but with `test_components`
+# replaced one or more of the
 # following:
 #   cpp_fuzzer_components (optional)
 #   rust_fuzzer_components (optional)
@@ -43,14 +45,16 @@ template("fuchsia_fuzzer_package") {
       rust_fuzzer_components = invoker.rust_fuzzer_components
     }
 
-    # Step 1: Determine which components to fuzz vs test based on which variants are active. This is
-    # eager, and may include components that don't end up being selected by a fuzzer variant. This
-    # is unlikely to happen with normal development workflows, but if it does, it will only
-    # advertise one or more fuzzer tests as fuzzers, which will produce a descriptive error message
-    # if run.
+    # Step 1: Determine which components to fuzz vs test based on which variants
+    # are active. This is eager, and may include components that don't end up
+    # being selected by a fuzzer variant. This is unlikely to happen with normal
+    # development workflows, but if it does, it will only advertise one or more
+    # fuzzer tests as fuzzers, which will produce a descriptive error message if
+    # run.
     #
     # TODO(https://fxbug.dev/42056967): Make this less eager, e.g. by extending test_spec to include metadata
-    # from the binary itself, or by making the fuzzer vs test a runtime determination.
+    # from the binary itself, or by making the fuzzer vs test a runtime
+    # determination.
     can_fuzz_cpp = false
     can_fuzz_rust = false
 
@@ -94,8 +98,8 @@ template("fuchsia_fuzzer_package") {
       deps += rust_fuzzer_components
     }
 
-    # Step 3: Register fuzzers and fuzzer tests. The former are distinguished from the latter by a
-    # fuzzer-specific `build_rule`.
+    # Step 3: Register fuzzers and fuzzer tests. The former are distinguished
+    # from the latter by a fuzzer-specific `build_rule`.
     group_deps = [ ":$package_target" ]
     foreach(component_set, component_sets) {
       foreach(component, component_set.components) {
@@ -118,7 +122,8 @@ template("fuchsia_fuzzer_package") {
       }
     }
 
-    # Step 4: Add the package and test registrations to a group with the `target_name`.
+    # Step 4: Add the package and test registrations to a group with the
+    # `target_name`.
     group(target_name) {
       testonly = true
       forward_variables_from(invoker, [ "visibility" ])

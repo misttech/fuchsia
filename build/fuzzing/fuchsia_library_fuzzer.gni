@@ -6,15 +6,15 @@ import("//build/fuzzing/internal/library_fuzzer.gni")
 
 # Creates a fuzzer binary.
 #
-# When built in a fuzzer toolchain variant, this template produces a fuzzer that uses libfuzzer as
-# its fuzzing engine, and that is linked directly against one or more target libraries in the same
-# process. The fuzzer generates and tests inputs in a loop, automatically discovering code paths and
-# finding bugs.
+# When built in a fuzzer toolchain variant, this template produces a fuzzer that
+# uses libfuzzer as its fuzzing engine, and that is linked directly against one
+# or more target libraries in the same process. The fuzzer generates and tests
+# inputs in a loop, automatically discovering code paths and finding bugs.
 #
-# When built with a non-fuzzer toolchain variant, it produces a "fuzzer test" that exercises the
-# same code as above with a set of fixed inputs. This is useful for ensuring the fuzzer code is
-# buildable and, if inputs that previously caused are added to the fixed set, acting as a regression
-# test.
+# When built with a non-fuzzer toolchain variant, it produces a "fuzzer test"
+# that exercises the same code as above with a set of fixed inputs. This is
+# useful for ensuring the fuzzer code is buildable and, if inputs that
+# previously caused are added to the fixed set, acting as a regression test.
 #
 # Parameters are the same as `executable` except that:
 #   $testonly cannot be set
@@ -28,10 +28,10 @@ template("fuchsia_library_fuzzer") {
     fuzzer_name = invoker.output_name
   }
 
-  # 'expect_includes_deps': A list option that defines which include paths should
-  # be incorporated into the fuzzer manifest. This ensures that specific headers
-  # are included during fuzzer generation, particularly from dependencies that
-  # are necessary for proper compilation and testing.
+  # 'expect_includes_deps': A list option that defines which include paths
+  # should be incorporated into the fuzzer manifest. This ensures that specific
+  # headers are included during fuzzer generation, particularly from
+  # dependencies that are necessary for proper compilation and testing.
   expect_includes_deps = []
   if (defined(invoker.expect_includes_deps)) {
     expect_includes_deps = invoker.expect_includes_deps

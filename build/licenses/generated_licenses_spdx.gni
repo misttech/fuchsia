@@ -6,15 +6,16 @@ import("//build/python/python_action.gni")
 
 declare_args() {
   # When true, generated_licenses_spdx template will generate stub SPDX files
-  # with placeholder license. License gathering will be skipped.
-  # Since license gathering is resource intensive, this is useful for non-production
-  # builds that would run faster.
-  # The global configuration can be overwritten in specific `generated_licenses_spdx`
-  # template invocation via the `generate_stub` parameter.
+  # with placeholder license. License gathering will be skipped. Since license
+  # gathering is resource intensive, this is useful for non-production builds
+  # that would run faster. The global configuration can be overwritten in
+  # specific `generated_licenses_spdx` template invocation via the
+  # `generate_stub` parameter.
   generate_licenses_spdx_stubs = true
 }
 
-# Generates a stub license SPDX json file. See `generate_licenses_spdx_stubs` arg.
+# Generates a stub license SPDX json file. See `generate_licenses_spdx_stubs`
+# arg.
 #
 # Parameters:
 #
@@ -60,7 +61,8 @@ template("_generated_licenses_spdx_stub") {
   }
 }
 
-# Collects license metadata and generates a license SPDX json file for a given target.
+# Collects license metadata and generates a license SPDX json file for a given
+# target.
 #
 # When `generate_licenses_spdx_stubs=true`, will generate a stub spdx instead.
 #

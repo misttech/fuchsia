@@ -4,7 +4,8 @@
 
 import("//build/python/python_library.gni")
 
-# This allows code call FIDL wire table constructors and setters rather than using builders.
+# This allows code call FIDL wire table constructors and setters rather than
+# using builders.
 config("fidl-wire-deprecated-mutable-tables") {
   cflags_cc = [ "-DFIDL_WIRE_ALLOW_DEPRECATED_MUTABLE_TABLES" ]
 

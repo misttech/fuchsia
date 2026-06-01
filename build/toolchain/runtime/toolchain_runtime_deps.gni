@@ -134,7 +134,8 @@ template("_define_runtime_group") {
       ]
 
       if (defined(lib.debug)) {
-        # Compute build-id from lib.debug if possible. Look for ..../.build-id/xx/yyyyyy.debug
+        # Compute build-id from lib.debug if possible. Look for
+        # ..../.build-id/xx/yyyyyy.debug
         _build_id = ""
         _lib_debug_nosuffix = string_replace(lib.debug, ".debug", "")
         _has_debug_suffix = _lib_debug_nosuffix != lib.debug

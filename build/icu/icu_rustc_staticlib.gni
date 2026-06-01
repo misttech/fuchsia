@@ -24,8 +24,8 @@ template("icu_rustc_staticlib") {
     # commit ID so that we could possibly use targets from different builds.
     rustc_staticlib(
         "${target_name}.icu_${icu_flavor.name}_${icu_flavor.commit_id}") {
-      # Do not forward variables which the template does not support. In addition,
-      # treat "visibility" and "testonly" as special.
+      # Do not forward variables which the template does not support. In
+      # addition, treat "visibility" and "testonly" as special.
       forward_variables_from(invoker,
                              "*",
                              [

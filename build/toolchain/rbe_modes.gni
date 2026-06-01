@@ -138,8 +138,8 @@ _default_rbe_settings = {
     rust_enable = true
     rust_exec_strategy = "racing"
 
-    # TODO: bazel does support "dynamic" execution strategies for racing,
-    # but it would be a good idea to spell out strategies per mnemonic (action type).
+    # TODO: bazel does support "dynamic" execution strategies for racing, but it
+    # would be a good idea to spell out strategies per mnemonic (action type).
     bazel_enable = true
     bazel_exec_strategy = "remote"
   }

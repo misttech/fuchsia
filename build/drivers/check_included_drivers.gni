@@ -9,8 +9,8 @@ import("//build/drivers/assert_driver_components.gni")
 # given at //build/drivers/all_drivers_list.txt. This will ignore any drivers
 # that are in //vendor/*.
 #
-# This also checks that all drivers included are driver components.
-# For more information on this check see //build/drivers/assert_drivers_components.gni
+# This also checks that all drivers included are driver components. For more
+# information on this check see //build/drivers/assert_drivers_components.gni
 #
 # Parameters
 #   contains_all_drivers (optional)
@@ -42,7 +42,8 @@ template("check_included_drivers") {
     outputs = [ metadata_check_output ]
     deps = invoker.deps
 
-    # fuchsia_driver_labels should be a list of qualified GN labels without toolchain information
+    # fuchsia_driver_labels should be a list of qualified GN labels without
+    # toolchain information
     data_keys = [ "fuchsia_driver_labels" ]
   }
 

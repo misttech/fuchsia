@@ -322,7 +322,8 @@ template("product_assembly_configuration") {
       }
     }
 
-    # bootfs_packages are just labels, not scopes, so the handling is slightly simpler.
+    # bootfs_packages are just labels, not scopes, so the handling is slightly
+    # simpler.
     bootfs_packages = []
     bootfs_package_manifests = []
     if (defined(invoker.bootfs_packages)) {

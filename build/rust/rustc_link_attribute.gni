@@ -79,13 +79,13 @@ template("rustc_link_attribute") {
   _config_target = "${target_name}.config"
 
   config(_config_target) {
-    # The Rust compiler translates a #[link(name = "foo")] attribute
-    # into an `-lfoo` flag when invoking the linker. There is no way to tell the Rust
+    # The Rust compiler translates a #[link(name = "foo")] attribute into an
+    # `-lfoo` flag when invoking the linker. There is no way to tell the Rust
     # compiler to link to a specific library file path.
     #
-    # To make this work semi-correctly, add the library's directory to `lib_dirs`
-    # and use `-ldylib=foo` or `-lstatic=foo` to ensure the right version of the
-    # library is picked up.
+    # To make this work semi-correctly, add the library's directory to
+    # `lib_dirs` and use `-ldylib=foo` or `-lstatic=foo` to ensure the right
+    # version of the library is picked up.
     #
     # lib_name can also be of the form 'foo:foo_renamed' to rename the linker
     # library flag to `-lfoo_renamed`.
@@ -95,9 +95,9 @@ template("rustc_link_attribute") {
       "-l${_lib_kind}=${_lib_name}",
 
       # This is necessary for the RBE wrapper to locate the file as an input.
-      # Without it, the remote build will fail with a linker error complaining about
-      # a missing library file for `-lfoo` even though the right `-L <dir>` option
-      # was passed to the linker to find it.
+      # Without it, the remote build will fail with a linker error complaining
+      # about a missing library file for `-lfoo` even though the right `-L
+      # <dir>` option was passed to the linker to find it.
       "-Clink-arg=" + rebase_path(_lib_path, root_build_dir),
     ]
   }

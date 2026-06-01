@@ -7,7 +7,8 @@ import("//build/fuzzing/host_library_fuzzer.gni")
 
 # Creates a C++ fuzzer binary.
 #
-# This template can be used to create fuzzers for both the Fuchsia and development host platforms.
+# This template can be used to create fuzzers for both the Fuchsia and
+# development host platforms.
 #
 # Parameters are the same as `executable`, plus:
 #

@@ -226,7 +226,8 @@ if (current_toolchain == dart_toolchain) {
     _packages_path = "$target_gen_dir/${target_name}_package_config.json"
     dart_package_config(_dart_package_config_target_name) {
       # Do not publish the metadata to the dart_package_config json file if the
-      # disable_metadata_entry flag is enabled in the dart_tool. The reason this is here
+      # disable_metadata_entry flag is enabled in the dart_tool. The reason this
+      # is here
       # is to avoid entries that may have identical rootUris as https://fxbug.dev/42136776 has highlighted.
       deps = _dart_deps
       if (!defined(invoker.disable_metadata_entry) ||

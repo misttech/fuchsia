@@ -51,7 +51,8 @@ if (current_build_target_api_level == "NEXT") {
       _target_level_found,
       "${current_build_target_api_level} is not a known numbered API level (${platform_version.all_numbered_api_levels}).")
 
-  # All numbered API levels must be below the reserved range of named API levels per
+  # All numbered API levels must be below the reserved range of named API levels
+  # per
   # https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0246_api_levels_are_32_bits#design.
   greater_fuchsia_api_levels += [
     "NEXT",

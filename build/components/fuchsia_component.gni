@@ -438,7 +438,8 @@ template("fuchsia_component") {
         _output_compiled_manifest,
       ]
 
-      # As the sole output is a compiled manifest, it can't leak output dir paths
+      # As the sole output is a compiled manifest, it can't leak output dir
+      # paths
       check_for_output_dir_leaks = false
 
       args = [
@@ -487,8 +488,8 @@ template("fuchsia_component") {
                   "--manifest-path-file",
                   rebase_path(_find_manifest_file, root_build_dir),
 
-                  # The list of includes that are expected to be included in the above
-                  # cml file.
+                  # The list of includes that are expected to be included in the
+                  # above cml file.
                   "--expected-includes",
                   rebase_path(_expected_includes_file, root_build_dir),
                 ] + cmc_include_paths

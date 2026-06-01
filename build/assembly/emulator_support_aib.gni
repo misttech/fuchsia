@@ -12,7 +12,8 @@ import("//build/python/python_action.gni")
 # includes the QEMU kernel itself.
 #
 # The following parameters are for when this template is being used to create a
-# platform AIB for a non-standard QEMU kernel image (such as  boot-shim only tests).
+# platform AIB for a non-standard QEMU kernel image (such as boot-shim only
+# tests).
 #
 # Parameters:
 #
@@ -84,8 +85,8 @@ template("emulator_support_assembly_input_bundle") {
         "${assembly_input_bundle_dir}.fini_manifest"
   }
 
-  # Write the emulator support metadata to a file, as this is the only way to get
-  # the path to the QEMU kernel provided.
+  # Write the emulator support metadata to a file, as this is the only way to
+  # get the path to the QEMU kernel provided.
   generated_file(labels.emulator_support_aib_input_metadata) {
     forward_variables_from(invoker,
                            [

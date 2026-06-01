@@ -190,8 +190,9 @@ template("sdk_source_set") {
     sdk_deps += [ sdk_dep ]
   }
 
-  # Split invoker.sources into sources and headers.
-  # If invoker.public is defined, use that as the list of headers. Otherwise, *.h are headers, and the others are sources
+  # Split invoker.sources into sources and headers. If invoker.public is
+  # defined, use that as the list of headers. Otherwise, *.h are headers, and
+  # the others are sources
   all_headers = []
   all_sources = []
   if (defined(invoker.public)) {
@@ -320,10 +321,11 @@ template("sdk_source_set") {
     # Ensure the behavior matches this documentation.
     # Both could be changed if it makes sense.
     #
-    # When plasa is enabled, the atom's `${sdk_target_name}_meta_copy` sub-target depends on
-    # the `${sdk_target_name}_plasa` target, which indirectly depends on
-    # `main_target_name`. Rather than trying to handle the `assert_no_deps` in
-    # `sdk_atom()`, just skip it in when generating plasa artifacts.
+    # When plasa is enabled, the atom's `${sdk_target_name}_meta_copy`
+    # sub-target depends on the `${sdk_target_name}_plasa` target, which
+    # indirectly depends on `main_target_name`. Rather than trying to handle the
+    # `assert_no_deps` in `sdk_atom()`, just skip it in when generating plasa
+    # artifacts.
     if (!generate_plasa_artifacts) {
       assert_no_deps = [ ":${main_target_name}" ]
     }

@@ -133,7 +133,8 @@ template("sdk_fuchsia_package") {
         expected_files_present = []
       }
 
-      # Label of package to be included in the SDK. Used for tracking `package_manifest.json`
+      # Label of package to be included in the SDK. Used for tracking
+      # `package_manifest.json`
       _full_package_label =
           get_label_info(invoker.package_label, "label_no_toolchain")
       package_manifest_file =
@@ -172,8 +173,8 @@ template("sdk_fuchsia_package") {
             _host_tool_dir + "/" + rebase_path(_far_tool_bin, root_build_dir)
       }
 
-      # Generates content checklist file using input package manifest, and runs checks
-      # against golden. See
+      # Generates content checklist file using input package manifest, and runs
+      # checks against golden. See
       # `//build/packages/generate_sdk_package_content_checklist.py` for more.
       action(_content_checklist_target) {
         forward_variables_from(invoker, [ "testonly" ])

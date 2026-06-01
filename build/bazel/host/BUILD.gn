@@ -46,10 +46,11 @@ if (sdk_cross_compile_host_tools && _is_default_toolchain) {
   }
 }
 
-# Copy cross-compiled SDK host tools from Bazel to host output directory expected by sdk_host_tool.
-# The targets here intentionally share the same target name with the ones defined by
-# `install_bazel_host_tools`, so they can be seamlessly consumed by SDK targets when cross-compiling
-# in different toolchains.
+# Copy cross-compiled SDK host tools from Bazel to host output directory
+# expected by sdk_host_tool. The targets here intentionally share the same
+# target name with the ones defined by `install_bazel_host_tools`, so they can
+# be seamlessly consumed by SDK targets when cross-compiling in different
+# toolchains.
 if (sdk_cross_compile_host_tools && current_toolchain == host_arm64_toolchain) {
   foreach(_target, sdk_host_tool_bazel_targets) {
     _name = get_label_info(_target.bazel_label, "name")

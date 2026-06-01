@@ -16,7 +16,8 @@ declare_args() {
   experimental_dso_enabled = false
 
   # If true, experimental memory optimization features like the
-  # `kernel.oom.experimental_expand_memory_stall` kernel argument will be enabled.
+  # `kernel.oom.experimental_expand_memory_stall` kernel argument will be
+  # enabled.
   experimental_mem_enabled = false
 }
 

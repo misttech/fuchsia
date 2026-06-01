@@ -926,9 +926,10 @@ if (in_default_toolchain) {
             }
           }
 
-          # As a special case, if this is a regular variant descriptor, mark is as
-          # as a candidate for the fuchsia or host toolchain. This flag is tested
-          # later to define fuchsia_toolchain_tags and host_toolchain_tags
+          # As a special case, if this is a regular variant descriptor, mark is
+          # as as a candidate for the fuchsia or host toolchain. This flag is
+          # tested later to define fuchsia_toolchain_tags and
+          # host_toolchain_tags
           if (target_type == [] && output_name == [] && label == [] &&
               name == [] && dir == [] && !defined(kernel) &&
               !defined(testonly)) {
@@ -947,9 +948,9 @@ if (in_default_toolchain) {
 }
 
 declare_args() {
-  # *This should never be set as a build argument.*
-  # It exists only to be set in `toolchain_args`.
-  # See //docs/concepts/build_system/internals/toolchains/build_arguments.md#toolchain_variant
+  # *This should never be set as a build argument.* It exists only to be set in
+  # `toolchain_args`. See
+  # //docs/concepts/build_system/internals/toolchains/build_arguments.md#toolchain_variant
   # for details and documentation for each field.
   toolchain_variant = {
     base = target_toolchain  # default toolchain
@@ -1006,9 +1007,9 @@ if (!defined(toolchain_variant.name)) {
   # LINT.ThenChange(//build/toolchain/fuchsia/BUILD.gn)
 }
 
-# Compute fuchsia_toolchain_tags and host_toolchain_tags which contain the
-# list of toolchain tags that apply to the fuchsia and host
-# toolchain by default, based on the 'select_variant' value after canonicalization.
+# Compute fuchsia_toolchain_tags and host_toolchain_tags which contain the list
+# of toolchain tags that apply to the fuchsia and host toolchain by default,
+# based on the 'select_variant' value after canonicalization.
 #
 # Note that these do not depend on the current toolchain context.
 # Also, fuchsia_toolchain_tags to not apply to Zircon toolchains.
@@ -1045,11 +1046,12 @@ if (_host_toolchain_variant_name == false) {
 }
 
 # Shared libraries built in GN toolchain() instances that implement instrumented
-# build variants should be installed into Fuchsia packages, boot images or system
-# images, as "lib/<variant>/", while non-instrumented ones should simply go to "lib/".
+# build variants should be installed into Fuchsia packages, boot images or
+# system images, as "lib/<variant>/", while non-instrumented ones should simply
+# go to "lib/".
 #
-# Also, as a special case, fuzzing build variants use the non-fuzzing build variant
-# name as the library sub-directory. In other words:
+# Also, as a special case, fuzzing build variants use the non-fuzzing build
+# variant name as the library sub-directory. In other words:
 #
 #   variant name        libdir               libprefix        note
 #
@@ -1058,15 +1060,17 @@ if (_host_toolchain_variant_name == false) {
 #   asan-ubsan    --->  lib/asan-ubsan/      "asan-ubsan/"    (instrumented)
 #   asan-fuzzer   --->  lib/asan/            "asan/"          (instrumented + fuzzing)
 #
-# Note that to run an ELF executable, the system will look its PT_INTERP entry, prepend
-# it with the hard-coded "lib/" prefix, to find the location of the dynamic linker/loader.
+# Note that to run an ELF executable, the system will look its PT_INTERP entry,
+# prepend it with the hard-coded "lib/" prefix, to find the location of the
+# dynamic linker/loader.
 #
-# The default location of the dynamic linker is 'lib/ld.so.1', and thus the default
-# value for PT_INTERP is simply "ld.so.1". However, for instrumented builds, the
-# loader will be in "lib/<variant>/ld.so.1", and the PT_INTERP will be
-# "<variant>/ld.so.1" instead. Which is why instrumented variants typically add
-# a link-time flag like "-Wl,-dynamic-linker=${toolchain_variant.libprefix}ld.so.1"
-# to override the default value (which is 'ld.so.1', hard-coded in the toolchain).
+# The default location of the dynamic linker is 'lib/ld.so.1', and thus the
+# default value for PT_INTERP is simply "ld.so.1". However, for instrumented
+# builds, the loader will be in "lib/<variant>/ld.so.1", and the PT_INTERP will
+# be "<variant>/ld.so.1" instead. Which is why instrumented variants typically
+# add a link-time flag like
+# "-Wl,-dynamic-linker=${toolchain_variant.libprefix}ld.so.1" to override the
+# default value (which is 'ld.so.1', hard-coded in the toolchain).
 #
 # Meanwhile "lib/${toolchain_variant.libprefix}" will be used to determine the
 # installation/distirbution destination path of shared libraries.
@@ -1286,7 +1290,8 @@ if (include_clippy) {
       "Use of clippy is currently not compatible with variants, if you need to build with 'select_variant', disable clippy with 'fx set ... --include-clippy=false' or 'include_clippy = false' in args.gn.  See https://fxbug.dev/396658029 for more information")
 }
 
-# Whether profile instrumentation is enabled for collecting coverage over Fuchsia binaries
+# Whether profile instrumentation is enabled for collecting coverage over
+# Fuchsia binaries
 is_fuchsia_coverage = fuchsia_toolchain_tags + [
                         "coverage",
                         "profile",
@@ -1315,8 +1320,8 @@ is_host_profile =
 # Deprecated alias for is_fuchsia_profile
 is_profile = is_fuchsia_profile
 
-# Whether address sanitizer instrumentation is enabled for Fuchsia and host binaries.
-# Note that this includes both asan and hwasan modes.
+# Whether address sanitizer instrumentation is enabled for Fuchsia and host
+# binaries. Note that this includes both asan and hwasan modes.
 is_fuchsia_asan = fuchsia_toolchain_tags + [
                     "asan",
                     "hwasan",
@@ -1337,7 +1342,8 @@ is_host_asan = host_toolchain_tags + [
 # Deprecated alias for is_fuchsia_asan
 is_asan = is_fuchsia_asan
 
-# Whether h/w address sanitizer instrumentation is enabled for Fuchsia and host binaries.
+# Whether h/w address sanitizer instrumentation is enabled for Fuchsia and host
+# binaries.
 is_fuchsia_hwasan = fuchsia_toolchain_tags + [ "hwasan" ] - [ "hwasan" ] !=
                     fuchsia_toolchain_tags
 is_host_hwasan =
@@ -1554,9 +1560,9 @@ e2e_test_libs = [
 ]
 
 # For libraries only supported on Linux hosts, we must use host_os to determine
-# whether to include them. The is_linux condition will not function as naively expected
-# because it applies to the current toolchain which may not be a host toolchain
-# when this file is loaded.
+# whether to include them. The is_linux condition will not function as naively
+# expected because it applies to the current toolchain which may not be a host
+# toolchain when this file is loaded.
 if (host_os == "linux") {
   e2e_test_libs += [ "//tools/emulator($host_toolchain)" ]
 }
@@ -1645,10 +1651,11 @@ set_defaults("rustc_staticlib") {
   configs = default_common_binary_configs
 }
 
-# For each built-in target type `foo`, create a wrapping template `_foo_interal_wrapper`.
-# Throughout the rest of BUILDCONFIG.gn, all other templates should call `_foo_interal_wrapper`
-# until a public `foo` template is declared. That is because templates can only invoke other
-# templates declared before them.
+# For each built-in target type `foo`, create a wrapping template
+# `_foo_interal_wrapper`. Throughout the rest of BUILDCONFIG.gn, all other
+# templates should call `_foo_interal_wrapper` until a public `foo` template is
+# declared. That is because templates can only invoke other templates declared
+# before them.
 #
 # All built-in target types:
 _built_in_target_types_with_internal_wrapper = [
@@ -1672,8 +1679,8 @@ _built_in_target_types_without_public_wrapper =
     _built_in_target_types_with_internal_wrapper
 
 foreach(_target_type, _built_in_target_types_with_internal_wrapper) {
-  # Wraps built-in target types (e.g. source_set, executable, etc.) to add additional
-  # parameters common to all of them.
+  # Wraps built-in target types (e.g. source_set, executable, etc.) to add
+  # additional parameters common to all of them.
   #
   # Additional parameters:
   #
@@ -1743,13 +1750,13 @@ foreach(_target_type, _built_in_target_types_with_internal_wrapper) {
       if (defined(invoker.metadata)) {
         _metadata = invoker.metadata
 
-        # Additional resource may be defined through distribution_entries metadata
-        # such as by resource.gni targets.
+        # Additional resource may be defined through distribution_entries
+        # metadata such as by resource.gni targets.
         if (defined(_metadata.distribution_entries)) {
           foreach(distribution_entry, _metadata.distribution_entries) {
             if (defined(distribution_entry.source)) {
-              # The source is relative to root_build_dir, and need to be converted into
-              # an absolute label for downstream processing.
+              # The source is relative to root_build_dir, and need to be
+              # converted into an absolute label for downstream processing.
               _resources += [ "//" + rebase_path(distribution_entry.source,
                                                  "//",
                                                  root_build_dir) ]
@@ -1763,8 +1770,8 @@ foreach(_target_type, _built_in_target_types_with_internal_wrapper) {
 
       # Record all resources that have "third_party" or "prebuilt" in their name
       # but ignore anything under out/default, because these are generated via
-      # an explicit dependency on a target which will have its own applicable_licenses
-      # metadata.
+      # an explicit dependency on a target which will have its own
+      # applicable_licenses metadata.
       _third_party_resources =
           filter_include(filter_exclude(_resources, [ _root_build_dir_filter ]),
                          [
@@ -1827,12 +1834,13 @@ _built_in_target_types_without_public_wrapper -= [
   "generated_file",
 ]
 
-# `hermetic_inputs_action()` and `hermetic_inputs_action_foreach()` are used
-# to run an action that generates a list of implicit inputs, as required
-# by the `hermetics_inputs_target` argument of our `action()` and `action_foreach()`
+# `hermetic_inputs_action()` and `hermetic_inputs_action_foreach()` are used to
+# run an action that generates a list of implicit inputs, as required by the
+# `hermetics_inputs_target` argument of our `action()` and `action_foreach()`
 # wrappers (see below).
 #
-# They take exactly the same arguments as action() and action_foreach() respectively.
+# They take exactly the same arguments as action() and action_foreach()
+# respectively.
 #
 # For now, they are never wrapped by the action tracer.
 #
@@ -2240,7 +2248,8 @@ foreach(_target_type,
           rebase_path("//build/tracer/output_cacher.py", root_build_dir),
           "--check-repeatability",
 
-          # "--disable",  # This will execute only the original command (pass-through).
+          # "--disable", This will execute only the original command
+          # (pass-through).
           "--label",
           get_label_info(":$target_name", "label_with_toolchain"),
           "--temp-suffix=",  # don't use suffix
@@ -2391,8 +2400,8 @@ foreach(_target_type,
           args += [ ".traces/${gen_path}" ]
         }
 
-        # Fail the action when tracing detects an issue.
-        # When benchmarking tracing overhead, ignore trace errors by setting this to 0.
+        # Fail the action when tracing detects an issue. When benchmarking
+        # tracing overhead, ignore trace errors by setting this to 0.
         args += [ "--failed-check-status=1" ]
 
         if (!hermetic_deps) {
@@ -2414,7 +2423,8 @@ foreach(_target_type,
           deps += [ _hermetic_inputs_target ]
         }
 
-        # As far as tracing and dependencies are concerned, sources are just inputs.
+        # As far as tracing and dependencies are concerned, sources are just
+        # inputs.
         args += [ "--inputs" ]
         if (defined(sources)) {
           args += rebase_path(sources, root_build_dir)
@@ -2658,14 +2668,14 @@ template("_fuchsia_binary") {
   }
 }
 
-# This template is used internally by the Fuchsia build system to perform variant
-# toolchain selection for 'final' linkable targets, i.e. executable(), loadable_module()
-# and shared_library().
+# This template is used internally by the Fuchsia build system to perform
+# variant toolchain selection for 'final' linkable targets, i.e. executable(),
+# loadable_module() and shared_library().
 #
-# Its purpose is to redirect to a specific GN toolchain() instance based on the current
-# variant selectors list (see documentation for `select_variant` above). For example,
-# if building the //foo:bar target in the //toolchain:zoo toolchain which supports an
-# Address-sanitizer variant, among others:
+# Its purpose is to redirect to a specific GN toolchain() instance based on the
+# current variant selectors list (see documentation for `select_variant` above).
+# For example, if building the //foo:bar target in the //toolchain:zoo toolchain
+# which supports an Address-sanitizer variant, among others:
 #
 # - If no variant is selected by the developer, then this will just build
 #   //foo:bar(//toolchain:zoo) directly. Let's assume this generates an executable
@@ -2699,10 +2709,10 @@ template("_fuchsia_binary") {
 #    In the examples above, this would redirect to //foo:bar(//toolchain:zoo-shared))
 #    and //foo:bar(//toolchain:zoo-asan-shared) respectively.
 #
-# NOTE: This template assumes that `target_name` will be the name of a final target type,
-# like "executable", and that invoker.target_name is the name of the real final target that
-# needs to be built. In other words, this is supposed to be called by a wrapper class as
-# in the following example:
+# NOTE: This template assumes that `target_name` will be the name of a final
+# target type, like "executable", and that invoker.target_name is the name of
+# the real final target that needs to be built. In other words, this is supposed
+# to be called by a wrapper class as in the following example:
 #
 #     template("my_executable") {
 #       variant_target("executable") {
@@ -2953,7 +2963,9 @@ template("variant_target") {
     builder_toolchain += "-shared"
   }
 
-  # LINT.ThenChange(//build/dist/packaged_shared_library.gni:variant_selection, //build/fuzzing/fuchsia_fuzzer_package.gni:variant_selection, //sdk/lib/c/libc_toolchain.gni:variant_selection)
+  # LINT.ThenChange(//build/dist/packaged_shared_library.gni:variant_selection,
+  # //build/fuzzing/fuchsia_fuzzer_package.gni:variant_selection,
+  # //sdk/lib/c/libc_toolchain.gni:variant_selection)
 
   if (current_toolchain == builder_toolchain) {
     # This is the toolchain selected to actually build this target.
@@ -3454,7 +3466,8 @@ template("_common_cxx_target_wrapper") {
   }
 }
 
-# This wraps the GN built-in shared_library() target and adds a few more features:
+# This wraps the GN built-in shared_library() target and adds a few more
+# features:
 #
 # - Redirecting from the current toolchain to its shared-library-compatible
 #   companion.
@@ -3993,16 +4006,16 @@ template("executable") {
 }
 _built_in_target_types_without_public_wrapper -= [ "executable" ]
 
-# This wraps the GN built-in loadable_module() template, adding a few more features.
-# See the documentation for executable() to see them.
+# This wraps the GN built-in loadable_module() template, adding a few more
+# features. See the documentation for executable() to see them.
 #
 # NOTE: The GN documentation is not very clear about the distinction between a
 # loadable_module() and a shared_library(). Both will generate the same
 # .so / .dylib / .dll based on the platform, but the difference is how they are
 # handled by their dependents at link time.
 #
-# Let's consider an executable("foo") that depends on both a shared_library("bar")
-# and a loadable_module("zoo"):
+# Let's consider an executable("foo") that depends on both a
+# shared_library("bar") and a loadable_module("zoo"):
 #
 # - If `foo` needs to be built, then both `bar` and `zoo` will be built before it
 #   (e.g. generating `libbar.so` and `libzoo.so` on ELF systems).
@@ -4417,11 +4430,12 @@ _built_in_target_types_without_public_wrapper -= [ "rust_library" ]
 #
 template("rust_proc_macro") {
   if (current_toolchain != toolchain_variant.base) {
-    # proc_macros are loadable modules that are used by the rustc compiler itself,
-    # and as such, need to be compiled in the _base_ (non-sanitizer) variant of
-    # host toolchain.
+    # proc_macros are loadable modules that are used by the rustc compiler
+    # itself, and as such, need to be compiled in the _base_ (non-sanitizer)
+    # variant of host toolchain.
     #
-    # We don't redirect to host here, but leave that up to higher level templates.
+    # We don't redirect to host here, but leave that up to higher level
+    # templates.
     group(target_name) {
       public_deps = [ ":$target_name(${toolchain_variant.base})" ]
     }

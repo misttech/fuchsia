@@ -30,7 +30,8 @@ labels = {
     # `bazel_product_bundle`.
     bazel_package_manifests_list = "${bazel_product_bundle_target}_package_manifests_list(${default_toolchain})"
   } else {
-    # These targets cannot be defined when there isn't a bazel_product_bundle_target defined.
+    # These targets cannot be defined when there isn't a
+    # bazel_product_bundle_target defined.
   }
 
   _qemu_deps = qemu_boot_shim.deps

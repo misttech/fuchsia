@@ -135,20 +135,22 @@ template("fuchsia_test_package") {
       test_specs.expects_ssh = false
     }
 
-    # test packages won't be configured by assembly tools, so we can check their config earlier
+    # test packages won't be configured by assembly tools, so we can check their
+    # config earlier
     _validate_structured_config = true
     if (defined(invoker.validate_structured_config)) {
       _validate_structured_config = invoker.validate_structured_config
     }
 
-    # While ffx is not listed as a dependency here, it is required for running this target
-    # test. It is not included as a dependency, because doing so would push the the scheduling
-    # of the test target creation steps to after the compilation of ffx, which would slow the
-    # build significantly. ffx is ambiently available when these tests are run and is listed
-    # as a dependency in //bundles/infra/test:host_tools.
-    # Use the stable host-tools directory for ffx, resummarize, and test-pilot.
-    # This directory is variant-agnostic and contains the actual binaries
-    # even when variants (like coverage) redirect the primary host toolchain.
+    # While ffx is not listed as a dependency here, it is required for running
+    # this target test. It is not included as a dependency, because doing so
+    # would push the the scheduling of the test target creation steps to after
+    # the compilation of ffx, which would slow the build significantly. ffx is
+    # ambiently available when these tests are run and is listed as a dependency
+    # in //bundles/infra/test:host_tools. Use the stable host-tools directory
+    # for ffx, resummarize, and test-pilot. This directory is variant-agnostic
+    # and contains the actual binaries even when variants (like coverage)
+    # redirect the primary host toolchain.
     host_executable = "$host_tools_dir/ffx"
     host_executable_rebased = rebase_path(host_executable, root_build_dir)
 
@@ -371,7 +373,8 @@ template("fuchsia_test_package") {
         package_manifests = [ package_manifest ]
         package_url = test_url
 
-        # Adding new_path for transition period. We will later replace this with path.
+        # Adding new_path for transition period. We will later replace this with
+        # path.
         new_path = script_outputs[0]
         if (!defined(data_deps)) {
           data_deps = []

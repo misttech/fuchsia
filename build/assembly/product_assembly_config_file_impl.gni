@@ -294,8 +294,8 @@ template("product_assembly_config_file") {
     contents = config_contents
   }
 
-  # Create a list of the input files that are in the above file, so that they can be copied into
-  # a target outdir to consolidate them.
+  # Create a list of the input files that are in the above file, so that they
+  # can be copied into a target outdir to consolidate them.
   generated_file(target_name + ".input_file_paths") {
     forward_variables_from(invoker,
                            [
@@ -308,8 +308,9 @@ template("product_assembly_config_file") {
     contents = config_input_paths_map
   }
 
-  # A group that is used to validate that the inputs are all properly depended-upon in GN, and that
-  # changes to these files will trigger the appropriate re-running of assembly.
+  # A group that is used to validate that the inputs are all properly
+  # depended-upon in GN, and that changes to these files will trigger the
+  # appropriate re-running of assembly.
   group_with_inputs(target_name + ".inputs") {
     forward_variables_from(invoker,
                            [

@@ -32,17 +32,20 @@ group("examples") {
   deps = [
     ":go_go_example_test($host_toolchain)",
 
-    # The GN `install_host_tools` target is removed, and the dep is replaced with the added entry in
-    # the `default_bazel_root_host_targets` list in `//build/bazel/bazel_root_targets_list.gni`
+    # The GN `install_host_tools` target is removed, and the dep is replaced
+    # with the added entry in the `default_bazel_root_host_targets` list in
+    # `//build/bazel/bazel_root_targets_list.gni`
     "//build/bazel/host:bazel_root_host_tools.go_example_bin_migrated.host_tool($host_toolchain)",
   ]
 }
 
-# The following targets are automatically synced from Bazel to GN by bazel2gn with:
+# The following targets are automatically synced from Bazel to GN by bazel2gn
+# with:
 #
 #   fx bazel2gn -d build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after/
 #
-# Add the verify_bazel2gn target below to the `deps` of `//build:bazel2gn_verifications` in
+# Add the verify_bazel2gn target below to the `deps` of
+# `//build:bazel2gn_verifications` in
 # `//build/BUILD.gn` to automatically sync the targets below from Bazel to GN.
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

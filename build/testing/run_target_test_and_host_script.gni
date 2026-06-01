@@ -7,10 +7,11 @@ import("//build/python/python_host_test.gni")
 # Defines a host test that runs a target test using `ffx test`, then triggers
 # a host side script after the target test completes.
 #
-# NOTE: This test template enforces that all target interactions should happen on the
-# target side via a `fuchsia_test_package`. And only post processing should happen
-# on the host. Do not use this template if you want to run a host-side test, where
-# target interaction happens on the host side, and the test target is a `host_test`.
+# NOTE: This test template enforces that all target interactions should happen
+# on the target side via a `fuchsia_test_package`. And only post processing
+# should happen on the host. Do not use this template if you want to run a
+# host-side test, where target interaction happens on the host side, and the
+# test target is a `host_test`.
 #
 # Parameters
 #   test_url  (required)
@@ -74,8 +75,8 @@ template("run_target_test_and_host_script") {
   }
   _data_deps = [ invoker.test_package ]
 
-  # Default test output, this will be overwritten by environment var: 'FUCHSIA_TEST_OUTDIR'
-  # when the test is running on Infra.
+  # Default test output, this will be overwritten by environment var:
+  # 'FUCHSIA_TEST_OUTDIR' when the test is running on Infra.
   _test_outdir = "${target_out_dir}/${target_name}"
 
   host_test_data("ffx_for_${target_name}") {
@@ -101,7 +102,8 @@ template("run_target_test_and_host_script") {
   _script_bin_name =
       get_path_info(get_label_info(invoker.host_script, "dir"), "name")
 
-  # Use `host_script_bin_name` if the output_name is not the same as the containing dir.
+  # Use `host_script_bin_name` if the output_name is not the same as the
+  # containing dir.
   if (defined(invoker.host_script_bin_name)) {
     _script_bin_name = invoker.host_script_bin_name
   }
@@ -143,9 +145,9 @@ template("run_target_test_and_host_script") {
 
     metadata = {
       # Since <target_name> is added automatically to tests.json and will invoke
-      # <test_package> at runtime, ensure that the latter does not appear in that
-      # file too. This prevents the test package from being run twice when all
-      # tests are run on infra.
+      # <test_package> at runtime, ensure that the latter does not appear in
+      # that file too. This prevents the test package from being run twice when
+      # all tests are run on infra.
       #
       # This is used by the //:tests build_api_module() target.
       tests_barrier = []

@@ -7,7 +7,8 @@ import("//build/toolchain/rbe.gni")
 import("//build/zircon/c_utils.gni")
 import("//sdk/lib/c/libc_toolchain.gni")
 
-# Produces a directory of debug symbols for the given deps wrapped in host_test_data().
+# Produces a directory of debug symbols for the given deps wrapped in
+# host_test_data().
 #
 # Arguments
 #
@@ -33,8 +34,8 @@ template("symbols_dir_test_data") {
   _unstripped_binaries_list_file = "$target_gen_dir/unstripped_binaries.list"
   _copy_unstripped_stamp_file = "$target_out_dir/copy_unstripped_binaries.stamp"
 
-  # This action takes the output of the link_output_rspfile target and copies them into the
-  # $symbol_dir directory.
+  # This action takes the output of the link_output_rspfile target and copies
+  # them into the $symbol_dir directory.
   action(_copy_unstripped_target) {
     testonly = true
     script = "//build/testing/copy_unstripped_binaries.py"
@@ -55,10 +56,12 @@ template("symbols_dir_test_data") {
       rebase_path(_output_dir, root_build_dir),
       rebase_path(depfile, root_build_dir),
 
-      # To also copy libc.so.debug, we should be able to add |sysroot_libc_target| to the deps of
-      # link_output_rspfile below and reuse the same logic. However, that target is not visible to
-      # us. As a workaround, we can tell the copy_unstripped_binaries.py script where the unstripped
-      # libc is and the script could create the dependency in its depfile.
+      # To also copy libc.so.debug, we should be able to add
+      # |sysroot_libc_target| to the deps of link_output_rspfile below and reuse
+      # the same logic. However, that target is not visible to us. As a
+      # workaround, we can tell the copy_unstripped_binaries.py script where the
+      # unstripped libc is and the script could create the dependency in its
+      # depfile.
       rebase_path(sysroot_libc_unstripped, root_build_dir),
       rebase_path(_copy_unstripped_stamp_file, root_build_dir),
     ]
@@ -82,8 +85,8 @@ template("symbols_dir_test_data") {
     }
   }
 
-  # This action generates a file that contains a list of all unstripped binaries (symbol files)
-  # that get linked in its dependency.
+  # This action generates a file that contains a list of all unstripped binaries
+  # (symbol files) that get linked in its dependency.
   link_output_rspfile(_rspfile_target) {
     testonly = true
     outputs = [ _unstripped_binaries_list_file ]

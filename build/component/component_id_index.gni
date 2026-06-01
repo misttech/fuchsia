@@ -6,8 +6,8 @@ import("//build/compiled_action.gni")
 import("//build/dist/resource.gni")
 
 # Define a component ID index which maps monikers (component URL + realm path)
-# to component instance IDs. component_manager uses this index to key a component's
-# storage directory to its instance ID.
+# to component instance IDs. component_manager uses this index to key a
+# component's storage directory to its instance ID.
 #
 # There may be multiple component_id_index()s in the build, which are merged
 # into a single index in the build and delivered to component_manager as a

@@ -5,7 +5,8 @@
 import("//build/python/python_action.gni")
 import("//build/python/python_binary.gni")
 
-# Collect a newline-delimited text file of package names from the create-system call.
+# Collect a newline-delimited text file of package names from the create-system
+# call.
 #
 # Arguments:
 #

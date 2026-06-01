@@ -78,9 +78,9 @@ template("_bind_library_sdk") {
 
 # Declares a suite of tests for a driver's bind rules.
 #
-# The tests run as host tests by invoking the compiler. To avoid specifying the rules and bind
-# library dependencies twice use the `tests` parameter on the bind_rules template to generate this
-# target with the appropriate parameters.
+# The tests run as host tests by invoking the compiler. To avoid specifying the
+# rules and bind library dependencies twice use the `tests` parameter on the
+# bind_rules template to generate this target with the appropriate parameters.
 #
 # Parameters
 #
@@ -191,8 +191,8 @@ template("bind_host_test") {
 
 # Declares a suite of tests for a driver's bind rules.
 #
-# This template is provided for convenience. It handles redirect bind_host_test to the host
-# toolchain.
+# This template is provided for convenience. It handles redirect bind_host_test
+# to the host toolchain.
 #
 # Parameters
 #
@@ -345,7 +345,8 @@ template("bindc") {
       deps += invoker.deps
     }
     metadata = {
-      # This metadata lets the packaging system know where to put the bytecode file.
+      # This metadata lets the packaging system know where to put the bytecode
+      # file.
       distribution_entries = [
         {
           source = rebase_path("$target_gen_dir/$output_file", root_build_dir)
@@ -628,8 +629,8 @@ template("_bind_library_rust") {
 
 # Declares a bind library.
 #
-# Declare a bind library that may be included by other libraries or bind rules. For more details,
-# refer to //tools/bindc/README.md.
+# Declare a bind library that may be included by other libraries or bind rules.
+# For more details, refer to //tools/bindc/README.md.
 #
 # Parameters
 #

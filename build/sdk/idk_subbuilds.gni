@@ -26,11 +26,12 @@ import("//sdk/config.gni")
 #        This is convenient when building an IDK matching `target_cpus` and
 #        `api_levels` but may build more targets than needed in other cases.
 #
-# Each action will depend on sdk_collection_label as well as //sdk:idk_build_tools.
+# Each action will depend on sdk_collection_label as well as
+# //sdk:idk_build_tools.
 #
-# Note that this does not define a top-level group() target that depends on all of
-# them. Instead, users like the idk() template should pick the sub-build targets
-# they need directly.
+# Note that this does not define a top-level group() target that depends on all
+# of them. Instead, users like the idk() template should pick the sub-build
+# targets they need directly.
 #
 # Args:
 #    target_cpus (required)

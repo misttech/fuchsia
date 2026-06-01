@@ -43,8 +43,8 @@ template("icu_rustc_library") {
         test_configs = invoker.test_configs
       }
 
-      # Since the library names are also crate names, we must place each flavored
-      # library in a separate directory, but with the same base name.
+      # Since the library names are also crate names, we must place each
+      # flavored library in a separate directory, but with the same base name.
       output_dir =
           "${target_out_dir}/icu_rustc_library_flavored.${_icu_target_name}"
 

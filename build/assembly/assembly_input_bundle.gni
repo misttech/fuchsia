@@ -289,7 +289,8 @@ template("assembly_input_bundle") {
     # The directory where all the bundle contents are written to
     assembly_input_bundle_dir = "${bundles_dir}/${bundle_name}"
 
-    # The unpackaged bootfs files that we throw into a package to add to the AIB.
+    # The unpackaged bootfs files that we throw into a package to add to the
+    # AIB.
     bootfs_files_package = "$target_out_dir/$target_name.bootfs_files_package/package_manifest.json"
 
     # The "official" outputs file that we create in that directory

@@ -31,8 +31,8 @@ if (current_os == target_os && target_sysroot != "") {
   # There's no libc provided for these yet.
   sysroot = ""
 } else {
-  # For other platforms that are not currently supported, do not define `sysroot`.
-  # Fail the GN and notify user.
+  # For other platforms that are not currently supported, do not define
+  # `sysroot`. Fail the GN and notify user.
   assert(
       false,
       "$current_os is unsupported, no sysroot is defined for toolchain $current_toolchain")

@@ -454,10 +454,12 @@ template("zx_library") {
         data_deps = []
       }
 
-      # Add allowlist to data_deps rather than deps to not trigger SDK deps logic
+      # Add allowlist to data_deps rather than deps to not trigger SDK deps
+      # logic
       data_deps += [ "//build:deprecated_zx_wrapper_allowlist" ]
       if (sdkable) {
-        # Prevent additional confusing uses of `sdk_publishable` per its documentation.
+        # Prevent additional confusing uses of `sdk_publishable` per its
+        # documentation.
         if (sdk_category == "partner") {
           data_deps += [ "//build/zircon:sdk_category_partner_allowlist" ]
         } else if (sdk_category == "internal") {
@@ -480,4 +482,6 @@ template("zx_library") {
 set_defaults("zx_library") {
   configs = default_common_binary_configs
 }
-# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_prebuilt_library.bzl, //build/bazel/bazel_idk/private/idk_cc_source_library.bzl, //build/bazel/rules/zx_library.bzl)
+# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_prebuilt_library.bzl,
+# //build/bazel/bazel_idk/private/idk_cc_source_library.bzl,
+# //build/bazel/rules/zx_library.bzl)

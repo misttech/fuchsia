@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# These rules aggregate license information for all the GN-built bazel input resources
-# into a licenses SPDX file to be used in bazel build too.
+# These rules aggregate license information for all the GN-built bazel input
+# resources into a licenses SPDX file to be used in bazel build too.
 #
 # The SPDX file is a bazel input file as well.
 

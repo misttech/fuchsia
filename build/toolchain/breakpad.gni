@@ -7,6 +7,6 @@
 breakpad_dump_syms_prebuilt =
     "//prebuilt/third_party/breakpad/${host_platform}/dump_syms/dump_syms"
 
-# Path to the breakpad 'dump_syms' prebuilt binary.
-# If passing this as action args, add `breakpad_dump_syms_prebuilt` as action inputs.
+# Path to the breakpad 'dump_syms' prebuilt binary. If passing this as action
+# args, add `breakpad_dump_syms_prebuilt` as action inputs.
 breakpad_dump_syms = rebase_path(breakpad_dump_syms_prebuilt, root_build_dir)

@@ -17,10 +17,11 @@ performance_testing_environments = [
   vim3_env,
 ]
 
-# Define a Python-driven performance test, specifying a Python host-side entry point specific to
-# the test. This is for tests that involve some test-specific host-side logic. If your test consists
-# of a Fuchsia component that generates a fuchsiaperf file and that requires no test-specific
-# host-side logic, you can use fuchsia_component_perf_test instead.
+# Define a Python-driven performance test, specifying a Python host-side entry
+# point specific to the test. This is for tests that involve some test-specific
+# host-side logic. If your test consists of a Fuchsia component that generates a
+# fuchsiaperf file and that requires no test-specific host-side logic, you can
+# use fuchsia_component_perf_test instead.
 #
 # Parameters
 #   main_source (required)
@@ -157,8 +158,8 @@ template("python_perf_test") {
         deps += [ ":${_runtime_deps_target}" ]
       }
 
-      # Enabling on internal builders is primarily controlled by GN groups and not by the
-      # "environments" list
+      # Enabling on internal builders is primarily controlled by GN groups and
+      # not by the "environments" list
       if (defined(invoker.environments)) {
         environments = invoker.environments
       } else {
@@ -179,9 +180,10 @@ template("python_perf_test") {
   }
 }
 
-# This template is for tests where the test consists of a Fuchsia component that generates a
-# fuchsiaperf file and that requires no test-specific host-side logic. If your test requires
-# test-specific host-side logic, use python_perf_test instead.
+# This template is for tests where the test consists of a Fuchsia component that
+# generates a fuchsiaperf file and that requires no test-specific host-side
+# logic. If your test requires test-specific host-side logic, use
+# python_perf_test instead.
 #
 # Parameters
 #   package (required)
@@ -294,9 +296,9 @@ template("fuchsia_component_perf_test") {
     if (defined(invoker.snapshot_on)) {
       snapshot_on = invoker.snapshot_on
     } else {
-      # For hermetic component tests, we generally don't want snapshots on failure
-      # as they are expensive and usually distinct from the component's internal state.
-      # Users can opt-in if needed.
+      # For hermetic component tests, we generally don't want snapshots on
+      # failure as they are expensive and usually distinct from the component's
+      # internal state. Users can opt-in if needed.
       snapshot_on = "never"
     }
   }

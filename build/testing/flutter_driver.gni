@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 declare_args() {
-  # Enables/Disables flutter driver using '--args=flutter_driver_enabled=[true/false]'
-  # in fx set. (Disabled by default)
-  # This is effective only on debug builds.
+  # Enables/Disables flutter driver using
+  # '--args=flutter_driver_enabled=[true/false]' in fx set. (Disabled by
+  # default) This is effective only on debug builds.
   flutter_driver_enabled = false
 }

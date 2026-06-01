@@ -134,11 +134,12 @@ template("golden_files") {
     comparison_json_target = "_golden_files.$target_name.generated_file"
 
     # In the actions below, we purposefully do not register the golden and
-    # candidate files as inputs; instead we record them within a depfile. Further
-    # the script will proactively create a blank golden file if the supplied one
-    # does not yet exist. These two measures allow (1) a user to not have to
-    # tediously create the files themselves when adding a new `golden_files()`
-    # target, and (2) ninja to execute this action without complaint before the
+    # candidate files as inputs; instead we record them within a depfile.
+    # Further the script will proactively create a blank golden file if the
+    # supplied one does not yet exist. These two measures allow (1) a user to
+    # not have to tediously create the files themselves when adding a new
+    # `golden_files()` target, and (2) ninja to execute this action without
+    # complaint before the
     # files exist.
 
     processed_comparisons = []

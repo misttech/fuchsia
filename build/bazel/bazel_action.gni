@@ -262,8 +262,9 @@ declare_args() {
 #        Expands to {{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.
 #
 template("bazel_action") {
-  # Bazel actions can only be run in the default toolchain, so no-op the template since
-  # trying to enforce this in all the BUILD.gn files themselves is currently infeasible.
+  # Bazel actions can only be run in the default toolchain, so no-op the
+  # template since trying to enforce this in all the BUILD.gn files themselves
+  # is currently infeasible.
   if (current_toolchain == default_toolchain) {
     assert(defined(invoker.command), "command must be defined!")
     assert(defined(invoker.bazel_targets), "bazel_targets must be defined!")
@@ -281,7 +282,8 @@ template("bazel_action") {
              "`bazel_platform` is only supported when `host` is true.")
     }
 
-    # Calculate the correct bazel platform to use from the build_for_host and bazel_platform params.
+    # Calculate the correct bazel platform to use from the build_for_host and
+    # bazel_platform params.
     if (_build_for_host) {
       _bazel_platform_config = "host_config_args"
       if (defined(invoker.bazel_platform)) {
@@ -377,9 +379,10 @@ template("bazel_action") {
                              "${_bazel_target_out_dir}/${_bazel_target_name}")
         }
 
-        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-        # GN will complain with an error but will not display the problematic
-        # so use an assert to provide a user-friendly message.
+        # In case of typo with a substitution (e.g. writing
+        # {{BAZEL_TARGET_O_DIR}}) GN will complain with an error but will not
+        # display the problematic so use an assert to provide a user-friendly
+        # message.
         assert(string_replace(path, "{{", "") == path,
                "Unsupported substitution in Bazel output path: $path")
 
@@ -437,9 +440,10 @@ template("bazel_action") {
                              "${_bazel_target_out_dir}/${_bazel_target_name}")
         }
 
-        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-        # GN will complain with an error but will not display the problematic
-        # so use an assert to provide a user-friendly message.
+        # In case of typo with a substitution (e.g. writing
+        # {{BAZEL_TARGET_O_DIR}}) GN will complain with an error but will not
+        # display the problematic so use an assert to provide a user-friendly
+        # message.
         assert(string_replace(path, "{{", "") == path,
                "Unsupported substitution in Bazel output path: $path")
 
@@ -523,9 +527,10 @@ template("bazel_action") {
                              "${_bazel_target_out_dir}/${_bazel_target_name}")
         }
 
-        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-        # GN will complain with an error but will not display the problematic
-        # so use an assert to provide a user-friendly message.
+        # In case of typo with a substitution (e.g. writing
+        # {{BAZEL_TARGET_O_DIR}}) GN will complain with an error but will not
+        # display the problematic so use an assert to provide a user-friendly
+        # message.
         assert(string_replace(path, "{{", "") == path,
                "Unsupported substitution in Bazel output path: $path")
 
@@ -583,8 +588,8 @@ template("bazel_action") {
     # Generate a manifest file that references all transitive bazel_input_file()
     # and bazel_input_directory() dependencies from 'deps' or 'bazel_inputs'.
     #
-    # These are passed to bazel_gn_target_action.py to populate the @gn_targets external
-    # repository with symlinks and filegroups().
+    # These are passed to bazel_gn_target_action.py to populate the @gn_targets
+    # external repository with symlinks and filegroups().
     #
     _gn_targets_repository_manifest =
         "$target_out_dir/${target_name}.gn_targets_manifest.json"
@@ -635,11 +640,12 @@ template("bazel_action") {
     _rebased_bazel_command_file =
         rebase_path(_bazel_command_file, root_build_dir)
 
-    # A file that will receive the explain output from the bazel_gn_target_action.py script.
+    # A file that will receive the explain output from the
+    # bazel_gn_target_action.py script.
     #
     # The output is from dependency checker in Bazel build's execution phase to
-    # explain, for each build step, either why it is being executed, or that it is
-    # up-to-date.
+    # explain, for each build step, either why it is being executed, or that it
+    # is up-to-date.
     #
     # NOTE: This file will only include explain output from the `build` command,
     # not other commands like `query`.
@@ -735,13 +741,13 @@ template("bazel_action") {
         outputs += [ _rust_project_json ]
       }
 
-      # bazel_gn_target_action.py always checks the rbe_settings.json file to see if
-      # RBE is enabled or not.
+      # bazel_gn_target_action.py always checks the rbe_settings.json file to
+      # see if RBE is enabled or not.
       inputs += [ "${root_build_dir}/rbe_settings.json" ]
       deps += [ "//build/rbe:rbe_settings.json" ]
 
-      # bazel_gn_target_action.py always checks global_bazel_args.json for configuration
-      # of extra global arguments
+      # bazel_gn_target_action.py always checks global_bazel_args.json for
+      # configuration of extra global arguments
       inputs += [ "${root_build_dir}/bazel_args/global_args.json" ]
       deps += [ "//build/bazel/config:global_args.json" ]
 
@@ -836,8 +842,8 @@ template("bazel_action") {
       }
 
       if (_has_package_outputs) {
-        # These starlark script are used to perform queries to get provider values
-        # for each package.
+        # These starlark script are used to perform queries to get provider
+        # values for each package.
         inputs += [ "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery" ]
       }
 
@@ -928,7 +934,8 @@ template("bazel_action") {
                                        "ninja_dir",
                                      ])
 
-              # Look up the stamp path for the bazel target that makes these outputs.
+              # Look up the stamp path for the bazel target that makes these
+              # outputs.
               _stamp_entry = {
               }
               foreach(_stamp_entry, _dedupe_stamp_lookup) {
@@ -942,7 +949,8 @@ template("bazel_action") {
               bazel_platform_config = _bazel_platform_config
               bazel_platform_label = _bazel_platform_label
 
-              # These all need to be rebased from GN paths to outdir-relative paths
+              # These all need to be rebased from GN paths to outdir-relative
+              # paths
               if (defined(entry.ninja_file)) {
                 ninja_file = rebase_path(entry.ninja_file, root_build_dir)
               }
@@ -956,17 +964,19 @@ template("bazel_action") {
               # The depfile that ninja will read for this action.
               ninja_depfile = rebase_path(depfile, root_build_dir)
 
-              # The gn_targets_dir that needs to be symlinked into the workspace to
-              # build the bazel action.  This is transitional until this is setup
-              # on a per-action basis via the bazel_gn_target_action.py script and
-              # more explicit data about the GN inputs needed by the bazel action.
+              # The gn_targets_dir that needs to be symlinked into the workspace
+              # to build the bazel action. This is transitional until this is
+              # setup on a per-action basis via the bazel_gn_target_action.py
+              # script and more explicit data about the GN inputs needed by the
+              # bazel action.
               gn_targets_dir =
                   rebase_path(_gn_targets_repository_path, root_build_dir)
               gn_targets_manifest =
                   rebase_path(_gn_targets_repository_manifest, root_build_dir)
             },
           ]
-          # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/scripts/bazel_action_utils.py:bazel_target_infos)
+          # LINT.ThenChange(//BUILD.gn:bazel_target_infos,
+          # //build/bazel/scripts/bazel_action_utils.py:bazel_target_infos)
         }
       }
 

@@ -154,9 +154,9 @@ template("_boot_test") {
 # A boot test is a general category of test defined by booting select images on
 # a device and declaring success if a certain magic string is written by the
 # booted system. This set-up allows us to execute test logic in constrained
-# environments (e.g., in physical memory or UEFI) that lack finer command-control
-# options for driving testing from the outside or a robust means of exfiltrating
-# test results for later analysis.
+# environments (e.g., in physical memory or UEFI) that lack finer
+# command-control options for driving testing from the outside or a robust means
+# of exfiltrating test results for later analysis.
 #
 # While this template does define host-side test target(s) for listening on
 # serial for the success string, the contained logic expects to already be run

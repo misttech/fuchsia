@@ -550,7 +550,8 @@ template("clang_toolchain") {
             " && $depfile_verifier -t \"{{label}}\" -d $depfile {{sources}}"
       }
 
-      # Append command suffix and expand {{STRIP_ARGS}} and {{REMOTE_STRIP_PREFIX}}
+      # Append command suffix and expand {{STRIP_ARGS}} and
+      # {{REMOTE_STRIP_PREFIX}}
       _strip_args = "--strip-all --keep-section=.rustc"
       command += string_replace(_link_common.command_suffix,
                                 "{{STRIP_ARGS}}",
@@ -650,8 +651,9 @@ template("clang_toolchain") {
                                  "-n \"$breakpad_name\" ")
       }
 
-      # As a special case, on Fuchsia, replace --strip-all with --strip-sections.
-      # It is stronger, and thus generates smaller binaries, but also creates
+      # As a special case, on Fuchsia, replace --strip-all with
+      # --strip-sections. It is stronger, and thus generates smaller binaries,
+      # but also creates
       # crashes for host binaries (e.g. https://fxbug.dev/42126969).
       if (invoker.toolchain_os == "fuchsia") {
         command = string_replace(command, " --strip-all ", " --strip-sections ")
@@ -988,8 +990,9 @@ template("clang_toolchain") {
                          _remote_dump_syms_prefix)
     }
 
-    # Expand _cxx_link_common into a scope that can be used for "solink" and "solink_module" tools
-    # below directly. All template parameters will be expanded, except BREAKPAD_NAME.
+    # Expand _cxx_link_common into a scope that can be used for "solink" and
+    # "solink_module" tools below directly. All template parameters will be
+    # expanded, except BREAKPAD_NAME.
     _cxx_link_solink = {
       forward_variables_from(_cxx_link_common, "*", [ "command_suffix" ])
       command = string_replace(command,
@@ -1000,7 +1003,8 @@ template("clang_toolchain") {
       command = string_replace(command, "{{START_GROUP}}", "")
       command = string_replace(command, "{{END_GROUP}}", "")
 
-      # Expand STRIP_ARGS, which is always --strip-all for shared objects / libraries.
+      # Expand STRIP_ARGS, which is always --strip-all for shared objects /
+      # libraries.
       command += string_replace(_cxx_link_common.command_suffix,
                                 "{{STRIP_ARGS}}",
                                 "--strip-all")
@@ -1019,8 +1023,8 @@ template("clang_toolchain") {
       }
     }
 
-    # Expand _cxx_link_common into a scope that can be used for the "link" tool below.
-    # All template parameters will be expanded.
+    # Expand _cxx_link_common into a scope that can be used for the "link" tool
+    # below. All template parameters will be expanded.
     _cxx_link_bin = {
       forward_variables_from(_cxx_link_common, "*", [ "command_suffix" ])
 

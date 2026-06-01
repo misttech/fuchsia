@@ -87,9 +87,9 @@ template("python_action_foreach") {
 
 # Declares an hermetic_inputs_action() that uses a python_binary for the script
 #
-# This is useful if the action's command is not hermetic, which is allowed
-# for those that generate hermetic input files. See documentation for action()
-# and hermetic_inputs_action() in //build/config/BUILDCONFIG.gn for more details.
+# This is useful if the action's command is not hermetic, which is allowed for
+# those that generate hermetic input files. See documentation for action() and
+# hermetic_inputs_action() in //build/config/BUILDCONFIG.gn for more details.
 #
 # This sets up the python module search path using the GN paths specified, and
 # otherwise is the same as an action(), forwarding all invoker vars to the

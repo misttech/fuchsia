@@ -23,7 +23,8 @@ action("generate_python_api_symbols") {
   ]
 }
 
-# Targets that add this config MUST add generate_python_api_symbols as a dependency.
+# Targets that add this config MUST add generate_python_api_symbols as a
+# dependency.
 config("python_c_extension_shared_lib_config") {
   cflags = [ "-I" + rebase_path("${python_include_dir}/python${python_version}",
                                 root_build_dir) ]

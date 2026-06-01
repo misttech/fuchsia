@@ -27,11 +27,11 @@ template("sdk_cpp_test") {
   foreach(cxx_version, invoker.cxx_versions) {
     _test_target = "${target_name}-cxx${cxx_version}"
     test(_test_target) {
-      forward_variables_from(
-          invoker,
-          "*",
-          # explicitly leave out `output_name` to avoid collisions.
-          [ "output_name" ])
+      forward_variables_from(invoker,
+                             "*",
+                             # explicitly leave out `output_name` to avoid
+                             # collisions.
+                             [ "output_name" ])
 
       configs += [ "//build/config:c++${cxx_version}" ]
     }

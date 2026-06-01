@@ -103,8 +103,8 @@ template("idk") {
       _subbuilds_dir_prefix = "idk_subbuild.${_sdk_collection_name}"
     }
   } else {
-    # Generate actions for all possible sub-builds.
-    # Only the ones matching invoker.api_levels and invoker.target_cpus will be used though.
+    # Generate actions for all possible sub-builds. Only the ones matching
+    # invoker.api_levels and invoker.target_cpus will be used though.
     _subbuilds_target = "idk_subbuild_${target_name}"
     _subbuilds_dir_prefix = "idk_subbuild.${target_name}"
 

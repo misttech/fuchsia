@@ -26,7 +26,8 @@ group("dart_allowlist") {
   # To add targets to this allowlist, please send a change to one of the OWNERS
   # of this file.
   #
-  # We will ignore variance in targets added/deleted from //third_part/dart-pkg and //src/tests/end_to_end/perf.
+  # We will ignore variance in targets added/deleted from //third_part/dart-pkg
+  # and //src/tests/end_to_end/perf.
   visibility = []
 
   # SL4F dart client library and tests which use it.
@@ -42,7 +43,8 @@ group("dart_allowlist") {
     "//src/tests/end_to_end/time_sync:*",
   ]
 
-  # Third_party dart programs/libraries must continue to be built as dart libraries.
+  # Third_party dart programs/libraries must continue to be built as dart
+  # libraries.
   visibility += [ "//third_party/dart-pkg/pub/*" ]
 
   # Catch-all for //vendor repos.

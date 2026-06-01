@@ -13,8 +13,8 @@ if (current_toolchain == default_toolchain) {
   # This template does not take any arguments. It generates a bazel_build_group
   # based on entries from `resolved_bazel_root_targets`.
   #
-  # This target, because it runs `bazel build`, is expected to only expand in the
-  # default toolchain.
+  # This target, because it runs `bazel build`, is expected to only expand in
+  # the default toolchain.
   #
   # Subtargets are created based on `gn_subtarget_name` from
   # `resolved_bazel_root_targets` list.
@@ -124,10 +124,10 @@ if (current_toolchain == host_toolchain) {
         _host_tool_target = "${_gn_target_name}.host_tool"
 
         if (current_toolchain == toolchain_variant.base) {
-          # There is more than one host_toolchain when variants are involved, or when
-          # building tools for multiple host environments, so we only want to do this
-          # copy in the base host toolchain to avoid multiple targets generating the
-          # same output.
+          # There is more than one host_toolchain when variants are involved, or
+          # when building tools for multiple host environments, so we only want
+          # to do this copy in the base host toolchain to avoid multiple targets
+          # generating the same output.
           copy(_host_tool_target) {
             outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
             sources = [ _ninja_output ]

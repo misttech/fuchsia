@@ -372,7 +372,8 @@ template("python_mobly_test") {
   # Define SSH binary host_test_data().
   #
 
-  # This is currently required by Honeydew for auxiliary device (access points and
+  # This is currently required by Honeydew for auxiliary device (access points
+  # and
   # iperf servers) interactions when running wlan end-to-end tests.
 
   _ssh_binary_test_data_target = "${_test_name}_test_data_ssh"

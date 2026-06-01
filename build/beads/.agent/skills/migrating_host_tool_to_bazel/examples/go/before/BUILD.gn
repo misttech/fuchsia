@@ -27,10 +27,12 @@ if (is_host) {
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 
-  # This target installs the host tool to ${host_tools_dir} (e.g. out/default/host_tools).
+  # This target installs the host tool to ${host_tools_dir} (e.g.
+  # out/default/host_tools).
   #
   # You don't need to migrate this tool, instead, set `install_host_tool = true`
-  # when adding your migrated Bazel host tool to `//build/bazel/bazel_root_targets_list.gni`.
+  # when adding your migrated Bazel host tool to
+  # `//build/bazel/bazel_root_targets_list.gni`.
   install_host_tools("host_tool") {
     deps = [ ":go_example_bin" ]
     outputs = [ "go_example_bin" ]

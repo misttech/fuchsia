@@ -19,8 +19,8 @@ template("icu_source_set") {
     # commit ID so that we could possibly use targets from different builds.
     source_set(
         "${target_name}.icu_${icu_flavor.name}_${icu_flavor.commit_id}") {
-      # Do not forward variables which the template does not support. In addition,
-      # treat "visibility" and "testonly" as special.
+      # Do not forward variables which the template does not support. In
+      # addition, treat "visibility" and "testonly" as special.
       forward_variables_from(invoker,
                              "*",
                              [

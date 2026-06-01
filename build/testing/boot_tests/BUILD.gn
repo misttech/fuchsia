@@ -19,9 +19,9 @@ product_assembly_configuration("product_config") {
   version = build_info_version
 }
 
-# Empty ZBI for boot-shim only tests. While these tests do not require a ZBI to run,
-# `assembled_system` requires one for generating the metadata that we need to use for
-# product bundles.
+# Empty ZBI for boot-shim only tests. While these tests do not require a ZBI to
+# run, `assembled_system` requires one for generating the metadata that we need
+# to use for product bundles.
 zbi("empty-zbi") {
   # Don't require the ZBI to be bootable.
   cpu = ""

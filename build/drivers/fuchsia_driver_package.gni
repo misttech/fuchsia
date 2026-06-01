@@ -12,8 +12,8 @@ import("//build/packages/exported_fuchsia_package_archive.gni")
 # metadata so that the drivers inside the package can be collected into a
 # Driver Manifest.
 #
-# A driver is a shared library that's placed in the /driver/ directory of the package.
-# Drivers are normally built with the `fuchsia_driver` build target.
+# A driver is a shared library that's placed in the /driver/ directory of the
+# package. Drivers are normally built with the `fuchsia_driver` build target.
 #
 # The fuchsia_driver_package does not need to contain any components, although
 # components placed in the package will behave normally.

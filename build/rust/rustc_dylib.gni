@@ -96,7 +96,8 @@ import("//build/rust/rustc_test.gni")
 #   applicable_licenses
 #   rustflags
 #
-# See //examples/rust/dylib/rust-shared/BUILD.gn for an example of using this template.
+# See //examples/rust/dylib/rust-shared/BUILD.gn for an example of using this
+# template.
 #
 template("rustc_dylib") {
   assert(is_fuchsia,
@@ -179,7 +180,8 @@ template("rustc_dylib") {
     configs = []
     configs = invoker.configs
 
-    # Avoid walking into data_deps when checking component manifest expected includes.
+    # Avoid walking into data_deps when checking component manifest expected
+    # includes.
     metadata = {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")

@@ -263,8 +263,9 @@ config("fast-math-baseline") {
   ]
 }
 
-# Disables finite-math-only, but sets all other fast-math optimizations.
-# Allow inf/nan to be used (while avoiding UB), with the other float-based optimizations.
+# Disables finite-math-only, but sets all other fast-math optimizations. Allow
+# inf/nan to be used (while avoiding UB), with the other float-based
+# optimizations.
 config("fast-math") {
   configs = [ ":fast-math-baseline" ]
   cflags = [
@@ -465,9 +466,10 @@ config("no_remote_link") {
 }
 
 # Each 'optimize_$optimize' config below corresponds to a single setting that's
-# controlled by a 'foo_optimize' argument. The 'default_optimize' level is set to
-# an 'optimize_$optimize' for convenience, but individual targets can override their
-# optimization level by removing default_optimize and manually applying one of
+# controlled by a 'foo_optimize' argument. The 'default_optimize' level is set
+# to an 'optimize_$optimize' for convenience, but individual targets can
+# override their optimization level by removing default_optimize and manually
+# applying one of
 # the configs below.
 
 config("default_optimize") {
@@ -1224,8 +1226,8 @@ config("Wno-implicit-fallthrough") {
   ]
 }
 
-# Config to suppress Wno-unused-but-set-parameter warning in the third party code
-# that doesn't comply with.
+# Config to suppress Wno-unused-but-set-parameter warning in the third party
+# code that doesn't comply with.
 config("Wno-unused-but-set-parameter") {
   cflags = [ "-Wno-unused-but-set-parameter" ]
   visibility = [
@@ -1354,10 +1356,11 @@ linker_config("werror") {
   if (deny_warnings) {
     rustflags = [ "-Dwarnings" ]
   } else if (rust_rbe_exec_strategy == "local") {
-    # The local exec strategy tries to see if there's an RBE cache hit before running the command
-    # locally. The RBE cache is often populated by infra builders which never have this flag, so we
-    # want to include it *only* when checking for a cache hit. This flag doesn't affect the output
-    # of the artifact, so it's safe to reuse it.
+    # The local exec strategy tries to see if there's an RBE cache hit before
+    # running the command locally. The RBE cache is often populated by infra
+    # builders which never have this flag, so we want to include it *only* when
+    # checking for a cache hit. This flag doesn't affect the output of the
+    # artifact, so it's safe to reuse it.
     rustflags = [ "--remote-only=-Dwarnings" ]
   }
 }
@@ -1417,8 +1420,8 @@ linker_config("icf") {
   }
 }
 
-# "_ALL_SOURCE" is used by some system headers to expose more features (say in fcntl.h) beyond those
-# strictly defined in standard.
+# "_ALL_SOURCE" is used by some system headers to expose more features (say in
+# fcntl.h) beyond those strictly defined in standard.
 config("all_source") {
   defines = [ "_ALL_SOURCE" ]
 }
@@ -1436,8 +1439,8 @@ config("thread_safety_annotations") {
       "-Wthread-safety",
 
       # TODO(https://fxbug.dev/42085252): Clang is catching instances of these in the kernel and drivers.
-      # Temporarily disable them for now to facilitate the roll then come back and
-      # fix them.
+      # Temporarily disable them for now to facilitate the roll then come back
+      # and fix them.
       "-Wno-unknown-warning-option",
       "-Wno-thread-safety-reference-return",
     ]
@@ -1502,7 +1505,8 @@ tlsdesc = {
     disable_dialect = "trad"
     have_tlsdesc = 1
 
-    # On arm64 TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC, but is always enabled for Clang.
+    # On arm64 TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC, but
+    # is always enabled for Clang.
     can_enable = is_gcc
     can_disable = is_gcc
     compiler_default = !is_gcc
@@ -1527,7 +1531,8 @@ tlsdesc = {
     disable_dialect = "gnu"
     have_tlsdesc = 1
 
-    # On arm64 TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC, but is always enabled for Clang.
+    # On arm64 TLSDESC is opt-in or opt-out via -mtls-dialect=... under GCC, but
+    # is always enabled for Clang.
     can_enable = is_gcc
     can_disable = is_gcc
     compiler_default = true
