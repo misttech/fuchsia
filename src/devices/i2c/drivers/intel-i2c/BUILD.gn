@@ -79,6 +79,7 @@ fuchsia_driver_component("intel-i2c") {
 fuchsia_driver_package("package") {
   package_name = "intel-i2c"
   driver_components = [ ":intel-i2c" ]
+  export_to_bazel = true
 }
 
 fuchsia_driver_component("intel-i2c-dfv2") {

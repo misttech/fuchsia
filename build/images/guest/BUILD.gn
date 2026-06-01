@@ -2,145 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/board_configuration.gni")
-import("//build/assembly/board_input_bundle.gni")
-import("//build/assembly/product_assembly_configuration.gni")
-import("//build/board.gni")
-import("//build/images/paths.gni")
-import("//build/info/info.gni")
-import("//build/product.gni")
+import("//build/bazel/assembly/bazel_product_image.gni")
 
-#########
-#
-# The Fuchsia Guest System Assembly Definition.
-#
-# The guest image is meant to be run in a VM hosted by the virtualization
-# subsystem in Fuchsia (running a Fuchsia VM on top of Fuchsia).
-#
-# The _contents_ of the guest system should not vary based any of the
-# global GN args that are set by the //product/<foo>.gni product-definition
-# files.  If it exists, it should always be the same regardless of the "main
-# product" that is being built for, as it is its own product-like assembly.
-#
-# The primary use of the guest system is to test the virtualization subsystem.
-# Its contents are based around that use-case.
-#
-# It needs:
-#  - General "eng" build-type support from the bringup / bootstrap level
-#      - serial access
-#      - virtcon
-#      - a shell
-#  - A netstack
-#      - ssh isn't required, but not prohibited
-#      - other connectivity components (e.g. bluetooth are not desired)
-#  - The virtio drivers
-#  - It's own vmm-specific board definition (which doesn't yet exist)
-
-# NOTE: As this is not available on bringup builds, the guest image is made into
-# no-op group in that build configuration, in order to work around ninja
-# dependency tracking issues for incremental builds when changing from an
-# `fx set core...` to `fx set bringup...`.  When this happens, ninja tries to
-# build dependencies it remembered from the `core` product, even if those are
-# nonsense (or not buildable) for bringup.
-#
-# And so the use of an empty group when building for bringup is an optimization
-# to make these targets fall out of the build graph in these situations, which
-# reduces build times and flake rates.
-#
-# See:  https://fxbug.dev/42062190 for context.
-
-if (labels.images == "//build/images/bringup") {
-  group("guest") {
-    testonly = true
-  }
-} else {
-  # In all other builds, define the guest assembly.
-  board_input_bundle("main_bundle") {
-    configuration = {
-      power_manager =
-          "//src/power/power-manager/node_config/base_node_config.json5"
-    }
-    drivers = [
-      {
-        package_target = "//src/devices/board/drivers/machina:package"
-        package_set = "bootfs"
-        driver_components = [ "meta/machina.cm" ]
-      },
-      {
-        package_target = "//src/devices/bus/drivers/pci:bus-pci-package"
-        package_set = "bootfs"
-        driver_components = [ "meta/bus-pci.cm" ]
-      },
-    ]
-    if (current_cpu == "x64") {
-      drivers += [
-        {
-          package_target = "//src/devices/block/drivers/ahci:package"
-          package_set = "bootfs"
-          driver_components = [ "meta/ahci.cm" ]
-        },
-        {
-          package_target = "//src/devices/board/drivers/x86:package"
-          package_set = "bootfs"
-          driver_components = [ "meta/platform-bus-x86.cm" ]
-        },
-        {
-          package_target = "//src/devices/i2c/drivers/intel-i2c:package"
-          package_set = "bootfs"
-          driver_components = [ "meta/intel-i2c.cm" ]
-        },
-        {
-          package_target = "//src/devices/serial/drivers/uart16550:package"
-          package_set = "bootfs"
-          driver_components = [ "meta/uart16550.cm" ]
-        },
-      ]
-    }
-    version = build_info_version
-  }
-
-  board_configuration("board") {
-    partitions_config = "//boards/partitions:default"
-    hardware_info = {
-      name = "guest-board"
-    }
-    input_bundles = [
-      ":main_bundle",
-      "//boards/emulation/virtio",
-    ]
-    version = build_info_version
-  }
-
-  # Guest's specific product assembly.  It's based on the minimal feature set
-  # and is specifically an "eng" build-type so that it can run tests.
-  product_assembly_configuration("product_assembly_config") {
-    platform = {
-      build_type = "eng"
-      feature_set_level = "utility"
-    }
-    base_packages = [
-      {
-        package_target =
-            "//src/virtualization/tests:virtualization_test_utils_pkg"
-      },
-      {
-        package_target = "//src/performance/trace"
-      },
-      {
-        package_target = "//src/security/bin/root_ssl_certificates"
-      },
-    ]
-    version = build_info_version
-  }
-
-  # The guest image itself.
-  assembled_system("guest") {
-    testonly = true
-    generate_fxfs = true
-    namespace = "guest"
-    image_name = "fuchsia"
-    product_assembly_config_label = ":product_assembly_config"
-    board_config_label = ":board"
-  }
+# Guest product image built via Bazel and bridged to Ninja
+bazel_product_image("guest") {
+  testonly = true
+  bazel_product_image_target = "//build/images/guest:guest_product"
+  bazel_inputs_from_gn = [
+    "//src/devices/board/drivers/machina:package.bazel_input",
+    "//src/devices/block/drivers/ahci:package.bazel_input",
+    "//src/devices/board/drivers/x86:package.bazel_input",
+    "//src/devices/i2c/drivers/intel-i2c:package.bazel_input",
+    "//src/devices/serial/drivers/uart16550:package.bazel_input",
+    "//src/virtualization/tests:virtualization_test_utils_pkg_bazel",
+    "//src/performance/trace:trace_bazel",
+    "//src/security/bin/root_ssl_certificates:root_ssl_certificates.bazel_input",
+    "//boards/emulation/virtio:virtio.bazel_inputs",
+  ]
+  image_use_vbmeta = false
+  image_has_fxfs_blob = true
 }

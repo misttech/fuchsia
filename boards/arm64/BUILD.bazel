@@ -15,7 +15,7 @@ fuchsia_board_configuration(
     name = "arm64",
     board_input_bundles = [
         ":main_bundle",
-        ":virtio",
+        "//boards/emulation/virtio",
     ],
     board_name = "arm64",
     filesystems = {
@@ -64,9 +64,4 @@ fuchsia_board_configuration(
 fuchsia_prebuilt_board_input_bundle(
     name = "main_bundle",
     files = "@gn_targets//boards/arm64:main_bundle",
-)
-
-fuchsia_prebuilt_board_input_bundle(
-    name = "virtio",
-    files = "@gn_targets//boards/emulation/virtio",
 )

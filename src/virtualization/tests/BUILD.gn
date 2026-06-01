@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/cipd.gni")
 import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
@@ -528,6 +529,11 @@ fuchsia_package("virtualization_test_utils_pkg") {
     ":virtio_rng_test_util_cmp",
     ":virtio_vsock_test_util_cmp",
   ]
+}
+
+export_fuchsia_package_to_bazel("virtualization_test_utils_pkg_bazel") {
+  testonly = true
+  package = ":virtualization_test_utils_pkg"
 }
 
 romfs_image("extras") {

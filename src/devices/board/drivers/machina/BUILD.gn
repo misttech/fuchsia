@@ -47,4 +47,5 @@ fuchsia_driver_component("machina") {
 fuchsia_driver_package("package") {
   package_name = "machina"
   driver_components = [ ":machina" ]
+  export_to_bazel = true
 }

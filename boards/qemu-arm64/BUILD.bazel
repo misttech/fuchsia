@@ -14,7 +14,7 @@ fuchsia_board_configuration(
     name = "qemu-arm64",
     board_input_bundles = [
         "//boards/arm64:main_bundle",
-        "//boards/arm64:virtio",
+        "//boards/emulation/virtio",
     ],
     board_name = "qemu-arm64",
     filesystems = {

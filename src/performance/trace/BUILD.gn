@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 
 executable("bin") {
@@ -59,4 +60,8 @@ source_set("options") {
 
 fuchsia_package("trace") {
   deps = [ ":bin" ]
+}
+
+export_fuchsia_package_to_bazel("trace_bazel") {
+  package = ":trace"
 }

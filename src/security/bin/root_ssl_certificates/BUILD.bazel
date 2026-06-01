@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
+
+package(default_visibility = ["//visibility:public"])
+
+fuchsia_prebuilt_package(
+    name = "root_ssl_certificates",
+    archive = "@gn_targets//src/security/bin/root_ssl_certificates:root_ssl_certificates",
+)

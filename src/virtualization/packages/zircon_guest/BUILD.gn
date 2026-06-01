@@ -22,13 +22,13 @@ guest_package("zircon_guest") {
   # within the guest image.
   testonly = true
   deps = [ "//build/images/guest" ]
-  zircon = guest_image_dir + "/guest_gen/fuchsia.zbi"
+  zircon = guest_image_dir + "/guest/product_image/fuchsia.zbi"
 
   cmdline = "console.use_virtio_console=true"
   cmdline += " console.shell=true"
 
   disk_filename = "filesystem.fxfs"
-  fxfs = guest_image_dir + "/guest_gen/fxfs.blk"
+  fxfs = guest_image_dir + "/guest/product_image/fxfs.sparse.blk"
   resources = [
     {
       path = rebase_path(fxfs)
