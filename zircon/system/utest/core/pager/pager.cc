@@ -4386,4 +4386,52 @@ TEST(Pager, ProxyUseAfterFree) {
   ASSERT_EQ(status, ZX_ERR_INVALID_ARGS);
 }
 
+// Regression test for https://fxbug.dev/505823417 that attempts to detach a pager VMO with pinned
+// pages.
+TEST(Pager, PagerDetachPinned) {
+  zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
+  if (!system_resource->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  zx::result<zx::resource> result =
+      maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
+  ASSERT_OK(result.status_value());
+  zx::resource iommu_resource = std::move(result.value());
+
+  zx::iommu iommu;
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
+                            iommu.reset_and_get_address()));
+
+  zx::bti bti;
+  ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
+
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo pager_vmo;
+  ASSERT_OK(
+      zx_pager_create_vmo(pager.get(), 0, port.get(), 0, 4096, pager_vmo.reset_and_get_address()));
+
+  zx::vmo aux_vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &aux_vmo));
+  ASSERT_OK(aux_vmo.op_range(ZX_VMO_OP_COMMIT, 0, 4096, nullptr, 0));
+
+  ASSERT_OK(zx_pager_supply_pages(pager.get(), pager_vmo.get(), 0, 4096, aux_vmo.get(), 0));
+
+  zx::pmt pmt;
+  zx_paddr_t paddr;
+  ASSERT_OK(bti.pin(ZX_BTI_PERM_READ, pager_vmo, 0, 4096, &paddr, 1, &pmt));
+
+  // Detach the pager VMO.
+  ASSERT_EQ(ZX_OK, zx_pager_detach_vmo(pager.get(), pager_vmo.get()));
+
+  // Clean up!
+  pmt.unpin();
+}
+
 }  // namespace pager_tests

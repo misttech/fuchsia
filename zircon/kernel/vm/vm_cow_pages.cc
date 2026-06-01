@@ -6936,8 +6936,10 @@ void VmCowPages::DetachSource() {
           return ZX_ERR_NEXT;
         }
 
-        // This is a page that we're going to remove; we don't expect it to be pinned.
-        DEBUG_ASSERT(p->Page()->object.pin_count == 0);
+        // We cannot remove the page if it's pinned.
+        if (p->Page()->object.pin_count > 0) {
+          return ZX_ERR_NEXT;
+        }
 
         page_remover.Push(p->ReleasePage());
         ++populated_slots_removed;
