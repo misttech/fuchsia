@@ -66,6 +66,7 @@ pub type Result<T = (), E = anyhow::Error> = std::result::Result<T, E>;
 const MAX_EXPONENTIAL_BACKOFF_DELAY_SEC: i64 = 180;
 const RESET_EXPONENTIAL_BACKOFF_TIMER_MIN: i64 = 5;
 const SERVICE_CHANNEL_SIZE: usize = 100;
+const MAX_VENDOR_SW_VERSION_TLV_LENGTH: usize = 16;
 
 impl Config {
     async fn open_spinel_device_proxy(&self) -> Result<SpinelDeviceProxy, Error> {
@@ -203,6 +204,60 @@ impl Config {
         Ok(build_info)
     }
 
+    fn compress_build_version(&self, original_version: &str) -> String {
+        // If it's already 16 bytes or less, return as-is.
+        if original_version.len() <= MAX_VENDOR_SW_VERSION_TLV_LENGTH {
+            return original_version.to_string();
+        }
+
+        if let Some(idx1) = original_version.find('.') {
+            // Find the second dot first, so we know exactly how long the date field is.
+            if let Some(offset) = original_version[idx1 + 1..].find('.') {
+                let idx2 = idx1 + 1 + offset;
+
+                // Try to remove the century only if the date field is long enough (>= 4 chars).
+                let date_field_len = idx2 - (idx1 + 1);
+                if date_field_len >= 4 {
+                    let mut temp_version = String::with_capacity(original_version.len() - 2);
+                    temp_version.push_str(&original_version[..idx1 + 1]); // e.g., "31."
+                    temp_version.push_str(&original_version[idx1 + 3..]); // e.g., "260312.103.1"
+
+                    if temp_version.len() <= MAX_VENDOR_SW_VERSION_TLV_LENGTH {
+                        return temp_version;
+                    }
+                }
+
+                // If still too long, try to remove the date entirely.
+                let mut temp_version = String::with_capacity(original_version.len());
+                temp_version.push_str(&original_version[..idx1]); // e.g., "31"
+                temp_version.push_str(&original_version[idx2..]); // e.g., ".103.1"
+
+                if temp_version.len() <= MAX_VENDOR_SW_VERSION_TLV_LENGTH {
+                    return temp_version;
+                }
+
+                // If still too long, try to keep the release version separated from the
+                // remaining date-less string, i.e. keep one dot for the release version for
+                // the better readability.
+                let formatted_version = if let Some(first_dot_idx) = temp_version.find('.') {
+                    let (head, tail) = temp_version.split_at(first_dot_idx + 1);
+                    format!("{}{}", head, tail.replace('.', ""))
+                } else {
+                    temp_version.clone() // if no dot found
+                };
+                if formatted_version.len() <= MAX_VENDOR_SW_VERSION_TLV_LENGTH {
+                    return formatted_version;
+                }
+
+                // If still too long, explicitly truncate to 16 characters safely.
+                return formatted_version.chars().take(MAX_VENDOR_SW_VERSION_TLV_LENGTH).collect();
+            }
+        }
+
+        // Fallback truncation if the version string is invalid.
+        original_version.chars().take(MAX_VENDOR_SW_VERSION_TLV_LENGTH).collect()
+    }
+
     /// Async method which returns the future that runs the driver.
     async fn prepare_to_run(&self) -> Result<impl Future<Output = Result<(), Error>>, Error> {
         let spinel_device_proxy = self.open_spinel_device_proxy().await?;
@@ -278,7 +333,10 @@ impl Config {
                 "unknown"
             }
         };
-        if let Err(e) = ot_instance.set_vendor_sw_version(version) {
+        // TODO(b/517822224): Remove this compression logic if the maximum vendor software version
+        // string length is increased to 32 bytes.
+        let compressed_version = self.compress_build_version(version);
+        if let Err(e) = ot_instance.set_vendor_sw_version(&compressed_version) {
             warn!("Failed to set the vendor sw version {:?} {:?}", version, e);
         }
 
@@ -439,5 +497,76 @@ async fn main() -> Result<(), Error> {
 
             info!("Restart attempt {} ({} max)", attempt_count, config.max_auto_restarts);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Config;
+
+    #[fuchsia::test]
+    fn test_compress_build_version_under_limit() {
+        let config = Config::default();
+        // Exactly 16 bytes
+        let version = "31.12345.1234567";
+        assert_eq!(config.compress_build_version(version), "31.12345.1234567");
+
+        // Under 16 bytes
+        let version = "31.103.1";
+        assert_eq!(config.compress_build_version(version), "31.103.1");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_removing_century() {
+        let config = Config::default();
+        // Original: 17 bytes -> Century removed: 15 bytes
+        let version = "31.20260312.103.1";
+        assert_eq!(config.compress_build_version(version), "31.260312.103.1");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_removing_date_entirely() {
+        let config = Config::default();
+        // Original: 23 bytes -> Century removed: 21 bytes -> Date removed: 14 bytes
+        let version = "29.20251023.103.2102100";
+        assert_eq!(config.compress_build_version(version), "29.103.2102100");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_removing_dots() {
+        let config = Config::default();
+        // Original: 26 bytes -> Century removed: 24 bytes ("123.261212.12345.12345.6")
+        //                    -> Date removed: 17 bytes ("123.12345.12345.6")
+        //                    -> Dots removed (1 dot left): 15 bytes ("123.12345123456")
+        let version = "123.20261212.12345.12345.6";
+        assert_eq!(config.compress_build_version(version), "123.12345123456");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_truncating_to_16_bytes_fallback() {
+        let config = Config::default();
+        // Original: 30 bytes
+        // Date removed: 21 bytes ("123.1234567.123456789")
+        // Dots removed (1 dot left): 20 bytes ("123.1234567123456789")
+        // Truncated: 16 bytes
+        let version = "123.20261212.1234567.123456789";
+        assert_eq!(config.compress_build_version(version), "123.123456712345");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_truncating_unrecognized_format() {
+        let config = Config::default();
+        // E.g., the version is the latest commit date.
+        let version = "2026-01-28T05:00:35+00:00";
+        assert_eq!(config.compress_build_version(version), "2026-01-28T05:00");
+    }
+
+    #[fuchsia::test]
+    fn test_compress_build_version_malformed_short_date() {
+        let config = Config::default();
+        // Tests safety when the segment after the first dot is unexpectedly short
+        // Cannot remove century safely, should fallback to date removal or truncation
+        let version = "31.20.103.2102100"; // 17 chars
+        assert_eq!(config.compress_build_version(version), "31.103.2102100");
     }
 }
