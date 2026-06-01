@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO: You only need one BUILD file. Chose between this one or the bazel one and then
-# delete the other one. Use bazel for vendor repo drivers. Use gn for in-tree drivers.
+# TODO: You only need one BUILD file. Chose between this one or the bazel one
+# and then delete the other one. Use bazel for vendor repo drivers. Use gn for
+# in-tree drivers.
 
 import("//build/components.gni")
 import("//build/drivers.gni")
@@ -17,8 +18,8 @@ group("my-driver-cpp") {
   ]
 }
 
-# TODO: Remember to link this to ../BUILD.gn tests group so that the tests are included.
-# Then delete this comment.
+# TODO: Remember to link this to ../BUILD.gn tests group so that the tests are
+# included. Then delete this comment.
 group("tests") {
   testonly = true
   deps = [ ":test_pkg_gn" ]

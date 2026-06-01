@@ -62,9 +62,8 @@ if (is_host) {
                "json")
 
     metadata = {
-      # Include the template files as test dependencies.
-      # Tests that depend on the `create` binary need to pull in the template files
-      # transitively.
+      # Include the template files as test dependencies. Tests that depend on
+      # the `create` binary need to pull in the template files transitively.
       test_runtime_deps =
           rebase_path(sources, "", "${host_tools_dir}/create_templates") +
           [ "${host_tools_dir}/create_templates/templates.json" ]

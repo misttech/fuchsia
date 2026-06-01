@@ -83,9 +83,10 @@ if (is_linux) {
     generated_file("buildinfo.ini") {
       testonly = true
       contents = [
-        # The path to images.json relative to the test data directory. This must be relative
-        # the test data directory specifically, rather than the build directory because the
-        # build directory is not guaranteed to exist at runtime, especially on CI.
+        # The path to images.json relative to the test data directory. This must
+        # be relative the test data directory specifically, rather than the
+        # build directory because the build directory is not guaranteed to exist
+        # at runtime, especially on CI.
         "image_manifest_path=" +
             rebase_path("$root_build_dir/images.json",
                         "$root_out_dir/test_data/emulator"),

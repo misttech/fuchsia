@@ -67,10 +67,10 @@ template("cvf") {
   }
 }
 
-# Create a Configuration Value Manifest.
-# This accepts a compiled manifest that is using configuration capabilities,
-# and it produces a Component Manifest that declares those configuration capabilities
-# with specific values and exposes each of these capabilities to it's parent.
+# Create a Configuration Value Manifest. This accepts a compiled manifest that
+# is using configuration capabilities, and it produces a Component Manifest that
+# declares those configuration capabilities with specific values and exposes
+# each of these capabilities to it's parent.
 #
 # Parameters
 #

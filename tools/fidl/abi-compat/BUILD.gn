@@ -17,7 +17,8 @@ declare_args() {
   check_external_external_abi_compat = false
 }
 
-# These API levels have known ABI incomaptibilities with the platform that we don't plan to fix.
+# These API levels have known ABI incomaptibilities with the platform that we
+# don't plan to fix.
 allow_abi_breakage = [
   "16",
   "17",
@@ -148,7 +149,8 @@ if (is_host) {
     include_tear_off =
         filter_include(allow_tear_off_abi_breakage, [ "$api_level" ]) == []
 
-    # Generate level <-> PLATFORM ABI reports without tear-off protocols, possibly block breakages.
+    # Generate level <-> PLATFORM ABI reports without tear-off protocols,
+    # possibly block breakages.
     abi_compat(label) {
       report = "${root_build_dir}/compatibility-report-${api_level}.txt"
       level_irs = [
@@ -163,14 +165,16 @@ if (is_host) {
       # Optionally check tear-off ABI breakage here.
       tear_off = include_tear_off
 
-      # Stop the build if errors are found, unless the API level is in `allow_abi_breakage`.
+      # Stop the build if errors are found, unless the API level is in
+      # `allow_abi_breakage`.
       if (enforce_abi_compat &&
           filter_include(allow_abi_breakage, [ "$api_level" ]) == []) {
         enforce = true
       }
     }
 
-    # If we're not enforcing tear-off protocol ABI, at least generate some reports.
+    # If we're not enforcing tear-off protocol ABI, at least generate some
+    # reports.
     if (!include_tear_off) {
       tear_off_label = "report_tear_off_${api_level}"
       reports += [ ":${tear_off_label}" ]

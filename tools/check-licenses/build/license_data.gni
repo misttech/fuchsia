@@ -77,8 +77,8 @@ template("license_data") {
 
   license_outdir = "$target_out_dir/license/gen"
 
-  # Step 1: Generate $root_build_dir/project.json by running "fx gn gen".
-  # Copy the resulting project.json file to $root_build_dir/license/gen/project.json.
+  # Step 1: Generate $root_build_dir/project.json by running "fx gn gen". Copy
+  # the resulting project.json file to $root_build_dir/license/gen/project.json.
   # This is done in //tools/check-licenses/util/cmd/gn/generate_project_json
   generate_project_json =
       "//tools/check-licenses/util/cmd/gn/generate_project_json"
@@ -96,10 +96,10 @@ template("license_data") {
   generate_target_json = "${target_name}_generate_target_json"
   generate_target_json_output = "$license_outdir/${target_name}.json"
 
-  # Step 2: Generate intermediate data file.
-  # project.json is extremely large, and includes a lot of unrelated information.
-  # This step filters out all targets that are not in the build graph of //:default,
-  # and saves the resulting json file to a different location.
+  # Step 2: Generate intermediate data file. project.json is extremely large,
+  # and includes a lot of unrelated information. This step filters out all
+  # targets that are not in the build graph of //:default, and saves the
+  # resulting json file to a different location.
   compiled_action(generate_intermediate_json) {
     forward_variables_from(invoker,
                            [

@@ -8,9 +8,10 @@ import("//build/host.gni")
 import("//build/rust/config.gni")
 
 # Compile a power configuration JSON into the
-# fuchsia.hardware.power/ComponentPowerConfiguration FIDL table.
-# This FIDL persisted file will be placed into a package at "/pkg/data/{output_name}"
-# and it can be read by the component using the libraries in //tools/power_config/lib/.
+# fuchsia.hardware.power/ComponentPowerConfiguration FIDL table. This FIDL
+# persisted file will be placed into a package at "/pkg/data/{output_name}" and
+# it can be read by the component using the libraries in
+# //tools/power_config/lib/.
 #
 # Parameters
 #
@@ -78,9 +79,10 @@ template("power_config") {
     outputs = [ "data/$file_output_name" ]
 
     if (defined(visibility)) {
-      # The group we create below for the non-default toolchains needs to depend on this target.
-      # We can't explicitly list all of the toolchain suffixes that might dep on this, because not
-      # all of them have variable shortcuts defined.
+      # The group we create below for the non-default toolchains needs to depend
+      # on this target. We can't explicitly list all of the toolchain suffixes
+      # that might dep on this, because not all of them have variable shortcuts
+      # defined.
       visibility += [ ":${resource_target}" ]
     }
 

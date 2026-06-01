@@ -4,8 +4,8 @@
 
 import("//build/rust/rustc_binary.gni")
 
-# This is glue code to integrate prost-build (which is normally used via build.rs)
-# with the GN build system.
+# This is glue code to integrate prost-build (which is normally used via
+# build.rs) with the GN build system.
 if (is_host) {
   rustc_binary("prost_build_standalone") {
     edition = "2024"

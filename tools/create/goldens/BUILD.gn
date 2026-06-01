@@ -42,8 +42,8 @@ group("tests") {
       "my-devicetree-visitor:tests",
       "my-driver-cpp:tests",
 
-      # TODO(b/512567245): Enable this test once we are able to compile it without
-      # a dead-code warning.
+      # TODO(b/512567245): Enable this test once we are able to compile it
+      # without a dead-code warning.
       #"my-driver-rust:tests",
     ]
   }

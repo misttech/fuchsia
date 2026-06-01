@@ -72,8 +72,8 @@ go_binary("orchestrate") {
   embed = [ ":main" ]
 }
 
-# Used for distributing the Orchestrate tool to private IDKs. Not to be included in
-# the Fuchsia IDK.
+# Used for distributing the Orchestrate tool to private IDKs. Not to be included
+# in the Fuchsia IDK.
 # See http://goto.google.com/orchestrate-distribution-testing.
 if (is_host) {
   sdk_host_tool("orchestrate_sdk") {

@@ -13,7 +13,8 @@ if (is_host) {
   host_test("update_crates_test_with_local_registry") {
     binary_path = "$root_out_dir/update_crates_test_bin"
 
-    # host tests are invoked with cwd=root_build_dir, so rebase all paths relative to that
+    # host tests are invoked with cwd=root_build_dir, so rebase all paths
+    # relative to that
     args = [
       "--test-base-dir",
       rebase_path(test_output_dir, root_build_dir),

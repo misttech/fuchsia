@@ -2,11 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# The following targets are automatically synced from Bazel to GN by bazel2gn with:
+# The following targets are automatically synced from Bazel to GN by bazel2gn
+# with:
 #
 #   fx bazel2gn -d tools/whereiscl
 #
-# Add the verify_bazel2gn target below to the `deps` of `//build:bazel2gn_verifications` in
+# Add the verify_bazel2gn target below to the `deps` of
+# `//build:bazel2gn_verifications` in
 # `//build/BUILD.gn` to automatically sync the targets below from Bazel to GN.
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

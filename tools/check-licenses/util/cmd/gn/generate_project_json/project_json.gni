@@ -41,8 +41,8 @@ template("project_json") {
   compiled_action("$target_name") {
     tool = "//tools/check-licenses/util/cmd/gn/generate_project_json:check-licenses-gen-project-json"
 
-    # This command runs "fx gn gen", which potentially touches thousands of files
-    # across the repo. It cannot be hermetic.
+    # This command runs "fx gn gen", which potentially touches thousands of
+    # files across the repo. It cannot be hermetic.
     # TODO(https://fxbug.dev/42165766): Improve the way notice files are generated.
     hermetic_deps = false
 

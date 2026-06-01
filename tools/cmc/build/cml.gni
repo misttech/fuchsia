@@ -39,8 +39,8 @@ import("//tools/cmc/build/restricted_features.gni")
 template("cm") {
   input_manifest = invoker.manifest
 
-  # We need to inject a use clause for DebugData for the coverage and profile variants.
-  # is_coverage is true for profile and coverage variants.
+  # We need to inject a use clause for DebugData for the coverage and profile
+  # variants. is_coverage is true for profile and coverage variants.
   needs_debugdata = is_coverage || is_profile
 
   if (needs_debugdata) {
@@ -131,7 +131,8 @@ template("cm") {
 
     # Add required offer lint flags
     if (!defined(required_offers)) {
-      # These offers are required in all CML that does not explicitly disable it.
+      # These offers are required in all CML that does not explicitly disable
+      # it.
       # This behavior will eventually be the default everywhere: https://fxbug.dev/42175121
       required_offers = {
         protocol = []
