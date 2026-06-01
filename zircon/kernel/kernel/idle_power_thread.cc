@@ -319,7 +319,8 @@ IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expect
 }
 
 zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resume_at) {
-  // Prevent re-entrant calls to suspend.
+  // Ensure CPUs in |cpus_active_before_suspend| are not modified during the execution of
+  // TransitionAllActiveToSuspend.
   Guard<Mutex> guard{TransitionLock::Get()};
 
   // Ensure that the monotonic clock is running and is returned to the running state no matter how

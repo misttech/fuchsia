@@ -109,9 +109,7 @@ class IdlePowerThread final {
   //   - {ZX_ERR_BAD_STATE, current state} if the current state was not Active or Offline.
   //   - {ZX_ERR_TIMED_OUT, Offline} if the current state was Offline and transition timeout
   //     expired.
-  TransitionResult TransitionOfflineToActive(zx_instant_mono_t timeout_at = ZX_TIME_INFINITE)
-      TA_EXCL(TransitionLock::Get()) {
-    Guard<Mutex> guard{TransitionLock::Get()};
+  TransitionResult TransitionOfflineToActive(zx_instant_mono_t timeout_at = ZX_TIME_INFINITE) {
     return TransitionFromTo(State::Offline, State::Active, timeout_at);
   }
 
@@ -170,12 +168,14 @@ class IdlePowerThread final {
   static constexpr StateMachine kSuspend{State::Suspend, State::Suspend};
   static constexpr StateMachine kSuspendToWakeup{State::Suspend, State::Wakeup};
 
+  // See |TransitionLock|.
   bool CompareExchangeState(StateMachine& expected, StateMachine desired) {
     return state_.compare_exchange_strong(expected, desired, ktl::memory_order_acq_rel,
                                           ktl::memory_order_acquire);
   }
+  // See |TransitionLock|.
   TransitionResult TransitionFromTo(State expected_state, State target_state,
-                                    zx_instant_mono_t timeout_at) TA_REQ(TransitionLock::Get());
+                                    zx_instant_mono_t timeout_at);
 
   using WakeResult = wake_vector::WakeResult;
   using WakeEvent = wake_vector::WakeEvent;
@@ -203,6 +203,7 @@ class IdlePowerThread final {
   // Called by the scheduler when updating per-CPU and per-thread stats.
   static zx_duration_mono_t TakeProcessorIdleTime();
 
+  // See |TransitionLock|.
   ktl::atomic<StateMachine> state_;
   AutounsignalMpUnplugEvent complete_;
 
@@ -213,6 +214,19 @@ class IdlePowerThread final {
   // reset to zero on each reschedule and when a CPU goes offline.
   zx_duration_mono_t processor_idle_time_ns_{0};
 
+  // The TransitionLock guards the |state_| of the subset of secondary (non-boot) CPUs that are
+  // actively transitioning in and out of suspension. Modifications to this participating secondary
+  // set must be performed under this global lock.
+  //
+  // TransitionAllActiveToSuspend obtains the global lock when it obtains the participating
+  // secondary set and holds it for the remainder of the method to prevent CPUs unexpectedly going
+  // offline.
+  //
+  // For example, unplugging a CPU by transitioning it from active to offline must be done under
+  // this lock, as otherwise it could modify the participating secondary set. On the other hand,
+  // transitioning a secondary CPU from offline to active need not be done under this lock, as
+  // TransitionAllActiveToSuspend itself ignores additional active CPUs after its participating set
+  // is acquired.
   DECLARE_SINGLETON_MUTEX(TransitionLock);
 
   enum SystemSuspendState : uint64_t {
