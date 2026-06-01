@@ -162,7 +162,10 @@ group("tests_for_general_cq_no_shield_box") {
 # reboot test here, but only for wpa2, not for every single security type).
 group("tests_for_wlan_cq") {
   testonly = true
-  public_deps = [ ":apf_test" ]
+  public_deps = [
+    ":apf_test",
+    ":sched_scan_test",
+  ]
 }
 
 # If you're writing a new test, add it to FYI first until it has a sufficient
@@ -171,7 +174,7 @@ group("tests_for_wlan_cq") {
 # provide much of a safety net. Consider moving it to one of the CQ groups above.
 group("tests_for_fyi") {
   testonly = true
-  public_deps = [ ":sched_scan_test" ]
+  public_deps = []
 }
 
 # These tests don't cause alerting if they break, and are configured to
