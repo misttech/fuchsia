@@ -135,7 +135,7 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::WriteSelf
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  uint32_t old_head = head_;
+  uint64_t old_head = head_;
 
   // total number of available empty slots in the fifo
   size_t avail = elem_count_ - (head_ - tail_);
@@ -151,10 +151,10 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::WriteSelf
   }
 
   while (count > 0) {
-    uint32_t offset = (head_ % elem_count_);
+    uint64_t offset = (head_ % elem_count_);
 
     // number of slots from target to end, inclusive
-    uint32_t n = elem_count_ - offset;
+    uint64_t n = elem_count_ - offset;
 
     // number of slots we can actually copy
     size_t to_copy = (count > n) ? n : count;
@@ -168,8 +168,7 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::WriteSelf
     }
 
     // adjust head and count
-    // due to size limitations on fifo, to_copy will always fit in a u32
-    head_ += static_cast<uint32_t>(to_copy);
+    head_ += to_copy;
     count -= to_copy;
     ptr = ptr.byte_offset(to_copy * elem_size_);
   }
@@ -235,7 +234,7 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::ReadToUse
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  uint32_t old_tail = tail_;
+  uint64_t old_tail = tail_;
 
   // total number of available entries to read from the fifo
   size_t avail = (head_ - tail_);
@@ -251,10 +250,10 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::ReadToUse
   }
 
   while (count > 0) {
-    uint32_t offset = (tail_ % elem_count_);
+    uint64_t offset = (tail_ % elem_count_);
 
     // number of slots from target to end, inclusive
-    uint32_t n = elem_count_ - offset;
+    uint64_t n = elem_count_ - offset;
 
     // number of slots we can actually copy
     size_t to_copy = (count > n) ? n : count;
@@ -268,8 +267,7 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::ReadToUse
     }
 
     // adjust tail and count
-    // due to size limitations on fifo, to_copy will always fit in a u32
-    tail_ += static_cast<uint32_t>(to_copy);
+    tail_ += to_copy;
     count -= to_copy;
     ptr = ptr.byte_offset(to_copy * elem_size_);
   }
