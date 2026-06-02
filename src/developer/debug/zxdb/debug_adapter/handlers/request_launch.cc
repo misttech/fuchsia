@@ -4,11 +4,16 @@
 
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_launch.h"
 
+#include <lib/syslog/cpp/macros.h>
+
 #include <dap/types.h>
 
 #include "src/developer/debug/shared/message_loop.h"
-#include "src/developer/debug/zxdb/client/filter.h"
+#include "src/developer/debug/shared/string_util.h"
+#include "src/developer/debug/zxdb/client/remote_api.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/system.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_attach.h"
 
 namespace dap {
 
@@ -38,13 +43,33 @@ void SplitDapCommand(const dap::string& cmd_string, dap::array<dap::string>& cmd
 
 dap::ResponseOrError<dap::LaunchResponse> OnRequestLaunch(DebugAdapterContext* context,
                                                           const dap::LaunchRequestZxdb& req) {
-  // TODO(https://fxbug.dev/512353047): DAP handlers should not depend on the console
+  // TODO(https://fxbug.dev/512349157): Use idiomatic Fuchsia patterns to launch test inferiors.
+  // Assume that the request is always launching a fuchsia component rather than a general command
   if (!context->supports_run_in_terminal()) {
-    context->console()->ProcessInputLine("run-component " + req.process);
+    if (!debug::StringContains(req.process, "://") || !debug::StringEndsWith(req.process, ".cm")) {
+      dap::Error err;
+      err.message = "The first argument must be a component URL.";
+      return err;
+    }
+    debug_ipc::RunComponentRequest run_request;
+    run_request.url = req.process;
+    context->session()->remote_api()->RunComponent(
+        run_request, [](Err err, debug_ipc::RunComponentReply reply) {
+          if (err.has_error()) {
+            LOGS(Error) << "Failed to run component: " << err.msg();
+          } else if (reply.status.has_error()) {
+            LOGS(Error) << "Failed to run component: " << reply.status.message();
+          }
+        });
     return dap::LaunchResponse();
   }
 
-  context->console()->ProcessInputLine("attach " + req.process);
+  dap::AttachRequestZxdb attach_req;
+  attach_req.process = req.process;
+  auto attach_resp = OnRequestAttach(context, attach_req);
+  if (attach_resp.error) {
+    return attach_resp.error;
+  }
 
   dap::RunInTerminalRequest run_request;
   run_request.title = "zxdb launch";

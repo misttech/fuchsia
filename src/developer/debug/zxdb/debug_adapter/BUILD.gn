@@ -72,6 +72,7 @@ source_set("tests") {
     "handlers/request_stacktrace_unittest.cc",
     "handlers/request_step_in_unittest.cc",
     "handlers/request_step_out_unittest.cc",
+    "handlers/request_terminate_unittest.cc",
     "handlers/request_threads_unittest.cc",
     "handlers/request_variables_unittest.cc",
     "handlers/request_zxdb_detach_unittest.cc",

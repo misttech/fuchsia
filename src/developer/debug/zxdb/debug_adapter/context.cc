@@ -205,10 +205,10 @@ void DebugAdapterContext::Init() {
       });
 
   dap_->registerHandler(
-      [this](const dap::TerminateRequest& req,
+      [this](const dap::ZxdbTerminateRequest& req,
              std::function<void(dap::ResponseOrError<dap::TerminateResponse>)> callback) {
-        DEBUG_LOG(DebugAdapter) << "TerminateRequest received";
-        OnRequestTerminate(this, req, callback);
+        DEBUG_LOG(DebugAdapter) << "ZxdbTerminateRequest received";
+        OnRequestZxdbTerminate(this, req, callback);
       });
 
   dap_->registerHandler(
