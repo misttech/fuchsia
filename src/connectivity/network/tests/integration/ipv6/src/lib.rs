@@ -724,9 +724,14 @@ async fn dad_assigns_when_echoed<N: Netstack>(name: &str) {
             // NB: we've already seen one probe from the above `add_address_for_dad` invocation.
             let mut got_num_probes = 1usize;
 
+            let mut recv_stream = fake_ep.frame_stream().fuse();
             while got_num_probes < WANT_NUM_PROBES {
                 let (data, _dropped) = futures::select_biased! {
-                    r = fake_ep.read() => r.expect("reading from fake_ep should succeed"),
+                    r = recv_stream.next() => {
+                        r
+                        .expect("recv_stream shouldn't end")
+                        .expect("reading from fake_ep should succeed")
+                    },
                     r = stop_echo_signal_receiver => {
                         r.expect("sender should never be dropped");
                         // The following condition means the DAD succeeded before any additional
