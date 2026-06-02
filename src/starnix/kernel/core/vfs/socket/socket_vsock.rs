@@ -376,7 +376,7 @@ mod tests {
                 /* kernel_private = */ false,
             )
             .expect("Failed to create socket.");
-            let vsock_ns = current_task.live().abstract_vsock_namespace.clone();
+            let vsock_ns = current_task.running_state().abstract_vsock_namespace.clone();
             vsock_ns
                 .bind(locked, &current_task, VSOCK_PORT, &listen_socket)
                 .expect("Failed to bind socket.");

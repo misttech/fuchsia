@@ -178,7 +178,11 @@ impl FsNodeOps for TaskDirectoryNode {
         let ops: Box<dyn FsNodeOps> = match &**name {
             b"cgroup" => Box::new(CgroupFile::new_node(task_weak)),
             b"cwd" => Box::new(CallbackSymlinkNode::new({
-                move || Ok(SymlinkTarget::Node(Task::from_weak(&task_weak)?.live()?.fs().cwd()))
+                move || {
+                    Ok(SymlinkTarget::Node(
+                        Task::from_weak(&task_weak)?.running_state()?.fs().cwd(),
+                    ))
+                }
             })),
             b"exe" => Box::new(CallbackSymlinkNode::new({
                 move || {
@@ -201,7 +205,11 @@ impl FsNodeOps for TaskDirectoryNode {
             )),
             b"mem" => Box::new(MemFile::new_node(task_weak)),
             b"root" => Box::new(CallbackSymlinkNode::new({
-                move || Ok(SymlinkTarget::Node(Task::from_weak(&task_weak)?.live()?.fs().root()))
+                move || {
+                    Ok(SymlinkTarget::Node(
+                        Task::from_weak(&task_weak)?.running_state()?.fs().root(),
+                    ))
+                }
             })),
             b"sched" => Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893980"))),
             b"schedstat" => {
@@ -359,7 +367,7 @@ impl FsNodeOps for FdDirectory {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         Ok(VecDirectory::new_file(fds_to_directory_entries(
-            Task::from_weak(&self.task)?.live()?.files.get_all_fds(),
+            Task::from_weak(&self.task)?.running_state()?.files.get_all_fds(),
         )))
     }
 
@@ -373,14 +381,19 @@ impl FsNodeOps for FdDirectory {
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
         let task = Task::from_weak(&self.task)?;
         // Make sure that the file descriptor exists before creating the node.
-        let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file =
+            task.running_state()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         // Derive the symlink's mode from the mode in which the file was opened.
         let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
         let task_reference = self.task.clone();
         Ok(node.fs().create_node_and_allocate_node_id(
             CallbackSymlinkNode::new(move || {
                 let task = Task::from_weak(&task_reference)?;
-                let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+                let file = task
+                    .running_state()?
+                    .files
+                    .get_allowing_opath(fd)
+                    .map_err(|_| errno!(ENOENT))?;
                 Ok(SymlinkTarget::Node(file.name.to_passive()))
             }),
             FsNodeInfo::new(mode, task.real_fscred()),
@@ -607,7 +620,9 @@ impl FsNodeOps for FdInfoDirectory {
             .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS, &task)
             .map_err(|_| errno!(EACCES))?;
 
-        Ok(VecDirectory::new_file(fds_to_directory_entries(task.live()?.files.get_all_fds())))
+        Ok(VecDirectory::new_file(fds_to_directory_entries(
+            task.running_state()?.files.get_all_fds(),
+        )))
     }
 
     fn lookup(
@@ -619,7 +634,8 @@ impl FsNodeOps for FdInfoDirectory {
     ) -> Result<FsNodeHandle, Errno> {
         let task = Task::from_weak(&self.task)?;
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
-        let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file =
+            task.running_state()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         let pos = file.offset.read();
         let flags = file.flags();
         let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
@@ -1305,7 +1321,9 @@ impl DynamicFileSource for StatusFile {
         writeln!(sink)?;
 
         if let Some(task) = task {
-            writeln!(sink, "Umask:\t0{:03o}", task.live()?.fs().umask().bits())?;
+            if let Ok(running_state) = task.running_state() {
+                writeln!(sink, "Umask:\t0{:03o}", running_state.fs().umask().bits())?;
+            }
             let task_state = task.read();
             writeln!(sink, "SigBlk:\t{:016x}", task_state.signal_mask().0)?;
             writeln!(sink, "SigPnd:\t{:016x}", task_state.task_specific_pending_signals().0)?;

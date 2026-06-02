@@ -376,7 +376,7 @@ impl UnixControlData {
                 // Validate pid: must match sender's PID, or sender has CAP_SYS_ADMIN
                 if credentials.pid != actual_pid {
                     security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-                    current_task.get_task(credentials.pid)?.live()?;
+                    current_task.get_task(credentials.pid)?.running_state()?;
                 }
                 // Validate uid: must match sender's uid/euid/suid, or sender has CAP_SETUID
                 if credentials.uid != task_creds.uid

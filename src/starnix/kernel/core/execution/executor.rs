@@ -111,8 +111,8 @@ where
 
     // Hold a lock on the task's thread slot until we have a chance to initialize it.
     let ref_task = Arc::clone(&task_builder.task);
-    let live_task = ref_task.live().unwrap();
-    let mut task_thread_guard = live_task.thread.write();
+    let running_state = ref_task.running_state().unwrap();
+    let mut task_thread_guard = running_state.thread.write();
 
     // Spawn the process' thread. Note, this closure ends up executing in the process referred to by
     // `process_handle`.

@@ -792,7 +792,7 @@ impl DynamicFileSource for ProcMountsFileSource {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let task_fs = task.live()?.fs.read();
+        let task_fs = task.running_state()?.fs.read();
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
@@ -892,7 +892,7 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let task_fs = task.live()?.fs.read();
+        let task_fs = task.running_state()?.fs.read();
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {

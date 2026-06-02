@@ -874,7 +874,7 @@ mod tests {
         open_flags: OpenFlags,
     ) -> FileHandle {
         let backing_fd = current_task
-            .live()
+            .running_state()
             .files
             .add(locked, &current_task, backing_file, FdFlags::empty())
             .unwrap();

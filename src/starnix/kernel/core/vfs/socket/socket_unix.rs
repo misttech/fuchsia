@@ -1091,7 +1091,7 @@ where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     if name[0] == b'\0' {
-        current_task.live().abstract_socket_namespace.lookup(name)
+        current_task.running_state().abstract_socket_namespace.lookup(name)
     } else {
         let mut context = LookupContext::default();
         let (parent, basename) =

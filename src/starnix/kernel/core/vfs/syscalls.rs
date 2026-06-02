@@ -245,7 +245,7 @@ pub fn sys_close(
     current_task: &CurrentTask,
     fd: FdNumber,
 ) -> Result<(), Errno> {
-    current_task.live().files.close(fd)?;
+    current_task.running_state().files.close(fd)?;
     Ok(())
 }
 
@@ -259,20 +259,20 @@ pub fn sys_close_range(
     if first > last || flags & !(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC) != 0 {
         return error!(EINVAL);
     }
-    let live_task = current_task.live();
+    let running_state = current_task.running_state();
     if flags & CLOSE_RANGE_UNSHARE != 0 {
-        live_task.files.unshare();
+        running_state.files.unshare();
     }
     let in_range = |fd: FdNumber| fd.raw() as u32 >= first && fd.raw() as u32 <= last;
     if flags & CLOSE_RANGE_CLOEXEC != 0 {
-        live_task.files.retain(locked, current_task, |fd, flags| {
+        running_state.files.retain(locked, current_task, |fd, flags| {
             if in_range(fd) {
                 *flags |= FdFlags::CLOEXEC;
             }
             true
         });
     } else {
-        live_task.files.retain(locked, current_task, |fd, _| !in_range(fd));
+        running_state.files.retain(locked, current_task, |fd, _| !in_range(fd));
     }
     Ok(())
 }
@@ -308,7 +308,7 @@ pub fn sys_fcntl(
         F_DUPFD | F_DUPFD_CLOEXEC => {
             let fd_number = arg as i32;
             let flags = if cmd == F_DUPFD_CLOEXEC { FdFlags::CLOEXEC } else { FdFlags::empty() };
-            let newfd = current_task.live().files.duplicate(
+            let newfd = current_task.running_state().files.duplicate(
                 locked,
                 current_task,
                 fd,
@@ -373,10 +373,10 @@ pub fn sys_fcntl(
             file.set_async_owner(owner);
             Ok(SUCCESS)
         }
-        F_GETFD => Ok(current_task.live().files.get_fd_flags_allowing_opath(fd)?.into()),
+        F_GETFD => Ok(current_task.running_state().files.get_fd_flags_allowing_opath(fd)?.into()),
         F_SETFD => {
             current_task
-                .live()
+                .running_state()
                 .files
                 .set_fd_flags_allowing_opath(fd, FdFlags::from_bits_truncate(arg as u32))?;
             Ok(SUCCESS)
@@ -1768,7 +1768,7 @@ pub fn sys_ioctl(
 ) -> Result<SyscallResult, Errno> {
     match request {
         FIOCLEX | FIONCLEX => {
-            current_task.live().files.ioctl_fd_flags(current_task, fd, request)?;
+            current_task.running_state().files.ioctl_fd_flags(current_task, fd, request)?;
             Ok(SUCCESS)
         }
         _ => {
@@ -1821,7 +1821,7 @@ pub fn sys_dup(
     current_task: &CurrentTask,
     oldfd: FdNumber,
 ) -> Result<FdNumber, Errno> {
-    current_task.live().files.duplicate(
+    current_task.running_state().files.duplicate(
         locked,
         current_task,
         oldfd,
@@ -1844,7 +1844,7 @@ pub fn sys_dup3(
         return error!(EINVAL);
     }
     let fd_flags = get_fd_flags(flags);
-    current_task.live().files.duplicate(
+    current_task.running_state().files.duplicate(
         locked,
         current_task,
         oldfd,
@@ -2197,11 +2197,11 @@ pub fn sys_pidfd_getfd(
     let file = current_task.get_file(pidfd)?;
     let tg = file.as_thread_group_key()?;
     let tg = tg.upgrade().ok_or_else(|| errno!(ESRCH))?;
-    let task = tg.read().get_live_task()?;
+    let task = tg.read().get_running_task()?;
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &task)?;
 
-    let target_file = task.live()?.files.get(targetfd)?;
+    let target_file = task.running_state()?.files.get(targetfd)?;
     current_task.add_file(locked, target_file, FdFlags::CLOEXEC)
 }
 
@@ -3930,7 +3930,11 @@ mod tests {
             let file_handle =
                 current_task.open_file(locked, "data/testfile.txt".into(), OpenFlags::RDONLY)?;
             let file_size = file_handle.node().stat(locked, current_task).unwrap().st_size;
-            current_task.live().files.insert(locked, current_task, fd, file_handle).unwrap();
+            current_task
+                .running_state()
+                .files
+                .insert(locked, current_task, fd, file_handle)
+                .unwrap();
 
             assert_eq!(sys_lseek(locked, current_task, fd, 0, SEEK_CUR)?, 0);
             assert_eq!(sys_lseek(locked, current_task, fd, 1, SEEK_CUR)?, 1);
@@ -3962,7 +3966,7 @@ mod tests {
             let newfd = sys_dup(locked, current_task, oldfd)?;
 
             assert_ne!(oldfd, newfd);
-            let files = &current_task.live().files;
+            let files = &current_task.running_state().files;
             assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
 
             assert_eq!(sys_dup(locked, current_task, FdNumber::from_raw(3)), error!(EBADF));
@@ -3982,7 +3986,7 @@ mod tests {
             sys_dup3(locked, current_task, oldfd, newfd, O_CLOEXEC)?;
 
             assert_ne!(oldfd, newfd);
-            let files = &current_task.live().files;
+            let files = &current_task.running_state().files;
             assert!(Arc::ptr_eq(&files.get(oldfd).unwrap(), &files.get(newfd).unwrap()));
             assert_eq!(files.get_fd_flags_allowing_opath(oldfd).unwrap(), FdFlags::empty());
             assert_eq!(files.get_fd_flags_allowing_opath(newfd).unwrap(), FdFlags::CLOEXEC);
@@ -4030,7 +4034,7 @@ mod tests {
             )?;
             assert!(
                 current_task
-                    .live()
+                    .running_state()
                     .files
                     .get_fd_flags_allowing_opath(fd)?
                     .contains(FdFlags::CLOEXEC)

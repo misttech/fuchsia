@@ -251,7 +251,7 @@ fn create_test_mm(task: &Task) -> Result<Arc<MemoryManager>, Errno> {
         MemoryManager::new_for_test(task.thread_group().root_vmar.unowned(), ArchWidth::Arch64);
     let fake_executable_addr = mm.get_random_base_for_executable(arch_width, 0)?;
     mm.initialize_brk_origin(arch_width, fake_executable_addr)?;
-    task.live()?.mm.update(Some(mm.clone()));
+    task.running_state()?.mm.update(Some(mm.clone()));
     Ok(mm)
 }
 

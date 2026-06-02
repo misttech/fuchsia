@@ -4827,7 +4827,7 @@ mod test {
                 .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
                 .expect("open");
             let fd = current_task
-                .live()
+                .running_state()
                 .files
                 .add(locked, current_task, file_handle, FdFlags::empty())
                 .expect("add file");

@@ -1588,7 +1588,7 @@ impl ThreadGroup {
 
         let mut tasks = vec![];
 
-        // This checks to see if the target is a living ptracee
+        // This checks to see if the target is a running ptracee.
         self.get_ptracees_and(selector, pids, &mut |task: &Task, _| {
             tasks.push(task.weak_self.clone());
         });
@@ -2164,21 +2164,21 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         self.get_waitable_running_children(selector, options, pids)
     }
 
-    /// Returns a task in the current thread group.
-    pub fn get_live_task(&self) -> Result<Arc<Task>, Errno> {
+    /// Returns a running task in the current thread group.
+    pub fn get_running_task(&self) -> Result<Arc<Task>, Errno> {
         self.tasks
             .iter()
-            .find_map(|container| container.1.upgrade().filter(|task| task.live().is_ok()))
+            .find_map(|container| container.1.upgrade().filter(|task| task.is_running()))
             .ok_or_else(|| errno!(ESRCH))
     }
 
     /// Returns a task representative of the [`ThreadGroup`].
     ///
-    /// If the task list contains at least one live task, an arbitrary live task is returned.
+    /// If the task list contains at least one running task, an arbitrary running task is returned.
     /// Otherwise, if the task list is empty, the process must be a zombie. In this case, the exited
     /// leader task is returned.
     pub fn get_any_task(&self) -> Result<Arc<Task>, Errno> {
-        self.get_live_task()
+        self.get_running_task()
             .ok()
             .or_else(|| self.base.leader_task.get().and_then(|t| t.upgrade()))
             .ok_or_else(|| errno!(ESRCH))

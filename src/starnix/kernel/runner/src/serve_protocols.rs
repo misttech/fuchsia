@@ -184,8 +184,8 @@ pub async fn serve_container_controller(
                         let mut results = vec![];
                         for thread_group in thread_groups {
                             if let Ok(leader) = system_task.get_task(thread_group.leader) {
-                                if let Ok(live) = leader.live() {
-                                    let files = &live.files;
+                                if let Ok(running_state) = leader.running_state() {
+                                    let files = &running_state.files;
                                     let fds = files.get_all_fds();
                                     for fd in fds {
                                         if let Ok(file) = files.get(fd) {

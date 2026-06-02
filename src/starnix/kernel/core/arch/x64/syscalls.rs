@@ -504,7 +504,7 @@ mod tests {
                 current_task.open_file(locked, path.into(), OpenFlags::RDONLY).unwrap();
             assert!(
                 !current_task
-                    .live()
+                    .running_state()
                     .files
                     .get_fd_flags_allowing_opath(fd)
                     .unwrap()

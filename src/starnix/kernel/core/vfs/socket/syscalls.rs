@@ -269,7 +269,7 @@ pub fn sys_bind(
             // If there is a null byte at the start of the sun_path, then the
             // address is abstract.
             if name[0] == b'\0' {
-                current_task.live().abstract_socket_namespace.bind(
+                current_task.running_state().abstract_socket_namespace.bind(
                     locked,
                     current_task,
                     name,
@@ -298,7 +298,7 @@ pub fn sys_bind(
             }
         }
         SocketAddress::Vsock { port, .. } => {
-            current_task.live().abstract_vsock_namespace.bind(
+            current_task.running_state().abstract_vsock_namespace.bind(
                 locked,
                 current_task,
                 port,

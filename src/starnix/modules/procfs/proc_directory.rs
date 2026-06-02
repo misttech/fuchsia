@@ -196,12 +196,12 @@ impl FsNodeOps for ProcDirectoryNode {
                 // duplicate caches being created. However, this is both unlikely and safe. In that
                 // event, the last cached to be installed wins the race and the only cost is the
                 // wasted work of creating multiple caches.
-                let live = task.live()?;
-                if let Some(pd) = live.proc_pid_directory_cache.cloned() {
+                let running_state = task.running_state()?;
+                if let Some(pd) = running_state.proc_pid_directory_cache.cloned() {
                     Ok(pd)
                 } else {
                     let pd = pid_directory(current_task, &node.fs(), &task);
-                    live.proc_pid_directory_cache.update(Some(pd.clone()));
+                    running_state.proc_pid_directory_cache.update(Some(pd.clone()));
                     Ok(pd)
                 }
             }

@@ -4083,11 +4083,11 @@ impl MemoryManager {
 
             let name_str = match &map.name() {
                 MappingNameRef::File(file) => {
-                    let Ok(live) = task.live() else {
-                        log_warn!("Task {} is not live", task.get_tid());
+                    let Ok(running_state) = task.running_state() else {
+                        log_warn!("Task {} is not running", task.get_tid());
                         continue;
                     };
-                    String::from_utf8_lossy(&file.name.path(&live.fs())).into_owned()
+                    String::from_utf8_lossy(&file.name.path(&running_state.fs())).into_owned()
                 }
                 MappingNameRef::None | MappingNameRef::AioContext(_) => {
                     if map.flags().contains(MappingFlags::SHARED)
@@ -4670,7 +4670,7 @@ fn write_map(
             // File names can have newlines that need to be escaped before printing.
             // According to https://man7.org/linux/man-pages/man5/proc.5.html the only
             // escaping applied to paths is replacing newlines with an octal sequence.
-            let path = file.name.path(&task.live()?.fs());
+            let path = file.name.path(&task.running_state()?.fs());
             sink.write_iter(
                 path.iter()
                     .flat_map(|b| if *b == b'\n' { b"\\012" } else { std::slice::from_ref(b) })
@@ -5060,12 +5060,12 @@ mod tests {
             let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
             let new_mm = MemoryManager::exec(
                 current_task.thread_group().root_vmar.unowned(),
-                current_task.live().mm.to_option_arc(),
+                current_task.running_state().mm.to_option_arc(),
                 node,
                 ArchWidth::Arch64,
             )
             .expect("failed to exec memory manager");
-            current_task.live().mm.update(Some(new_mm));
+            current_task.running_state().mm.update(Some(new_mm));
 
             assert!(!has(brk_addr));
             assert!(!has(mapped_addr));

@@ -2001,7 +2001,7 @@ pub mod tests {
 
             // Ensure that the receiver.task() has no file descriptors.
             assert!(
-                receiver.task().live().files.get_all_fds().is_empty(),
+                receiver.task().running_state().files.get_all_fds().is_empty(),
                 "receiver already has files"
             );
 
@@ -2127,7 +2127,7 @@ pub mod tests {
             // Verify that the fds have been translated.
             let (receiver_file, receiver_fd_flags) = receiver
                 .task()
-                .live()
+                .running_state()
                 .files
                 .get_allowing_opath_with_flags(FdNumber::from_raw(translated_bar.fds[0] as i32))
                 .expect("FD not found in receiver");
@@ -2138,7 +2138,7 @@ pub mod tests {
             assert_eq!(receiver_fd_flags, FdFlags::CLOEXEC);
             let (receiver_file, receiver_fd_flags) = receiver
                 .task()
-                .live()
+                .running_state()
                 .files
                 .get_allowing_opath_with_flags(FdNumber::from_raw(translated_bar.fds[1] as i32))
                 .expect("FD not found in receiver");
@@ -2153,7 +2153,7 @@ pub mod tests {
             assert!(
                 receiver
                     .task()
-                    .live()
+                    .running_state()
                     .files
                     .get_allowing_opath(FdNumber::from_raw(translated_bar.fds[0] as i32))
                     .expect_err("file should be closed")
@@ -2162,7 +2162,7 @@ pub mod tests {
             assert!(
                 receiver
                     .task()
-                    .live()
+                    .running_state()
                     .files
                     .get_allowing_opath(FdNumber::from_raw(translated_bar.fds[1] as i32))
                     .expect_err("file should be closed")
@@ -2207,7 +2207,7 @@ pub mod tests {
 
             // Ensure that the receiver.task() has no file descriptors.
             assert!(
-                receiver.task().live().files.get_all_fds().is_empty(),
+                receiver.task().running_state().files.get_all_fds().is_empty(),
                 "receiver already has files"
             );
 
@@ -2334,7 +2334,7 @@ pub mod tests {
 
             // Ensure that the receiver.task() has no file descriptors.
             assert!(
-                receiver.task().live().files.get_all_fds().is_empty(),
+                receiver.task().running_state().files.get_all_fds().is_empty(),
                 "receiver already has files"
             );
 
@@ -2434,7 +2434,7 @@ pub mod tests {
             // The receiver should have the fd.
             let fd = transient_state.state.as_ref().unwrap().owned_fds[0];
             assert!(
-                receiver.task().live().files.get_allowing_opath(fd).is_ok(),
+                receiver.task().running_state().files.get_allowing_opath(fd).is_ok(),
                 "file should be translated"
             );
 
@@ -2443,7 +2443,7 @@ pub mod tests {
             assert!(
                 receiver
                     .task()
-                    .live()
+                    .running_state()
                     .files
                     .get_allowing_opath(fd)
                     .expect_err("file should be closed")
@@ -2973,7 +2973,7 @@ pub mod tests {
             // The receiver should now have a file.
             let receiver_fd = receiver
                 .task()
-                .live()
+                .running_state()
                 .files
                 .get_all_fds()
                 .first()
@@ -2984,7 +2984,7 @@ pub mod tests {
             assert_eq!(
                 receiver
                     .task()
-                    .live()
+                    .running_state()
                     .files
                     .get_fd_flags_allowing_opath(receiver_fd)
                     .expect("get flags"),
@@ -2996,7 +2996,7 @@ pub mod tests {
                 Arc::ptr_eq(
                     &receiver
                         .task()
-                        .live()
+                        .running_state()
                         .files
                         .get_allowing_opath(receiver_fd)
                         .expect("receiver should have FD"),
@@ -3071,7 +3071,7 @@ pub mod tests {
             // The receiver should now have a file.
             let receiver_fd = receiver
                 .task()
-                .live()
+                .running_state()
                 .files
                 .get_all_fds()
                 .first()
@@ -3131,7 +3131,7 @@ pub mod tests {
                 .expect("failed to translate handles");
 
             assert!(
-                !receiver.task().live().files.get_all_fds().is_empty(),
+                !receiver.task().running_state().files.get_all_fds().is_empty(),
                 "receiver should have a file"
             );
 
@@ -3139,7 +3139,7 @@ pub mod tests {
             transaction_state.release(());
 
             assert!(
-                receiver.task().live().files.get_all_fds().is_empty(),
+                receiver.task().running_state().files.get_all_fds().is_empty(),
                 "receiver should not have any files"
             );
         })

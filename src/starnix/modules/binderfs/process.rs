@@ -773,9 +773,9 @@ impl<'a> BinderProcessGuard<'a> {
         if let Some(thread) = self.thread_pool.threads.get(&tid) {
             return Ok(OwnedRef::share(thread));
         }
-        let live_state = task.live()?;
+        let running_state = task.running_state()?;
         let handle =
-            live_state.thread.read().clone().unwrap_or_else(|| Arc::new(zx::Thread::invalid()));
+            running_state.thread.read().clone().unwrap_or_else(|| Arc::new(zx::Thread::invalid()));
         let thread = BinderThread::new(self, tid, handle);
         self.thread_pool.threads.insert(tid, OwnedRef::share(&thread));
         Ok(thread)
@@ -1093,5 +1093,5 @@ impl HandleTable {
 
 /// Returns a task in the process keyed by `key`.
 fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<Arc<Task>> {
-    key.upgrade().and_then(|tg| tg.read().get_live_task().ok())
+    key.upgrade().and_then(|tg| tg.read().get_running_task().ok())
 }

@@ -12,7 +12,7 @@ use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     ExitStatus, RobustListHeadPtr, RunState, SeccompFilter, SeccompFilterContainer,
-    SeccompNotifierHandle, SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState,
+    SeccompNotifierHandle, SeccompState, SeccompStateValue, Task, TaskFlags, TaskRunningState,
     ThreadState, Waiter,
 };
 use crate::vfs::{
@@ -199,7 +199,7 @@ impl CurrentTask {
     /// Exit the task by dropping its running state.
     pub fn exit(&self, locked: &mut Locked<TaskRelease>) {
         // When this method returns, the following invariants must be met:
-        // 1. No new references to live `Task` state must be obtainable.
+        // 1. No new references to running `Task` state must be obtainable.
         // 2. All externally-visible `Task` state must reflect that the `Task` has exited.
         // 3. All observers of `Task` exit events must be notified.
 
@@ -209,11 +209,11 @@ impl CurrentTask {
         self.signal_vfork();
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
-        if let Ok(live) = self.task.live() {
-            live.files.release();
-            live.mm.update(None);
+        if let Ok(running_state) = self.task.running_state() {
+            running_state.files.release();
+            running_state.mm.update(None);
         }
-        self.live_state.update(None);
+        self.running_state.update(None);
 
         self.trigger_delayed_releaser(locked);
 
@@ -229,19 +229,19 @@ impl CurrentTask {
         self.ptrace_disconnect();
     }
 
-    /// Returns the [`TaskLiveState`] for the [`Task`].
+    /// Returns the [`TaskRunningState`] for the [`Task`].
     ///
     /// # Panics
     ///
-    /// Calling `live()` on a [`CurrentTask`] for which the [`Task`] has no live state (i.e.
-    /// zombie tasks) panics. However, such tasks should not have a `CurrentTask`.
+    /// Calling `running_state()` on a [`CurrentTask`] for which the [`Task`] has no running state
+    /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
-    pub fn live(&self) -> RcuReadGuard<TaskLiveState> {
-        self.task.live().expect("CurrentTask must have TaskLiveState")
+    pub fn running_state(&self) -> RcuReadGuard<TaskRunningState> {
+        self.task.running_state().expect("CurrentTask must have TaskRunningState")
     }
 
     pub fn fs(&self) -> Arc<FsContext> {
-        self.live().fs()
+        self.running_state().fs()
     }
 
     pub fn has_shared_fs(&self) -> bool {
@@ -253,7 +253,7 @@ impl CurrentTask {
 
     pub fn unshare_fs(&self) {
         let new_fs = self.fs().fork();
-        self.live().fs.update(new_fs);
+        self.running_state().fs.update(new_fs);
     }
 
     /// Returns the current subjective credentials of the task.
@@ -341,7 +341,7 @@ impl CurrentTask {
         }
         // The /proc/pid directory's ownership is updated when the task's euid
         // or egid changes. See proc(5).
-        let maybe_node = self.live().proc_pid_directory_cache.cloned();
+        let maybe_node = self.running_state().proc_pid_directory_cache.cloned();
         if let Some(node) = maybe_node {
             let creds = self.real_creds().euid_as_fscred();
             // SAFETY: The /proc/pid directory held by `proc_pid_directory_cache` represents the
@@ -382,15 +382,15 @@ impl CurrentTask {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.live().files.add(locked, self, file, flags)
+        self.running_state().files.add(locked, self, file, flags)
     }
 
     pub fn get_file(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
-        self.live().files.get(fd)
+        self.running_state().files.get(fd)
     }
 
     pub fn get_file_allowing_opath(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
-        self.live().files.get_allowing_opath(fd)
+        self.running_state().files.get_allowing_opath(fd)
     }
 
     /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
@@ -1098,7 +1098,7 @@ impl CurrentTask {
                 resolved_elf.file.name.to_passive(),
                 resolved_elf.arch_width,
             )?;
-            self.live().mm.update(Some(new_mm.clone()));
+            self.running_state().mm.update(Some(new_mm.clone()));
             new_mm
         };
 
@@ -1110,8 +1110,8 @@ impl CurrentTask {
 
         // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
         // clone(2).
-        self.live().files.unshare();
-        self.live().files.exec(locked, self);
+        self.running_state().files.unshare();
+        self.running_state().files.exec(locked, self);
 
         {
             let mut state = self.write();
@@ -1618,7 +1618,11 @@ impl CurrentTask {
         }
 
         let fs = if clone_fs { self.fs() } else { self.fs().fork() };
-        let files = if clone_files { self.live().files.clone() } else { self.live().files.fork() };
+        let files = if clone_files {
+            self.running_state().files.clone()
+        } else {
+            self.running_state().files.fork()
+        };
 
         let kernel = self.kernel();
 
@@ -1733,14 +1737,14 @@ impl CurrentTask {
         // Only create the vfork event when the caller requested CLONE_VFORK.
         let vfork_event = if clone_vfork { Some(Arc::new(zx::Event::create())) } else { None };
 
-        // Clone live state in a nested scope to ensure that the RCU read scope is not held across
-        // the release_on_error block.
+        // Clone running state in a nested scope to ensure that the RCU read scope is not held
+        // across the release_on_error block.
         let abstract_socket_namespace;
         let abstract_vsock_namespace;
         {
-            let live = self.live();
-            abstract_socket_namespace = live.abstract_socket_namespace.clone();
-            abstract_vsock_namespace = live.abstract_vsock_namespace.clone();
+            let running_state = self.running_state();
+            abstract_socket_namespace = running_state.abstract_socket_namespace.clone();
+            abstract_vsock_namespace = running_state.abstract_vsock_namespace.clone();
         }
 
         let mut child = TaskBuilder::new(Task::new(
@@ -1812,7 +1816,7 @@ impl CurrentTask {
                     child.thread_group.root_vmar.unowned(),
                     self.thread_state.arch_width(),
                 )?;
-                child.live()?.mm.update(Some(child_mm));
+                child.running_state()?.mm.update(Some(child_mm));
             }
 
             if clone_parent_settid {
@@ -1850,7 +1854,7 @@ impl CurrentTask {
                     child.thread_group.root_vmar.unowned(),
                     self.thread_state.arch_width(),
                 )?;
-                child.live()?.mm.update(Some(child_mm));
+                child.running_state()?.mm.update(Some(child_mm));
             }
 
             child.thread_state = self.thread_state.snapshot::<HeapRegs>();

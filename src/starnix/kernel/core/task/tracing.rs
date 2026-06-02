@@ -131,19 +131,19 @@ impl TracePerformanceEventManager {
     fn read_existing_pid_map(pid_table: &PidTable) -> HashMap<tid_t, KoidPair> {
         let mut pid_map = HashMap::new();
 
-        let ids = pid_table.task_ids();
+        let ids = pid_table.running_task_ids();
         for tid in &ids {
-            // Live tasks may exit at any time. Record a task only if a snapshot of its live state
-            // can be obtained.
+            // Running tasks may exit at any time. Record a task only if a snapshot of its running
+            // state can be obtained.
             let Ok(task) = pid_table.get_task(*tid) else {
                 continue;
             };
-            let Ok(live) = task.live() else {
+            let Ok(running_state) = task.running_state() else {
                 continue;
             };
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),
-                thread: live.thread.read().koid(),
+                thread: running_state.thread.read().koid(),
             };
             // ignore entries with no process or thread.
             if pair.process.is_some() || pair.thread.is_some() {
@@ -168,7 +168,7 @@ mod tests {
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
-            let tkoid = current_task.live().thread.read().koid();
+            let tkoid = current_task.running_state().thread.read().koid();
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
             let _another_current = create_task(locked, &kernel, "another-task");
@@ -233,8 +233,8 @@ mod tests {
                 .expect("test thread");
 
             {
-                let another_current_live = another_current.live();
-                another_current_live.thread.write().set(Arc::new(test_thread));
+                let another_current_running = another_current.running_state();
+                another_current_running.thread.write().set(Arc::new(test_thread));
             }
 
             let pid_map = manager.map.read().clone();

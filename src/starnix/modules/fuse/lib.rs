@@ -222,7 +222,7 @@ pub fn new_fuse_fs(
     )?;
     let default_permissions = options.params.get(b"default_permissions").is_some().into();
     let connection = current_task
-        .live()
+        .running_state()
         .files
         .get(fd)?
         .downcast_file::<DevFuse>()

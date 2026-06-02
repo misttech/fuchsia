@@ -2503,7 +2503,7 @@ mod tests {
 
             // Check which signalfds are readable.
             let sfd_term_int_file = current_task
-                .live()
+                .running_state()
                 .files
                 .get(sfd_term_int)
                 .expect("failed to get sfd_term_int file");
@@ -2567,7 +2567,7 @@ mod tests {
             let ready_items = Arc::new(Mutex::new(VecDeque::new()));
 
             let sfd_term_int_file = current_task
-                .live()
+                .running_state()
                 .files
                 .get(sfd_term_int)
                 .expect("failed to get sfd_term_int file");

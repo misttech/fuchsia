@@ -340,7 +340,7 @@ pub fn sys_getcpu(
     // from https://man7.org/linux/man-pages/man2/getcpu.2.html
     if !cpu_out.is_null() {
         let thread_stats = current_task
-            .live()
+            .running_state()
             .thread
             .read()
             .as_ref()
@@ -1821,7 +1821,7 @@ pub fn sys_unshare(
     }
 
     if (flags & CLONE_FILES) != 0 {
-        current_task.live().files.unshare();
+        current_task.running_state().files.unshare();
     }
 
     if (flags & CLONE_FS) != 0 {
@@ -1976,7 +1976,7 @@ pub fn sys_kcmp(
             fn get_file(task: &Task, index: u64) -> Result<FileHandle, Errno> {
                 // TODO: Test whether O_PATH is allowed here. Conceptually, seems like
                 //       O_PATH should be allowed, but we haven't tested it yet.
-                task.live()?.files.get_allowing_opath(FdNumber::from_raw(
+                task.running_state()?.files.get_allowing_opath(FdNumber::from_raw(
                     index.try_into().map_err(|_| errno!(EBADF))?,
                 ))
             }
@@ -1985,13 +1985,13 @@ pub fn sys_kcmp(
             Ok(encode_ordering(obfuscate_arc(&file1).cmp(&obfuscate_arc(&file2))))
         }
         KcmpResource::FILES => {
-            let files1 = task1.live()?.files.id();
-            let files2 = task2.live()?.files.id();
+            let files1 = task1.running_state()?.files.id();
+            let files2 = task2.running_state()?.files.id();
             Ok(encode_ordering(obfuscate_value(files1.raw()).cmp(&obfuscate_value(files2.raw()))))
         }
         KcmpResource::FS => {
-            let fs1 = task1.live()?.fs();
-            let fs2 = task2.live()?.fs();
+            let fs1 = task1.running_state()?.fs();
+            let fs2 = task2.running_state()?.fs();
             Ok(encode_ordering(obfuscate_arc(&fs1).cmp(&obfuscate_arc(&fs2))))
         }
         KcmpResource::SIGHAND => Ok(encode_ordering(

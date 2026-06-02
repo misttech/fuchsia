@@ -152,7 +152,7 @@ where
 {
     let init_task = kernel.pids.read().get_task(1).map_err(|_| errno!(EINVAL))?;
 
-    let fs = init_task.live()?.fs().fork();
+    let fs = init_task.running_state()?.fs().fork();
 
     let security_state = if let Some(seclabel) = seclabel {
         security::task_for_context(&init_task, seclabel.as_bytes().into())?
@@ -415,11 +415,11 @@ where
     let abstract_socket_namespace;
     let abstract_vsock_namespace;
     {
-        let live = system_task.live()?;
-        mm = live.mm.to_option_arc();
-        fs = live.fs.to_arc();
-        abstract_socket_namespace = live.abstract_socket_namespace.clone();
-        abstract_vsock_namespace = live.abstract_vsock_namespace.clone();
+        let running_state = system_task.running_state()?;
+        mm = running_state.mm.to_option_arc();
+        fs = running_state.fs.to_arc();
+        abstract_socket_namespace = running_state.abstract_socket_namespace.clone();
+        abstract_vsock_namespace = running_state.abstract_vsock_namespace.clone();
     }
 
     let current_task: CurrentTask = TaskBuilder::new(Task::new(

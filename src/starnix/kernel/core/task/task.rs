@@ -724,11 +724,11 @@ impl std::ops::Deref for ZirconThread {
     }
 }
 
-/// The live state of a task.
+/// The running state of a task.
 ///
-/// This structure contains the state of a task that is only relevant while the task is alive. It
-/// is dropped when the task enters the zombie state.
-pub struct TaskLiveState {
+/// This structure contains the state of a task that is only relevant while the task is running. It
+/// is dropped when the task enters an exited state.
+pub struct TaskRunningState {
     /// A handle to the underlying Zircon thread object.
     ///
     /// Some tasks lack an underlying Zircon thread. These tasks are used internally by the
@@ -757,7 +757,7 @@ pub struct TaskLiveState {
     pub proc_pid_directory_cache: RcuOptionBox<FsNodeHandle>,
 }
 
-impl TaskLiveState {
+impl TaskRunningState {
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
         self.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }
@@ -954,10 +954,10 @@ pub struct Task {
     /// process.
     pub thread_group: Arc<ThreadGroup>,
 
-    /// The live state of the task.
+    /// The running state of the task.
     ///
-    /// This is `None` for zombie tasks.
-    pub live_state: RcuOptionBox<TaskLiveState>,
+    /// This is `None` for exited tasks.
+    pub running_state: RcuOptionBox<TaskRunningState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1133,7 +1133,7 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                live_state: RcuOptionBox::new(Some(TaskLiveState {
+                running_state: RcuOptionBox::new(Some(TaskRunningState {
                     thread: RwLock::new(ZirconThread::new(thread.map(Arc::new))),
                     files,
                     mm: RcuOptionArc::new(mm),
@@ -1206,15 +1206,24 @@ impl Task {
         self.get_task(self.read().ptrace.as_ref().map(|p| p.core_state.pid)?).ok()
     }
 
-    /// Returns the live state of the task, if it exists.
+    /// Determine whether the task is running.
+    ///
+    /// # Thread Safety
+    ///
+    /// The task may exit immediately after `is_running()` returns `true`.
+    pub fn is_running(&self) -> bool {
+        self.running_state.read().is_some()
+    }
+
+    /// Returns the running state of the task, if it exists.
     ///
     /// # Errors
     ///
-    /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its live
+    /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its running
     /// resources have been dropped.
     #[track_caller]
-    pub fn live(&self) -> Result<RcuReadGuard<TaskLiveState>, Errno> {
-        self.live_state.read().ok_or_else(|| errno!(ESRCH))
+    pub fn running_state(&self) -> Result<RcuReadGuard<TaskRunningState>, Errno> {
+        self.running_state.read().ok_or_else(|| errno!(ESRCH))
     }
 
     /// Returns the memory manager of the task, if it exists.
@@ -1227,7 +1236,7 @@ impl Task {
     ///   - `EINVAL`: the task does not have a memory manager.
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
-        self.live()?.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
+        self.running_state()?.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }
 
     /// Modify the given elements of the scheduler state with new values and update the
@@ -1394,7 +1403,7 @@ impl Task {
     }
 
     pub fn thread_runtime_info(&self) -> Result<zx::TaskRuntimeInfo, Errno> {
-        self.live()?
+        self.running_state()?
             .thread
             .read()
             .as_ref()
@@ -1412,13 +1421,13 @@ impl Task {
     /// This will interrupt any blocking syscalls if the task is blocked on one.
     /// The signal_state of the task must not be locked.
     pub fn interrupt(&self) {
-        let Ok(live) = self.live() else {
+        let Ok(running_state) = self.running_state() else {
             log_warn!("Cannot interrupt dead task {}", self.get_tid());
             return;
         };
 
         self.read().run_state.wake();
-        if let Some(thread) = live.thread.read().as_ref() {
+        if let Some(thread) = running_state.thread.read().as_ref() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,
                 reason = "Force documented unsafe blocks in Starnix"
@@ -1438,7 +1447,7 @@ impl Task {
     }
 
     pub fn set_command_name(&self, mut new_name: TaskCommand) {
-        let Ok(live) = self.live() else {
+        let Ok(running_state) = self.running_state() else {
             log_warn!("Cannot set command name for dead task {}", self.get_tid());
             return;
         };
@@ -1459,7 +1468,7 @@ impl Task {
         let mut command_guard = self.persistent_info.command_guard();
 
         // Set the name on the Linux thread.
-        if let Some(thread) = live.thread.read().as_ref() {
+        if let Some(thread) = running_state.thread.read().as_ref() {
             set_zx_name(&**thread, new_name.as_bytes());
         }
 
@@ -1508,11 +1517,11 @@ impl Task {
     pub fn time_stats(&self) -> TaskTimeStats {
         use zx::Task;
         // TODO(https://fxbug.dev/297440106): Return time stats for zombie tasks.
-        let live = match self.live() {
-            Ok(live) => live,
+        let running_state = match self.running_state() {
+            Ok(running_state) => running_state,
             Err(_) => return TaskTimeStats::default(),
         };
-        let info = match live.thread.read().as_ref() {
+        let info = match running_state.thread.read().as_ref() {
             Some(thread) => thread.get_runtime_info().expect("Failed to get thread stats"),
             None => return TaskTimeStats::default(),
         };
@@ -1537,7 +1546,7 @@ impl Task {
     }
 
     pub fn record_pid_koid_mapping(&self) {
-        let Ok(live) = self.live() else {
+        let Ok(running_state) = self.running_state() else {
             log_warn!("Cannot record pid/koid mapping for dead task {}", self.get_tid());
             return;
         };
@@ -1545,14 +1554,14 @@ impl Task {
         let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
 
         let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = live.thread.read().koid();
+        let tkoid = running_state.thread.read().koid();
         mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }
 
 impl Drop for Task {
     fn drop(&mut self) {
-        debug_assert!(self.live_state.read().is_none());
+        debug_assert!(self.running_state.read().is_none());
     }
 }
 
