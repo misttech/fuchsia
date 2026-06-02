@@ -63,8 +63,8 @@ def main() -> int:
                 ws.init_cartfs_workspace(args.snapshot)
 
             if ws.is_checkout_uptodate():
-                logger.log_warn(
-                    "No work to do, workspace is already bootstrapped."
+                logger.log_info(
+                    "Workspace is up to date, no CartFS workspace sync is needed."
                 )
                 return 0
 

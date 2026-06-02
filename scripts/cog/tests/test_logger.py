@@ -9,6 +9,18 @@ import logger
 
 
 class TestLogger(unittest.TestCase):
+    def tearDown(self) -> None:
+        if logger._logger:
+            if logger._file_handler:
+                logger._logger.removeHandler(logger._file_handler)
+                logger._file_handler.close()
+                logger._file_handler = None
+            if logger._memory_handler:
+                logger._logger.removeHandler(logger._memory_handler)
+                logger._memory_handler.close()
+                logger._memory_handler = None
+        super().tearDown()
+
     @patch("builtins.print")
     def test_emit_status(self, mock_print: unittest.mock.MagicMock) -> None:
         # Enable status updates and verify that emit_status() prints to stdout.
@@ -142,6 +154,41 @@ class TestLogger(unittest.TestCase):
         )
         self.assertEqual(cm.records[2].getMessage(), "stdout: out")
         self.assertEqual(cm.records[3].getMessage(), "stderr: err")
+
+    def test_retroactive_file_logging(self) -> None:
+        import logging
+        import tempfile
+        from pathlib import Path
+
+        # Reset the logger and stream/file/memory handlers
+        logger.init_logger(log_level=logging.DEBUG)
+
+        # Log messages before file logging is set up
+        logger.log_info("Initial info message")
+        logger.log_debug("Initial debug message")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_path = Path(tmpdir)
+            log_file = workspace_path / "workspace_setup.log"
+
+            # Verify file doesn't exist yet
+            self.assertFalse(log_file.exists())
+
+            # Initialize file logging, which should retroactively dump prior logs
+            logger.setup_file_logging(workspace_path)
+
+            # Log a message after file logging is set up
+            logger.log_info("Message after file setup")
+
+            # Verify file now exists
+            self.assertTrue(log_file.exists())
+
+            # Read log content
+            log_content = log_file.read_text()
+
+            self.assertIn("Initial info message", log_content)
+            self.assertIn("Initial debug message", log_content)
+            self.assertIn("Message after file setup", log_content)
 
 
 if __name__ == "__main__":

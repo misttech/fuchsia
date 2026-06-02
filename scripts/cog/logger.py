@@ -10,12 +10,14 @@ import os
 import shlex
 import subprocess
 import sys
+from logging.handlers import MemoryHandler
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
 _logger: Optional[logging.Logger] = None
 _stream_handler: Optional[logging.StreamHandler[Any]] = None
 _file_handler: Optional[logging.FileHandler] = None
+_memory_handler: Optional[MemoryHandler] = None
 _enable_status_updates: bool = False
 _console_log_level: int = logging.WARNING
 
@@ -129,6 +131,8 @@ def init_logger(
     global _stream_handler
     global _enable_status_updates
     global _console_log_level
+    global _memory_handler
+
     _enable_status_updates = enable_status_updates
     _console_log_level = log_level
     logger = logging.getLogger("cog")
@@ -148,6 +152,15 @@ def init_logger(
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+    # `_memory_handler` lets us retroactively dump logs that were recorded before
+    # `logger.setup_file_logging` is called.
+    if _file_handler is None and _memory_handler is None:
+        _memory_handler = MemoryHandler(
+            capacity=10000, flushLevel=logging.CRITICAL + 1
+        )
+        _memory_handler.setLevel(logging.DEBUG)
+        logger.addHandler(_memory_handler)
+
     _stream_handler = handler
     _logger = logger
 
@@ -160,6 +173,7 @@ def setup_file_logging(workspace_root: Path) -> None:
     """
     global _logger
     global _file_handler
+    global _memory_handler
     if _logger is None:
         init_logger()
 
@@ -175,6 +189,13 @@ def setup_file_logging(workspace_root: Path) -> None:
         file_handler.setLevel(logging.DEBUG)
         file_formatter = _create_formatter(colors=False)
         file_handler.setFormatter(file_formatter)
+
+        # Dump all of the logs that have been emitted so far.
+        if _memory_handler:
+            _memory_handler.setTarget(file_handler)
+            _logger.removeHandler(_memory_handler)
+            _memory_handler.close()
+            _memory_handler = None
 
         _logger.addHandler(file_handler)
         _file_handler = file_handler
