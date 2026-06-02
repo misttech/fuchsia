@@ -580,14 +580,10 @@ class X86PageTableImpl : public X86PageTableBase {
 
     PageTableLevel top = static_cast<T*>(this)->top_level();
     const uint start = vaddr_to_index(top, base);
-    uint end = vaddr_to_index(top, base + size - 1);
-    // Check the end if it fills out the table entry.
-    if (page_aligned(top, base + size)) {
-      end += 1;
-    }
+    const uint end = vaddr_to_index(top, base + size - 1);
     IntermediatePtFlags flags = static_cast<T*>(this)->intermediate_flags();
 
-    for (uint i = start; i < end; i++) {
+    for (uint i = start; i <= end; i++) {
       auto result = AllocatePageTable(true);
       if (result.is_error()) {
         return result.status_value();
@@ -616,16 +612,10 @@ class X86PageTableImpl : public X86PageTableBase {
     // entry.
     PageTableLevel top = static_cast<T*>(this)->top_level();
     const uint restricted_start = vaddr_to_index(top, restricted_base);
-    uint restricted_end = vaddr_to_index(top, restricted_base + restricted_size - 1);
-    if (page_aligned(top, restricted_base + restricted_size)) {
-      restricted_end += 1;
-    }
+    const uint restricted_end = vaddr_to_index(top, restricted_base + restricted_size - 1);
     const uint shared_start = vaddr_to_index(top, shared_base);
-    uint shared_end = vaddr_to_index(top, shared_base + shared_size - 1);
-    if (page_aligned(top, shared_base + shared_size)) {
-      shared_end += 1;
-    }
-    DEBUG_ASSERT(restricted_end <= shared_start);
+    const uint shared_end = vaddr_to_index(top, shared_base + shared_size - 1);
+    DEBUG_ASSERT(restricted_end < shared_start);
 
     zx_status_t status = Init(ctx, test_paf);
     if (status != ZX_OK) {
@@ -640,7 +630,7 @@ class X86PageTableImpl : public X86PageTableBase {
       DEBUG_ASSERT(restricted->referenced_pt_ == nullptr);
 
       // Assert that there are no entries in the restricted page table.
-      for (uint i = restricted_start; i < restricted_end; i++) {
+      for (uint i = restricted_start; i <= restricted_end; i++) {
         DEBUG_ASSERT(!IS_PAGE_PRESENT(restricted->virt_[i]));
       }
 
@@ -657,7 +647,7 @@ class X86PageTableImpl : public X86PageTableBase {
       // Set up the PML4 so we capture any mappings created prior to creation of this unified page
       // table.
       pt_entry_t curr_entry = 0;
-      for (uint i = shared_start; i < shared_end; i++) {
+      for (uint i = shared_start; i <= shared_end; i++) {
         curr_entry = shared->virt_[i];
         if (IS_PAGE_PRESENT(curr_entry)) {
           virt_[i] = curr_entry;
@@ -1642,12 +1632,8 @@ class X86PageTableImpl : public X86PageTableBase {
       PageTableLevel top = static_cast<T*>(this)->top_level();
       pt_entry_t* table = static_cast<pt_entry_t*>(virt_);
       const uint start = vaddr_to_index(top, base);
-      uint end = vaddr_to_index(top, base + size - 1);
-      // Check the end if it fills out the table entry.
-      if (page_aligned(top, base + size)) {
-        end += 1;
-      }
-      for (uint i = start; i < end; i++) {
+      const uint end = vaddr_to_index(top, base + size - 1);
+      for (uint i = start; i <= end; i++) {
         if (IS_PAGE_PRESENT(table[i])) {
           volatile pt_entry_t* next_table = get_next_table_from_entry(table[i]);
           paddr_t ptable_phys = X86_VIRT_TO_PHYS(next_table);
@@ -1668,14 +1654,9 @@ class X86PageTableImpl : public X86PageTableBase {
       if (virt_) {
         pt_entry_t* table = static_cast<pt_entry_t*>(virt_);
         const uint start = vaddr_to_index(top, base);
-        uint end = vaddr_to_index(top, base + size - 1);
+        const uint end = vaddr_to_index(top, base + size - 1);
 
-        // Check the end if it fills out the table entry.
-        if (page_aligned(top, base + size)) {
-          end += 1;
-        }
-
-        for (uint i = start; i < end; ++i) {
+        for (uint i = start; i <= end; ++i) {
           DEBUG_ASSERT_MSG(!IS_PAGE_PRESENT(table[i]),
                            "Destroy() called on page table with entry 0x%" PRIx64
                            " still present at index %u; aspace size: %zu, is_shared_: %d\n",

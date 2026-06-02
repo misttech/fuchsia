@@ -625,3 +625,90 @@ TEST(ProcessShared, PropertiesShared) {
   }
 #endif
 }
+
+// Regression test for https://fxbug.dev/507137840.
+// Verify that mapping a page at the very end of a shared process's VMAR boundary
+// succeeds and does not panic the kernel due to under-allocated/unpopulated
+// top-level page table entries during InitShared.
+TEST(ProcessShared, SharedVmarBoundary) {
+  zx::process shared_proc;
+  zx::vmar shared_vmar;
+  constexpr const char kSharedName[] = "shared";
+  ASSERT_OK(zx::process::create(*zx::job::default_job(), kSharedName, sizeof(kSharedName),
+                                ZX_PROCESS_SHARED, &shared_proc, &shared_vmar));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  ASSERT_OK(vmo.op_range(ZX_VMO_OP_COMMIT, 0, zx_system_get_page_size(), nullptr, 0));
+
+  zx_info_vmar_t vmar_info;
+  ASSERT_OK(shared_vmar.get_info(ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info), nullptr, nullptr));
+
+  zx_vaddr_t mapped_addr;
+  zx_vaddr_t offset = vmar_info.len - zx_system_get_page_size();
+
+  ASSERT_OK(shared_vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC | ZX_VM_MAP_RANGE,
+                            offset, vmo, 0, zx_system_get_page_size(), &mapped_addr));
+}
+
+// Regression test for https://fxbug.dev/507137840.
+// Verify that process destruction cleans up the mappings at the shared VMAR
+// boundary correctly without panicking the kernel (targeting DestroyIndividual).
+TEST(ProcessShared, SharedVmarBoundaryDestruction) {
+  zx::process shared_proc;
+  zx::vmar shared_vmar;
+  constexpr const char kSharedName[] = "shared";
+  ASSERT_OK(zx::process::create(*zx::job::default_job(), kSharedName, sizeof(kSharedName),
+                                ZX_PROCESS_SHARED, &shared_proc, &shared_vmar));
+
+  // Explicitly reset the process handle to trigger process destruction
+  // and page table cleanup (DestroyIndividual) within the test scope.
+  shared_proc.reset();
+  shared_vmar.reset();
+}
+
+// Regression test for https://fxbug.dev/507137840.
+// Verify that the PML4 prepopulation boundary is calculated correctly in InitUnified
+// by mapping at the very end of the shared VMAR, creating a shared child process,
+// and verifying the child process can successfully read from the mapped address.
+TEST(ProcessShared, UnifiedVmarBoundary) {
+  NEEDS_NEXT_SKIP(zx_process_create_shared);
+
+  zx::process prototype_process;
+  zx::vmar shared_vmar;
+  constexpr const char kPrototypeName[] = "prototype_process";
+  ASSERT_OK(zx::process::create(*zx::job::default_job(), kPrototypeName, sizeof(kPrototypeName),
+                                ZX_PROCESS_SHARED, &prototype_process, &shared_vmar));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx_info_vmar_t vmar_info;
+  ASSERT_OK(shared_vmar.get_info(ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info), nullptr, nullptr));
+  uintptr_t offset = vmar_info.len - zx_system_get_page_size();
+
+  uintptr_t addr;
+  ASSERT_OK(shared_vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC, offset, vmo, 0,
+                            zx_system_get_page_size(), &addr));
+
+  std::vector<char> shared_data = {'a', 'b', 'c'};
+  ASSERT_OK(vmo.write(shared_data.data(), 0, shared_data.size()));
+
+  zx::process process;
+  zx::vmar restricted_vmar;
+  constexpr const char kProcessName[] = "process";
+  ASSERT_OK(zx_process_create_shared(prototype_process.get(), 0, kProcessName, sizeof(kProcessName),
+                                     process.reset_and_get_address(),
+                                     restricted_vmar.reset_and_get_address()));
+
+  std::vector<char> read_data = {'d', 'e', 'f'};
+  size_t actual = 0;
+  ASSERT_EQ(prototype_process.read_memory(addr, read_data.data(), read_data.size(), &actual),
+            ZX_OK);
+  ASSERT_EQ(read_data, shared_data);
+
+  read_data = {'d', 'e', 'f'};
+  ASSERT_EQ(process.read_memory(addr, read_data.data(), read_data.size(), &actual), ZX_OK);
+  ASSERT_EQ(read_data, shared_data);
+}

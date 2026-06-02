@@ -192,9 +192,9 @@ static bool x86_test_physmap_nx() {
 static bool x86_test_destroy_unified() {
   BEGIN_TEST;
 
-  // Create a shared and restricted aspace.
+  // Create a shared and restricted aspace that do not share a PML4 entry.
   constexpr uint64_t kTestAspaceSize = 4ull * kPageSize;
-  constexpr uint64_t kTestSharedAspaceBase = kTestAspaceSize + kPageSize;
+  constexpr uint64_t kTestSharedAspaceBase = 1ULL << PML4_SHIFT;
   X86ArchVmAspace restricted(0, kTestAspaceSize, /*mmu_flags=*/0);
   EXPECT_EQ(ZX_OK, restricted.InitRestricted());
   X86ArchVmAspace shared(kTestSharedAspaceBase, kTestAspaceSize, /*mmu_flags=*/0);
