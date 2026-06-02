@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	swarmingpb "go.chromium.org/luci/swarming/proto/api_v2"
+	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -577,5 +578,89 @@ func TestReadTaskRequests(t *testing.T) {
 	// Compare the result with the expected data
 	if diff := cmp.Diff(expectedResults, result, protocmp.Transform()); diff != "" {
 		t.Errorf("readTaskRequests() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildShardToFailedTestsMap(t *testing.T) {
+	shards := []testsharder.Shard{
+		{
+			Name: "shard1",
+			Tests: []testsharder.Test{
+				{Test: build.Test{Name: "test1"}},
+				{Test: build.Test{Name: "test2"}},
+				{Test: build.Test{Name: "other_test"}},
+			},
+		},
+		{
+			Name: "shard2",
+			Tests: []testsharder.Test{
+				{Test: build.Test{Name: "test3"}},
+				{Test: build.Test{Name: "another_test"}},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name        string
+		targetTests []string
+		expected    map[string][]string
+	}{
+		{
+			name:        "exact match",
+			targetTests: []string{"test1"},
+			expected: map[string][]string{
+				"shard1": {"test1"},
+			},
+		},
+		{
+			name:        "regex wildcard match",
+			targetTests: []string{"^test.*"},
+			expected: map[string][]string{
+				"shard1": {"test1", "test2"},
+				"shard2": {"test3"},
+			},
+		},
+		{
+			name:        "multiple regexes",
+			targetTests: []string{"test1", "another_.*"},
+			expected: map[string][]string{
+				"shard1": {"test1"},
+				"shard2": {"another_test"},
+			},
+		},
+		{
+			name:        "no match",
+			targetTests: []string{"non_existent"},
+			expected:    map[string][]string{},
+		},
+		{
+			name:        "target 2 tests and skip the rest",
+			targetTests: []string{"test1", "test3"},
+			expected: map[string][]string{
+				"shard1": {"test1"},
+				"shard2": {"test3"},
+			},
+		},
+		{
+			name:        "target 0 tests (empty list) and skip all",
+			targetTests: []string{},
+			expected:    map[string][]string{},
+		},
+		{
+			name:        "invalid regex ignored",
+			targetTests: []string{"[invalid", "test1"},
+			expected: map[string][]string{
+				"shard1": {"test1"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := buildShardToFailedTestsMap(shards, tc.targetTests)
+			if diff := cmp.Diff(tc.expected, result); diff != "" {
+				t.Errorf("buildShardToFailedTestsMap() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

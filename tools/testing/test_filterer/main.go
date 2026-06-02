@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -36,6 +37,7 @@ type flags struct {
 type PresubmitRetryMetadata struct {
 	ShardToFailedTestsMap        map[string][]string `json:"shard_to_failed_tests_map"`
 	ShardsWithTefmocheckFailures []string            `json:"shards_with_tefmocheck_failures"`
+	TargetTests                  []string            `json:"target_tests"`
 }
 
 type Test struct {
@@ -257,11 +259,68 @@ func createFilteredTaskRequests(
 	return filteredTaskRequests
 }
 
+func buildShardToFailedTestsMap(shards []testsharder.Shard, targetTests []string) map[string][]string {
+	result := make(map[string][]string)
+	if len(targetTests) == 0 {
+		return result
+	}
+
+	var regexes []*regexp.Regexp
+	for _, t := range targetTests {
+		re, err := regexp.Compile(t)
+		if err != nil {
+			log.Printf("Warning: failed to compile regex %q: %v", t, err)
+			continue
+		}
+		regexes = append(regexes, re)
+	}
+
+	for _, shard := range shards {
+		var matchedTests []string
+		for _, test := range shard.Tests {
+			for _, re := range regexes {
+				if re.MatchString(test.Name) {
+					matchedTests = append(matchedTests, test.Name)
+					break
+				}
+			}
+		}
+		if len(matchedTests) > 0 {
+			result[shard.Name] = matchedTests
+		}
+	}
+	return result
+}
+
 func main() {
 	flags := parseFlags()
 	metadata := readPresubmitRetryMetadata(flags.presubmitRetryMetadataJsonPath)
 	shards := readShards(flags.shardsJsonPath)
 	taskRequests := readTaskRequests(flags.taskRequestsJsonPath)
+	if len(metadata.TargetTests) > 0 {
+		// Clean input patterns (strip spaces)
+		cleanedTargets := make([]string, 0, len(metadata.TargetTests))
+		for _, t := range metadata.TargetTests {
+			trimmed := strings.TrimSpace(t)
+			if trimmed != "" {
+				cleanedTargets = append(cleanedTargets, trimmed)
+			}
+		}
+
+		if len(cleanedTargets) > 0 {
+			metadata.ShardToFailedTestsMap = buildShardToFailedTestsMap(shards, cleanedTargets)
+			// Fail-fast if targeted tests were requested but matched nothing
+			if len(metadata.ShardToFailedTestsMap) == 0 {
+				log.Fatalf("Error: target_tests %v matched 0 tests in the build graph. Please check for typos!", cleanedTargets)
+			}
+			// Clear previous tefmocheck failures as they don't apply to targeted tests
+			metadata.ShardsWithTefmocheckFailures = nil
+
+			flags.hasReusedBuildArtifacts = true
+			flags.skipPreviouslyPassedTestShards = true
+			flags.skipPreviouslyPassedTests = true
+		}
+	}
 	filteredShards := createSkippedShards(shards, metadata, &flags)
 	filteredTaskRequests := createFilteredTaskRequests(taskRequests, metadata, &flags)
 	jsonData, err := json.MarshalIndent(filteredShards, "", twoSpaces)
