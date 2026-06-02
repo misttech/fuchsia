@@ -122,7 +122,7 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
   WaitForCmdAct(__func__, ep_num);
 }
 
-void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
+void Dwc3::CmdEpEndTransfer(Endpoint& ep) {
   TRACE_DURATION("dwc3", "Dwc3::CmdEpEndTransfer", "ep_num", ep.ep_num);
   if (!power_on_) {
     return;
@@ -155,9 +155,7 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
   if (poll_end_xfer_) {
     WaitForCmdAct(__func__, ep_num);
   } else {
-    // Rather than synchronize against a CommandComplete endpoint event, just give the core some
-    // time to complete halting any DMA.
-    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    ep.end_xfer_state = Endpoint::EndXferState::kEndXferStarted;
   }
 }
 

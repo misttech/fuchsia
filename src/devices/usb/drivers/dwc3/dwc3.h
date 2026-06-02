@@ -204,6 +204,30 @@ class Dwc3 : public fdf::DriverBase2,
     bool got_not_ready{false};
     bool stalled{false};
     bool xfer_in_progress{false};
+
+    // The following flag accounts for race conditions between the time a transfer is ended (by way
+    // of the EndTransfer command) and when the CommandComplete event occurs. If poll_end_xfer_ is
+    // in effect, the CmdAct register is polled instead of relying on an event, and this flag is
+    // unused.
+    enum class EndXferState {
+      // Normal operation, no EndTransfer command has been issued.
+      kDefault,
+
+      // The EndTransfer command was issued, but the CommandComplete event has yet to arrive,
+      // implying the core is still in the process of halting DMA. This implies poll_end_xfer flag
+      // is not in effect.
+      kEndXferStarted,
+
+      // A request to reset the endpoint was made while an EndTransfer command was in progress. In
+      // this case, defer resetting the endpoint until after the CommandComplete event arrives.
+      kResetWhileEndXferPending,
+
+      // A request to disable the endpoint was made while an EndTransfer command was in progress. In
+      // this case, defer disabling the endpoint and replying to the FIDL caller's completer until
+      // after the CommandComplete event arrives.
+      kDisableWhileEndXferPending,
+    };
+    EndXferState end_xfer_state{EndXferState::kDefault};
   };
 
   struct UserEndpoint {
@@ -216,6 +240,7 @@ class Dwc3 : public fdf::DriverBase2,
     TrbFifo fifo;
     Endpoint ep;
     std::optional<EpServer> server;
+    std::optional<DisableEndpointCompleter::Async> disable_completer;
   };
 
   // A small helper class which basically allows us to have a collection of user
@@ -329,6 +354,10 @@ class Dwc3 : public fdf::DriverBase2,
     fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup;
     fuchsia_hardware_usb_descriptor::wire::UsbSpeed cur_speed{
         fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined};
+    // True if a control transfer setup stage re-initialization is pending.
+    // Setting this defers stalling the OUT endpoint and queuing the setup
+    // stage TRB until the active end-transfer command (DEPENDXFER) completes.
+    bool setup_pending{false};
   };
 
   friend struct std::formatter<Ep0::State>;
@@ -371,6 +400,7 @@ class Dwc3 : public fdf::DriverBase2,
   void HandleEpTransferCompleteEvent(uint8_t ep_num);
   void HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage);
   void HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id);
+  void HandleEpEndTransferCompleteEvent(uint8_t ep_num);
 
   [[nodiscard]] zx_status_t CheckHwVersion();
   [[nodiscard]] zx_status_t ResetHw();
@@ -381,6 +411,7 @@ class Dwc3 : public fdf::DriverBase2,
   zx_status_t Ep0Init();
   // This method is safe to call with the core powered down.
   void Ep0Reset();
+  void Ep0ResetHalves();
   void Ep0Start();
   void Ep0QueueSetup();
   void Ep0StartEndpoints();
@@ -411,7 +442,7 @@ class Dwc3 : public fdf::DriverBase2,
   void CmdEpTransferConfig(const Endpoint& ep);
   void CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys);
   // This method is safe to call with the core powered down.
-  void CmdEpEndTransfer(const Endpoint& ep);
+  void CmdEpEndTransfer(Endpoint& ep);
   void CmdEpSetStall(const Endpoint& ep);
   void CmdEpClearStall(const Endpoint& ep);
 

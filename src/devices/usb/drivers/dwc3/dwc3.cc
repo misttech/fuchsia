@@ -768,6 +768,10 @@ void Dwc3::ReleaseResources() {
   ep0_.shared_fifo.Release();
 
   for (UserEndpoint& uep : user_endpoints_) {
+    if (uep.disable_completer.has_value()) {
+      uep.disable_completer->Reply(zx::error(ZX_ERR_CANCELED));
+      uep.disable_completer.reset();
+    }
     uep.fifo.Release();
   }
 
@@ -1201,10 +1205,22 @@ void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
     return;
   }
 
-  uep->server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
-  EpSetConfig(uep->ep, false);
+  if (uep->disable_completer.has_value()) {
+    fdf::warn("Endpoint({}) already being disabled!", uep->ep.ep_num);
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
+    return;
+  }
 
-  completer.Reply(zx::ok());
+  uep->server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
+  if (uep->ep.end_xfer_state == Endpoint::EndXferState::kEndXferStarted) {
+    // If the endpoint is in the process of terminating a transfer, defer replying to the completer
+    // until after the EndTransfer's CommandComplete event arrives.
+    uep->ep.end_xfer_state = Endpoint::EndXferState::kDisableWhileEndXferPending;
+    uep->disable_completer = completer.ToAsync();
+  } else {
+    EpSetConfig(uep->ep, false);
+    completer.Reply(zx::ok());
+  }
 }
 
 void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
@@ -1353,12 +1369,21 @@ void Dwc3::EpReset(Endpoint& ep) {
   ep.got_not_ready = false;
   ep.rsrc_id = Endpoint::kInvalidResourceId;
   ep.xfer_in_progress = false;
+  ep.end_xfer_state = Endpoint::EndXferState::kDefault;
 }
 
 void Dwc3::UserEpReset(UserEndpoint& uep) {
   TRACE_DURATION("dwc3", "Dwc3::UserEpReset", "ep_num", uep.ep.ep_num);
   uep.server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
-  EpReset(uep.ep);
+  if (uep.ep.end_xfer_state == Endpoint::EndXferState::kEndXferStarted) {
+    uep.ep.end_xfer_state = Endpoint::EndXferState::kResetWhileEndXferPending;
+  } else {
+    EpReset(uep.ep);
+    if (uep.disable_completer.has_value()) {
+      uep.disable_completer->Reply(zx::ok());
+      uep.disable_completer.reset();
+    }
+  }
 }
 
 void Dwc3::Ep0Reset() {
@@ -1371,12 +1396,28 @@ void Dwc3::Ep0Reset() {
     }
     CmdEpEndTransfer(is_out ? ep0_.out : ep0_.in);
   }
+
+  if (ep0_.out.end_xfer_state == Endpoint::EndXferState::kEndXferStarted ||
+      ep0_.in.end_xfer_state == Endpoint::EndXferState::kEndXferStarted) {
+    if (ep0_.out.end_xfer_state == Endpoint::EndXferState::kEndXferStarted) {
+      ep0_.out.end_xfer_state = Endpoint::EndXferState::kResetWhileEndXferPending;
+    }
+    if (ep0_.in.end_xfer_state == Endpoint::EndXferState::kEndXferStarted) {
+      ep0_.in.end_xfer_state = Endpoint::EndXferState::kResetWhileEndXferPending;
+    }
+  } else {
+    Ep0ResetHalves();
+  }
+}
+
+void Dwc3::Ep0ResetHalves() {
   EpReset(ep0_.out);
   EpReset(ep0_.in);
   ep0_.cur_setup = {};
   ep0_.cur_speed = fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined;
   ep0_.state = Ep0::State::None;
   ep0_.shared_fifo.Clear();
+  ep0_.setup_pending = false;
 }
 
 void Dwc3::ResetEndpoints() {

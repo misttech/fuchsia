@@ -107,7 +107,8 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
 
 void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
   TRACE_DURATION("dwc3", "Dwc3::UserEpQueueNext", "ep_num", uep.ep.ep_num);
-  if (uep.server->current_req.has_value() || !uep.ep.got_not_ready ||
+  if (uep.ep.end_xfer_state != Endpoint::EndXferState::kDefault ||
+      uep.server->current_req.has_value() || !uep.ep.got_not_ready ||
       uep.server->queued_reqs.empty()) {
     return;
   }
@@ -221,6 +222,57 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
     UserEndpoint* const uep = get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
     uep->ep.rsrc_id = rsrc_id;
+  }
+}
+
+void Dwc3::HandleEpEndTransferCompleteEvent(uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpEndTransferCompleteEvent", "ep_num", ep_num);
+
+  Endpoint* ep;
+  UserEndpoint* uep = nullptr;
+
+  if (is_ep0_num(ep_num)) {
+    ep = (ep_num == kEp0Out) ? &ep0_.out : &ep0_.in;
+  } else {
+    uep = get_user_endpoint(ep_num);
+    ZX_ASSERT(uep != nullptr);
+    ep = &uep->ep;
+  }
+
+  // Save the current state before resetting it.
+  const Endpoint::EndXferState state = ep->end_xfer_state;
+  ep->end_xfer_state = Endpoint::EndXferState::kDefault;
+
+  if (uep) {
+    // Process deferred operations for user endpoints.
+    if (state == Endpoint::EndXferState::kResetWhileEndXferPending) {
+      EpReset(*ep);
+      if (uep->disable_completer.has_value()) {
+        uep->disable_completer->Reply(zx::ok());
+        uep->disable_completer.reset();
+      }
+    } else if (state == Endpoint::EndXferState::kDisableWhileEndXferPending) {
+      EpSetConfig(*ep, false);
+      if (uep->disable_completer.has_value()) {
+        uep->disable_completer->Reply(zx::ok());
+        uep->disable_completer.reset();
+      }
+    } else {
+      UserEpQueueNext(*uep);
+    }
+  } else {
+    // Coordinate EP0 OUT/IN channels. Execute deferred operations only
+    // when both directions are fully halted.
+    if (ep0_.out.end_xfer_state == Endpoint::EndXferState::kDefault &&
+        ep0_.in.end_xfer_state == Endpoint::EndXferState::kDefault) {
+      if (state == Endpoint::EndXferState::kResetWhileEndXferPending) {
+        Ep0ResetHalves();
+      } else if (ep0_.setup_pending) {
+        ep0_.setup_pending = false;
+        EpSetStall(ep0_.out, true);
+        Ep0QueueSetup();
+      }
+    }
   }
 }
 

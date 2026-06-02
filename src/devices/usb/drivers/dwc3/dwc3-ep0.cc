@@ -173,8 +173,12 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
         // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
         ep0_.shared_fifo.Clear();
         CmdEpEndTransfer(ep0_.out);
-        EpSetStall(ep0_.out, true);
-        Ep0QueueSetup();
+        if (ep0_.out.end_xfer_state != Endpoint::EndXferState::kDefault) {
+          ep0_.setup_pending = true;
+        } else {
+          EpSetStall(ep0_.out, true);
+          Ep0QueueSetup();
+        }
       }
       break;
     case Ep0::State::DataIn:
@@ -182,8 +186,12 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
         // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
         ep0_.shared_fifo.Clear();
         CmdEpEndTransfer(ep0_.in);
-        EpSetStall(ep0_.out, true);
-        Ep0QueueSetup();
+        if (ep0_.in.end_xfer_state != Endpoint::EndXferState::kDefault) {
+          ep0_.setup_pending = true;
+        } else {
+          EpSetStall(ep0_.out, true);
+          Ep0QueueSetup();
+        }
       }
       break;
     case Ep0::State::WaitNrdyOut:
@@ -243,77 +251,77 @@ void Dwc3::HandleEp0Setup(size_t length) {
       ->Control(setup, is_out ? fidl::VectorView<uint8_t>::FromExternal(
                                     reinterpret_cast<uint8_t*>(ep0_.buffer->virt()), length)
                               : fidl::VectorView<uint8_t>::FromExternal(nullptr, 0))
-      .Then(
-          [this, is_out, fail, length, setup](
-              fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>& result) {
-            if (!power_on_ || !controller_started_) {
-              // Return in case the core was powered off or disabled between the setup event and
-              // the reply from our child.
-              return;
-            }
+      .Then([this, is_out, fail, length,
+             setup](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>&
+                        result) {
+        if (!power_on_ || !controller_started_) {
+          // Return in case the core was powered off or disabled between the setup event and
+          // the reply from our child.
+          return;
+        }
 
-            if (!result.ok()) {
-              fdf::error("(framework) Control(): {}", result.status_string());
-              fail();
-              return;
-            }
-            if (result->is_error()) {
-              if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-                fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
-              } else {
-                fdf::debug("Control(): {}", zx_status_get_string(result->error_value()));
+        if (!result.ok()) {
+          fdf::error("(framework) Control(): {}", result.status_string());
+          fail();
+          return;
+        }
+        if (result->is_error()) {
+          if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+            fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
+          } else {
+            fdf::debug("Control(): {}", zx_status_get_string(result->error_value()));
+          }
+          fail();
+          return;
+        }
+
+        switch (ep0_.state) {
+          case Ep0::State::TwoStage:
+            ep0_.state = Ep0::State::WaitHost;
+            break;
+          case Ep0::State::WaitFidl:
+            EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
+            ep0_.state = Ep0::State::Status;
+            break;
+          case Ep0::State::WaitHost:
+            // Nonsensical case that should never happen. See state commentary.
+            fdf::error("Invalid Ep0 state");
+            fail();
+            break;
+          default:
+            if (!is_out) {
+              if (ep0_.state == Ep0::State::None) {
+                fdf::error(
+                    "BUG TRIPPED: Async IN control callback handling None state! (CRASH IMMINENT)");
+                // Sleep to allow syslog to flush this to serial before the instant hardware
+                // lockup!
+                zx::nanosleep(zx::deadline_after(zx::msec(500)));
               }
-              fail();
-              return;
-            }
-
-            switch (ep0_.state) {
-              case Ep0::State::TwoStage:
-                ep0_.state = Ep0::State::WaitHost;
-                break;
-              case Ep0::State::WaitFidl:
-                EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
-                ep0_.state = Ep0::State::Status;
-                break;
-              case Ep0::State::WaitHost:
-                // Nonsensical case that should never happen. See state commentary.
-                fdf::error("Invalid Ep0 state");
+              // A lightweight byte-span is used to make it easier to process the read data.
+              cpp20::span<uint8_t> read_data{result.value()->read.get()};
+              // Don't blow out caller's buffer.
+              if (read_data.size_bytes() > length) {
                 fail();
-                break;
-              default:
-                if (!is_out) {
-                  if (ep0_.state == Ep0::State::None) {
-                    fdf::error(
-                        "BUG TRIPPED: Async IN control callback handling None state! (CRASH IMMINENT)");
-                    // Sleep to allow syslog to flush this to serial before the instant hardware
-                    // lockup!
-                    zx::nanosleep(zx::deadline_after(zx::msec(500)));
-                  }
-                  // A lightweight byte-span is used to make it easier to process the read data.
-                  cpp20::span<uint8_t> read_data{result.value()->read.get()};
-                  // Don't blow out caller's buffer.
-                  if (read_data.size_bytes() > length) {
-                    fail();
-                    return;
-                  }
+                return;
+              }
 
-                  if (!read_data.empty()) {
-                    std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
-                  }
+              if (!read_data.empty()) {
+                std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
+              }
 
-                  fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
-                  // queue a write for the data phase
-                  CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
-                  EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
-                                  ep0_.buffer->phys(), read_data.size_bytes());
-                }
+              fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
+              // queue a write for the data phase
+              CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
+              EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
+                              ep0_.buffer->phys(), read_data.size_bytes());
             }
+        }
 
-            if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
-                setup.b_request == USB_REQ_SET_CONFIGURATION) {
-              SetDeviceState(fpolicy::DeviceState::kConfigured);
-            }
-          });
+        if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
+            setup.b_request == USB_REQ_SET_CONFIGURATION) {
+          SetDeviceState(fpolicy::DeviceState::kConfigured);
+        }
+      });
 }
 
 }  // namespace dwc3
