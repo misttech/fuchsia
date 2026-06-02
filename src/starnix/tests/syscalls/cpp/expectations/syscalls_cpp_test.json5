@@ -48,6 +48,7 @@
 
                 // TODO(https://fxbug.dev/297440106)
                 // TODO(https://fxbug.dev/365540067)
+                "PidFdTest.PidFdOpenAfterZombification",
                 "ZombieProcTest.*",
 
                 // TODO(https://fxbug.dev/493895527): Hangs; Fix and re-enable.
