@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use errors::ffx_error;
 use ffx_config::{ConfigError, EnvironmentContext};
 use ffx_target_remove_args::RemoveCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
@@ -39,23 +38,22 @@ fho::embedded_plugin!(RemoveTool);
 impl FfxMain for RemoveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        if self.context.get_direct_connection_mode() {
-            return Err(
-                ffx_error!("You cannot remove a target when using direct-connection mode").into()
-            );
-        }
-        match Self::remove_impl(
-            &self.context,
-            self.target_collection_proxy.await?,
-            self.cmd,
-            &mut writer,
-        )
-        .await
-        {
+        let res = if self.context.get_direct_connection_mode() {
+            Self::remove_direct_impl(&self.context, self.cmd, &mut writer).await
+        } else {
+            Self::remove_impl(
+                &self.context,
+                self.target_collection_proxy.await?,
+                self.cmd,
+                &mut writer,
+            )
+            .await
+        };
+        match res {
             Ok(message) => {
                 if writer.is_machine() {
                     writer.machine(&CommandStatus::Ok { message: Some(message) })?;
-                } else {
+                } else if !message.is_empty() {
                     writeln!(writer.stderr(), "{message}")
                         .map_err(|e| bug!("writing to stderr: {e}"))?;
                 }
@@ -74,6 +72,41 @@ impl FfxMain for RemoveTool {
 }
 
 impl RemoveTool {
+    async fn remove_direct_impl(
+        context: &EnvironmentContext,
+        cmd: RemoveCommand,
+        writer: &mut <Self as FfxMain>::Writer,
+    ) -> Result<String> {
+        let cfg = Config::new_from_context(context);
+        if cmd.all {
+            let list = match cfg.storage_get().await {
+                Ok(v) => v,
+                Err(ManualTargetsError::Config(ConfigError::NoValueSet(_))) => {
+                    return Ok("No manual targets found.".into());
+                }
+                Err(e) => return_bug!(e),
+            };
+            if let Some(arr) = list.as_object() {
+                for (k, _) in arr {
+                    writeln!(writer.stderr(), "Removed {k}").map_err(|e| bug!(e))?;
+                }
+            }
+            cfg.storage_set(serde_json::Value::Object(serde_json::Map::new()))
+                .await
+                .map_err(|e| bug!(e))?;
+            Ok("".to_string())
+        } else if let Some(name_or_addr) = cmd.name_or_addr {
+            let mut targets = cfg.get_or_default().await;
+            if targets.remove(&name_or_addr).is_some() {
+                cfg.storage_set(targets.into()).await.map_err(|e| bug!(e))?;
+                Ok("Removed.".to_string())
+            } else {
+                Ok("No matching target found.".to_string())
+            }
+        } else {
+            return_user_error!("need to specify a target name or address or use the --all option")
+        }
+    }
     async fn remove_impl(
         context: &EnvironmentContext,
         target_collection: ffx::TargetCollectionProxy,
@@ -259,25 +292,59 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_error_in_direct_mode() {
+    async fn test_remove_in_direct_mode() {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::DIRECT_CONNECTIONS, true)
             .build()
             .expect("test_env build");
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
+
         let server = setup_fake_target_collection_proxy(|_| {
             unreachable!("proxy should not be used in direct mode");
         });
         let tool = RemoveTool {
-            cmd: RemoveCommand { all: false, name_or_addr: None },
+            cmd: RemoveCommand { all: false, name_or_addr: Some("127.0.0.1:8022".to_owned()) },
             target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
-        let buffers = TestBuffers::default();
-        let writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
-        let err = tool.main(writer).await.expect_err("target remove");
+        let test_buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
+        tool.main(writer).await.expect("run main");
+        assert_eq!(test_buffers.into_stderr_str(), "Removed.\n");
+
+        let value = mt.get().await.unwrap();
+        let targets = value.as_object().unwrap();
+        assert!(!targets.contains_key("127.0.0.1:8022"));
+        assert!(targets.contains_key("127.0.0.1:8023"));
+    }
+
+    #[fuchsia::test]
+    async fn test_remove_all_in_direct_mode() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::DIRECT_CONNECTIONS, true)
+            .build()
+            .expect("test_env build");
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
+
+        let server = setup_fake_target_collection_proxy(|_| {
+            unreachable!("proxy should not be used in direct mode");
+        });
+        let tool = RemoveTool {
+            cmd: RemoveCommand { all: true, name_or_addr: None },
+            target_collection_proxy: Deferred::from_output(Ok(server)),
+            context: env.context.clone(),
+        };
+        let test_buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
+        tool.main(writer).await.expect("run main");
         assert_eq!(
-            format!("{err}"),
-            "You cannot remove a target when using direct-connection mode".to_string()
+            test_buffers.into_stderr_str(),
+            "Removed 127.0.0.1:8022\nRemoved 127.0.0.1:8023\n"
         );
+
+        let targets = mt.get_or_default().await;
+        assert!(targets.is_empty());
     }
 }

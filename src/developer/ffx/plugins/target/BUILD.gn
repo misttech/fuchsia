@@ -68,8 +68,10 @@ if (is_host) {
   group("host_tests") {
     testonly = true
     deps = [
+      "add:tests",
       "list:tests",
       "package:host_tests",
+      "remove:tests",
       "ssh:host_tests",
     ]
   }

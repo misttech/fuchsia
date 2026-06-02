@@ -5,11 +5,12 @@
 use async_trait::async_trait;
 use errors::ffx_error;
 use ffx_config::EnvironmentContext;
-use ffx_target::add_manual_target;
+use ffx_target::{TargetInfoQuery, add_manual_target, knock_target_daemonless};
 use ffx_target_add_args::AddCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_ffx::{TargetCollectionProxy, TargetConnectionError};
+use manual_targets::{Config as ManualTargetsConfig, ManualTargets};
 use netext::parse_address_parts;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -43,9 +44,19 @@ impl FfxMain for AddTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         if self.context.get_direct_connection_mode() {
-            return Err(
-                ffx_error!("You cannot add a target when using direct-connection mode").into()
-            );
+            if !self.cmd.nowait {
+                let query = TargetInfoQuery::try_from(self.cmd.addr.clone())
+                    .map_err(|e| ffx_error!("Could not parse '{}'. {}", self.cmd.addr, e))?;
+                knock_target_daemonless(&query, &self.context, None)
+                    .await
+                    .map_err(|e| ffx_error!("Could not connect to target: {e}"))?;
+            }
+            let mt = ManualTargetsConfig::new_from_context(&self.context);
+            mt.add(self.cmd.addr.clone()).await.map_err(|e| {
+                ffx_error!("Failed to add target to manual targets collection: {e}")
+            })?;
+            writer.machine(&CommandStatus::Ok { message: None })?;
+            return Ok(());
         }
         match add_impl(Some(&mut writer), self.target_collection_proxy.await?, self.cmd).await {
             Ok(_) => {
@@ -334,7 +345,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_error_in_direct_mode() {
+    async fn test_add_in_direct_mode_nowait() {
         let env = ffx_config::test_env()
             .runtime_config(ffx_config::keys::DIRECT_CONNECTIONS, true)
             .build()
@@ -343,16 +354,17 @@ mod test {
             unreachable!("proxy should not be used in direct mode");
         });
         let tool = AddTool {
-            cmd: AddCommand { addr: "addr".into(), nowait: true },
+            cmd: AddCommand { addr: "127.0.0.1:8022".into(), nowait: true },
             target_collection_proxy: Deferred::from_output(Ok(server)),
             context: env.context.clone(),
         };
         let buffers = TestBuffers::default();
         let writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
-        let err = tool.main(writer).await.expect_err("target add");
-        assert_eq!(
-            format!("{err}"),
-            "You cannot add a target when using direct-connection mode".to_string()
-        );
+        tool.main(writer).await.expect("target add");
+
+        let mt = ManualTargetsConfig::new_from_context(&env.context);
+        let value = mt.get().await.unwrap();
+        let targets = value.as_object().unwrap();
+        assert!(targets.contains_key("127.0.0.1:8022"));
     }
 }

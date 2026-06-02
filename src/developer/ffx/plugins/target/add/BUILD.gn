@@ -22,6 +22,7 @@ ffx_plugin("ffx_target_add") {
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/manual_targets:lib",
     "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/holders:lib",
@@ -35,4 +36,9 @@ ffx_plugin("ffx_target_add") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/lib/fuchsia",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_target_add_tests($host_toolchain)" ]
 }
