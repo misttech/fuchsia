@@ -147,6 +147,8 @@ fuchsia_rust_driver("driver-rust") {
   output_name = rust_output_name
   sources = [
     "rust/src/driver.rs",
+    "rust/src/imported_image.rs",
+    "rust/src/imported_images.rs",
     "rust/src/lib.rs",
     "rust/src/resources.rs",
     "rust/src/virtio_gpu_abi.rs",
@@ -154,13 +156,16 @@ fuchsia_rust_driver("driver-rust") {
   deps = [
     ":virtio-gpu-display-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_rust_next",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust_next",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_rust_next",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/fidl",
     "//sdk/rust/zx",
+    "//sdk/rust/zx-sys",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
     "//third_party/rust_crates:bitfield",

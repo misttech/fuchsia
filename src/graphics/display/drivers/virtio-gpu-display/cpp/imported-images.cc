@@ -125,7 +125,7 @@ zx::result<SysmemBufferInfo> ImportedBufferCollection::GetSysmemMetadata(uint32_
   uint32_t bytes_per_row_divisor = image_format_constraints.has_bytes_per_row_divisor()
                                        ? image_format_constraints.bytes_per_row_divisor()
                                        : 1;
-  bytes_per_row_divisor = std::max<uint32_t>(bytes_per_row_divisor, 1);
+  ZX_DEBUG_ASSERT_MSG(bytes_per_row_divisor != 0, "Sysmem deviated from its contract");
 
   fuchsia_images2::wire::PixelFormat fidl_pixel_format = image_format_constraints.pixel_format();
   if (!display::PixelFormat::IsSupported(fidl_pixel_format)) {

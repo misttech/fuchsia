@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/504722357): Remove this in favor of more granular
+// attributes when the Rust port is completed.
 #![allow(dead_code)]
+
 use bitfield::bitfield;
 use fidl_next_fuchsia_images2 as fidl_images2;
 use std::num::NonZeroU32;
@@ -568,7 +571,7 @@ pub struct Create2DResourceCommand {
     pub height: u32,
 }
 
-/// A continuous list of memory pages assigned to a 2D resource.
+/// A contiguous list of memory pages assigned to a 2D resource.
 ///
 /// virtio14 5.7.6.8 "Device Operation: controlq" >
 /// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING command description >
