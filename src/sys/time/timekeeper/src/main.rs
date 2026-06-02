@@ -41,7 +41,7 @@ use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime::{UtcClock, UtcClockDetails, UtcClockUpdate, UtcDuration, UtcTimeline};
 use futures::SinkExt as _;
 use futures::channel::mpsc;
-use futures::future::{self, OptionFuture};
+use futures::future::{self, FutureExt, OptionFuture};
 use futures::stream::StreamExt as _;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
@@ -344,7 +344,9 @@ async fn main() -> Result<()> {
             .unwrap_or_else(|_| Default::default()),
     ));
 
-    let (cmd_send, cmd_rcv) = mpsc::channel(1);
+    // Capacity is set to >1 since we may have more than one unit of work to insert into the
+    // channel before we start.
+    let (cmd_send, cmd_rcv) = mpsc::channel(10);
 
     let cmd_send_clone = cmd_send.clone();
     let serve_test_protocols = config.serve_test_protocols();
@@ -793,22 +795,28 @@ async fn maintain_utc<R: Rtc, D: 'static>(
         }
     });
 
-    let periodic_rtc_update: OptionFuture<_> = config
-        .get_periodic_rtc_update_interval()
-        .map(|interval| periodic_rtc_update(cmd_send.clone(), interval))
-        .into();
+    let rtc_updater = match config.get_periodic_rtc_update_interval() {
+        Some(interval) => periodic_rtc_update(cmd_send.clone(), interval).boxed(),
+        None => future::ready(()).boxed(),
+    }
+    .boxed();
 
-    future::join4(fut1, fut2, oneshot, periodic_rtc_update).await;
+    future::join4(fut1, fut2, oneshot, rtc_updater).await;
 }
 
 async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>, interval: zx::BootDuration) {
+    info!("periodic_rtc_update: starting periodic RTC updates, update interval: {interval:?}");
     loop {
         fasync::Timer::new(fasync::BootInstant::after(interval)).await;
+        debug!("periodic_rtc_update: sending command");
         if let Err(e) = cmd_send.send(Command::UpdateRtc).await {
-            debug!("failed to send UpdateRtc command: {:?}", e);
+            // Reported as "error" since if this does not work, it generates
+            // bug reports.
+            error!("failed to send UpdateRtc command: {e:?}");
             break;
         }
     }
+    warn!("periodic_rtc_update: exiting. This should not happen in production.");
 }
 
 // Reexport test config creation to be used in other tests.
