@@ -677,6 +677,13 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
 
         let timer_id = timer_not_yet_scheduled.then_some(CacheTimerAction::CreateNewTimer(key));
 
+        if !m_flag && found_gap.end < u16::MAX {
+            // There is another fragment after this one that is already present
+            // in the cache. That means that this fragment can't be the last
+            // one (must have `m_flag` set).
+            return (FragmentProcessingState::InvalidFragment, timer_id);
+        }
+
         // Remove `found_gap` since the gap as it exists will no longer be
         // valid.
         assert!(fragment_data.missing_blocks.remove(&found_gap));
@@ -745,11 +752,6 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
                     end: found_gap.end
                 })
             );
-        } else if found_gap.end > fragment_blocks_range.end && !m_flag && found_gap.end < u16::MAX {
-            // There is another fragment after this one that is already present
-            // in the cache. That means that this fragment can't be the last
-            // one (must have `m_flag` set).
-            return (FragmentProcessingState::InvalidFragment, timer_id);
         } else {
             // Make sure that if we are not adding a fragment after the packet,
             // it is because `packet` goes up to the `found_gap`'s end boundary,
@@ -2195,5 +2197,79 @@ mod tests {
             );
             assert_eq!(bindings_ctx.timers.timers(), [],);
         }
+    }
+
+    // Regression test for https://fxbug.dev/515396407
+    #[test]
+    fn test_fragment_reassembly_evasion_cache_corruption() {
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<Ipv4>();
+        let id = 5;
+
+        // 1. Send fragment at offset 0, length 10, `m_flag = true`.
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 0, size: 10, m_flag: true },
+            get_ipv4_builder(),
+            ExpectedResult::NeedMore,
+        );
+
+        // 2. Send fragment at offset 30, length 10, `m_flag = true`.
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 30, size: 10, m_flag: true },
+            get_ipv4_builder(),
+            ExpectedResult::NeedMore,
+        );
+
+        // 3. Send fragment at offset 10, length 10, `m_flag = false`.
+        // This is invalid because we have fragment at 30.
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 10, size: 10, m_flag: false },
+            get_ipv4_builder(),
+            ExpectedResult::Invalid,
+        );
+
+        // 4. Send fragment at offset 40, length 10, `m_flag = false`.
+        // If cache was corrupted, this might trigger Ready because gap [10, 29] was lost.
+        // It should return NeedMore because we are still missing [20, 29].
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 40, size: 10, m_flag: false },
+            get_ipv4_builder(),
+            ExpectedResult::NeedMore,
+        );
+    }
+
+    // Regression test for https://fxbug.dev/517292898
+    #[test]
+    fn test_multiple_last_fragments_evasion() {
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<Ipv4>();
+        let id = 6;
+
+        // 1. Send fragment at offset 2, length 1, `m_flag = false`.
+        // This defines the packet end at block 2. Gaps: [0, 1].
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 2, size: 1, m_flag: false },
+            get_ipv4_builder(),
+            ExpectedResult::NeedMore,
+        );
+
+        // 2. Send fragment at offset 1, length 1, `m_flag = false`.
+        // This also claims to be last, but we already have block 2.
+        // This must be invalid.
+        process_ipv4_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 1, size: 1, m_flag: false },
+            get_ipv4_builder(),
+            ExpectedResult::Invalid,
+        );
     }
 }
