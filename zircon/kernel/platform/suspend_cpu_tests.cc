@@ -93,7 +93,7 @@ bool one_wakes_another() {
 
     if (reported == State::SUSPENDING) {
       // Wait a short amount of time, see that the thread is still suspended, then wake it.
-      Thread::Current::SleepRelative(ZX_MSEC(1));
+      Thread::Current::SleepRelative(ZX_USEC(200));
       if (arg->target_state.load(ktl::memory_order_acquire) == State::SUSPENDING) {
         mp_interrupt(mp_ipi_target::MASK, cpu_num_to_mask(arg->target));
         return ZX_OK;
