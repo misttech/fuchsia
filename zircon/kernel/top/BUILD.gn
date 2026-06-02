@@ -48,6 +48,9 @@ source_set("top") {
     # Temporary dependencies on kernel Rust crates to build them while we are
     # working on bringing up more functionality in Rust. At the moment, this
     # code is not actually used by the kernel.
-    deps += [ "//zircon/kernel/lib/counters:counters-rs" ]
+    deps += [
+      "//src/lib/ksync",
+      "//zircon/kernel/lib/counters:counters-rs",
+    ]
   }
 }

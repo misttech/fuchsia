@@ -53,6 +53,7 @@ all_libs = [
   "jtrace",
   "kconcurrent",
   "kpci",
+  "ksync",
   "ktl",
   "ktrace",
   "libc",
