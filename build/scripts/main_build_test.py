@@ -269,6 +269,9 @@ class BuildCommandExecutionTest(unittest.TestCase):
                 self.assertEqual(result.return_code, 0)
                 mock_popen.assert_called_once()
                 mock_unlink.assert_called_once_with(missing_ok=True)
+                mock_lock.assert_called_once_with(
+                    invocation.context.build_dir, print_message=False
+                )
 
     @mock.patch("main_build.BuildLock")
     @mock.patch("main_build.subprocess.Popen")
@@ -323,6 +326,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
         # Even in dry_run mode, we should call the subprocess because
         # we forwarded --dry-run to the wrapper.
         mock_popen.assert_called_once()
+        mock_lock.assert_called_once()
 
 
 class BuildLockTest(unittest.TestCase):
@@ -337,7 +341,7 @@ class BuildLockTest(unittest.TestCase):
     ) -> None:
         mock_call.return_value = 0
         build_dir = pathlib.Path("/tmp/build")
-        with main_build.BuildLock(build_dir):
+        with main_build.BuildLock(build_dir, print_message=True):
             pass
         mock_call.assert_called_with(
             [
@@ -348,7 +352,8 @@ class BuildLockTest(unittest.TestCase):
                 mock.ANY,
             ]
         )
-        mock_print.assert_called_with("Lock acquired, proceeding with build.")
+        mock_print.assert_any_call("Lock acquired, proceeding with build.")
+        mock_print.assert_any_call("Build completed.")
 
     @mock.patch("main_build.check_shell_command", return_value=True)
     @mock.patch("subprocess.call")
@@ -363,11 +368,12 @@ class BuildLockTest(unittest.TestCase):
     ) -> None:
         mock_call.side_effect = [1, 0]
         build_dir = pathlib.Path("/tmp/build")
-        with main_build.BuildLock(build_dir):
+        with main_build.BuildLock(build_dir, print_message=True):
             pass
         self.assertEqual(mock_call.call_count, 2)
         mock_sleep.assert_called_once()
-        mock_print.assert_called_with("Lock acquired, proceeding with build.")
+        mock_print.assert_any_call("Lock acquired, proceeding with build.")
+        mock_print.assert_any_call("Build completed.")
 
 
 class FindFuchsiaDirTest(unittest.TestCase):

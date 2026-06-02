@@ -177,11 +177,14 @@ class BuildLock:
     understand what is happening.
     """
 
-    def __init__(self, build_dir: pathlib.Path) -> None:
+    def __init__(
+        self, build_dir: pathlib.Path, print_message: bool = False
+    ) -> None:
         # LINT.IfChange(build_lock)
         self.build_lock_file = build_dir.with_suffix(".build_lock")
         # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_lock)
         self._has_shlock = check_shell_command("shlock")
+        self.print_message = print_message
 
     def __enter__(self) -> "BuildLock":
         if self._has_shlock:
@@ -199,14 +202,17 @@ class BuildLock:
             ):
                 time.sleep(0.1)
 
-            # This message is critical for AI agents to understand when a build
-            # is proceeding after acquiring a lock. Do not remove.
-            print("Lock acquired, proceeding with build.")
+            if self.print_message:
+                # This message is critical for AI agents to understand when a build
+                # is proceeding after acquiring a lock. Do not remove.
+                print("Lock acquired, proceeding with build.")
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if self._has_shlock:
             self.build_lock_file.unlink(missing_ok=True)
+        if self.print_message:
+            print("Build completed.")
 
 
 class FuchsiaBuildContext(object):
@@ -544,7 +550,10 @@ class BuildCommandExecution(object):
           exit code of the command, 0 for success.
         """
         try:
-            with BuildLock(self.invocation.context.build_dir):
+            quiet = os.getenv("FX_BUILD_QUIET") == "1"
+            with BuildLock(
+                self.invocation.context.build_dir, print_message=quiet
+            ):
                 return self._run_without_locking()
         finally:
             for f in self.cleanup_files:
