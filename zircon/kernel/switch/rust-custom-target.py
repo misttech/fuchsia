@@ -95,6 +95,10 @@ def main() -> int:
                 if (
                     new_feature.startswith("-")
                     and ("+" + new_feature[1:]) in original_features
+                    # TODO(https://fxbug.dev/518918403): rustc complains it
+                    # wants to see -neon even when we had to remove +neon to
+                    # get back to the apparent baseline.
+                    and new_feature != "-neon"
                 ):
                     continue
             features.append(new_feature)
