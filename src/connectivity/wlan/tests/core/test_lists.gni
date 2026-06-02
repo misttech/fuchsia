@@ -48,3 +48,8 @@ core_tests_for_wlan_cq = [
 # above.
 core_tests_for_fyi =
     [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
+
+# Tests longer than ~20 minutes consume significant resources and significantly
+# lengthen the cadence of the test runs. Split these tests out so we can run
+# them at reduced frequency.
+core_tests_for_fyi_long = []

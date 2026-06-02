@@ -122,6 +122,7 @@ group("tests_host") {
   testonly = true
   public_deps = [
     ":tests_for_fyi",
+    ":tests_for_fyi_long",
     ":tests_for_general_cq",
     ":tests_for_general_cq_no_shield_box",
     ":tests_for_wlan_cq",
@@ -183,4 +184,12 @@ group("tests_for_fyi") {
 group("tests_for_fyi_performance") {
   testonly = true
   public_deps = [ ":create_client_iface_benchmark_test" ]
+}
+
+# Tests longer than ~20 minutes consume significant resources and significantly
+# lengthen the cadence of the test runs. Split these tests out so we can run
+# them at reduced frequency.
+group("tests_for_fyi_long") {
+  testonly = true
+  public_deps = []
 }
