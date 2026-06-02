@@ -215,9 +215,9 @@ class FuchsiaDevice(
         self._device_info: custom_types.DeviceInfo = device_info
 
         # Track if the device was created with a statically provided IP (infra).
-        self._is_static_ip: bool = (
-            device_info.ip_port is not None
-            and environ.get("BOTANIST_CONFIG") is not None
+        self._is_static_ip: bool = device_info.ip_port is not None and (
+            environ.get("BOTANIST_CONFIG") is not None
+            or environ.get("SWARMING_TASK_ID") is not None
         )
 
         self._ffx_config_data: FfxConfigData = ffx_config_data
