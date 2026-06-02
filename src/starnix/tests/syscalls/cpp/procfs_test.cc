@@ -27,6 +27,7 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -443,6 +444,45 @@ TEST_F(ProcTaskDirTest, KthreadStatIsNotEmpty) {
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString("/proc/2/stat", &contents));
   ASSERT_THAT(contents.size(), testing::Gt(0));
+}
+
+// Verify that seeking in a pseudo-dynamic file (which uses lazy seek) and subsequently reading from
+// it correctly catches up the sequence generator and returns the expected suffix data.
+// Uses `/proc/self/cmdline` as it is static during the lifetime of the process.
+TEST_F(ProcTaskDirTest, DynamicFileSeek) {
+  std::string contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/cmdline", &contents));
+  ASSERT_THAT(contents.size(), testing::Gt(5));
+
+  fbl::unique_fd fd(open("/proc/self/cmdline", O_RDONLY));
+  ASSERT_TRUE(fd.is_valid());
+
+  off_t offset = lseek(fd.get(), 3, SEEK_SET);
+  ASSERT_EQ(offset, 3);
+
+  std::string seeked_contents;
+  ASSERT_TRUE(files::ReadFileDescriptorToString(fd.get(), &seeked_contents));
+  EXPECT_EQ(seeked_contents, contents.substr(3));
+}
+
+// Verify that seeking past the end of a pseudo-dynamic file succeeds (lazy seek) and only returns
+// EOF when actually reading.
+// Uses `/proc/self/cmdline` as it is static during the lifetime of the process.
+TEST_F(ProcTaskDirTest, DynamicFileSeekPastEnd) {
+  std::string contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/cmdline", &contents));
+
+  fbl::unique_fd fd(open("/proc/self/cmdline", O_RDONLY));
+  ASSERT_TRUE(fd.is_valid());
+
+  // Seek past the end of the cmdline file.
+  off_t target_offset = static_cast<off_t>(contents.size()) + 1;
+  off_t offset = lseek(fd.get(), target_offset, SEEK_SET);
+  ASSERT_EQ(offset, target_offset);
+
+  // The seek succeeded. Attempting to read should return 0 bytes (EOF) rather than failing.
+  char buf;
+  EXPECT_THAT(read(fd.get(), &buf, sizeof(buf)), SyscallSucceedsWithValue(0));
 }
 
 // Returns a vector holding the elements of the supplied "/proc/pid/stat" contents, with a zeroeth
