@@ -20,6 +20,7 @@
 #include <lib/trace/event.h>
 #include <zircon/status.h>
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -759,30 +760,28 @@ bool DisplayCompositor::PerformGpuComposition(
       }
     }
 
-    std::vector<zx::event> render_fences;
-    render_fences.push_back(std::move(event_data.wait_event));
+    // Prepare semaphores for this render pass.
+    std::array<zx::event, 2> render_fences;
+    size_t num_render_fences = 1;
+    render_fences[0] = std::move(event_data.wait_event);
+    if (is_final_display) {
+      render_fences[num_render_fences++] = std::move(render_finished_fence);
+    }
 
     Renderer::RenderArgs render_args{
-        .release_fences = render_fences,
+        .release_fences = std::span<zx::event>(render_fences.data(), num_render_fences),
         .apply_color_conversion = cc_state_machine_.GetDataToApply().has_value(),
     };
     if (config_.enable_frame_counter_overlay) {
       render_args.display_frame_number = frame_number;
     }
+    // const render_args allows us to retrieve the fences after the render call.
+    renderer_->Render(render_target, layers, render_data.images, render_args);
 
-    // Only add render_finished_fence if we're rendering the final display's framebuffer.
+    event_data.wait_event = std::move(render_args.release_fences[0]);
     if (is_final_display) {
-      render_fences.push_back(std::move(render_finished_fence));
-      render_args.release_fences = render_fences;
-      renderer_->Render(render_target, layers, render_data.images, render_args);
-      // Retrieve fence.
-      render_finished_fence = std::move(render_fences.back());
-    } else {
-      renderer_->Render(render_target, layers, render_data.images, render_args);
+      render_finished_fence = std::move(render_args.release_fences[1]);
     }
-
-    // Retrieve fence.
-    event_data.wait_event = std::move(render_fences[0]);
 
     if (display_engine_data.layers.empty()) {
       FLATLAND_VERBOSE_LOG << "PerformGpuComposition() failed: no layers available for display "
