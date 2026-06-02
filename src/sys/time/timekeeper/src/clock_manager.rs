@@ -14,6 +14,8 @@ use crate::time_source_manager::{KernelBootTimeProvider, TimeSourceManager};
 use crate::{Config, UtcTransform};
 use anyhow::{Context, Result, anyhow};
 use chrono::prelude::*;
+use fidl_fuchsia_time as fft;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{UtcClock, UtcClockUpdate, UtcDuration, UtcInstant};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, select};
@@ -25,7 +27,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use time_adjust::Command;
 use time_pretty::{format_duration, format_timer};
-use {fidl_fuchsia_time as fft, fuchsia_async as fasync};
 
 /// One million for PPM calculations
 const MILLION: i64 = 1_000_000;
@@ -759,10 +760,25 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                         }
                         Some(Command::UpdateRtc) => {
                             if allow_timekeeper_to_update_rtc {
-                                debug!("UpdateRtc command received.");
                                 if let Some(ref estimator) = self.estimator {
+                                    // When an estimator is present, we know that
+                                    // we got an externally synchronized time at
+                                    // least once.
                                     let estimate_transform = estimator.transform();
                                     self.update_rtc(&estimate_transform).await;
+                                } else if clock_started {
+                                    // The UTC clock is started, so update RTC to match.
+                                    // Note that in this case we do not know the time
+                                    // quality, we only know that UTC is started.
+                                    if let Ok(utc_instant) = self.clock.read() {
+                                        self.set_rtc_infallible(utc_instant).await;
+                                    }
+                                } else {
+                                    // While this branch could have been created differently,
+                                    // it currently mimics the legacy behavior of "what to do
+                                    // if RTC update was requested, but the clock has not
+                                    // started". We decide to not record known-incorrect time.
+                                    debug!("Not updating RTC.");
                                 }
                                 // We need to continue backing off sampling after this command.
                                 back_off_deadline = Mi::after(back_off_delay);
@@ -882,24 +898,33 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
         };
     }
 
-    /// Updates the real time clock to the supplied transform if an RTC is configured.
-    async fn update_rtc(&mut self, estimate_transform: &UtcTransform) {
-        // Note RTC only applies to primary so we don't include the track in our log messages.
+    /// Set RTC to the supplied UTC instant.
+    /// This utc_instant could be coming from an unreliable time source.
+    async fn set_rtc_infallible(&mut self, utc_instant: UtcInstant) {
         if let Some(ref rtc) = self.rtc {
-            let estimate_utc = estimate_transform.synthetic(zx::BootInstant::get());
-            let utc_chrono = Utc.timestamp_nanos(estimate_utc.into_nanos());
-            match rtc.set(estimate_utc).await {
+            // Pretty-print UTC time.
+            let utc_chrono = Utc.timestamp_nanos(utc_instant.into_nanos());
+            match rtc.set(utc_instant).await {
                 Err(err) => {
-                    error!("failed to update RTC to {}: {}", utc_chrono, err);
+                    error!("failed to update RTC to {utc_chrono}: {err}");
                     self.diagnostics.record(Event::WriteRtc { outcome: WriteRtcOutcome::Failed });
                 }
                 Ok(()) => {
-                    info!("updated RTC to {}", utc_chrono);
+                    info!("updated RTC to {utc_chrono}");
                     self.diagnostics
                         .record(Event::WriteRtc { outcome: WriteRtcOutcome::Succeeded });
                 }
             };
         }
+    }
+
+    /// Updates the RTC to the supplied transform if an RTC is configured.
+    /// The update is based on an existing estimate_transform, meaning it's
+    /// an externally synchronized value.
+    async fn update_rtc(&mut self, estimate_transform: &UtcTransform) {
+        // Note RTC only applies to primary so we don't include the track in our log messages.
+        let estimate_utc = estimate_transform.synthetic(zx::BootInstant::get());
+        self.set_rtc_infallible(estimate_utc).await;
     }
 
     /// Sets a task that asynchronously applies the supplied scheduled clock updates and then
