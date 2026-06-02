@@ -15,7 +15,7 @@ import os
 import shutil
 import sys
 
-from fuchsia.tools.pylib import elf_info
+from debug_symbols.tools.pylib import elf_info
 
 _STAMP_FILE_NAME = ".stamp"
 
@@ -65,7 +65,7 @@ def main():
                         continue
                     print(
                         "ERROR: Duplicate entries for build-id %s\n  %s\n  %s\n"
-                        % (build_dir, debug_map[build_id], elf_with_symbols),
+                        % (build_id, debug_map[build_id], elf_with_symbols),
                         file=sys.stderr,
                     )
                     return 1

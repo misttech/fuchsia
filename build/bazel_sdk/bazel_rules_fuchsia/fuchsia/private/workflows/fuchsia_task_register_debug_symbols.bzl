@@ -4,8 +4,11 @@
 
 """Registers debug symbols with ffx as a task workflow."""
 
+load(
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
+    "merge_debug_symbol_infos",
+)
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
-load("//fuchsia/private:fuchsia_debug_symbols.bzl", "merge_debug_symbol_infos")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_shell_task.bzl", "shell_task_rule")
 

@@ -2,9 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "@fuchsia_rules_common//:utils.bzl",
+    "get_target_deps_from_attributes",
+    "make_resource_struct",
+)
+
 # buildifier: disable=module-docstring
 load(":providers.bzl", "FuchsiaCollectedPackageResourcesInfo", "FuchsiaPackageResourcesInfo")
-load(":utils.bzl", "get_target_deps_from_attributes", "make_resource_struct")
 
 def _package_resources_providers(ctx, resources):
     return [

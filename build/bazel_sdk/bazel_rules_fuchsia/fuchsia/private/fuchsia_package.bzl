@@ -5,6 +5,17 @@
 """fuchsia_package() rule."""
 
 load(
+    "@fuchsia_rules_common//:utils.bzl",
+    "make_resource_struct",
+)
+load(
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
+    "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
+    "find_and_process_unstripped_binaries",
+    "merge_debug_symbol_infos",
+    "strip_resources",
+)
+load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     "FuchsiaDebugSymbolInfo",
 )
@@ -12,13 +23,6 @@ load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
 load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
-load(
-    ":fuchsia_debug_symbols.bzl",
-    "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
-    "find_and_process_unstripped_binaries",
-    "merge_debug_symbol_infos",
-    "strip_resources",
-)
 load(":fuchsia_package_resource.bzl", "fuchsia_find_all_package_resources")
 load(":fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_transition.bzl", "fuchsia_transition")
@@ -36,7 +40,6 @@ load(
     "append_suffix_to_label",
     "fuchsia_cpu_from_ctx",
     "label_name",
-    "make_resource_struct",
     "stub_executable",
 )
 

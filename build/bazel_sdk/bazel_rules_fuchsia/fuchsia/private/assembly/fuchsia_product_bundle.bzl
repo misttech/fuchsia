@@ -5,13 +5,13 @@
 """Rule that creates a product bundle for flashing, emulating, or updating a Fuchsia product to a target device."""
 
 load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
-load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
-load("//fuchsia/private:ffx_tool.bzl", "get_ffx_product_args", "get_ffx_product_inputs", "get_ffx_scrutiny_args", "get_ffx_scrutiny_inputs")
 load(
-    "//fuchsia/private:fuchsia_debug_symbols.bzl",
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
     "fuchsia_collect_all_debug_symbols_infos_aspect",
     "transform_collected_debug_symbols_infos",
 )
+load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:ffx_tool.bzl", "get_ffx_product_args", "get_ffx_product_inputs", "get_ffx_scrutiny_args", "get_ffx_scrutiny_inputs")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private/assembly:fuchsia_product.bzl", "generate_create_system_call_info")
 load(

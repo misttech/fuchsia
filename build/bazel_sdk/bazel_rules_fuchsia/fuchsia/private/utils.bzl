@@ -4,7 +4,10 @@
 
 """Common utilities needed by Bazel SDK rules."""
 
-load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load(
+    "@fuchsia_rules_common//:utils.bzl",
+    "flatten",
+)
 load(":providers.bzl", "FuchsiaProvidersInfo")
 
 _INVALID_LABEL_CHARACTERS = "\"!%@^_#$&'()*+,;<=>?[]{|}~/".elems()
@@ -86,22 +89,6 @@ def stub_executable(ctx):
     )
 
     return executable_file
-
-def flatten(elements):
-    # buildifier: disable=function-docstring-args
-    # buildifier: disable=function-docstring-return
-    """Flattens an arbitrarily nested list of lists to non-list elements while preserving order."""
-    result = []
-    unprocessed = list(elements)
-    for _ in range(len(str(unprocessed))):
-        if not unprocessed:
-            return result
-        elem = unprocessed.pop(0)
-        if type(elem) in ("list", "tuple"):
-            unprocessed = list(elem) + unprocessed
-        else:
-            result.append(elem)
-    fail("Unable to flatten list!")
 
 def collect_runfiles(ctx, *elements, ignore_types = []):
     # buildifier: disable=function-docstring-args
@@ -368,39 +355,6 @@ def alias(*, name, executable, testonly = False, **kwargs):
         **kwargs
     )
 
-def get_target_deps_from_attributes(rule_attr, rule_kind = None, known_rule_kinds = {}):
-    """Return all dependencies from a given target context during analysis.
-
-    Args:
-        rule_attr: The ctx.attr value for the current target.
-        rule_kind: Optional string for the rule kind (this is aspect_ctx.rule.kind
-             when called from an aspect implementation function). If provided,
-             this can speed up the computation for a few known target kinds.
-        known_rule_kinds: Optional dictionary containing known rule kinds and their attributes to check
-    Returns:
-        A list of Target values corresponding to the dependencies of the current
-        target.
-    """
-    attr_names = known_rule_kinds.get(rule_kind)
-    if not attr_names:
-        # For unknown rule kinds, parse all attributes and filter
-        # those that are Targets or lists of Targets to the result.
-        attr_names = dir(rule_attr)
-
-    result = []
-    for attr_name in attr_names:
-        attr_value = getattr(rule_attr, attr_name, None)
-        if not attr_value:
-            continue
-        if type(attr_value) == "Target":
-            result.append(attr_value)
-            continue
-        if type(attr_value) == "list" and type(attr_value[0]) == "Target":
-            result.extend(attr_value)
-            continue
-
-    return depset(result).to_list()
-
 def filter(obj, value = None, exclude = True):
     # buildifier: disable=function-docstring-args
     # buildifier: disable=function-docstring-return
@@ -435,12 +389,6 @@ def filter(obj, value = None, exclude = True):
     # In case the previous assumption is violated.
     fail("Unable to filter all none values!")
 
-def make_resource_struct(src, dest):
-    return struct(
-        src = src,
-        dest = dest,
-    )
-
 def get_runfiles(target):
     # Helper function to get the runfiles as a list of files from a target.
     return [symlink.target_file for symlink in target[DefaultInfo].default_runfiles.root_symlinks.to_list()]
@@ -455,54 +403,7 @@ def is_lib(file):
     for char in rparts[2].elems():
         if not (char.isdigit() or char == "."):
             return False
-    return True
 
-#TODO(b/341799247) The logic for find_cc_toolchain is copied from
-#https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/bazel_rules_cc/cc/find_cc_toolchain.bzl;l=56;drc=13d212d39bbc415fd971138396cfd99320e04517
-#
-# We need to do this because we are currently using an older version of rules_cc
-# that is not compatible with our current version of bazel. Once we roll rules_cc
-# we can go back to using the method defined there.
-CC_TOOLCHAIN_TYPE = "@bazel_tools//tools/cpp:toolchain_type"
-
-def find_cc_toolchain(ctx):
-    """
-Returns the current `CcToolchainInfo`.
-
-    Args:
-      ctx: The rule context for which to find a toolchain.
-
-    Returns:
-      A CcToolchainInfo.
-    """
-
-    # Check the incompatible flag for toolchain resolution.
-    if hasattr(cc_common, "is_cc_toolchain_resolution_enabled_do_not_use") and cc_common.is_cc_toolchain_resolution_enabled_do_not_use(ctx = ctx):
-        if not CC_TOOLCHAIN_TYPE in ctx.toolchains:
-            fail("In order to use find_cc_toolchain, your rule has to depend on C++ toolchain. See find_cc_toolchain.bzl docs for details.")
-        toolchain_info = ctx.toolchains[CC_TOOLCHAIN_TYPE]
-        if toolchain_info == None:
-            # No cpp toolchain was found, so report an error.
-            fail("Unable to find a CC toolchain using toolchain resolution. Target: %s, Platform: %s, Exec platform: %s" %
-                 (ctx.label, ctx.fragments.platform.platform, ctx.fragments.platform.host_platform))
-        if hasattr(toolchain_info, "cc_provider_in_toolchain") and hasattr(toolchain_info, "cc"):
-            return toolchain_info.cc
-        return toolchain_info
-
-    # Fall back to the legacy implicit attribute lookup.
-    if hasattr(ctx.attr, "_cc_toolchain"):
-        return ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
-
-    # We didn't find anything.
-    fail("In order to use find_cc_toolchain, your rule has to depend on C++ toolchain. See find_cc_toolchain.bzl docs for details.")
-
-def with_fuchsia_constraint(target_compatible_with = []):
-    """Adds "@platforms//os:fuchsia" to the specified list if it's not already present."""
-    return target_compatible_with if (
-        "@platforms//os:fuchsia" in target_compatible_with
-    ) else target_compatible_with + ["@platforms//os:fuchsia"]
-
-# These rule attributes are needed by rules that want to call preprocess_file()
 PREPROCESS_FILE_ATTRS = {
     "_preprocessor_binary": attr.label(
         default = Label("@fuchsia_clang//:bin/clang-cpp"),

@@ -5,6 +5,12 @@
 """All Fuchsia Providers."""
 
 load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    _FuchsiaCollectedUnstrippedBinariesInfo = "FuchsiaCollectedUnstrippedBinariesInfo",
+    _FuchsiaUnstrippedBinaryInfo = "FuchsiaUnstrippedBinaryInfo",
+    _make_fuchsia_unstripped_binary_info = "make_fuchsia_unstripped_binary_info",
+)
+load(
     "@fuchsia_rules_common//packages:providers.bzl",
     _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
 )
@@ -56,54 +62,9 @@ FuchsiaPackagedComponentInfo = provider(
     },
 )
 
-def _fuchsia_unstripped_binary_info_init(*, unstripped_file, dest, stripped_file = None, source_search_root = None):
-    if not dest or type(dest) != "string":
-        fail("Required 'dest' argument must be a string, got: %s" % repr(dest))
-    if not unstripped_file or type(unstripped_file) != "File":
-        fail("Required 'unstripped_file' argument must be a File, got: %s" % repr(unstripped_file))
-    if stripped_file and type(stripped_file) != "File":
-        fail("Optional 'stripped_file' argument must be a File, got: %s" % repr(stripped_file))
-    if source_search_root != None and type(source_search_root) != "File":
-        fail("Optional 'source_search_root' argument must be a None or a File, got: %s type=%s" % (repr(source_search_root), type(source_search_root)))
-    return {
-        "dest": dest,
-        "unstripped_file": unstripped_file,
-        "stripped_file": stripped_file,
-        "source_search_root": "BUILD_WORKSPACE_DIRECTORY" if source_search_root == None else source_search_root,
-        "never_forward": True,
-    }
-
-FuchsiaUnstrippedBinaryInfo, make_fuchsia_unstripped_binary_info = provider(
-    "Contains information about one unstripped Fuchsia binary and its install location for the corresponding stripped file",
-    fields = {
-        "unstripped_file": "A required File value for the source unstripped ELF binary file.",
-        "stripped_file": "Either None, or a File value for the corresponding stripped ELF binary file, if available as a prebuilt.",
-        "dest": "A Fuchsia package install path string for the stripped file.",
-        "source_search_root": """Either None, or a File value pointing to a file or directory,
-            see FuchsiaDebugSymbolInfo for documentation about this value. If None, the root workspace
-            directory is used as the source search root directory.""",
-        "never_forward": """A boolean whose value must be True. Its presence ensures that these values are
-            never forwarded to dependents. See documentation for can_forward_provider() function.""",
-    },
-    init = _fuchsia_unstripped_binary_info_init,
-)
-
-FuchsiaCollectedUnstrippedBinariesInfo = provider(
-    "Contains information about a set of unstripped ELF binaries.",
-    fields = {
-        "source_search_root_to_unstripped_binary": """
-            A { source_search_root -> depset[struct(dest, unstripped_file, stripped_file)] } dictionary,
-            Where 'unstripped_file' is a source File value for the unstripped file,
-            where 'stripped_file' is either None, or a source File value for the corresponding
-            stripped file if available as a prebuilt, and 'dest' is a install path string within
-            a Fuchsia package for the corresponding stripped file.
-
-            Where 'source_search_root' is either a string or a File value describing the source
-            search directory used by the zxdb to locate sources at debug time. See FuchsiaDebugSymbolInfo
-            for more details about this value.
-            """,
-    },
-)
+FuchsiaCollectedUnstrippedBinariesInfo = _FuchsiaCollectedUnstrippedBinariesInfo
+FuchsiaUnstrippedBinaryInfo = _FuchsiaUnstrippedBinaryInfo
+make_fuchsia_unstripped_binary_info = _make_fuchsia_unstripped_binary_info
 
 FuchsiaComponentManifestInfo = provider(
     "Contains information about a Fuchsia component manifest",

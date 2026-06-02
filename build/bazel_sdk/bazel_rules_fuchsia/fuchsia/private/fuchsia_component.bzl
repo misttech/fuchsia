@@ -2,16 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "@fuchsia_rules_common//:utils.bzl",
+    "make_resource_struct",
+)
+load(
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
+    "merge_debug_symbol_infos",
+)
+
 # buildifier: disable=module-docstring
 load(":fuchsia_component_manifest.bzl", "ensure_compiled_component_manifest")
-load(":fuchsia_debug_symbols.bzl", "merge_debug_symbol_infos")
 load(
     ":providers.bzl",
     "FuchsiaComponentInfo",
     "FuchsiaComponentManifestInfo",
     "FuchsiaPackageResourcesInfo",
 )
-load(":utils.bzl", "label_name", "make_resource_struct")
+load(":utils.bzl", "label_name")
 
 def _manifest_target(name, manifest_in, tags, testonly):
     target_name = name + "_ensure_compiled_manifest"

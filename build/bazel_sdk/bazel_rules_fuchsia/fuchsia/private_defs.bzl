@@ -22,6 +22,13 @@ load(
     _FuchsiaProductConfigInfo = "FuchsiaProductConfigInfo",
 )
 load(
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
+    _FUCHSIA_DEBUG_SYMBOLS_ATTRS = "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
+    _fuchsia_collect_all_debug_symbols_infos_aspect = "fuchsia_collect_all_debug_symbols_infos_aspect",
+    _strip_resources = "strip_resources",
+    _transform_collected_debug_symbols_infos = "transform_collected_debug_symbols_infos",
+)
+load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     _FuchsiaDebugSymbolInfo = "FuchsiaDebugSymbolInfo",
 )
@@ -36,11 +43,7 @@ load(
 )
 load(
     "//fuchsia/private:fuchsia_debug_symbols.bzl",
-    _FUCHSIA_DEBUG_SYMBOLS_ATTRS = "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
-    _fuchsia_collect_all_debug_symbols_infos_aspect = "fuchsia_collect_all_debug_symbols_infos_aspect",
     _fuchsia_debug_symbols = "fuchsia_debug_symbols",
-    _strip_resources = "strip_resources",
-    _transform_collected_debug_symbols_infos = "transform_collected_debug_symbols_infos",
 )
 load(
     "//fuchsia/private:fuchsia_toolchains.bzl",

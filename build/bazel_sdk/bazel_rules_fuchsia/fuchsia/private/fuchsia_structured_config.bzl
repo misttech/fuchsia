@@ -8,13 +8,21 @@
 //build/components/fuchsia_structured_config.gni.)
 """
 
+load(
+    "@fuchsia_rules_common//:utils.bzl",
+    "make_resource_struct",
+)
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load(":fuchsia_fidl_cc_library.bzl", "fuchsia_fidl_cc_library")
 load(":fuchsia_fidl_library.bzl", "fuchsia_fidl_library")
 load(":fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
-load(":providers.bzl", "FuchsiaComponentManifestInfo", "FuchsiaPackageResourcesInfo", "FuchsiaStructuredConfigInfo")
-load(":utils.bzl", "make_resource_struct")
+load(
+    ":providers.bzl",
+    "FuchsiaComponentManifestInfo",
+    "FuchsiaPackageResourcesInfo",
+    "FuchsiaStructuredConfigInfo",
+)
 
 #####
 # cvf

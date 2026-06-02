@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 
-from fuchsia.tools.pylib import elf_info
+from debug_symbols.tools.pylib import elf_info
 
 
 def debug(msg: str):

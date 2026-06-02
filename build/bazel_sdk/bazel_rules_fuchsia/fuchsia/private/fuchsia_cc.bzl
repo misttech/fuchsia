@@ -9,6 +9,7 @@ Drop in replacements for cc_binary and cc_test:
  - fuchsia_cc_test
 """
 
+load("@fuchsia_rules_common//:utils.bzl", "find_cc_toolchain")
 load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     "FuchsiaDebugSymbolInfo",
@@ -27,7 +28,7 @@ load(
     "FuchsiaPackageResourcesInfo",
     "FuchsiaUnstrippedBinaryInfo",
 )
-load(":utils.bzl", "find_cc_toolchain", "forward_providers")
+load(":utils.bzl", "forward_providers")
 
 KNOWN_PROVIDERS = [
     CcInfo,

@@ -5,10 +5,13 @@
 """Common utilities used for workflows/tasks."""
 
 load(
+    "@fuchsia_rules_common//:utils.bzl",
+    _flatten = "flatten",
+)
+load(
     "//fuchsia/private:utils.bzl",
     _alias = "alias",
     _collect_runfiles = "collect_runfiles",
-    _flatten = "flatten",
     _label_name = "label_name",
     _normalized_target_name = "normalized_target_name",
     _rule_variants = "rule_variants",
