@@ -151,6 +151,8 @@ pub fn cfg_to_gn_conditional(cfg: &str) -> Result<String> {
         Ok(String::from("(current_cpu == \"x64\" || current_cpu == \"arm64\")"))
     } else if cfg == "target_pointer_width = \"32\"" {
         Ok(String::from("(current_cpu == \"riscv32\" || current_cpu == \"arm\")"))
+    } else if cfg == "kernel" {
+        Ok(String::from("is_kernel"))
 
     // Everything below is random cfgs that we don't know anything about
     } else if cfg.starts_with("target_os") {

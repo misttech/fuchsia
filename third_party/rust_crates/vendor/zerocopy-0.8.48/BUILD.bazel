@@ -55,7 +55,6 @@ rust_library(
         ],
     ),
     crate_features = [
-        "alloc",
         "derive",
         "simd",
         "zerocopy-derive",
@@ -114,7 +113,6 @@ cargo_build_script(
         ],
     ),
     crate_features = [
-        "alloc",
         "derive",
         "simd",
         "zerocopy-derive",

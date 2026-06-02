@@ -24011,12 +24011,14 @@ rustc_library("zerocopy-v0_8_48") {
     "--cap-lints=allow",
     "-Cmetadata=2b12925d406dcbcb",
     "-Cextra-filename=-2b12925d406dcbcb",
-    "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"simd\"",
     "--cfg=feature=\"zerocopy-derive\"",
     "--cfg=zerocopy_inline_always",
   ]
+  if (!is_kernel) {
+    rustflags += [ "--cfg=feature=\"alloc\"" ]
+  }
 
   visibility = [ ":*" ]
 
