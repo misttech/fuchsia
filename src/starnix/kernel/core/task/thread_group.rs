@@ -204,8 +204,9 @@ pub struct ThreadGroupMutableState {
     /// the value of `stopped`. If not None, contains the SignalInfo to return.
     pub last_signal: Option<SignalInfo>,
 
-    /// Whether the thread_group is terminating or not, and if it is, the exit info of the thread
-    /// group.
+    /// Whether the `ThreadGroup` is running or not.
+    ///
+    /// For exited thread groups, this contains the exit status.
     run_state: ThreadGroupRunState,
 
     /// Time statistics accumulated from the children.
@@ -473,7 +474,8 @@ pub struct ProcessExitInfo {
 enum ThreadGroupRunState {
     #[default]
     Running,
-    Terminating(ExitStatus),
+    Exiting(ExitStatus),
+    Exited(ExitStatus),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -808,13 +810,11 @@ impl ThreadGroup {
         }
         let mut pids = self.kernel.pids.write();
         let mut state = self.write();
-        if state.is_terminating() {
-            // The thread group is already terminating and all threads in the thread group have
-            // already been interrupted.
+        if !state.is_running() {
             return;
         }
 
-        state.run_state = ThreadGroupRunState::Terminating(exit_status.clone());
+        state.run_state = ThreadGroupRunState::Exiting(exit_status.clone());
 
         // Drop ptrace zombies
         state.zombie_ptracees.release(&mut pids);
@@ -850,10 +850,10 @@ impl ThreadGroup {
 
     pub fn add(&self, task: Arc<Task>) -> Result<(), Errno> {
         let mut state = self.write();
-        if state.is_terminating() {
+        if !state.is_running() {
             if state.tasks_count() == 0 {
                 log_warn!(
-                    "Task {} with leader {} terminating while adding its first task, \
+                    "Task {} with leader {} not running while adding its first task, \
                 not sending creation notification",
                     task.tid,
                     self.leader
@@ -886,24 +886,23 @@ impl ThreadGroup {
             if let Some(container) = state.tasks.remove(&task.tid) {
                 container.into()
             } else {
-                // The task has never been added. The only expected case is that this thread was
-                // already terminating.
-                debug_assert!(state.is_terminating());
+                // The task has never been added. The only expected case is that this thread group
+                // is not running.
+                debug_assert!(!state.is_running());
                 return;
             };
 
         if state.tasks.is_empty() {
-            let exit_status =
-                if let ThreadGroupRunState::Terminating(exit_status) = &state.run_state {
-                    exit_status.clone()
-                } else {
-                    let exit_status = task.exit_status().unwrap_or_else(|| {
-                        log_error!("Exiting without an exit code.");
-                        ExitStatus::Exit(u8::MAX)
-                    });
-                    state.run_state = ThreadGroupRunState::Terminating(exit_status.clone());
-                    exit_status
-                };
+            let exit_status = if let ThreadGroupRunState::Exiting(exit_status) = &state.run_state {
+                exit_status.clone()
+            } else {
+                let exit_status = task.exit_status().unwrap_or_else(|| {
+                    log_error!("Exiting without an exit code.");
+                    ExitStatus::Exit(u8::MAX)
+                });
+                state.set_exiting(exit_status.clone());
+                exit_status
+            };
 
             // Replace PID table entry with a zombie.
             let exit_info =
@@ -1008,6 +1007,8 @@ impl ThreadGroup {
                 let parent = parent.upgrade();
                 parent.check_orphans(locked, pids);
             }
+
+            self.write().set_exited();
         }
     }
 
@@ -1944,8 +1945,27 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             .unwrap_or_else(|| TaskCommand::new(b"<leader exited>"))
     }
 
-    pub fn is_terminating(&self) -> bool {
-        !matches!(self.run_state, ThreadGroupRunState::Running)
+    pub fn is_running(&self) -> bool {
+        matches!(self.run_state, ThreadGroupRunState::Running)
+    }
+
+    pub fn is_exited(&self) -> bool {
+        matches!(self.run_state, ThreadGroupRunState::Exited(_))
+    }
+
+    fn set_exiting(&mut self, exit_status: ExitStatus) {
+        self.run_state = ThreadGroupRunState::Exiting(exit_status);
+    }
+
+    fn set_exited(&mut self) {
+        let ThreadGroupRunState::Exiting(exit_status) = std::mem::take(&mut self.run_state) else {
+            panic!("Must transition from Exiting to Exited");
+        };
+        self.run_state = ThreadGroupRunState::Exited(exit_status);
+
+        if let Some(notifier) = self.exit_notifier.take() {
+            let _ = notifier.send(());
+        }
     }
 
     pub fn children(&self) -> impl Iterator<Item = Arc<ThreadGroup>> + '_ {
@@ -2070,7 +2090,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             Self::is_correct_exit_signal(options.wait_for_clone, child.read().exit_signal)
         };
 
-        // If wait_for_exited flag is disabled or no terminated children were found we look for living children.
+        // If wait_for_exited flag is disabled or no exited children were found we look for running
+        // children.
         let mut selected_children = self
             .children
             .values()

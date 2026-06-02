@@ -405,8 +405,8 @@ impl CgroupState {
             let Some(thread_group) = thread_group.upgrade() else {
                 return false;
             };
-            let terminating = thread_group.read().is_terminating();
-            !terminating
+            let running = thread_group.read().is_running();
+            running
         });
     }
 
