@@ -62,21 +62,15 @@ Steps:
 
 ### Launching a Fuchsia shell tool in the emulator
 
-Use the steps below to run shell tools in the emulator, such as
-`display-tool`.
+<!-- TODO(https://fxbug.dev/518978889): Add instructions to cover tools not
+     included in the package cache by default. -->
 
-1. Run a package server (blocks; needs its own terminal):
-   `fx serve --foreground`
+Use the step below to run driver development tools in the emulator, such as
+`display-tool` and `display-tweak`.
 
-2. Wait for the command above to output a line similar to:
-   `Serving repository '/ssd/fuchsia/out/x64/amber-files' over address '[::]:8083'.`
-
-3. Run the command: `ffx target ssh -- {COMMAND} [{ARGUMENTS...}]`.
+1. Run the command: `ffx target ssh -- {COMMAND} [{ARGUMENTS...}]`.
    Example: `ffx target ssh -- display-tool info`
 
-4. If starting the command fails and the output contains
-   `Cannot create child process: -25 (ZX_ERR_NOT_FOUND)`, wait a few seconds for
-   the VM to connect to the package server, and try again.
 
 ### Obtaining emulator configuration details
 
