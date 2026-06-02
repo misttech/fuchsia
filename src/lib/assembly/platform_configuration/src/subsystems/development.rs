@@ -193,6 +193,15 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.platform_bundle("development_support_tools_connectivity_thread")?;
         }
 
+        if config.tools.display.driver_tools {
+            context.ensure_build_type_and_feature_set_level(
+                &[BuildType::Eng],
+                &[FeatureSetLevel::Standard],
+                "Display driver development tools",
+            )?;
+            builder.platform_bundle("display_driver_development_tools")?;
+        }
+
         if config.tools.storage.enable_partitioning_tools {
             context.ensure_build_type_and_feature_set_level(
                 &[BuildType::Eng],

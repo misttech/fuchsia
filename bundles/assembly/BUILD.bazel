@@ -1701,14 +1701,6 @@ assembly_input_bundle(
             "components": ["display-test"],
         },
         {
-            "package": "display-tool",
-            "components": ["display-tool"],
-        },
-        {
-            "package": "display-tweak",
-            "components": ["display-tweak"],
-        },
-        {
             "package": "magma-info",
             "components": ["magma-info"],
         },
@@ -4152,6 +4144,29 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/media/sounds/soundplayer:meta/soundplayer.core_shard.cml",
+    ],
+)
+
+# Tools for interactive debugging/development of display drivers
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "display_driver_development_tools",
+    allowed_in = [
+        "eng",
+    ],
+    cache_packages = [
+        "//bundles/assembly/bazel_inputs/src/graphics/display/bin/display-tool",
+        "//bundles/assembly/bazel_inputs/src/graphics/display/bin/display-tweak",
+    ],
+    shell_commands = [
+        {
+            "package": "display-tool",
+            "components": ["display-tool"],
+        },
+        {
+            "package": "display-tweak",
+            "components": ["display-tweak"],
+        },
     ],
 )
 

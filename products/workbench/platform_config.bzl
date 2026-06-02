@@ -32,6 +32,9 @@ workbench_platform_config = {
             "audio": {
                 "driver_tools": True,
             },
+            "display": {
+                "driver_tools": True,
+            },
             "connectivity": {
                 "enable_networking": True,
                 "enable_wlan": True,

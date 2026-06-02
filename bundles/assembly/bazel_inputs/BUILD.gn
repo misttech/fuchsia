@@ -1441,6 +1441,13 @@ group("video_development_support") {
       [ "//bundles/assembly/bazel_inputs/src/media/codec/examples:encode-file" ]
 }
 
+group("display_driver_development_tools") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/graphics/display/bin/display-tool",
+    "//bundles/assembly/bazel_inputs/src/graphics/display/bin/display-tweak",
+  ]
+}
+
 group("media_sessions") {
   deps = [ "//bundles/assembly/bazel_inputs/src/media/sessions:mediasession" ]
 }

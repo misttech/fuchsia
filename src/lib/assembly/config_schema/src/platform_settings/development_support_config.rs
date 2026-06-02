@@ -103,6 +103,21 @@ pub struct ToolsConfig {
     /// Tools for storage.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub storage: StorageToolsConfig,
+
+    /// Tools for display.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub display: DisplayToolsConfig,
+}
+
+/// Platform-provided tools for development and debugging of display.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DisplayToolsConfig {
+    /// Include tools for display driver development and debugging, such as:
+    ///   - 'display-tool'
+    ///   - 'display-tweak'
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub driver_tools: bool,
 }
 
 /// Platform-provided tools for development and debugging of audio.
