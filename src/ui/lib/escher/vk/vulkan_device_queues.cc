@@ -23,6 +23,7 @@ VulkanDeviceQueues::Caps::Caps(vk::PhysicalDevice device) {
     device_api_version = props.apiVersion;
     msaa_sample_counts =
         impl::GetSupportedColorSampleCounts(props.limits.sampledImageColorSampleCounts);
+    is_virtual_gpu = props.deviceType == vk::PhysicalDeviceType::eVirtualGpu;
   }
 
   {

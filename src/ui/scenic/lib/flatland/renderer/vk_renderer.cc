@@ -989,19 +989,22 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
       TRACE_FLOW_BEGIN("gfx", "semaphore", koid_info.koid);
     }
 
-    semaphores.emplace_back(sema);
-
     // TODO(https://fxbug.dev/42174813): Semaphore lifetime should be guaranteed by Escher. This
     // wait is a workaround for the issue where we destroy semaphores before they are signalled.
-    TRACE_DURATION("gfx", "VkRenderer::Render[WaitOnce]");
-    auto wait = std::make_shared<async::WaitOnce>(fence_original.get(), ZX_EVENT_SIGNALED,
-                                                  ZX_WAIT_ASYNC_TIMESTAMP);
-    zx_status_t wait_status =
-        wait->Begin(async_get_default_dispatcher(),
-                    [copy_ref = wait, sema](async_dispatcher_t*, async::WaitOnce*, zx_status_t,
-                                            const zx_packet_signal_t*) {
-                      // Let these fall out of scope.
-                    });
+    if (escher_->device()->caps().is_virtual_gpu) {
+      TRACE_DURATION("gfx", "VkRenderer::Render[WaitOnce]");
+      auto wait = std::make_shared<async::WaitOnce>(fence_original.get(), ZX_EVENT_SIGNALED,
+                                                    ZX_WAIT_ASYNC_TIMESTAMP);
+      zx_status_t wait_status =
+          wait->Begin(async_get_default_dispatcher(),
+                      [copy_ref = wait, sema](async_dispatcher_t*, async::WaitOnce*, zx_status_t,
+                                              const zx_packet_signal_t*) {
+                        // Let these fall out of scope.
+                      });
+      FX_DCHECK(wait_status == ZX_OK);
+    }
+
+    semaphores.emplace_back(sema);
   }
 
   // Submit the commands and wait for them to finish.

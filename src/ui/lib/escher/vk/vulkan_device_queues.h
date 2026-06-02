@@ -54,6 +54,7 @@ class VulkanDeviceQueues : public fxl::RefCountedThreadSafe<VulkanDeviceQueues> 
     uint32_t device_api_version = 0;
     bool allow_protected_memory = false;
     bool allow_ycbcr = false;
+    bool is_virtual_gpu = false;
 
     vk::PhysicalDeviceFeatures enabled_features;
 
