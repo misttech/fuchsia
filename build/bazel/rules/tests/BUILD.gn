@@ -29,9 +29,8 @@ bazel_build_action("tests") {
   # The tests rely on the "fuchsia_platform" sysroots.
   deps = [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
 
-  # TODO(https://fxbug.dev/505802054): Specify that the "fuchsia_platform"
-  # platform should be used and remove this dependency on the in-tree SDK.
-  no_sdk = false
+  bazel_platform = "fuchsia_platform_${current_cpu}"
+  no_sdk = true
 }
 
 bazel_build_action("quick_tests") {
@@ -49,7 +48,6 @@ bazel_build_action("quick_tests") {
   # The tests rely on the "fuchsia_platform" sysroots.
   deps = [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
 
-  # TODO(https://fxbug.dev/505802054): Specify that the "fuchsia_platform"
-  # platform should be used and remove this dependency on the in-tree SDK.
-  no_sdk = false
+  bazel_platform = "fuchsia_platform_${current_cpu}"
+  no_sdk = true
 }

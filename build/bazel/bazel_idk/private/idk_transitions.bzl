@@ -15,13 +15,8 @@ visibility([
 def _verify_is_main_platform_configuration(current_platforms, current_api_level):
     main_target_platform = "//build/bazel/platforms:fuchsia_platform_%s" % target_cpu
 
-    # TODO(https://fxbug.dev/505802054): Remove once this is no longer being
-    # invoked by a `bazel_action()` with the non-platform "fuchsia" platform.
-    non_platform_main_target_platform = "//build/bazel/platforms:fuchsia_%s" % target_cpu
-
     if (len(current_platforms) != 1 or
-        (str(current_platforms[0]) != ("@@" + main_target_platform) and
-         str(current_platforms[0]) != ("@@" + non_platform_main_target_platform)) or
+        str(current_platforms[0]) != ("@@" + main_target_platform) or
         current_api_level != "PLATFORM"):
         fail('This transition should only be used in the main "PLATFORM" build (platform: "%s", api_level: "PLATFORM"), not (platforms: "%s", api_level: "%s").' % (
             main_target_platform,

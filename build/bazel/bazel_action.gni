@@ -275,28 +275,19 @@ template("bazel_action") {
     assert(!_build_for_host || _no_sdk,
            "`no_sdk` must true when `host` is true. ")
 
-    # Limit usage of `bazel_platform` to host platforms to minimize chances of
-    # misuse. It's created to support cross-compiling SDK host tools.
-    if (defined(invoker.bazel_platform)) {
-      assert(_build_for_host,
-             "`bazel_platform` is only supported when `host` is true.")
-    }
-
-    # Calculate the correct bazel platform to use from the build_for_host and
-    # bazel_platform params.
+    # Calculate the correct Bazel platform to use.
     if (_build_for_host) {
       _bazel_platform_config = "host_config_args"
-      if (defined(invoker.bazel_platform)) {
-        _bazel_platform_label =
-            "//build/bazel/platforms:${invoker.bazel_platform}"
-      } else {
-        _bazel_platform_label = "//build/bazel/platforms:host"
-      }
+      _bazel_platform_label = "//build/bazel/platforms:host"
     } else {
       # Since this template can only be used on the default toolchain, the
       # platform is always Fuchsia.
       _bazel_platform_config = "fuchsia_config_args"
       _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
+    }
+    if (defined(invoker.bazel_platform)) {
+      _bazel_platform_label =
+          "//build/bazel/platforms:${invoker.bazel_platform}"
     }
 
     _update_rust_project =
@@ -762,9 +753,10 @@ template("bazel_action") {
         _out_dir = get_label_info(_bazel_target, "target_out_dir")
         _bazel_label = get_label_info(_bazel_target, "name")
 
-        _dedupe_suffix = "${current_os}_${current_cpu}"
         if (_build_for_host) {
           _dedupe_suffix = "${host_os}_${host_cpu}"
+        } else {
+          _dedupe_suffix = "${current_os}_${current_cpu}"
         }
         if (defined(invoker.bazel_platform)) {
           _dedupe_suffix = invoker.bazel_platform
