@@ -12,7 +12,7 @@ use core::mem::size_of;
 use core::ops::Deref;
 use core::time::Duration;
 
-use net_types::ip::{Ip, Ipv6, Ipv6Addr};
+use net_types::ip::{Ip, IpAddress as _, Ipv6, Ipv6Addr};
 use net_types::{MulticastAddr, Witness as _};
 use packet::BufferView;
 use packet::records::{ParsedRecord, RecordParseResult, Records, RecordsImpl, RecordsImplLayout};
@@ -817,7 +817,17 @@ impl<B: SplitByteSlice> MessageBody for Mldv2QueryBody<B> {
     fn parse(bytes: B) -> ParseResult<Self> {
         let (header, bytes) = Ref::<_, Mldv2QueryMessageHeader>::from_prefix(bytes)
             .map_err(|_| ParseError::Format)?;
-        let sources = Ref::<B, [Ipv6Addr]>::from_bytes(bytes).map_err(|_| ParseError::Format)?;
+        let num_sources_bytes =
+            usize::from(Ipv6Addr::BYTES) * usize::from(header.number_of_sources());
+        // Read exactly `number_of_sources` addresses from the body. Any
+        // trailing bytes MUST be ignored per [RFC 3810 section 5.1.12].
+        //
+        // [RFC 3810 section 5.1.12]:
+        //     https://datatracker.ietf.org/doc/html/rfc3810#section-5.1.12
+        let (sources_bytes, _rest) =
+            bytes.split_at(num_sources_bytes).map_err(|_| ParseError::Format)?;
+        let sources =
+            Ref::<B, [Ipv6Addr]>::from_bytes(sources_bytes).map_err(|_| ParseError::Format)?;
         Ok(Mldv2QueryBody { header, sources })
     }
 
@@ -848,7 +858,6 @@ impl_icmp_message!(
 
 #[cfg(test)]
 mod tests {
-
     use packet::{NestableSerializer as _, NoOpSerializationContext, ParseBuffer, Serializer};
     use test_case::test_case;
 
@@ -1273,6 +1282,26 @@ mod tests {
             .unwrap();
 
         check_mld_report_v2(&icmp, RECORDS_HEADERS, RECORDS_SOURCES);
+    }
+
+    #[test_case(&[0x11, 0x22, 0x33, 0x44]; "extra bytes")]
+    #[test_case(Ipv6Addr::new([1, 2, 3, 4, 5, 6, 7, 8]).bytes(); "extra addr")]
+    fn test_mld_query_v2_trailing_bytes_ignored(extend_bytes: &[u8]) {
+        use crate::testdata::mld_router_query::*;
+
+        let mut body_with_trailing = QUERY_V2.to_vec();
+        body_with_trailing.extend_from_slice(extend_bytes);
+
+        let mut req = &body_with_trailing[..];
+        let ip = req.parse_with::<_, Ipv6Packet<_>>(()).unwrap();
+        check_ip(&ip, SRC_IP, DST_IP);
+        let icmp = req
+            .parse_with::<_, IcmpPacket<_, _, MulticastListenerQueryV2>>(IcmpParseArgs::new(
+                SRC_IP, DST_IP,
+            ))
+            .unwrap();
+
+        check_mld_query_v2(&icmp, MAX_RESP_CODE, HOST_GROUP_ADDRESS, SOURCES);
     }
 
     // Test that our maximum sources accounting matches an equivalent example in
