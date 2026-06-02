@@ -1062,7 +1062,10 @@ impl Task {
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
                 running_state: RcuOptionBox::new(Some(TaskRunningState {
-                    thread: RwLock::new(ZirconThread::new(thread.map(Arc::new))),
+                    thread: thread.map_or_else(
+                        || Default::default(),
+                        |thread| ZirconThread::new(Arc::new(thread)).into(),
+                    ),
                     files,
                     mm: RcuOptionArc::new(mm),
                     fs: RcuArc::new(fs),
@@ -1333,8 +1336,7 @@ impl Task {
     pub fn thread_runtime_info(&self) -> Result<zx::TaskRuntimeInfo, Errno> {
         self.running_state()?
             .thread
-            .read()
-            .as_ref()
+            .get()
             .ok_or_else(|| errno!(EINVAL))?
             .get_runtime_info()
             .map_err(|status| from_status_like_fdio!(status))
@@ -1355,7 +1357,7 @@ impl Task {
         };
 
         self.read().run_state.wake();
-        if let Some(thread) = running_state.thread.read().as_ref() {
+        if let Some(thread) = running_state.thread.get() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,
                 reason = "Force documented unsafe blocks in Starnix"
@@ -1396,8 +1398,8 @@ impl Task {
         let mut command_guard = self.persistent_info.command_guard();
 
         // Set the name on the Linux thread.
-        if let Some(thread) = running_state.thread.read().as_ref() {
-            set_zx_name(&**thread, new_name.as_bytes());
+        if let Some(thread) = running_state.thread.get() {
+            set_zx_name(thread.thread.as_ref(), new_name.as_bytes());
         }
 
         // If this is the thread group leader, use this name for the process too.
@@ -1449,7 +1451,7 @@ impl Task {
             Ok(running_state) => running_state,
             Err(_) => return TaskTimeStats::default(),
         };
-        let info = match running_state.thread.read().as_ref() {
+        let info = match running_state.thread.get() {
             Some(thread) => thread.get_runtime_info().expect("Failed to get thread stats"),
             None => return TaskTimeStats::default(),
         };
@@ -1482,7 +1484,7 @@ impl Task {
         let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
 
         let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = running_state.thread.read().koid();
+        let tkoid = running_state.thread.get().map(|t| t.koid);
         mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }

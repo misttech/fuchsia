@@ -4,7 +4,7 @@
 
 use crate::execution::loop_entry::enter_syscall_loop;
 use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
-use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder};
+use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder, ZirconThread};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{LockBefore, Locked, Mutex, TaskRelease, Unlocked};
@@ -109,10 +109,8 @@ where
         );
     }
 
-    // Hold a lock on the task's thread slot until we have a chance to initialize it.
     let ref_task = Arc::clone(&task_builder.task);
     let running_state = ref_task.running_state().unwrap();
-    let mut task_thread_guard = running_state.thread.write();
 
     // Spawn the process' thread. Note, this closure ends up executing in the process referred to by
     // `process_handle`.
@@ -192,9 +190,8 @@ where
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .expect("must have RIGHT_DUPLICATE on handle we created"),
     );
-    task_thread_guard.set(thread);
+    running_state.thread.set(ZirconThread::new(thread)).expect("thread should only be set once");
     // Now that the task has a thread handle, update the thread's role using the policy configured.
-    drop(task_thread_guard);
     if let Err(err) = ref_task.sync_scheduler_state_to_role() {
         log_warn!(err:?; "Couldn't update freshly spawned thread's profile.");
     }

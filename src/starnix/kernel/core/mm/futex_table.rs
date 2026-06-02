@@ -283,7 +283,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         current_task
             .get_task(new_owner_tid as i32)
             .ok()
-            .and_then(|o| o.running_state().unwrap().thread.read().as_ref().map(Arc::clone))
+            .and_then(|o| o.running_state().unwrap().thread.get().map(|t| Arc::clone(&t.thread)))
             .map_or_else(
                 || error!(ESRCH),
                 |owner| current_task.block_with_owner_until(guard, &owner, deadline),

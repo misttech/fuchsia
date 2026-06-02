@@ -143,7 +143,7 @@ impl TracePerformanceEventManager {
             };
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),
-                thread: running_state.thread.read().koid(),
+                thread: running_state.thread.get().map(|t| t.koid),
             };
             // ignore entries with no process or thread.
             if pair.process.is_some() || pair.thread.is_some() {
@@ -159,6 +159,7 @@ impl TracePerformanceEventManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::ZirconThread;
     use crate::testing::{create_task, spawn_kernel_and_run};
     use futures::channel::oneshot;
 
@@ -168,7 +169,7 @@ mod tests {
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
-            let tkoid = current_task.running_state().thread.read().koid();
+            let tkoid = current_task.running_state().thread.get().map(|t| t.koid);
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
             let _another_current = create_task(locked, &kernel, "another-task");
@@ -233,8 +234,11 @@ mod tests {
                 .expect("test thread");
 
             {
-                let another_current_running = another_current.running_state();
-                another_current_running.thread.write().set(Arc::new(test_thread));
+                another_current
+                    .running_state()
+                    .thread
+                    .set(ZirconThread::new(Arc::new(test_thread)))
+                    .expect("test thread set");
             }
 
             let pid_map = manager.map.read().clone();

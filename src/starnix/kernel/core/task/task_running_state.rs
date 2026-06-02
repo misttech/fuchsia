@@ -6,11 +6,10 @@ use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace};
 use crate::vfs::{FdTable, FsContext, FsNodeHandle};
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox};
-use starnix_sync::RwLock;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// The running state of a task.
 ///
@@ -21,7 +20,7 @@ pub struct TaskRunningState {
     ///
     /// Some tasks lack an underlying Zircon thread. These tasks are used internally by the
     /// Starnix kernel to track background work, typically on a `kthread`.
-    pub thread: RwLock<ZirconThread>,
+    pub thread: OnceLock<ZirconThread>,
 
     /// The file descriptor table for this task.
     ///
@@ -55,31 +54,36 @@ impl TaskRunningState {
     }
 }
 
-/// A synchronized container for an optional Zircon thread and its cached KOID.
-#[derive(Debug)]
+/// A synchronized container for a Zircon thread and its cached KOID.
+#[derive(Debug, Clone)]
 pub struct ZirconThread {
-    thread: Option<Arc<zx::Thread>>,
-    koid: Option<zx::Koid>,
+    /// The underlying Zircon thread.
+    ///
+    /// # Thread Safety
+    ///
+    /// Blocking operations are unsafe while holding RCU read locks. However, references to this
+    /// thread must be held across blocking operations (e.g., futex waits). The [`ZirconThread`]
+    /// container as a whole is guarded by RCU because it is a member of the RCU-guarded
+    /// [`TaskRunningState`]. This field is reference counted so it can be accessed outside of RCU
+    /// locks through a strong reference.
+    ///
+    /// Holding a reference to the thread does not guarantee that the task to which it belongs will
+    /// continue running. The task may exit at any time. The thread will continue to exist in memory
+    /// until all references are dropped. When the task exits and execution stops, reference holders
+    /// will observe the thread transition to [`zx::ThreadState::Dead`] normally.
+    pub thread: Arc<zx::Thread>,
+    pub koid: zx::Koid,
 }
 
 impl ZirconThread {
-    pub fn new(thread: Option<Arc<zx::Thread>>) -> Self {
-        let koid = thread.as_ref().and_then(|t| t.koid().ok());
+    pub fn new(thread: Arc<zx::Thread>) -> Self {
+        let koid = thread.koid().expect("Failed to get thread koid");
         Self { thread, koid }
-    }
-
-    pub fn set(&mut self, thread: Arc<zx::Thread>) {
-        self.koid = thread.koid().ok();
-        self.thread = Some(thread);
-    }
-
-    pub fn koid(&self) -> Option<zx::Koid> {
-        self.koid
     }
 }
 
 impl Deref for ZirconThread {
-    type Target = Option<Arc<zx::Thread>>;
+    type Target = Arc<zx::Thread>;
     fn deref(&self) -> &Self::Target {
         &self.thread
     }

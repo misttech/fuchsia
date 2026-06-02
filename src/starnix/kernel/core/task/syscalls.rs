@@ -342,9 +342,9 @@ pub fn sys_getcpu(
         let thread_stats = current_task
             .running_state()
             .thread
-            .read()
-            .as_ref()
+            .get()
             .expect("current thread is never None when executing")
+            .thread
             .stats()
             .map_err(|e| errno!(EINVAL, format!("getting thread stats failed {e:?}")))?;
         current_task.write_object(cpu_out, &thread_stats.last_scheduled_cpu)?;

@@ -99,12 +99,16 @@ impl SchedulerManager {
                 return Ok(());
             }
         };
-        let thread = running_state.thread.read();
-        let Some(thread) = thread.as_ref() else {
+        let Some(zircon_thread) = running_state.thread.get() else {
             log_debug!("thread role update requested for task without thread, skipping");
             return Ok(());
         };
-        Self::set_thread_role_inner(role_manager, thread, role_name, &self.profile_handle_cache)
+        Self::set_thread_role_inner(
+            role_manager,
+            &zircon_thread.thread,
+            role_name,
+            &self.profile_handle_cache,
+        )
     }
 
     fn set_thread_role_inner(

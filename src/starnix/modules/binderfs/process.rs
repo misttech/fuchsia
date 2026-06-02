@@ -774,8 +774,10 @@ impl<'a> BinderProcessGuard<'a> {
             return Ok(OwnedRef::share(thread));
         }
         let running_state = task.running_state()?;
-        let handle =
-            running_state.thread.read().clone().unwrap_or_else(|| Arc::new(zx::Thread::invalid()));
+        let handle = running_state
+            .thread
+            .get()
+            .map_or_else(|| Arc::new(zx::Thread::invalid()), |t| t.thread.clone());
         let thread = BinderThread::new(self, tid, handle);
         self.thread_pool.threads.insert(tid, OwnedRef::share(&thread));
         Ok(thread)
