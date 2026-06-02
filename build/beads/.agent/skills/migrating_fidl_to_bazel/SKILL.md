@@ -36,7 +36,7 @@ GN to Bazel.
 5.  Verify the Bazel target builds successfully:
 
     ```bash
-    fx bazel build --config=fuchsia //sdk/fidl/{library_name}:{library_name}
+    fx bazel build --config=fuchsia_platform //sdk/fidl/{library_name}:{library_name}
     ```
 
 ## 2. Register the target
@@ -69,7 +69,7 @@ GN to Bazel.
     ```bash
     fx set core.x64
     fx build //sdk/fidl:compatibility_tests
-    fx bazel build --config=fuchsia //sdk/fidl:compatibility_tests
+    fx bazel build --config=fuchsia_platform //sdk/fidl:compatibility_tests
     ```
 
 4.  If the migrated FIDL library does NOT have the `category` attribute set, you

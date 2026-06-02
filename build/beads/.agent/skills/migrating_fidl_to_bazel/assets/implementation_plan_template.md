@@ -26,12 +26,12 @@ Example:
 - List the tests and commands which are run after all libraries are migrated.
 Example:
 * Verify Bazel build for each library:
-	`fx bazel build --config=fuchsia //sdk/fidl/<library_name>:<library_name>`
+	`fx bazel build --config=fuchsia_platform //sdk/fidl/<library_name>:<library_name>`
 * Run Bazel rule test:
-	`fx bazel build --config=fuchsia //build/bazel/rules/tests`
+	`fx bazel build --config=fuchsia_platform //build/bazel/rules/tests`
 * Verify compatibility tests:
 	`fx build //sdk/fidl:compatibility_tests`
-	`fx bazel build --config=fuchsia //sdk/fidl:compatibility_tests`
+	`fx bazel build --config=fuchsia_platform //sdk/fidl:compatibility_tests`
 * Run full build at the end:
 	`fx build`
 
