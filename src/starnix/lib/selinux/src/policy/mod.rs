@@ -609,8 +609,10 @@ pub trait Parse: Sized {
 /// Context for validating a parsed policy.
 pub(super) struct PolicyValidationContext {
     /// The policy data that is being validated.
-    #[allow(unused)]
     pub(super) data: PolicyData,
+
+    /// True if "userspace_initial_context" is enabled, which requires the "init" SID to be defined.
+    pub(super) need_init_sid: bool,
 }
 
 /// Validate a parsed data structure.

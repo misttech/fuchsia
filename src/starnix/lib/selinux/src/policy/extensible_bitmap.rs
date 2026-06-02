@@ -410,7 +410,8 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let context = PolicyValidationContext { data: policy_data.clone() };
+                let context =
+                    PolicyValidationContext { data: policy_data.clone(), need_init_sid: false };
                 assert_eq!(
                     Err(ValidateError::InvalidExtensibleBitmapItemSize {
                         found_size: MAP_NODE_BITS - 1
@@ -438,7 +439,8 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let context = PolicyValidationContext { data: policy_data.clone() };
+                let context =
+                    PolicyValidationContext { data: policy_data.clone(), need_init_sid: false };
                 assert_eq!(
                     Err(ValidateError::MisalignedExtensibleBitmapHighBit {
                         found_size: MAP_NODE_BITS,
@@ -504,7 +506,8 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let context = PolicyValidationContext { data: policy_data.clone() };
+                let context =
+                    PolicyValidationContext { data: policy_data.clone(), need_init_sid: false };
                 match parsed.validate(&context).map_err(as_validate_error) {
                     Err(ValidateError::MisalignedExtensibleBitmapItemStartBit {
                         found_start_bit,
@@ -541,7 +544,8 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let context = PolicyValidationContext { data: policy_data.clone() };
+                let context =
+                    PolicyValidationContext { data: policy_data.clone(), need_init_sid: false };
                 assert_eq!(
                     parsed.validate(&context).map_err(as_validate_error),
                     Err(ValidateError::OutOfOrderExtensibleBitmapItems {

@@ -19,6 +19,7 @@ pub enum ReferenceInitialSid {
     Unlabeled = 3,
     _Fs = 4,
     File = 5,
+    Init = 7,
     _Port = 9,
     _Netif = 10,
     _Netmsg = 11,
@@ -65,6 +66,7 @@ initial_sid_enum! {
         // keep-sorted start
         Devnull("devnull"),
         File("file"),
+        Init("init"),
         Kernel("kernel"),
         Security("security"),
         Unlabeled("unlabeled"),
@@ -110,24 +112,19 @@ pub struct TaskAttrs {
 impl TaskAttrs {
     /// Returns initial state for kernel tasks.
     pub fn for_kernel() -> Self {
-        Self::for_sid(InitialSid::Kernel.into())
+        Self::for_transition(InitialSid::Kernel.into(), InitialSid::Kernel.into())
     }
 
     /// Returns placeholder state for use when SELinux is not enabled.
     pub fn for_selinux_disabled() -> Self {
-        Self::for_sid(InitialSid::Unlabeled.into())
-    }
-
-    /// Used to create initial state for tasks with a specified SID.
-    pub fn for_sid(sid: SecurityId) -> Self {
-        Self::for_transition(sid, sid)
+        Self::for_transition(InitialSid::Unlabeled.into(), InitialSid::Unlabeled.into())
     }
 
     /// Used to create new security state when transitioning a task to a new SID.
-    pub fn for_transition(new_sid: SecurityId, old_sid: SecurityId) -> Self {
+    pub fn for_transition(new_sid: SecurityId, previous_sid: SecurityId) -> Self {
         Self {
             current_sid: new_sid,
-            previous_sid: old_sid,
+            previous_sid,
             exec_sid: None,
             fscreate_sid: None,
             keycreate_sid: None,

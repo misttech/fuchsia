@@ -354,9 +354,15 @@ impl ParsedPolicy {
     }
 
     /// Returns the policy entry for the specified initial Security Context.
-    pub(super) fn initial_context(&self, id: crate::InitialSid) -> &Context {
-        let id = le::U32::from(id as u32);
+    pub(super) fn initial_context(&self, mut id: crate::InitialSid) -> &Context {
+        // If "userspace_initial_context" is not set then the "init" SID is treated as "kernel".
+        if id == crate::InitialSid::Init && !self.has_policycap(PolicyCap::UserspaceInitialContext)
+        {
+            id = crate::InitialSid::Kernel
+        }
+
         // [`InitialSids`] validates that all `InitialSid` values are defined by the policy.
+        let id = le::U32::from(id as u32);
         &self.initial_sids.data.iter().find(|initial| initial.id() == id).unwrap().context()
     }
 
@@ -774,7 +780,8 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let context = PolicyValidationContext { data: self.data.clone() };
+        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
+        let context = PolicyValidationContext { data: self.data.clone(), need_init_sid };
 
         self.magic
             .validate(&context)

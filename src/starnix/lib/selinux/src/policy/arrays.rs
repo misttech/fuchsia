@@ -789,8 +789,12 @@ pub(super) struct DeprecatedFilenameTransitionMetadata {
 
 impl Validate for SimpleArray<InitialSid> {
     type Error = anyhow::Error;
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         for initial_sid in crate::InitialSid::all_variants() {
+            if *initial_sid == crate::InitialSid::Init && !context.need_init_sid {
+                continue;
+            }
             self.data
                 .iter()
                 .find(|initial| initial.id().get() == *initial_sid as u32)

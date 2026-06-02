@@ -30,7 +30,9 @@ use linux_uapi::{
     perf_type_id_PERF_TYPE_HARDWARE, perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_RAW,
     perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
 };
-use selinux::{FileSystemMountOptions, SecurityId, SecurityPermission, SecurityServer, TaskAttrs};
+use selinux::{
+    FileSystemMountOptions, InitialSid, SecurityId, SecurityPermission, SecurityServer, TaskAttrs,
+};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::arc_key::WeakKey;
@@ -1402,14 +1404,22 @@ pub fn bprm_creds_for_exec(
     elf_state: &mut ResolvedElf,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.bprm_creds_for_exec");
-    if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::task::bprm_creds_for_exec(
-            &security_server,
-            current_task,
-            executable,
-            elf_state,
-        )
-    })
+    if let Some(state) = &current_task.kernel().security_state.state {
+        if state.has_policy() {
+            return selinux_hooks::task::bprm_creds_for_exec(
+                &state.server,
+                current_task,
+                executable,
+                elf_state,
+            );
+        } else {
+            // SELinux is enabled but not yet configured, so apply the "init" SID.
+            let previous_sid = current_task.current_creds().security_state.current_sid;
+            elf_state.creds.security_state =
+                TaskAttrs::for_transition(InitialSid::Init.into(), previous_sid);
+        }
+    }
+    Ok(())
 }
 
 /// Called during `exec()`, immediately before the `elf_state.creds` are applied to the calling
@@ -2309,7 +2319,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn no_state_update_for_selinux_disabled() {
+    async fn exec_no_state_update_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             let target_sid = InitialSid::Unlabeled.into();
 
@@ -2333,12 +2343,14 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn no_state_update_for_selinux_without_policy() {
+    async fn exec_initial_context_for_selinux_without_policy() {
         spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
-            let initial_state = current_task.current_creds().security_state.clone();
             let elf_sid = InitialSid::Unlabeled.into();
-
-            assert_ne!(elf_sid, selinux_hooks::current_task_state(current_task).current_sid);
+            assert_ne!(selinux_hooks::current_task_state(current_task).current_sid, elf_sid);
+            assert_ne!(
+                selinux_hooks::current_task_state(current_task).current_sid,
+                InitialSid::Init.into()
+            );
 
             // Set exec_sid to cause the hook to apply a transition, to verify if it is updated or not.
             testing::mutate_attrs_for_test(current_task, |attrs| {
@@ -2350,14 +2362,14 @@ mod tests {
                 testing::make_resolved_elf(locked, current_task, executable.clone());
 
             bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
-            // Verify that the current_sid has not changed.
-            assert_eq!(resolved_elf.creds.security_state.current_sid, initial_state.current_sid);
+
+            assert_eq!(resolved_elf.creds.security_state.current_sid, InitialSid::Init.into());
         })
         .await;
     }
 
     #[fuchsia::test]
-    async fn state_update_for_permissive_mode() {
+    async fn exec_state_update_for_permissive_mode() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
                 security_server.set_enforcing(false);

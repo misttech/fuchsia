@@ -347,6 +347,14 @@ _COMPOSITE_POLICY_PATHS = [
         ],
         "open_perms_policy",
     ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/userspace_initial_context.conf",
+        ],
+        "userspace_initial_context_policy",
+    ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [

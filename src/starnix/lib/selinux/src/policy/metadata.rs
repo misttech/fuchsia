@@ -197,7 +197,7 @@ mod tests {
     macro_rules! validate_test {
         ($parse_output:ident, $data:expr, $result:tt, $check_impl:block) => {{
             let data = Arc::new($data);
-            let context = PolicyValidationContext { data: data.clone() };
+            let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
             fn check_by_value($result: Result<(), <$parse_output as Validate>::Error>) {
                 $check_impl
             }
@@ -236,7 +236,7 @@ mod tests {
             u32::from_le_bytes(bytes.clone().as_slice().try_into().unwrap());
 
         let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
         let (magic, tail) = PolicyCursor::parse::<Magic>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
@@ -298,7 +298,7 @@ mod tests {
     fn invalid_policy_version() {
         let bytes = [(POLICYDB_VERSION_MIN - 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
@@ -311,7 +311,7 @@ mod tests {
 
         let bytes = [(POLICYDB_VERSION_MAX + 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone(), need_init_sid: false };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);

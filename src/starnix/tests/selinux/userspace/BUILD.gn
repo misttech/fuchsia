@@ -152,6 +152,7 @@ test_names = [
   "timerslack",
   "tun_tap",
   "unlabeled_fs",
+  "userspace_initial_context",
   "xattr_access",
 
   # keep-sorted end
@@ -209,6 +210,7 @@ policy_files = [
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/syslog_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/tun_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/userspace_initial_context_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/xattr_access_policy",
 ]
 

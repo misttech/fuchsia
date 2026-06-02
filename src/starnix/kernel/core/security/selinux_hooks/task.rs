@@ -234,7 +234,7 @@ pub(in crate::security) fn task_alloc_from_context(
             .security_context_to_sid(context.into())
             .map_err(|e| errno!(EINVAL, format!("{:?}", e)))?
     };
-    Ok(TaskAttrs::for_sid(sid))
+    Ok(TaskAttrs::for_transition(sid, InitialSid::Kernel.into()))
 }
 
 /// Checks if creating a task is allowed.
@@ -1117,8 +1117,8 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs =
-                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                    attrs.current_sid = current_sid;
+                    attrs.exec_sid = Some(exec_sid);
                 });
 
                 let mut resolved_elf =
@@ -1162,8 +1162,8 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs =
-                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                    attrs.current_sid = current_sid;
+                    attrs.exec_sid = Some(exec_sid);
                 });
 
                 let mut resolved_elf =
@@ -1207,8 +1207,8 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs =
-                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                    attrs.current_sid = current_sid;
+                    attrs.exec_sid = Some(exec_sid);
                 });
 
                 let mut resolved_elf =
@@ -1251,8 +1251,8 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs =
-                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                    attrs.current_sid = current_sid;
+                    attrs.exec_sid = Some(exec_sid);
                 });
 
                 let mut resolved_elf =
@@ -1289,7 +1289,7 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs = TaskAttrs::for_sid(current_sid);
+                    attrs.current_sid = current_sid;
                 });
 
                 // Since the security domain is not changing, the `noatsecure` permission is not
@@ -1332,7 +1332,7 @@ mod tests {
                     create_test_executable(locked, current_task, executable_security_context);
 
                 mutate_attrs_for_test(&current_task, |attrs| {
-                    *attrs = TaskAttrs::for_sid(current_sid);
+                    attrs.current_sid = current_sid;
                 });
 
                 // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
