@@ -15,8 +15,7 @@ use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
     NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState, SchedulingPolicy,
     SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState, ThreadGroup,
-    ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZirconThread,
-    ZombieProcess,
+    ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsString};
 use atomic_bitflags::atomic_bitflags;
@@ -1033,7 +1032,6 @@ impl Task {
         tid: tid_t,
         command: TaskCommand,
         thread_group: Arc<ThreadGroup>,
-        thread: Option<zx::Thread>,
         files: FdTable,
         mm: Option<Arc<MemoryManager>>,
         // The only case where fs should be None if when building the initial task that is the
@@ -1062,10 +1060,7 @@ impl Task {
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
                 running_state: RcuOptionBox::new(Some(TaskRunningState {
-                    thread: thread.map_or_else(
-                        || Default::default(),
-                        |thread| ZirconThread::new(Arc::new(thread)).into(),
-                    ),
+                    thread: Default::default(),
                     files,
                     mm: RcuOptionArc::new(mm),
                     fs: RcuArc::new(fs),

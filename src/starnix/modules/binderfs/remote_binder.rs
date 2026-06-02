@@ -1196,7 +1196,7 @@ mod tests {
                                 pid,
                                 process_group,
                             );
-                            Ok(TaskInfo { thread: None, thread_group, memory_manager }.into())
+                            Ok(TaskInfo { thread_group, memory_manager }.into())
                         },
                         Credentials::root(),
                     )

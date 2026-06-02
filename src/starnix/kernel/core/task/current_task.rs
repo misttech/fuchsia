@@ -1649,7 +1649,7 @@ impl CurrentTask {
         let timerslack_ns;
         let uts_ns;
 
-        let TaskInfo { thread, thread_group, memory_manager } = {
+        let TaskInfo { thread_group, memory_manager } = {
             // These variables hold the original parent in case we need to switch the parent of the
             // new task because of CLONE_PARENT.
             let weak_original_parent;
@@ -1692,7 +1692,6 @@ impl CurrentTask {
 
             if clone_thread {
                 TaskInfo {
-                    thread: None,
                     thread_group: self.thread_group().clone(),
                     memory_manager: self.mm().ok(),
                 }
@@ -1751,7 +1750,6 @@ impl CurrentTask {
             pid,
             command,
             thread_group,
-            thread,
             files,
             memory_manager,
             fs,

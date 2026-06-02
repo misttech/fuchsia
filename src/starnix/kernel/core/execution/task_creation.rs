@@ -24,11 +24,11 @@ use starnix_uapi::{errno, error, from_status_like_fdio, pid_t, rlimit};
 use std::ffi::CString;
 use std::sync::Arc;
 
-/// Result returned when creating new Zircon threads and processes for tasks.
+/// Result returned when creating new Zircon processes for tasks.
+///
+/// This does not include the task's Zircon thread. Backing threads are attached later in the task
+/// lifecycle, when creating an execution context in [`execute_task()`].
 pub struct TaskInfo {
-    /// The thread that was created for the task.
-    pub thread: Option<zx::Thread>,
-
     /// The thread group that the task should be added to.
     pub thread_group: Arc<ThreadGroup>,
 
@@ -74,7 +74,7 @@ where
         signal_actions,
     );
 
-    Ok(TaskInfo { thread: None, thread_group, memory_manager: None })
+    Ok(TaskInfo { thread_group, memory_manager: None })
 }
 
 /// Creates a process that shares half its address space with this process.
@@ -281,7 +281,7 @@ where
                 pid,
                 process_group,
             );
-            Ok(TaskInfo { thread: None, thread_group, memory_manager: None }.into())
+            Ok(TaskInfo { thread_group, memory_manager: None }.into())
         },
         Credentials::root(),
     )?;
@@ -335,7 +335,7 @@ where
     let process_group = ProcessGroup::new(pid, None);
     pids.add_process_group(process_group.clone());
 
-    let TaskInfo { thread, thread_group, memory_manager } =
+    let TaskInfo { thread_group, memory_manager } =
         task_info_factory(locked, pid, process_group.clone())?;
 
     process_group.insert(locked.cast_locked::<TaskRelease>(), &thread_group);
@@ -350,7 +350,6 @@ where
             pid,
             initial_name,
             thread_group,
-            thread,
             FdTable::default(),
             memory_manager,
             root_fs,
@@ -426,7 +425,6 @@ where
         pid,
         initial_name,
         system_task.thread_group().clone(),
-        None,
         FdTable::default(),
         mm,
         fs,
