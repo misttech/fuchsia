@@ -1560,6 +1560,21 @@ mod tests {
             LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
                 .unwrap(),
         );
+        // Synchronously fill the active circular buffer (2 data pages) to guarantee immediate dropped pages.
+        let max_payload = (*PAGE_SIZE) as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let num_msgs = max_payload / TestMessage::SIZE;
+        for _ in 0..(2 * num_msgs) {
+            let (res, now, delta) = buffer.reserve(TestMessage::SIZE).unwrap();
+            let msg = TestMessage {
+                thread_index: 0,
+                timestamp_nanos: now.into_nanos() as u64,
+                delta: delta.into_nanos() as u64,
+                data: *b"Event data\0\0",
+            };
+            res.write_at(0, &msg.to_bytes());
+            buffer.commit(res);
+        }
+
         let writers_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut handles = vec![];
 
@@ -1641,7 +1656,10 @@ mod tests {
     #[test]
     fn test_concurrent_readers_rejection() {
         #[derive(Debug)]
-        struct SleepingOutputBuffer;
+        struct SleepingOutputBuffer {
+            barrier_in_available: Arc<std::sync::Barrier>,
+            barrier_test_done: Arc<std::sync::Barrier>,
+        }
         impl Buffer for SleepingOutputBuffer {
             fn segments_count(&self) -> Result<usize, Errno> {
                 Ok(1)
@@ -1661,7 +1679,13 @@ mod tests {
                 Ok(0)
             }
             fn available(&self) -> usize {
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                // Signal the main thread that we are active and holding the read lock, and block
+                // until the main thread reaches its wait point.
+                self.barrier_in_available.wait();
+
+                // Block here until the main thread has completed its concurrent read assertion.
+                self.barrier_test_done.wait();
+
                 (*PAGE_SIZE) as usize
             }
             fn bytes_written(&self) -> usize {
@@ -1680,24 +1704,32 @@ mod tests {
                 .unwrap(),
         );
 
-        let buffer_clone1 = Arc::clone(&buffer);
-        let handle1 = std::thread::spawn(move || {
-            let mut dest = SleepingOutputBuffer;
-            let _ = buffer_clone1.read(&mut dest);
+        let barrier_in_available = Arc::new(std::sync::Barrier::new(2));
+        let barrier_test_done = Arc::new(std::sync::Barrier::new(2));
+
+        let buffer_clone = Arc::clone(&buffer);
+        let barrier_in_available_clone = Arc::clone(&barrier_in_available);
+        let barrier_test_done_clone = Arc::clone(&barrier_test_done);
+        let handle = std::thread::spawn(move || {
+            let mut dest = SleepingOutputBuffer {
+                barrier_in_available: barrier_in_available_clone,
+                barrier_test_done: barrier_test_done_clone,
+            };
+            let _ = buffer_clone.read(&mut dest);
         });
 
-        // Ensure thread 1 enters `read()` and calls `available()` where it sleeps.
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Wait until the background thread enters `available()` and is holding the read lock.
+        barrier_in_available.wait();
 
-        let buffer_clone2 = Arc::clone(&buffer);
-        let handle2 = std::thread::spawn(move || {
-            let mut dest = VecOutputBuffer::new((*PAGE_SIZE) as usize);
-            let res = buffer_clone2.read(&mut dest);
-            assert_eq!(res.unwrap_err(), starnix_uapi::errno!(EBUSY));
-        });
+        // Perform concurrent read while background thread holds `reader_active` lock.
+        let mut dest = VecOutputBuffer::new((*PAGE_SIZE) as usize);
+        let res = buffer.read(&mut dest);
+        assert_eq!(res.unwrap_err(), starnix_uapi::errno!(EBUSY));
 
-        handle2.join().unwrap();
-        handle1.join().unwrap();
+        // Signal the background thread that the assertion is done and it can proceed.
+        barrier_test_done.wait();
+
+        handle.join().unwrap();
     }
 
     #[test]
