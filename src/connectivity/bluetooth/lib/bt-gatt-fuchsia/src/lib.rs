@@ -220,6 +220,9 @@ fn to_gatt_advertising_data(
             ret.push(Uri(uri));
         }
     }
+    if let Some(name) = data.broadcast_name {
+        ret.push(BroadcastName(name));
+    }
     ret
 }
 
@@ -234,7 +237,8 @@ fn to_gatt_scan_result(peer: &fidl_le::Peer) -> bt_gatt::central::ScanResult {
             .advertising_data
             .clone()
             .map_or(Vec::new(), |d| to_gatt_advertising_data(d)),
-        advertising_sid: peer.advertising_sid.unwrap_or_default(),
+        advertising_sid: peer.advertising_sid,
+        periodic_advertising_interval: peer.periodic_advertising_interval,
     }
 }
 

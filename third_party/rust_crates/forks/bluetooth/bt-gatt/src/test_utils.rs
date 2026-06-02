@@ -3,22 +3,25 @@
 // found in the LICENSE file.
 
 use bt_common::core::{Address, AddressType};
-use futures::Stream;
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use futures::future::{Ready, ready};
+use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::future::{ready, Ready};
+use futures::stream::{FusedStream, Stream};
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::task::Poll;
+use std::task::{Poll, Waker};
 
 use bt_common::{PeerId, Uuid};
 
 use crate::central::ScanResult;
 use crate::client::CharacteristicNotification;
+
 use crate::periodic_advertising::{PeriodicAdvertising, SyncReport};
 use crate::pii::GetPeerAddr;
-use crate::server::{self, LocalService, ReadResponder, ServiceDefinition, WriteResponder};
-use crate::{GattTypes, ServerTypes, types::*};
+use crate::server::{
+    self, LocalService, NotificationType, ReadResponder, ServiceDefinition, WriteResponder,
+};
+use crate::{types::*, GattTypes, ServerTypes};
 
 #[derive(Default)]
 struct FakePeerServiceInner {
@@ -221,24 +224,47 @@ impl crate::Client<FakeTypes> for FakeClient {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Debug)]
+struct ScannedResultStreamInner {
+    results: VecDeque<Result<ScanResult>>,
+    waker: Option<Waker>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ScannedResultStreamController(Arc<Mutex<ScannedResultStreamInner>>);
+
+impl ScannedResultStreamController {
+    /// Add a single scanned result item to output from the stream.
+    pub fn add_scanned_result(&self, item: Result<ScanResult>) {
+        let mut lock = self.0.lock();
+        lock.results.push_back(item);
+        if let Some(waker) = lock.waker.take() {
+            waker.wake();
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct ScannedResultStream {
     inner: Arc<Mutex<ScannedResultStreamInner>>,
 }
 
-#[derive(Default)]
-pub struct ScannedResultStreamInner {
-    result: Option<Result<ScanResult>>,
-}
-
 impl ScannedResultStream {
+    /// Creates a new ScannedResultStream.
+    /// Client can get a ScannedResultStreamController using the `controller`
+    /// method.
     pub fn new() -> Self {
-        Self { inner: Arc::new(Mutex::new(ScannedResultStreamInner::default())) }
+        Self::default()
     }
 
-    /// Set scanned result item to output from the stream.
-    pub fn set_scanned_result(&mut self, item: Result<ScanResult>) {
-        self.inner.lock().result = Some(item);
+    pub fn controller(&self) -> ScannedResultStreamController {
+        ScannedResultStreamController(self.inner.clone())
+    }
+}
+
+impl FusedStream for ScannedResultStream {
+    fn is_terminated(&self) -> bool {
+        self.inner.lock().results.is_empty()
     }
 }
 
@@ -247,14 +273,15 @@ impl Stream for ScannedResultStream {
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let mut lock = self.inner.lock();
-        if lock.result.is_some() {
-            Poll::Ready(lock.result.take())
-        } else {
-            // Never wake up, as if we never find another result
-            Poll::Pending
+        match lock.results.pop_front() {
+            Some(result) => Poll::Ready(Some(result)),
+            None => {
+                lock.waker = Some(cx.waker().clone());
+                Poll::Pending
+            }
         }
     }
 }
@@ -345,7 +372,7 @@ impl FakeCentral {
 
 impl crate::Central<FakeTypes> for FakeCentral {
     fn scan(&self, _filters: &[crate::central::ScanFilter]) -> ScannedResultStream {
-        ScannedResultStream::new()
+        ScannedResultStream::default()
     }
 
     fn connect(&self, peer_id: PeerId) -> <FakeTypes as GattTypes>::ConnectFuture {
@@ -402,6 +429,8 @@ struct FakeServerInner {
     service_senders:
         HashMap<server::ServiceId, UnboundedSender<Result<server::ServiceEvent<FakeTypes>>>>,
     sender: UnboundedSender<FakeServerEvent>,
+    notification_peers: HashSet<PeerId>,
+    indication_peers: HashSet<PeerId>,
 }
 
 #[derive(Clone, Debug)]
@@ -429,6 +458,8 @@ impl FakeServer {
                     services: Default::default(),
                     service_senders: Default::default(),
                     sender,
+                    notification_peers: HashSet::new(),
+                    indication_peers: HashSet::new(),
                 })),
             },
             receiver,
@@ -486,6 +517,38 @@ impl FakeServer {
             }))
             .unwrap();
     }
+
+    pub fn incoming_client_configuration(
+        &self,
+        peer_id: PeerId,
+        id: server::ServiceId,
+        handle: Handle,
+        notification_type: NotificationType,
+    ) {
+        let mut inner = self.inner.lock();
+        match notification_type {
+            NotificationType::Notify => {
+                inner.notification_peers.insert(peer_id);
+            }
+            NotificationType::Indicate => {
+                inner.indication_peers.insert(peer_id);
+            }
+            NotificationType::Disable => {
+                inner.notification_peers.remove(&peer_id);
+                inner.indication_peers.remove(&peer_id);
+            }
+        }
+        inner
+            .service_senders
+            .get(&id)
+            .unwrap()
+            .unbounded_send(Ok(server::ServiceEvent::ClientConfiguration {
+                peer_id,
+                handle,
+                notification_type,
+            }))
+            .unwrap();
+    }
 }
 
 pub struct FakeLocalService {
@@ -519,16 +582,24 @@ impl LocalService<FakeTypes> for FakeLocalService {
     }
 
     fn notify(&self, characteristic: &Handle, data: &[u8], peers: &[PeerId]) {
-        self.inner
-            .lock()
-            .sender
-            .unbounded_send(FakeServerEvent::Notified {
-                service_id: self.id,
-                handle: *characteristic,
-                value: data.into(),
-                peers: peers.into(),
-            })
-            .unwrap();
+        let inner = self.inner.lock();
+        let peers_to_notify: HashSet<_> = if peers.is_empty() {
+            inner.notification_peers.clone()
+        } else {
+            peers.iter().filter(|p| inner.notification_peers.contains(p)).cloned().collect()
+        };
+
+        if !peers_to_notify.is_empty() {
+            inner
+                .sender
+                .unbounded_send(FakeServerEvent::Notified {
+                    service_id: self.id,
+                    handle: *characteristic,
+                    value: data.into(),
+                    peers: peers_to_notify.into_iter().collect(),
+                })
+                .unwrap();
+        }
     }
 
     fn indicate(
@@ -538,17 +609,25 @@ impl LocalService<FakeTypes> for FakeLocalService {
         peers: &[PeerId],
     ) -> <FakeTypes as ServerTypes>::IndicateConfirmationStream {
         let (sender, receiver) = futures::channel::mpsc::unbounded();
-        self.inner
-            .lock()
-            .sender
-            .unbounded_send(FakeServerEvent::Indicated {
-                service_id: self.id,
-                handle: *characteristic,
-                value: data.into(),
-                peers: peers.into(),
-                confirmations: sender,
-            })
-            .unwrap();
+        let inner = self.inner.lock();
+        let peers_to_indicate: HashSet<_> = if peers.is_empty() {
+            inner.indication_peers.clone()
+        } else {
+            peers.iter().filter(|p| inner.indication_peers.contains(p)).cloned().collect()
+        };
+
+        if !peers_to_indicate.is_empty() {
+            inner
+                .sender
+                .unbounded_send(FakeServerEvent::Indicated {
+                    service_id: self.id,
+                    handle: *characteristic,
+                    value: data.into(),
+                    peers: peers_to_indicate.into_iter().collect(),
+                    confirmations: sender,
+                })
+                .unwrap();
+        }
         receiver
     }
 }

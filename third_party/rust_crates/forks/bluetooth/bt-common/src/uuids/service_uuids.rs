@@ -10,8 +10,8 @@ use super::{AssignedUuid, Uuid};
 // Generated with a magic regexp: %s/ - uuid: \(......\)\n   name: \(.\+\)\n   id: \(.\+\)\n/(\1, "\2", "\3"),\r/g
 
 #[rustfmt::skip]
-lazy_static! {
-    pub static ref SERVICE_UUIDS: HashMap<Uuid, AssignedUuid> = assigned_uuid_map!(
+pub static SERVICE_UUIDS: std::sync::LazyLock<HashMap<Uuid, AssignedUuid>> = std::sync::LazyLock::new(|| {
+    assigned_uuid_map!(
 (0x1800, "Generic Access", "org.bluetooth.service.generic_access"),
 (0x1801, "Generic Attribute", "org.bluetooth.service.generic_attribute"),
 (0x1802, "Immediate Alert", "org.bluetooth.service.immediate_alert"),
@@ -81,5 +81,5 @@ lazy_static! {
 (0x1857, "Electronic Shelf Label", "org.bluetooth.service.electronic_shelf_label"),
 (0x1858, "Gaming Audio", "org.bluetooth.service.gaming_audio"),
 (0x1859, "Mesh Proxy Solicitation", "org.bluetooth.service.mesh_proxy_solicitation"),
-    );
-}
+    )
+});

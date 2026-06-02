@@ -4702,7 +4702,6 @@ rustc_library("bt-common-v0_0_1") {
 
   deps = []
   deps += [ ":futures-v0_3_31" ]
-  deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":uuid-v1_1_2" ]
 
@@ -4774,6 +4773,7 @@ rustc_library("bt-pacs-v0_0_1") {
   deps += [ ":bt-common-v0_0_1" ]
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
+  deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":pin-project-v1_1_11" ]
   deps += [ ":thiserror-v2_0_18" ]
 

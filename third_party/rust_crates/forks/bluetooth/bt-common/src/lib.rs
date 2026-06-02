@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 extern crate core as rust_core;
-#[macro_use]
-extern crate lazy_static;
 
 /// Peers are identified by ids, which should be treated as opaque by service
 /// libraries. Stack implementations should ensure that each PeerId identifies a
@@ -13,7 +11,7 @@ extern crate lazy_static;
 /// same peer as long as the PeerId was retrieved after the `Central` was
 /// instantiated. PeerIds can be valid longer than that (often if the peer is
 /// bonded)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PeerId(pub u64);
 
 impl rust_core::fmt::Display for PeerId {
@@ -21,7 +19,13 @@ impl rust_core::fmt::Display for PeerId {
         &self,
         f: &mut rust_core::fmt::Formatter<'_>,
     ) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{:x}", self.0)
+        write!(f, "{:016x}", self.0)
+    }
+}
+
+impl std::fmt::Debug for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PeerId").field(&format_args!("0x{}", self)).finish()
     }
 }
 

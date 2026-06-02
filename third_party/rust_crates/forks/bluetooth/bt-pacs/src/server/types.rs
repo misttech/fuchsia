@@ -4,11 +4,11 @@
 
 //! Define types and trait implementations specific to the PACS server.
 
-use bt_gatt::Characteristic;
 use bt_gatt::client::FromCharacteristic;
 use bt_gatt::types::{
     AttributePermissions, CharacteristicProperties, CharacteristicProperty, Handle, SecurityLevels,
 };
+use bt_gatt::Characteristic;
 
 use std::collections::HashSet;
 

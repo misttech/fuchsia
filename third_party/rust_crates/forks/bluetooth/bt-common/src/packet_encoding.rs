@@ -11,13 +11,14 @@ pub trait Decodable: ::core::marker::Sized {
 
     /// Decodes into a new object or an error, and the number of bytes that
     /// the decoding consumed.  Should attempt to consume the entire item from
-    /// the buffer in the case of an error.  If the item end cannot be determined,
-    /// return an error and consume the entirety of the bufer (`buf.len()`)
+    /// the buffer in the case of an error.  If the item end cannot be
+    /// determined, return an error and consume the entirety of the bufer
+    /// (`buf.len()`)
     fn decode(buf: &[u8]) -> (::core::result::Result<Self, Self::Error>, usize);
 
     /// Tries to decode a collection of this object concatenated in a buffer.
-    /// Returns a vector of items (or errors) and the number of bytes consumed to
-    /// decode them.
+    /// Returns a vector of items (or errors) and the number of bytes consumed
+    /// to decode them.
     /// Continues to decode items until the buffer is consumed or the max items.
     /// If None, will decode the entire buffer.
     fn decode_multiple(

@@ -11,8 +11,8 @@ use super::{AssignedUuid, Uuid};
 // With a tweak for "CO2 Concentration"
 
 #[rustfmt::skip]
-lazy_static! {
-    pub static ref CHARACTERISTIC_UUIDS: HashMap<Uuid, AssignedUuid> = assigned_uuid_map!(
+pub static CHARACTERISTIC_UUIDS: std::sync::LazyLock<HashMap<Uuid, AssignedUuid>> = std::sync::LazyLock::new(|| {
+    assigned_uuid_map!(
           (0x2900, "Characteristic Extended Properties", "org.bluetooth.descriptor.gatt.characteristic_extended_properties"),
           (0x2901, "Characteristic User Description", "org.bluetooth.descriptor.gatt.characteristic_user_description"),
           (0x2902, "Client Characteristic Configuration", "org.bluetooth.descriptor.gatt.client_characteristic_configuration"),
@@ -31,5 +31,5 @@ lazy_static! {
           (0x290F, "Complete BR-EDR Transport Block Data", "org.bluetooth.descriptor.complete_br_edr_transport_block_data"),
           (0x2910, "Observation Schedule", "org.bluetooth.descriptor.observation_schedule"),
           (0x2911, "Valid Range and Accuracy", "org.bluetooth.descriptor.valid_range_accuracy"),
-    );
-}
+    )
+});

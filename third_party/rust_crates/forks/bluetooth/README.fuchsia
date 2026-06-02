@@ -26,9 +26,17 @@ due to an issue with rules_rust not finding the workspace Cargo.toml and failing
 fx update-rustc-third-party
 
 
-The mirror should be updated using the new script, update_bluetooth.sh, included here, by
-specifying a git upstream hash.
-i.e.: ./update_bluetooth.sh c88c57d26787871904541c1beb7881f6e4b18b66
+How to roll/update this dependency:
+
+1. Run the update script with a git upstream hash:
+   $ ./update_bluetooth.sh <git_upstream_hash>
+
+2. Observe the warning logs from the script:
+   - **Missing External Crates:** If any crates are flagged as missing in Fuchsia, you MUST add them to `third_party/rust_crates/Cargo.toml` and rerun the script. This is a blocker.
+   - **Mismatched Versions:** If any crates have mismatched versions, this is a **non-blocking follow-up action**. You can proceed with the roll, but you should submit a change to the upstream `bluetooth` repository (`bluetooth.git`) to update its `rust/Cargo.toml` to match Fuchsia's versions later.
+
+3. Complete the roll by running:
+   $ fx update-rustc-third-party
 
 * Are there any restrictions to how it should be rolled?
 

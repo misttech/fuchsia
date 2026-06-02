@@ -10,6 +10,13 @@ with `cargo test` and should be passing on every commit.  Crates that use
 async features of rust are executor-agnostic - using any async executor
 should be possible.
 
+Additionally, any changes to the repository should also be formatted and
+checked for style, using the commands:
+```
+$ cargo fmt
+$ cargo check
+```
+
 ## Services
 
 Crates that implement services as defined by the published specifications.
@@ -76,9 +83,9 @@ best practices.
 
 # Important Note about User Data and Privacy
 
-As Bluetooth is often used for data sharing and can send sensitive information,
-care should be taken by integrators of this library to ensure that user data and
-privacy is maintained.
+As Bluetooth is often used for data sharing and can send sensitive
+information, care should be taken by integrators of this library to ensure
+that user data and privacy is maintained.
 
 The crates here do not store any data persistently, and identifiers are stable
 only as long as the connection is maintained.

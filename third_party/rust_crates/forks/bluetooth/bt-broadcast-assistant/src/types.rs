@@ -5,7 +5,7 @@
 use bt_bap::types::*;
 use bt_bass::types::{BigSubgroup, BisSync};
 use bt_common::core::{Address, AddressType};
-use bt_common::core::{AdvertisingSetId, PaInterval};
+use bt_common::core::{AdvertisingSetId, PeriodicAdvertisingInterval};
 use bt_common::packet_encoding::Error as PacketError;
 use std::collections::HashMap;
 
@@ -19,7 +19,7 @@ pub struct BroadcastSource {
     pub(crate) address_type: Option<AddressType>,
     pub(crate) advertising_sid: Option<AdvertisingSetId>,
     pub(crate) broadcast_id: Option<BroadcastId>,
-    pub(crate) pa_interval: Option<PaInterval>,
+    pub(crate) periodic_advertising_interval: Option<PeriodicAdvertisingInterval>,
     pub(crate) endpoint: Option<BroadcastAudioSourceEndpoint>,
 }
 
@@ -53,6 +53,14 @@ impl BroadcastSource {
         self
     }
 
+    pub fn with_periodic_advertising_interval(
+        &mut self,
+        interval: PeriodicAdvertisingInterval,
+    ) -> &mut Self {
+        self.periodic_advertising_interval = Some(interval);
+        self
+    }
+
     pub fn with_endpoint(&mut self, endpoint: BroadcastAudioSourceEndpoint) -> &mut Self {
         self.endpoint = Some(endpoint);
         self
@@ -75,8 +83,8 @@ impl BroadcastSource {
         if let Some(broadcast_id) = other.broadcast_id {
             self.broadcast_id = Some(broadcast_id);
         }
-        if let Some(pa_interval) = other.pa_interval {
-            self.pa_interval = Some(pa_interval);
+        if let Some(pa_interval) = other.periodic_advertising_interval {
+            self.periodic_advertising_interval = Some(pa_interval);
         }
         if let Some(endpoint) = &other.endpoint {
             self.endpoint = Some(endpoint.clone());

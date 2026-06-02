@@ -15,9 +15,9 @@ use bt_common::packet_encoding::Decodable;
 use bt_gatt::client::CharacteristicNotification;
 use bt_gatt::types::Error as BtGattError;
 
-use crate::client::KnownBroadcastSources;
 use crate::client::error::Error;
 use crate::client::error::ServiceError;
+use crate::client::KnownBroadcastSources;
 use crate::types::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -122,91 +122,75 @@ impl Stream for EventStream {
 
         loop {
             if let Some(item) = self.event_queue.pop_front() {
-                match item {
-                    Ok(event) => return Poll::Ready(Some(Ok(event))),
-                    Err(e) => {
-                        // If an error was received, we terminate the event stream, but send an
-                        // error to indicate why it was terminated.
-                        self.terminated = true;
-                        return Poll::Ready(Some(Err(e)));
+                // An error from a single stream will be reported, but the main EventStream
+                // will continue for other sources.
+                return Poll::Ready(Some(item));
+            }
+
+            let Some(item) = futures::ready!(self.notification_streams.poll_next_unpin(cx)) else {
+                // All notification streams have been closed. Terminate the EventStream.
+                self.terminated = true;
+                let err = Error::EventStream(Box::new(Error::Service(
+                    ServiceError::NotificationChannelClosed(format!(
+                        "All BASS GATT notification streams closed"
+                    )),
+                )));
+                return Poll::Ready(Some(Err(err)));
+            };
+
+            // One of the notification streams produced an error. Report it, but do not
+            // terminate. SelectAll will remove the faulty stream from its set.
+            let Ok(notification) = item else {
+                let err = Error::EventStream(Box::new(Error::Gatt(item.unwrap_err())));
+                return Poll::Ready(Some(Err(err)));
+            };
+
+            let char_handle = notification.handle;
+            let (Ok(new_state), _) = BroadcastReceiveState::decode(notification.value.as_slice())
+            else {
+                self.event_queue.push_back(Ok(Event::UnknownPacket));
+                continue;
+            };
+
+            let maybe_prev_state = {
+                let mut lock = self.broadcast_sources.lock();
+                lock.update_state(char_handle, new_state.clone())
+            };
+
+            // If the previous value was not empty, check if it was overwritten.
+            if let Some(ref prev_state) = maybe_prev_state {
+                if let BroadcastReceiveState::NonEmpty(prev_receive_state) = prev_state {
+                    if new_state.is_empty() || !new_state.has_same_broadcast_id(&prev_state) {
+                        self.event_queue.push_back(Ok(Event::RemovedBroadcastSource(
+                            prev_receive_state.broadcast_id,
+                        )));
                     }
                 }
             }
 
-            match self.notification_streams.poll_next_unpin(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => {
-                    let err = Error::EventStream(Box::new(Error::Service(
-                        ServiceError::NotificationChannelClosed(format!(
-                            "GATT notification stream for BRS characteristics closed"
-                        )),
+            // BRS characteristic value was updated with a new broadcast source
+            // information.
+            if let BroadcastReceiveState::NonEmpty(receive_state) = &new_state {
+                let is_new_source = match maybe_prev_state {
+                    Some(prev_state) => !new_state.has_same_broadcast_id(&prev_state),
+                    None => true,
+                };
+                if is_new_source {
+                    self.event_queue.push_back(Ok(Event::AddedBroadcastSource(
+                        receive_state.broadcast_id,
+                        receive_state.pa_sync_state,
+                        receive_state.big_encryption,
                     )));
-                    self.event_queue.push_back(Err(err));
-                }
-                Poll::Ready(Some(Err(error))) => {
-                    // Deem all errors as critical.
-                    let err = Error::EventStream(Box::new(Error::Gatt(error)));
-                    self.event_queue.push_back(Err(err));
-                }
-                Poll::Ready(Some(Ok(notification))) => {
-                    let char_handle = notification.handle;
-                    let (Ok(new_state), _) =
-                        BroadcastReceiveState::decode(notification.value.as_slice())
-                    else {
-                        self.event_queue.push_back(Ok(Event::UnknownPacket));
-                        continue;
-                    };
-
-                    let maybe_prev_state = {
-                        let mut lock = self.broadcast_sources.lock();
-                        lock.update_state(char_handle, new_state.clone())
-                    };
-
-                    let mut multi_events = VecDeque::new();
-
-                    // If the previous value was not empty, check if it was overwritten.
-                    if let Some(ref prev_state) = maybe_prev_state {
-                        if let BroadcastReceiveState::NonEmpty(prev_receive_state) = prev_state {
-                            if new_state.is_empty() || !new_state.has_same_broadcast_id(&prev_state)
-                            {
-                                multi_events.push_back(Ok(Event::RemovedBroadcastSource(
-                                    prev_receive_state.broadcast_id,
-                                )));
-                            }
-                        }
+                } else {
+                    let other_events = Event::from_broadcast_receive_state(&receive_state);
+                    for e in other_events.into_iter() {
+                        self.event_queue.push_back(Ok(e));
                     }
-
-                    // BRS characteristic value was updated with a new broadcast source
-                    // information.
-                    if let BroadcastReceiveState::NonEmpty(receive_state) = &new_state {
-                        let is_new_source = match maybe_prev_state {
-                            Some(prev_state) => !new_state.has_same_broadcast_id(&prev_state),
-                            None => true,
-                        };
-                        if is_new_source {
-                            multi_events.push_back(Ok(Event::AddedBroadcastSource(
-                                receive_state.broadcast_id,
-                                receive_state.pa_sync_state,
-                                receive_state.big_encryption,
-                            )));
-                        } else {
-                            let other_events = Event::from_broadcast_receive_state(&receive_state);
-                            for e in other_events.into_iter() {
-                                multi_events.push_back(Ok(e));
-                            }
-                        }
-                    }
-                    if multi_events.len() != 0 {
-                        self.event_queue.append(&mut multi_events);
-                        continue;
-                    }
-                    continue;
                 }
-            };
-
-            break;
+            }
+            // Continue to the top of the loop to start draining the event_queue.
+            continue;
         }
-        Poll::Pending
     }
 }
 
@@ -220,7 +204,7 @@ mod tests {
     use futures::channel::mpsc::unbounded;
 
     use bt_common::core::AddressType;
-    use bt_gatt::types::Handle;
+    use bt_gatt::types::{Error as BtGattError, GattError, Handle};
 
     #[test]
     fn poll_event_stream() {
@@ -370,5 +354,58 @@ mod tests {
 
         // Should be pending because no more events generated from notifications.
         assert!(event_streams.poll_next_unpin(&mut noop_cx).is_pending());
+    }
+
+    #[test]
+    fn error_on_one_stream_does_not_terminate_event_stream() {
+        let mut streams = SelectAll::new();
+        let (sender1, receiver1) = unbounded();
+        let (sender2, receiver2) = unbounded();
+        streams.push(receiver1.boxed());
+        streams.push(receiver2.boxed());
+
+        let source_tracker = Arc::new(Mutex::new(KnownBroadcastSources::new(HashMap::from([
+            (Handle(0x1), BroadcastReceiveState::Empty),
+            (Handle(0x2), BroadcastReceiveState::Empty),
+        ]))));
+        let mut event_streams = EventStream::new(streams, source_tracker);
+        let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
+
+        // Send an error on one stream.
+        sender1.unbounded_send(Err(BtGattError::Gatt(GattError::InvalidPdu))).expect("should send");
+
+        // We should receive the error event.
+        let polled = event_streams.poll_next_unpin(&mut noop_cx);
+        assert_matches!(polled, Poll::Ready(Some(Err(Error::EventStream(_)))));
+
+        // The stream should NOT be terminated.
+        assert!(!event_streams.is_terminated());
+        assert!(event_streams.poll_next_unpin(&mut noop_cx).is_pending());
+
+        // Send a valid notification on the other stream.
+        #[rustfmt::skip]
+        sender2
+            .unbounded_send(Ok(CharacteristicNotification {
+                handle: Handle(0x2),
+                value: vec![
+                    0x02, AddressType::Public as u8,             // source id and address type
+                    0x03, 0x04, 0x05, 0x06, 0x07, 0x08,          // address
+                    0x01, 0x02, 0x03, 0x04,                      // ad set id and broadcast id
+                    PaSyncState::Synced as u8,
+                    EncryptionStatus::NotEncrypted.raw_value(),
+                    0x00,                                        // no subgroups
+                ],
+                maybe_truncated: false,
+            }))
+            .expect("should send");
+
+        // We should be able to receive the event from the second stream.
+        let polled = event_streams.poll_next_unpin(&mut noop_cx);
+        assert_matches!(polled, Poll::Ready(Some(Ok(event))) => {
+            assert_eq!(event, Event::AddedBroadcastSource(BroadcastId::try_from(0x040302).unwrap(), PaSyncState::Synced, EncryptionStatus::NotEncrypted));
+        });
+
+        // The stream should still not be terminated.
+        assert!(!event_streams.is_terminated());
     }
 }

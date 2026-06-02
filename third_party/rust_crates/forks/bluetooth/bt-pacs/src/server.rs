@@ -30,10 +30,11 @@
 //! }
 
 use bt_common::generic_audio::ContextType;
-use bt_gatt::Server as _;
 use bt_gatt::server::LocalService;
 use bt_gatt::server::{ReadResponder, ServiceDefinition, WriteResponder};
 use bt_gatt::types::{GattError, Handle};
+use bt_gatt::Server as _;
+
 use futures::task::{Poll, Waker};
 use futures::{Future, Stream};
 use pin_project::pin_project;
@@ -41,8 +42,8 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::{
-    AudioLocations, AvailableAudioContexts, PacRecord, SinkAudioLocations, SourceAudioLocations,
-    SupportedAudioContexts,
+    AudioLocations, AvailableAudioContexts, AvailableContexts, PacRecord, SinkAudioLocations,
+    SourceAudioLocations, SupportedAudioContexts,
 };
 
 pub(crate) mod types;
@@ -135,7 +136,11 @@ impl<T: bt_gatt::ServerTypes> Stream for LocalServiceState<T> {
 
 impl<T: bt_gatt::ServerTypes> LocalServiceState<T> {
     fn is_published(&self) -> bool {
-        if let LocalServiceState::NotPublished { .. } = self { false } else { true }
+        if let LocalServiceState::NotPublished { .. } = self {
+            false
+        } else {
+            true
+        }
     }
 }
 
@@ -332,6 +337,38 @@ impl<T: bt_gatt::ServerTypes> Server<T> {
     fn is_sink_locations_handle(&self, handle: Handle) -> bool {
         self.sink_audio_locations.as_ref().map_or(false, |locations| locations.handle == handle)
     }
+
+    /// Updates available audio contexts by overwritting the previously
+    /// set available audio contexts value. If a context type is not
+    /// part of the supported audio contexts, it will be ignored and
+    /// the resulting available audio contexts would not contain that
+    /// particular type.
+    /// Returns the reference to the resulting available audio context.
+    pub fn update_available(&mut self, available: AudioContexts) -> &AvailableAudioContexts {
+        let supported = &self.supported_audio_contexts;
+        let new_sink =
+            AvailableContexts::from_iter(available.sink.intersection(&supported.sink).cloned());
+        let new_source =
+            AvailableContexts::from_iter(available.source.intersection(&supported.source).cloned());
+
+        let changed = self.available_audio_contexts.sink != new_sink
+            || self.available_audio_contexts.source != new_source;
+
+        self.available_audio_contexts.sink = new_sink;
+        self.available_audio_contexts.source = new_source;
+
+        if !changed {
+            return &self.available_audio_contexts;
+        }
+        if let LocalServiceState::Published { service, .. } = &self.local_service {
+            service.notify(
+                &AVAILABLE_AUDIO_CONTEXTS_HANDLE,
+                &self.available_audio_contexts.into_char_value(),
+                &[],
+            );
+        }
+        &self.available_audio_contexts
+    }
 }
 
 impl<T: bt_gatt::ServerTypes> Stream for Server<T> {
@@ -377,15 +414,13 @@ impl<T: bt_gatt::ServerTypes> Stream for Server<T> {
                     responder.respond(&value[offset..]);
                     continue;
                 }
-                // TODO(b/309015071): support optional writes.
+                // TODO(b/335293412): support optional writes.
                 Write { responder, .. } => {
                     responder.error(GattError::WriteNotPermitted);
                     continue;
                 }
-                // TODO(b/309015071): implement notify since it's mandatory.
-                ClientConfiguration { .. } => {
-                    unimplemented!();
-                }
+                // We don't do anything complex with ClientConfiguration for now.
+                ClientConfiguration { .. } => continue,
                 _ => continue,
             }
         }
@@ -396,15 +431,16 @@ impl<T: bt_gatt::ServerTypes> Stream for Server<T> {
 mod tests {
     use super::*;
 
-    use bt_common::PeerId;
     use bt_common::core::{CodecId, CodingFormat};
-    use bt_common::generic_audio::AudioLocation;
     use bt_common::generic_audio::codec_capabilities::*;
+    use bt_common::generic_audio::AudioLocation;
+    use bt_common::PeerId;
     use bt_gatt::server;
+    use bt_gatt::server::NotificationType;
     use bt_gatt::test_utils::{FakeServer, FakeServerEvent, FakeTypes};
     use bt_gatt::types::ServiceKind;
-    use futures::{FutureExt, StreamExt};
 
+    use futures::{FutureExt, StreamExt};
     use std::collections::HashSet;
 
     use crate::AvailableContexts;
@@ -413,7 +449,7 @@ mod tests {
     // - 1 sink and 1 source PAC characteristics
     // - sink audio locations
     fn default_server_builder() -> ServerBuilder {
-        let builder = ServerBuilder::new()
+        ServerBuilder::new()
             .add_sink(vec![PacRecord {
                 codec_id: CodecId::Assigned(CodingFormat::ALawLog),
                 codec_specific_capabilities: vec![CodecCapability::SupportedFrameDurations(
@@ -440,8 +476,7 @@ mod tests {
                     metadata: vec![],
                 },
             ])
-            .add_source(vec![]);
-        builder
+            .add_source(vec![])
     }
 
     #[test]
@@ -499,46 +534,37 @@ mod tests {
     #[test]
     fn build_server_error() {
         // No sink or source PACs.
-        assert!(
-            ServerBuilder::new()
-                .build::<FakeTypes>(
-                    AudioContexts::new(
-                        HashSet::from([ContextType::Conversational, ContextType::Media]),
-                        HashSet::from([ContextType::Media]),
-                    ),
-                    AudioContexts::new(HashSet::from([ContextType::Media]), HashSet::new()),
-                )
-                .is_err()
-        );
+        assert!(ServerBuilder::new()
+            .build::<FakeTypes>(
+                AudioContexts::new(
+                    HashSet::from([ContextType::Conversational, ContextType::Media]),
+                    HashSet::from([ContextType::Media]),
+                ),
+                AudioContexts::new(HashSet::from([ContextType::Media]), HashSet::new()),
+            )
+            .is_err());
 
         // Sink audio context in available not in supported.
-        assert!(
-            default_server_builder()
-                .build::<FakeTypes>(
-                    AudioContexts::new(
-                        HashSet::from([ContextType::Conversational, ContextType::Media]),
-                        HashSet::from([ContextType::Media]),
-                    ),
-                    AudioContexts::new(HashSet::from([ContextType::Alerts]), HashSet::new()),
-                )
-                .is_err()
-        );
+        assert!(default_server_builder()
+            .build::<FakeTypes>(
+                AudioContexts::new(
+                    HashSet::from([ContextType::Conversational, ContextType::Media]),
+                    HashSet::from([ContextType::Media]),
+                ),
+                AudioContexts::new(HashSet::from([ContextType::Alerts]), HashSet::new()),
+            )
+            .is_err());
 
         // Sink audio context in available not in supported.
-        assert!(
-            default_server_builder()
-                .build::<FakeTypes>(
-                    AudioContexts::new(
-                        HashSet::from([ContextType::Conversational, ContextType::Media]),
-                        HashSet::from([ContextType::Media]),
-                    ),
-                    AudioContexts::new(
-                        HashSet::from([]),
-                        HashSet::from([ContextType::EmergencyAlarm])
-                    ),
-                )
-                .is_err()
-        );
+        assert!(default_server_builder()
+            .build::<FakeTypes>(
+                AudioContexts::new(
+                    HashSet::from([ContextType::Conversational, ContextType::Media]),
+                    HashSet::from([ContextType::Media]),
+                ),
+                AudioContexts::new(HashSet::from([]), HashSet::from([ContextType::EmergencyAlarm])),
+            )
+            .is_err());
     }
 
     #[test]
@@ -638,5 +664,107 @@ mod tests {
         };
         assert_eq!(handle, available_char_handle);
         assert_eq!(value.expect("should be ok"), vec![0x04, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn update_available() {
+        let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
+
+        let mut server = default_server_builder()
+            .build::<FakeTypes>(
+                AudioContexts::new(
+                    HashSet::from([ContextType::Media, ContextType::Alerts]),
+                    HashSet::from([ContextType::Media]),
+                ),
+                AudioContexts::new(HashSet::from([ContextType::Media]), HashSet::new()),
+            )
+            .unwrap();
+
+        let (fake_gatt_server, mut event_receiver) = FakeServer::new();
+        let _ = server.publish(fake_gatt_server.clone()).expect("should succeed");
+
+        // Server should poll on local server state.
+        let Poll::Pending = server.next().poll_unpin(&mut noop_cx) else {
+            panic!("Should be pending");
+        };
+
+        // Should receive event that GATT service was published.
+        let mut event_stream = event_receiver.next();
+        let Poll::Ready(Some(FakeServerEvent::Published { id, .. })) =
+            event_stream.poll_unpin(&mut noop_cx)
+        else {
+            panic!("Should be published");
+        };
+
+        // Mimic a remote peer de-registering for notifications.
+        fake_gatt_server.incoming_client_configuration(
+            PeerId(1),
+            id,
+            AVAILABLE_AUDIO_CONTEXTS_HANDLE,
+            NotificationType::Disable,
+        );
+
+        // Update available context information.
+        let updated = server.update_available(AudioContexts {
+            sink: HashSet::from([ContextType::Alerts]),
+            source: HashSet::from([ContextType::Media, ContextType::Conversational]),
+        });
+        assert_eq!(
+            updated.sink,
+            AvailableContexts::Available(HashSet::from([ContextType::Alerts]))
+        );
+        assert_eq!(
+            updated.source,
+            AvailableContexts::Available(HashSet::from([ContextType::Media]))
+        );
+        // No event received since we haven't registered for notifications.
+        let Poll::Pending = event_stream.poll_unpin(&mut noop_cx) else {
+            panic!("No peer registered for notifications");
+        };
+
+        // Mimic a remote peer registering for notifications.
+        fake_gatt_server.incoming_client_configuration(
+            PeerId(1),
+            id,
+            AVAILABLE_AUDIO_CONTEXTS_HANDLE,
+            NotificationType::Notify,
+        );
+        // Poll on server to process client config request.
+        let Poll::Pending = server.next().poll_unpin(&mut noop_cx) else {
+            panic!("Should be pending");
+        };
+        // Update available context information.
+        let updated = server.update_available(AudioContexts {
+            sink: HashSet::from([ContextType::Media, ContextType::Alerts]),
+            source: HashSet::from([ContextType::Media]),
+        });
+        assert_eq!(
+            updated.sink,
+            AvailableContexts::Available(HashSet::from([ContextType::Media, ContextType::Alerts]))
+        );
+        assert_eq!(
+            updated.source,
+            AvailableContexts::Available(HashSet::from([ContextType::Media]))
+        );
+        // Should have notified the updated value.
+        let Poll::Ready(Some(FakeServerEvent::Notified { service_id, handle, value, peers })) =
+            event_stream.poll_unpin(&mut noop_cx)
+        else {
+            panic!("Should be notified");
+        };
+        assert_eq!(service_id, id);
+        assert_eq!(handle, AVAILABLE_AUDIO_CONTEXTS_HANDLE);
+        assert_eq!(value, vec![0x04, 0x04, 0x04, 0x00]);
+        assert_eq!(peers, vec![PeerId(1)]);
+
+        // Update available with the same context information.
+        let _ = server.update_available(AudioContexts {
+            sink: HashSet::from([ContextType::Media, ContextType::Alerts]),
+            source: HashSet::from([ContextType::Media, ContextType::Conversational]),
+        });
+        // No event received since available context hasn't changed.
+        let Poll::Pending = event_stream.poll_unpin(&mut noop_cx) else {
+            panic!("Should not be notified");
+        };
     }
 }

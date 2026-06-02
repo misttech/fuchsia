@@ -110,6 +110,7 @@ done
 # See https://github.com/bazelbuild/rules_rust/issues/3059
 
 crate_paths=rust/bt-*
+declare -A missing_external_crates
 
 for crate in ${crate_paths[@]}
 do
@@ -122,9 +123,9 @@ do
   do
     crate_name=${internal_crate_name#"rust/"}
     # For dependencies like: `bt-foo.workspace = true`
-    sed -i -e "s/$crate_name.workspace = true/$crate_name = { path = \"..\\/$crate_name\" }/" $crate/Cargo.toml
+    sed -i -e "s/$crate_name\.workspace = true/$crate_name = { path = \"..\\/$crate_name\" }/" $crate/Cargo.toml
     # For dependencies like: `bt-foo = { workspace = true, ... }`
-    sed -i -e "s/$crate_name = { workspace = true, /$crate_name = { path = \"..\\/$crate_name\", /" $crate/Cargo.toml
+    sed -i -e "s/$crate_name = { workspace = true *, /$crate_name = { path = \"..\\/$crate_name\", /" $crate/Cargo.toml
   done
 
   # Handle external crates by replacing workspace = true with the full version string.
@@ -134,18 +135,32 @@ do
     # Use | as a separator to avoid issues with special characters in the replacement string.
     sed -i -e "s|$external_crate_name.workspace = true|$full_def|" "$crate/Cargo.toml"
   done
+
+  # Check for remaining workspace = true which indicates missing external crates in Fuchsia
+  while IFS= read -r missing_crate; do
+    if [[ -n "$missing_crate" ]]; then
+      missing_external_crates[$missing_crate]=1
+    fi
+  done < <(grep -E "workspace[[:space:]]*=[[:space:]]*true" "$crate/Cargo.toml" | \
+           sed -E -n -e 's/^[[:space:]]*([a-zA-Z0-9_-]+)\.workspace.*/\1/p' \
+                     -e 's/^[[:space:]]*([a-zA-Z0-9_-]+)[[:space:]]*=[[:space:]]*\{.*workspace.*/\1/p' || true)
 done
 
 rm -r $bluetooth_mirror_dir
 mkdir $bluetooth_mirror_dir
 cp -rv rust/* $bluetooth_mirror_dir/
 
+YELLOW="\033[0;33m"
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+RESET="\033[0m"
+
 if [ ${#mismatched_crates[@]} -ne 0 ]; then
   echo ""
-  echo -e "\033[0;33m" # Yellow color for warning
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo "WARNING: Bluetooth crate dependency versions are out of sync with Fuchsia."
-  echo -e "\033[90mPlease update the versions in the bluetooth repository's rust/Cargo.toml to match.\033[0m"
+  echo -e "${YELLOW}================================================================================"
+  echo "WARNING (NON-BLOCKING FOLLOW-UP): Bluetooth crate dependency versions are out of sync with Fuchsia."
+  echo "You can proceed with the current roll, but please submit a change to the"
+  echo "upstream bluetooth repository (bluetooth.git) later to update its rust/Cargo.toml."
   echo ""
   echo "The following crates have mismatched versions:"
   for crate_name in "${!mismatched_crates[@]}"; do
@@ -156,11 +171,25 @@ if [ ${#mismatched_crates[@]} -ne 0 ]; then
   for crate_name in "${!mismatched_crates[@]}"; do
     echo "    ${external_crate_versions[$crate_name]}"
   done
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo -e "\033[0m" # Reset color
+  echo -e "================================================================================${RESET}"
 fi
 
-echo ""
-echo -e "\033[0;32mRun \`fx update-rustc-third-party\` to complete crate update. If it fails, try commenting out the targets that use the bluetooth crates and rerun the command again.\033[0m"
-echo ""
+if [ ${#missing_external_crates[@]} -ne 0 ]; then
+  echo ""
+  echo -e "${RED}================================================================================"
+  echo "WARNING (BLOCKING): Missing external crates in Fuchsia's third_party/rust_crates/Cargo.toml."
+  echo "Please add these crates to Fuchsia's third_party/rust_crates/Cargo.toml first."
+  echo ""
+  echo "The following external crates are used by Bluetooth but missing in Fuchsia:"
+  for crate_name in "${!missing_external_crates[@]}"; do
+    echo "  - $crate_name"
+  done
+  echo ""
+  echo -e "Add an entry for them in ${YELLOW}third_party/rust_crates/Cargo.toml${RED} and rerun this script."
+  echo -e "================================================================================${RESET}"
+else
+  echo ""
+  echo -e "${GREEN}Run \`fx update-rustc-third-party\` to complete crate update. If it fails, try commenting out the targets that use the bluetooth crates and rerun the command again.${RESET}"
+  echo ""
+fi
 echo "Done"

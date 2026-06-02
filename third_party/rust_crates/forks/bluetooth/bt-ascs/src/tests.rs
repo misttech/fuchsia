@@ -68,18 +68,36 @@ fn publishes() {
     assert!(poll_result.is_pending());
 }
 
+fn register_for_notification(fake_server: &mut FakeServer, peer_id: PeerId, handle: Handle) {
+    fake_server.incoming_client_configuration(
+        peer_id,
+        ASCS_SERVICE_ID,
+        handle,
+        bt_gatt::server::NotificationType::Notify,
+    );
+}
+
+// A published server with one sink and one source.
 fn published_server() -> (
     Pin<Box<AudioStreamControlServiceServer<FakeTypes>>>,
     FakeServer,
     UnboundedReceiver<FakeServerEvent>,
 ) {
     let mut ascs_server = Box::pin(AudioStreamControlServiceServer::<FakeTypes>::new(1, 1));
-    let (fake_server, events) = FakeServer::new();
+    let (mut fake_server, mut events) = FakeServer::new();
 
     let result = ascs_server.publish(&fake_server);
     assert!(result.is_ok());
 
     assert!(ascs_server.poll_next_unpin(&mut futures_test::task::noop_context()).is_pending());
+
+    assert!(matches!(expect_service_event(&mut events), FakeServerEvent::Published { .. }));
+
+    for peer_id in [PeerId(1), PeerId(2)] {
+        for handle in [Handle(1), Handle(2), Handle(3)] {
+            register_for_notification(&mut fake_server, peer_id, handle);
+        }
+    }
 
     (ascs_server, fake_server, events)
 }
@@ -90,20 +108,17 @@ fn poll_server(
     server.poll_next_unpin(&mut futures_test::task::noop_context())
 }
 
-// Ignored because we currently do nothing with operations.
-#[ignore]
 #[test]
 fn peers_are_separated() {
     let (mut ascs_server, fake_server, mut server_events) = published_server();
 
     // Read the sink uuid
-    fake_server.incoming_read(PeerId(1), ASCS_SERVICE_ID, Handle(2), 0);
-
+    fake_server.incoming_read(PeerId(1), ASCS_SERVICE_ID, Handle(3), 0);
     // Poll the ascs server, should not result in an ASCS event
     assert!(poll_server(&mut ascs_server).is_pending());
 
     // Should have the response
-    let peer_one_value;
+    let mut peer_one_value;
     match server_events.poll_next_unpin(&mut futures_test::task::noop_context()) {
         Poll::Ready(Some(FakeServerEvent::ReadResponded { service_id, handle: _, value })) => {
             assert_eq!(service_id, ASCS_SERVICE_ID);
@@ -120,24 +135,174 @@ fn peers_are_separated() {
         ASCS_SERVICE_ID,
         Handle(1),
         0,
-        vec![0x01, ase_id, 0x01, 0x01, 0x06, 0x00],
+        vec![0x01, 0x01, ase_id, 0x01, 0x01, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00],
     );
 
-    // Still shouldn't have any event
+    use crate::server::ServiceEvent;
+    use crate::types::*;
+    // Should have a codec configure event to respond to
+    match poll_server(&mut ascs_server) {
+        Poll::Ready(Some(Ok(ServiceEvent::CodecConfigure { responder, .. }))) => {
+            responder.accept(
+                Framing::Unframed,
+                vec![Phy::Le1MPhy],
+                5,
+                std::time::Duration::from_millis(20).try_into().unwrap(),
+                PresentationDelayRange::build(0, 500).unwrap(),
+            );
+        }
+        x => panic!("Expected a CodecConfigure, got {x:?}"),
+    };
+
+    // Expect the write to be responded to / acknowledged and a notification from
+    // the CP handle and the Source ASE
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::WriteResponded { value, .. } => assert!(value.is_ok()),
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
     assert!(poll_server(&mut ascs_server).is_pending());
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::Notified { handle, .. } => assert_eq!(Handle(1), handle),
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::Notified { peers, handle, value, .. } => {
+            assert!(peers.contains(&PeerId(1)));
+            assert_eq!(Handle(3), handle);
+            // Should be the same ASE_ID
+            assert_eq!(value[0], ase_id);
+            assert_eq!(value[1], 0x01); // State is CodecConfigured
+            peer_one_value = value;
+        }
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
 
     // Read the sink id from another peer
-    fake_server.incoming_read(PeerId(2), ASCS_SERVICE_ID, Handle(2), 0);
+    fake_server.incoming_read(PeerId(2), ASCS_SERVICE_ID, Handle(3), 0);
+
+    assert!(poll_server(&mut ascs_server).is_pending());
+    assert!(poll_server(&mut ascs_server).is_pending());
 
     let peer_two_value;
-    match server_events.poll_next_unpin(&mut futures_test::task::noop_context()) {
-        Poll::Ready(Some(FakeServerEvent::ReadResponded { service_id, handle: _, value })) => {
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::ReadResponded { service_id, handle: _, value } => {
             assert_eq!(service_id, ASCS_SERVICE_ID);
             peer_two_value = value.unwrap();
         }
         x => panic!("Expected the read to be responded to got {x:?}"),
     };
 
-    let _ase_id = peer_two_value[0];
     assert!(peer_one_value[1] != peer_two_value[1]);
+}
+
+#[test]
+fn invalid_operation() {
+    let (mut ascs_server, fake_server, mut server_events) = published_server();
+
+    // Read the sink uuid
+    fake_server.incoming_read(PeerId(1), ASCS_SERVICE_ID, Handle(3), 0);
+    // Poll the ascs server, should not result in an ASCS event
+    assert!(poll_server(&mut ascs_server).is_pending());
+
+    // Should have the response
+    let sink_value;
+    match server_events.poll_next_unpin(&mut futures_test::task::noop_context()) {
+        Poll::Ready(Some(FakeServerEvent::ReadResponded { service_id, handle: _, value })) => {
+            assert_eq!(service_id, ASCS_SERVICE_ID);
+            sink_value = value.unwrap();
+        }
+        x => panic!("Expected the read to be responded to got {x:?}"),
+    };
+
+    let ase_id = sink_value[0];
+
+    // Write an operation that is unknown.
+    fake_server.incoming_write(
+        PeerId(1),
+        ASCS_SERVICE_ID,
+        Handle(1),
+        0,
+        vec![0x1f, 0x01, ase_id, 0xC0, 0xDE],
+    );
+
+    // Should have nothing to respond to
+    match poll_server(&mut ascs_server) {
+        Poll::Pending => {}
+        x => panic!("Expected to still be pending, got {x:?}"),
+    };
+
+    // Expect the write to be responded to / acknowledged and a notification from
+    // the CP handle and the Source ASE
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::WriteResponded { value, .. } => assert!(value.is_ok()),
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
+    assert!(poll_server(&mut ascs_server).is_pending());
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::Notified { handle, value, peers, .. } => {
+            assert!(peers.contains(&PeerId(1)));
+            assert_eq!(Handle(1), handle);
+            // Opcode should match
+            // Number_of_ASEs should be 0xFF (Table 4.7)
+            // ASE_ID is 0x00, and Reason should be 0x00
+            assert_eq!(value, &[0x1f, 0xFF, 0x00, 0x01, 0x00]);
+        }
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
+}
+
+#[test]
+fn invalid_length() {
+    let (mut ascs_server, fake_server, mut server_events) = published_server();
+
+    // Read the sink uuid
+    fake_server.incoming_read(PeerId(1), ASCS_SERVICE_ID, Handle(3), 0);
+    // Poll the ascs server, should not result in an ASCS event
+    assert!(poll_server(&mut ascs_server).is_pending());
+
+    // Should have the response
+    let sink_value;
+    match server_events.poll_next_unpin(&mut futures_test::task::noop_context()) {
+        Poll::Ready(Some(FakeServerEvent::ReadResponded { service_id, handle: _, value })) => {
+            assert_eq!(service_id, ASCS_SERVICE_ID);
+            sink_value = value.unwrap();
+        }
+        x => panic!("Expected the read to be responded to got {x:?}"),
+    };
+
+    let ase_id = sink_value[0];
+
+    // Write an operation that is the wrong length (too short)
+    fake_server.incoming_write(
+        PeerId(1),
+        ASCS_SERVICE_ID,
+        Handle(1),
+        0,
+        vec![0x01, 0x01, ase_id, 0xC0, 0xDE],
+    );
+
+    // Should have nothing to respond to
+    match poll_server(&mut ascs_server) {
+        Poll::Pending => {}
+        x => panic!("Expected to still be pending, got {x:?}"),
+    };
+
+    // Expect the write to be responded to / acknowledged and a notification from
+    // the CP handle and the Source ASE
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::WriteResponded { value, .. } => assert!(value.is_ok()),
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
+    assert!(poll_server(&mut ascs_server).is_pending());
+    match expect_service_event(&mut server_events) {
+        FakeServerEvent::Notified { handle, value, peers, .. } => {
+            assert!(peers.contains(&PeerId(1)));
+            assert_eq!(Handle(1), handle);
+            // Opcode should match
+            // Number_of_ASEs should be 0xFF (Table 4.7)
+            // ASE_ID is 0x00, and Reason should be 0x00
+            assert_eq!(value, &[0x01, 0xFF, 0x00, 0x02, 0x00]);
+        }
+        x => panic!("Expected acknowledge of write, got {x:?}"),
+    };
 }

@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::Uuid;
-use bt_common::core::CodecId;
 use bt_common::core::ltv::LtValue;
+use bt_common::core::CodecId;
 use bt_common::generic_audio::codec_capabilities::CodecCapability;
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::generic_audio::{AudioLocation, ContextType};
 use bt_common::packet_encoding::{Decodable, Encodable};
-use bt_gatt::{Characteristic, client::FromCharacteristic};
+use bt_common::Uuid;
+use bt_gatt::{client::FromCharacteristic, Characteristic};
 
 use std::collections::HashSet;
 
@@ -303,6 +303,17 @@ pub enum AvailableContexts {
     Available(HashSet<ContextType>),
 }
 
+impl FromIterator<ContextType> for AvailableContexts {
+    fn from_iter<I: IntoIterator<Item = ContextType>>(iter: I) -> Self {
+        let types_: HashSet<_> = iter.into_iter().collect();
+        if types_.len() == 0 {
+            AvailableContexts::NotAvailable
+        } else {
+            AvailableContexts::Available(types_)
+        }
+    }
+}
+
 impl Decodable for AvailableContexts {
     type Error = bt_common::packet_encoding::Error;
 
@@ -467,12 +478,12 @@ mod tests {
     use super::*;
 
     use bt_common::{
-        Uuid,
         generic_audio::codec_capabilities::{CodecCapabilityType, SamplingFrequency},
+        Uuid,
     };
     use bt_gatt::{
-        Characteristic,
         types::{AttributePermissions, Handle},
+        Characteristic,
     };
 
     use pretty_assertions::assert_eq;

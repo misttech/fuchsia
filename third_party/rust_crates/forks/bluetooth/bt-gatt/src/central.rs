@@ -20,6 +20,7 @@ pub enum AdvertisingDatum {
     Appearance(u16),
     TxPowerLevel(i8),
     Uri(String),
+    BroadcastName(String),
 }
 
 /// Matches a single advertised attribute or condition from a Bluetooth Low
@@ -75,7 +76,8 @@ pub struct ScanResult {
     pub connectable: bool,
     pub name: PeerName,
     pub advertised: Vec<AdvertisingDatum>,
-    pub advertising_sid: u8,
+    pub advertising_sid: Option<u8>,
+    pub periodic_advertising_interval: Option<u16>,
 }
 
 pub trait Central<T: crate::GattTypes> {

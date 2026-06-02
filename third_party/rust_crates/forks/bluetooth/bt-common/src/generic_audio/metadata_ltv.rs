@@ -4,7 +4,7 @@
 
 use crate::core::ltv::LtValue;
 use crate::packet_encoding::Error as PacketError;
-use crate::{CompanyId, decodable_enum};
+use crate::{decodable_enum, CompanyId};
 
 use crate::generic_audio::ContextType;
 

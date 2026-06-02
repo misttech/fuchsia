@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::core::CodecId;
 use bt_common::core::ltv::LtValue;
+use bt_common::core::CodecId;
 use bt_common::generic_audio::codec_configuration::CodecConfiguration;
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::packet_encoding::{Decodable, Encodable, Error as PacketError};
 
 /// Broadcast_ID is a 3-byte data on the wire.
 /// Defined in BAP spec v1.0.1 section 3.7.2.1.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct BroadcastId(u32);
 
 impl BroadcastId {
@@ -24,7 +24,13 @@ impl BroadcastId {
 
 impl std::fmt::Display for BroadcastId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:#08x}", self.0)
+        write!(f, "{:08x}", self.0)
+    }
+}
+
+impl std::fmt::Debug for BroadcastId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BroadcastId").field(&format_args!("0x{}", self)).finish()
     }
 }
 
@@ -318,8 +324,8 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use bt_common::generic_audio::AudioLocation;
     use bt_common::generic_audio::codec_configuration::{FrameDuration, SamplingFrequency};
+    use bt_common::generic_audio::AudioLocation;
 
     #[test]
     fn broadcast_id() {

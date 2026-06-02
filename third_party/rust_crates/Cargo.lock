@@ -567,7 +567,6 @@ name = "bt-common"
 version = "0.0.1"
 dependencies = [
  "futures",
- "lazy_static",
  "thiserror 2.0.18",
  "uuid 1.1.2",
 ]
@@ -589,6 +588,7 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "futures",
+ "parking_lot 0.12.5",
  "pin-project",
  "thiserror 2.0.18",
 ]

@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use bt_common::packet_encoding::Decodable;
-use bt_gatt::GattTypes;
 use bt_gatt::client::{CharacteristicNotification, PeerService, ServiceCharacteristic};
 use bt_gatt::types::{CharacteristicProperty, Error as GattLibraryError, Handle};
+use bt_gatt::GattTypes;
 use futures::stream::{BoxStream, FusedStream, SelectAll, Stream, StreamExt};
 use std::task::Poll;
 
 use crate::error::{Error, ServiceError};
-use crate::types::{BATTERY_LEVEL_UUID, BatteryLevel, READ_CHARACTERISTIC_BUFFER_SIZE};
+use crate::types::{BatteryLevel, BATTERY_LEVEL_UUID, READ_CHARACTERISTIC_BUFFER_SIZE};
 
 /// Represents the termination status of a Stream.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -199,13 +199,13 @@ impl<T: GattTypes> BatteryMonitorClient<T> {
 pub(crate) mod tests {
     use super::*;
 
-    use bt_common::Uuid;
     use bt_common::packet_encoding::Error as PacketError;
+    use bt_common::Uuid;
     use bt_gatt::test_utils::{FakeClient, FakePeerService, FakeTypes};
     use bt_gatt::types::{
         AttributePermissions, Characteristic, CharacteristicProperties, GattError,
     };
-    use futures::{FutureExt, pin_mut};
+    use futures::{pin_mut, FutureExt};
 
     pub(crate) const BATTERY_LEVEL_HANDLE: Handle = Handle(0x1);
     pub(crate) fn fake_battery_service(battery_level: u8) -> FakePeerService {

@@ -15,8 +15,8 @@ bt-common = { path = "../bt-common" }
 bt-gatt = { path = "../bt-gatt" }
 futures = "=0.3.31"
 num = { version = "0.4.3", features = ["rand"] }
-parking_lot = "0.12.4"
-thiserror = "2.0.12"
+parking_lot = "0.12.5"
+thiserror = "2.0.18"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

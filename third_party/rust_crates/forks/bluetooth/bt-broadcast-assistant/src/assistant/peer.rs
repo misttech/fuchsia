@@ -15,7 +15,7 @@ use bt_bass::client::BroadcastAudioScanServiceClient;
 #[cfg(any(test, feature = "debug"))]
 use bt_bass::types::BroadcastReceiveState;
 use bt_bass::types::{BisSync, PaSync};
-use bt_common::core::PaInterval;
+use bt_common::core::PeriodicAdvertisingInterval;
 use bt_common::packet_encoding::Error as PacketError;
 use bt_common::PeerId;
 #[cfg(any(test, feature = "debug"))]
@@ -129,7 +129,9 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
                 broadcast_source.address.unwrap(),
                 broadcast_source.advertising_sid.unwrap(),
                 pa_sync,
-                broadcast_source.pa_interval.unwrap_or(PaInterval::unknown()),
+                broadcast_source
+                    .periodic_advertising_interval
+                    .unwrap_or(PeriodicAdvertisingInterval::unknown()),
                 broadcast_source.endpoint_to_big_subgroups(bis_sync).map_err(Error::PacketError)?,
             )
             .await
@@ -154,11 +156,11 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
         let pa_interval = self
             .broadcast_sources
             .get_by_broadcast_id(&broadcast_id)
-            .map(|bs| bs.pa_interval)
+            .map(|bs| bs.periodic_advertising_interval)
             .unwrap_or(None);
 
         self.bass
-            .modify_broadcast_source(broadcast_id, pa_sync, pa_interval, Some(bis_sync), None)
+            .modify_broadcast_source(broadcast_id, pa_sync, pa_interval, bis_sync, None)
             .await
             .map_err(Into::into)
     }

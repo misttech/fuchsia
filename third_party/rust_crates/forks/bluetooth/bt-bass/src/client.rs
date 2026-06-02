@@ -14,7 +14,7 @@ use log::warn;
 use parking_lot::Mutex;
 
 use bt_bap::types::BroadcastId;
-use bt_common::core::{AddressType, AdvertisingSetId, PaInterval};
+use bt_common::core::{AddressType, AdvertisingSetId, PeriodicAdvertisingInterval};
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::packet_encoding::Decodable;
 use bt_gatt::client::{CharacteristicNotification, PeerService, ServiceCharacteristic};
@@ -270,7 +270,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         advertiser_address: [u8; ADDRESS_BYTE_SIZE],
         sid: AdvertisingSetId,
         pa_sync: PaSync,
-        pa_interval: PaInterval,
+        pa_interval: PeriodicAdvertisingInterval,
         subgroups: Vec<BigSubgroup>,
     ) -> Result<(), Error> {
         let op = AddSourceOperation::new(
@@ -296,16 +296,16 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
     ///   in
     /// * `pa_interval` - updated PA interval value. If none, unknown value is
     ///   used
-    /// * `bis_sync` - desired BIG to BIS synchronization information. If empty,
-    ///   it's not updated
+    /// * `bis_map` - desired BIG to BIS synchronization update information. If
+    ///   a BIG does not exist as a key, sync for that BIG is not updated.
     /// * `metadata_map` - map of updated metadata for BIGs. If a mapping does
     ///   not exist for a BIG, that BIG's metadata is not updated
     pub async fn modify_broadcast_source(
         &self,
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
-        pa_interval: Option<PaInterval>,
-        bis_sync: Option<HashMap<SubgroupIndex, BisSync>>,
+        pa_interval: Option<PeriodicAdvertisingInterval>,
+        bis_map: HashMap<SubgroupIndex, BisSync>,
         metadata_map: Option<HashMap<SubgroupIndex, Vec<Metadata>>>,
     ) -> Result<(), Error> {
         let op = {
@@ -314,13 +314,12 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
                 .ok_or(Error::UnknownBroadcastSource(broadcast_id))?;
 
             // Update BIS_Sync param for BIGs if applicable.
-            if let Some(sync_map) = bis_sync {
-                for (big_index, group) in state.subgroups.iter_mut().enumerate() {
-                    if let Some(bis_sync) = sync_map.get(&(big_index as u8)) {
-                        group.bis_sync = bis_sync.clone();
-                    }
+            for (big_index, group) in state.subgroups.iter_mut().enumerate() {
+                if let Some(bis_sync) = bis_map.get(&(big_index as u8)) {
+                    group.bis_sync = bis_sync.clone();
                 }
             }
+
             // Update metadata for BIGs if applicable.
             if let Some(mut m) = metadata_map {
                 for (big_index, group) in state.subgroups.iter_mut().enumerate() {
@@ -347,7 +346,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
             ModifySourceOperation::new(
                 state.source_id,
                 pa_sync,
-                pa_interval.unwrap_or(PaInterval::unknown()),
+                pa_interval.unwrap_or(PeriodicAdvertisingInterval::unknown()),
                 state.subgroups,
             )
         };
@@ -737,7 +736,7 @@ mod tests {
             [0x04, 0x10, 0x00, 0x00, 0x00, 0x00],
             AdvertisingSetId(1),
             PaSync::DoNotSync,
-            PaInterval::unknown(),
+            PeriodicAdvertisingInterval::unknown(),
             vec![],
         );
         pin_mut!(op_fut);
@@ -778,8 +777,8 @@ mod tests {
         let op_fut = client.modify_broadcast_source(
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
-            Some(PaInterval(0xAAAA)),
-            None,
+            Some(PeriodicAdvertisingInterval(0xAAAA)),
+            HashMap::new(),
             None,
         );
         pin_mut!(op_fut);
@@ -827,7 +826,7 @@ mod tests {
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
             None,
-            Some(HashMap::from([(0, BisSync::sync(vec![1, 3, 5]).unwrap())])),
+            HashMap::from([(0, BisSync::sync(vec![1, 3, 5]).unwrap())]),
             Some(HashMap::from([
                 (0, vec![Metadata::BroadcastAudioImmediateRenderingFlag]),
                 (1, vec![Metadata::Language("eng".to_string())]),
@@ -835,7 +834,7 @@ mod tests {
             ])),
         );
         pin_mut!(op_fut);
-        let polled = op_fut.poll_unpin(&mut noop_cx);
+        let polled: Poll<Result<(), Error>> = op_fut.poll_unpin(&mut noop_cx);
         assert_matches!(polled, Poll::Ready(Ok(_)));
     }
 
@@ -849,7 +848,7 @@ mod tests {
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
             None,
-            None,
+            HashMap::new(),
             None,
         );
         pin_mut!(op_fut);

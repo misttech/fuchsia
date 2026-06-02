@@ -12,8 +12,8 @@ bt-common = { path = "../bt-common" }
 
 ### Others
 futures = "=0.3.31"
-parking_lot = "0.12.4"
-thiserror = "2.0.12"
+parking_lot = "0.12.5"
+thiserror = "2.0.18"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

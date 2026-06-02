@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::packet_encoding::Decodable;
+use bt_common::packet_encoding::{Decodable, Encodable};
 use bt_common::{codable_as_bitmask, decodable_enum};
 use thiserror::Error;
 
@@ -28,8 +28,8 @@ pub enum Error {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseCode {
     Success { ase_id: AseId },
-    UnsupportedOpcode,
-    InvalidLength,
+    UnsupportedOpcode { opcode_byte: u8 },
+    InvalidLength { opcode_byte: u8 },
     InvalidAseId { value: u8 },
     InvalidAseStateMachineTransition { ase_id: AseId },
     InvalidAseDirection { ase_id: AseId },
@@ -44,8 +44,8 @@ impl ResponseCode {
     fn to_code(&self) -> u8 {
         match self {
             ResponseCode::Success { .. } => 0x00,
-            ResponseCode::UnsupportedOpcode => 0x01,
-            ResponseCode::InvalidLength => 0x02,
+            ResponseCode::UnsupportedOpcode { .. } => 0x01,
+            ResponseCode::InvalidLength { .. } => 0x02,
             ResponseCode::InvalidAseId { .. } => 0x03,
             ResponseCode::InvalidAseStateMachineTransition { .. } => 0x04,
             ResponseCode::InvalidAseDirection { .. } => 0x05,
@@ -65,6 +65,22 @@ impl ResponseCode {
         }
     }
 
+    pub fn invalid_length() -> Self {
+        Self::invalid_length_opcode(0)
+    }
+
+    pub fn invalid_length_opcode(opcode_byte: u8) -> Self {
+        Self::InvalidLength { opcode_byte }
+    }
+
+    pub fn unsupported_opcode(opcode_byte: u8) -> Self {
+        Self::UnsupportedOpcode { opcode_byte }
+    }
+
+    pub(crate) fn is_invalid_length(&self) -> bool {
+        matches!(self, Self::InvalidLength { .. })
+    }
+
     fn reason_byte(&self) -> u8 {
         match self {
             ResponseCode::ConfigurationParameterValue { reason, .. } => (*reason).into(),
@@ -73,9 +89,13 @@ impl ResponseCode {
         }
     }
 
-    fn ase_id_value(&self) -> u8 {
+    /// Get the ASE_ID value for this ResponseCode.  This is included in the
+    /// control point notification in response to an operation.  For
+    /// UnsupportedOpcode and InvaildLength, the ASE_ID is defined by the
+    /// spec to be 0x00.
+    pub(crate) fn ase_id_value(&self) -> u8 {
         match self {
-            ResponseCode::UnsupportedOpcode | ResponseCode::InvalidLength => 0x00,
+            ResponseCode::UnsupportedOpcode { .. } | ResponseCode::InvalidLength { .. } => 0x00,
             ResponseCode::InvalidAseId { value } => *value,
             ResponseCode::Success { ase_id }
             | ResponseCode::InvalidAseStateMachineTransition { ase_id }
@@ -85,6 +105,15 @@ impl ResponseCode {
             | ResponseCode::Metadata { ase_id, .. }
             | ResponseCode::InsufficientResources { ase_id }
             | ResponseCode::UnspecifiedError { ase_id } => (*ase_id).into(),
+        }
+    }
+
+    pub(crate) fn error_notify_value(&self) -> Vec<u8> {
+        match self {
+            Self::UnsupportedOpcode { opcode_byte } | Self::InvalidLength { opcode_byte } => {
+                [*opcode_byte, 0xFFu8].into_iter().chain(self.notify_value()).collect()
+            }
+            _ => vec![],
         }
     }
 
@@ -162,14 +191,14 @@ impl Decodable for AseId {
 
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < 1 {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         (buf[0].try_into(), 1)
     }
 }
 
 decodable_enum! {
-    pub enum AseControlPointOpcode<u8, ResponseCode, UnsupportedOpcode> {
+    pub enum AseControlPointOpcode<u8, bt_common::packet_encoding::Error, OutOfRange> {
         ConfigCodec = 0x01,
         ConfigQos = 0x02,
         Enable = 0x03,
@@ -181,14 +210,37 @@ decodable_enum! {
     }
 }
 
+impl AseControlPointOpcode {
+    pub(crate) fn allowed_in_state(&self, state: &AseState) -> bool {
+        let allowed_states: &[AseState] = match self {
+            Self::ConfigCodec { .. } => {
+                &[AseState::Idle, AseState::CodecConfigured, AseState::QosConfigured]
+            }
+            Self::ConfigQos { .. } => &[AseState::CodecConfigured, AseState::QosConfigured],
+            Self::Enable { .. } => &[AseState::QosConfigured],
+            Self::ReceiverStartReady { .. } => &[AseState::Enabling],
+            Self::ReceiverStopReady { .. } => &[AseState::Disabling],
+            Self::Disable { .. } => &[AseState::Streaming],
+            Self::UpdateMetadata { .. } => &[AseState::Enabling, AseState::Streaming],
+            Self::Release { .. } => &[
+                AseState::Enabling,
+                AseState::Streaming,
+                AseState::CodecConfigured,
+                AseState::QosConfigured,
+                AseState::Disabling,
+            ],
+        };
+        allowed_states.contains(state)
+    }
+}
+
 /// ASE Control Operations.  These can be initiated by a server or client.
 /// Defined in Table 4.6 of ASCS v1.0
-/// Marked non-exaustive as the remaining operations are RFU and new operations
-/// could arrive but should be rejected if they are not recognized.
+/// Unrecognized Operations result in Error Operations, which translate directly
+/// into an Error response.
 /// Some variants already contain responses as decoding errors are detected,
 /// i.e. invalid parameters or metadata, which will be delivered after the
 /// operation is complete with the results from the rest of the operation.
-#[non_exhaustive]
 #[derive(Debug, PartialEq, Clone)]
 pub enum AseControlOperation {
     ConfigCodec { codec_configurations: Vec<CodecConfiguration>, responses: Vec<ResponseCode> },
@@ -215,17 +267,17 @@ impl AseControlOperation {
             | Self::ConfigQos { responses, .. }
             | Self::Enable { responses, .. }
             | Self::UpdateMetadata { responses, .. } => {
-                responses.contains(&ResponseCode::InvalidLength)
+                responses.into_iter().find(|x| x.is_invalid_length()).is_some()
             }
             _ => false,
         }
     }
 }
 
-impl TryFrom<AseControlOperation> for u8 {
+impl TryFrom<&AseControlOperation> for u8 {
     type Error = Error;
 
-    fn try_from(value: AseControlOperation) -> Result<Self, Self::Error> {
+    fn try_from(value: &AseControlOperation) -> Result<Self, Self::Error> {
         match value {
             AseControlOperation::ConfigCodec { .. } => Ok(0x01),
             AseControlOperation::ConfigQos { .. } => Ok(0x02),
@@ -252,17 +304,29 @@ fn partition_results<T, E>(collection: Vec<Result<T, E>>) -> (Vec<T>, Vec<E>) {
     (oks, errs)
 }
 
+impl TryFrom<&AseControlOperation> for AseControlPointOpcode {
+    type Error = bt_common::packet_encoding::Error;
+    fn try_from(value: &AseControlOperation) -> Result<Self, Self::Error> {
+        u8::try_from(value).map_err(|_| Self::Error::OutOfRange)?.try_into()
+    }
+}
+
 impl TryFrom<Vec<u8>> for AseControlOperation {
     type Error = ResponseCode;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         if value.len() < Self::MIN_BYTE_SIZE {
-            return Err(ResponseCode::InvalidLength);
+            return Err(ResponseCode::invalid_length());
         }
-        let operation: AseControlPointOpcode = value[0].try_into()?;
+        let operation: AseControlPointOpcode = match value[0].try_into() {
+            Ok(opcode) => opcode,
+            Err(_e) => {
+                return Err(ResponseCode::unsupported_opcode(value[0]));
+            }
+        };
         let number_of_ases = value[1] as usize;
         if number_of_ases < 1 {
-            return Err(ResponseCode::InvalidLength);
+            return Err(ResponseCode::invalid_length_opcode(value[0]));
         }
         let (op, consumed) = match operation {
             AseControlPointOpcode::ConfigCodec => {
@@ -286,19 +350,25 @@ impl TryFrom<Vec<u8>> for AseControlOperation {
             AseControlPointOpcode::ReceiverStartReady => {
                 // Only InvalidLength is possible
                 let (results, consumed) = AseId::decode_multiple(&value[2..], Some(number_of_ases));
-                let ases = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>()?;
+                let Ok(ases) = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>() else {
+                    return Err(ResponseCode::invalid_length_opcode(value[0]));
+                };
                 (Self::ReceiverStartReady { ases }, consumed)
             }
             AseControlPointOpcode::Disable => {
                 // Only InvalidLength is possible
                 let (results, consumed) = AseId::decode_multiple(&value[2..], Some(number_of_ases));
-                let ases = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>()?;
+                let Ok(ases) = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>() else {
+                    return Err(ResponseCode::invalid_length_opcode(value[0]));
+                };
                 (Self::Disable { ases }, consumed)
             }
             AseControlPointOpcode::ReceiverStopReady => {
                 // Only InvalidLength is possible
                 let (results, consumed) = AseId::decode_multiple(&value[2..], Some(number_of_ases));
-                let ases = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>()?;
+                let Ok(ases) = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>() else {
+                    return Err(ResponseCode::invalid_length_opcode(value[0]));
+                };
                 (Self::ReceiverStopReady { ases }, consumed)
             }
             AseControlPointOpcode::UpdateMetadata => {
@@ -310,7 +380,9 @@ impl TryFrom<Vec<u8>> for AseControlOperation {
             AseControlPointOpcode::Release => {
                 // Only InvalidLength is possible
                 let (results, consumed) = AseId::decode_multiple(&value[2..], Some(number_of_ases));
-                let ases = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>()?;
+                let Ok(ases) = results.into_iter().collect::<Result<Vec<_>, ResponseCode>>() else {
+                    return Err(ResponseCode::invalid_length_opcode(value[0]));
+                };
                 (Self::Release { ases }, consumed)
             }
         };
@@ -320,10 +392,10 @@ impl TryFrom<Vec<u8>> for AseControlOperation {
         // the length of any variable length parameters for that operation as
         // defined in Section 5.1 through Section 5.8.
         if (consumed + 2) != value.len() {
-            return Err(ResponseCode::InvalidLength);
+            return Err(ResponseCode::invalid_length_opcode(value[0]));
         }
         if op.contains_invalid_length() {
-            return Err(ResponseCode::InvalidLength);
+            return Err(ResponseCode::invalid_length_opcode(value[0]));
         }
         Ok(op)
     }
@@ -361,6 +433,16 @@ decodable_enum! {
     }
 }
 
+impl From<TargetPhy> for Phy {
+    fn from(value: TargetPhy) -> Self {
+        match value {
+            TargetPhy::Le1MPhy => Self::Le1MPhy,
+            TargetPhy::Le2MPhy => Self::Le2MPhy,
+            TargetPhy::LeCodedPhy => Self::LeCodedPhy,
+        }
+    }
+}
+
 codable_as_bitmask!(Phy, u8);
 
 impl Phy {
@@ -388,12 +470,12 @@ impl Decodable for CodecConfiguration {
 
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_BYTE_SIZE {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let codec_specific_configuration_len = buf[Self::MIN_BYTE_SIZE - 1] as usize;
         let total_len = codec_specific_configuration_len + Self::MIN_BYTE_SIZE;
         if buf.len() < total_len {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let try_decode_fn = |buf: &[u8]| {
             let ase_id = AseId::try_from(buf[0])?;
@@ -462,7 +544,7 @@ impl Decodable for QosConfiguration {
 
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < QosConfiguration::BYTE_SIZE {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let try_decode_fn = |buf: &[u8]| {
             let ase_id = AseId::try_from(buf[0])?;
@@ -476,7 +558,7 @@ impl Decodable for QosConfiguration {
                     sdu_interval = interval;
                 }
                 (Err(bt_common::packet_encoding::Error::BufferTooSmall), _) => {
-                    return Err(ResponseCode::InvalidLength);
+                    return Err(ResponseCode::invalid_length());
                 }
                 (Err(bt_common::packet_encoding::Error::OutOfRange), _) => {
                     return Err(ResponseCode::ConfigurationParameterValue {
@@ -506,7 +588,7 @@ impl Decodable for QosConfiguration {
             let max_transport_latency =
                 MaxTransportLatency::decode(&buf[11..]).0.map_err(|e| match e {
                     bt_common::packet_encoding::Error::BufferTooSmall => {
-                        ResponseCode::InvalidLength
+                        ResponseCode::invalid_length()
                     }
                     bt_common::packet_encoding::Error::OutOfRange => {
                         ResponseCode::ConfigurationParameterValue {
@@ -546,7 +628,11 @@ impl TryFrom<u8> for CigId {
     type Error = bt_common::packet_encoding::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value > 0xEF { Err(Self::Error::OutOfRange) } else { Ok(CigId(value)) }
+        if value > 0xEF {
+            Err(Self::Error::OutOfRange)
+        } else {
+            Ok(CigId(value))
+        }
     }
 }
 
@@ -567,7 +653,11 @@ impl TryFrom<u8> for CisId {
     type Error = bt_common::packet_encoding::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value > 0xEF { Err(Self::Error::OutOfRange) } else { Ok(CisId(value)) }
+        if value > 0xEF {
+            Err(Self::Error::OutOfRange)
+        } else {
+            Ok(CisId(value))
+        }
     }
 }
 
@@ -639,7 +729,7 @@ impl MaxSdu {
 /// Max Transport Latency
 /// Valid range is [0x0005, 0x0FA0].
 /// Transmitted in little-endian, Stored in native-endian.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MaxTransportLatency(u16);
 
 impl Decodable for MaxTransportLatency {
@@ -654,6 +744,20 @@ impl Decodable for MaxTransportLatency {
             return (Err(Self::Error::OutOfRange), Self::BYTE_SIZE);
         }
         (Ok(MaxTransportLatency(val)), Self::BYTE_SIZE)
+    }
+}
+
+impl Encodable for MaxTransportLatency {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < 2 {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        [buf[0], buf[1]] = self.0.to_le_bytes();
+        Ok(())
     }
 }
 
@@ -678,7 +782,7 @@ impl MaxTransportLatency {
 /// Presentation delay parameter value being requested by the client for an ASE.
 /// This value is 24 bits long (0x00FFFFFF max)
 /// Transmitted in little-endian, Stored in native-endian.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PresentationDelay {
     pub microseconds: u32,
 }
@@ -692,10 +796,104 @@ impl Decodable for PresentationDelay {
 
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::BYTE_SIZE {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let microseconds = u32::from_le_bytes([buf[0], buf[1], buf[2], 0]);
         (Ok(PresentationDelay { microseconds }), Self::BYTE_SIZE)
+    }
+}
+
+impl Encodable for PresentationDelay {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        let encoded_le = self.microseconds.to_le_bytes();
+        [buf[0], buf[1], buf[2]] = [encoded_le[0], encoded_le[1], encoded_le[2]];
+        Ok(())
+    }
+}
+
+/// Presentation Delay Range.  Used to indicate the supported range and
+/// preferred range of the Presentation Delay parameter to be requested by the
+/// ASCS Client. Prefered Minimum must be above min, and preferred_max must be
+/// below max. Either of these being None indicates no preference.
+#[derive(Debug, Clone)]
+pub struct PresentationDelayRange {
+    min: PresentationDelay,
+    max: PresentationDelay,
+    preferred_min: Option<PresentationDelay>,
+    preferred_max: Option<PresentationDelay>,
+}
+
+impl PresentationDelayRange {
+    const BYTE_SIZE: usize = PresentationDelay::BYTE_SIZE * 4;
+    /// Make a new delay range with no preference. Returns
+    /// ResponseCode::InvalidLength if min > max or the value is out of the
+    /// acceptable range (PresentationDelay is 24 bits)
+    pub fn build(min_us: u32, max_us: u32) -> Result<Self, ResponseCode> {
+        if min_us > max_us || min_us > 0x00FFFFFF || max_us > 0x00FFFFFF {
+            return Err(ResponseCode::invalid_length());
+        }
+        Ok(Self {
+            min: PresentationDelay { microseconds: min_us },
+            max: PresentationDelay { microseconds: max_us },
+            preferred_min: None,
+            preferred_max: None,
+        })
+    }
+    /// Set the preferred range.  If the range does not fit into the supported
+    /// range, returns Err(ResponseCode::InvalidLength).
+    pub fn with_preferred(
+        &mut self,
+        min_us: Option<u32>,
+        max_us: Option<u32>,
+    ) -> Result<&mut Self, ResponseCode> {
+        self.preferred_min = match min_us {
+            Some(min_us)
+                if min_us < self.min.microseconds || max_us.is_some_and(|max| max < min_us) =>
+            {
+                return Err(ResponseCode::invalid_length());
+            }
+            Some(min_us) => Some(PresentationDelay { microseconds: min_us }),
+            None => None,
+        };
+        self.preferred_max = match max_us {
+            Some(max_us)
+                if max_us > self.max.microseconds || min_us.is_some_and(|min| min > max_us) =>
+            {
+                return Err(ResponseCode::invalid_length());
+            }
+            Some(max_us) => Some(PresentationDelay { microseconds: max_us }),
+            None => None,
+        };
+        Ok(self)
+    }
+}
+
+impl Encodable for PresentationDelayRange {
+    type Error = bt_common::packet_encoding::Error;
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        buf[0..Self::BYTE_SIZE].fill(0);
+        self.min.encode(&mut buf[0..3])?;
+        self.max.encode(&mut buf[3..6])?;
+        if let Some(pref_min) = &self.preferred_min {
+            pref_min.encode(&mut buf[6..9])?;
+        }
+        if let Some(pref_max) = &self.preferred_max {
+            pref_max.encode(&mut buf[9..12])?;
+        }
+        Ok(())
     }
 }
 
@@ -714,7 +912,7 @@ impl Decodable for AseIdWithMetadata {
 
     fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_BYTE_SIZE {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let ase_id = match AseId::try_from(buf[0]) {
             Ok(ase_id) => ase_id,
@@ -723,20 +921,22 @@ impl Decodable for AseIdWithMetadata {
         let metadata_length = buf[1] as usize;
         let total_length = Self::MIN_BYTE_SIZE + metadata_length;
         if buf.len() < total_length {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         use bt_common::core::ltv::Error as LtvError;
         use bt_common::core::ltv::LtValue;
         let (metadata_results, consumed) = Metadata::decode_all(&buf[2..2 + metadata_length]);
         if consumed != metadata_length {
-            return (Err(ResponseCode::InvalidLength), buf.len());
+            return (Err(ResponseCode::invalid_length()), buf.len());
         }
         let metadata_result: Result<Vec<Metadata>, LtvError<<Metadata as LtValue>::Type>> =
             metadata_results.into_iter().collect();
         let Ok(metadata) = metadata_result else {
             match metadata_result.unwrap_err() {
-                LtvError::MissingType => return (Err(ResponseCode::InvalidLength), buf.len()),
-                LtvError::MissingData(_) => return (Err(ResponseCode::InvalidLength), buf.len()),
+                LtvError::MissingType => return (Err(ResponseCode::invalid_length()), buf.len()),
+                LtvError::MissingData(_) => {
+                    return (Err(ResponseCode::invalid_length()), buf.len());
+                }
                 LtvError::UnrecognizedType(_, type_value) => {
                     return (
                         Err(ResponseCode::Metadata {
@@ -770,7 +970,7 @@ mod tests {
     use bt_common::packet_encoding::Encodable;
 
     use bt_common::core::ltv::LtValue;
-    use bt_common::generic_audio::{AudioLocation, codec_configuration};
+    use bt_common::generic_audio::{codec_configuration, AudioLocation};
 
     #[test]
     fn codec_configuration_roundtrip() {
@@ -830,16 +1030,12 @@ mod tests {
         let encoded_vec: Vec<u8> = encoded.into_iter().copied().collect();
         let operation = AseControlOperation::try_from(encoded_vec);
 
-        let Ok(operation) = operation else {
-            panic!("Expected decode to work correctly, got {operation:?}");
-        };
-
         assert_eq!(
             operation,
-            AseControlOperation::ConfigCodec {
+            Ok(AseControlOperation::ConfigCodec {
                 codec_configurations: vec![codec_config],
                 responses: Vec::new()
-            }
+            })
         );
     }
 
@@ -859,12 +1055,8 @@ mod tests {
         let encoded_vec: Vec<u8> = encoded.into_iter().copied().collect();
         let operation = AseControlOperation::try_from(encoded_vec);
 
-        let Ok(operation) = operation else {
-            panic!("Expected decode to work correctly, got {operation:?}");
-        };
-
         match operation {
-            AseControlOperation::ConfigCodec { codec_configurations, responses } => {
+            Ok(AseControlOperation::ConfigCodec { codec_configurations, responses }) => {
                 assert_eq!(codec_configurations, vec![codec_config]);
                 assert_eq!(responses.len(), 1);
                 assert!(matches!(responses[0], ResponseCode::ConfigurationParameterValue { .. }));
@@ -888,7 +1080,7 @@ mod tests {
         let encoded_vec: Vec<u8> = encoded.into_iter().copied().collect();
         let operation = AseControlOperation::try_from(encoded_vec);
 
-        assert_eq!(operation, Err(ResponseCode::InvalidLength));
+        assert_eq!(operation, Err(ResponseCode::invalid_length_opcode(0x01)));
     }
 
     #[test]
@@ -950,9 +1142,7 @@ mod tests {
         assert_eq!(consumed, encoded_qos.len() - 2);
         let encoded_qos: Vec<u8> = encoded_qos.into_iter().copied().collect();
         let operation = AseControlOperation::try_from(encoded_qos);
-        let Ok(_operation) = operation else {
-            panic!("Expected decode to work correctly, for {operation:?}");
-        };
+        assert!(operation.is_ok());
 
         #[rustfmt::skip]
         let encoded_qos_one_fails = &[
@@ -987,5 +1177,47 @@ mod tests {
             }
             x => panic!("Expected ConfigQos to succeed, got {x:?}"),
         };
+    }
+
+    #[test]
+    fn presentation_delay_range() {
+        // Min must be < than max, and within the right range
+        assert!(PresentationDelayRange::build(10, 1).is_err());
+        assert!(PresentationDelayRange::build(1000, 0xC0FFEE00).is_err());
+        assert!(PresentationDelayRange::build(0xC0FFEE00, 0xC0FFEE01).is_err());
+
+        let mut delay_range = PresentationDelayRange::build(1000, 2000).unwrap();
+
+        assert_eq!(delay_range.min.microseconds, 1000);
+        assert_eq!(delay_range.max.microseconds, 2000);
+
+        assert!(delay_range.with_preferred(None, None).is_ok());
+        assert_eq!(delay_range.preferred_min, None);
+        assert!(delay_range.with_preferred(Some(900), None).is_err());
+        assert_eq!(delay_range.preferred_min, None);
+        assert!(delay_range.with_preferred(Some(1500), Some(1001)).is_err());
+        assert_eq!(delay_range.preferred_min, None);
+        assert!(delay_range.with_preferred(Some(1500), None).is_ok());
+        assert_eq!(delay_range.preferred_min, Some(PresentationDelay { microseconds: 1500 }));
+        assert_eq!(delay_range.preferred_max, None);
+
+        assert!(delay_range.with_preferred(None, Some(2100)).is_err());
+        assert!(delay_range.with_preferred(Some(1801), Some(1800)).is_err());
+        assert!(delay_range.with_preferred(Some(1500), Some(1800)).is_ok());
+        assert_eq!(delay_range.preferred_min, Some(PresentationDelay { microseconds: 1500 }));
+        assert_eq!(delay_range.preferred_max, Some(PresentationDelay { microseconds: 1800 }));
+
+        let mut encoded = [0; PresentationDelayRange::BYTE_SIZE];
+        assert!(delay_range.encode(&mut encoded).is_ok());
+
+        #[rustfmt::skip]
+        let expected: &[u8; 12] = &[
+            0xE8, 0x03, 0x00, // 1000
+            0xD0, 0x07, 0x00, // 2000
+            0xDC, 0x05, 0x00, // 1500
+            0x08, 0x07, 0x00, // 1800
+        ];
+
+        assert_eq!(&encoded, expected);
     }
 }

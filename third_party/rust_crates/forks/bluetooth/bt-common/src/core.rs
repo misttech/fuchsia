@@ -60,9 +60,9 @@ impl AdvertisingSetId {
 
 /// SyncInfo Interval value which is 2 bytes long.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PaInterval(pub u16);
+pub struct PeriodicAdvertisingInterval(pub u16);
 
-impl PaInterval {
+impl PeriodicAdvertisingInterval {
     pub const BYTE_SIZE: usize = 2;
     pub const UNKNOWN_VALUE: u16 = 0xFFFF;
 
@@ -71,7 +71,7 @@ impl PaInterval {
     }
 }
 
-impl Encodable for PaInterval {
+impl Encodable for PeriodicAdvertisingInterval {
     type Error = PacketError;
 
     /// Encodees the PaInterval to 2 byte value using little endian encoding.
@@ -190,8 +190,8 @@ impl crate::packet_encoding::Decodable for CodecId {
     }
 }
 
-impl Encodable for CodecId {
-    type Error = PacketError;
+impl crate::packet_encoding::Encodable for CodecId {
+    type Error = crate::packet_encoding::Error;
 
     fn encoded_len(&self) -> core::primitive::usize {
         Self::BYTE_SIZE
@@ -244,8 +244,8 @@ mod tests {
 
     #[test]
     fn encode_pa_interval() {
-        let mut buf = [0; PaInterval::BYTE_SIZE];
-        let interval = PaInterval(0x1004);
+        let mut buf = [0; PeriodicAdvertisingInterval::BYTE_SIZE];
+        let interval = PeriodicAdvertisingInterval(0x1004);
 
         interval.encode(&mut buf[..]).expect("should succeed");
         assert_eq!(buf, [0x04, 0x10]);
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn encode_pa_interval_fails() {
         let mut buf = [0; 1]; // Not enough buffer space.
-        let interval = PaInterval(0x1004);
+        let interval = PeriodicAdvertisingInterval(0x1004);
 
         interval.encode(&mut buf[..]).expect_err("should fail");
     }

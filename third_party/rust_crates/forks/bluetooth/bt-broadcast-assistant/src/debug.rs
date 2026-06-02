@@ -18,7 +18,7 @@ use bt_common::gen_commandset;
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::PeerId;
 use bt_gatt::pii::GetPeerAddr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use futures::stream::FusedStream;
 use futures::Future;
@@ -103,7 +103,7 @@ impl<T: bt_gatt::GattTypes + 'static, R: GetPeerAddr> AssistantDebug<T, R> {
             return;
         };
         if let Err(e) = f(peer).await {
-            eprintln!("failed to perform oepration: {e:?}");
+            eprintln!("failed to perform operation: {e:?}");
         }
     }
 }
@@ -164,16 +164,43 @@ fn parse_bis_sync(input: &str) -> HashMap<SubgroupIndex, BisSync> {
             eprintln!("Failed to parse big index from '{}', ignoring.", parts[0]);
             continue;
         };
-        let Ok(bis_index) = parse_int::<u8>(parts[1]) else {
-            eprintln!("Failed to parse bis index from '{}', ignoring.", parts[1]);
-            continue;
-        };
-        let entry = map.entry(ith_big).or_insert(BisSync::no_sync());
-        if let Err(e) = entry.synchronize_to_index(bis_index) {
-            eprintln!("Invalid BIS index: {e:?}");
+        match parse_int::<u8>(parts[1]) {
+            Ok(bis_index) => {
+                let entry = map.entry(ith_big).or_insert(BisSync::no_sync());
+                if let Err(e) = entry.synchronize_to_index(bis_index) {
+                    eprintln!("Failed to set sync to BIS index: {e:?}");
+                }
+            }
+            Err(_) if parts[1] == "OFF" => {
+                map.insert(ith_big, BisSync::no_sync());
+            }
+            Err(e) => {
+                eprintln!("{e:?} - BIS index should be a number from 1-31, ignoring {}", parts[1]);
+            }
         }
     }
     map
+}
+
+/// Converts a passcode string into a 16-byte broadcast code.
+/// The string is UTF-8 encoded and then padded with zeros on the right to a
+/// total length of 16 bytes. This result is a little-endian byte array
+/// equivalent to a 128-bit value.
+fn passcode_to_broadcast_code(passcode: &str) -> Result<[u8; 16], String> {
+    if passcode.is_empty() {
+        return Err("invalid broadcast code: passcode cannot be empty".to_string());
+    }
+    let code = passcode.as_bytes();
+    if code.len() > 16 {
+        return Err(format!(
+            "invalid broadcast code: '{}'. should be at max length 16, but was {}",
+            passcode,
+            code.len()
+        ));
+    }
+    let mut broadcast_code = [0u8; 16];
+    broadcast_code[..code.len()].copy_from_slice(code);
+    Ok(broadcast_code)
 }
 
 impl<T: bt_gatt::GattTypes + 'static, R: GetPeerAddr> CommandRunner for AssistantDebug<T, R>
@@ -187,13 +214,18 @@ where
         cmd: Self::Set,
         args: Vec<String>,
     ) -> impl futures::Future<Output = Result<(), impl std::error::Error>> {
+        let help_subcommands: HashSet<&str> = HashSet::from(["help", "-h", "--help"]);
         async move {
+            if args.len() >= 1 && help_subcommands.contains(args[0].as_str()) {
+                eprintln!("usage: {}", cmd.help_simple());
+                return Ok(());
+            }
             match cmd {
                 AssistantCmd::Info => {
                     let known = self.assistant.known_broadcast_sources();
-                    eprintln!("Known Broadcast Sources:");
+                    println!("Known Broadcast Sources:");
                     for (id, s) in known {
-                        eprintln!("PeerId ({id}), source: {s:?}");
+                        println!("PeerId ({id}), source: {s:?}");
                     }
                 }
                 AssistantCmd::Connect => {
@@ -240,19 +272,16 @@ where
                         return Ok(());
                     };
 
-                    let code = args[1].as_bytes();
-                    if code.len() > 16 {
-                        eprintln!(
-                            "invalid broadcast code: {}. should be at max length 16",
-                            args[1]
-                        );
-                        return Ok(());
-                    }
-                    let mut passcode_vec = vec![0; 16];
-                    passcode_vec[16 - code.len()..16].copy_from_slice(code);
+                    let broadcast_code = match passcode_to_broadcast_code(&args[1]) {
+                        Ok(code) => code,
+                        Err(e) => {
+                            eprintln!("{e:?}");
+                            return Ok(());
+                        }
+                    };
+
                     self.with_peer(|peer| async move {
-                        peer.send_broadcast_code(broadcast_id, passcode_vec.try_into().unwrap())
-                            .await
+                        peer.send_broadcast_code(broadcast_id, broadcast_code).await
                     })
                     .await;
                 }
@@ -383,7 +412,7 @@ where
                         advertising_sid,
                     ) {
                         Ok(source) => {
-                            eprintln!("broadcast source after additional info: {source:?}")
+                            println!("broadcast source after additional info: {source:?}")
                         }
                         Err(e) => {
                             eprintln!("failed to enter in broadcast source information: {e:?}")
@@ -401,7 +430,7 @@ where
                     }
 
                     let Ok(peer_id) = parse_peer_id(&args[0]) else {
-                        println!("invalid peer id: {}", args[0]);
+                        eprintln!("invalid peer id: {}", args[0]);
                         return Ok(());
                     };
 
@@ -432,7 +461,7 @@ where
                         .assistant
                         .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
                     {
-                        Ok(source) => eprintln!("broadcast source with metadata: {source:?}"),
+                        Ok(source) => println!("broadcast source with metadata: {source:?}"),
                         Err(e) => eprintln!("failed to enter in broadcast source metadata: {e:?}"),
                     }
                 }
@@ -465,7 +494,7 @@ where
                         .assistant
                         .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
                     {
-                        Ok(source) => eprintln!("broadcast source with metadata: {source:?}"),
+                        Ok(source) => println!("broadcast source with metadata: {source:?}"),
                         Err(e) => {
                             eprintln!("failed to enter in empty broadcast source metadata: {e:?}")
                         }
@@ -524,10 +553,22 @@ mod tests {
 
     #[test]
     fn test_parse_bis_sync() {
+        // Basic case with multiple BIGs and BIS indices.
         let bis_sync = parse_bis_sync("0-1,0-2,1-1");
         assert_eq!(bis_sync.len(), 2);
         assert_eq!(bis_sync.get(&0), Some(&BisSync::sync(vec![1, 2]).unwrap()));
         assert_eq!(bis_sync.get(&1), Some(&BisSync::sync(vec![1]).unwrap()));
+
+        // Case with "OFF" to disable sync for a BIG.
+        let bis_sync = parse_bis_sync("0-1,1-OFF,0-2");
+        assert_eq!(bis_sync.len(), 2);
+        assert_eq!(bis_sync.get(&0), Some(&BisSync::sync(vec![1, 2]).unwrap()));
+        assert_eq!(bis_sync.get(&1), Some(&BisSync::no_sync()));
+
+        // Case where sync is set and then turned off for the same BIG.
+        let bis_sync = parse_bis_sync("0-5,0-OFF");
+        assert_eq!(bis_sync.len(), 1);
+        assert_eq!(bis_sync.get(&0), Some(&BisSync::no_sync()));
 
         // Will ignore invalid values.
         let bis_sync = parse_bis_sync("0-1,0-2,1:1,1-1-1,");
@@ -536,5 +577,35 @@ mod tests {
 
         let bis_sync = parse_bis_sync("hellothisistoallynotvalid");
         assert_eq!(bis_sync.len(), 0);
+    }
+
+    #[test]
+    fn test_passcode_to_broadcast_code() {
+        // UTF-8 string that is less than 16 bytes.
+        // Source of truth test case from Bluetooth Spec.
+        let code = "Børne House";
+        let expected = [
+            0x42, 0xc3, 0xb8, 0x72, 0x6e, 0x65, 0x20, 0x48, 0x6f, 0x75, 0x73, 0x65, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let actual = passcode_to_broadcast_code(code).expect("should succeed");
+        assert_eq!(actual, expected);
+        assert_eq!(u128::from_le_bytes(actual), 0x00000000_6573756F_4820656E_72B8C342);
+
+        // Valid ASCII passcode, exactly 16 bytes.
+        let code = "1234567890123456";
+        let expected = [
+            0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34,
+            0x35, 0x36,
+        ];
+        assert_eq!(passcode_to_broadcast_code(code).unwrap(), expected);
+
+        // Invalid passcode, over 16 bytes.
+        let code = "12345678901234567";
+        assert!(passcode_to_broadcast_code(code).is_err());
+
+        // Empty passcode should be an error.
+        let code = "";
+        assert!(passcode_to_broadcast_code(code).is_err());
     }
 }

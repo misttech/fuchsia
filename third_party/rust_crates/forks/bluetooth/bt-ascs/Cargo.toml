@@ -9,10 +9,10 @@ edition = "2021"
 [dependencies]
 bt-common = { path = "../bt-common" }
 bt-gatt = { path = "../bt-gatt" }
-thiserror = "2.0.12"
+thiserror = "2.0.18"
 futures = "=0.3.31"
-pin-project = "1.0.11"
-log = { version = "0.4.27", features = ["kv", "std"] }
+pin-project = "1.1"
+log = { version = "0.4.29", features = ["kv", "std"] }
 
 [dev-dependencies]
 futures-test = "=0.3.31"

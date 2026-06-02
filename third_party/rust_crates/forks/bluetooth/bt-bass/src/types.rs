@@ -4,7 +4,7 @@
 
 use bt_bap::types::BroadcastId;
 use bt_common::core::ltv::LtValue;
-use bt_common::core::{AddressType, AdvertisingSetId, PaInterval};
+use bt_common::core::{AddressType, AdvertisingSetId, PeriodicAdvertisingInterval};
 use bt_common::generic_audio::metadata_ltv::*;
 use bt_common::packet_encoding::{Decodable, Encodable, Error as PacketError};
 use bt_common::{decodable_enum, Uuid};
@@ -155,7 +155,7 @@ pub struct AddSourceOperation {
     pub(crate) advertising_sid: AdvertisingSetId,
     pub(crate) broadcast_id: BroadcastId,
     pub(crate) pa_sync: PaSync,
-    pub(crate) pa_interval: PaInterval,
+    pub(crate) pa_interval: PeriodicAdvertisingInterval,
     pub(crate) subgroups: Vec<BigSubgroup>,
 }
 
@@ -166,7 +166,7 @@ impl AddSourceOperation {
         + AdvertisingSetId::BYTE_SIZE
         + BroadcastId::BYTE_SIZE
         + PA_SYNC_BYTE_SIZE
-        + PaInterval::BYTE_SIZE
+        + PeriodicAdvertisingInterval::BYTE_SIZE
         + NUM_SUBGROUPS_BYTE_SIZE;
 
     pub fn new(
@@ -175,7 +175,7 @@ impl AddSourceOperation {
         advertising_sid: AdvertisingSetId,
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
-        pa_interval: PaInterval,
+        pa_interval: PeriodicAdvertisingInterval,
         subgroups: Vec<BigSubgroup>,
     ) -> Self {
         AddSourceOperation {
@@ -212,7 +212,8 @@ impl Decodable for AddSourceOperation {
             let advertising_sid = AdvertisingSetId(buf[8]);
             let broadcast_id = BroadcastId::decode(&buf[9..12]).0?;
             let pa_sync = PaSync::try_from(buf[12])?;
-            let pa_interval = PaInterval(u16::from_le_bytes(buf[13..15].try_into().unwrap()));
+            let pa_interval =
+                PeriodicAdvertisingInterval(u16::from_le_bytes(buf[13..15].try_into().unwrap()));
             let num_subgroups = buf[15] as usize;
             let mut subgroups = Vec::new();
 
@@ -284,7 +285,7 @@ impl Encodable for AddSourceOperation {
 pub struct ModifySourceOperation {
     source_id: SourceId,
     pa_sync: PaSync,
-    pa_interval: PaInterval,
+    pa_interval: PeriodicAdvertisingInterval,
     subgroups: Vec<BigSubgroup>,
 }
 
@@ -292,13 +293,13 @@ impl ModifySourceOperation {
     const MIN_PACKET_SIZE: usize = ControlPointOpcode::BYTE_SIZE
         + SOURCE_ID_BYTE_SIZE
         + PA_SYNC_BYTE_SIZE
-        + PaInterval::BYTE_SIZE
+        + PeriodicAdvertisingInterval::BYTE_SIZE
         + NUM_SUBGROUPS_BYTE_SIZE;
 
     pub fn new(
         source_id: SourceId,
         pa_sync: PaSync,
-        pa_interval: PaInterval,
+        pa_interval: PeriodicAdvertisingInterval,
         subgroups: Vec<BigSubgroup>,
     ) -> Self {
         ModifySourceOperation { source_id, pa_sync, pa_interval, subgroups }
@@ -323,7 +324,8 @@ impl Decodable for ModifySourceOperation {
             let _ = Self::check_opcode(buf[0])?;
             let source_id = buf[1];
             let pa_sync = PaSync::try_from(buf[2])?;
-            let pa_interval = PaInterval(u16::from_le_bytes(buf[3..5].try_into().unwrap()));
+            let pa_interval =
+                PeriodicAdvertisingInterval(u16::from_le_bytes(buf[3..5].try_into().unwrap()));
             let num_subgroups = buf[5] as usize;
             let mut subgroups = Vec::new();
 
@@ -1154,7 +1156,7 @@ mod tests {
             AdvertisingSetId(1),
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
-            PaInterval::unknown(),
+            PeriodicAdvertisingInterval::unknown(),
             vec![],
         );
         assert_eq!(op.encoded_len(), 16);
@@ -1186,7 +1188,7 @@ mod tests {
             AdvertisingSetId(1),
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::SyncPastAvailable,
-            PaInterval::unknown(),
+            PeriodicAdvertisingInterval::unknown(),
             subgroups,
         );
         assert_eq!(op.encoded_len(), 31); // 16 for minimum params and params 15 for the subgroup.
@@ -1210,8 +1212,12 @@ mod tests {
     #[test]
     fn modify_source_without_subgroups() {
         // Encoding operation with no subgroups.
-        let op =
-            ModifySourceOperation::new(0x0A, PaSync::SyncPastAvailable, PaInterval(0x1004), vec![]);
+        let op = ModifySourceOperation::new(
+            0x0A,
+            PaSync::SyncPastAvailable,
+            PeriodicAdvertisingInterval(0x1004),
+            vec![],
+        );
         assert_eq!(op.encoded_len(), 6);
         let mut buf = vec![0u8; op.encoded_len()];
         op.encode(&mut buf[..]).expect("shoud succeed");
@@ -1233,8 +1239,12 @@ mod tests {
             BigSubgroup::new(Some(BisSync(0x000000FE)))
                 .with_metadata(vec![Metadata::BroadcastAudioImmediateRenderingFlag]), /* encoded_len = 7 */
         ];
-        let op =
-            ModifySourceOperation::new(0x0B, PaSync::DoNotSync, PaInterval::unknown(), subgroups);
+        let op = ModifySourceOperation::new(
+            0x0B,
+            PaSync::DoNotSync,
+            PeriodicAdvertisingInterval::unknown(),
+            subgroups,
+        );
         assert_eq!(op.encoded_len(), 21); // 6 for minimum params and params 15 for two subgroups.
         let mut buf = vec![0u8; op.encoded_len()];
         op.encode(&mut buf[..]).expect("shoud succeed");
@@ -1340,10 +1350,8 @@ mod tests {
             broadcast_id: BroadcastId::try_from(0x00010203).unwrap(),
             pa_sync_state: PaSyncState::NotSynced,
             big_encryption: EncryptionStatus::NotEncrypted,
-            subgroups: vec![
-                BigSubgroup::new(None)
-                    .with_metadata(vec![Metadata::ParentalRating(Rating::AllAge)]), /* encoded_len = 8 */
-            ],
+            subgroups: vec![BigSubgroup::new(None)
+                .with_metadata(vec![Metadata::ParentalRating(Rating::AllAge)]) /* encoded_len = 8 */],
         });
         assert_eq!(state.encoded_len(), 23);
         let mut buf = vec![0; state.encoded_len()];

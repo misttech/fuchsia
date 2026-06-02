@@ -163,9 +163,11 @@ impl LtValue for CodecCapability {
     fn encode_value(&self, buf: &mut [u8]) -> Result<(), crate::packet_encoding::Error> {
         match self {
             CodecCapability::SupportedAudioChannelCounts(counts) => {
-                buf[0] = counts
-                    .iter()
-                    .fold(0, |acc, count| if *count > 8 { acc } else { acc | (1 << (*count - 1)) });
+                buf[0] =
+                    counts.iter().fold(
+                        0,
+                        |acc, count| if *count > 8 { acc } else { acc | (1 << (*count - 1)) },
+                    );
             }
             CodecCapability::SupportedFrameDurations(support) => {
                 buf[0] = match support {

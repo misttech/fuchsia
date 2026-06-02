@@ -243,9 +243,11 @@ fn central_search_works() {
         connectable: true,
         name: PeerName::CompleteName("Marie's Pixel 7 Pro".to_owned()),
         advertised: vec![AdvertisingDatum::Services(vec![Uuid::from_u16(0x1844)])],
-        advertising_sid: 0,
+        advertising_sid: Some(0),
+        periodic_advertising_interval: None,
     };
-    let _ = scan_results.set_scanned_result(Ok(scanned_result));
+    let controller = scan_results.controller();
+    let _ = controller.add_scanned_result(Ok(scanned_result));
 
     let polled = scan_results.poll_next_unpin(&mut noop_cx);
     assert_matches!(polled, Poll::Ready(Some(Ok(_))));

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::Uuid;
 use bt_common::packet_encoding::{Decodable, Error as PacketError};
+use bt_common::Uuid;
 
 /// The UUID of the GATT battery service.
 /// Defined in Assigned Numbers Section 3.4.2.

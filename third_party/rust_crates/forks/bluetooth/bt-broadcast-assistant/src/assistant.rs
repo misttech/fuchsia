@@ -196,7 +196,7 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
             address_type: Some(address_type),
             advertising_sid: Some(advertising_sid),
             broadcast_id: None,
-            pa_interval: None,
+            periodic_advertising_interval: None,
             endpoint: None,
         };
 
@@ -231,7 +231,7 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
             address_type: None,
             advertising_sid: None,
             broadcast_id: None,
-            pa_interval: None,
+            periodic_advertising_interval: None,
             endpoint: Some(endpoint),
         };
 
@@ -284,7 +284,7 @@ mod tests {
                 address_type: Some(AddressType::Public),
                 advertising_sid: Some(AdvertisingSetId(1)),
                 broadcast_id: Some(bid),
-                pa_interval: None,
+                periodic_advertising_interval: None,
                 endpoint: None,
             }
         );
@@ -303,7 +303,7 @@ mod tests {
                 address_type: Some(AddressType::Random),
                 advertising_sid: Some(AdvertisingSetId(1)),
                 broadcast_id: Some(bid),
-                pa_interval: None,
+                periodic_advertising_interval: None,
                 endpoint: Some(BroadcastAudioSourceEndpoint {
                     presentation_delay_ms: 32,
                     big: vec![]
