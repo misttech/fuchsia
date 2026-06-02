@@ -3304,8 +3304,9 @@ group("fuzzers") {
 }
 
 if (is_android) {
-  # gRPC BinderTransport's Java API and internal code, which cannot be handled by GN's source_set
-  # and we need manually create a android_library target for them.
+  # gRPC BinderTransport's Java API and internal code, which cannot be handled
+  # by GN's source_set and we need manually create a android_library target for
+  # them.
   android_library("binder_java_helper") {
     sources = [
       "$source_root/src/core/ext/transport/binder/java/io/grpc/binder/cpp/GrpcBinderConnection.java",

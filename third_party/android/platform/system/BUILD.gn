@@ -15,7 +15,8 @@ config("sparse-includes") {
 license("sparse_format_license") {
   public_package_name = "sparse_format"
 
-  # Extracted the license headers of sparse_defs.h and sparse_format.h into a license file.
+  # Extracted the license headers of sparse_defs.h and sparse_format.h into a
+  # license file.
   license_files = [ "SPARSE_FORMAT_LICENSE" ]
 }
 

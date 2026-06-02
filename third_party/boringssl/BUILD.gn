@@ -75,8 +75,9 @@ foreach(lib_type, lib_types) {
       # TODO(https://fxbug.dev/42138737): profile instrumentation significantly affects performance.
       configs += [ "//build/config:no_profile" ]
 
-      # boringssl should always be optimized for speed because otherwise performance is
-      # significantly worse, impacting pave and boot times on debug builds. See
+      # boringssl should always be optimized for speed because otherwise
+      # performance is significantly worse, impacting pave and boot times on
+      # debug builds. See
       # https://fxbug.dev/42133086.
       configs -= [ "//build/config:default_optimize" ]
       configs += [ "//build/config:optimize_speed" ]
@@ -98,15 +99,17 @@ foreach(lib_type, lib_types) {
       ":export_symbols",
     ]
 
-    # For this and the crypto lib, do not export symbols if building a binary for the host if
-    # building a static library. This prevents potential name conflicts if this is statically
-    # included in a .so and the .so is then used via dlopen.
+    # For this and the crypto lib, do not export symbols if building a binary
+    # for the host if building a static library. This prevents potential name
+    # conflicts if this is statically included in a .so and the .so is then used
+    # via dlopen.
     if (is_linux && lib_type == "static") {
       configs -= [ ":export_symbols" ]
     }
     deps = [ ":crypto-${lib_type}" ]
     if (is_fuchsia) {
-      # boringssl should always be optimized for speed because otherwise performance is significantly
+      # boringssl should always be optimized for speed because otherwise
+      # performance is significantly
       # worse, impacting pave and boot times on debug builds (https://fxbug.dev/42133086)
       configs -= [ "//build/config:default_optimize" ]
       configs += [ "//build/config:optimize_speed" ]
@@ -319,18 +322,19 @@ if (!is_kernel) {
     deps += [ "rust:tests" ]
   }
 
-  ################################################################################
+  # ################################################################################
   # Fuzzers
 
-  # Upstream BoringSSL defines a `fuzzers` global variable in the generated
-  # GNI files; we rename it to avoid colliding with the similarly-named parameter
-  # on the fuzzer_package.
+  # Upstream BoringSSL defines a `fuzzers` global variable in the generated GNI
+  # files; we rename it to avoid colliding with the similarly-named parameter on
+  # the fuzzer_package.
   #
   # TODO(https://fxbug.dev/42056966): Remove once `fuzzers` parameter is removed.
   fuzzer_names = fuzzers
   fuzzers = []
 
-  # Explicitly remove the arm_cpuinfo fuzzer, which tests Linux-specific routines
+  # Explicitly remove the arm_cpuinfo fuzzer, which tests Linux-specific
+  # routines
   if (is_fuchsia) {
     fuzzer_names -= [ "arm_cpuinfo" ]
   }

@@ -43,7 +43,8 @@ config("abseil_config") {
     # TODO(fxbug.dev/42055286): -Warray-parameter is failing in wyhash.cc:31.
     "-Wno-array-parameter",
 
-    # TODO(fxbug.dev/42055484): -Wdeprecated-builtins is failing in type_traits.h:293.
+    # TODO(fxbug.dev/42055484): -Wdeprecated-builtins is failing in
+    # type_traits.h:293.
     "-Wno-deprecated-builtins",
   ]
 }

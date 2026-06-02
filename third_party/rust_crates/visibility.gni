@@ -49,11 +49,12 @@ once_cell_visibility = [
   #    |\_________\   \|__|  \|_______|\|__|
   #    \|_________|
   #
-  # This is an allowlist of targets that use the `once_cell` Rust library, as
-  # of Rust 1.80, LazyLock and LazyCell are now stable which should cover most of the use
-  # cases for `once_cell.
+  # This is an allowlist of targets that use the `once_cell` Rust library, as of
+  # Rust 1.80, LazyLock and LazyCell are now stable which should cover most of
+  # the use cases for `once_cell.
   #
-  # Most of the listed in-tree dependencies on once_cell use the `get_or_try_init` method which
+  # Most of the listed in-tree dependencies on once_cell use the
+  # `get_or_try_init` method which
   # is not stable yet, see https://github.com/rust-lang/rust/issues/109737. It is expected that
   # they can be migrated over once it has stabilized in std.
   #
@@ -118,7 +119,9 @@ tracing_subscriber_visibility = [
   # go/fuchsia-rust-log
   #
   # To regenerate, run:
-  # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:tracing-subscriber' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
+  # (cd $FUCHSIA_DIR && git grep --files-with-matches
+  # '//third_party/rust_crates:tracing-subscriber' -- '*BUILD.gn' | sed
+  # 's|\(.*\)/BUILD.gn|"//\1:*",|')
 
   # At this time we are not enforcing restrictions on the below.
   "//third_party/*",
@@ -136,8 +139,8 @@ zeroize_visibility = [
   #
   # This is an allowlist of targets that use the `zeroize` Rust crate.
   #
-  # At this time only Android KeyMint is allowed to use it.
-  # Unfortunately we can't be more specific without exposing internal paths under vendor/.
+  # At this time only Android KeyMint is allowed to use it. Unfortunately we
+  # can't be more specific without exposing internal paths under vendor/.
   "//vendor/*:*",
 ]
 
@@ -153,8 +156,8 @@ openssl_visibility = [
   #
   # This is an allowlist of targets that use the `openssl` Rust crate.
   #
-  # At this time only Android KeyMint is allowed to use it.
-  # Unfortunately we can't be more specific without exposing internal paths under vendor/.
+  # At this time only Android KeyMint is allowed to use it. Unfortunately we
+  # can't be more specific without exposing internal paths under vendor/.
   "//vendor/*:*",
 ]
 
@@ -168,8 +171,8 @@ bincode_visibility = [
   #    |\_________\   \|__|  \|_______|\|__|
   #    \|_________|
   #
-  # This is an allowlist of targets that use the `bincode` Rust crate.
-  # Bincode is no longer maintained upstream, with an explanation to be found at:
+  # This is an allowlist of targets that use the `bincode` Rust crate. Bincode
+  # is no longer maintained upstream, with an explanation to be found at:
   # https://crates.io/crates/bincode/3.0.0
   # It should not be used for newer code. Please use 'rkyv' instead.
   #
@@ -190,10 +193,10 @@ regex_visibility = [
   #    |\_________\   \|__|  \|_______|\|__|
   #    \|_________|
   #
-  # This is an allowlist of targets that use the `regex` Rust crate.
-  # The regex crate often adds approximately 600KB to the size of components
-  # that use it because of its Unicode tables. Please consider using `regex-lite`
-  # if you don't need full Unicode support or if size is a concern.
+  # This is an allowlist of targets that use the `regex` Rust crate. The regex
+  # crate often adds approximately 600KB to the size of components that use it
+  # because of its Unicode tables. Please consider using `regex-lite` if you
+  # don't need full Unicode support or if size is a concern.
   #
   # To regenerate, run:
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:regex\"' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
@@ -281,6 +284,7 @@ regex_visibility = [
   "//tools/shush:*",
   "//tools/zedmon/client:*",
 
-  # Allow generic usage within vendor directories without exposing internal paths
+  # Allow generic usage within vendor directories without exposing internal
+  # paths
   "//vendor/*:*",
 ]

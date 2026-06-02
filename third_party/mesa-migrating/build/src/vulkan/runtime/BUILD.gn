@@ -27,7 +27,8 @@ config("common") {
   include_dirs = [
     "$target_gen_dir",
 
-    # Needed because generated vk_dispatch_trampolines.h includes 'vulkan/util/vk_dispatch_table.h'
+    # Needed because generated vk_dispatch_trampolines.h includes
+    # 'vulkan/util/vk_dispatch_table.h'
     "$target_gen_dir/../..",
     src_dir,
     "$mesa_source_root/src/vulkan",

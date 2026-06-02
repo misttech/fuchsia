@@ -108,8 +108,8 @@ mesa_source_set("lavapipe") {
 
   sources = [
     # target.c is not used by our sibling meson.build, but rather by
-    # //mesa/src/gallium/targets/lavapipe/meson.build.  We include it here because it's not worth
-    # creating another BUILD.gn for a single file.
+    # //mesa/src/gallium/targets/lavapipe/meson.build. We include it here
+    # because it's not worth creating another BUILD.gn for a single file.
     "$mesa_source_root/src/gallium/targets/lavapipe/lavapipe_target.c",
     "$src_dir/lvp_cmd_buffer.c",
     "$src_dir/lvp_descriptor_set.c",
@@ -154,11 +154,12 @@ mesa_source_set("lavapipe") {
 
 # Implements VK_FUCHSIA_buffer_collection.
 #
-# Unlike most ICDs, the Lavapipe ICD runs entirely on the CPU in the client process, without the
-# need to communicate with the privileged system driver.  Therefore it would seem that Magma, whose
-# job is to provide a framework to communicate with the system driver, is unnecessary in Fuchsia.
-# This is true.  However, to support VK_FUCHSIA_buffer_collection, Lavapipe must interact with
-# sysmem.  Magma provides sysmem utilities which make this job much easier.
+# Unlike most ICDs, the Lavapipe ICD runs entirely on the CPU in the client
+# process, without the need to communicate with the privileged system driver.
+# Therefore it would seem that Magma, whose job is to provide a framework to
+# communicate with the system driver, is unnecessary in Fuchsia. This is true.
+# However, to support VK_FUCHSIA_buffer_collection, Lavapipe must interact with
+# sysmem. Magma provides sysmem utilities which make this job much easier.
 mesa_source_set("fuchsia_buffer_collection_extension") {
   sources = [ "$src_dir/lvp_fuchsia_buffer_collection.c" ]
 

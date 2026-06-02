@@ -39,7 +39,8 @@
 #
 # This will end up placing the validation libraries within the package's "lib/"
 # directory, where they can be loaded like normal libraries, and place the layer
-# configuration data in the package's "data/vulkan/explicit_layer.d" directory which
+# configuration data in the package's "data/vulkan/explicit_layer.d" directory
+# which
 # is mapped to "/config/vulkan/explicit_layer.d"
 
 import("//build_overrides/vulkan_validation_layers.gni")

@@ -23,9 +23,10 @@ config("gtest_config") {
 }
 
 static_library("gtest_no_testonly") {
-  # In-tree tests should prefer //third_party/googletest:gtest because that enforces that only
-  # testonly code uses gtest. This target should be used for tests or dependencies of tests that are
-  # packaged into the SDK, since they cannot be testonly.
+  # In-tree tests should prefer //third_party/googletest:gtest because that
+  # enforces that only testonly code uses gtest. This target should be used for
+  # tests or dependencies of tests that are packaged into the SDK, since they
+  # cannot be testonly.
   visibility = [
     ":*",
     "//sdk/lib/driver/testing/cpp:*",

@@ -39,9 +39,9 @@ config("build_config") {
   defines = [
     "LLVM_AVAILABLE",
 
-    # In meson.build, this refers to the LLVM version required to support the selected features
-    # (e.g. in Lavapipe).  It is *not* the version of the LLVM we are using, although that version
-    # must be >= the value listed here.
+    # In meson.build, this refers to the LLVM version required to support the
+    # selected features (e.g. in Lavapipe). It is *not* the version of the LLVM
+    # we are using, although that version must be >= the value listed here.
     "MESA_LLVM_VERSION_STRING=\">= 17.0.0\"",
     "LLVM_IS_SHARED=0",
     "DRAW_LLVM_AVAILABLE=1",
@@ -54,10 +54,10 @@ config("build_config") {
   }
 }
 
-# Note, this should perhaps be replaced by
-# `//src/lib/llvm:LLVMHeader_config` at some point, once that one uses platform-specific headers,
-# not just the ${host_platform} ones.  This also works around a versioning problem: the sandbox
-# version of LLVM used by Mesa is newer than the prebuilt headers.
+# Note, this should perhaps be replaced by `//src/lib/llvm:LLVMHeader_config` at
+# some point, once that one uses platform-specific headers, not just the
+# ${host_platform} ones. This also works around a versioning problem: the
+# sandbox version of LLVM used by Mesa is newer than the prebuilt headers.
 config("LLVMHeader_config") {
   cflags = [ "-isystem" + rebase_path(
                  "//prebuilt/third_party/llvm/${current_platform}/include",

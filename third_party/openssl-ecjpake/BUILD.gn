@@ -13,7 +13,8 @@ source_set("openssl-ecjpake") {
   public_configs = [ ":openssl-ecjpake_config" ]
   deps = [ "//third_party/boringssl" ]
 
-  # Suppress warnings in upstream code that are triggered by Fuchsia compilation flags.
+  # Suppress warnings in upstream code that are triggered by Fuchsia compilation
+  # flags.
 }
 
 config("openssl-ecjpake_config") {
@@ -39,7 +40,8 @@ executable("openssl-ecjpake_test") {
 config("openssl-ecjpake_test_config") {
   configs = [ ":openssl-ecjpake_config" ]
 
-  # Suppress warnings in upstream code that are triggered by Fuchsia compilation flags.
+  # Suppress warnings in upstream code that are triggered by Fuchsia compilation
+  # flags.
   cflags = [
     "-Wno-error=sign-compare",
     "-Wno-conversion",

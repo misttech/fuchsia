@@ -23,7 +23,8 @@ import("../../../../mesa.gni")
 
 src_dir = "$mesa_source_root/src/gallium/auxiliary/pipe-loader"
 
-# Allow multiple source sets to be compiled with the same source code but different configs.
+# Allow multiple source sets to be compiled with the same source code but
+# different configs.
 pipe_loader_sources = [
   "$src_dir/driinfo_gallium.h",
   "$src_dir/pipe_loader.c",
@@ -62,9 +63,11 @@ config("pipe-loader-config-llvmpipe") {
   defines = [ "GALLIUM_LLVMPIPE" ]
 }
 
-# A specialized pipe-loader with the same source code but configured differently.  This accomplishes
-# the same goal as //src/gallium/drivers/llvmpipe/meson.build, where the "driver_swrast" is replaced
-# with a modified version.  GN is less flexible than Meson in this regard, so we take this approach.
+# A specialized pipe-loader with the same source code but configured
+# differently. This accomplishes the same goal as
+# //src/gallium/drivers/llvmpipe/meson.build, where the "driver_swrast" is
+# replaced with a modified version. GN is less flexible than Meson in this
+# regard, so we take this approach.
 mesa_source_set("pipe-loader-llvmpipe") {
   sources = pipe_loader_sources
   deps = pipe_loader_deps

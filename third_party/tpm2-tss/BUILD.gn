@@ -87,7 +87,8 @@ static_library("tss2-rc") {
       "//zircon/kernel/lib/libc",
     ]
     if (is_efi_toolchain) {
-      # efi tool chain doesn't have the __thread attribute. Override it to be empty.
+      # efi tool chain doesn't have the __thread attribute. Override it to be
+      # empty.
       defines = [ "__thread=" ]
     }
   }

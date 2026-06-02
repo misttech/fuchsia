@@ -29,7 +29,8 @@ mesa_source_set("fuchsia_memory_mapper") {
     "$src_dir/gallivm/lp_bld_fuchsia_memory_mapper.hpp",
   ]
   deps = [
-    # These are for marking JIT memory as executable in lp_bld_fuchsia_memory_mapper.cpp.
+    # These are for marking JIT memory as executable in
+    # lp_bld_fuchsia_memory_mapper.cpp.
     "$mesa_build_root/src/util",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
   ]
@@ -152,8 +153,9 @@ mesa_source_set("gallivm") {
     "$mesa_build_root/..:LLVMHeader_config",
   ]
 
-  # Unlike the Fuchsia default, ASAN-UBSAN builds don't have "no_rtti".  This causes problems when
-  # linking with the LLVM prebuilts, which are built without RTTI.
+  # Unlike the Fuchsia default, ASAN-UBSAN builds don't have "no_rtti". This
+  # causes problems when linking with the LLVM prebuilts, which are built
+  # without RTTI.
   if (is_ubsan) {
     configs += [ "//build/config:no_rtti" ]
   }

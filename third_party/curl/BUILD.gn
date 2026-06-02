@@ -582,8 +582,9 @@ executable("curl_bin") {
 source_set("tool_hugehelp") {
   sources = [ "tool_hugehelp.c" ]
 
-  # Because we check this in directly to fuchsia.git instead of generating it during the build, we
-  # have to tell it where to find the headers that it expects to be generated alongside.
+  # Because we check this in directly to fuchsia.git instead of generating it
+  # during the build, we have to tell it where to find the headers that it
+  # expects to be generated alongside.
   include_dirs = [
     "src/lib",
     "src/src",

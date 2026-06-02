@@ -39,7 +39,8 @@ config("compiler_config") {
 
 config("warnings") {
   cflags = [
-    # ../../third_party/mesa-migrating/src/src/intel/compiler/brw_vec4_gs_visitor.cpp:567:4: error: array designators are a C99 extension [-Werror,-Wc99-designator]
+    # ../../third_party/mesa-migrating/src/src/intel/compiler/brw_vec4_gs_visitor.cpp:567:4:
+    # error: array designators are a C99 extension [-Werror,-Wc99-designator]
     #    [GL_POINTS] =_3DPRIM_POINTLIST,
     #    ^~~~~~~~~~~
     # 1 error generated.

@@ -6,8 +6,8 @@ import("//build/host.gni")
 import("//build/zircon/migrated_targets.gni")
 
 # *NOTE*: This check is used to ensure that the Rust zstd bindings we use in
-# //third_party/rust_crates/forks/zstd-sys stays in sync with the pinned version of zstd.
-# To update our pinned version of zstd:
+# //third_party/rust_crates/forks/zstd-sys stays in sync with the pinned version
+# of zstd. To update our pinned version of zstd:
 #
 #   1. Determine if there are any incompatible API or ABI changes in the new version that
 #      are incompatible with the Rust crate in //third_party/rust_crates/forks/zstd-sys.
@@ -63,7 +63,8 @@ if (verify_rust_zstd_sys_crate_binding_version) {
             string_replace(rust_version_rel[zstd_sys_version_idx], ";", ""),
           ])
 
-  # Make sure the versions match, and if not, provide details on how to update them.
+  # Make sure the versions match, and if not, provide details on how to update
+  # them.
   assert(
       lib_version == crate_version,
       string_join(
