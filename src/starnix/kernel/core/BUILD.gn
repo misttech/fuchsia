@@ -152,6 +152,7 @@ _starnix_core_sources = [
   "task/syscalls.rs",
   "task/syslog.rs",
   "task/task.rs",
+  "task/task_running_state.rs",
   "task/thread_group.rs",
   "task/thread_lockup_detector.rs",
   "task/thread_state.rs",

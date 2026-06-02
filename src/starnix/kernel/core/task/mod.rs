@@ -24,6 +24,7 @@ mod session;
 pub(crate) mod syslog;
 #[allow(clippy::module_inception)]
 mod task;
+mod task_running_state;
 mod thread_group;
 mod thread_lockup_detector;
 mod thread_state;
@@ -50,6 +51,7 @@ pub use seccomp::*;
 pub use session::*;
 pub use syslog::*;
 pub use task::*;
+pub use task_running_state::*;
 pub use thread_group::*;
 pub use thread_lockup_detector::*;
 pub use thread_state::*;
