@@ -779,6 +779,7 @@ func runTestOnce(
 	case <-timeoutCh:
 		result.Status = runtests.TestAborted
 		timeout = outerTestTimeout
+		result.FailureReason = fmt.Sprintf("tester did not complete within %s", outerTestTimeout)
 		cancelTest()
 	}
 

@@ -255,7 +255,15 @@ func failedTest(name string, runIndex int, duration time.Duration) runtests.Test
 }
 
 func timedOutTest(name string, runIndex int, duration time.Duration) runtests.TestDetails {
-	return testDetails(name, runIndex, duration, runtests.TestAborted)
+	d := testDetails(name, runIndex, duration, runtests.TestAborted)
+	d.FailureReason = "tester did not complete within 3m30s"
+	return d
+}
+
+func gracefulTimedOutTest(name string, runIndex int, duration time.Duration) runtests.TestDetails {
+	d := testDetails(name, runIndex, duration, runtests.TestAborted)
+	d.FailureReason = "test timed out after 3m0s"
+	return d
 }
 
 func TestFilterTests(t *testing.T) {
@@ -413,6 +421,8 @@ func TestRunAndOutputTests(t *testing.T) {
 		pkgResolveFailed bool
 		// The duration that package resolution will take.
 		pkgResolutionDuration time.Duration
+		// Whether the test should time out within the tester itself.
+		gracefulTimeout bool
 	}
 
 	testCases := []struct {
@@ -481,6 +491,22 @@ func TestRunAndOutputTests(t *testing.T) {
 			},
 		},
 		{
+			name: "graceful timed out test",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo"},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {duration: perTestTimeout, gracefulTimeout: true},
+			},
+			expectedResults: []runtests.TestDetails{
+				gracefulTimedOutTest("foo", 0, perTestTimeout),
+			},
+		},
+		{
 			name: "passed test with separate package resolution timeout",
 			tests: []testsharder.Test{
 				{
@@ -525,7 +551,11 @@ func TestRunAndOutputTests(t *testing.T) {
 				"foo/0": {pkgResolutionDuration: 60 * time.Second, pkgResolveFailed: true},
 			},
 			expectedResults: []runtests.TestDetails{
-				failedTest("foo", 0, 60*time.Second),
+				func() runtests.TestDetails {
+					d := failedTest("foo", 0, 60*time.Second)
+					d.FailureReason = "failed to setup test: package resolution failed"
+					return d
+				}(),
 			},
 		},
 		{
@@ -1089,6 +1119,12 @@ func TestRunAndOutputTests(t *testing.T) {
 					} else if behavior.connErr {
 						result.Status = runtests.TestFailure
 						return result, connectionError{fmt.Errorf("conn err")}
+					}
+
+					if behavior.gracefulTimeout {
+						result.Status = runtests.TestAborted
+						result.FailureReason = fmt.Sprintf("test timed out after %s", test.Timeout)
+						return result, nil
 					}
 
 					if timeout > 0 && behavior.duration >= timeout {

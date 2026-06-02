@@ -502,6 +502,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		testResult.Status = runtests.TestSuccess
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		testResult.Status = runtests.TestAborted
+		testResult.FailureReason = fmt.Sprintf("test subprocess timed out after %s", test.Timeout)
 	} else if againstDevice() && errors.As(err, &exitErr) {
 		// Exit code 40 signals that the device is in a bad state and
 		// needs to be power-cycled. See https://fxbug.dev/425675837.
@@ -937,6 +938,7 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 		testResult.Status = runtests.TestSuccess
 	case ffxutil.TestTimedOut:
 		testResult.Status = runtests.TestAborted
+		testResult.FailureReason = fmt.Sprintf("ffx test command timed out after %s", test.Timeout)
 	case ffxutil.TestNotStarted:
 		testResult.Status = runtests.TestSkipped
 	default:
@@ -1606,8 +1608,13 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 			return testResult, nil
 		}
 
-		if match == res_timed_out || match == res_canceled {
-			testResult.FailureReason = "test timed out or canceled"
+		if match == res_timed_out {
+			testResult.FailureReason = fmt.Sprintf("test timed out after %s", test.Timeout)
+			testResult.Status = runtests.TestAborted
+			return testResult, nil
+		}
+		if match == res_canceled {
+			testResult.FailureReason = "test canceled"
 			testResult.Status = runtests.TestAborted
 			return testResult, nil
 		}
