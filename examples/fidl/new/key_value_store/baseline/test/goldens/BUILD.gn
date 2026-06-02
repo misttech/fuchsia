@@ -44,8 +44,8 @@ resource("test_write_item_error_invalid_value_server") {
   outputs = [ "data/goldens/{{source_file_part}}" ]
 }
 
-# These are files that are meant to be included with our test component. Each file represents a
-# golden from a single process for a single test.
+# These are files that are meant to be included with our test component. Each
+# file represents a golden from a single process for a single test.
 group("resources") {
   deps = [
     ":test_write_item_error_already_found_client",

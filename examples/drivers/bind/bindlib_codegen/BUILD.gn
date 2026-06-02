@@ -46,9 +46,10 @@ rustc_binary("parent_rust_code") {
 
 # [END example_rust_target]
 
-# This is a duplicate of my_bindlib_target used to validate the goldens we are checking in
-# so the docs can show generated code. We don't want to show this build target as an example
-# since the golden file properties here are not necessary.
+# This is a duplicate of my_bindlib_target used to validate the goldens we are
+# checking in so the docs can show generated code. We don't want to show this
+# build target as an example since the golden file properties here are not
+# necessary.
 bind_library("check_golden") {
   source = "mybindlib.bind"
   name = "fuchsia.example.library"

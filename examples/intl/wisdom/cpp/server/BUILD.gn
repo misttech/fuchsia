@@ -4,9 +4,9 @@
 
 import("//src/lib/icu/third_party_icu_headers.gni")
 
-# Add here all the ICU library headers that you would otherwise use #include for.
-# A header named "icu_headers.h" is generated in the same output directory, and
-# contains #includes to all the `headers` named below.
+# Add here all the ICU library headers that you would otherwise use #include
+# for. A header named "icu_headers.h" is generated in the same output directory,
+# and contains #includes to all the `headers` named below.
 #
 # Include that file as:
 #     #include "examples/intl/wisdom/cpp/server/icu_headers.h"

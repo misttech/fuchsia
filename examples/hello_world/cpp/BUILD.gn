@@ -31,7 +31,8 @@ fuchsia_component("hello-world-cpp-component") {
 
 fuchsia_package("hello-world-cpp") {
   deps = [
-    # component-url: fuchsia-pkg://fuchsia.com/hello-world-cpp#meta/hello-world-cpp.cm
+    # component-url:
+    # fuchsia-pkg://fuchsia.com/hello-world-cpp#meta/hello-world-cpp.cm
     ":hello-world-cpp-component",
   ]
 }

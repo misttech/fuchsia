@@ -34,9 +34,10 @@ resource("verse_4") {
   outputs = [ "data/{{source_file_part}}" ]
 }
 
-# These are files that are meant to be included with our client component. Each file represents a
-# write "attempt" to the key-value store, where the name of the file (sans extension) serving as the
-# key, and the contents serving as the value.
+# These are files that are meant to be included with our client component. Each
+# file represents a write "attempt" to the key-value store, where the name of
+# the file (sans extension) serving as the key, and the contents serving as the
+# value.
 group("resources") {
   deps = [
     ":error_invalid_key_",

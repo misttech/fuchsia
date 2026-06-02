@@ -14,8 +14,9 @@ group("fuzzers") {
   ]
 }
 
-# This target is the same as the one above; whether fuzzers or unit tests are built depends on which
-# toolchain variant is active. Typically, you should include fuzzers in your package's tests.
+# This target is the same as the one above; whether fuzzers or unit tests are
+# built depends on which toolchain variant is active. Typically, you should
+# include fuzzers in your package's tests.
 group("hermetic_tests") {
   testonly = true
   deps = [ ":fuzzing-examples" ]

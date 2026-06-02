@@ -52,9 +52,10 @@ fuchsia_driver_package("pkg") {
   driver_components = [ ":component" ]
 }
 
-# This is a test written in rust that uses the driver test realm to load and run the driver,
-# which provides a similar level of interactivity with the driver as the C++ unit test driver
-# above but allows you to write the test and any supporting components in rust.
+# This is a test written in rust that uses the driver test realm to load and run
+# the driver, which provides a similar level of interactivity with the driver as
+# the C++ unit test driver above but allows you to write the test and any
+# supporting components in rust.
 rustc_test("realm-test") {
   output_name = "simple-rust-driver-realm-test"
   edition = "2024"

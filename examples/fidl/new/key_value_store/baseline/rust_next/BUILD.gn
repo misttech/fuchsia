@@ -4,8 +4,8 @@
 
 import("//build/components.gni")
 
-# The two definitions below are Fuchsia components, which will be wrapped into a package for
-# delivery to running devices.
+# The two definitions below are Fuchsia components, which will be wrapped into a
+# package for delivery to running devices.
 fuchsia_component("client") {
   component_name = "keyvaluestore_baseline_client"
   manifest = "//examples/fidl/new/key_value_store/baseline/meta/client.cml"
@@ -20,8 +20,9 @@ fuchsia_component("server") {
   deps = [ "server:bin" ]
 }
 
-# The following is an internal test harness for validating this example. It is not part of the
-# example itself, and exists as a validation method to ensure that the code does not go stale.
+# The following is an internal test harness for validating this example. It is
+# not part of the example itself, and exists as a validation method to ensure
+# that the code does not go stale.
 fuchsia_component("test") {
   testonly = true
   manifest = "//examples/fidl/new/key_value_store/baseline/test/meta/runner.cml"

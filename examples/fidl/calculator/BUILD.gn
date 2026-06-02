@@ -13,8 +13,8 @@ group("all") {
   ]
 }
 
-# This component combines the calculator_server & client components into one realm
-# with all necessary routing.
+# This component combines the calculator_server & client components into one
+# realm with all necessary routing.
 fuchsia_component("calculator_realm") {
   manifest = "realm/meta/realm.cml"
 }

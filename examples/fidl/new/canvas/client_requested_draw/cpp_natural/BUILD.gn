@@ -4,8 +4,8 @@
 
 import("//build/components.gni")
 
-# The two definitions below are Fuchsia components, which will be wrapped into a package for
-# delivery to running devices.
+# The two definitions below are Fuchsia components, which will be wrapped into a
+# package for delivery to running devices.
 fuchsia_component("client") {
   component_name = "canvas_clientrequesteddraw_client"
   manifest = "//examples/fidl/new/canvas/client_requested_draw/meta/client.cml"
@@ -17,7 +17,8 @@ fuchsia_component("server") {
   deps = [ "server:bin" ]
 }
 
-# The Fuchsia package, containing all of our child components in one neat artifact.
+# The Fuchsia package, containing all of our child components in one neat
+# artifact.
 fuchsia_package("examples_fidl_canvas_clientrequesteddraw_cpp_natural") {
   deps = [
     ":client",
@@ -26,8 +27,9 @@ fuchsia_package("examples_fidl_canvas_clientrequesteddraw_cpp_natural") {
   ]
 }
 
-# The following is an internal test harness for validating this example. It is not part of the
-# example itself, and exists as a validation method to ensure that the code does not go stale.
+# The following is an internal test harness for validating this example. It is
+# not part of the example itself, and exists as a validation method to ensure
+# that the code does not go stale.
 fuchsia_component("test") {
   testonly = true
   manifest =

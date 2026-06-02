@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# NOTE: The comments that have [START/END ...] in them are used to identify code snippets that
-# appear in the documentation.  Please be aware that changes in these blocks will affect the
+# NOTE: The comments that have [START/END ...] in them are used to identify code
+# snippets that appear in the documentation. Please be aware that changes in
+# these blocks will affect the
 # documentation on fuchsia.dev.
 
 import("//build/components.gni")
@@ -43,7 +44,8 @@ fuchsia_component("hello-world-rust-component") {
 
 fuchsia_package("hello-world-rust") {
   deps = [
-    # component-url: fuchsia-pkg://fuchsia.com/hello-world-rust#meta/hello-world-rust.cm
+    # component-url:
+    # fuchsia-pkg://fuchsia.com/hello-world-rust#meta/hello-world-rust.cm
     ":hello-world-rust-component",
   ]
 }

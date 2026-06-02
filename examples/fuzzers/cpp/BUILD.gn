@@ -17,8 +17,8 @@ fuchsia_library_fuzzer("corpus_fuzzer") {
   sources = [ "corpus.cc" ]
 }
 
-# Same as `corpus_fuzzer`, but without the seed corpus. This can be used to illustrate the
-# difference providing a seed corpus can make on fuzzer coverage.
+# Same as `corpus_fuzzer`, but without the seed corpus. This can be used to
+# illustrate the difference providing a seed corpus can make on fuzzer coverage.
 fuchsia_library_fuzzer("corpus_fuzzer_without_corpus") {
   sources = [ "corpus.cc" ]
 }
@@ -32,8 +32,9 @@ fuchsia_library_fuzzer("dictionary_fuzzer") {
   sources = [ "dictionary.cc" ]
 }
 
-# Same as `dictionary_fuzzer`, but without the dictionary. This can be used to illustrate the
-# difference providing a dictionary can make on fuzzer performance.
+# Same as `dictionary_fuzzer`, but without the dictionary. This can be used to
+# illustrate the difference providing a dictionary can make on fuzzer
+# performance.
 fuchsia_library_fuzzer("dictionary_fuzzer_without_dictionary") {
   sources = [ "corpus.cc" ]
 }

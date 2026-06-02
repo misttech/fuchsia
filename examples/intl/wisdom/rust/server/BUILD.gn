@@ -75,9 +75,10 @@ group("server") {
   deps = [ ":intl_wisdom_server_rust" ]
 }
 
-# This group contains all tests in this package.  It is intentonally given a
-# standardized name "tests" so that it could be referred to as ".../wisdom:tests"
-# without needing to look into this file to see what the precise target name is.
+# This group contains all tests in this package. It is intentonally given a
+# standardized name "tests" so that it could be referred to as
+# ".../wisdom:tests" without needing to look into this file to see what the
+# precise target name is.
 group("tests") {
   testonly = true
   deps = [ ":intl_wisdom_server_rust_tests" ]
