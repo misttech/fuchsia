@@ -611,6 +611,9 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
 
   // Thread C (Event thread)
   std::thread t_c([&]() {
+    char name[] = "channel-call-thread-c";
+    zx::thread::self()->set_property(ZX_PROP_NAME, name, sizeof(name));
+
     zx_signals_t observed;
     char buf[8] = {0};
     uint32_t act_bytes, act_handles;
@@ -633,6 +636,9 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
 
     // Thread B
     std::thread t_b([&]() {
+      char name[] = "channel-call-thread-b";
+      zx::thread::self()->set_property(ZX_PROP_NAME, name, sizeof(name));
+
       zx_port_packet_t packet;
       port.wait(zx::time::infinite(), &packet);
 
@@ -643,6 +649,9 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
 
     // Thread A
     std::thread t_a([&]() {
+      char name[] = "channel-call-thread-a";
+      zx::thread::self()->set_property(ZX_PROP_NAME, name, sizeof(name));
+
       char buf[8] = {0};
       zx_channel_call_args_t args = {
           .wr_bytes = buf,
