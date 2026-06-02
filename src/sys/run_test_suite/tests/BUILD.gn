@@ -48,8 +48,8 @@ fuchsia_unittest_package("run_test_suite_integration_tests") {
 
   subpackages = [ "//src/sys/test_manager:pkg" ]
 
-  # There's expected error logs that happen due to races given that the logging component just
-  # logs and exits quickly.
+  # There's expected error logs that happen due to races given that the logging
+  # component just logs and exits quickly.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

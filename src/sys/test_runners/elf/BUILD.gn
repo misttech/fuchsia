@@ -86,7 +86,8 @@ fuchsia_package("elf-test-ambient-exec-runner") {
   deps = [ ":elf-test-ambient-exec-runner-component" ]
 }
 
-# Identical to elf-test-runner-component, just with the create raw processes job policy.
+# Identical to elf-test-runner-component, just with the create raw processes job
+# policy.
 fuchsia_component("elf-test-create-raw-processes-runner-component") {
   testonly = true
   component_name = "elf-test-create-raw-processes-runner"

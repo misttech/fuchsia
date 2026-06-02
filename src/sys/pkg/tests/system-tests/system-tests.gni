@@ -581,8 +581,8 @@ template("system_test_reboot_suite") {
   }
 }
 
-# A template that configures a System Test Recovery Suite against a given release
-# builder.
+# A template that configures a System Test Recovery Suite against a given
+# release builder.
 #
 # Parameters
 #

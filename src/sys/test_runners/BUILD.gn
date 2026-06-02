@@ -165,7 +165,8 @@ group("tests") {
   }
 }
 
-# Use this group to include fuchsia.process.Launcher in generated test manifests.
+# Use this group to include fuchsia.process.Launcher in generated test
+# manifests.
 #
 # Intended for use in tests for test runners.
 group("test-with-process-launcher") {

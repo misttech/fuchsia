@@ -29,12 +29,13 @@ rustc_binary("shared-multi-call-tool-binary") {
   configs += [
     "//build/config/rust/lints:clippy_warn_all",
 
-    # This binary is a part of the bootfs image, so attempt to minimize its size impact.
+    # This binary is a part of the bootfs image, so attempt to minimize its size
+    # impact.
     "//build/config/rust:bootfs",
   ]
 
-  # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
-  # enabled, shift it to the large RBE worker pool)
+  # As this is a large binary that uses many resources to compile (and takes
+  # minutes when LTO is enabled, shift it to the large RBE worker pool)
   _concurrent_jobs = concurrent_jobs.link_highmem
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")

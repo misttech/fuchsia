@@ -206,7 +206,8 @@ template("package_tool_repository_publish") {
     ]
   }
 
-  # Expose build-time package publishing arguments to devshell commands. (`fx publish`)
+  # Expose build-time package publishing arguments to devshell commands. (`fx
+  # publish`)
   publish_tool_opts_dep = "${target_name}_tool_opts"
   generated_file(publish_tool_opts_dep) {
     outputs = [ "${_output_repository_dir}/publish_tool_opts" ]
@@ -244,7 +245,8 @@ template("package_tool_repository_publish") {
 
     deps += [ ":${target_name}_repo_deps" ]
 
-    # The contents of these folders is dynamic, and managed entirely by this action.
+    # The contents of these folders is dynamic, and managed entirely by this
+    # action.
     hermetic_action_ignored_prefixes =
         [ "${_output_repository_dir}/repository" ]
 
@@ -286,7 +288,8 @@ template("package_tool_repository_publish") {
   }
 }
 
-# Generate a package archive in the format produced by `ffx package archive create'.
+# Generate a package archive in the format produced by `ffx package archive
+# create'.
 #
 # The archive is generated at $target_out_dir/$package_name where package_name
 # is `get_label_info($package, "name")`
@@ -377,7 +380,8 @@ template("package_tool_package_manifest_list_create") {
                              "check_for_output_dir_leaks",
                            ])
 
-    # The contents of these folders is dynamic, and managed entirely by this action.
+    # The contents of these folders is dynamic, and managed entirely by this
+    # action.
 
     hermetic_action_ignored_prefixes = [
       _manifests_dir,

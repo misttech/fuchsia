@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This module ensures that these build templates work for components defined in other files.
+# This module ensures that these build templates work for components defined in
+# other files.
 
 import("//build/components.gni")
 

@@ -6,8 +6,8 @@ import("//build/components.gni")
 import("//build/test.gni")
 
 # This binary is in charge of wiring all the fake resources for the test.
-# Everything is offered to the test component, which is a parent. The
-# parent then forwards this to the child(the early boot instrumentation component).
+# Everything is offered to the test component, which is a parent. The parent
+# then forwards this to the child(the early boot instrumentation component).
 executable("provider") {
   sources = [ "provider.cc" ]
   deps = [

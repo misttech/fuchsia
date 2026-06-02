@@ -4,8 +4,8 @@
 
 import("//build/dist/resource.gni")
 
-# A corpus with a rather large number of individual inputs is used for testing. This corpus was
-# generated using the following snippet of Python:
+# A corpus with a rather large number of individual inputs is used for testing.
+# This corpus was generated using the following snippet of Python:
 #
 #   import hashlib
 #   a = [ ord('a'), ord('a'), ord('a') ]

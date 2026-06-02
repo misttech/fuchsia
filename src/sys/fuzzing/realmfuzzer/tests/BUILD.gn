@@ -62,12 +62,13 @@ fuchsia_test_package("integration-tests-pkg") {
   ]
 }
 
-# This test verifies that an instrumented executable linked against the target runtime can function
-# normally even if the coverage component is not found. In order to use existing component manifests
-# for the realms being fuzzed, program binary names must be unchanged. Since executables are
-# uniquely named per build, the same executable used for fuzzing may be available outside the test
-# realm for "normal" use. As a result, fuzzing-related behavior must be strictly optional depending
-# on the availability of the coverage component.
+# This test verifies that an instrumented executable linked against the target
+# runtime can function normally even if the coverage component is not found. In
+# order to use existing component manifests for the realms being fuzzed, program
+# binary names must be unchanged. Since executables are uniquely named per
+# build, the same executable used for fuzzing may be available outside the test
+# realm for "normal" use. As a result, fuzzing-related behavior must be strictly
+# optional depending on the availability of the coverage component.
 test("standalone") {
   output_name = "realmfuzzer_standalone_test"
   sources = [ "standalone-test.cc" ]

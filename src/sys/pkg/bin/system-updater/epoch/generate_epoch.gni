@@ -4,16 +4,19 @@
 
 import("//build/compiled_action.gni")
 
-# Generate an epoch file, which is used to prevent backwards OTAs across a version boundary. See
+# Generate an epoch file, which is used to prevent backwards OTAs across a
+# version boundary. See
 # [RFC-0071](https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0071_ota_backstop) for more
 # context on the epoch.
 #
-# This is abstracted into a template because epoch needs to be generated in two locations:
+# This is abstracted into a template because epoch needs to be generated in two
+# locations:
 # 1. In the update package, to specify the epoch of the build we're trying to OTA to.
 # 2. In the system-updater binary, to specify the epoch of the build we're currently running.
 #
-# Having a centralized build template prevents epoch generation from drifting. This makes it harder
-# to "mess up" epoch generation if we do a build system refactor.
+# Having a centralized build template prevents epoch generation from drifting.
+# This makes it harder to "mess up" epoch generation if we do a build system
+# refactor.
 #
 # Parameters
 #

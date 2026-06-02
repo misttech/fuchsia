@@ -7,7 +7,8 @@ import("//build/components.gni")
 group("tests") {
   testonly = true
   if (!is_asan) {
-    # The raw processes test is created using ZX_PROCESS_SHARED, which does not play nice with asan.
+    # The raw processes test is created using ZX_PROCESS_SHARED, which does not
+    # play nice with asan.
     deps = [ ":security-policy-create-raw-processes-test" ]
   }
 }

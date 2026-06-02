@@ -93,8 +93,9 @@ fuchsia_test_package("test_manager_test") {
     "diagnostics_tests:test-manager-diagnostics-tests",
   ]
 
-  # There's expected error logs that happen during the test such as not resolving an instance when
-  # testing that we fail to execute a test with an unknown URL.
+  # There's expected error logs that happen during the test such as not
+  # resolving an instance when testing that we fail to execute a test with an
+  # unknown URL.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -181,8 +182,8 @@ group("tests") {
       "test_data:debug-data-test",
 
       # test_manager_test launches these tests.
-      # TODO(b/301507292): consider reorganizing these tests so that these dependencies
-      # are not necessary.
+      # TODO(b/301507292): consider reorganizing these tests so that these
+      # dependencies are not necessary.
       "//examples/components/routing/integration_tests/cpp:subpackaged_echo_integration_test_cpp",
       "//examples/components/routing/integration_tests/rust:subpackaged_echo_integration_test_rust",
       "//src/sys/test_runners/gtest/test_data:gtest-runner-example-tests",

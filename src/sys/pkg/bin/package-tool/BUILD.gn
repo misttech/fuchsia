@@ -21,7 +21,8 @@ if (is_host) {
     sources = [ "src/main.rs" ]
     configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 
-    # Avoid instrumenting this target as it has a large negative impact on performance.
+    # Avoid instrumenting this target as it has a large negative impact on
+    # performance.
     exclude_toolchain_tags = [
       "asan",
       "coverage",

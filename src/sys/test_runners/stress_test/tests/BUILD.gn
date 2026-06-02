@@ -31,8 +31,8 @@ fuchsia_test_component("stress_runner_integration_test") {
 fuchsia_test_package("stress-runner-integration-test") {
   test_components = [ ":stress_runner_integration_test" ]
 
-  # This includes the `always_fail`, `always_pass`, `timeout` and `echo` stress tests
-  # used in this integration test.
+  # This includes the `always_fail`, `always_pass`, `timeout` and `echo` stress
+  # tests used in this integration test.
   deps = [ "test_data" ]
 
   subpackages = [ "//src/sys/test_manager:pkg" ]

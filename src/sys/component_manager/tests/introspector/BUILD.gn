@@ -66,7 +66,8 @@ fuchsia_component("test_root") {
   deps = [ ":proxy_outgoing_to_incoming" ]
   manifest = "meta/test_root.cml"
 
-  # We want `diagnostics` from self rather than parent, so we can't use syslog/client.shard.cml.
+  # We want `diagnostics` from self rather than parent, so we can't use
+  # syslog/client.shard.cml.
   check_includes = false
 }
 

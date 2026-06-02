@@ -22,7 +22,8 @@ template("devhost_keys") {
          "output_keys_dir must be defined")
   _output_keys_dir = invoker.output_keys_dir
 
-  # These files are copied from amber_devhost_keys_dir into $amber_keys_dir/keys.
+  # These files are copied from amber_devhost_keys_dir into
+  # $amber_keys_dir/keys.
   copy(target_name) {
     sources = [
       "${_devhost_keys_dir}/snapshot.json",
@@ -94,8 +95,8 @@ template("devhost_root_metadata") {
 
 # Publish package manifests to a devhost-based repository.
 #
-# This will create a devhost that's initialized with the devhost keys and root metadata, then
-# publish all package manifests to it.
+# This will create a devhost that's initialized with the devhost keys and root
+# metadata, then publish all package manifests to it.
 #
 # Parameters
 #

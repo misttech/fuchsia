@@ -113,8 +113,8 @@ rustc_binary("bin") {
     "//build/config/rust:bootfs",
   ]
 
-  # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
-  # enabled, shift it to the large RBE worker pool)
+  # As this is a large binary that uses many resources to compile (and takes
+  # minutes when LTO is enabled, shift it to the large RBE worker pool)
   _concurrent_jobs = concurrent_jobs.link_highmem
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")
@@ -181,8 +181,8 @@ group("hermetic_tests") {
   public_deps = [ ":pkg-cache-tests" ]
 }
 
-# If the file in this resource is included in the system_image package, then pkg-cache will *not*
-# enforce executability restrictions.
+# If the file in this resource is included in the system_image package, then
+# pkg-cache will *not* enforce executability restrictions.
 resource("disable-executability-restrictions-resource") {
   sources = [ "disable_executability_restrictions" ]
   outputs = [ "data/pkgfs_disable_executability_restrictions" ]

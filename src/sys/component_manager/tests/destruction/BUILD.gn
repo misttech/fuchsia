@@ -91,7 +91,8 @@ fuchsia_component("collection_realm") {
   deps = [ ":destruction_collection_realm_bin" ]
   manifest = "meta/collection_realm.cml"
 
-  # We want `diagnostics` from self rather than parent, so we can't use syslog/client.shard.cml.
+  # We want `diagnostics` from self rather than parent, so we can't use
+  # syslog/client.shard.cml.
   check_includes = false
 }
 
@@ -100,7 +101,8 @@ fuchsia_component("destroy_and_recreate") {
   deps = [ ":destroy_and_recreate_bin" ]
   manifest = "meta/destroy_and_recreate.cml"
 
-  # We want `diagnostics` from self rather than parent, so we can't use syslog/client.shard.cml.
+  # We want `diagnostics` from self rather than parent, so we can't use
+  # syslog/client.shard.cml.
   check_includes = false
 }
 

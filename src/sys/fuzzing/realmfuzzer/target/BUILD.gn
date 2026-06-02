@@ -17,7 +17,8 @@ source_set("instrumented") {
   deps = [ "//build/validate:non_production_tag" ]
 }
 
-# Version of the `target` library that does not install hooks, and can be used for testing.
+# Version of the `target` library that does not install hooks, and can be used
+# for testing.
 source_set("no_hooks") {
   visibility = [ "../*" ]
   sources = [

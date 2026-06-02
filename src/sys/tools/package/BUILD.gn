@@ -7,7 +7,8 @@ import("//build/dist/renamed_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 # `package` is conceptually a binary, but it is built as a lib here so it can be
-# aggregated into //src/sys/tools/shared-multi-call-tool-binary to save disk space.
+# aggregated into //src/sys/tools/shared-multi-call-tool-binary to save disk
+# space.
 rustc_library("package") {
   visibility = [
     ":*",

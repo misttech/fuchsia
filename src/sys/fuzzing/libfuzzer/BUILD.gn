@@ -22,7 +22,8 @@ group("tests") {
   ]
 }
 
-# The libFuzzer stats conversions are built separately to allow their use by realmfuzzer et al.
+# The libFuzzer stats conversions are built separately to allow their use by
+# realmfuzzer et al.
 source_set("stats-lib") {
   testonly = true
   sources = [

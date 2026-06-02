@@ -50,11 +50,12 @@ fuchsia_fuzzctl_lib_template("lib") {
     "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust_flex",
   ]
 
-  # This target includes tests which depend on the test fixtures, which in turn depend on the
-  # library. If the tests also refer to code in the library the normal way, i.e. `use crate::...`,
-  # then Rust is unable to determine that the code is identical to what the test fixtures are using
-  # and complains. The workaround is to have the test depend on the library explicitly, and
-  # `use fuchsia_fuzzctl::...` where necessary.
+  # This target includes tests which depend on the test fixtures, which in turn
+  # depend on the library. If the tests also refer to code in the library the
+  # normal way, i.e. `use crate::...`, then Rust is unable to determine that the
+  # code is identical to what the test fixtures are using and complains. The
+  # workaround is to have the test depend on the library explicitly, and `use
+  # fuchsia_fuzzctl::...` where necessary.
   test_deps = [
     ":lib",
     "testing",

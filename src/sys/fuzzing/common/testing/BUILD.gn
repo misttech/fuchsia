@@ -37,8 +37,8 @@ source_set("testing") {
   ]
 }
 
-# Test executables which use this source_set (in place of a real sanitizer runtime) must include
-# `exclude_toolchain_tags = [ "instrumented" ]`.
+# Test executables which use this source_set (in place of a real sanitizer
+# runtime) must include `exclude_toolchain_tags = [ "instrumented" ]`.
 source_set("sanitizer") {
   testonly = true
   sources = [
@@ -78,8 +78,8 @@ fuchsia_test_component("fuzzer") {
   deps = [ ":fuzzer-bin" ]
 }
 
-# A standalone package containing a fake fuzzer. The normal fuzzing tools, e.g. `ffx fuzz`, should
-# work with the package produced.
+# A standalone package containing a fake fuzzer. The normal fuzzing tools, e.g.
+# `ffx fuzz`, should work with the package produced.
 fuchsia_test_package("fuzzer-pkg") {
   package_name = "fake-fuzzer"
   test_components = [ ":fuzzer" ]
