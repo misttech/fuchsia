@@ -2168,8 +2168,8 @@ pub fn sys_pidfd_open(
         // Validate that a process (and not just a task) entry exists for the PID.
         let task = pid_table.get_task(pid).ok();
         let file = match (pid_table.get_process(pid), task) {
-            (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
-                new_pidfd(locked, current_task, &proc, &*task.mm()?, open_flags)
+            (Some(ProcessEntryRef::Process(proc)), Some(_)) => {
+                new_pidfd(locked, current_task, &proc, open_flags)
             }
             (Some(ProcessEntryRef::Zombie(_)), _) => {
                 new_zombie_pidfd(locked, current_task, open_flags)
