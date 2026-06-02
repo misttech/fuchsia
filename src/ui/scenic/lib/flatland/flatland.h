@@ -437,6 +437,11 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // Present() is called, the actual destruction of Links happens in the following Present().
   std::vector<fit::function<void()>> pending_link_operations_;
 
+  // Fences that signal when an image creation operation has completed.
+  // These are appended to acquire fences in the next `Present()` to ensure
+  // that the Present task waits for image import to complete.
+  std::vector<zx::event> pending_create_image_fences_;
+
   // Wraps a LinkSystem::LinkToChild and the properties currently associated with that link.
   struct LinkToChildData {
     LinkSystem::LinkToChild link;

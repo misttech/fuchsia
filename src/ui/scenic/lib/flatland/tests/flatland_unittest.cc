@@ -12,6 +12,7 @@
 #include <lib/async/default.h>
 #include <lib/async/time.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
+#include <lib/fpromise/bridge.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -5059,6 +5060,132 @@ TEST_F(FlatlandTest, CreateImageWithDuplicatedImportTokens) {
                           /*vmo_idx*/ i, std::move(properties));
     PRESENT(flatland, true);
   }
+}
+
+TEST_F(FlatlandTest, CreateImageAsyncWaitsForPresent) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
+
+  fpromise::bridge<> bridge;
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(testing::Invoke(
+          [&bridge](const ImageMetadata& metadata, allocation::BufferCollectionUsage usage_type) {
+            return bridge.consumer.promise();
+          }));
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 100});
+
+  const ContentId kId(1);
+  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+
+  // Call Present.
+  fuchsia_ui_composition::PresentArgs present_args;
+  flatland->Present(std::move(present_args));
+
+  // Run loop. The task should be blocked on the fence.
+  RunLoopUntilIdle();
+
+  // Now resolve the promise.
+  bridge.completer.complete_ok();
+
+  // Run loop again. Now the fence should be signaled and the task should run.
+  // Note: if this `EXPECT_CALL` wasn't here, the test would fail due to an
+  // unexpected call on the presenter.
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
+
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, DestroyFlatlandBeforeCreateImageResolves) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
+
+  fpromise::bridge<> bridge;
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(testing::Invoke(
+          [&bridge](const ImageMetadata& metadata, allocation::BufferCollectionUsage usage_type) {
+            return bridge.consumer.promise();
+          }));
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 100});
+
+  const ContentId kId(1);
+  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+
+  // Run loop to get the task scheduled on the executor.
+  RunLoopUntilIdle();
+
+  // Now destroy the flatland instance.
+  flatland.reset();
+
+  // Run loop again. The pending task should be dropped because the executor is
+  // destroyed, i.e. the mock receives no call to ScheduleUpdateForSession().
+  // There should be no crash.
+  RunLoopUntilIdle();
+
+  // We can also resolve the promise to ensure it doesn't cause issues.
+  bridge.completer.complete_ok();
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, ReleaseImageBeforeAsyncCreateImageCompletes) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
+
+  fpromise::bridge<> bridge;
+  allocation::GlobalImageId global_image_id = allocation::kInvalidImageId;
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(testing::Invoke(
+          [&bridge, &global_image_id](const ImageMetadata& metadata,
+                                      allocation::BufferCollectionUsage usage_type) {
+            global_image_id = metadata.identifier;
+            return bridge.consumer.promise();
+          }));
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 100});
+
+  const ContentId kId(1);
+  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+
+  // Release the image before the promise is resolved.
+  flatland->ReleaseImage(kId);
+
+  // Call Present.
+  fuchsia_ui_composition::PresentArgs present_args;
+  flatland->Present(std::move(present_args));
+
+  // Run loop to get the task scheduled on the executor. The task should be blocked on the fence.
+  RunLoopUntilIdle();
+
+  // Now resolve the promise.
+  bridge.completer.complete_ok();
+
+  // The session update should run and schedule an update, but the image is already marked dead.
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
+
+  RunLoopUntilIdle();
+
+  // Once the session update is applied and presentation completed (simulated by signaling the
+  // release fences), the image must be released by the importer.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
 }
 
 TEST_F(FlatlandTest, CreateImageInMultipleFlatlands) {

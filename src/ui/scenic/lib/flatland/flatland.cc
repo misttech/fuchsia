@@ -99,6 +99,18 @@ void SetViewportPropertiesMissingDefaults(ViewportProperties& properties,
   }
 }
 
+std::pair<zx::event, zx::event> CreateEventAndDup() {
+  zx::event event1;
+  zx_status_t status = zx::event::create(0, &event1);
+  FX_DCHECK(status == ZX_OK);
+
+  zx::event event2;
+  status = event1.duplicate(ZX_RIGHT_SAME_RIGHTS, &event2);
+  FX_DCHECK(status == ZX_OK);
+
+  return {std::move(event1), std::move(event2)};
+}
+
 }  // namespace
 
 namespace flatland {
@@ -194,6 +206,9 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
   FX_DCHECK(flatland_presenter_);
 
   FX_LOGS(INFO) << "Flatland NEW session_id=" << session_id_;
+
+  // Pre-allocate space to avoid initial heap allocations.
+  pending_create_image_fences_.reserve(8);
 }
 
 void Flatland::Bind(fidl::ServerEnd<fuchsia_ui_composition::Flatland> server_end,
@@ -591,6 +606,17 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       operation();
     }
   };
+
+  // Append pending creation fences to acquire fences to ensure `CreateImage()` completes
+  // before this `Present()` takes effect.
+  // TODO(https://fxbug.dev/505749054): This is overly eager, and may unnecessarily delay the
+  // current Present when the new image isn't referenced in the current UberStruct.
+  if (!pending_create_image_fences_.empty()) {
+    args.acquire_fences()->insert(args.acquire_fences()->end(),
+                                  std::make_move_iterator(pending_create_image_fences_.begin()),
+                                  std::make_move_iterator(pending_create_image_fences_.end()));
+    pending_create_image_fences_.clear();
+  }
 
   // TODO(https://fxbug.dev/474444799): If |config_.pass_acquire_fences| is true, these fences
   // can be directly queued on the render task rather than waiting on cpu. This will be possible
@@ -1401,6 +1427,12 @@ void Flatland::CreateImage(ContentId image_id,
                        << "  size=" << properties.size()->width() << "x"
                        << properties.size()->height();
 
+  // This fence is used to bridge promise resolution (see below) to the existing `fence_queue_`
+  // mechanism, to guarantee that the image has been created by the time the corresponding
+  // `Present()`'s UberStruct is applied to the global scene graph.
+  auto [create_image_fence, create_image_fence_dup] = CreateEventAndDup();
+  pending_create_image_fences_.push_back(std::move(create_image_fence));
+
   std::vector<fpromise::promise<>> promises;
   promises.reserve(buffer_collection_importers_.size());
   for (auto& importer : buffer_collection_importers_) {
@@ -1410,10 +1442,13 @@ void Flatland::CreateImage(ContentId image_id,
   }
   auto join_promise =
       fpromise::join_promise_vector(std::move(promises))
-          .and_then([this, id = metadata.identifier](
-                        std::vector<fpromise::result<>>& results) -> fpromise::result<> {
+          .and_then([this, id = metadata.identifier, fence = std::move(create_image_fence_dup)](
+                        std::vector<fpromise::result<>>& results) mutable -> fpromise::result<> {
             bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
+
             if (ok) {
+              // Signal the fence to unblock `Present()` via `fence_queue_` (see above).
+              fence.signal(0, ZX_EVENT_SIGNALED);
               return fpromise::ok();
             }
             // If this importer fails, we need to release the image from all of the importers that
