@@ -755,6 +755,34 @@ pub mod test {
                     },
                     EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
                 ),
+                (
+                    HelperDefinition {
+                        index: 200,
+                        name: "mock_sk_storage_get",
+                        signature: FunctionSignature {
+                            args: vec![Type::StructParameter { id: MemoryId::from_raw(4) }],
+                            return_value: Type::UNKNOWN_SCALAR,
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
+                (
+                    HelperDefinition {
+                        index: 201,
+                        name: "mock_get_ptr",
+                        signature: FunctionSignature {
+                            args: vec![],
+                            return_value: Type::MemoryParameter {
+                                size: MemoryParameterSize::Value(100),
+                                input: true,
+                                output: true,
+                            },
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
             ]
         });
 
@@ -1147,6 +1175,7 @@ pub mod test {
     #[test_case(local_test_data!("write_only_helper.data"))]
     #[test_case(local_test_data!("context_parameter.data"))]
     #[test_case(local_test_data!("err_context_parameter.data"))]
+    #[test_case(local_test_data!("err_memory_id_collision.data"))]
     #[test_case(local_test_data!("err_packet_oob.data"))]
     fn test_ebpf_conformance(content: &str) {
         let Some(mut test_case) = TestCase::parse(content) else {
