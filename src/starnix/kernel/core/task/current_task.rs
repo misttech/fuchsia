@@ -222,9 +222,8 @@ impl CurrentTask {
         // thread group, and the code below will invalidate it.
         // Moreover, this requires an Arc of the task to ensure the tasks of
         // the thread group are always valid.
-        let mut pids = self.kernel().pids.write();
-        self.task.thread_group().remove(locked, &mut pids, &self.task);
-        drop(pids);
+        let pids = self.kernel().pids.write();
+        self.task.thread_group().remove(locked, pids, &self.task);
 
         self.ptrace_disconnect();
     }
