@@ -27,7 +27,10 @@ rustc_binary("bin") {
     "//third_party/rust_crates:rustyline",
   ]
 
-  test_deps = [ "//src/lib/fidl/rust/fidl" ]
+  test_deps = [
+    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+    "//src/lib/fidl/rust/fidl",
+  ]
 
   sources = [
     "src/address_lookup.rs",

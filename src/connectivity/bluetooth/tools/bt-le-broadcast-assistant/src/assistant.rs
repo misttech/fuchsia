@@ -43,9 +43,9 @@ async fn printout_bass_events(
     futures::pin_mut!(bass_stream);
     while let Some(res) = bass_stream.next().await {
         match res {
-            Ok(event) => println!("\t[BASS Event] {:?}", event),
+            Ok(event) => println!("\n\t[BASS Event]\n\t{:#?}\n", event),
             Err(e) => {
-                eprintln!("\t[BASS Error] {:?}", e);
+                eprintln!("\n\t[BASS Error]\n\t{:#?}\n", e);
                 break;
             }
         }
@@ -70,21 +70,21 @@ where
         if let AssistantStatus::Started { .. } = self.status {
             return;
         }
-        println!("Starting Broadcast Assistant to look for Broadcast Sources");
+        println!("\nStarting Broadcast Assistant to scan for Broadcast Sources...\n");
         let (tx, rx) = oneshot::channel();
         let event_stream = self.debug.start().unwrap();
         let task = fasync::Task::local(async move {
             let mut stream = event_stream.take_until(rx);
             while let Some(res) = stream.next().await {
                 match res {
-                    Ok(event) => println!("Received broadcast assistant event: {:?}", event),
+                    Ok(event) => println!("\n\t[Broadcast Assistant Event]\n\t{:#?}\n", event),
                     Err(e) => {
-                        println!("Received broadcast assistant error: {:?}", e);
+                        println!("\n\t[Broadcast Assistant Error]\n\t{:#?}\n", e);
                         break;
                     }
                 }
             }
-            println!("Broadcast Assistant stopped looking for Broadcast Sources");
+            println!("\nBroadcast Assistant stopped scanning for Broadcast Sources.\n");
         });
         self.status =
             AssistantStatus::Started { event_processing_task: task, stop_event_processing_tx: tx };
@@ -111,14 +111,14 @@ pub async fn assistant_cmd<T: bt_gatt::GattTypes + 'static, R: GetPeerAddr + 'st
     <T as bt_gatt::GattTypes>::NotificationStream: std::marker::Send,
 {
     if let Err(e) = state.debug.run(cmd, args).await {
-        eprintln!("Error running assistant: {e:?}");
+        eprintln!("\n[Error] Error running assistant: {e:#?}\n");
         return;
     }
 
     if let Ok(peer_event_stream) = state.debug.take_connected_peer_event_stream() {
         let event_task = fasync::Task::local(async move {
             let _ = printout_bass_events(peer_event_stream).await;
-            eprintln!("Connected scan delegator peer event stream terminated!");
+            eprintln!("\n\t[Notice] Connected scan delegator peer event stream terminated!\n");
         });
         state.peer_event_task = Some(event_task);
     }

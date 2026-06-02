@@ -35,31 +35,39 @@ async fn look_for_scan_delegators<
     let mut scan_result_stream = match state.debug.look_for_scan_delegators() {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("Error starting scan: {:?}", e);
+            eprintln!("\n[Error] Error starting scan: {e:#?}\n");
             return;
         }
     };
 
     let timeout = fasync::MonotonicDuration::from_seconds(scan_duration_sec).after_now();
 
-    eprintln!("Looking for scan delegators for {} seconds...", scan_duration_sec);
+    eprintln!("\nLooking for scan delegators for {} seconds...", scan_duration_sec);
     loop {
         let result = scan_result_stream.next().on_timeout(timeout, || None).await;
         match result {
             Some(Ok(scanned)) => {
-                eprintln!("\tFound scan delegator peer: {:?}", scanned.id);
+                let name = match &scanned.name {
+                    bt_gatt::central::PeerName::CompleteName(n) => n.as_str(),
+                    bt_gatt::central::PeerName::PartialName(n) => n.as_str(),
+                    bt_gatt::central::PeerName::Unknown => "<Unknown>",
+                };
+                eprintln!(
+                    "\tFound scan delegator peer ({}): {} (connectable? {})",
+                    scanned.id, name, scanned.connectable
+                );
             }
             Some(Err(e)) => {
-                eprintln!("\tReceived scan error: {:?}", e);
+                eprintln!("\n\t[Error] Received scan error: {e:#?}\n");
                 break;
             }
             None => {
-                eprintln!("\tNo more scan results, scan finished.");
+                eprintln!("\n\tNo more scan results, scan finished.\n");
                 break;
             }
         }
     }
-    eprintln!("Finished looking for scan delegators after {scan_duration_sec} seconds...");
+    eprintln!("Finished looking for scan delegators after {scan_duration_sec} seconds...\n");
 }
 
 // Starts the GATT REPL.
@@ -84,7 +92,7 @@ where
     let (mut commands, mut acks) = cmd_stream();
     while let Some(cmd) = commands.next().await {
         handle_cmd(cmd, &mut state).await.map_err(|e| {
-            println!("Error: {}", e);
+            println!("\n[Error] {}\n", e);
             e
         })?;
         acks.send(()).await?;
@@ -120,7 +128,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
                         return Ok(());
                     }
                     Err(e) => {
-                        println!("Error: {:?}", e);
+                        println!("\n[Error] Error reading input: {e:#?}\n");
                         return Err(e.into());
                     }
                 }
@@ -161,7 +169,7 @@ fn handle_set_peer_addr_cmd(
     };
 
     cache.set_peer_address(peer_id, addr, addr_type);
-    println!("Caching {peer_id} address as {addr:?} {addr_type:?}");
+    println!("\nCaching {peer_id} address as {addr:?} {addr_type:?}\n");
     Ok(())
 }
 
@@ -187,8 +195,8 @@ where
             let cmd: Cmd = token.parse().unwrap();
             match cmd {
                 Cmd::Help => {
-                    eprintln!("{}", Cmd::help_msg());
-                    eprintln!("Broadcast Assistant Commands:\r\n{}", AssistantCmd::help_all());
+                    eprintln!("\n{}", Cmd::help_msg());
+                    eprintln!("Broadcast Assistant Commands:\r\n{}\n", AssistantCmd::help_all());
                 }
                 Cmd::Scan => {
                     let mut duration = DEFAULT_SCAN_DURATION_SEC;
@@ -196,16 +204,16 @@ where
                         match args[0].parse::<i64>() {
                             Ok(d) if d > 0 => duration = d,
                             Ok(_) => {
-                                eprintln!("Scan duration must be a positive number.");
+                                eprintln!("\n[Error] Scan duration must be a positive number.\n");
                                 return Ok(());
                             }
                             Err(e) => {
-                                eprintln!("Invalid duration: {}", e);
+                                eprintln!("\n[Error] Invalid duration: {}\n", e);
                                 return Ok(());
                             }
                         }
                     } else if args.len() > 1 {
-                        eprintln!("Usage: {}", cmd.help_simple());
+                        eprintln!("\n[Error] Usage: {}\n", cmd.help_simple());
                         return Ok(());
                     }
                     state.stop_broadcast_assistant().await;
@@ -215,11 +223,11 @@ where
                 Cmd::SetPeerAddr => {
                     if let Some(cache) = &state.local_cache {
                         if let Err(e) = handle_set_peer_addr_cmd(cache, args, &cmd) {
-                            eprintln!("{}", e);
+                            eprintln!("\n[Error] {}\n", e);
                         }
                     } else {
                         eprintln!(
-                            "`set-peer-addr` is only available with the --use-static-address flag."
+                            "\n[Error] `set-peer-addr` is only available with the --use-static-address flag.\n"
                         );
                     }
                 }
@@ -234,7 +242,7 @@ where
             assistant_cmd(state, cmd, args_str).await;
         }
         Some(val) => {
-            eprintln!("Unknown command: {:?}", val);
+            eprintln!("\n[Error] Unknown command: {:?}\n", val);
         }
         None => {}
     };
