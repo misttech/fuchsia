@@ -1,5 +1,5 @@
 ---
-name: promote-wlan-e2e-tests
+name: wlan-e2e-test-promotion
 description: >
   Workflow to identify FYI WLAN tests with 300+ consecutive passes, calculate
   their average runtime, and promote them to CQ by creating a CL.
