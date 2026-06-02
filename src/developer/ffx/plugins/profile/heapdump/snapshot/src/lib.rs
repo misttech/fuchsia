@@ -33,6 +33,8 @@ fho::embedded_plugin!(SnapshotTool);
 impl FfxMain for SnapshotTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         snapshot(&self.context, self.remote_control, self.cmd).await?;
         Ok(())

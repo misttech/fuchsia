@@ -26,6 +26,8 @@ fho::embedded_plugin!(StopTool);
 impl FfxMain for StopTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         stop_impl(self.lifecycle_proxy, self.cmd, &mut writer).await?;
         Ok(())

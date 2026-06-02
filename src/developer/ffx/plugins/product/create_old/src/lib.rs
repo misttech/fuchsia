@@ -37,6 +37,9 @@ fho::embedded_plugin!(ProductCreateTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ProductCreateTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let sdk = self.ctx.get_sdk().context("getting sdk env context")?;
         let sdk_version = match sdk.get_version() {

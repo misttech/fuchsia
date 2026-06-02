@@ -37,6 +37,9 @@ fho::embedded_plugin!(RemoveTool);
 #[async_trait(?Send)]
 impl FfxMain for RemoveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let res = if self.context.get_direct_connection_mode() {
             Self::remove_direct_impl(&self.context, self.cmd, &mut writer).await

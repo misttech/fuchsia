@@ -25,6 +25,8 @@ fho::embedded_plugin!(CapabilityTool);
 impl FfxMain for CapabilityTool {
     // TODO(b/471819893) Support actual JSON output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
         // All errors from component_debug library are user-visible.

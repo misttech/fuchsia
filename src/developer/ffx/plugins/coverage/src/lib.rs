@@ -44,6 +44,8 @@ fho::embedded_plugin!(CoverageTool);
 impl FfxMain for CoverageTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         coverage(self.cmd).await.map_err(Into::into)
     }

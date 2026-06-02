@@ -32,6 +32,9 @@ pub struct EchoTool {
 #[async_trait(?Send)]
 impl FfxMain for EchoTool {
     type Writer = MachineWriter<String>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let text = self.cmd.text.as_deref().unwrap_or("FFX");
         let echo_out = self

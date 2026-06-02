@@ -182,6 +182,9 @@ fho::embedded_plugin!(GenTool);
 #[async_trait(?Send)]
 impl FfxMain for GenTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let res = match self.cmd.subcommand {
             SubCommand::Sine(cmd) => generate_signal(GenericSignal::from(cmd)).await,

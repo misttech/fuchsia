@@ -35,6 +35,9 @@ fho::embedded_plugin!(ProductBundleCreateTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ProductBundleCreateTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let build_dir = self
             .ctx

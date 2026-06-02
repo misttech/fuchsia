@@ -23,6 +23,9 @@ fho::embedded_plugin!(GpuUsageTool);
 #[async_trait(?Send)]
 impl FfxMain for GpuUsageTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let GpuUsageTool { cmd, gpu_logger, .. } = self;
         match cmd.subcommand {

@@ -117,6 +117,8 @@ fho::embedded_plugin!(RunTool);
 impl FfxMain for RunTool {
     type Writer = MachineWriter<LogEntry>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         cmd_impl(&self.context, self.rcs, self.cmd, writer, self.connector).await?;
         Ok(())

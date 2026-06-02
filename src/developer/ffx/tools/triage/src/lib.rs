@@ -41,6 +41,8 @@ pub struct TriageTool {
 impl FfxMain for TriageTool {
     type Writer = Writer;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         triage(&self.context, self.data_provider_proxy.await.ok(), writer, self.cmd)
             .await

@@ -30,6 +30,8 @@ fho::embedded_plugin!(SshTool);
 impl FfxMain for SshTool {
     // This command doesn't actually produce any normal output itself.
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let addr = get_addr(&self.context, (*self.ssh_addr).into())?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)

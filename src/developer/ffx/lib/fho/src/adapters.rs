@@ -9,12 +9,14 @@
 #[macro_export]
 macro_rules! embedded_plugin {
     ($tool:ty) => {
+        $crate::embedded_plugin!($tool, $crate::macro_deps::fho::Error);
+    };
+    ($tool:ty, $err:ty) => {
         /// FFX Plugin implementation.
         pub async fn ffx_plugin_impl(
             env: &$crate::macro_deps::fho::FhoEnvironment,
-            cmd: <$tool as $crate::FfxTool>::Command,
+            cmd: <$tool as $crate::FfxTool<$err>>::Command,
         ) -> $crate::Result<()> {
-            use $crate::FfxMain as _;
             #[allow(unused_imports)]
             use $crate::macro_deps::{
                 argh, bug, check_strict_constraints, ffx_diagnostics_analytics_state, return_bug,
@@ -23,7 +25,7 @@ macro_rules! embedded_plugin {
 
             $crate::macro_deps::check_strict_constraints(
                 &env.ffx_command().global,
-                <$tool as $crate::FfxTool>::requires_target(),
+                <$tool as $crate::FfxTool<$err>>::requires_target(),
             )?;
 
             // Create the writer, and if the schema is flag is set,
@@ -44,13 +46,14 @@ macro_rules! embedded_plugin {
             }
 
             ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &cmd);
-            let tool = <$tool as $crate::subtool::FfxTool>::from_env(env.clone(), cmd).await?;
+            let tool =
+                <$tool as $crate::subtool::FfxTool<$err>>::from_env(env.clone(), cmd).await?;
             env.update_log_file(tool.log_basename())?;
-            let res = $crate::FfxMain::main(tool, writer).await;
+            let res = <$tool as $crate::FfxMain>::main(tool, writer).await;
             // The env must not be dropped entirely until after the main function has completed, as
             // the underlying backing connection is kept inside the environment (in the case of
             // direct connections via `crate::connector::DefaultConnector`.
-            env.wrap_main_result(res)
+            env.wrap_main_result(res.map_err(|e| e.into()))
         }
 
         /// Returns whether or not this plugin supports structured machine output.
@@ -160,7 +163,8 @@ pub(crate) mod tests {
     #[async_trait(?Send)]
     impl FfxMain for FakeTool {
         type Writer = TestWriter;
-        async fn main(self, mut writer: Self::Writer) -> Result<()> {
+        type Error = crate::Error;
+        async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
             assert_eq!(self.from_env_string.0, "foobar");
             assert_eq!(self.fake_command.stuff, "stuff");
             writer.line("junk-line").unwrap();

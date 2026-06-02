@@ -32,6 +32,9 @@ fho::embedded_plugin!(VersionTool);
 #[async_trait(?Send)]
 impl FfxMain for VersionTool {
     type Writer = MachineWriter<Versions>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let tool_version = self.context.build_info().into();
         let should_query_daemon = self.cmd.verbose && !self.context.get_direct_connection_mode();

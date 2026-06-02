@@ -24,6 +24,9 @@ fho::embedded_plugin!(NetworkActivityTool);
 #[async_trait(?Send)]
 impl FfxMain for NetworkActivityTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.subcommand {
             args_mod::SubCommand::Start(start_cmd) => start(self.network_logger, start_cmd).await?,

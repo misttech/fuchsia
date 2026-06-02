@@ -25,6 +25,9 @@ fho::embedded_plugin!(ShellTool);
 #[async_trait(?Send)]
 impl FfxMain for ShellTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let Self { cmd: ShellCommand { shell_command }, launcher } = self;
 

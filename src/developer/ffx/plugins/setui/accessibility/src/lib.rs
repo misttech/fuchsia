@@ -30,6 +30,9 @@ fho::embedded_plugin!(AccessibilityTool);
 #[async_trait(?Send)]
 impl FfxMain for AccessibilityTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.accessibility_proxy, self.cmd, &mut writer).await?;
         Ok(())

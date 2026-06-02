@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use analytics::add_custom_event;
-use anyhow::Result;
 use async_trait::async_trait;
 
 use ffx_config::EnvironmentContext;
@@ -71,6 +70,7 @@ pub enum ListError {
 
 #[derive(FfxTool)]
 #[target(None)]
+#[main_error(ListError)]
 pub struct ListTool {
     #[command]
     cmd: ListCommand,
@@ -80,13 +80,11 @@ pub struct ListTool {
     fho_env: fho::FhoEnvironment,
 }
 
-fho::embedded_plugin!(ListTool);
+fho::embedded_plugin!(ListTool, ListError);
 
-#[async_trait(?Send)]
-impl FfxMain for ListTool {
-    type Writer = VerifiedMachineWriter<Vec<JsonTarget>>;
-    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        self.main_impl(writer).await.map_err(|e| match e {
+impl From<ListError> for fho::Error {
+    fn from(e: ListError) -> Self {
+        match e {
             ListError::ShowTargets(e @ ShowTargetsError::DeviceNotFound(_)) => fho::Error::from(
                 anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 2)),
             ),
@@ -94,7 +92,17 @@ impl FfxMain for ListTool {
                 anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 1)),
             ),
             other => fho::Error::from(anyhow::Error::from(other)),
-        })
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl FfxMain for ListTool {
+    type Error = ListError;
+
+    type Writer = VerifiedMachineWriter<Vec<JsonTarget>>;
+    async fn main(self, writer: Self::Writer) -> std::result::Result<(), ListError> {
+        self.main_impl(writer).await
     }
 }
 
@@ -276,6 +284,7 @@ pub async fn emit_device_stats_event(num_devices: usize, query: &Option<String>)
 mod test {
     use super::*;
     use addr::TargetAddr;
+    use anyhow::Result;
     use ffx_command::FfxCommandLine;
     use ffx_list_args::{AddressTypes, Format};
     use ffx_target::info::{RemoteControlState, TargetState};
@@ -616,5 +625,19 @@ mod test {
 
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("MockConnectionError"));
+    }
+
+    #[test]
+    fn test_list_error_conversion() {
+        let err = ListError::ShowTargets(ShowTargetsError::DeviceNotFound("blarg".to_string()));
+        let fho_err = fho::Error::from(err);
+        assert_eq!(fho_err.to_string(), "Device blarg not found.");
+
+        let err2 = ListError::ShowTargets(ShowTargetsError::NoAddressTypes);
+        let fho_err2 = fho::Error::from(err2);
+        assert_eq!(
+            fho_err2.to_string(),
+            "Invalid arguments, you must allow at least one address type"
+        );
     }
 }

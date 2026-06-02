@@ -21,6 +21,9 @@ fho::embedded_plugin!(ExtractTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ExtractTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         self.cmd_extract().await.map_err(Into::into)
     }

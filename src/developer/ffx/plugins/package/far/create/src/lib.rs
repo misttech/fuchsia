@@ -23,6 +23,9 @@ fho::embedded_plugin!(FarCreateTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for FarCreateTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         let mut entries = BTreeMap::new();
 

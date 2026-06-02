@@ -25,6 +25,9 @@ fho::embedded_plugin!(NightModeTool);
 #[async_trait(?Send)]
 impl FfxMain for NightModeTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.night_mode_proxy, self.cmd, &mut writer).await?;
         Ok(())

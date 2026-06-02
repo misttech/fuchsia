@@ -108,6 +108,9 @@ impl StopTool {
 #[async_trait(?Send)]
 impl FfxMain for StopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let wb = match self.get_wait_behavior() {
             Ok(behavior) => behavior,

@@ -24,6 +24,9 @@ fho::embedded_plugin!(TemperatureLoggerTool);
 #[async_trait(?Send)]
 impl FfxMain for TemperatureLoggerTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.subcommand {
             args_mod::SubCommand::Start(start_cmd) => {

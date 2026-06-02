@@ -27,6 +27,9 @@ fho::embedded_plugin!(ScrutinyShellTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyShellTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let (namespace, args) =
             parse_command(self.cmd.command).map_err(|e| fho::Error::User(e.into()))?;

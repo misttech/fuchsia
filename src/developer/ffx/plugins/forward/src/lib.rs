@@ -66,6 +66,8 @@ impl std::fmt::Display for ForwardMessage {
 impl FfxMain for ForwardTool {
     type Writer = VerifiedMachineWriter<ForwardMessage>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { remote_control_connector, cmd } = self;
         let ForwardCommand { quiet, spec, ui_interval, once } = cmd;

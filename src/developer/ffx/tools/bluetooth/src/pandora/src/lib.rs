@@ -27,6 +27,9 @@ fho::embedded_plugin!(PandoraTool);
 #[async_trait(?Send)]
 impl FfxMain for PandoraTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match &self.cmd.subcommand {
             // ffx bluetooth pandora start

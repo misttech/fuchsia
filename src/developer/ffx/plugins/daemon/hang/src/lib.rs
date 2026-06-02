@@ -21,6 +21,9 @@ fho::embedded_plugin!(DaemonHangTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for DaemonHangTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         let _ = self.testing_proxy.hang().await;
         Ok(())

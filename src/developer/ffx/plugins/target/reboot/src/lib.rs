@@ -43,6 +43,9 @@ fho::embedded_plugin!(RebootTool);
 #[async_trait(?Send)]
 impl FfxMain for RebootTool {
     type Writer = MachineWriter<()>;
+
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         // We have to check is_strict() explicitly because at this point
         // the connection mode (direct vs daemon) has not yet been

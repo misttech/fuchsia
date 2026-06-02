@@ -77,6 +77,8 @@ fho::embedded_plugin!(MemoryTool);
 impl FfxMain for MemoryTool {
     type Writer = MachineWriter<ProfileMemoryOutput>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         match (&self.cmd.backend, self.memory_monitor1, self.memory_monitor2) {
             (Backend::MemoryMonitor1, Some(mm1), _) | (Backend::Default, Some(mm1), _) => {

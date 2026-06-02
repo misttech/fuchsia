@@ -56,6 +56,9 @@ use gcs::error::GcsError;
 #[async_trait(?Send)]
 impl FfxMain for ProductBisectTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     /// Main entry point for the `ffx product bisect` tool.
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         writer.line("")?;

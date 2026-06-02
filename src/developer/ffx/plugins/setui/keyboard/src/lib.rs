@@ -24,6 +24,9 @@ fho::embedded_plugin!(KeyboardTool);
 #[async_trait(?Send)]
 impl FfxMain for KeyboardTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.keyboard_proxy, self.cmd, &mut writer).await?;
         Ok(())

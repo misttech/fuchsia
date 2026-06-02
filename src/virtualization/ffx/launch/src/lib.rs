@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_guest_launch_args::LaunchArgs;
-use fho::{bug, return_user_error, FfxMain, FfxTool, MachineWriter, Result, ToolIO as _};
+use fho::{FfxMain, FfxTool, MachineWriter, Result, ToolIO as _, bug, return_user_error};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::io::Write as _;
 
@@ -19,6 +19,8 @@ fho::embedded_plugin!(GuestLaunchTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for GuestLaunchTool {
     type Writer = MachineWriter<guest_cli::launch::LaunchResult>;
+
+    type Error = ::fho::Error;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let services = guest_cli::platform::HostPlatformServices::new(self.remote_control);
 

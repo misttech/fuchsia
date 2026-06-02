@@ -23,6 +23,9 @@ fho::embedded_plugin!(CycleTool);
 #[async_trait(?Send)]
 impl FfxMain for CycleTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         cycle_impl(self.manager_proxy, self.cmd, &mut writer).await?;
         Ok(())

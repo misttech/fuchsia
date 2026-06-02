@@ -29,6 +29,8 @@ fho::embedded_plugin!(ExploreTool);
 impl FfxMain for ExploreTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query_f(&self.rcs).await?;
         let stdout = if self.cmd.command.is_some() { Stdout::buffered() } else { Stdout::raw()? };

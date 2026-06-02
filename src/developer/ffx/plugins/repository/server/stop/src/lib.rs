@@ -36,6 +36,9 @@ fho::embedded_plugin!(RepoStopTool);
 #[async_trait(?Send)]
 impl FfxMain for RepoStopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.stop().await {
             Ok(info) => {

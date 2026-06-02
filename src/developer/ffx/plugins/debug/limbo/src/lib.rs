@@ -26,6 +26,8 @@ fho::embedded_plugin!(LimboTool);
 impl FfxMain for LimboTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.command {
             LimboSubCommand::Status(_) => status(self.limbo_proxy, writer).await?,

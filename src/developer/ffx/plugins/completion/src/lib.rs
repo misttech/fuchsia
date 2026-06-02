@@ -25,6 +25,8 @@ fho::embedded_plugin!(CompletionTool);
 impl FfxMain for CompletionTool {
     type Writer = fho::null_writer::NullWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         let exe = std::env::current_exe()
             .map_err(|e| fho::user_error!("Failed to get current executable: {}", e))?;

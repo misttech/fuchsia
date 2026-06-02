@@ -28,6 +28,9 @@ fho::embedded_plugin!(PlayTool);
 #[async_trait(?Send)]
 impl FfxMain for PlayTool {
     type Writer = MachineWriter<PlayResult>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let (play_remote, play_local) = self.controller.domain().create_datagram_socket();
         let reader: Box<dyn Read + Send + 'static> = match &self.cmd.file {

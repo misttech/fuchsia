@@ -4,7 +4,7 @@
 
 use crate::{FfxMain, FfxTool, FhoEnvironment, TryFromEnv};
 use argh::{ArgsInfo, FromArgs, SubCommand};
-use ffx_command::Result;
+use ffx_command::{Error, Result};
 use std::cell::RefCell;
 
 // We need this wrapper because we want to store the subtool as a dyn
@@ -53,7 +53,13 @@ impl<T: FfxTool> SubtoolBox for Subtool<T> {
         let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(&env)
             .await
             .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
-        self.tool.borrow_mut().take().expect("subtool is gone?").main(writer).await
+        self.tool
+            .borrow_mut()
+            .take()
+            .expect("subtool is gone?")
+            .main(writer)
+            .await
+            .map_err(|e| e.into())
     }
 }
 
@@ -140,7 +146,8 @@ impl<S: SubtoolSuite> FfxTool for FfxSubtoolSuite<S> {
 #[async_trait::async_trait(?Send)]
 impl<S: SubtoolSuite> FfxMain for FfxSubtoolSuite<S> {
     type Writer = crate::null_writer::NullWriter;
-    async fn main(self, _writer: Self::Writer) -> Result<()> {
+    type Error = Error;
+    async fn main(self, _writer: Self::Writer) -> std::result::Result<(), Self::Error> {
         self.subtool.run(self.env).await
     }
     async fn try_print_schema(self, _writer: Self::Writer) -> Result<()> {

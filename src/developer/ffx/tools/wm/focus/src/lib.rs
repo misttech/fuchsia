@@ -23,6 +23,9 @@ fho::embedded_plugin!(FocusTool);
 #[async_trait(?Send)]
 impl FfxMain for FocusTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         focus_impl(self.manager_proxy, self.cmd, &mut writer).await?;
         Ok(())

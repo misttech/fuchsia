@@ -35,6 +35,9 @@ fho::embedded_plugin!(ExploreTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ExploreTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         #[allow(clippy::large_futures)]
         match explore_cmd(self.cmd, self.dash_launcher_proxy).await {

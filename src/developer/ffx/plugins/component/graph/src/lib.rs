@@ -25,6 +25,8 @@ fho::embedded_plugin!(GraphTool);
 impl FfxMain for GraphTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 

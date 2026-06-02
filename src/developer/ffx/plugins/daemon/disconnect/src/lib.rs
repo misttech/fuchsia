@@ -21,6 +21,9 @@ fho::embedded_plugin!(DisconnectTool);
 #[async_trait(?Send)]
 impl FfxMain for DisconnectTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         disconnect_impl(&self.target_proxy, self.cmd).await
     }

@@ -21,6 +21,9 @@ fho::embedded_plugin!(ClearPreferredSshAddressTool);
 #[async_trait(?Send)]
 impl FfxMain for ClearPreferredSshAddressTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         clear_preferred_ssh_address_impl(&self.target_proxy, self.cmd).await
     }

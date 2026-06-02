@@ -26,6 +26,8 @@ fho::embedded_plugin!(StartTool);
 impl FfxMain for StartTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         start_impl(self.lifecycle_proxy, self.cmd, &mut writer).await?;
         Ok(())

@@ -93,6 +93,9 @@ fho::embedded_plugin!(ScreenshotTool);
 #[async_trait(?Send)]
 impl FfxMain for ScreenshotTool {
     type Writer = VerifiedMachineWriter<ScreenshotOutput>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         screenshot_impl(self.screenshot_proxy, self.cmd, &mut writer).await?;
         Ok(())

@@ -56,6 +56,8 @@ impl CommandStatus {
 impl FfxMain for SymbolIndexTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.sub_command {
             SymbolIndexSubCommand::List(cmd) => {

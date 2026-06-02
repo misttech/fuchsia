@@ -32,6 +32,9 @@ fho::embedded_plugin!(DeregisterTool);
 #[async_trait(?Send)]
 impl FfxMain for DeregisterTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         // Get the repository that should be registered.
         let instance_root = self

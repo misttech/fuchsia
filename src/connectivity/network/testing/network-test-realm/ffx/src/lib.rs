@@ -56,6 +56,8 @@ fho::embedded_plugin!(NetTestRealmTool);
 impl FfxMain for NetTestRealmTool {
     type Writer = MachineWriter<String>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         net_test_realm(self.remote_control, self.cmd, writer).await.map_err(Into::into)
     }

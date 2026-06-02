@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_guest_mem_args::MemArgs;
-use fho::{bug, FfxMain, FfxTool, MachineWriter, Result, ToolIO as _};
+use fho::{FfxMain, FfxTool, MachineWriter, Result, ToolIO as _, bug};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::io::Write as _;
 
@@ -19,6 +19,8 @@ fho::embedded_plugin!(GuestMemTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for GuestMemTool {
     type Writer = MachineWriter<guest_cli::mem::GuestMemResult>;
+
+    type Error = ::fho::Error;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let services = guest_cli::platform::HostPlatformServices::new(self.remote_control);
         let output = guest_cli::mem::handle_mem(&services, self.cmd).await?;

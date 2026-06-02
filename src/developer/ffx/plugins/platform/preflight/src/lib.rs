@@ -70,6 +70,9 @@ fho::embedded_plugin!(PreflightTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PreflightTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         preflight_cmd_impl(self.cmd, &mut writer).await.map_err(Into::into)
     }

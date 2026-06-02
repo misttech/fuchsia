@@ -27,6 +27,8 @@ fho::embedded_plugin!(MemorySignalTool);
 impl FfxMain for MemorySignalTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     /// Forwards the specified memory pressure level to the fuchsia.memory.debug.MemoryPressure FIDL
     /// interface.
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {

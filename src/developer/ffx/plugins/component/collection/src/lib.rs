@@ -23,6 +23,9 @@ fho::embedded_plugin!(CollectionTool);
 #[async_trait(?Send)]
 impl FfxMain for CollectionTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 

@@ -24,6 +24,9 @@ fho::embedded_plugin!(OffTool);
 #[async_trait(?Send)]
 impl FfxMain for OffTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         off(self.admin_proxy, self.cmd).await
     }

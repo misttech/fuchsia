@@ -22,6 +22,9 @@ fho::embedded_plugin!(TargetDefaultTool);
 #[async_trait(?Send)]
 impl FfxMain for TargetDefaultTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         exec_target_default_impl(&self.context, self.cmd, &mut writer).await?;
         Ok(())

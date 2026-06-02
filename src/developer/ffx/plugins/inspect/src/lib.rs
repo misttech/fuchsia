@@ -40,6 +40,8 @@ pub struct InspectTool {
 impl FfxMain for InspectTool {
     type Writer = MachineWriter<InspectOutput>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { rcs, archive_accessor, cmd } = self;
         let (rcs, archive_accessor) = match futures::future::join(rcs, archive_accessor).await {

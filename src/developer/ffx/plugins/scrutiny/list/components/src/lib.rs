@@ -18,6 +18,9 @@ fho::embedded_plugin!(ScrutinyComponentsTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyComponentsTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let artifacts = if self.cmd.recovery {
             Scrutiny::from_product_bundle_recovery(&self.cmd.product_bundle)

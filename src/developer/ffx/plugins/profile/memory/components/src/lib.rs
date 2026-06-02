@@ -87,6 +87,8 @@ impl PluginOutput<ComponentProfileResult> for MachineWriter<ComponentProfileResu
 impl FfxMain for MemoryComponentsTool {
     type Writer = MachineWriter<ComponentProfileResult>;
 
+    type Error = ::fho::Error;
+
     /// Forwards the specified memory pressure level to the fuchsia.memory.debug.MemoryPressure FIDL
     /// interface.
     async fn main(self, writer: MachineWriter<ComponentProfileResult>) -> fho::Result<()> {

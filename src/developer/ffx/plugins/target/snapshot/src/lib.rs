@@ -59,6 +59,9 @@ fho::embedded_plugin!(SnapshotTool);
 #[async_trait(?Send)]
 impl FfxMain for SnapshotTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         if self.cmd.dump_annotations {
             match dump_annotations(self.data_provider_proxy).await {

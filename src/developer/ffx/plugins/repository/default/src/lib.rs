@@ -21,6 +21,9 @@ fho::embedded_plugin!(RepoDefaultTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for RepoDefaultTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         exec_repository_default_impl(&self.context, self.cmd, &mut writer).await
     }

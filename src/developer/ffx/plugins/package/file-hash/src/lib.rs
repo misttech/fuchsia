@@ -24,6 +24,9 @@ fho::embedded_plugin!(FileHashTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for FileHashTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> Result<()> {
         match self.cmd_file_hash(&mut writer).await {
             Ok(data) => {

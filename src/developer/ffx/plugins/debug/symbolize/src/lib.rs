@@ -24,6 +24,8 @@ fho::embedded_plugin!(SymbolizeTool);
 impl FfxMain for SymbolizeTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         if let Err(e) = symbol_index::ensure_symbol_index_registered(&self.context) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);

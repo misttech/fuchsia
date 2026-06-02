@@ -29,6 +29,8 @@ fho::embedded_plugin!(DoctorTool);
 impl FfxMain for DoctorTool {
     type Writer = MachineWriter<Vec<RouteReport>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
         let route_validator = connect_to_route_validator(&self.rcs).await?;

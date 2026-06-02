@@ -34,6 +34,9 @@ fho::embedded_plugin!(PbGetVersionTool);
 #[async_trait(?Send)]
 impl FfxMain for PbGetVersionTool {
     type Writer = MachineWriter<UniqueReleaseInfoVector>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let artifact_path = &self.cmd.artifact;
         let info: VersionInfoWithDependencies =

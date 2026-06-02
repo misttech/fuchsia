@@ -75,6 +75,9 @@ fho::embedded_plugin!(ServerStartTool);
 #[async_trait(?Send)]
 impl FfxMain for ServerStartTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let new_logname = self.log_basename();
 

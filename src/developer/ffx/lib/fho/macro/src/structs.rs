@@ -20,16 +20,17 @@ use syn::{ExprCall, Ident};
 ///     }
 /// }
 /// ```
-struct StructDecl<'a>(&'a syn::DeriveInput);
+struct StructDecl<'a>(&'a syn::DeriveInput, syn::Type);
 
 impl ToTokens for StructDecl<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let ast = self.0;
+        let err_ty = &self.1;
         let struct_name = &ast.ident;
         let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
         tokens.extend(quote! {
             #[fho::macro_deps::async_trait(?Send)]
-            impl #impl_generics fho::subtool::FfxTool for #struct_name #ty_generics #where_clause
+            impl #impl_generics fho::subtool::FfxTool<#err_ty> for #struct_name #ty_generics #where_clause
         })
     }
 }
@@ -238,6 +239,27 @@ fn parse_target_connection(parent_ast: &syn::DeriveInput) -> Result<TargetConnec
     Ok(state)
 }
 
+fn parse_main_error(parent_ast: &syn::DeriveInput) -> Result<syn::Type, ParseError> {
+    let mut main_error = None;
+    let mut found = false;
+    for attr in &parent_ast.attrs {
+        if attr.path().is_ident("main_error") {
+            if found {
+                return Err(ParseError::DuplicateAttr(attr.span()));
+            }
+            found = true;
+            let parsed_type = attr.parse_args::<syn::Type>().map_err(|e| {
+                ParseError::InvalidTargetAttr(
+                    attr.span(),
+                    format!("Invalid #[main_error] argument: {e}"),
+                )
+            })?;
+            main_error = Some(parsed_type);
+        }
+    }
+    Ok(main_error.unwrap_or_else(|| syn::parse_quote! { fho::macro_deps::fho::Error }))
+}
+
 impl<'a> NamedFieldStruct<'a> {
     pub fn new(
         parent_ast: &'a syn::DeriveInput,
@@ -246,7 +268,8 @@ impl<'a> NamedFieldStruct<'a> {
         let mut fields =
             fields.named.iter().map(NamedFieldTy::parse).collect::<Result<Vec<_>, ParseError>>()?;
         let command_field_decl = CommandFieldTypeDecl(extract_command_field(&mut fields)?);
-        let struct_decl = StructDecl(&parent_ast);
+        let err_ty = parse_main_error(parent_ast)?;
+        let struct_decl = StructDecl(&parent_ast, err_ty);
         let attrs = FromEnvAttributes::from_attrs(&parent_ast.attrs)?;
         let connection = parse_target_connection(parent_ast)?;
         let checks = CheckCollection(attrs.checks);
@@ -463,5 +486,67 @@ mod tests {
         };
         let nfs = NamedFieldStruct::new(&ast, &fields).unwrap();
         assert!(matches!(nfs.connection, TargetConnection::Default));
+    }
+
+    #[test]
+    fn test_main_error_specified() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxTool)]
+            #[main_error(MyCoolError)]
+            struct Foo {
+                #[command]
+                bar: bool,
+            }
+            "#,
+        );
+        let ds = crate::extract_struct_info(&ast).unwrap();
+        let syn::Fields::Named(_) = &ds.fields else {
+            unreachable!();
+        };
+        let err_ty = parse_main_error(&ast).unwrap();
+        let expected_ty: syn::Type = syn::parse_quote! { MyCoolError };
+        assert_eq!(err_ty.to_token_stream().to_string(), expected_ty.to_token_stream().to_string());
+    }
+
+    #[test]
+    fn test_main_error_default() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxTool)]
+            struct Foo {
+                #[command]
+                bar: bool,
+            }
+            "#,
+        );
+        let ds = crate::extract_struct_info(&ast).unwrap();
+        let syn::Fields::Named(_) = &ds.fields else {
+            unreachable!();
+        };
+        let err_ty = parse_main_error(&ast).unwrap();
+        let expected_ty: syn::Type = syn::parse_quote! { fho::macro_deps::fho::Error };
+        assert_eq!(err_ty.to_token_stream().to_string(), expected_ty.to_token_stream().to_string());
+    }
+
+    #[test]
+    fn test_main_error_duplicate() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxTool)]
+            #[main_error(MyCoolError)]
+            #[main_error(AnotherError)]
+            struct Foo {
+                #[command]
+                bar: bool,
+            }
+            "#,
+        );
+        let ds = crate::extract_struct_info(&ast).unwrap();
+        let syn::Fields::Named(fields) = &ds.fields else {
+            unreachable!();
+        };
+        let res = NamedFieldStruct::new(&ast, &fields);
+        assert!(matches!(res, Err(ParseError::DuplicateAttr(_))));
     }
 }

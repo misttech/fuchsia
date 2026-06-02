@@ -24,6 +24,8 @@ fho::embedded_plugin!(RemoveTool);
 impl FfxMain for RemoveTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         remove_impl(self.manager_proxy, self.cmd, &mut writer).await?;
         Ok(())

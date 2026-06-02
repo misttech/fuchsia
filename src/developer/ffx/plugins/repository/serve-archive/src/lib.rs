@@ -145,6 +145,8 @@ fho::embedded_plugin!(ServeArchiveTool<DefaultServeArchiveTools>);
 impl<T: ServeArchiveTools> FfxMain for ServeArchiveTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> Result<()> {
         T::serve_archive(
             self.cmd,

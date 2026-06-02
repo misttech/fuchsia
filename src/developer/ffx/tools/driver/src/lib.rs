@@ -179,6 +179,8 @@ pub struct DriverTool {
 impl FfxMain for DriverTool {
     type Writer = MachineWriter<serde_json::Value>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let DriverTool { remote_control, cmd } = self;
         let tool_cmd: driver_tools_fdomain::args::DriverCommand = cmd.into();

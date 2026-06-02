@@ -20,6 +20,9 @@ fho::embedded_plugin!(LogMessageTool);
 #[async_trait(?Send)]
 impl FfxMain for LogMessageTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         log_message_impl(self.rcs_proxy, &mut writer, self.cmd).await
     }

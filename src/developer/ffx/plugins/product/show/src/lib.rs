@@ -29,6 +29,9 @@ fho::embedded_plugin!(ProductShowTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ProductShowTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let mut input = stdin();
         let mut output = stdout();

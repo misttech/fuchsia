@@ -26,6 +26,8 @@ fho::embedded_plugin!(RouteTool);
 impl FfxMain for RouteTool {
     type Writer = MachineWriter<Vec<RouteReport>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = rcs::connect_to_realm_query_f(&self.rcs).await?;
         let route_validator = rcs::connect_to_route_validator_f(&self.rcs).await?;

@@ -154,6 +154,7 @@ impl fho::FfxMain for SuiteAdapter {
     // rely on it be accurate. The correct writer is created
     // as part of ffx_plugin_impl().
     type Writer = fho::null_writer::NullWriter;
+    type Error = fho::Error;
 
     async fn main(self, _writer:  Self::Writer) -> fho::Result<()> {
         ffx_plugin_impl(&self.env, self.cmd).await

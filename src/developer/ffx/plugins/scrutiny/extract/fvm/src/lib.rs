@@ -18,6 +18,9 @@ fho::embedded_plugin!(ScrutinyFvmTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyFvmTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let value = FvmExtractController::extract(self.cmd.input, self.cmd.output)?;
         let s = serde_json::to_string_pretty(&value).map_err(|e| fho::Error::User(e.into()))?;

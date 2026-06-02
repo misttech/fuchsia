@@ -57,6 +57,8 @@ fho::embedded_plugin!(ProcessTool);
 impl FfxMain for ProcessTool {
     type Writer = Writer;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Writer) -> fho::Result<()> {
         self.handle_cmd(writer).await.map_err(Into::into)
     }

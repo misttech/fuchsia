@@ -24,6 +24,9 @@ fho::embedded_plugin!(PowerLoggerTool);
 #[async_trait(?Send)]
 impl FfxMain for PowerLoggerTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     /// Forwards the specified memory pressure level to the fuchsia.memory.Debugger FIDL interface.
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.subcommand {

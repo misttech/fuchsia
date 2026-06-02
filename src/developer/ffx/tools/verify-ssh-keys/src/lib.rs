@@ -35,6 +35,8 @@ pub struct VerifyTool {
 impl FfxMain for VerifyTool {
     type Writer = MachineWriter<SshKey>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let MatchingKeysInfo { keys: found_keys, dirs_searched, io_errors } =
             ffx_ssh::keys::find_matching_ssh_keys(&self.env, *self.device_addr).await?;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_guest_vsockperf_args::VsockPerfArgs;
-use fho::{bug, return_user_error, FfxMain, FfxTool, MachineWriter, Result, ToolIO as _};
+use fho::{FfxMain, FfxTool, MachineWriter, Result, ToolIO as _, bug, return_user_error};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::io::Write as _;
 
@@ -19,10 +19,15 @@ fho::embedded_plugin!(GuestVsockPerfTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for GuestVsockPerfTool {
     type Writer = MachineWriter<guest_cli::vsockperf::VsockPerfResult>;
+
+    type Error = ::fho::Error;
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
         // TODO(https://fxbug.dev/42068091): Remove when overnet supports duplicated socket handles.
-        return_user_error!("The ffx guest plugin doesn't support duplicating handles for socket io. \
-    Use the guest tool instead: `fx shell guest vsock-perf {}`. See https://fxbug.dev/42068091 for updates.", self.cmd.guest_type);
+        return_user_error!(
+            "The ffx guest plugin doesn't support duplicating handles for socket io. \
+    Use the guest tool instead: `fx shell guest vsock-perf {}`. See https://fxbug.dev/42068091 for updates.",
+            self.cmd.guest_type
+        );
 
         // TODO(https://fxbug.dev/42068091): Enable when overnet supports duplicated socket handles.
         #[allow(unreachable_code)]

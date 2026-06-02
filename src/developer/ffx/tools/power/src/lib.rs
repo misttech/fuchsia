@@ -68,6 +68,8 @@ pub struct PowerTool {
 impl FfxMain for PowerTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         powercli::power(self.cmd.into(), Connector::new(self.remote_control), &mut writer)
             .await

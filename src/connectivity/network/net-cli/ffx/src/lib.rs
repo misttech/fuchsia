@@ -227,6 +227,8 @@ pub struct NetTool {
 #[async_trait::async_trait(?Send)]
 impl FfxMain for NetTool {
     type Writer = MachineWriter<serde_json::Value>;
+
+    type Error = ::fho::Error;
     async fn main(self, writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         self.net(writer).await
     }

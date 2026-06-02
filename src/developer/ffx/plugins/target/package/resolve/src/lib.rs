@@ -37,6 +37,9 @@ fho::embedded_plugin!(ResolveTool);
 #[async_trait(?Send)]
 impl FfxMain for ResolveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.resolve_cmd().await {
             Ok(()) => {

@@ -29,6 +29,8 @@ fho::embedded_plugin!(DaemonLogTool);
 impl FfxMain for DaemonLogTool {
     type Writer = ffx_writer::SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         if !self.ctx.get("log.enabled").bug()? {
             ffx_bail!("Logging is not enabled.");

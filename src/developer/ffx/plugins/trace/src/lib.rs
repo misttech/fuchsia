@@ -291,6 +291,8 @@ pub struct TraceTool {
 impl FfxMain for TraceTool {
     type Writer = Writer;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         match self.cmd.sub_cmd.clone() {
             TraceSubCommand::ListCategories(_) => self.list_categories(writer).await,

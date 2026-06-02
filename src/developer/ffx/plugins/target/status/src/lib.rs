@@ -57,6 +57,7 @@ impl Notifier for DefaultNotifier {
 impl FfxMain for Status {
     // This is a machine notifier, but there is (currently) no machine output in use yet.
     type Writer = VerifiedMachineWriter<StatusUpdate>;
+    type Error = ::fho::Error;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let mut notifier = DefaultNotifier { writer };

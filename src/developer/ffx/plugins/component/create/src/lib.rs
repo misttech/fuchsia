@@ -24,6 +24,9 @@ fho::embedded_plugin!(CreateTool);
 #[async_trait(?Send)]
 impl FfxMain for CreateTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let lifecycle_controller = connect_to_lifecycle_controller_f(&self.rcs).await?;
         let realm_query = connect_to_realm_query_f(&self.rcs).await?;

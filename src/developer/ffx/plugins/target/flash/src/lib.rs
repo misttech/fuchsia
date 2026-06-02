@@ -180,6 +180,7 @@ impl ProgressIndicator {
 impl FfxMain for FlashTool {
     // TODO(https://fxbug.dev/380444711): Add tests for schema
     type Writer = VerifiedMachineWriter<FlashMessage>;
+    type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         // Checks

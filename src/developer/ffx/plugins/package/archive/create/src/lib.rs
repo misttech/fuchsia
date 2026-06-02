@@ -19,6 +19,9 @@ fho::embedded_plugin!(ArchiveCreateTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveCreateTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         cmd_package_archive_create(self.cmd)
             .await

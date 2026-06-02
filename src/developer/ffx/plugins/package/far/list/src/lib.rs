@@ -43,6 +43,9 @@ fho::embedded_plugin!(FarListTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for FarListTool {
     type Writer = MachineWriter<Vec<FarEntry>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         cmd_list(self.cmd, writer).await.map_err(Into::into)
     }

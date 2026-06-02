@@ -25,6 +25,9 @@ pub struct AssemblyTool {
 #[async_trait(?Send)]
 impl FfxMain for AssemblyTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: SimpleWriter) -> Result<()> {
         // Dispatch to the correct operation based on the command.
         // The context() is used to display which operation failed in the event of

@@ -49,6 +49,8 @@ fho::embedded_plugin!(PackagesTool);
 impl FfxMain for PackagesTool {
     type Writer = PackagesWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         packages_impl(self.cmd, self.context, writer).await?;
         Ok(())

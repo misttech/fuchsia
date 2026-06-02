@@ -109,6 +109,9 @@ fho::embedded_plugin!(RepoListTool);
 #[async_trait(?Send)]
 impl FfxMain for RepoListTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let full = self.cmd.full;
         let names = self.cmd.names.clone();

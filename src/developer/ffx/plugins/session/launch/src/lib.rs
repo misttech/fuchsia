@@ -32,6 +32,9 @@ fho::embedded_plugin!(LaunchTool);
 #[async_trait(?Send)]
 impl FfxMain for LaunchTool {
     type Writer = MachineWriter<()>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         launch_impl(self.launcher_proxy, self.rcs, self.cmd, &mut writer).await?;
         if writer.is_machine() {

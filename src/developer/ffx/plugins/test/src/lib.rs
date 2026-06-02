@@ -101,6 +101,8 @@ impl Write for SyncBuffer {
 impl FfxMain for TestTool {
     type Writer = VerifiedMachineWriter<TestToolMessage>;
 
+    type Error = ::fho::Error;
+
     // TODO(https://fxbug.dev/42078544): use Writer when it becomes possible.
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let remote_control =

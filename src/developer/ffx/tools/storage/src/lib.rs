@@ -34,6 +34,9 @@ pub struct StorageTool {
 #[async_trait(?Send)]
 impl FfxMain for StorageTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand {
             StorageSubCommand::Fxfs(cmd) => {

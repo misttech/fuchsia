@@ -44,6 +44,9 @@ fho::embedded_plugin!(ReplaceTool);
 #[async_trait(?Send)]
 impl FfxMain for ReplaceTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.replace_cmd().await {
             Ok(()) => {

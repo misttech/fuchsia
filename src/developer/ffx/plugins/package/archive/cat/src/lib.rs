@@ -18,6 +18,9 @@ fho::embedded_plugin!(ArchiveCatTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveCatTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         let mut archive_reader = FarArchiveReader::new(&self.cmd.archive)?;
 

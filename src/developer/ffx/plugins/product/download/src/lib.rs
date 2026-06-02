@@ -34,6 +34,8 @@ pub struct PbDownloadTool {
 impl FfxMain for PbDownloadTool {
     type Writer = VerifiedMachineWriter<MachineOutput<()>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let client = Client::initial()?;
 

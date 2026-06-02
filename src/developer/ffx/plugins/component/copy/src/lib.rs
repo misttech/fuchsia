@@ -24,6 +24,9 @@ fho::embedded_plugin!(CopyTool);
 #[async_trait(?Send)]
 impl FfxMain for CopyTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let query_proxy = connect_to_realm_query(&self.rcs).await?;
         let CopyComponentCommand { paths, verbose } = self.cmd;

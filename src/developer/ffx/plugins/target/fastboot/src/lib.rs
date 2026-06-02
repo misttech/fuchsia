@@ -49,6 +49,8 @@ pub enum FastbootMessage {
 impl FfxMain for FastbootTool {
     type Writer = VerifiedMachineWriter<FastbootMessage>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         cmd_impl(&self.ctx, &mut writer, &self.cmd).await
     }

@@ -75,6 +75,8 @@ pub struct ProfilerTool {
 impl FfxMain for ProfilerTool {
     type Writer = Writer;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         info!(cmd:? = self.cmd; "Running profiler... ");
         self.profiler(writer).await

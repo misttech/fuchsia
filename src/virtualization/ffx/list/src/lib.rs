@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_guest_list_args::ListArgs;
-use fho::{bug, FfxMain, FfxTool, MachineWriter, Result, ToolIO as _};
+use fho::{FfxMain, FfxTool, MachineWriter, Result, ToolIO as _, bug};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::io::Write as _;
 
@@ -19,6 +19,8 @@ fho::embedded_plugin!(GuestWipeTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for GuestWipeTool {
     type Writer = MachineWriter<guest_cli::list::GuestList>;
+
+    type Error = ::fho::Error;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let services = guest_cli::platform::HostPlatformServices::new(self.remote_control);
         let output = guest_cli::list::handle_list(&services, &self.cmd).await?;

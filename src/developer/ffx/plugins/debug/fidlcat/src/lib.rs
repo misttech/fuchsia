@@ -64,6 +64,8 @@ fho::embedded_plugin!(FidlTool);
 impl FfxMain for FidlTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: SimpleWriter) -> fho::Result<()> {
         let Self { cmd, context, launcher_proxy } = self;
 

@@ -23,6 +23,9 @@ fho::embedded_plugin!(DeprecatedTool);
 #[async_trait(?Send)]
 impl FfxMain for DeprecatedTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         handle_deprecated_command(self.proxy, self.cmd).await?;
         Ok(())

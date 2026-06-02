@@ -104,6 +104,9 @@ fho::embedded_plugin!(ListTool);
 #[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match self.list_from_device().await {
             Ok(info) => {

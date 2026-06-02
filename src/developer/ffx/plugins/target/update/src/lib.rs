@@ -63,6 +63,8 @@ fho::embedded_plugin!(UpdateTool);
 impl FfxMain for UpdateTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     /// Main entry point for the `update` subcommand.
     async fn main(self, mut writer: SimpleWriter) -> Result<()> {
         let update = self.cmd.clone();

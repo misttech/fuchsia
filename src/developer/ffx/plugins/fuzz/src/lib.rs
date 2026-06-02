@@ -44,6 +44,8 @@ fho::embedded_plugin!(FuzzTool);
 impl FfxMain for FuzzTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         fuzz(self.remote_control, self.cmd, &self.context).await.map_err(Into::into)
     }

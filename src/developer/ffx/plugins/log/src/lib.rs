@@ -72,6 +72,8 @@ fho::embedded_plugin!(LogTool);
 impl FfxMain for LogTool {
     type Writer = CommandOutputMachineWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         log_impl(writer, &self.context, self.cmd, self.rcs_connector, true).await?;
         Ok(())

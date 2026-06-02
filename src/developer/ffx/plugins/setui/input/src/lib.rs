@@ -28,6 +28,9 @@ fho::embedded_plugin!(InputTool);
 #[async_trait(?Send)]
 impl FfxMain for InputTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.input_proxy, self.cmd, &mut writer).await?;
         Ok(())

@@ -25,6 +25,9 @@ fho::embedded_plugin!(IntlTool);
 #[async_trait(?Send)]
 impl FfxMain for IntlTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.intl_proxy, self.cmd, &mut writer).await?;
         Ok(())

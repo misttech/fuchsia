@@ -59,6 +59,8 @@ fho::embedded_plugin!(ShowTool);
 #[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<TargetShowInfo>;
+    type Error = ::fho::Error;
+
     /// Main entry point for the `show` subcommand.
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         self.show_cmd(&mut writer).await.map_err(|e| e.into())

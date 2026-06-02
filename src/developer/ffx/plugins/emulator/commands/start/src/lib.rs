@@ -235,6 +235,8 @@ fho::embedded_plugin!(EmuStartTool<EngineOperationsData>);
 impl<T: EngineOperations> FfxMain for EmuStartTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         match self.do_start(&mut writer).await {
             Ok(messages) => writer.machine(&CommandStatus::Ok { messages }).map_err(|e| bug!(e)),

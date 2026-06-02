@@ -43,6 +43,8 @@ async fn get_job_koid(runtime: &Runtime) -> Result<zx_koid_t> {
 impl FfxMain for DebugTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 

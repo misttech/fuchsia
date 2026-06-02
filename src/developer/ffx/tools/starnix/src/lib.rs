@@ -72,6 +72,8 @@ pub struct StarnixTool {
 impl FfxMain for StarnixTool {
     type Writer = VerifiedMachineWriter<StarnixToolOutput>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let output = match self.cmd.subcommand {
             StarnixSubCommand::Adb(command) => command

@@ -24,6 +24,9 @@ fho::embedded_plugin!(DiscoveryTool);
 #[async_trait(?Send)]
 impl FfxMain for DiscoveryTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth discovery start

@@ -77,6 +77,9 @@ fho::embedded_plugin!(ProductListTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ProductListTool {
     type Writer = MachineWriter<Vec<ProductBundle>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let mut input = stdin();
         // Emit machine progress info to stderr so users can redirect it to /dev/null.

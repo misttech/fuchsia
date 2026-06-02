@@ -94,6 +94,8 @@ pub struct BootloaderToolMessage {
 impl FfxMain for BootloaderTool {
     type Writer = VerifiedMachineWriter<BootloaderToolMessage>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let handle = ffx_target::discover_single_default_target(&self.ctx)
             .await

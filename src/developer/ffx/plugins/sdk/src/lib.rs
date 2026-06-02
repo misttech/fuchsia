@@ -34,6 +34,8 @@ fho::embedded_plugin!(SdkTool);
 impl FfxMain for SdkTool {
     type Writer = VerifiedMachineWriter<SdkInfo>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let sdk: Sdk =
             self.context.get_sdk().user_message("Could not load currently active SDK")?;

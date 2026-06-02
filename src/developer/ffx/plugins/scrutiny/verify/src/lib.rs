@@ -31,6 +31,9 @@ fho::embedded_plugin!(ScrutinyVerifyTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyVerifyTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         if self.cmd.depfile.is_some() && self.cmd.stamp.is_none() {
             return_user_error!("Cannot specify --depfile without --stamp");

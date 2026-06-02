@@ -25,6 +25,9 @@ fho::embedded_plugin!(SetupTool);
 #[async_trait(?Send)]
 impl FfxMain for SetupTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.setup_proxy, self.cmd, &mut writer).await?;
         Ok(())

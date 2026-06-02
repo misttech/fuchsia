@@ -24,6 +24,8 @@ fho::embedded_plugin!(StopTool);
 impl FfxMain for StopTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
         stop_tool_impl(self.cmd, self.debugger_proxy).await?;
         Ok(())

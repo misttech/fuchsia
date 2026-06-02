@@ -22,6 +22,9 @@ fho::embedded_plugin!(ArchiveListTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveListTool {
     type Writer = MachineWriter<Vec<ArchiveEntry>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         let mut archive_reader = FarArchiveReader::new(&self.cmd.archive)?;
         list_implementation(self.cmd, &mut writer, &mut archive_reader).map_err(Into::into)

@@ -23,6 +23,9 @@ fho::embedded_plugin!(DropPowerLeaseTool);
 #[async_trait(?Send)]
 impl FfxMain for DropPowerLeaseTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         drop_power_lease_impl(self.handoff_proxy, self.cmd, &mut writer).await?;
         Ok(())

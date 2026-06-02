@@ -36,6 +36,8 @@ fho::embedded_plugin!(EchoTool);
 impl FfxMain for EchoTool {
     type Writer = VerifiedMachineWriter<EchoMessage>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match echo_impl(self.rcs_proxy, self.cmd, &mut writer).await {
             Ok(()) => Ok(()),

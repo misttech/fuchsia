@@ -25,6 +25,9 @@ fho::embedded_plugin!(WipeTool);
 #[async_trait(?Send)]
 impl FfxMain for WipeTool {
     type Writer = MachineWriter<()>;
+
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         if !self.cmd.force {
             writeln!(

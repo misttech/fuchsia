@@ -25,6 +25,9 @@ fho::embedded_plugin!(DoNotDisturbTool);
 #[async_trait(?Send)]
 impl FfxMain for DoNotDisturbTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.do_not_disturb_proxy, self.cmd, &mut writer).await?;
         Ok(())

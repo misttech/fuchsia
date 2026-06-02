@@ -25,6 +25,9 @@ fho::embedded_plugin!(FactoryResetTool);
 #[async_trait(?Send)]
 impl FfxMain for FactoryResetTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         run_command(self.factory_reset_proxy, self.cmd, &mut writer).await?;
         Ok(())

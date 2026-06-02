@@ -32,6 +32,9 @@ pub struct AuthTool {
 #[async_trait(?Send)]
 impl FfxMain for AuthTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> Result<()> {
         match &self.cmd.subcommand {
             AuthSubCommand::Generate(command) => {

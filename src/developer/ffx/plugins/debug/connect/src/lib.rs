@@ -36,6 +36,8 @@ fho::embedded_plugin!(ConnectTool);
 impl FfxMain for ConnectTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
         connect_tool_impl(&self.context, self.cmd, self.launcher_proxy).await?;
         Ok(())

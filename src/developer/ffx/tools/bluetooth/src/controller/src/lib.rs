@@ -31,6 +31,9 @@ fho::embedded_plugin!(ControllerTool);
 #[async_trait(?Send)]
 impl FfxMain for ControllerTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let hosts = self.get_hosts().await?;
         match self.cmd.subcommand {

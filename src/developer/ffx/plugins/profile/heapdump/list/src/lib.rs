@@ -65,6 +65,8 @@ fho::embedded_plugin!(ListTool);
 impl FfxMain for ListTool {
     type Writer = MachineWriter<Vec<StoredSnapshot>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         list(self.remote_control, self.cmd, &mut writer).await?;
         Ok(())

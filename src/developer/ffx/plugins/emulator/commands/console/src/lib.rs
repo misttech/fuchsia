@@ -32,6 +32,8 @@ fho::embedded_plugin!(EmuConsoleTool);
 impl FfxMain for EmuConsoleTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let instance_dir: PathBuf =
             self.context.get(EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;

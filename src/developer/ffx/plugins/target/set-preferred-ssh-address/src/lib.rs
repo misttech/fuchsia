@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use ffx_target_set_preferred_ssh_address_args::SetPreferredSshAddressCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
+use fidl_fuchsia_developer_ffx as ffx;
+use fidl_fuchsia_net as fnet;
 use target_holders::TargetProxyHolder;
-use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_net as fnet};
 
 #[derive(FfxTool)]
 pub struct SetPreferredSshAddressTool {
@@ -22,6 +23,9 @@ fho::embedded_plugin!(SetPreferredSshAddressTool);
 #[async_trait(?Send)]
 impl FfxMain for SetPreferredSshAddressTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         set_preferred_ssh_address(&self.target_proxy, self.cmd).await?;
         Ok(())

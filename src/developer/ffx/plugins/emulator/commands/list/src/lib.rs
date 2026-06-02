@@ -84,6 +84,9 @@ fho::embedded_plugin!(EmuListTool<InstanceData>);
 #[async_trait(?Send)]
 impl<T: Instances> FfxMain for EmuListTool<T> {
     type Writer = VerifiedMachineWriter<Vec<EmuListItem>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: VerifiedMachineWriter<Vec<EmuListItem>>) -> fho::Result<()> {
         let instance_list: Vec<EmulatorInstanceData> = self
             .instances

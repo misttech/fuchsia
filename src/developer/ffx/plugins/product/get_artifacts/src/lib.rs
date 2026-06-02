@@ -42,6 +42,8 @@ fho::embedded_plugin!(PbGetArtifactsTool);
 impl FfxMain for PbGetArtifactsTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         // Set the product bundle path from config if it was not passed in.
         if self.cmd.product_bundle.is_none() {

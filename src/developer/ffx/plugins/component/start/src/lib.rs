@@ -36,6 +36,8 @@ fho::embedded_plugin!(StartTool);
 impl FfxMain for StartTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         start_tool_impl(self).await.map_err(|e| ffx_error!(e))?;
         Ok(())

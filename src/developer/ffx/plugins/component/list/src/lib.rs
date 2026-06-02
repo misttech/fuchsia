@@ -33,6 +33,8 @@ pub struct ListOutput {
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<ListOutput>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query_f(&self.rcs).await?;
         // All errors from component_debug library are user-visible.

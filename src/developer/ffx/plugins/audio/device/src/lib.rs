@@ -69,6 +69,8 @@ fho::embedded_plugin!(DeviceTool);
 impl FfxMain for DeviceTool {
     type Writer = MachineWriter<DeviceResult>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let registry = self.registry.map(Registry::new);
 

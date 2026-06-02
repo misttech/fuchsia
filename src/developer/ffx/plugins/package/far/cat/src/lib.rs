@@ -21,6 +21,9 @@ fho::embedded_plugin!(FarCatTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for FarCatTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         let far_file = File::open(&self.cmd.far_file).map_err(|e| {
             user_error!("failed to open file: {}: {e}", self.cmd.far_file.display())

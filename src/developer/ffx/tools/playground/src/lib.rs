@@ -62,6 +62,9 @@ pub struct PlaygroundTool {
 #[async_trait(?Send)]
 impl FfxMain for PlaygroundTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         exec_playground(self.rcs_proxy, self.cmd).await?;
         Ok(())

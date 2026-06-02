@@ -33,6 +33,8 @@ fho::embedded_plugin!(SelfTestTool);
 impl FfxMain for SelfTestTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         selftest(&self.context, self.cmd).await.map_err(Into::into)
     }

@@ -99,6 +99,8 @@ fho::embedded_plugin!(ShowTool);
 impl FfxMain for ShowTool {
     type Writer = MachineWriter<OtaManifestOutput>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let manifest_bytes = std::fs::read(&self.cmd.manifest)
             .with_context(|| format!("Reading manifest file: {}", self.cmd.manifest))

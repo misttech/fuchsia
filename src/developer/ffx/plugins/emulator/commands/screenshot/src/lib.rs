@@ -27,6 +27,8 @@ fho::embedded_plugin!(ScreenshotTool);
 impl FfxMain for ScreenshotTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> FhoResult<()> {
         let mut engine = self.get_engine().await?;
         let absolute_path = self.resolve_path()?;

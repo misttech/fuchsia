@@ -26,6 +26,9 @@ fho::embedded_plugin!(CpuLoadTool);
 #[async_trait(?Send)]
 impl FfxMain for CpuLoadTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let CpuLoadTool { cmd, rcs_proxy, cpu_logger, .. } = self;
         match (cmd.subcommand, cmd.duration) {

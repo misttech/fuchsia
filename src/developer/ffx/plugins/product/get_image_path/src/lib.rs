@@ -44,6 +44,8 @@ fho::embedded_plugin!(PbGetImagePathTool);
 impl FfxMain for PbGetImagePathTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         // Set the product bundle path from config if it was not passed in.
         if self.cmd.product_bundle.is_none() {

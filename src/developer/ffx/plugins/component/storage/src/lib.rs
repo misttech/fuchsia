@@ -29,6 +29,8 @@ fho::embedded_plugin!(StorageTool);
 impl FfxMain for StorageTool {
     type Writer = MachineWriter<Vec<String>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 

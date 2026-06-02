@@ -36,13 +36,17 @@ pub use ffx_command::FfxCommandLine;
 
 #[doc(hidden)]
 pub mod macro_deps {
+    pub use crate as fho;
+    pub use anyhow;
+    pub use argh;
+    pub use async_lock;
     pub use async_trait::async_trait;
     pub use ffx_command::{
         Ffx, ToolRunner, bug, check_strict_constraints, return_bug, return_user_error,
     };
     pub use ffx_config::EnvironmentContext;
-    pub use {
-        crate as fho, anyhow, argh, async_lock, ffx_diagnostics_analytics_state, futures, serde,
-        writer,
-    };
+    pub use ffx_diagnostics_analytics_state;
+    pub use futures;
+    pub use serde;
+    pub use writer;
 }

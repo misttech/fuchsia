@@ -26,6 +26,7 @@ fho::embedded_plugin!(PbExtractBlobsTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PbExtractBlobsTool {
     type Writer = ffx_writer::SimpleWriter;
+    type Error = ::fho::Error;
 
     async fn main(mut self, mut writer: Self::Writer) -> FhoResult<()> {
         // Set the product bundle path from config if it was not passed in.

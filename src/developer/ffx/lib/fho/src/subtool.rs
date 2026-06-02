@@ -28,7 +28,10 @@ use writer::ToolIO;
 // as from_env() that need to know the size can still work, while allowing the
 // dynamically-sized trait objects to be referred to in a dyn context.
 #[async_trait(?Send)]
-pub trait FfxTool: FfxMain {
+pub trait FfxTool<E = Error>: FfxMain<Error = E>
+where
+    E: Into<Error> + 'static,
+{
     type Command: FromArgs + SubCommand + ArgsInfo;
 
     fn supports_structured_output(&self) -> bool;
@@ -48,7 +51,7 @@ pub trait FfxTool: FfxMain {
         let result = match ffx_command::init_cmd(ExecutableKind::Subtool) {
             Ok(c) => {
                 env_context = Some(c.context.clone());
-                ffx_command::run::<FhoSuite<Self>>(c).await
+                ffx_command::run::<FhoSuite<Self, E>>(c).await
             }
             Err(e) => Err(e),
         };
@@ -68,11 +71,12 @@ pub trait FfxTool: FfxMain {
 
 #[async_trait(?Send)]
 pub trait FfxMain {
-    type Writer: TryFromEnv + ToolIO;
+    type Writer: TryFromEnv + ToolIO + 'static;
+    type Error: Into<Error> + 'static;
 
     /// The entrypoint of the tool. Once FHO has set up the environment for the tool, this is
     /// invoked. Should not be invoked directly unless for testing.
-    async fn main(self, writer: Self::Writer) -> Result<()>;
+    async fn main(self, writer: Self::Writer) -> std::result::Result<(), Self::Error>;
 
     /// Given the writer, print the output schema. This is exposed to allow
     /// traversing the subtool adapters which combine more than one subtool which
@@ -93,7 +97,10 @@ pub trait FfxMain {
 
 #[derive(FromArgs)]
 #[argh(subcommand)]
-pub enum FhoHandler<M: FfxTool> {
+pub enum FhoHandler<M: FfxTool<E>, E = Error>
+where
+    E: Into<Error> + 'static,
+{
     //FhoVersion1(M),
     /// Run the tool as if under ffx
     Standalone(M::Command),
@@ -145,27 +152,34 @@ pub struct StandaloneToolCommand<M: SubCommand> {
 
 #[derive(FromArgs)]
 /// Fuchsia Host Objects Runner
-pub struct ToolCommand<M: FfxTool> {
+pub struct ToolCommand<M: FfxTool<E>, E = Error>
+where
+    E: Into<Error> + 'static,
+{
     #[argh(subcommand)]
-    pub subcommand: FhoHandler<M>,
+    pub subcommand: FhoHandler<M, E>,
 }
 
-pub struct FhoSuite<M> {
+pub struct FhoSuite<M, E = Error> {
     context: EnvironmentContext,
-    _p: std::marker::PhantomData<fn(M) -> ()>,
+    _p: std::marker::PhantomData<fn(M, E) -> ()>,
 }
 
-impl<M> Clone for FhoSuite<M> {
+impl<M, E> Clone for FhoSuite<M, E> {
     fn clone(&self) -> Self {
         Self { context: self.context.clone(), _p: self._p.clone() }
     }
 }
 
-struct FhoTool<M: FfxTool> {
+struct FhoTool<M: FfxTool<E>, E = Error>
+where
+    E: Into<Error> + 'static,
+{
     env: FhoEnvironment,
     redacted_args: Vec<String>,
     enhanced_args: Option<Vec<String>>,
     main: M,
+    _p: std::marker::PhantomData<E>,
 }
 
 struct MetadataRunner {
@@ -183,7 +197,7 @@ impl ToolRunner for MetadataRunner {
 }
 
 #[async_trait(?Send)]
-impl<T: FfxTool> ToolRunner for FhoTool<T> {
+impl<T: FfxTool<E>, E: Into<Error> + 'static> ToolRunner for FhoTool<T, E> {
     async fn run(self: Box<Self>, metrics: MetricsSession) -> Result<ExitStatus> {
         if !analytics_command(&self.redacted_args.join(" ")) {
             metrics.print_notice(&mut std::io::stderr()).await?;
@@ -202,7 +216,7 @@ impl<T: FfxTool> ToolRunner for FhoTool<T> {
                 Err(user_error!("--schema is not supported for this command (subtool)."))
             }
         } else {
-            self.main.main(writer).await.map(|_| ExitStatus::from_raw(0))
+            self.main.main(writer).await.map(|_| ExitStatus::from_raw(0)).map_err(|e| e.into())
         };
         let res = metrics
             .command_finished(&res, &self.redacted_args, self.enhanced_args.as_deref())
@@ -212,7 +226,7 @@ impl<T: FfxTool> ToolRunner for FhoTool<T> {
     }
 }
 
-impl<T: FfxTool> FhoTool<T> {
+impl<T: FfxTool<E>, E: Into<Error> + 'static> FhoTool<T, E> {
     async fn build(
         context: &EnvironmentContext,
         ffx: FfxCommandLine,
@@ -229,20 +243,21 @@ impl<T: FfxTool> FhoTool<T> {
         };
         let main = T::from_env(env.clone(), tool).await?;
 
-        let found = FhoTool { env, redacted_args, enhanced_args, main };
+        let found =
+            FhoTool { env, redacted_args, enhanced_args, main, _p: std::marker::PhantomData };
         Ok(Box::new(found))
     }
 }
 
 #[async_trait::async_trait(?Send)]
-impl<M: FfxTool> ToolSuite for FhoSuite<M> {
+impl<M: FfxTool<E>, E: Into<Error> + 'static> ToolSuite for FhoSuite<M, E> {
     fn from_env(context: &EnvironmentContext) -> Result<Self> {
         let context = context.clone();
         Ok(Self { context: context, _p: Default::default() })
     }
 
     fn global_command_list() -> &'static [&'static argh::CommandInfo] {
-        FhoHandler::<M>::COMMANDS
+        FhoHandler::<M, E>::COMMANDS
     }
 
     async fn get_args_info(&self) -> Result<ffx_command::CliArgsInfo> {
@@ -254,7 +269,7 @@ impl<M: FfxTool> ToolSuite for FhoSuite<M> {
         ffx: &FfxCommandLine,
     ) -> Result<Option<Box<dyn ToolRunner + '_>>> {
         let args = Vec::from_iter(ffx.global.subcommand.iter().map(String::as_str));
-        let command = ToolCommand::<M>::from_args(&Vec::from_iter(ffx.cmd_iter()), &args)
+        let command = ToolCommand::<M, E>::from_args(&Vec::from_iter(ffx.cmd_iter()), &args)
             .map_err(|err| Error::from_early_exit(&ffx.command, err))?;
 
         let res: Box<dyn ToolRunner> = match command.subcommand {
@@ -262,7 +277,7 @@ impl<M: FfxTool> ToolSuite for FhoSuite<M> {
                 Box::new(MetadataRunner { cmd, info: M::Command::COMMAND })
             }
             FhoHandler::Standalone(tool) => {
-                FhoTool::<M>::build(&self.context, ffx.clone(), tool).await?
+                FhoTool::<M, E>::build(&self.context, ffx.clone(), tool).await?
             }
         };
         Ok(Some(res))
@@ -273,14 +288,14 @@ impl<M: FfxTool> ToolSuite for FhoSuite<M> {
         ffx: &FfxCommandLine,
     ) -> Result<Option<Box<dyn ToolRunner + '_>>> {
         let args = Vec::from_iter(ffx.global.subcommand.iter().map(String::as_str));
-        match ToolCommand::<M>::from_args(&Vec::from_iter(ffx.cmd_iter()), &args) {
+        match ToolCommand::<M, E>::from_args(&Vec::from_iter(ffx.cmd_iter()), &args) {
             Ok(cmd) => {
                 let res: Box<dyn ToolRunner> = match cmd.subcommand {
                     FhoHandler::Metadata(cmd) => {
                         Box::new(MetadataRunner { cmd, info: M::Command::COMMAND })
                     }
                     FhoHandler::Standalone(tool) => {
-                        FhoTool::<M>::build(&self.context, ffx.clone(), tool).await?
+                        FhoTool::<M, E>::build(&self.context, ffx.clone(), tool).await?
                     }
                 };
                 return Ok(Some(res));
@@ -330,7 +345,8 @@ mod tests {
         #[async_trait(?Send)]
         impl FfxMain for FakeToolWillFail {
             type Writer = TestWriter;
-            async fn main(self, _writer: Self::Writer) -> Result<()> {
+            type Error = Error;
+            async fn main(self, _writer: Self::Writer) -> Result<(), Self::Error> {
                 panic!("This should never get called")
             }
         }

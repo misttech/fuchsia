@@ -23,6 +23,9 @@ fho::embedded_plugin!(CompressTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for CompressTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> Result<()> {
         match self.cmd_blob_compress(&mut writer).await {
             Ok(data) => {

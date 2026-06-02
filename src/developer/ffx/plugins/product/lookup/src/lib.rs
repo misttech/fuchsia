@@ -27,6 +27,9 @@ fho::embedded_plugin!(PbLookupTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PbLookupTool {
     type Writer = VerifiedMachineWriter<MachineOutput<ProductBundle>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> Result<()> {
         if writer.is_machine() {
             self.do_machine_main(writer).await

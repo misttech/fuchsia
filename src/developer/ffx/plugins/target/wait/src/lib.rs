@@ -88,6 +88,8 @@ async fn run_diagnostics(env: &EnvironmentContext, timeout: Duration) -> String 
 impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.wait_impl().await {
             Ok(()) => {

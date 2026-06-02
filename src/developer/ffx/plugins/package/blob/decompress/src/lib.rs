@@ -24,6 +24,9 @@ fho::embedded_plugin!(DecompressTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for DecompressTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> Result<()> {
         match self.cmd_blob_decompress(&mut writer).await {
             Ok(data) => {

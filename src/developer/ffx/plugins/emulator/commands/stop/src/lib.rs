@@ -31,6 +31,9 @@ fho::embedded_plugin!(EmuStopTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for EmuStopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         match self.stop_impl(&mut writer).await {
             Ok(errors) => writer

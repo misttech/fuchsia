@@ -31,6 +31,8 @@ fho::embedded_plugin!(DownloadTool);
 impl FfxMain for DownloadTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         download(&self.context, self.remote_control, self.cmd).await?;
         Ok(())

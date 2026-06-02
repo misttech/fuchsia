@@ -24,6 +24,9 @@ fho::embedded_plugin!(AccessPointTool);
 #[async_trait(?Send)]
 impl FfxMain for AccessPointTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         handle_client_command(self.ap_provider, self.ap_listener, self.cmd).await?;
         Ok(())

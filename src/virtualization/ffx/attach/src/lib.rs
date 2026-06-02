@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_guest_attach_args::AttachArgs;
-use fho::{bug, return_user_error, FfxMain, FfxTool, MachineWriter, Result, ToolIO as _};
+use fho::{FfxMain, FfxTool, MachineWriter, Result, ToolIO as _, bug, return_user_error};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::io::Write as _;
 
@@ -19,6 +19,8 @@ fho::embedded_plugin!(GuestAttachTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for GuestAttachTool {
     type Writer = MachineWriter<guest_cli::attach::AttachResult>;
+
+    type Error = ::fho::Error;
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
         // TODO(https://fxbug.dev/42068091): Remove when overnet supports duplicated socket handles.
         return_user_error!(

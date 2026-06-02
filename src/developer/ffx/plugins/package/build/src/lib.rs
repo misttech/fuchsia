@@ -18,6 +18,9 @@ fho::embedded_plugin!(PackageBuildTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PackageBuildTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         cmd_package_build(self.cmd)
             .await

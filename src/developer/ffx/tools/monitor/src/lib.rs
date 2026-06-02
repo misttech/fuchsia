@@ -589,6 +589,9 @@ async fn handle_request(
 #[async_trait(?Send)]
 impl FfxMain for MonitorTool {
     type Writer = MachineWriter<serde_json::Value>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: <Self as FfxMain>::Writer) -> fho::Result<()> {
         let pid_file_path: String = self
             .context

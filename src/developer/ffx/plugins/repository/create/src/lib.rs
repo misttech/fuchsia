@@ -51,6 +51,9 @@ fho::embedded_plugin!(CreateTool<SizedPackageTools>);
 #[async_trait(?Send)]
 impl<T: PackageTools> FfxMain for CreateTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match T::cmd_repo_create(self.cmd).await {
             Ok(()) => {

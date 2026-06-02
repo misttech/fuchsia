@@ -28,6 +28,8 @@ fho::embedded_plugin!(ListDevicesTool);
 impl FfxMain for ListDevicesTool {
     type Writer = MachineWriter<ListResult>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let registry = self.registry.map(Registry::new);
         let selectors = get_devices(&self.dev_class, registry.as_ref()).await?;

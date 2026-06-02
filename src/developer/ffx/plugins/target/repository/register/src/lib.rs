@@ -58,6 +58,9 @@ fho::embedded_plugin!(RegisterTool);
 #[async_trait(?Send)]
 impl FfxMain for RegisterTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.register_cmd().await {
             Ok(()) => {

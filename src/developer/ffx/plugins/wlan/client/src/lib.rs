@@ -25,6 +25,9 @@ fho::embedded_plugin!(ClientTool);
 #[async_trait(?Send)]
 impl FfxMain for ClientTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         handle_client_command(self.client_provider, self.client_listener, self.cmd).await?;
         Ok(())

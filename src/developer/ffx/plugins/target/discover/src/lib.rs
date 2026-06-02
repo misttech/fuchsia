@@ -121,6 +121,9 @@ struct Discoverer<P: ProcessManager, D: DiscoveryRunner> {
 #[async_trait(?Send)]
 impl FfxMain for DiscoverTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         // Run quietly if we're in the background, or if the user requested it
         let mut discoverer = Discoverer::new(

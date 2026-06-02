@@ -27,6 +27,9 @@ fho::embedded_plugin!(ProductGetRepoTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ProductGetRepoTool {
     type Writer = MachineWriter<Vec<RepositoryInfo>>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let product_bundle = ProductBundle::try_load_from(&self.cmd.product_bundle)
             .map_err(|e| user_error!("Failed to load product bundle: {e}"))?;

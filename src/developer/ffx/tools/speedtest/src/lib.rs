@@ -30,6 +30,8 @@ fho::embedded_plugin!(SpeedtestTool);
 impl FfxMain for SpeedtestTool {
     type Writer = VerifiedMachineWriter<Vec<client::SpeedtestReport>>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { cmd, remote_control } = self;
         let moniker = Moniker::parse_str("/core/ffx-laboratory:speedtest").unwrap();

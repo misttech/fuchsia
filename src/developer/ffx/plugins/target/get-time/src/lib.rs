@@ -21,6 +21,9 @@ fho::embedded_plugin!(GetTimeTool);
 #[async_trait(?Send)]
 impl FfxMain for GetTimeTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         get_time_impl(self.rcs_proxy, &mut writer, self.cmd.boot).await
     }

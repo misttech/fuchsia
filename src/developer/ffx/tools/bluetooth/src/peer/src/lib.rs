@@ -35,6 +35,9 @@ fho::embedded_plugin!(PeerTool);
 #[async_trait(?Send)]
 impl FfxMain for PeerTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
         let peers: Vec<Peer> = self.get_peers().await?;
         match self.cmd.subcommand.clone() {

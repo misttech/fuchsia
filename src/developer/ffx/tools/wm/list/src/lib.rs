@@ -23,6 +23,9 @@ fho::embedded_plugin!(ListTool);
 #[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         list_impl(self.manager_proxy, self.cmd, &mut writer).await?;
         Ok(())

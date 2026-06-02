@@ -50,6 +50,9 @@ fho::embedded_plugin!(PublishTool<SizedPackageTools>);
 #[async_trait(?Send)]
 impl<T: PackageTools> FfxMain for PublishTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match T::cmd_repo_publish(self.cmd).await {
             Ok(()) => {

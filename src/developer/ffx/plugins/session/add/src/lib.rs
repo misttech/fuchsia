@@ -33,6 +33,8 @@ fho::embedded_plugin!(AddTool);
 impl FfxMain for AddTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         add_impl(self.manager_proxy, self.cmd, spawn_ctrl_c_listener(), &mut writer).await?;
         Ok(())

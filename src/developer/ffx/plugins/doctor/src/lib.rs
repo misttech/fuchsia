@@ -278,6 +278,8 @@ fho::embedded_plugin!(DoctorTool);
 impl FfxMain for DoctorTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         // TODO(b/373720502): This is passing a `Some(self.show_tool)` to make it simpler not to
         // have to update existing tests that take in a dozen arguments. The proper approach for

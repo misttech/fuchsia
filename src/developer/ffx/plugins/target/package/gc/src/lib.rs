@@ -35,6 +35,9 @@ fho::embedded_plugin!(GcTool);
 #[async_trait(?Send)]
 impl FfxMain for GcTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.gc_cmd().await {
             Ok(()) => {

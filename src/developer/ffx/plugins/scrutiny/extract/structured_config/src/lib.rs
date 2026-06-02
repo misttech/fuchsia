@@ -19,6 +19,9 @@ fho::embedded_plugin!(ScrutinyStructuredConfigTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyStructuredConfigTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let mut scrutiny = if self.cmd.recovery {
             Scrutiny::from_product_bundle_recovery(&self.cmd.product_bundle)

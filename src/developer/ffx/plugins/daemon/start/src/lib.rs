@@ -22,6 +22,8 @@ const CIRCUIT_REFRESH_RATE: std::time::Duration = std::time::Duration::from_mill
 impl FfxMain for DaemonStartTool {
     type Writer = ffx_writer::SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         if self.cmd.background {
             return self.start_in_background().await;

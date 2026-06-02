@@ -8,12 +8,14 @@ use blocking::Unblock;
 
 use fdomain_client::Socket;
 use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_media as fmedia;
+use ffx_audio_common;
 use ffx_audio_record_args::{AudioCaptureUsageExtended, RecordCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
 use futures::{AsyncWrite, FutureExt};
 use target_holders::fdomain::moniker;
-use {fdomain_fuchsia_audio_controller as fac, fdomain_fuchsia_media as fmedia, ffx_audio_common};
 
 #[derive(FfxTool)]
 pub struct RecordTool {
@@ -28,6 +30,9 @@ fho::embedded_plugin!(RecordTool);
 #[async_trait(?Send)]
 impl FfxMain for RecordTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let capturer_usage = match self.cmd.usage {
             AudioCaptureUsageExtended::Background(usage)

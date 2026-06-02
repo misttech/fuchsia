@@ -30,6 +30,8 @@ fho::embedded_plugin!(CrashTool);
 impl FfxMain for CrashTool {
     type Writer = SimpleWriter;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut _writer: Self::Writer) -> fho::Result<()> {
         crash_tool_impl(&self.context, self.limbo_proxy, self.launcher_proxy).await?;
         Ok(())

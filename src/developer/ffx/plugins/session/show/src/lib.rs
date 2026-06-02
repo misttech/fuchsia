@@ -5,11 +5,12 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use component_debug::cli::show_cmd_print;
+use component_debug_fdomain as component_debug;
 use ffx_session_show_args::SessionShowCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
+use rcs_fdomain as rcs;
 use target_holders::fdomain::RemoteControlProxyHolder;
-use {component_debug_fdomain as component_debug, rcs_fdomain as rcs};
 
 const DETAILS_FAILURE: &str = "Could not get session information from the target. This may be
 because there are no running sessions, or because the target is using a product configuration
@@ -28,6 +29,8 @@ fho::embedded_plugin!(ShowTool);
 impl FfxMain for ShowTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
     type Writer = SimpleWriter;
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         show_impl(self.rcs, self.cmd, &mut writer).await?;
         Ok(())

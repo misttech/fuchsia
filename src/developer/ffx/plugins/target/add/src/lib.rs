@@ -42,6 +42,9 @@ fho::embedded_plugin!(AddTool);
 #[async_trait(?Send)]
 impl FfxMain for AddTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         if self.context.get_direct_connection_mode() {
             if !self.cmd.nowait {

@@ -20,6 +20,9 @@ fho::embedded_plugin!(DaemonCrashTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for DaemonCrashTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         let _ = self.testing_proxy.crash().await;
         Ok(())

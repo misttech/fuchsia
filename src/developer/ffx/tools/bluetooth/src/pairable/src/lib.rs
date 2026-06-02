@@ -25,6 +25,9 @@ fho::embedded_plugin!(PairableTool);
 #[async_trait(?Send)]
 impl FfxMain for PairableTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth pairable once

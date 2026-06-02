@@ -54,6 +54,8 @@ impl std::fmt::Display for ConfigToolMessage {
 impl FfxMain for ConfigTool {
     type Writer = VerifiedMachineWriter<ConfigToolMessage>;
 
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match &self.config.sub {
             SubCommand::CheckSshKeys(check_ssh_cmd) => {

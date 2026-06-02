@@ -18,6 +18,9 @@ fho::embedded_plugin!(ExperimentTool);
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ExperimentTool {
     type Writer = SimpleWriter;
+
+    type Error = ::fho::Error;
+
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         Ok(())
     }

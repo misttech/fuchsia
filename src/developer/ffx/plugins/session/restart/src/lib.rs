@@ -23,6 +23,9 @@ fho::embedded_plugin!(RestartTool);
 #[async_trait(?Send)]
 impl FfxMain for RestartTool {
     type Writer = MachineWriter<()>;
+
+    type Error = ::fho::Error;
+
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         restart_impl(self.restarter_proxy, self.cmd, &mut writer).await?;
         if writer.is_machine() {
