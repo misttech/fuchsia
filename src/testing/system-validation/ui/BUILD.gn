@@ -6,7 +6,8 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/run_target_test_and_host_script.gni")
 
-# Create a test wrapper that connects to ViewProvider implemented by example apps
+# Create a test wrapper that connects to ViewProvider implemented by example
+# apps
 rustc_binary("bin") {
   name = "ui_app_instrumentor"
   testonly = true
@@ -65,9 +66,9 @@ fuchsia_test_package("system_validation_test_pkg") {
   ]
 }
 
-# fx set workstation_eng_paused.x64 --release --with-base //sdk/bundles:tools  \
-# --with-base //src/testing/system-validation:tests \
-# --with-host //src/testing/system-validation/ui:flatland_view_provider_with_host_script
+# fx set workstation_eng_paused.x64 --release --with-base //sdk/bundles:tools \
+# --with-base //src/testing/system-validation:tests \ --with-host
+# //src/testing/system-validation/ui:flatland_view_provider_with_host_script
 #
 # fx test --e2e flatland_view_provider_with_host_script
 if (is_host && target_cpu == "x64" && !is_asan) {

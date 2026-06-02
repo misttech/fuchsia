@@ -6,8 +6,9 @@ import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 
 if (is_host) {
-  # Note - Intentionally not adding this hello_world_test across all the different fuchsia build
-  # test groups defined in `//src/testing/end_to_end/BUILD.gn`
+  # Note - Intentionally not adding this hello_world_test across all the
+  # different fuchsia build test groups defined in
+  # `//src/testing/end_to_end/BUILD.gn`
   python_mobly_test("hello_world_test") {
     main_source = "test_hello_world.py"
     libraries = [
@@ -18,7 +19,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the RTC affordance functional test cases and its dependencies.
+# Group containing all of the RTC affordance functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":hello_world_test($host_toolchain)" ]

@@ -14,14 +14,15 @@ if (is_host) {
     ]
     environments = [ vim3_env ]
 
-    # This test changes the time on device to future and resets it back to present.
-    # Failing to reset the time can cause subsequent tests to fail. So prevent it
-    # from affecting other tests by isolating it to its own shard.
+    # This test changes the time on device to future and resets it back to
+    # present. Failing to reset the time can cause subsequent tests to fail. So
+    # prevent it from affecting other tests by isolating it to its own shard.
     isolated = true
   }
 }
 
-# Group containing all of the RTC affordance functional test cases and its dependencies.
+# Group containing all of the RTC affordance functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":rtc_test($host_toolchain)" ]

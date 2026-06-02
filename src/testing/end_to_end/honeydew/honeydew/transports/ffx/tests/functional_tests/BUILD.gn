@@ -93,7 +93,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the FFX transport functional test cases and their dependencies.
+# Group containing all of the FFX transport functional test cases and their
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [

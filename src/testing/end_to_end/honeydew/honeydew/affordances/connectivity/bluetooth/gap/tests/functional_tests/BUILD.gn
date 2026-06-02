@@ -16,7 +16,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the GAP affordance functional test cases and its dependencies.
+# Group containing all of the GAP affordance functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":bluetooth_gap_test_fc($host_toolchain)" ]

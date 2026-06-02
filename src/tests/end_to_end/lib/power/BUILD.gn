@@ -28,7 +28,8 @@ python_library("power") {
   data_package_name = "data"
 }
 
-# A small wrapper executable around the library call to merge power and trace data.
+# A small wrapper executable around the library call to merge power and trace
+# data.
 python_binary("merge_power_trace_bin") {
   testonly = true
   main_source = "merge_power_trace.py"

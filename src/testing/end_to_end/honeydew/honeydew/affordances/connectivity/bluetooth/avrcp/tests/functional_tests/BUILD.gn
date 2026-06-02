@@ -31,7 +31,8 @@ group("test_bluetooth_avrcp_sl4f") {
   ]
 }
 
-# Group containing all of the AVRCP affordance functional test cases and its dependencies.
+# Group containing all of the AVRCP affordance functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":test_bluetooth_avrcp_sl4f" ]

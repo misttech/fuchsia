@@ -20,8 +20,8 @@ if (is_host) {
       },
     ]
 
-    # Runs on "main" builders (try and ci) in QEMU environments, but only on x64,
-    # as we don't currently support Dart on arm64 hosts.
+    # Runs on "main" builders (try and ci) in QEMU environments, but only on
+    # x64, as we don't currently support Dart on arm64 hosts.
     if (target_cpu == "x64") {
       environments += [ emu_env ]
     }

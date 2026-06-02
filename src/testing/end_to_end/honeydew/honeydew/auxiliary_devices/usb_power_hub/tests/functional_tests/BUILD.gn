@@ -16,7 +16,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the PowerSwitchDmc functional test cases and its dependencies.
+# Group containing all of the PowerSwitchDmc functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":test_usb_power_hub_using_dmc($host_toolchain)" ]

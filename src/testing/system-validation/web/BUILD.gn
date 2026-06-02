@@ -19,9 +19,9 @@ fuchsia_test_package("simple_png_web_system_validation_test_pkg") {
   package_name = "simple_png_web_system_validation"
   test_components = [ ":web_view_system_validation_component" ]
 
-  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut down the
-  # system-validation test component and its children, which causes web_engine to log an
-  # error upon getting disconnected.
+  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut
+  # down the system-validation test component and its children, which causes
+  # web_engine to log an error upon getting disconnected.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -55,9 +55,9 @@ fuchsia_test_package("simple_audio_web_system_validation_test_pkg") {
   package_name = "simple_audio_web_system_validation"
   test_components = [ ":web_view_system_validation_component" ]
 
-  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut down the
-  # system-validation test component and its children, which causes web_engine to log an
-  # error upon getting disconnected.
+  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut
+  # down the system-validation test component and its children, which causes
+  # web_engine to log an error upon getting disconnected.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -75,9 +75,9 @@ fuchsia_test_package("simple_video_web_system_validation_test_pkg") {
   package_name = "simple_video_web_system_validation"
   test_components = [ ":web_view_system_validation_component" ]
 
-  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut down the
-  # system-validation test component and its children, which causes web_engine to log an
-  # error upon getting disconnected.
+  # Do not fail test on ERROR log. When the test ends, elf_test_runner will shut
+  # down the system-validation test component and its children, which causes
+  # web_engine to log an error upon getting disconnected.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -89,9 +89,9 @@ fuchsia_test_package("simple_video_web_system_validation_test_pkg") {
   ]
 }
 
-# fx set workstation_eng_paused.x64 --release \
-# --with-base //src/testing/system-validation:tests \
-# --with-host //src/testing/system-validation/web:simple_video_web_with_host_script
+# fx set workstation_eng_paused.x64 --release \ --with-base
+# //src/testing/system-validation:tests \ --with-host
+# //src/testing/system-validation/web:simple_video_web_with_host_script
 #
 # fx test --e2e simple_video_web_with_host_script
 if (is_host && target_cpu == "x64" && !is_asan) {

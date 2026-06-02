@@ -36,7 +36,8 @@ python_library("user_input_test_lib") {
   ]
 }
 
-# Group containing all of the session affordances functional test cases and its dependencies.
+# Group containing all of the session affordances functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":user_input_test($host_toolchain)" ]

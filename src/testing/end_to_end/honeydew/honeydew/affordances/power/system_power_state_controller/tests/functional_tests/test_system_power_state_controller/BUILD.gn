@@ -8,8 +8,8 @@ import("//build/testing/environments.gni")
 if (is_host) {
   # TODO(https://fxbug.dev/374184169): Starnix based suspend-resume will not work anymore after
   # fxr/1128713. So do not run this test in infra. Once https://fxbug.dev/374184169 is implemented,
-  # update `system_power_state_controller` affordance implementation accordingly and re-enable these
-  # tests on platform builds
+  # update `system_power_state_controller` affordance implementation accordingly
+  # and re-enable these tests on platform builds
   python_mobly_test("system_power_state_controller_test_on_starnix") {
     main_source = "test_system_power_state_controller.py"
     libraries = [
@@ -35,7 +35,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the SystemPowerStateController affordance functional test cases and its dependencies.
+# Group containing all of the SystemPowerStateController affordance functional
+# test cases and its dependencies.
 group("tests") {
   testonly = true
   public_deps = [

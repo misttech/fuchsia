@@ -64,7 +64,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the fuchsia_device functional test cases and its dependencies.
+# Group containing all of the fuchsia_device functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [

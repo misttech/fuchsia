@@ -72,7 +72,8 @@ rustc_binary("test_driver_bin") {
 #   fashion to the in-tree approach to test a FIDL binding implementation against other
 #   implementations.
 #
-# These lists will contain the labels for the test components and the harness packages.
+# These lists will contain the labels for the test components and the harness
+# packages.
 test_component_labels = []
 test_harness_labels = []
 foreach(test, fidl_compatibility_tests_categories) {
@@ -135,9 +136,9 @@ foreach(test, fidl_compatibility_tests_categories) {
             binary = "bin/$output"
 
             # TODO(https://fxbug.dev/42077626): do not hardcode this here. These args must come from
-            # structured config and will look different in-tree and OOT. For now, we hardcode it
-            # given that there's no support for structured config values for components using a
-            # test runner.
+            # structured config and will look different in-tree and OOT. For
+            # now, we hardcode it given that there's no support for structured
+            # config values for components using a test runner.
             args = fidl_compatibilty_test_impls
           }
         },
@@ -207,11 +208,12 @@ foreach(test, fidl_compatibility_tests_categories) {
     manifest_deps = [ ":$generate_test_label" ]
     deps = [ ":test_driver_bin" ]
 
-    # We manually create a realm builder topology due to our needs of the server living in the root,
-    # while the collection being in the harness.
+    # We manually create a realm builder topology due to our needs of the server
+    # living in the root, while the collection being in the harness.
   }
 
-  # Save the component label, so that it may be included as a dependency of the test package.
+  # Save the component label, so that it may be included as a dependency of the
+  # test package.
   test_component_labels += [ ":${component_label}" ]
 }
 

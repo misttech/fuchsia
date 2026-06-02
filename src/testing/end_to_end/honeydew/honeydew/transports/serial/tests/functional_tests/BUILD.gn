@@ -21,7 +21,8 @@ if (is_host) {
   }
 }
 
-# Group containing all of the Serial transport functional test cases and its dependencies.
+# Group containing all of the Serial transport functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [ ":serial_test($host_toolchain)" ]

@@ -56,7 +56,8 @@ python_library("session_test_lib") {
   ]
 }
 
-# Group containing all of the session affordances functional test cases and its dependencies.
+# Group containing all of the session affordances functional test cases and its
+# dependencies.
 group("tests") {
   testonly = true
   public_deps = [

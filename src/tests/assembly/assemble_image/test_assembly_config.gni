@@ -66,8 +66,8 @@ template("test_assembly_config") {
       }
       testonly = true
       deps += [
-        # Assembly should only be performed in the default toolchain, so depend on
-        # that task in the default toolchain.
+        # Assembly should only be performed in the default toolchain, so depend
+        # on that task in the default toolchain.
         ":${target_name}($default_toolchain)",
       ]
     }
@@ -81,18 +81,18 @@ template("test_assembly_config") {
       deps = [ "//src/tests/assembly/lib/run_assembly" ]
     }
 
-    not_needed(
-        [
-          # When this test is moved to a host_test(), these will then be used.
-          "files",
-          "labels",
+    not_needed([
+                 # When this test is moved to a host_test(), these will then be
+                 # used.
+                 "files",
+                 "labels",
 
-          # Args which are used in the is_fuchsia section
-          "base_packages_param",
-          "additional_deps_param",
-          "additional_args_param",
-          "config_json_param",
-        ])
+                 # Args which are used in the is_fuchsia section
+                 "base_packages_param",
+                 "additional_deps_param",
+                 "additional_args_param",
+                 "config_json_param",
+               ])
     not_needed(invoker,
                [
                  "product",
@@ -151,8 +151,9 @@ template("test_assembly_config") {
       }
     }
 
-    # This is an action rather than a host test because enumerating all the inputs to assembly
-    # for the host_test_data() template is very difficult right now.
+    # This is an action rather than a host test because enumerating all the
+    # inputs to assembly for the host_test_data() template is very difficult
+    # right now.
     # TODO(https://fxbug.dev/42179042) archive the AIB into a tgz for host_test_data()
     #
     # NOTE:  This action should only occur in the target toolchain, not in the

@@ -17,7 +17,8 @@ fuchsia_component("log-start-component") {
 
 fuchsia_package("memory-budget-session") {
   deps = [
-    # component-url: fuchsia-pkg://fuchsia.com/memory-budget-session#meta/log-start.cm
+    # component-url:
+    # fuchsia-pkg://fuchsia.com/memory-budget-session#meta/log-start.cm
     ":log-start-component",
   ]
 }

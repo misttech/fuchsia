@@ -290,8 +290,9 @@ fuchsia_unittest_package("log_settings_min_severity") {
 
   deps = [ ":log_settings_min_severity_bin" ]
 
-  # This test expects to observe its own TRACE-level log messages but does not configure that as
-  # the static severity level in the binary. The test relies on the configuration below to pass.
+  # This test expects to observe its own TRACE-level log messages but does not
+  # configure that as the static severity level in the binary. The test relies
+  # on the configuration below to pass.
   test_specs = {
     log_settings = {
       min_severity = "TRACE"

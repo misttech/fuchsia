@@ -103,7 +103,8 @@ executable("syz-executor") {
   ]
 }
 
-# Match the warnings enabled for Fuchsia builds in syzkaller/sys/targets/targets.go.
+# Match the warnings enabled for Fuchsia builds in
+# syzkaller/sys/targets/targets.go.
 config("warnings") {
   cflags = [
     "-Wall",
