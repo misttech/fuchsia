@@ -54,23 +54,36 @@ rust_library(
         "sync",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "time",  # aarch64-unknown-linux-gnu
+            "bytes",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "fs",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "io-util",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "libc",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "mio",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "net",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "num_cpus",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "process",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "rt",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "rt-multi-thread",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "signal",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "signal-hook-registry",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "socket2",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu
+            "time",  # @rules_rust//rust/platform:aarch64-unknown-linux-gnu, aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "bytes",  # x86_64-unknown-linux-gnu
-            "fs",  # x86_64-unknown-linux-gnu
-            "io-util",  # x86_64-unknown-linux-gnu
-            "libc",  # x86_64-unknown-linux-gnu
-            "mio",  # x86_64-unknown-linux-gnu
-            "net",  # x86_64-unknown-linux-gnu
-            "num_cpus",  # x86_64-unknown-linux-gnu
-            "process",  # x86_64-unknown-linux-gnu
-            "rt",  # x86_64-unknown-linux-gnu
-            "rt-multi-thread",  # x86_64-unknown-linux-gnu
-            "signal",  # x86_64-unknown-linux-gnu
-            "signal-hook-registry",  # x86_64-unknown-linux-gnu
-            "socket2",  # x86_64-unknown-linux-gnu
-            "time",  # x86_64-unknown-linux-gnu
+            "bytes",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "fs",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "io-util",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "libc",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "mio",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "net",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "num_cpus",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "process",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "rt",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "rt-multi-thread",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "signal",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "signal-hook-registry",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "socket2",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu
+            "time",  # @rules_rust//rust/platform:x86_64-unknown-linux-gnu, x86_64-unknown-linux-gnu
         ],
         "//conditions:default": [],
     }),
@@ -79,8 +92,8 @@ rust_library(
     rustc_flags = [
         "--cap-lints=allow",
     ] + select({
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "--cfg=tokio_unstable",  # x86_64-unknown-linux-gnu
+        "@platforms//os:linux": [
+            "--cfg=tokio_unstable",  # @platforms//os:linux
         ],
         "//conditions:default": [],
     }),
@@ -102,14 +115,14 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/pin-project-lite-0.2.17:pin_project_lite",
     ] + select({
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/mio-0.8.11:mio",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",  # x86_64-unknown-linux-gnu
-            "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",  # x86_64-unknown-linux-gnu
+        "@platforms//os:linux": [
+            "//third_party/rust_crates/ask2patch/memchr",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/libc-0.2.186:libc",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/mio-0.8.11:mio",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",  # @platforms//os:linux
+            "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",  # @platforms//os:linux
         ],
         "//conditions:default": [],
     }),

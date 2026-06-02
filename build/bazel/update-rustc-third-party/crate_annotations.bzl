@@ -11,6 +11,24 @@
 
 load("@rules_rust//crate_universe:defs.bzl", "crate")
 
+_TOKIO_HOST_FEATURES = [
+    "bytes",
+    "fs",
+    "io-util",
+    "libc",
+    "mio",
+    "net",
+    "num_cpus",
+    "process",
+    "rt-multi-thread",
+    "rt",
+    "signal",
+    "signal-hook-registry",
+    "socket2",
+    "sync",
+    "time",
+]
+
 CRATE_ANNOTATIONS = {
     "anyhow": [
         crate.annotation(
@@ -78,7 +96,7 @@ CRATE_ANNOTATIONS = {
             deps = crate.select(
                 common = [],
                 selects = {
-                    "x86_64-unknown-linux-gnu": [
+                    "@platforms//os:linux": [
                         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
                         "//third_party/rust_crates/vendor/libc-0.2.186:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
@@ -91,32 +109,20 @@ CRATE_ANNOTATIONS = {
             ),
             crate_features = crate.select(
                 common = [],
+                # In Bazel, more specific select keys take precedence over more general ones
+                # (e.g. @rules_rust//rust/platform:x86_64-unknown-linux-gnu over @platforms//os:linux).
+                # The generated tokio target has feature select defined on the more specific
+                # platform keys, so we must use those keys here to provide the features so they
+                # don't get neglected.
                 selects = {
-                    "x86_64-unknown-linux-gnu": [
-                        "bytes",
-                        "fs",
-                        "io-util",
-                        "libc",
-                        "mio",
-                        "net",
-                        "num_cpus",
-                        "process",
-                        "rt-multi-thread",
-                        "rt",
-                        "signal",
-                        "signal-hook-registry",
-                        "socket2",
-                        "sync",
-                        "time",
-                    ],
+                    "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": _TOKIO_HOST_FEATURES,
+                    "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": _TOKIO_HOST_FEATURES,
                 },
             ),
             rustc_flags = crate.select(
                 common = [],
                 selects = {
-                    "x86_64-unknown-linux-gnu": [
-                        "--cfg=tokio_unstable",
-                    ],
+                    "@platforms//os:linux": ["--cfg=tokio_unstable"],
                 },
             ),
         ),
@@ -195,7 +201,7 @@ CRATE_ANNOTATIONS = {
     ],
     "mock-omaha-server": [
         crate.annotation(
-            version = "0.3.7",
+            version = "0.3.8",
             deps = crate.select(
                 common = [
                     "//src/lib/fuchsia-async",
@@ -204,11 +210,12 @@ CRATE_ANNOTATIONS = {
                     "//third_party/rust_crates/vendor:argh",
                 ],
                 selects = {
-                    "x86_64-unknown-linux-gnu": [
+                    "@platforms//os:linux": [
                         "//third_party/rust_crates/vendor:tokio",
                     ],
                 },
             ),
+            rustc_flags = ["--cfg=fasync"],
         ),
     ],
     "pin-init": [
