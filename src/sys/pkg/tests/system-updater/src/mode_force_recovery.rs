@@ -69,7 +69,7 @@ async fn writes_recovery_and_force_reboots_into_it_packageless() {
     );
 
     env.assert_interactions(crate::initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::Recovery,

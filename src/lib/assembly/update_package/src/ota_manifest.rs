@@ -315,9 +315,6 @@ mod tests {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(manifest::AssetType::Zbi),
-                sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                    .parse()
-                    .unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: 0,
                     fuchsia_merkle_root:
@@ -332,9 +329,6 @@ mod tests {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(manifest::AssetType::Vbmeta),
-                sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                    .parse()
-                    .unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: 0,
                     fuchsia_merkle_root:

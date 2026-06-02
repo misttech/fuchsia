@@ -20,8 +20,12 @@ pub struct Version {
     pub update_hash: String,
     /// The hash of the system image package.
     pub system_image_hash: String,
-    /// The vbmeta and zbi hash are SHA256 hash of the image with trailing zeros removed, we can't
-    /// use the exact image because when reading from paver we get the entire partition back.
+    /// For the currently running system, the vbmeta and zbi hash are SHA256 hash of the image with
+    /// trailing zeros removed, because we can't use the exact image because when reading from paver
+    /// we get the entire partition back.
+    /// For an update package, the hashes are SHA256 hash of the image without removing trailing
+    /// zeros.
+    /// For an ota manifest, the hashes are the fuchsia merkle roots of the image blobs.
     pub vbmeta_hash: String,
     pub zbi_hash: String,
     /// The version in build-info.
@@ -131,7 +135,7 @@ impl Version {
                 .find(|image| {
                     image.image_type == update_package::manifest::ImageType::Asset(asset_type)
                 })
-                .map(|image| image.sha256.to_string())
+                .map(|image| image.blob.fuchsia_merkle_root.to_string())
                 .unwrap_or_default()
         });
         let build_version = manifest.build_info_version.clone();

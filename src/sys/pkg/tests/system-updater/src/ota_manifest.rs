@@ -25,7 +25,6 @@ async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
             images: vec![manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: zbi_content.len() as u64,
                     fuchsia_merkle_root: zbi_hash,

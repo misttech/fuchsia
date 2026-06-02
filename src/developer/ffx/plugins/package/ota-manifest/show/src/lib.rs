@@ -31,7 +31,6 @@ pub struct OtaManifestOutput {
 struct ImageOutput {
     slot: String,
     image_type: String,
-    sha256: String,
     blob: BlobOutput,
 }
 
@@ -74,7 +73,6 @@ impl From<Image> for ImageOutput {
                 ImageType::Asset(ref asset) => format!("Asset({:?})", asset),
                 ImageType::Firmware(ref fw) => format!("Firmware({})", fw),
             },
-            sha256: image.sha256.to_string(),
             blob: image.blob.into(),
         }
     }
@@ -217,7 +215,6 @@ mod tests {
                 Image {
                     slot: Slot::AB,
                     image_type: ImageType::Firmware("test-fw".to_string()),
-                    sha256: "0".repeat(64).parse().unwrap(),
                     blob: Blob {
                         uncompressed_size: 1234,
                         fuchsia_merkle_root: "1".repeat(64).parse().unwrap(),
@@ -226,7 +223,6 @@ mod tests {
                 Image {
                     slot: Slot::R,
                     image_type: ImageType::Asset(update_package::manifest::AssetType::Zbi),
-                    sha256: "a".repeat(64).parse().unwrap(),
                     blob: Blob {
                         uncompressed_size: 9999,
                         fuchsia_merkle_root: "b".repeat(64).parse().unwrap(),
@@ -290,7 +286,6 @@ mod tests {
                 {
                     "slot": "A/B",
                     "image_type": "Firmware(test-fw)",
-                    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
                     "blob": {
                         "uncompressed_size": 1234,
                         "fuchsia_merkle_root": "1111111111111111111111111111111111111111111111111111111111111111"
@@ -299,7 +294,6 @@ mod tests {
                 {
                     "slot": "Recovery",
                     "image_type": "Asset(Zbi)",
-                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "blob": {
                         "uncompressed_size": 9999,
                         "fuchsia_merkle_root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

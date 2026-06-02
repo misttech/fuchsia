@@ -84,7 +84,7 @@ async fn updates_the_system_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), content_blob_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), content_blob_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -240,7 +240,7 @@ async fn updates_the_system_with_progress_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), content_blob_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), content_blob_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,

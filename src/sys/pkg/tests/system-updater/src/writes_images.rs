@@ -120,7 +120,6 @@ async fn fails_on_image_write_error_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(8),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -252,7 +251,6 @@ async fn writes_to_both_configs_if_abr_not_supported_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(8),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -504,7 +502,6 @@ async fn assert_writes_for_current_and_target_packageless(
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -721,7 +718,6 @@ async fn retry_image_blob_fetch_once_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -884,7 +880,6 @@ async fn retry_image_blob_fetch_twice_fails_update_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -1044,7 +1039,6 @@ async fn writes_fuchsia_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
             blob: manifest::Blob {
                 uncompressed_size: zbi_content.len() as u64,
                 fuchsia_merkle_root: zbi_hash,
@@ -1194,7 +1188,6 @@ async fn writes_fuchsia_vbmeta_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: zbi_content.len() as u64,
                     fuchsia_merkle_root: zbi_hash,
@@ -1203,7 +1196,6 @@ async fn writes_fuchsia_vbmeta_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(1),
                 blob: manifest::Blob {
                     uncompressed_size: vbmeta_content.len() as u64,
                     fuchsia_merkle_root: vbmeta_hash,
@@ -1319,7 +1311,6 @@ async fn zbi_match_in_desired_config_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
             blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
         }],
         ..make_manifest([])
@@ -1421,7 +1412,6 @@ async fn zbi_match_in_active_config_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
             blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
         }],
         ..make_manifest([])
@@ -1536,7 +1526,6 @@ async fn zbi_match_in_active_config_error_in_desired_config_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
             blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
         }],
         ..make_manifest([])
@@ -1670,7 +1659,6 @@ async fn asset_comparing_respects_fuchsia_mem_buffer_size_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
             blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
         }],
         ..make_manifest([])
@@ -1795,7 +1783,6 @@ async fn asset_copying_sets_fuchsia_mem_buffer_size_packageless() {
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
             blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
         }],
         ..make_manifest([])
@@ -1926,13 +1913,11 @@ async fn recovery_already_present_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: MATCHING_SHA256.parse().unwrap(),
                 blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: rzbi_hash },
             },
         ],
@@ -1958,7 +1943,7 @@ async fn recovery_already_present_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), rzbi_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), rzbi_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -2061,13 +2046,11 @@ async fn writes_recovery_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: rzbi_content.len() as u64,
                     fuchsia_merkle_root: rzbi_hash,
@@ -2087,7 +2070,7 @@ async fn writes_recovery_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), rzbi_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), rzbi_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -2214,13 +2197,11 @@ async fn writes_recovery_vbmeta_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: rzbi_content.len() as u64,
                     fuchsia_merkle_root: rzbi_hash,
@@ -2229,7 +2210,6 @@ async fn writes_recovery_vbmeta_packageless() {
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(1),
                 blob: manifest::Blob {
                     uncompressed_size: rvbmeta_content.len() as u64,
                     fuchsia_merkle_root: rvbmeta_hash,
@@ -2250,7 +2230,11 @@ async fn writes_recovery_vbmeta_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions().chain([
-            ReplaceRetainedBlobs(vec![hash(9).into(), rzbi_hash.into(), rvbmeta_hash.into()]),
+            ReplaceRetainedBlobs(vec![
+                empty_merkle().into(),
+                rzbi_hash.into(),
+                rvbmeta_hash.into(),
+            ]),
             Gc,
         ]),
         [
@@ -2379,7 +2363,6 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(1),
                 blob: manifest::Blob {
                     uncompressed_size: zbi_content.len() as u64,
                     fuchsia_merkle_root: zbi_hash,
@@ -2388,7 +2371,6 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: rzbi_content.len() as u64,
                     fuchsia_merkle_root: rzbi_hash,

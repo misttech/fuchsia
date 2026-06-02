@@ -95,13 +95,11 @@ async fn images_manifest_firmware_no_match_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -123,7 +121,7 @@ async fn images_manifest_firmware_no_match_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -227,13 +225,11 @@ async fn images_manifest_firmware_match_desired_config_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: MATCHING_SHA256.parse().unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -254,7 +250,7 @@ async fn images_manifest_firmware_match_desired_config_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -361,13 +357,11 @@ async fn images_manifest_firmware_match_active_config_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: MATCHING_SHA256.parse().unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -391,7 +385,7 @@ async fn images_manifest_firmware_match_active_config_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -519,13 +513,11 @@ async fn firmware_comparing_respects_fuchsia_mem_buffer_size_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: MATCHING_SHA256.parse().unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -554,7 +546,7 @@ async fn firmware_comparing_respects_fuchsia_mem_buffer_size_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -675,13 +667,11 @@ async fn firmware_copying_sets_fuchsia_mem_buffer_size_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: MATCHING_SHA256.parse().unwrap(),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -709,7 +699,7 @@ async fn firmware_copying_sets_fuchsia_mem_buffer_size_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -837,13 +827,11 @@ async fn writes_multiple_firmware_types_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("a".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_a_content.len() as u64,
                     fuchsia_merkle_root: firmware_a_hash,
@@ -852,7 +840,6 @@ async fn writes_multiple_firmware_types_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("b".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_b_content.len() as u64,
                     fuchsia_merkle_root: firmware_b_hash,
@@ -873,7 +860,7 @@ async fn writes_multiple_firmware_types_packageless() {
     env.assert_unordered_interactions(
         initial_interactions().chain([
             ReplaceRetainedBlobs(vec![
-                hash(9).into(),
+                empty_merkle().into(),
                 firmware_a_hash.into(),
                 firmware_b_hash.into(),
             ]),
@@ -1008,13 +995,11 @@ async fn skips_unsupported_firmware_type_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("a".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -1038,7 +1023,7 @@ async fn skips_unsupported_firmware_type_packageless() {
 
     env.assert_unordered_interactions(
         initial_interactions()
-            .chain([ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]), Gc]),
+            .chain([ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]), Gc]),
         [
             Paver(PaverEvent::ReadAsset {
                 configuration: paver::Configuration::B,
@@ -1163,13 +1148,11 @@ async fn fails_on_firmware_write_error_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("a".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -1219,7 +1202,7 @@ async fn fails_on_firmware_write_error_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), firmware_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), firmware_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,

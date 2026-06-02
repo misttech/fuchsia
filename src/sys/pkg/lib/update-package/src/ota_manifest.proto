@@ -69,11 +69,8 @@ message Image {
   // The slot this image should be written to.
   Slot slot = 3;
 
-  // The sha256 hash of the raw image with no padding.
-  bytes sha256 = 4;
-
   // Metadata about the blob containing the image data.
-  Blob blob = 5;
+  Blob blob = 4;
 }
 
 // The type of a system asset.

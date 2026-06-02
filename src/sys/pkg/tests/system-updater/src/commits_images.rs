@@ -79,7 +79,7 @@ async fn fails_setting_configuration_active_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -171,7 +171,7 @@ async fn fails_commit_recovery_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::Recovery,

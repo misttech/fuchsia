@@ -47,7 +47,7 @@ async fn verifies_existing_blobs_if_enabled() {
     assert_matches!(receiver.next().await, Some(()));
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), blob_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), blob_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -100,7 +100,7 @@ async fn re_fetches_corrupt_blob() {
     env.run_packageless_update().await.unwrap();
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), blob_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), blob_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,

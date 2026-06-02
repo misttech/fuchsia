@@ -80,7 +80,7 @@ async fn succeeds_without_writable_data_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -177,13 +177,11 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(6),
                 blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(3),
                 blob: manifest::Blob { uncompressed_size: 6, fuchsia_merkle_root: vbmeta_hash },
             },
         ],
@@ -238,6 +236,11 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
     .await
     .unwrap();
 
+    let expected_zbi_hash =
+        if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
+    let expected_vbmeta_hash =
+        if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
+
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
         Some(json!({
@@ -256,9 +259,8 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
                 "target": {
                     "update_hash": update_hash,
                     "system_image_hash": system_image_hash,
-                    "vbmeta_hash":
-                        hashstr(3),
-                    "zbi_hash": hashstr(6),
+                    "vbmeta_hash": expected_vbmeta_hash,
+                    "zbi_hash": expected_zbi_hash,
                     "build_version": "0.2.0.0",
                     "epoch": SOURCE_EPOCH.to_string()
                 },
@@ -302,6 +304,8 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
 
     env.run_update_with_options(update_url, default_options()).await.unwrap();
 
+    let expected_zbi_hash = if update_url == UPDATE_PKG_URL { EMPTY_SHA256 } else { EMPTY_MERKLE };
+
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
         Some(json!({
@@ -319,7 +323,7 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
                     "update_hash": update_hash,
                     "system_image_hash": "",
                     "vbmeta_hash": "",
-                    "zbi_hash": EMPTY_SHA256,
+                    "zbi_hash": expected_zbi_hash,
                     "build_version": "1.2.3.4",
                     "epoch": SOURCE_EPOCH.to_string()
                 },
@@ -379,13 +383,11 @@ async fn increments_attempts_counter_on_retry(
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(6),
                 blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
             },
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(3),
                 blob: manifest::Blob { uncompressed_size: 6, fuchsia_merkle_root: vbmeta_hash },
             },
         ],
@@ -427,6 +429,11 @@ async fn increments_attempts_counter_on_retry(
 
     env.run_update_with_options(update_url, default_options()).await.unwrap();
 
+    let expected_zbi_hash =
+        if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
+    let expected_vbmeta_hash =
+        if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
+
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
         Some(json!({
@@ -444,8 +451,8 @@ async fn increments_attempts_counter_on_retry(
                 "target": {
                     "update_hash": update_hash,
                     "system_image_hash": "",
-                    "vbmeta_hash": hashstr(3),
-                    "zbi_hash": hashstr(6),
+                    "vbmeta_hash": expected_vbmeta_hash,
+                    "zbi_hash": expected_zbi_hash,
                     "build_version": "",
                     "epoch": SOURCE_EPOCH.to_string()
                 },

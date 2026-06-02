@@ -131,7 +131,7 @@ async fn succeeds_even_if_metrics_fail_to_send_packageless() {
     assert_eq!(loggers.len(), 0);
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,

@@ -1390,7 +1390,7 @@ impl PackagelessAttempt<'_> {
                 };
                 let image_type = (&image.image_type).into();
                 if should_write_image(
-                    image.sha256,
+                    image.blob.fuchsia_merkle_root,
                     image.blob.uncompressed_size,
                     current_configuration,
                     target_config,
@@ -1567,8 +1567,8 @@ async fn write_image_from_package(
 /// configuration before returning false.
 ///
 /// Returning true indicates that the asset in the update differs from what is on the device.
-async fn should_write_image(
-    image_sha256: fuchsia_hash::Sha256,
+async fn should_write_image<T: BufferHasher>(
+    image_hash: fuchsia_hash::GenericDigest<T>,
     image_size: u64,
     current_config: paver::CurrentConfiguration,
     target_config: paver::TargetConfiguration,
@@ -1580,7 +1580,7 @@ async fn should_write_image(
             data_sink,
             single_target_config,
             image_type,
-            image_sha256,
+            image_hash,
             image_size,
         )
         .await
@@ -1589,7 +1589,7 @@ async fn should_write_image(
         info!(
             target_config:?,
             image_type:?,
-            image_sha256:?,
+            image_hash:?,
             image_size;
             "Target configuration already contains the desired target image, skip writing"
         );
@@ -1603,7 +1603,7 @@ async fn should_write_image(
             data_sink,
             current_config,
             image_type,
-            image_sha256,
+            image_hash,
             image_size,
         )
         .await
@@ -1612,7 +1612,7 @@ async fn should_write_image(
             current_config:?,
             target_config:?,
             image_type:?,
-            image_sha256:?,
+            image_hash:?,
             image_size;
             "Current configuration contains the desired target image, \
             copying to avoid a download"
@@ -1644,11 +1644,11 @@ impl<'a> From<&'a update_package::manifest::ImageType> for ImageType<'a> {
     }
 }
 
-async fn get_image_buffer_if_hash_and_size_match(
+async fn get_image_buffer_if_hash_and_size_match<T: BufferHasher>(
     data_sink: &fpaver::DataSinkProxy,
     configuration: fpaver::Configuration,
     image_type: ImageType<'_>,
-    image_sha256: fuchsia_hash::Sha256,
+    image_hash: fuchsia_hash::GenericDigest<T>,
     image_size: u64,
 ) -> Option<fmem::Buffer> {
     let fmem::Buffer { vmo, size } =
@@ -1658,7 +1658,7 @@ async fn get_image_buffer_if_hash_and_size_match(
                 warn!(
                     configuration:?,
                     image_type:?,
-                    image_sha256:?,
+                    image_hash:?,
                     image_size;
                     "Error reading image, so it will not be used to avoid a download: {:#}",
                     anyhow!(e)
@@ -1673,13 +1673,13 @@ async fn get_image_buffer_if_hash_and_size_match(
         return None;
     }
     let buffer = fmem::Buffer { vmo, size: image_size };
-    let buffer_hash = match sha256_buffer(&buffer) {
+    let buffer_hash = match T::hash_buffer(&buffer) {
         Ok(hash) => hash,
         Err(e) => {
             warn!(
                 configuration:?,
                 image_type:?,
-                image_sha256:?,
+                image_hash:?,
                 image_size;
                 "Error hashing image so it will not be used to avoid a download: {:#}",
                 anyhow!(e)
@@ -1687,21 +1687,36 @@ async fn get_image_buffer_if_hash_and_size_match(
             return None;
         }
     };
-    if buffer_hash == image_sha256 { Some(buffer) } else { None }
+    if buffer_hash == image_hash { Some(buffer) } else { None }
 }
 
-fn sha256_buffer(
+fn map_buffer(
     fmem::Buffer { vmo, size }: &fmem::Buffer,
-) -> anyhow::Result<fuchsia_hash::Sha256> {
-    let mapping =
-        mapped_vmo::ImmutableMapping::create_from_vmo(vmo, true).context("mapping the buffer")?;
+) -> anyhow::Result<mapped_vmo::TruncatedImmutableMapping> {
     let size: usize = (*size).try_into().context("buffer size as usize")?;
-    if size > mapping.len() {
-        anyhow::bail!("buffer size {size} larger than vmo size {}", mapping.len());
+    let mapping = mapped_vmo::TruncatedImmutableMapping::create_from_vmo(vmo, true, size)
+        .context("mapping the buffer")?;
+    Ok(mapping)
+}
+
+trait BufferHasher: Sized + Copy + PartialEq {
+    fn hash_buffer(buffer: &fmem::Buffer) -> anyhow::Result<fuchsia_hash::GenericDigest<Self>>;
+}
+
+impl BufferHasher for fuchsia_hash::Sha256Marker {
+    fn hash_buffer(buffer: &fmem::Buffer) -> anyhow::Result<fuchsia_hash::GenericDigest<Self>> {
+        let mapping = map_buffer(buffer)?;
+        Ok(From::from(*AsRef::<[u8; 32]>::as_ref(&<sha2::Sha256 as sha2::Digest>::digest(
+            &*mapping,
+        ))))
     }
-    Ok(From::from(*AsRef::<[u8; 32]>::as_ref(&<sha2::Sha256 as sha2::Digest>::digest(
-        &mapping[..size],
-    ))))
+}
+
+impl BufferHasher for fuchsia_hash::FuchsiaMerkleMarker {
+    fn hash_buffer(buffer: &fmem::Buffer) -> anyhow::Result<fuchsia_hash::GenericDigest<Self>> {
+        let mapping = map_buffer(buffer)?;
+        Ok(fuchsia_merkle::root_from_slice(&*mapping))
+    }
 }
 
 async fn sync_package_cache(pkg_cache: &fpkg::PackageCacheProxy) -> Result<(), Error> {
@@ -1953,9 +1968,9 @@ mod tests {
 }
 
 #[cfg(test)]
-mod test_sha256_buffer {
+mod test_buffer_hashers {
     use super::*;
-    use assert_matches::assert_matches;
+    use std::assert_matches;
 
     fn make_buffer(payload: Vec<u8>) -> fmem::Buffer {
         let vmo = zx::Vmo::create(payload.len().try_into().unwrap()).unwrap();
@@ -1964,9 +1979,9 @@ mod test_sha256_buffer {
     }
 
     #[test]
-    fn empty() {
+    fn sha256_empty() {
         let buffer = make_buffer(vec![]);
-        let calc_hash = sha256_buffer(&buffer).unwrap();
+        let calc_hash = fuchsia_hash::Sha256Marker::hash_buffer(&buffer).unwrap();
         assert_eq!(
             calc_hash,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".parse().unwrap()
@@ -1974,9 +1989,9 @@ mod test_sha256_buffer {
     }
 
     #[test]
-    fn large() {
+    fn sha256_large() {
         let buffer = make_buffer(vec![0; 1024 * 50]);
-        let calc_hash = sha256_buffer(&buffer).unwrap();
+        let calc_hash = fuchsia_hash::Sha256Marker::hash_buffer(&buffer).unwrap();
         assert_eq!(
             calc_hash,
             "16fa66a7dc98d93f2a4c5d20baf5177f59c4c37fc62face65690c11c15fe6ff9".parse().unwrap()
@@ -1984,10 +1999,10 @@ mod test_sha256_buffer {
     }
 
     #[test]
-    fn buffer_size_smaller_than_vmo_size_uses_buffer_size() {
+    fn sha256_buffer_size_smaller_than_vmo_size_uses_buffer_size() {
         let mut buffer = make_buffer(vec![0; 1024 * 51]);
         buffer.size = 1024 * 50;
-        let calc_hash = sha256_buffer(&buffer).unwrap();
+        let calc_hash = fuchsia_hash::Sha256Marker::hash_buffer(&buffer).unwrap();
         assert_eq!(
             calc_hash,
             "16fa66a7dc98d93f2a4c5d20baf5177f59c4c37fc62face65690c11c15fe6ff9".parse().unwrap()
@@ -1995,10 +2010,48 @@ mod test_sha256_buffer {
     }
 
     #[test]
-    fn buffer_size_larger_than_vmo_size_errors() {
+    fn sha256_buffer_size_larger_than_vmo_size_errors() {
         let mut buffer = make_buffer(vec![0; 10]);
         // vmo size will be rounded up to nearest page multiple
         buffer.size = 4097;
-        assert_matches!(sha256_buffer(&buffer), Err(_));
+        assert_matches!(fuchsia_hash::Sha256Marker::hash_buffer(&buffer), Err(_));
+    }
+
+    #[test]
+    fn merkle_empty() {
+        let buffer = make_buffer(vec![]);
+        let calc_hash = fuchsia_hash::FuchsiaMerkleMarker::hash_buffer(&buffer).unwrap();
+        assert_eq!(
+            calc_hash,
+            "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b".parse().unwrap()
+        );
+    }
+
+    #[test]
+    fn merkle_large() {
+        let buffer = make_buffer(vec![0; 1024 * 50]);
+        let calc_hash = fuchsia_hash::FuchsiaMerkleMarker::hash_buffer(&buffer).unwrap();
+        assert_eq!(
+            calc_hash,
+            "29c166e9d1826ea3c0be3ffe6c8f0a56a2a5df6b1f5142aae9d121faa5986f93".parse().unwrap()
+        );
+    }
+
+    #[test]
+    fn merkle_buffer_size_smaller_than_vmo_size_uses_buffer_size() {
+        let mut buffer = make_buffer(vec![0; 1024 * 51]);
+        buffer.size = 1024 * 50;
+        let calc_hash = fuchsia_hash::FuchsiaMerkleMarker::hash_buffer(&buffer).unwrap();
+        assert_eq!(
+            calc_hash,
+            "29c166e9d1826ea3c0be3ffe6c8f0a56a2a5df6b1f5142aae9d121faa5986f93".parse().unwrap()
+        );
+    }
+
+    #[test]
+    fn merkle_buffer_size_larger_than_vmo_size_errors() {
+        let mut buffer = make_buffer(vec![0; 10]);
+        buffer.size = 4097;
+        assert_matches!(fuchsia_hash::FuchsiaMerkleMarker::hash_buffer(&buffer), Err(_));
     }
 }

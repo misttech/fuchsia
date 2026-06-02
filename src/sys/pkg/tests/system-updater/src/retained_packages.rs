@@ -462,7 +462,7 @@ async fn non_empty_blobs_packageless() {
     let () = env.run_packageless_update().await.expect("run system updater");
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), content_blob_hash.into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), content_blob_hash.into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -486,7 +486,7 @@ async fn empty_blobs_packageless() {
     let () = env.run_packageless_update().await.expect("run system updater");
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,

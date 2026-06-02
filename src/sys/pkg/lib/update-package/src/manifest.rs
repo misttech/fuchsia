@@ -82,8 +82,6 @@ pub struct Image {
     pub slot: Slot,
     /// The type of the image.
     pub image_type: ImageType,
-    /// The sha256 hash of the raw image with no padding.
-    pub sha256: fuchsia_hash::Sha256,
     /// Metadata about the blob containing the image data.
     pub blob: Blob,
 }
@@ -95,35 +93,10 @@ impl Image {
         slot: Slot,
         image_type: ImageType,
     ) -> Result<Self, std::io::Error> {
-        use sha2::Digest as _;
-        use std::io::Read as _;
-
-        let mut file = std::fs::File::open(path)?;
-        let mut sha256_hasher = sha2::Sha256::new();
-        let mut merkle_builder = fuchsia_merkle::BufferedMerkleRootBuilder::default();
-        let mut buf = [0; 65536];
-        let mut size = 0;
-        loop {
-            let bytes_read = file.read(&mut buf)?;
-            if bytes_read == 0 {
-                break;
-            }
-            let buf = &buf[..bytes_read];
-            sha256_hasher.update(buf);
-            merkle_builder.write(buf);
-            size += bytes_read as u64;
-        }
-
-        let fuchsia_merkle_root = merkle_builder.complete();
-        let sha256 =
-            fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()));
-
-        Ok(Self {
-            slot,
-            image_type,
-            sha256,
-            blob: Blob { uncompressed_size: size, fuchsia_merkle_root },
-        })
+        let file = std::fs::File::open(path)?;
+        let size = file.metadata()?.len();
+        let fuchsia_merkle_root = fuchsia_merkle::root_from_reader(file)?;
+        Ok(Self { slot, image_type, blob: Blob { uncompressed_size: size, fuchsia_merkle_root } })
     }
 }
 
@@ -205,12 +178,8 @@ impl TryFrom<proto::Image> for Image {
         let slot = image.slot().into();
         let image_type =
             image.image_type.ok_or_else(|| "image_type missing".to_string())?.try_into()?;
-        let sha256 = fuchsia_hash::Sha256::from(
-            <[u8; 32]>::try_from(image.sha256)
-                .map_err(|e| format!("invalid sha256 length: {e:?}"))?,
-        );
         let blob = image.blob.ok_or_else(|| "blob missing".to_string())?.try_into()?;
-        Ok(Self { slot, image_type, sha256, blob })
+        Ok(Self { slot, image_type, blob })
     }
 }
 
@@ -219,7 +188,6 @@ impl From<Image> for proto::Image {
         Self {
             slot: proto::Slot::from(image.slot).into(),
             image_type: Some(image.image_type.into()),
-            sha256: image.sha256.as_ref().to_vec(),
             blob: Some(image.blob.into()),
         }
     }
@@ -291,8 +259,7 @@ impl TryFrom<proto::Blob> for Blob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
-    use sha2::Digest as _;
+    use std::assert_matches;
     use std::io::Write as _;
     use std::str::FromStr;
     use tempfile::NamedTempFile;
@@ -309,7 +276,6 @@ mod tests {
                 proto::Image {
                     slot: proto::Slot::Ab.into(),
                     image_type: Some(proto::image::ImageType::Asset(proto::AssetType::Zbi.into())),
-                    sha256: vec![0; 32],
                     blob: Some(proto::Blob {
                         uncompressed_size: 1234,
                         fuchsia_merkle_root: vec![1; 32],
@@ -318,7 +284,6 @@ mod tests {
                 proto::Image {
                     slot: proto::Slot::Ab.into(),
                     image_type: Some(proto::image::ImageType::Firmware("bootloader".to_string())),
-                    sha256: vec![2; 32],
                     blob: Some(proto::Blob {
                         uncompressed_size: 3456,
                         fuchsia_merkle_root: vec![3; 32],
@@ -339,13 +304,11 @@ mod tests {
         assert_eq!(manifest.images.len(), 2);
         assert_eq!(manifest.images[0].slot, Slot::AB);
         assert_eq!(manifest.images[0].image_type, ImageType::Asset(AssetType::Zbi));
-        assert_eq!(manifest.images[0].sha256, [0; 32].into());
         assert_eq!(manifest.images[0].blob.uncompressed_size, 1234);
         assert_eq!(manifest.images[0].blob.fuchsia_merkle_root, [1; 32].into());
 
         assert_eq!(manifest.images[1].slot, Slot::AB);
         assert_eq!(manifest.images[1].image_type, ImageType::Firmware("bootloader".to_string()));
-        assert_eq!(manifest.images[1].sha256, [2; 32].into());
         assert_eq!(manifest.images[1].blob.uncompressed_size, 3456);
         assert_eq!(manifest.images[1].blob.fuchsia_merkle_root, [3; 32].into());
 
@@ -371,7 +334,6 @@ mod tests {
             images: vec![proto::Image {
                 slot: proto::Slot::Ab.into(),
                 image_type: None,
-                sha256: vec![0; 32],
                 blob: Some(proto::Blob {
                     uncompressed_size: 1234,
                     fuchsia_merkle_root: vec![1; 32],
@@ -397,13 +359,11 @@ mod tests {
                 Image {
                     slot: Slot::AB,
                     image_type: ImageType::Asset(AssetType::Zbi),
-                    sha256: [0; 32].into(),
                     blob: Blob { uncompressed_size: 1234, fuchsia_merkle_root: [1; 32].into() },
                 },
                 Image {
                     slot: Slot::AB,
                     image_type: ImageType::Firmware("bootloader".to_string()),
-                    sha256: [2; 32].into(),
                     blob: Blob { uncompressed_size: 3456, fuchsia_merkle_root: [3; 32].into() },
                 },
             ],
@@ -426,10 +386,6 @@ mod tests {
 
         assert_eq!(image.blob.uncompressed_size, 11);
         assert_eq!(
-            image.sha256,
-            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".parse().unwrap()
-        );
-        assert_eq!(
             image.blob.fuchsia_merkle_root,
             "8af85e2fe5da3385ea468ed1cb8412eaea6530a90b5dd8dee96529c8d9d39b97".parse().unwrap()
         );
@@ -439,11 +395,9 @@ mod tests {
     fn image_from_path_large_file() {
         let mut file = NamedTempFile::new().unwrap();
         let chunk = [1; 1024];
-        let mut sha256_hasher = sha2::Sha256::new();
         let mut merkle_builder = fuchsia_merkle::BufferedMerkleRootBuilder::default();
         for _ in 0..1000 {
             file.write_all(&chunk).unwrap();
-            sha256_hasher.update(chunk);
             merkle_builder.write(&chunk);
         }
 
@@ -451,10 +405,6 @@ mod tests {
             Image::from_path(file.path(), Slot::AB, ImageType::Asset(AssetType::Zbi)).unwrap();
 
         assert_eq!(image.blob.uncompressed_size, 1000 * 1024);
-        assert_eq!(
-            image.sha256,
-            fuchsia_hash::Sha256::from(*AsRef::<[u8; 32]>::as_ref(&sha256_hasher.finalize()))
-        );
         assert_eq!(image.blob.fuchsia_merkle_root, merkle_builder.complete());
     }
 }

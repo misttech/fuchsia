@@ -50,7 +50,7 @@ async fn fails_on_ota_downloader_connect_error_packageless() {
     assert!(result.is_err(), "system updater succeeded when it should fail");
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), hash(0).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), hash(0).into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -128,7 +128,7 @@ async fn fails_on_blob_fetch_error_packageless() {
     );
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into(), hash(0).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into(), hash(0).into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -290,7 +290,7 @@ async fn fails_when_package_cache_sync_fails_packageless() {
     assert!(result.is_err(), "system updater succeeded when it should fail");
 
     env.assert_interactions(initial_interactions().chain([
-        ReplaceRetainedBlobs(vec![hash(9).into()]),
+        ReplaceRetainedBlobs(vec![empty_merkle().into()]),
         Gc,
         Paver(PaverEvent::ReadAsset {
             configuration: paver::Configuration::B,
@@ -340,7 +340,6 @@ async fn test_stage_failure_reason_packageless(
     expected_reason: StageFailureReason,
 ) {
     let mut manifest = make_manifest([]);
-    manifest.images[0].sha256 = [0; 32].into();
     manifest.images[0].blob.uncompressed_size = 1000;
     let env = TestEnv::builder().ota_manifest(manifest).build().await;
     env.ota_downloader_service.set_fetch_blob_response(Err(resolve_error));

@@ -70,6 +70,11 @@ mod writes_images;
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const MATCHING_SHA256: &str = "e0705e68b0468289858b543f8a57f375a3b4f46391a72f94a28d82d6a3dacaa7";
+const EMPTY_MERKLE: &str = "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b";
+
+fn empty_merkle() -> Hash {
+    EMPTY_MERKLE.parse().unwrap()
+}
 // Generated with `openssl genpkey -algorithm ed25519 -out ed25519.pem`
 // openssl pkey -in ed25519.pem -outform DER | tail -c 32 | xxd -p -c 32
 const MANIFEST_PRIVATE_KEY: &str =
@@ -122,8 +127,7 @@ fn make_manifest(blobs: impl IntoIterator<Item = ::update_package::manifest::Blo
         images: vec![manifest::Image {
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: EMPTY_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+            blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: empty_merkle() },
         }],
         blobs: blobs.into_iter().collect(),
     }

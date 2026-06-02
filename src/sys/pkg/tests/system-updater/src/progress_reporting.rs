@@ -96,7 +96,7 @@ async fn progress_reporting_fetch_multiple_packages() {
 
 #[fasync::run_singlethreaded(test)]
 async fn progress_reporting_fetch_multiple_blobs_packageless() {
-    let image_content = vec![0; 500];
+    let image_content = vec![1; 500];
     let image_hash = fuchsia_merkle::root_from_slice(&image_content);
 
     let mut manifest = make_manifest([
@@ -107,7 +107,6 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
     manifest.images = vec![manifest::Image {
         slot: manifest::Slot::AB,
         image_type: manifest::ImageType::Asset(AssetType::Zbi),
-        sha256: EMPTY_SHA256.parse().unwrap(),
         blob: manifest::Blob { uncompressed_size: 500, fuchsia_merkle_root: image_hash },
     }];
 

@@ -527,7 +527,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(1),
                 blob: manifest::Blob {
                     uncompressed_size: recovery_zbi_content.len() as u64,
                     fuchsia_merkle_root: recovery_zbi_hash,
@@ -536,7 +535,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(2),
                 blob: manifest::Blob {
                     uncompressed_size: recovery_vbmeta_content.len() as u64,
                     fuchsia_merkle_root: recovery_vbmeta_hash,
@@ -545,7 +543,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(3),
                 blob: manifest::Blob {
                     uncompressed_size: zbi_content.len() as u64,
                     fuchsia_merkle_root: zbi_hash,
@@ -554,7 +551,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(4),
                 blob: manifest::Blob {
                     uncompressed_size: vbmeta_content.len() as u64,
                     fuchsia_merkle_root: vbmeta_hash,
@@ -563,7 +559,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: sha256(5),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_content.len() as u64,
                     fuchsia_merkle_root: firmware_hash,
@@ -572,7 +567,6 @@ async fn fully_populated_images_manifest_packageless() {
             manifest::Image {
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("bl2".to_string()),
-                sha256: sha256(6),
                 blob: manifest::Blob {
                     uncompressed_size: firmware_bl2_content.len() as u64,
                     fuchsia_merkle_root: firmware_bl2_hash,
