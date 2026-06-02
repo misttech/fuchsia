@@ -890,7 +890,8 @@ async fn send_with_retransmits_at_instants<I: deps::Instant, T: Clone + Send + D
                 | deps::SocketError::NoInterface
                 | deps::SocketError::NetworkUnreachable
                 | deps::SocketError::UnsupportedHardwareType
-                | deps::SocketError::AddrNotAvailable => return Err(Error::Socket(e)),
+                | deps::SocketError::AddrNotAvailable
+                | deps::SocketError::BrokenPipe => return Err(Error::Socket(e)),
                 // We view EHOSTUNREACH as a recoverable error, as the desired
                 // destination could only be temporarily offline, and this does
                 // not necessarily indicate an issue with our own network stack.
@@ -968,7 +969,8 @@ fn recv_stream<'a, T: 'a, U: Send>(
                 | deps::SocketError::NoInterface
                 | deps::SocketError::NetworkUnreachable
                 | deps::SocketError::UnsupportedHardwareType
-                | deps::SocketError::AddrNotAvailable => {
+                | deps::SocketError::AddrNotAvailable
+                | deps::SocketError::BrokenPipe => {
                     recv_message_fatal_socket_error.increment();
                     return Err(Error::Socket(e));
                 }

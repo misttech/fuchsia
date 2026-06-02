@@ -65,9 +65,6 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             E::Eisconn => {
                 panic!("got EISCONN, but we aren't using connection-mode sockets: {:?}", e)
             }
-            E::Epipe => {
-                panic!("got EPIPE, but we aren't using connection-mode sockets: {:?}", e)
-            }
             E::Enomem => panic!("out of memory: {:?}", e),
             E::Eopnotsupp => dhcp_client_core::deps::SocketError::Other(e),
 
@@ -76,6 +73,11 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             E::Econnrefused => {
                 panic!("got ECONNREFUSED, but we aren't using connection-mode sockets: {:?}", e)
             }
+
+            // ============
+            // ZX_ERR_PEER_CLOSED on the fuchsia.posix.socket.packet/Socket channel
+            // is mapped to EPIPE in FDIO.
+            E::Epipe => dhcp_client_core::deps::SocketError::BrokenPipe,
 
             // ============
             // The following errors aren't expected to be returned by any of the

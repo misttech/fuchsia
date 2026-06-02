@@ -58,6 +58,9 @@ pub enum SocketError {
     /// The address is not available.
     #[error("address not available")]
     AddrNotAvailable,
+    /// Broken pipe.
+    #[error("broken pipe")]
+    BrokenPipe,
     /// Other IO errors observed on socket operations.
     #[error("socket error: {0}")]
     Other(std::io::Error),

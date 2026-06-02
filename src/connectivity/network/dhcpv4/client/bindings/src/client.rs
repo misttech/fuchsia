@@ -54,6 +54,7 @@ impl Error {
                 }
                 dhcp_client_core::deps::SocketError::HostUnreachable
                 | dhcp_client_core::deps::SocketError::AddrNotAvailable
+                | dhcp_client_core::deps::SocketError::BrokenPipe
                 | dhcp_client_core::deps::SocketError::Other(_) => {
                     Self::Core(dhcp_client_core::client::Error::Socket(socket_error))
                 }

@@ -130,6 +130,7 @@ pub(crate) async fn serve_client_provider(
                                         | dhcp_client_core::deps::SocketError::AddrNotAvailable
                                         | dhcp_client_core::deps::SocketError::HostUnreachable
                                         | dhcp_client_core::deps::SocketError::NetworkUnreachable
+                                        | dhcp_client_core::deps::SocketError::BrokenPipe
                                         | dhcp_client_core::deps::SocketError::Other(_) => {
                                             ClientExitReason::UnableToOpenSocket
                                         }

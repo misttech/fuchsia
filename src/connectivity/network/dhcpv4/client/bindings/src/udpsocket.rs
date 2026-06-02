@@ -32,6 +32,7 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             E::Ehostunreach => dhcp_client_core::deps::SocketError::HostUnreachable,
             E::Enetunreach => dhcp_client_core::deps::SocketError::NetworkUnreachable,
             E::Enobufs | E::Enomem => panic!("out of memory: {e:?}"),
+            E::Epipe => dhcp_client_core::deps::SocketError::BrokenPipe,
             E::Eacces
             | E::Eaddrinuse
             | E::Eaddrnotavail
@@ -44,7 +45,6 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             | E::Eopnotsupp
             | E::Enotconn
             | E::Eperm
-            | E::Epipe
             | E::Esocktnosupport => dhcp_client_core::deps::SocketError::Other(e),
 
             // TODO(https://fxbug.dev/42077996): Revisit whether we should
