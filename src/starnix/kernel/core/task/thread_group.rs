@@ -1884,9 +1884,15 @@ impl ThreadGroup {
                 return;
             };
 
+            let mut state = this.write();
+            if state.is_exited() {
+                // Do not set an exit notifier on an exited thread group. It will never be notified.
+                return;
+            }
+
             // Register a channel to be notified when exit() is complete.
             let (on_exited_send, on_exited) = futures::channel::oneshot::channel();
-            this.write().exit_notifier = Some(on_exited_send);
+            state.exit_notifier = Some(on_exited_send);
 
             // We want to be able to log about this thread group without upgrading the `Weak`.
             let tg_name = format!("{this:?}");

@@ -29,6 +29,7 @@ group("tests") {
     "remotevol:tests",
     "scheduler:tests",
     "selinux/userspace:tests",
+    "shutdown:tests",
     "suspend:tests",
     "syscalls:tests",
     "sysrq:tests",
