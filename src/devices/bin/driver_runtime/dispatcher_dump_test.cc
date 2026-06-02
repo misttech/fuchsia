@@ -70,13 +70,12 @@ void DispatcherDumpTest::TearDown() {
 TEST_F(DispatcherDumpTest, DumpNoTasks) {
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
 
     ASSERT_EQ(state.running_dispatcher, nullptr);
     ASSERT_EQ(state.running_driver, nullptr);
-    ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get());
+    ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get()->GetDispatcher());
     ASSERT_EQ(state.driver_owner, fake_driver_);
     ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
     ASSERT_EQ(state.name.data(), kDispatcherName);
@@ -92,13 +91,12 @@ TEST_F(DispatcherDumpTest, DumpFromTask) {
   ASSERT_OK(async::PostTask(dispatcher_.async_dispatcher(), [&] {
     {
       driver_runtime::Dispatcher::DumpState state;
-      driver_runtime::Dispatcher* runtime_dispatcher =
-          static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+      driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
       runtime_dispatcher->Dump(&state);
 
-      ASSERT_EQ(state.running_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.running_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.running_driver, fake_driver_);
-      ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get());
+      ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.driver_owner, fake_driver_);
       ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
       ASSERT_EQ(state.name.data(), kDispatcherName);
@@ -112,13 +110,12 @@ TEST_F(DispatcherDumpTest, DumpFromTask) {
   ASSERT_OK(async::PostTask(dispatcher_.async_dispatcher(), [&] {
     {
       driver_runtime::Dispatcher::DumpState state;
-      driver_runtime::Dispatcher* runtime_dispatcher =
-          static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+      driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
       runtime_dispatcher->Dump(&state);
 
-      ASSERT_EQ(state.running_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.running_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.running_driver, fake_driver_);
-      ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get());
+      ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.driver_owner, fake_driver_);
       ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
       ASSERT_EQ(state.name.data(), kDispatcherName);
@@ -148,15 +145,14 @@ TEST_F(DispatcherDumpTest, DumpFromAnotherDispatcher) {
   ASSERT_OK(async::PostTask(dispatcher_.async_dispatcher(), [&] {
     {
       driver_runtime::Dispatcher::DumpState state;
-      driver_runtime::Dispatcher* runtime_dispatcher =
-          static_cast<driver_runtime::Dispatcher*>(dispatcher2->get());
+      driver_runtime::Dispatcher* runtime_dispatcher = dispatcher2->get()->GetDispatcher();
       runtime_dispatcher->Dump(&state);
 
       // The dispatcher being dumped is different from the dispatcher running on the current
       // thread.
-      ASSERT_EQ(state.running_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.running_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.running_driver, fake_driver_);
-      ASSERT_EQ(state.dispatcher_to_dump, dispatcher2->get());
+      ASSERT_EQ(state.dispatcher_to_dump, dispatcher2->get()->GetDispatcher());
       ASSERT_EQ(state.driver_owner, fake_driver2);
       ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
       ASSERT_EQ(state.name.data(), kAdditionalDispatcherName);
@@ -193,20 +189,19 @@ TEST_F(DispatcherDumpTest, QueueTaskFromAnotherDispatcher) {
 
     {
       driver_runtime::Dispatcher::DumpState state;
-      driver_runtime::Dispatcher* runtime_dispatcher2 =
-          static_cast<driver_runtime::Dispatcher*>(dispatcher2->get());
+      driver_runtime::Dispatcher* runtime_dispatcher2 = dispatcher2->get()->GetDispatcher();
       runtime_dispatcher2->Dump(&state);
 
       // The dispatcher being dumped is different from the dispatcher running on the current
       // thread.
-      ASSERT_EQ(state.running_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.running_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.running_driver, fake_driver_);
-      ASSERT_EQ(state.dispatcher_to_dump, dispatcher2->get());
+      ASSERT_EQ(state.dispatcher_to_dump, dispatcher2->get()->GetDispatcher());
       ASSERT_EQ(state.driver_owner, fake_driver2);
       ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
       ASSERT_EQ(state.name.data(), kAdditionalDispatcherName);
       ASSERT_EQ(state.queued_tasks.size(), 1);
-      ASSERT_EQ(state.queued_tasks[0].initiating_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.queued_tasks[0].initiating_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.queued_tasks[0].initiating_driver, fake_driver_);
     }
     task_completion.Signal();
@@ -244,13 +239,12 @@ TEST_F(DispatcherDumpTest, DumpDuringShutdown) {
 
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
 
     ASSERT_EQ(state.running_dispatcher, nullptr);
     ASSERT_EQ(state.running_driver, nullptr);
-    ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get());
+    ASSERT_EQ(state.dispatcher_to_dump, dispatcher_.get()->GetDispatcher());
     ASSERT_EQ(state.driver_owner, fake_driver_);
     ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kShuttingDown);
     ASSERT_EQ(state.name.data(), kDispatcherName);
@@ -278,13 +272,12 @@ TEST_F(DispatcherDumpTest, DumpUnsynchronizedDispatcher) {
   ASSERT_OK(async::PostTask(dispatcher_.async_dispatcher(), [&] {
     {
       driver_runtime::Dispatcher::DumpState state;
-      driver_runtime::Dispatcher* runtime_dispatcher =
-          static_cast<driver_runtime::Dispatcher*>(dispatcher->get());
+      driver_runtime::Dispatcher* runtime_dispatcher = dispatcher->get()->GetDispatcher();
 
       runtime_dispatcher->Dump(&state);
-      ASSERT_EQ(state.running_dispatcher, dispatcher_.get());
+      ASSERT_EQ(state.running_dispatcher, dispatcher_.get()->GetDispatcher());
       ASSERT_EQ(state.running_driver, fake_driver_);
-      ASSERT_EQ(state.dispatcher_to_dump, dispatcher->get());
+      ASSERT_EQ(state.dispatcher_to_dump, dispatcher->get()->GetDispatcher());
       ASSERT_EQ(state.driver_owner, fake_driver2);
       ASSERT_EQ(state.state, driver_runtime::Dispatcher::DispatcherState::kRunning);
       ASSERT_EQ(state.name.data(), kDispatcherName);
@@ -309,8 +302,7 @@ TEST_F(DispatcherDumpTest, DumpRequestsCount) {
   ASSERT_OK(fdf_testing_run_until_idle());
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
     ASSERT_EQ(state.debug_stats.num_inlined_requests, 0);
     ASSERT_EQ(state.debug_stats.num_total_requests, 1);
@@ -342,8 +334,7 @@ TEST_F(DispatcherDumpTest, DumpRequestsCount) {
   // We should see 1 inlined request in the dump.
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
     ASSERT_EQ(state.debug_stats.num_inlined_requests, 1);
     ASSERT_EQ(state.debug_stats.num_total_requests, 2);
@@ -374,8 +365,7 @@ TEST_F(DispatcherDumpTest, DumpChannelWaitNotYetRegistered) {
 
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher2_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher2_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
     ASSERT_EQ(state.debug_stats.num_inlined_requests, 0);
     ASSERT_EQ(state.debug_stats.num_total_requests, 2);
@@ -405,8 +395,7 @@ TEST_F(DispatcherDumpTest, DumpChannelWaitRegistered) {
 
   {
     driver_runtime::Dispatcher::DumpState state;
-    driver_runtime::Dispatcher* runtime_dispatcher =
-        static_cast<driver_runtime::Dispatcher*>(dispatcher2_.get());
+    driver_runtime::Dispatcher* runtime_dispatcher = dispatcher2_.get()->GetDispatcher();
     runtime_dispatcher->Dump(&state);
     ASSERT_EQ(state.debug_stats.num_inlined_requests, 1);
     ASSERT_EQ(state.debug_stats.num_total_requests, 2);

@@ -26,9 +26,7 @@ class ThreadPoolTest : public RuntimeTestCase {
   void InitTestDispatcher(std::string_view scheduler_role,
                           fdf::SynchronizedDispatcher::Options options = {});
 
-  driver_runtime::Dispatcher* runtime_dispatcher() {
-    return static_cast<driver_runtime::Dispatcher*>(dispatcher_.get());
-  }
+  driver_runtime::Dispatcher* runtime_dispatcher() { return dispatcher_.get()->GetDispatcher(); }
 
  protected:
   fdf_testing::internal::DriverRuntimeEnv runtime_env;
@@ -158,7 +156,7 @@ class MultipleDispatchersThreadPoolTest : public RuntimeTestCase {
 
   driver_runtime::Dispatcher::ThreadPool* GetThreadPool(
       fdf::Unowned<fdf::SynchronizedDispatcher>& dispatcher) {
-    return static_cast<driver_runtime::Dispatcher*>(dispatcher->get())->thread_pool();
+    return dispatcher->get()->GetDispatcher()->thread_pool();
   }
 
  protected:

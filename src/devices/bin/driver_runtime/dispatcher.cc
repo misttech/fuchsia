@@ -111,6 +111,78 @@ const async_ops_t g_dispatcher_ops = {
 
 }  // namespace
 
+extern const async_ops_t g_veneer_ops = {
+    .version = ASYNC_OPS_V3,
+    .reserved = 0,
+    .v1 = {
+        .now =
+            [](async_dispatcher_t* dispatcher) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->GetTime();
+            },
+        .begin_wait =
+            [](async_dispatcher_t* dispatcher, async_wait_t* wait) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->BeginWait(wait, true /* is_always_on */);
+            },
+        .cancel_wait =
+            [](async_dispatcher_t* dispatcher, async_wait_t* wait) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->CancelWait(wait);
+            },
+        .post_task =
+            [](async_dispatcher_t* dispatcher, async_task_t* task) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->PostTask(task, true /* is_always_on */);
+            },
+        .cancel_task =
+            [](async_dispatcher_t* dispatcher, async_task_t* task) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->CancelTask(task);
+            },
+        .queue_packet =
+            [](async_dispatcher_t* dispatcher, async_receiver_t* receiver,
+               const zx_packet_user_t* data) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->QueuePacket(receiver, data);
+            },
+        .set_guest_bell_trap = [](async_dispatcher_t* dispatcher, async_guest_bell_trap_t* trap,
+                                  zx_handle_t guest, zx_vaddr_t addr,
+                                  size_t length) { return ZX_ERR_NOT_SUPPORTED; },
+    },
+    .v2 = {
+        .bind_irq =
+            [](async_dispatcher_t* dispatcher, async_irq_t* irq) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->BindIrq(irq);
+            },
+        .unbind_irq =
+            [](async_dispatcher_t* dispatcher, async_irq_t* irq) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->UnbindIrq(irq);
+            },
+        .create_paged_vmo = [](async_dispatcher_t* dispatcher, async_paged_vmo_t* paged_vmo,
+                               uint32_t options, zx_handle_t pager, uint64_t vmo_size,
+                               zx_handle_t* vmo_out) { return ZX_ERR_NOT_SUPPORTED; },
+        .detach_paged_vmo = [](async_dispatcher_t* dispatcher,
+                               async_paged_vmo_t* paged_vmo) { return ZX_ERR_NOT_SUPPORTED; },
+    },
+    .v3 = {
+        .get_sequence_id =
+            [](async_dispatcher_t* dispatcher, async_sequence_id_t* out_sequence_id,
+               const char** out_error) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->GetSequenceId(out_sequence_id, out_error);
+            },
+        .check_sequence_id =
+            [](async_dispatcher_t* dispatcher, async_sequence_id_t sequence_id,
+               const char** out_error) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              return veneer->dispatcher->CheckSequenceId(sequence_id, out_error);
+            },
+    },
+};
+
 DispatcherCoordinator& GetDispatcherCoordinator() {
   static DispatcherCoordinator shared_loop;
   return shared_loop;
@@ -138,7 +210,7 @@ Dispatcher::AsyncWait::AsyncWait(async_wait_t* original_wait, Dispatcher& dispat
       };
   // Note that this callback is called *after* |OnSignal|, which is the immediate callback that is
   // invoked when the async wait is signaled.
-  SetCallback(static_cast<fdf_dispatcher_t*>(&dispatcher), std::move(callback), original_wait_);
+  SetCallback(&dispatcher, std::move(callback), original_wait_);
 }
 
 Dispatcher::AsyncWait::~AsyncWait() {
@@ -256,7 +328,7 @@ bool Dispatcher::AsyncIrq::Unbind() {
 }
 
 std::unique_ptr<driver_runtime::CallbackRequest> Dispatcher::AsyncIrq::CreateCallbackRequest(
-    Dispatcher& dispatcher) {
+    Dispatcher& dispatcher, bool locked) __TA_NO_THREAD_SAFETY_ANALYSIS {
   auto async_dispatcher = dispatcher.GetAsyncDispatcher();
 
   // TODO(https://fxbug.dev/42052990): We should consider something more efficient than creating a
@@ -266,6 +338,20 @@ std::unique_ptr<driver_runtime::CallbackRequest> Dispatcher::AsyncIrq::CreateCal
   // explanation.
   auto callback_request =
       std::make_unique<driver_runtime::CallbackRequest>(CallbackRequest::RequestType::kIrq);
+  callback_request->set_handle(original_irq_->object);
+
+  bool is_wake = false;
+  if (locked) {
+    is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
+  } else {
+    fbl::AutoLock lock(&dispatcher.callback_lock_);
+    is_wake = dispatcher.IsWakeVectorLocked(original_irq_->object, 0);
+  }
+
+  if (is_wake) {
+    callback_request->set_request_type(CallbackRequest::RequestType::kWakeIrq);
+  }
+
   driver_runtime::Callback callback =
       [this, async_dispatcher](std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
                                zx_status_t status) {
@@ -273,8 +359,7 @@ std::unique_ptr<driver_runtime::CallbackRequest> Dispatcher::AsyncIrq::CreateCal
         // future interrupts.
         original_irq_->handler(async_dispatcher, original_irq_, status, &interrupt_packet_);
       };
-  callback_request->SetCallback(static_cast<fdf_dispatcher_t*>(&dispatcher), std::move(callback),
-                                this);
+  callback_request->SetCallback(&dispatcher, std::move(callback), this);
   return callback_request;
 }
 
@@ -303,7 +388,7 @@ void Dispatcher::AsyncIrq::OnSignal(async_dispatcher_t* global_dispatcher, zx_st
 Dispatcher::Dispatcher(uint32_t options, std::string_view name, bool unsynchronized,
                        bool allow_sync_calls, const void* owner,
                        fdf_dispatcher_shutdown_observer_t* observer)
-    : async_dispatcher_t{&g_dispatcher_ops},
+    : DispatcherInterface{&g_dispatcher_ops},
       options_(options),
       unsynchronized_(unsynchronized),
       allow_sync_calls_(allow_sync_calls),
@@ -311,7 +396,8 @@ Dispatcher::Dispatcher(uint32_t options, std::string_view name, bool unsynchroni
       thread_pool_(nullptr),
       process_shared_dispatcher_(nullptr),
       timer_(this),
-      shutdown_observer_(observer) {
+      shutdown_observer_(observer),
+      veneer_{{&g_veneer_ops}, this} {
   name_.Append(name);
 }
 
@@ -401,18 +487,6 @@ zx_status_t Dispatcher::CreateUnmanagedDispatcher(
   return ZX_OK;
 }
 
-// static
-Dispatcher* Dispatcher::DowncastAsyncDispatcher(async_dispatcher_t* dispatcher) {
-  auto ret = static_cast<Dispatcher*>(dispatcher);
-  ret->canary_.Assert();
-  return ret;
-}
-
-async_dispatcher_t* Dispatcher::GetAsyncDispatcher() {
-  // Note: We inherit from async_t so we can upcast to it.
-  return static_cast<async_dispatcher_t*>(this);
-}
-
 void Dispatcher::ShutdownAsync() {
   {
     fbl::AutoLock lock(&callback_lock_);
@@ -463,6 +537,9 @@ void Dispatcher::ShutdownAsync() {
       shutdown_waiting_for_timer_ = true;
     }
     shutdown_queue_.splice(shutdown_queue_.end(), delayed_tasks_);
+    shutdown_queue_.splice(shutdown_queue_.end(), sleep_queue_);
+    shutdown_queue_.splice(shutdown_queue_.end(), wake_queue_);
+    shutdown_queue_.splice(shutdown_queue_.end(), always_on_delayed_tasks_);
 
     // To avoid race conditions with attempting to cancel a wait that might be scheduled to
     // run, we will cancel the event waiter in the |CompleteShutdown| callback. This is as
@@ -503,6 +580,10 @@ void Dispatcher::CompleteShutdown() {
     ZX_ASSERT_MSG(callback_queue_.is_empty(),
                   "CompleteShutdown called but callback queue has %lu items",
                   callback_queue_.size_slow());
+    ZX_ASSERT_MSG(sleep_queue_.is_empty(), "CompleteShutdown called but sleep queue not empty");
+    ZX_ASSERT_MSG(wake_queue_.is_empty(), "CompleteShutdown called but wake queue not empty");
+    ZX_ASSERT_MSG(always_on_delayed_tasks_.is_empty(),
+                  "CompleteShutdown called but always on delayed tasks not empty");
     ZX_ASSERT_MSG((!event_waiter_ || !event_waiter_->signaled()),
                   "CompleteShutdown called but event waiter is still signaled");
     ZX_ASSERT(IsIdleLocked());
@@ -530,7 +611,7 @@ void Dispatcher::CompleteShutdown() {
             return callback_request.holds_async_operation(operation);
           });
       if (iter == shutdown_queue_.end()) {
-        auto callback_request = irq.CreateCallbackRequest(*this);
+        auto callback_request = irq.CreateCallbackRequest(*this, true /* locked */);
         shutdown_queue_.push_back(std::move(callback_request));
       }
       // If the irq is still in the list, unbinding shouldn't fail.
@@ -568,8 +649,7 @@ void Dispatcher::CompleteShutdown() {
   callback_lock_.Release();
 
   for (auto token : registered_tokens) {
-    token->handler(static_cast<fdf_dispatcher_t*>(this), token, ZX_ERR_CANCELED,
-                   FDF_HANDLE_INVALID);
+    token->handler(this->to_fdf_dispatcher(), token, ZX_ERR_CANCELED, FDF_HANDLE_INVALID);
   }
 
   fdf_dispatcher_shutdown_observer_t* shutdown_observer = nullptr;
@@ -640,7 +720,7 @@ zx_status_t Dispatcher::Seal(uint32_t option) {
 
 zx_time_t Dispatcher::GetTime() { return zx_clock_get_monotonic(); }
 
-zx_status_t Dispatcher::BeginWait(async_wait_t* wait) {
+zx_status_t Dispatcher::BeginWait(async_wait_t* wait, bool is_always_on) {
   fbl::AutoLock lock(&callback_lock_);
   if (!IsRunningLocked()) {
     return ZX_ERR_BAD_STATE;
@@ -648,6 +728,15 @@ zx_status_t Dispatcher::BeginWait(async_wait_t* wait) {
   // TODO(92740): we should do something more efficient rather than creating a new
   // AsyncWait each time.
   auto async_wait = std::make_unique<AsyncWait>(wait, *this);
+  async_wait->set_handle(wait->object);
+  async_wait->set_signals(wait->trigger);
+
+  if (IsWakeVectorLocked(wait->object, wait->trigger)) {
+    async_wait->set_request_type(CallbackRequest::RequestType::kWakeWait);
+  } else if (is_always_on) {
+    async_wait->set_request_type(CallbackRequest::RequestType::kAlwaysOnWait);
+  }
+
   return AsyncWait::BeginWait(std::move(async_wait), *this);
 }
 
@@ -702,15 +791,26 @@ zx::time Dispatcher::GetNextTimeoutLocked() const {
   // tasks can be moved into the callback queue anyways and reset the timer whenever callback queue
   // is empty.
   if (callback_queue_.is_empty()) {
-    if (delayed_tasks_.is_empty()) {
-      return zx::time::infinite();
+    zx::time next_regular = zx::time::infinite();
+    if (!delayed_tasks_.is_empty()) {
+      next_regular = static_cast<const DelayedTask*>(&delayed_tasks_.front())->deadline;
     }
-    return static_cast<const DelayedTask*>(&delayed_tasks_.front())->deadline;
+
+    zx::time next_always_on = zx::time::infinite();
+    if (!always_on_delayed_tasks_.is_empty()) {
+      next_always_on = static_cast<const DelayedTask*>(&always_on_delayed_tasks_.front())->deadline;
+    }
+
+    if (suspend_state_ == SuspendState::kSuspended) {
+      return next_always_on;  // Ignore regular tasks when suspended!
+    }
+
+    return std::min(next_regular, next_always_on);
   }
   return zx::time::infinite();
 }
 
-void Dispatcher::ResetTimerLocked() {
+void Dispatcher::ResetTimerLocked(bool force) {
   zx::time deadline = GetNextTimeoutLocked();
   if (deadline == zx::time::infinite()) {
     // Nothing is left on the queue to fire.
@@ -725,18 +825,33 @@ void Dispatcher::ResetTimerLocked() {
   // "UpdateTaskDeadline" method on tasks which would allow us to shift the deadline as necessary,
   // without risking the need to cancel the task.
 
-  if (timer_.current_deadline() > deadline && timer_.Cancel() == ZX_OK) {
+  if ((force || timer_.current_deadline() > deadline) && timer_.Cancel() == ZX_OK) {
     timer_.BeginWait(deadline);
   }
 }
 
+bool Dispatcher::IsWakeVectorLocked(zx_handle_t handle, zx_signals_t signals) const {
+  auto iter = wake_vectors_.find(handle);
+  if (iter != wake_vectors_.end()) {
+    zx_signals_t wv_signals = iter->second;
+    if ((wv_signals & signals) || wv_signals == 0 || signals == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void Dispatcher::InsertDelayedTaskSortedLocked(std::unique_ptr<DelayedTask> task) {
+  auto& queue = (task->request_type() == CallbackRequest::RequestType::kAlwaysOnTask)
+                    ? always_on_delayed_tasks_
+                    : delayed_tasks_;
+
   // Find the first node that is bigger and insert before it. fbl::DoublyLinkedList handles all of
   // the edge cases for us.
-  auto iter = delayed_tasks_.find_if([&](const CallbackRequest& other) {
+  auto iter = queue.find_if([&](const CallbackRequest& other) {
     return static_cast<const DelayedTask*>(&other)->deadline > task->deadline;
   });
-  delayed_tasks_.insert(iter, std::move(task));
+  queue.insert(iter, std::move(task));
 }
 
 void Dispatcher::CheckDelayedTasksLocked() {
@@ -745,16 +860,35 @@ void Dispatcher::CheckDelayedTasksLocked() {
     return;
   }
   zx::time now = zx::clock::get_monotonic();
-  auto iter = delayed_tasks_.find_if([&](const CallbackRequest& task) {
+  bool added_tasks = false;
+
+  // Always-on tasks
+  auto iter = always_on_delayed_tasks_.find_if([&](const CallbackRequest& task) {
     return static_cast<const DelayedTask*>(&task)->deadline > now;
   });
-  if (iter != delayed_tasks_.begin()) {
+  if (iter != always_on_delayed_tasks_.begin()) {
     fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> done_tasks;
-    done_tasks = delayed_tasks_.split_after(--iter);
-    // split_after removes the tasks which are *not* done, so we must swap the lists to get desired
-    // result.
-    std::swap(delayed_tasks_, done_tasks);
+    done_tasks = always_on_delayed_tasks_.split_after(--iter);
+    std::swap(always_on_delayed_tasks_, done_tasks);
     callback_queue_.splice(callback_queue_.end(), done_tasks);
+    added_tasks = true;
+  }
+
+  // Regular tasks
+  if (suspend_state_ != SuspendState::kSuspended) {
+    iter = delayed_tasks_.find_if([&](const CallbackRequest& task) {
+      return static_cast<const DelayedTask*>(&task)->deadline > now;
+    });
+    if (iter != delayed_tasks_.begin()) {
+      fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> done_tasks;
+      done_tasks = delayed_tasks_.split_after(--iter);
+      std::swap(delayed_tasks_, done_tasks);
+      callback_queue_.splice(callback_queue_.end(), done_tasks);
+      added_tasks = true;
+    }
+  }
+
+  if (added_tasks) {
     if (event_waiter_ && !event_waiter_->signaled()) {
       event_waiter_->signal();
     }
@@ -780,7 +914,7 @@ void Dispatcher::Timer::Handler() {
   }
 }
 
-zx_status_t Dispatcher::PostTask(async_task_t* task) {
+zx_status_t Dispatcher::PostTask(async_task_t* task, bool is_always_on) {
   driver_runtime::Callback callback =
       [this, task](std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
                    zx_status_t status) { task->handler(this, task, status); };
@@ -789,9 +923,10 @@ zx_status_t Dispatcher::PostTask(async_task_t* task) {
   if (zx::time(task->deadline) <= now) {
     // TODO(92740): we should do something more efficient rather than creating a new
     // callback request each time.
-    auto callback_request =
-        std::make_unique<driver_runtime::CallbackRequest>(CallbackRequest::RequestType::kTask);
-    callback_request->SetCallback(static_cast<fdf_dispatcher_t*>(this), std::move(callback), task);
+    auto callback_request = std::make_unique<driver_runtime::CallbackRequest>(
+        is_always_on ? CallbackRequest::RequestType::kAlwaysOnTask
+                     : CallbackRequest::RequestType::kTask);
+    callback_request->SetCallback(this, std::move(callback), task);
     CallbackRequest* callback_ptr = callback_request.get();
     callback_request = RegisterCallbackWithoutQueueing(std::move(callback_request));
     // Dispatcher returned callback request as queueing failed.
@@ -800,8 +935,10 @@ zx_status_t Dispatcher::PostTask(async_task_t* task) {
     }
     QueueRegisteredCallback(callback_ptr, ZX_OK);
   } else {
-    auto delayed_task = std::make_unique<DelayedTask>(zx::time(task->deadline));
-    delayed_task->SetCallback(static_cast<fdf_dispatcher_t*>(this), std::move(callback), task);
+    auto delayed_task = std::make_unique<DelayedTask>(
+        zx::time(task->deadline), is_always_on ? CallbackRequest::RequestType::kAlwaysOnTask
+                                               : CallbackRequest::RequestType::kTask);
+    delayed_task->SetCallback(this, std::move(callback), task);
 
     fbl::AutoLock al(&callback_lock_);
     if (!IsRunningLocked()) {
@@ -980,7 +1117,9 @@ fit::result<Dispatcher::NonInlinedReason> Dispatcher::ShouldInline(
   // will be empty, but we still want to consider it not reentrant and directly
   // call into the driver.
   bool is_global_loop_callback = (req_type == CallbackRequest::RequestType::kIrq) ||
-                                 (req_type == CallbackRequest::RequestType::kWait);
+                                 (req_type == CallbackRequest::RequestType::kWait) ||
+                                 (req_type == CallbackRequest::RequestType::kWakeIrq) ||
+                                 (req_type == CallbackRequest::RequestType::kWakeWait);
   if (is_global_loop_callback) {
     return fit::ok();
   }
@@ -1019,6 +1158,8 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
     IdleCheckLocked();
   });
 
+  bool should_trigger_resume = false;
+  fdf_env_resume_requester_t* local_resume_requester = nullptr;
   std::unique_ptr<driver_runtime::CallbackRequest> callback_request;
   {
     fbl::AutoLock lock(&callback_lock_);
@@ -1052,62 +1193,122 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
     }
     callback_request->SetCallbackReason(callback_reason);
 
-    // Whether we want to call the callback now, or queue it to be run on the async loop.
-    fit::result<NonInlinedReason> should_inline = ShouldInline(callback_request);
-    debug_stats_.num_total_requests++;
-    if (should_inline.is_error()) {
-      callback_queue_.push_back(std::move(callback_request));
-      if (event_waiter_ && !event_waiter_->signaled()) {
-        event_waiter_->signal();
+    if (suspend_state_ == SuspendState::kSuspended) {
+      auto req_type = callback_request->request_type();
+      if (req_type == CallbackRequest::RequestType::kWakeIrq ||
+          req_type == CallbackRequest::RequestType::kWakeWait) {
+        wake_queue_.push_back(std::move(callback_request));
+        should_trigger_resume = true;
+        local_resume_requester = resume_requester_;
+      } else if (!callback_request->IsAlwaysOn()) {
+        sleep_queue_.push_back(std::move(callback_request));
+        return;  // No signal, just return.
       }
+    }
 
-      // If the message was not inlined earlier due to the wait not yet been ready,
-      // we should make sure this reason is displayed even if any other of the
-      // reasons also apply.
+    if (!should_trigger_resume) {
+      // Whether we want to call the callback now, or queue it to be run on the async loop.
+      fit::result<NonInlinedReason> should_inline = ShouldInline(callback_request);
+      debug_stats_.num_total_requests++;
+      if (should_inline.is_error()) {
+        callback_queue_.push_back(std::move(callback_request));
+        if (event_waiter_ && !event_waiter_->signaled()) {
+          event_waiter_->signal();
+        }
+
+        // If the message was not inlined earlier due to the wait not yet been ready,
+        // we should make sure this reason is displayed even if any other of the
+        // reasons also apply.
+        if (was_deferred) {
+          debug_stats_.non_inlined.channel_wait_not_yet_registered++;
+        } else {
+          switch (should_inline.error_value()) {
+            case kAllowSyncCalls:
+              debug_stats_.non_inlined.allow_sync_calls++;
+              break;
+            case kDispatchingOnAnotherThread:
+              debug_stats_.non_inlined.parallel_dispatch++;
+              break;
+            case kTask:
+              debug_stats_.non_inlined.task++;
+              break;
+            case kUnknownThread:
+              debug_stats_.non_inlined.unknown_thread++;
+              break;
+            case kReentrant:
+              debug_stats_.non_inlined.reentrant++;
+              break;
+            case kNoThreadMigration:
+              debug_stats_.non_inlined.no_thread_migration++;
+              break;
+            default:
+              LOGF(ERROR, "Unhandled NonInlinedReason");
+          };
+        }
+        return;
+      }
+      // The request was not queued earlier, so we don't count it as inlined in the stats,
+      // even though it is getting inlined in this specific instance.
       if (was_deferred) {
         debug_stats_.non_inlined.channel_wait_not_yet_registered++;
       } else {
-        switch (should_inline.error_value()) {
-          case kAllowSyncCalls:
-            debug_stats_.non_inlined.allow_sync_calls++;
-            break;
-          case kDispatchingOnAnotherThread:
-            debug_stats_.non_inlined.parallel_dispatch++;
-            break;
-          case kTask:
-            debug_stats_.non_inlined.task++;
-            break;
-          case kUnknownThread:
-            debug_stats_.non_inlined.unknown_thread++;
-            break;
-          case kReentrant:
-            debug_stats_.non_inlined.reentrant++;
-            break;
-          case kNoThreadMigration:
-            debug_stats_.non_inlined.no_thread_migration++;
-            break;
-          default:
-            LOGF(ERROR, "Unhandled NonInlinedReason");
-        };
+        debug_stats_.num_inlined_requests++;
       }
-      return;
+
+      auto req_type = callback_request->request_type();
+      if (!callback_request->IsAlwaysOn()) {
+        executing_power_managed_tasks_++;
+      }
+      if (req_type == CallbackRequest::RequestType::kWakeIrq ||
+          req_type == CallbackRequest::RequestType::kWakeWait) {
+        executing_wake_vectors_++;
+      }
+      dispatching_sync_ = true;
     }
-    // The request was not queued earlier, so we don't count it as inlined in the stats,
-    // even though it is getting inlined in this specific instance.
-    if (was_deferred) {
-      debug_stats_.non_inlined.channel_wait_not_yet_registered++;
-    } else {
-      debug_stats_.num_inlined_requests++;
-    }
-    dispatching_sync_ = true;
   }
+
+  if (should_trigger_resume) {
+    if (local_resume_requester && local_resume_requester->handler) {
+      local_resume_requester->handler(local_resume_requester);
+    }
+    return;
+  }
+
+  auto req_type = callback_request->request_type();
   DispatchCallback(std::move(callback_request));
 
-  fbl::AutoLock lock(&callback_lock_);
-  dispatching_sync_ = false;
-  if (!callback_queue_.is_empty() && event_waiter_ && !event_waiter_->signaled() &&
-      IsRunningLocked()) {
-    event_waiter_->signal();
+  bool should_complete_suspend = false;
+  fit::closure completion_callback;
+  {
+    fbl::AutoLock lock(&callback_lock_);
+    dispatching_sync_ = false;
+
+    if (!CallbackRequest::IsAlwaysOn(req_type)) {
+      ZX_ASSERT(executing_power_managed_tasks_ > 0);
+      executing_power_managed_tasks_--;
+
+      if (req_type == CallbackRequest::RequestType::kWakeIrq ||
+          req_type == CallbackRequest::RequestType::kWakeWait) {
+        ZX_ASSERT(executing_wake_vectors_ > 0);
+        executing_wake_vectors_--;
+      }
+
+      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0) {
+        if (suspend_completion_callback_) {
+          completion_callback = std::move(suspend_completion_callback_);
+          should_complete_suspend = true;
+        }
+      }
+    }
+
+    if (!callback_queue_.is_empty() && event_waiter_ && !event_waiter_->signaled() &&
+        IsRunningLocked()) {
+      event_waiter_->signal();
+    }
+  }
+
+  if (should_complete_suspend && completion_callback) {
+    completion_callback();
   }
 }
 
@@ -1163,7 +1364,7 @@ std::unique_ptr<Dispatcher::AsyncIrq> Dispatcher::RemoveIrqLocked(Dispatcher::As
 }
 
 void Dispatcher::QueueIrq(AsyncIrq* irq, zx_status_t status) {
-  auto callback_request = irq->CreateCallbackRequest(*this);
+  auto callback_request = irq->CreateCallbackRequest(*this, false /* locked */);
   CallbackRequest* callback_ptr = callback_request.get();
 
   {
@@ -1203,7 +1404,15 @@ bool Dispatcher::SetCallbackReason(CallbackRequest* callback_to_update,
   auto iter = callback_queue_.find_if(
       [callback_to_update](auto& callback) -> bool { return &callback == callback_to_update; });
   if (iter == callback_queue_.end()) {
-    return false;
+    iter = sleep_queue_.find_if(
+        [callback_to_update](auto& callback) -> bool { return &callback == callback_to_update; });
+    if (iter == sleep_queue_.end()) {
+      iter = wake_queue_.find_if(
+          [callback_to_update](auto& callback) -> bool { return &callback == callback_to_update; });
+      if (iter == wake_queue_.end()) {
+        return false;
+      }
+    }
   }
   callback_to_update->SetCallbackReason(callback_reason);
   return true;
@@ -1222,6 +1431,18 @@ std::unique_ptr<CallbackRequest> Dispatcher::CancelAsyncOperationLocked(void* op
   if (iter) {
     return iter;
   }
+  iter = sleep_queue_.erase_if([operation](const CallbackRequest& callback_request) {
+    return callback_request.holds_async_operation(operation);
+  });
+  if (iter) {
+    return iter;
+  }
+  iter = wake_queue_.erase_if([operation](const CallbackRequest& callback_request) {
+    return callback_request.holds_async_operation(operation);
+  });
+  if (iter) {
+    return iter;
+  }
   iter = shutdown_queue_.erase_if([operation](const CallbackRequest& callback_request) {
     return callback_request.holds_async_operation(operation);
   });
@@ -1229,6 +1450,13 @@ std::unique_ptr<CallbackRequest> Dispatcher::CancelAsyncOperationLocked(void* op
     return iter;
   }
   iter = delayed_tasks_.erase_if([operation](const CallbackRequest& callback_request) {
+    return callback_request.holds_async_operation(operation);
+  });
+  if (iter) {
+    ResetTimerLocked();
+    return iter;
+  }
+  iter = always_on_delayed_tasks_.erase_if([operation](const CallbackRequest& callback_request) {
     return callback_request.holds_async_operation(operation);
   });
   if (iter) {
@@ -1273,6 +1501,8 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
   });
 
   uint32_t num_callbacks_dispatched = 0;
+  size_t current_batch_power_managed_count = 0;
+  size_t current_batch_wake_vectors_count = 0;
 
   fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> to_call;
   {
@@ -1292,6 +1522,19 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
 
     num_callbacks_dispatched += TakeNextCallbacks(&to_call);
 
+    for (auto& req : to_call) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWakeIrq ||
+          type == CallbackRequest::RequestType::kWakeWait) {
+        current_batch_wake_vectors_count++;
+      }
+      if (!req.IsAlwaysOn()) {
+        current_batch_power_managed_count++;
+      }
+    }
+    executing_power_managed_tasks_ += current_batch_power_managed_count;
+    executing_wake_vectors_ += current_batch_wake_vectors_count;
+
     // Check if there are callbacks left to process and we should wake up an additional
     // thread. For synchronized dispatchers, parallel callbacks are disallowed.
     if (unsynchronized_ && !callback_queue_.is_empty()) {
@@ -1303,7 +1546,13 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
     }
   }
 
+  bool should_complete_suspend = false;
+  fit::closure completion_callback;
+
   while (true) {
+    should_complete_suspend = false;
+    completion_callback = nullptr;
+
     // Call the callbacks outside of the lock.
     while (!to_call.is_empty()) {
       auto callback_request = to_call.pop_front();
@@ -1313,21 +1562,62 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
 
     {
       fbl::AutoLock lock(&callback_lock_);
+
+      executing_power_managed_tasks_ -= current_batch_power_managed_count;
+      executing_wake_vectors_ -= current_batch_wake_vectors_count;
+      current_batch_power_managed_count = 0;
+      current_batch_wake_vectors_count = 0;
+
+      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0) {
+        if (suspend_completion_callback_) {
+          completion_callback = std::move(suspend_completion_callback_);
+          should_complete_suspend = true;
+        }
+      }
+
       // Check if there are any more callbacks to dispatch. This may be the case
       // if we were dispatching an async operation, or if the user queued more
       // operations during the last callback.
       if (!callback_queue_.is_empty() && (num_callbacks_dispatched < kBatchSize)) {
         num_callbacks_dispatched += TakeNextCallbacks(&to_call);
-        // Time to dispatch more callbacks.
-        continue;
-      }
 
-      // If we woke up an additional thread, that thread will update the
-      // event waiter signals as necessary.
-      if (!event_waiter) {
-        return;
+        for (auto& req : to_call) {
+          auto type = req.request_type();
+          if (type == CallbackRequest::RequestType::kWakeIrq ||
+              type == CallbackRequest::RequestType::kWakeWait) {
+            current_batch_wake_vectors_count++;
+          }
+          if (!req.IsAlwaysOn()) {
+            current_batch_power_managed_count++;
+          }
+        }
+        executing_power_managed_tasks_ += current_batch_power_managed_count;
+        executing_wake_vectors_ += current_batch_wake_vectors_count;
+      } else {
+        dispatching_sync_ = false;
+        if (!callback_queue_.is_empty() && event_waiter_ && !event_waiter_->signaled()) {
+          event_waiter_->signal();
+        }
       }
-      dispatching_sync_ = false;
+    }  // Drop the lock
+
+    // 1. Execute the callback outside the lock BEFORE doing continue/return
+    if (should_complete_suspend && completion_callback) {
+      completion_callback();
+    }
+
+    // 2. Now handle the control flow
+    if (!to_call.is_empty()) {
+      continue;
+    }
+
+    if (!event_waiter) {
+      return;
+    }
+
+    // 3. Final cleanup and return
+    {
+      fbl::AutoLock lock(&callback_lock_);
       ResetTimerLocked();
       if (callback_queue_.is_empty() && event_waiter->signaled()) {
         event_waiter->designal();
@@ -1412,12 +1702,24 @@ bool Dispatcher::HasQueuedTasks() {
   fbl::AutoLock lock(&callback_lock_);
 
   for (auto& callback_request : callback_queue_) {
+    if (callback_request.request_type() == CallbackRequest::RequestType::kTask ||
+        callback_request.request_type() == CallbackRequest::RequestType::kAlwaysOnTask) {
+      return true;
+    }
+  }
+  for (auto& callback_request : sleep_queue_) {
+    if (callback_request.request_type() == CallbackRequest::RequestType::kTask) {
+      return true;
+    }
+  }
+  for (auto& callback_request : wake_queue_) {
     if (callback_request.request_type() == CallbackRequest::RequestType::kTask) {
       return true;
     }
   }
   for (auto& callback_request : shutdown_queue_) {
-    if (callback_request.request_type() == CallbackRequest::RequestType::kTask) {
+    if (callback_request.request_type() == CallbackRequest::RequestType::kTask ||
+        callback_request.request_type() == CallbackRequest::RequestType::kAlwaysOnTask) {
       return true;
     }
   }
@@ -1510,10 +1812,9 @@ zx_status_t Dispatcher::ScheduleTokenCallback(fdf_token_t* token, zx_status_t st
         [dispatcher = this, token, channel = std::move(channel)](
             std::unique_ptr<driver_runtime::CallbackRequest> callback_request,
             zx_status_t status) mutable {
-          token->handler(static_cast<fdf_dispatcher_t*>(dispatcher), token, status,
-                         channel.release());
+          token->handler(dispatcher->to_fdf_dispatcher(), token, status, channel.release());
         };
-    callback_request->SetCallback(static_cast<fdf_dispatcher_t*>(this), std::move(callback));
+    callback_request->SetCallback(this, std::move(callback));
 
     callback_request_ptr = callback_request.get();
 
@@ -1660,6 +1961,87 @@ zx_status_t DispatcherCoordinator::ShutdownDispatchersAsync(
 }
 
 // static
+zx_status_t DispatcherCoordinator::SuspendDispatchersAsync(const void* driver,
+                                                           fdf_env_suspend_completer_t* completer) {
+  if (!driver || !completer || !completer->handler) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  std::vector<fbl::RefPtr<Dispatcher>> dispatchers;
+  {
+    fbl::AutoLock lock(&(GetDispatcherCoordinator().lock_));
+    auto driver_state_iter = GetDispatcherCoordinator().drivers_.find(driver);
+    if (!driver_state_iter.IsValid()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+    driver_state_iter->GetDispatchers(dispatchers);
+  }
+
+  if (dispatchers.empty()) {
+    completer->handler(completer);
+    return ZX_OK;
+  }
+
+  struct SuspendContext {
+    fdf_env_suspend_completer_t* completer;
+    std::atomic<size_t> pending_dispatchers;
+  };
+
+  auto context = std::make_shared<SuspendContext>();
+  context->completer = completer;
+  context->pending_dispatchers.store(dispatchers.size());
+
+  for (auto& dispatcher : dispatchers) {
+    dispatcher->SuspendAsync([context]() {
+      if (context->pending_dispatchers.fetch_sub(1) == 1) {
+        context->completer->handler(context->completer);
+      }
+    });
+  }
+  return ZX_OK;
+}
+
+// static
+void DispatcherCoordinator::ResumeDispatchers(const void* driver) {
+  if (!driver) {
+    return;
+  }
+
+  std::vector<fbl::RefPtr<Dispatcher>> dispatchers;
+  {
+    fbl::AutoLock lock(&(GetDispatcherCoordinator().lock_));
+    auto driver_state_iter = GetDispatcherCoordinator().drivers_.find(driver);
+    if (!driver_state_iter.IsValid()) {
+      return;
+    }
+    driver_state_iter->GetDispatchers(dispatchers);
+  }
+
+  for (auto& dispatcher : dispatchers) {
+    dispatcher->Resume();
+  }
+}
+
+// static
+void DispatcherCoordinator::RegisterResumeRequester(const void* driver,
+                                                    fdf_env_resume_requester_t* requester) {
+  std::vector<fbl::RefPtr<Dispatcher>> dispatchers;
+  {
+    fbl::AutoLock lock(&(GetDispatcherCoordinator().lock_));
+    auto driver_state_iter = GetDispatcherCoordinator().drivers_.find(driver);
+    if (!driver_state_iter.IsValid()) {
+      return;
+    }
+    driver_state_iter->GetDispatchers(dispatchers);
+    driver_state_iter->SetResumeRequester(requester);
+  }
+
+  for (auto& dispatcher : dispatchers) {
+    dispatcher->SetResumeRequester(requester);
+  }
+}
+
+// static
 void DispatcherCoordinator::DestroyAllDispatchers() {
   std::vector<fbl::RefPtr<Dispatcher>> dispatchers;
   {
@@ -1796,6 +2178,7 @@ zx_status_t DispatcherCoordinator::RegisterDispatcherLocked(
   }
 
   dispatcher->SetThreadPool(thread_pool, thread_pool->loop()->dispatcher());
+  dispatcher->SetResumeRequester(driver_state->GetResumeRequester());
   driver_state->AddDispatcher(std::move(dispatcher));
 
   return ZX_OK;
@@ -1932,7 +2315,7 @@ void DispatcherCoordinator::NotifyDispatcherShutdown(
     // We should have already set up the driver call stack before calling
     // |NotifyDispatcherShutdown|.
     ZX_ASSERT(thread_context::GetCurrentDispatcher() == &dispatcher);
-    dispatcher_shutdown_observer->handler(static_cast<fdf_dispatcher_t*>(&dispatcher),
+    dispatcher_shutdown_observer->handler(dispatcher.to_fdf_dispatcher(),
                                           dispatcher_shutdown_observer);
   }
   {
@@ -2341,6 +2724,254 @@ void Dispatcher::ThreadPool::CachedIrqs::NewThreadWakeupLocked(uint32_t total_nu
     IncrementGenerationId();
   }
   threads_wakeup_count_ = 0;
+}
+
+void Dispatcher::SuspendAsync(fit::closure completion_callback) {
+  bool should_trigger_resume = false;
+  bool should_complete_immediately = false;
+  fdf_env_resume_requester_t* local_resume_requester = nullptr;
+
+  {
+    fbl::AutoLock lock(&callback_lock_);
+    suspend_state_ = SuspendState::kSuspended;
+
+    // Check callback_queue_ for triggered wake vectors.
+    fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> wake_vectors_to_move;
+    auto iter = callback_queue_.begin();
+    while (iter != callback_queue_.end()) {
+      auto req_type = iter->request_type();
+      if (req_type == CallbackRequest::RequestType::kWakeIrq ||
+          req_type == CallbackRequest::RequestType::kWakeWait) {
+        auto next = iter;
+        next++;
+        wake_vectors_to_move.push_back(callback_queue_.erase(iter));
+        iter = next;
+      } else {
+        iter++;
+      }
+    }
+
+    should_trigger_resume = !wake_vectors_to_move.is_empty() || (executing_wake_vectors_ > 0);
+    wake_queue_.splice(wake_queue_.end(), wake_vectors_to_move);
+
+    // Move remaining power-managed tasks to sleep queue.
+    fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> regular_tasks_to_move;
+    iter = callback_queue_.begin();
+    while (iter != callback_queue_.end()) {
+      if (!iter->IsAlwaysOn()) {
+        auto next = iter;
+        next++;
+        regular_tasks_to_move.push_back(callback_queue_.erase(iter));
+        iter = next;
+      } else {
+        iter++;
+      }
+    }
+    sleep_queue_.splice(sleep_queue_.end(), regular_tasks_to_move);
+
+    if (callback_queue_.is_empty() && event_waiter_ && event_waiter_->signaled()) {
+      event_waiter_->designal();
+    }
+
+    // Clear pending timers to avoid spurious wakeups.
+    ResetTimerLocked(true /* force */);
+
+    local_resume_requester = resume_requester_;
+
+    if (executing_power_managed_tasks_ == 0) {
+      should_complete_immediately = true;
+    } else {
+      ZX_ASSERT(!suspend_completion_callback_);
+      suspend_completion_callback_ = std::move(completion_callback);
+    }
+  }  // Lock released here
+
+  if (should_complete_immediately) {
+    completion_callback();
+  }
+
+  if (should_trigger_resume) {
+    if (local_resume_requester && local_resume_requester->handler) {
+      local_resume_requester->handler(local_resume_requester);
+    }
+  }
+}
+
+void Dispatcher::Resume() {
+  fit::closure completion_callback;
+  {
+    fbl::AutoLock lock(&callback_lock_);
+    if (suspend_state_ == SuspendState::kNone) {
+      return;
+    }
+    suspend_state_ = SuspendState::kNone;
+
+    if (suspend_completion_callback_) {
+      completion_callback = std::move(suspend_completion_callback_);
+    }
+
+    // Flush tasks from wake_queue_ to the front of callback_queue_ first.
+    callback_queue_.splice(callback_queue_.begin(), wake_queue_);
+
+    // Flush tasks from sleep_queue_ back to callback_queue_.
+    callback_queue_.splice(callback_queue_.end(), sleep_queue_);
+
+    // Re-arm timer by calling CheckDelayedTasksLocked() and ResetTimerLocked().
+    CheckDelayedTasksLocked();
+    ResetTimerLocked();
+
+    // Signal worker threads if we have work.
+    if (!callback_queue_.is_empty() && event_waiter_ && !event_waiter_->signaled()) {
+      event_waiter_->signal();
+    }
+  }  // Lock released here!
+
+  if (completion_callback) {
+    completion_callback();
+  }
+}
+
+void Dispatcher::SetResumeRequester(fdf_env_resume_requester_t* requester) {
+  bool should_trigger_resume = false;
+  fdf_env_resume_requester_t* local_resume_requester = nullptr;
+
+  {
+    fbl::AutoLock lock(&callback_lock_);
+    resume_requester_ = requester;
+
+    if (suspend_state_ == SuspendState::kSuspended &&
+        (!wake_queue_.is_empty() || executing_wake_vectors_ > 0)) {
+      should_trigger_resume = true;
+      local_resume_requester = resume_requester_;
+    }
+  }
+
+  if (should_trigger_resume && local_resume_requester && local_resume_requester->handler) {
+    local_resume_requester->handler(local_resume_requester);
+  }
+}
+
+// NOTE: Limitations of current Wake Vector implementation:
+// 1. fdf_channel wait requests do not currently support wake vectors.
+// 2. QueuePacket completely bypasses power management.
+// 3. If a wait is posted on the always-on dispatcher but is also a wake vector,
+//    it will be treated as a wake vector and delayed during suspend.
+zx_status_t Dispatcher::RegisterWakeVector(zx_handle_t handle, zx_signals_t signals) {
+  fbl::AutoLock lock(&callback_lock_);
+  if (suspend_state_ == SuspendState::kSuspended) {
+    return ZX_ERR_BAD_STATE;
+  }
+
+  wake_vectors_[handle] |= signals;
+
+  // Search and update RequestType in registered_callbacks_, callback_queue_, and waits_.
+  for (auto& req : registered_callbacks_) {
+    if (IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWait) {
+        req.set_request_type(CallbackRequest::RequestType::kWakeWait);
+      } else if (type == CallbackRequest::RequestType::kIrq) {
+        req.set_request_type(CallbackRequest::RequestType::kWakeIrq);
+      }
+    }
+  }
+  for (auto& req : callback_queue_) {
+    if (IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWait) {
+        req.set_request_type(CallbackRequest::RequestType::kWakeWait);
+      } else if (type == CallbackRequest::RequestType::kIrq) {
+        req.set_request_type(CallbackRequest::RequestType::kWakeIrq);
+      }
+    }
+  }
+  for (auto& wait : waits_) {
+    if (IsWakeVectorLocked(wait.handle(), wait.signals())) {
+      auto type = wait.request_type();
+      if (type == CallbackRequest::RequestType::kWait) {
+        wait.set_request_type(CallbackRequest::RequestType::kWakeWait);
+      }
+    }
+  }
+
+  return ZX_OK;
+}
+
+zx_status_t Dispatcher::UnregisterWakeVector(zx_handle_t handle, zx_signals_t signals) {
+  fbl::AutoLock lock(&callback_lock_);
+
+  auto iter = wake_vectors_.find(handle);
+  if (iter == wake_vectors_.end()) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  if (signals == 0) {
+    wake_vectors_.erase(iter);
+  } else {
+    iter->second &= ~signals;
+    if (iter->second == 0) {
+      wake_vectors_.erase(iter);
+    }
+  }
+
+  // Revert RequestType back to kWait/kIrq.
+  for (auto& req : registered_callbacks_) {
+    if (req.handle() == handle && !IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWakeWait) {
+        req.set_request_type(CallbackRequest::RequestType::kWait);
+      } else if (type == CallbackRequest::RequestType::kWakeIrq) {
+        req.set_request_type(CallbackRequest::RequestType::kIrq);
+      }
+    }
+  }
+  for (auto& req : callback_queue_) {
+    if (req.handle() == handle && !IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWakeWait) {
+        req.set_request_type(CallbackRequest::RequestType::kWait);
+      } else if (type == CallbackRequest::RequestType::kWakeIrq) {
+        req.set_request_type(CallbackRequest::RequestType::kIrq);
+      }
+    }
+  }
+  for (auto& wait : waits_) {
+    if (wait.handle() == handle && !IsWakeVectorLocked(wait.handle(), wait.signals())) {
+      auto type = wait.request_type();
+      if (type == CallbackRequest::RequestType::kWakeWait) {
+        wait.set_request_type(CallbackRequest::RequestType::kWait);
+      }
+    }
+  }
+  for (auto& req : sleep_queue_) {
+    if (req.handle() == handle && !IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWakeWait) {
+        req.set_request_type(CallbackRequest::RequestType::kWait);
+      } else if (type == CallbackRequest::RequestType::kWakeIrq) {
+        req.set_request_type(CallbackRequest::RequestType::kIrq);
+      }
+    }
+  }
+  for (auto& req : wake_queue_) {
+    if (req.handle() == handle && !IsWakeVectorLocked(req.handle(), req.signals())) {
+      auto type = req.request_type();
+      if (type == CallbackRequest::RequestType::kWakeWait) {
+        LOGF(
+            ERROR,
+            "Actively queued wake item type being changed: kWakeWait to kWait. This item will still "
+            "execute with higher priority in the queue.");
+        req.set_request_type(CallbackRequest::RequestType::kWait);
+      } else if (type == CallbackRequest::RequestType::kWakeIrq) {
+        LOGF(ERROR,
+             "Actively queued wake item type being changed: kWakeIrq to kIrq. This item will still "
+             "execute with higher priority in the queue.");
+        req.set_request_type(CallbackRequest::RequestType::kIrq);
+      }
+    }
+  }
+
+  return ZX_OK;
 }
 
 }  // namespace driver_runtime

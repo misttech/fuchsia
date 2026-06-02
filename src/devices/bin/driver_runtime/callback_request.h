@@ -40,10 +40,22 @@ class CallbackRequest
     kWait,
     kTask,
     kOther,
+    kWakeIrq,
+    kWakeWait,
+    kAlwaysOnTask,
+    kAlwaysOnWait,
+    kAlwaysOnOther,
   };
 
   explicit CallbackRequest(RequestType request_type = RequestType::kOther)
       : request_type_(request_type) {}
+
+  static bool IsAlwaysOn(RequestType type) {
+    return type == RequestType::kAlwaysOnTask || type == RequestType::kAlwaysOnWait ||
+           type == RequestType::kAlwaysOnOther;
+  }
+
+  bool IsAlwaysOn() const { return IsAlwaysOn(request_type_); }
 
   // Initializes the callback to be queued.
   // Sets the dispatcher, and the callback that will be called by |Call|.
@@ -96,14 +108,21 @@ class CallbackRequest
   }
 
   RequestType request_type() { return request_type_; }
+  void set_request_type(RequestType type) { request_type_ = type; }
 
   void* async_operation() { return async_operation_.value_or(nullptr); }
+
+  void set_handle(zx_handle_t handle) { handle_ = handle; }
+  zx_handle_t handle() const { return handle_; }
+
+  void set_signals(zx_signals_t signals) { signals_ = signals; }
+  zx_signals_t signals() const { return signals_; }
 
   const void* initiating_driver() { return initiating_driver_; }
   driver_runtime::Dispatcher* initiating_dispatcher() { return initiating_dispatcher_; }
 
  private:
-  const RequestType request_type_;
+  RequestType request_type_;
 
   driver_runtime::Dispatcher* dispatcher_ = nullptr;
   Callback callback_;
@@ -115,6 +134,8 @@ class CallbackRequest
   // This is for tracking who caused the callback request to be queued.
   const void* initiating_driver_ = nullptr;
   driver_runtime::Dispatcher* initiating_dispatcher_ = nullptr;
+  zx_handle_t handle_ = ZX_HANDLE_INVALID;
+  zx_signals_t signals_ = 0;
 };
 
 }  // namespace driver_runtime

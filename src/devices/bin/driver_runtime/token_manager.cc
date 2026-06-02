@@ -50,7 +50,7 @@ zx_status_t TokenManager::Register(zx_handle_t token, fdf_dispatcher_t* dispatch
 
   // If registering with the dispatcher fails, we will drop our token handle,
   // and the peer token handle will be notified of ZX_CHANNEL_PEER_CLOSED,
-  zx_status_t status = dispatcher->RegisterPendingToken(fdf_token);
+  zx_status_t status = dispatcher->GetDispatcher()->RegisterPendingToken(fdf_token);
   if (status != ZX_OK) {
     return status;
   }
@@ -185,7 +185,8 @@ zx_status_t TokenManager::WaitOnPeerClosedLocked(PendingTokenInfo* pending_token
 void TokenManager::RegisteredCallback::OnPeerClosed() {
   ZX_ASSERT(fdf_token_ != nullptr);
   ZX_ASSERT(dispatcher_ != nullptr);
-  auto status = dispatcher_->ScheduleTokenCallback(fdf_token_, ZX_ERR_CANCELED, fdf::Channel());
+  auto status = dispatcher_->GetDispatcher()->ScheduleTokenCallback(fdf_token_, ZX_ERR_CANCELED,
+                                                                    fdf::Channel());
   // This may fail if the dispatcher is shutting down. In that case the dispatcher is
   // going to send the cancellation callback in |CompleteShutdown|.
   ZX_ASSERT((status == ZX_OK) || (status == ZX_ERR_BAD_STATE));
@@ -195,7 +196,7 @@ zx_status_t TokenManager::RegisteredCallback::OnTransferRequest(fdf::Channel cha
   ZX_ASSERT(channel.is_valid());
   ZX_ASSERT(fdf_token_ != nullptr);
   ZX_ASSERT(dispatcher_ != nullptr);
-  return dispatcher_->ScheduleTokenCallback(fdf_token_, ZX_OK, std::move(channel));
+  return dispatcher_->GetDispatcher()->ScheduleTokenCallback(fdf_token_, ZX_OK, std::move(channel));
 }
 
 zx_status_t TokenManager::TransferRequest::OnCallbackRegister(fdf_dispatcher_t* dispatcher,
@@ -203,7 +204,7 @@ zx_status_t TokenManager::TransferRequest::OnCallbackRegister(fdf_dispatcher_t* 
   ZX_ASSERT(channel_.is_valid());
   ZX_ASSERT(fdf_token != nullptr);
   ZX_ASSERT(dispatcher != nullptr);
-  return dispatcher->ScheduleTokenCallback(fdf_token, ZX_OK, std::move(channel_));
+  return dispatcher->GetDispatcher()->ScheduleTokenCallback(fdf_token, ZX_OK, std::move(channel_));
 }
 
 zx_status_t TokenManager::TransferRequest::OnTransferReceive(fdf_handle_t* handle) {

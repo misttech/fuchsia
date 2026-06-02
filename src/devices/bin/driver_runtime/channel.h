@@ -44,8 +44,7 @@ struct Channel : public Object {
                     zx_handle_t* handles, uint32_t num_handles);
   zx_status_t Read(uint32_t options, fdf_arena_t** out_arena, void** out_data,
                    uint32_t* out_num_bytes, zx_handle_t** out_handles, uint32_t* out_num_handles);
-  zx_status_t WaitAsync(struct fdf_dispatcher* dispatcher, fdf_channel_read_t* channel_read,
-                        uint32_t options);
+  zx_status_t WaitAsync(Dispatcher* dispatcher, fdf_channel_read_t* channel_read, uint32_t options);
   zx_status_t CancelWait();
   zx_status_t Call(uint32_t options, zx_time_t deadline, const fdf_channel_call_args_t* args);
   void Close();

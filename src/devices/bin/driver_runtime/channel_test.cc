@@ -367,7 +367,7 @@ TEST_F(ChannelTest, SyncDispatcherCancelQueuedRead) {
     // This should queue the callback on the async loop. It won't be running yet
     // as this task is currently blocking the loop.
     ASSERT_EQ(ZX_OK, fdf_channel_write(local_.get(), 0, arena_.get(), nullptr, 0, nullptr, 0));
-    auto* runtime_dispatcher = static_cast<driver_runtime::Dispatcher*>(dispatcher->get());
+    auto* runtime_dispatcher = dispatcher->get()->GetDispatcher();
     ASSERT_EQ(runtime_dispatcher->callback_queue_size_slow(), 1);
     // This should synchronously cancel the callback.
     ASSERT_OK(channel_read->Cancel());  // Cancellation should always succeed for sync dispatchers.
@@ -412,7 +412,7 @@ TEST_F(ChannelTest, SyncDispatcherCancelQueuedReadFromTask) {
 
   sync_completion_t task_completion;
   ASSERT_OK(async::PostTask(dispatcher->async_dispatcher(), [&] {
-    auto* runtime_dispatcher = static_cast<driver_runtime::Dispatcher*>(dispatcher->get());
+    auto* runtime_dispatcher = dispatcher->get()->GetDispatcher();
     ASSERT_EQ(runtime_dispatcher->callback_queue_size_slow(), 1);
     // This should synchronously cancel the callback.
     ASSERT_OK(channel_read->Cancel());
@@ -463,7 +463,7 @@ TEST_F(ChannelTest, SyncDispatcherCancelTaskFromChannelRead) {
   auto channel_read = std::make_unique<fdf::ChannelRead>(
       remote_.get(), 0,
       [&](fdf_dispatcher_t* dispatcher, fdf::ChannelRead* channel_read, zx_status_t status) {
-        auto* runtime_dispatcher = static_cast<driver_runtime::Dispatcher*>(dispatcher);
+        auto* runtime_dispatcher = dispatcher->GetDispatcher();
         ASSERT_EQ(runtime_dispatcher->callback_queue_size_slow(), 1);
         // This should synchronously cancel the callback.
         task.Cancel();
@@ -538,7 +538,7 @@ TEST_F(ChannelTest, SyncDispatcherForcedAsyncCancelQueuedRead) {
       });
   ASSERT_OK(channel_read->Begin(dispatcher->get()));
 
-  auto* runtime_dispatcher = static_cast<driver_runtime::Dispatcher*>(dispatcher->get());
+  auto* runtime_dispatcher = dispatcher->get()->GetDispatcher();
   ASSERT_OK(async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher->get()), [&] {
     // This should queue the callback on the async loop.
     ASSERT_EQ(ZX_OK, fdf_channel_write(local_.get(), 0, arena_.get(), nullptr, 0, nullptr, 0));
@@ -662,7 +662,7 @@ TEST_F(ChannelTest, UnsyncDispatcherCancelQueuedRead) {
       });
   ASSERT_OK(channel_read->Begin(fdf_dispatcher_));
 
-  auto* runtime_dispatcher = static_cast<driver_runtime::Dispatcher*>(fdf_dispatcher_);
+  auto* runtime_dispatcher = fdf_dispatcher_->GetDispatcher();
   ASSERT_OK(async::PostTask(fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_), [&] {
     // This should queue the callback on the async loop.
     ASSERT_EQ(ZX_OK, fdf_channel_write(local_.get(), 0, arena_.get(), nullptr, 0, nullptr, 0));

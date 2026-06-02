@@ -78,7 +78,7 @@ class DispatcherTest : public RuntimeTestCase {
                                      libsync::Completion* complete_blocking_read);
 
   static void WaitUntilIdle(fdf_dispatcher_t* dispatcher) {
-    static_cast<driver_runtime::Dispatcher*>(dispatcher)->WaitUntilIdle();
+    dispatcher->GetDispatcher()->WaitUntilIdle();
   }
 
   fdf_testing::internal::DriverRuntimeEnv runtime_env;
@@ -156,7 +156,7 @@ void DispatcherTest::CreateDispatcher(uint32_t options, std::string_view name,
     ASSERT_EQ(ZX_OK, driver_runtime::Dispatcher::Create(options, name, scheduler_role,
                                                         observer->fdf_observer(), &dispatcher));
   }
-  *out_dispatcher = static_cast<fdf_dispatcher_t*>(dispatcher);
+  *out_dispatcher = dispatcher->to_fdf_dispatcher();
   dispatchers_.push_back(*out_dispatcher);
   observers_.push_back(std::move(observer));
 }
@@ -172,7 +172,7 @@ void DispatcherTest::CreateUnmanagedDispatcher(uint32_t options, std::string_vie
     ASSERT_EQ(ZX_OK, driver_runtime::Dispatcher::CreateUnmanagedDispatcher(
                          options, name, observer->fdf_observer(), &dispatcher));
   }
-  *out_dispatcher = static_cast<fdf_dispatcher_t*>(dispatcher);
+  *out_dispatcher = dispatcher->to_fdf_dispatcher();
   dispatchers_.push_back(*out_dispatcher);
   observers_.push_back(std::move(observer));
 }
@@ -268,7 +268,7 @@ TEST_F(DispatcherTest, SyncDispatcherCallOnLoop) {
     ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
     // Check that the callback hasn't been called yet, as we shutdown the async loop.
     ASSERT_FALSE(sync_completion_signaled(&read_completion));
-    ASSERT_EQ(1, dispatcher->callback_queue_size_slow());
+    ASSERT_EQ(1, dispatcher->GetDispatcher()->callback_queue_size_slow());
   }
 
   ASSERT_OK(fdf_testing_run_until_idle());
@@ -641,7 +641,7 @@ TEST_F(DispatcherTest, AllowSyncCallsDirectCalls) {
 
   {
     // Simulate a driver writing a message to the driver with the blocking dispatcher.
-    thread_context::PushDriver(driver_a, dispatcher_a);
+    thread_context::PushDriver(driver_a, dispatcher_a->GetDispatcher());
     auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
 
     // Allocate space for the runtime to write the txid.
@@ -1019,19 +1019,17 @@ TEST_F(DispatcherTest, ReentrancyManyDrivers) {
 
   // Signal once the first driver is called into.
   sync_completion_t completion;
-  ASSERT_NO_FATAL_FAILURE(RegisterAsyncReadSignal(ch_to_prev[0],
-                                                  static_cast<fdf_dispatcher_t*>(dispatchers_[0]),
-                                                  &driver_locks[0], &completion));
+  ASSERT_NO_FATAL_FAILURE(
+      RegisterAsyncReadSignal(ch_to_prev[0], dispatchers_[0], &driver_locks[0], &completion));
 
   // Each driver will wait for a callback, then write a message to the next driver.
   for (uint32_t i = 1; i < kNumDrivers; i++) {
-    ASSERT_NO_FATAL_FAILURE(RegisterAsyncReadReply(ch_to_prev[i],
-                                                   static_cast<fdf_dispatcher_t*>(dispatchers_[i]),
-                                                   &driver_locks[i], ch_to_next[i]));
+    ASSERT_NO_FATAL_FAILURE(
+        RegisterAsyncReadReply(ch_to_prev[i], dispatchers_[i], &driver_locks[i], ch_to_next[i]));
   }
 
   {
-    thread_context::PushDriver(dispatchers_[0]->owner());
+    thread_context::PushDriver(dispatchers_[0]->GetDispatcher()->owner());
     auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
 
     fbl::AutoLock lock(&driver_locks[0]);
@@ -1062,7 +1060,7 @@ TEST_F(DispatcherTest, EmptyCallStack) {
     // Call without any recorded call stack.
     // This should queue the callback to run on an async loop thread.
     ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
-    ASSERT_EQ(1, dispatcher->callback_queue_size_slow());
+    ASSERT_EQ(1, dispatcher->GetDispatcher()->callback_queue_size_slow());
     ASSERT_FALSE(sync_completion_signaled(&read_completion));
   }
 
@@ -1092,7 +1090,7 @@ TEST_F(DispatcherTest, SyncDispatcherShutdownBeforeWrite) {
                                                         observer.fdf_observer(), &dispatcher));
   }
 
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
 
   // Registered, but not yet ready to run.
   auto channel_read = std::make_unique<fdf::ChannelRead>(
@@ -1132,7 +1130,7 @@ TEST_F(DispatcherTest, SyncDispatcherShutdownBeforeSignaled) {
     ASSERT_EQ(ZX_OK, driver_runtime::Dispatcher::Create(0, "", scheduler_role,
                                                         observer.fdf_observer(), &dispatcher));
   }
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
 
   // Registered, but not yet signaled.
   async_dispatcher_t* async_dispatcher = dispatcher->GetAsyncDispatcher();
@@ -1171,7 +1169,7 @@ TEST_F(DispatcherTest, UnsyncDispatcherShutdown) {
                                                         scheduler_role, observer.fdf_observer(),
                                                         &dispatcher));
   }
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
   libsync::Completion task_started;
   // Post a task that will block until we signal it.
   ASSERT_OK(async::PostTask(fdf_dispatcher.async_dispatcher(), [&] {
@@ -1228,7 +1226,7 @@ TEST_F(DispatcherTest, UnsyncDispatcherShutdownBeforeWrite) {
                                                         &dispatcher));
   }
 
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
 
   // Registered, but not yet ready to run.
   auto channel_read = std::make_unique<fdf::ChannelRead>(
@@ -1270,7 +1268,7 @@ TEST_F(DispatcherTest, UnsyncDispatcherShutdownBeforeSignaled) {
                                                         scheduler_role, observer.fdf_observer(),
                                                         &dispatcher));
   }
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
 
   // Registered, but not yet signaled.
   async_dispatcher_t* async_dispatcher = dispatcher->GetAsyncDispatcher();
@@ -1316,7 +1314,7 @@ TEST_F(DispatcherTest, ShutdownDispatcherInAsyncLoopCallback) {
         completion.Signal();
         delete channel_read;
       });
-  ASSERT_OK(channel_read->Begin(static_cast<fdf_dispatcher_t*>(dispatcher)));
+  ASSERT_OK(channel_read->Begin(dispatcher->to_fdf_dispatcher()));
   channel_read.release();  // Deleted on callback.
 
   {
@@ -1357,7 +1355,7 @@ TEST_F(DispatcherTest, ShutdownDispatcherFromTwoCallbacks) {
         fdf_dispatcher_shutdown_async(dispatcher);
         completion.Signal();
       });
-  ASSERT_OK(channel_read->Begin(static_cast<fdf_dispatcher_t*>(dispatcher)));
+  ASSERT_OK(channel_read->Begin(dispatcher->to_fdf_dispatcher()));
 
   libsync::Completion completion2;
   auto channel_read2 = std::make_unique<fdf::ChannelRead>(
@@ -1367,7 +1365,7 @@ TEST_F(DispatcherTest, ShutdownDispatcherFromTwoCallbacks) {
         fdf_dispatcher_shutdown_async(dispatcher);
         completion2.Signal();
       });
-  ASSERT_OK(channel_read2->Begin(static_cast<fdf_dispatcher_t*>(dispatcher)));
+  ASSERT_OK(channel_read2->Begin(dispatcher->to_fdf_dispatcher()));
 
   {
     // Make the writes reentrant so they are scheduled to run on the async loop.
@@ -1413,7 +1411,7 @@ TEST_F(DispatcherTest, ShutdownDispatcherQueueChannelReadCallback) {
   });
   ASSERT_OK(wait_task_started.Wait(zx::time::infinite()));
 
-  fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
+  fdf::Dispatcher fdf_dispatcher(dispatcher->to_fdf_dispatcher());
 
   auto channel_read = std::make_unique<fdf::ChannelRead>(
       remote_ch_, 0,
@@ -2269,20 +2267,21 @@ TEST_F(DispatcherTest, UnbindIrqImmediatelyAfterTriggering) {
 
   // Create and unbind a bunch of irqs.
   zx::interrupt irqs[kNumIrqs] = {};
+  std::vector<std::unique_ptr<async::Irq>> irq_wrappers(kNumIrqs);
   for (uint32_t i = 0; i < kNumIrqs; i++) {
     // Must unbind irq from dispatcher thread.
     libsync::Completion unbind_complete;
-    ASSERT_OK(async::PostTask(dispatcher, [&] {
+    ASSERT_OK(async::PostTask(dispatcher, [&, i] {
       ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(0), 0, ZX_INTERRUPT_VIRTUAL, &irqs[i]));
 
-      async::Irq irq(
+      irq_wrappers[i] = std::make_unique<async::Irq>(
           irqs[i].get(), 0,
           [&](async_dispatcher_t* dispatcher_arg, async::Irq* irq_arg, zx_status_t status,
               const zx_packet_interrupt_t* interrupt) { ASSERT_FALSE(true); });
-      ASSERT_EQ(ZX_OK, irq.Begin(dispatcher));
+      ASSERT_EQ(ZX_OK, irq_wrappers[i]->Begin(dispatcher));
       // This queues the irq packet on the port, which may be read by another thread.
       irqs[i].trigger(0, zx::time_boot());
-      ASSERT_OK(irq.Cancel());
+      ASSERT_OK(irq_wrappers[i]->Cancel());
       unbind_complete.Signal();
     }));
     unbind_complete.Wait();
@@ -2369,9 +2368,9 @@ TEST_F(DispatcherTest, WaitUntilIdle) {
   fdf_dispatcher_t* dispatcher;
   ASSERT_NO_FATAL_FAILURE(CreateDispatcher(0, __func__, "", CreateFakeDriver(), &dispatcher));
 
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
   WaitUntilIdle(dispatcher);
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
 }
 
 TEST_F(DispatcherTest, WaitUntilIdleWithDirectCall) {
@@ -2395,7 +2394,7 @@ TEST_F(DispatcherTest, WaitUntilIdleWithDirectCall) {
   // Wait for the read callback to be called, it will block until we signal it to complete.
   ASSERT_OK(entered_callback.Wait(zx::time::infinite()));
 
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   // Start a thread that blocks until the dispatcher is idle.
   libsync::Completion wait_started;
@@ -2403,13 +2402,13 @@ TEST_F(DispatcherTest, WaitUntilIdleWithDirectCall) {
   std::thread t2 = std::thread([&] {
     wait_started.Signal();
     WaitUntilIdle(dispatcher);
-    ASSERT_TRUE(dispatcher->IsIdle());
+    ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
     wait_complete.Signal();
   });
 
   ASSERT_OK(wait_started.Wait(zx::time::infinite()));
   ASSERT_FALSE(wait_complete.signaled());
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   complete_blocking_read.Signal();
 
@@ -2433,16 +2432,16 @@ TEST_F(DispatcherTest, WaitUntilIdleWithAsyncLoop) {
 
   // Call is reentrant, so the read will be queued on the async loop.
   ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   // Wait for the read callback to be called, it will block until we signal it to complete.
   ASSERT_OK(entered_callback.Wait(zx::time::infinite()));
 
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   complete_blocking_read.Signal();
   WaitUntilIdle(dispatcher);
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
 }
 
 TEST_F(DispatcherTest, WaitUntilIdleCanceledRead) {
@@ -2458,7 +2457,7 @@ TEST_F(DispatcherTest, WaitUntilIdleCanceledRead) {
 
   // Call is reentrant, so the read will be queued on the async loop.
   ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   ASSERT_OK(channel_read->Cancel());
 
@@ -2481,7 +2480,7 @@ TEST_F(DispatcherTest, WaitUntilIdlePendingWait) {
       wait.Begin(async_dispatcher,
                  [](async_dispatcher_t* async_dispatcher, async::WaitOnce* wait, zx_status_t status,
                     const zx_packet_signal_t* signal) { ASSERT_FALSE(true); }));
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
   WaitUntilIdle(dispatcher);
 }
 
@@ -2496,7 +2495,7 @@ TEST_F(DispatcherTest, WaitUntilIdleDelayedTask) {
   task.set_handler([] { ASSERT_FALSE(true); });
   ASSERT_OK(task.PostForTime(async_dispatcher, zx::deadline_after(zx::sec(100))));
 
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
   WaitUntilIdle(dispatcher);
 
   ASSERT_OK(task.Cancel());  // Task should not be running yet.
@@ -2545,7 +2544,7 @@ TEST_F(DispatcherTest, WaitUntilIdleWithAsyncLoopMultipleThreads) {
   ASSERT_OK(local[0].entered_callback.Wait(zx::time::infinite()));
   local[0].complete_blocking_read.Signal();
 
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   // Allow all the read callbacks to complete.
   for (uint32_t i = 1; i < kNumClients; i++) {
@@ -2575,18 +2574,18 @@ TEST_F(DispatcherTest, WaitUntilIdleMultipleDispatchers) {
 
   // Call is reentrant, so the read will be queued on the async loop.
   ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   // Wait for the read callback to be called, it will block until we signal it to complete.
   ASSERT_OK(entered_callback.Wait(zx::time::infinite()));
 
-  ASSERT_FALSE(dispatcher->IsIdle());
-  ASSERT_TRUE(dispatcher2->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
+  ASSERT_TRUE(dispatcher2->GetDispatcher()->IsIdle());
   WaitUntilIdle(dispatcher2);
 
   complete_blocking_read.Signal();
   WaitUntilIdle(dispatcher);
-  ASSERT_TRUE(dispatcher->IsIdle());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->IsIdle());
 }
 
 TEST_F(DispatcherTest, SyncDispatcherCancelRequestDuringShutdown) {
@@ -2608,7 +2607,7 @@ TEST_F(DispatcherTest, SyncDispatcherCancelRequestDuringShutdown) {
       [&](fdf_dispatcher_t* dispatcher, fdf::ChannelRead* channel_read, zx_status_t status) {
         ASSERT_FALSE(true);  // This should never be called.
       });
-  ASSERT_OK(channel_read->Begin(static_cast<fdf_dispatcher_t*>(dispatcher)));
+  ASSERT_OK(channel_read->Begin(dispatcher->to_fdf_dispatcher()));
 
   libsync::Completion task_started;
   libsync::Completion dispatcher_shutdown_started;
@@ -2778,7 +2777,7 @@ TEST_F(DispatcherTest, HasQueuedTasks) {
   fdf_dispatcher_t* dispatcher;
   ASSERT_NO_FATAL_FAILURE(CreateDispatcher(0, __func__, "", CreateFakeDriver(), &dispatcher));
 
-  ASSERT_FALSE(dispatcher->HasQueuedTasks());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->HasQueuedTasks());
 
   // We shouldn't actually block on a dispatcher that doesn't have ALLOW_SYNC_CALLS set,
   // but this is just for synchronizing the test.
@@ -2789,22 +2788,22 @@ TEST_F(DispatcherTest, HasQueuedTasks) {
 
   // Call is reentrant, so the read will be queued on the async loop.
   ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
-  ASSERT_FALSE(dispatcher->IsIdle());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->IsIdle());
 
   // Wait for the read callback to be called, it will block until we signal it to complete.
   ASSERT_OK(entered_callback.Wait(zx::time::infinite()));
 
   libsync::Completion entered_task;
   ASSERT_OK(async::PostTask(dispatcher, [&] { entered_task.Signal(); }));
-  ASSERT_TRUE(dispatcher->HasQueuedTasks());
+  ASSERT_TRUE(dispatcher->GetDispatcher()->HasQueuedTasks());
 
   complete_blocking_read.Signal();
 
   entered_task.Wait();
-  ASSERT_FALSE(dispatcher->HasQueuedTasks());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->HasQueuedTasks());
 
   WaitUntilIdle(dispatcher);
-  ASSERT_FALSE(dispatcher->HasQueuedTasks());
+  ASSERT_FALSE(dispatcher->GetDispatcher()->HasQueuedTasks());
 }
 
 // Tests shutting down all the dispatchers owned by a driver.
@@ -3047,7 +3046,7 @@ TEST_F(DispatcherTest, WaitUntilDispatchersDestroyed) {
   for (uint32_t i = 0; i < kNumDispatchers; i++) {
     // Not all dispatchers have been destroyed yet.
     ASSERT_FALSE(wait_complete);
-    dispatchers[i]->ShutdownAsync();
+    dispatchers[i]->GetDispatcher()->ShutdownAsync();
   }
   thread.join();
   ASSERT_TRUE(wait_complete);
@@ -3239,15 +3238,16 @@ TEST_F(DispatcherTest, CreateUnsynchronizedAllowSyncCallsFails) {
   DispatcherShutdownObserver observer(false /* require_callback */);
   driver_runtime::Dispatcher* dispatcher;
   uint32_t options = FDF_DISPATCHER_OPTION_UNSYNCHRONIZED | FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
-  ASSERT_NE(ZX_OK,
-            fdf_dispatcher::Create(options, __func__, "", observer.fdf_observer(), &dispatcher));
+  ASSERT_NE(ZX_OK, driver_runtime::Dispatcher::Create(options, __func__, "",
+                                                      observer.fdf_observer(), &dispatcher));
 }
 
 // Tests that you cannot create a dispatcher on a thread not managed by the driver runtime.
 TEST_F(DispatcherTest, CreateDispatcherOnNonRuntimeThreadFails) {
   DispatcherShutdownObserver observer(false /* require_callback */);
   driver_runtime::Dispatcher* dispatcher;
-  ASSERT_NE(ZX_OK, fdf_dispatcher::Create(0, __func__, "", observer.fdf_observer(), &dispatcher));
+  ASSERT_NE(ZX_OK, driver_runtime::Dispatcher::Create(0, __func__, "", observer.fdf_observer(),
+                                                      &dispatcher));
 }
 
 // Tests that we don't spawn more threads than we need.
@@ -3263,8 +3263,8 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
     // Create first dispatcher
     driver_runtime::Dispatcher* dispatcher;
     DispatcherShutdownObserver observer;
-    ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
-                                     observer.fdf_observer(), &dispatcher));
+    ASSERT_OK(driver_runtime::Dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__,
+                                                 "", observer.fdf_observer(), &dispatcher));
     ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
     dispatcher->ShutdownAsync();
@@ -3273,8 +3273,8 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
 
     // Create second dispatcher
     DispatcherShutdownObserver observer2;
-    ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
-                                     observer2.fdf_observer(), &dispatcher));
+    ASSERT_OK(driver_runtime::Dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__,
+                                                 "", observer2.fdf_observer(), &dispatcher));
     // Note that we are still at 1 thread.
     ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
@@ -3308,14 +3308,16 @@ TEST_F(DispatcherTest, MaximumThreads) {
     std::array<driver_runtime::Dispatcher*, kNumDispatchers> dispatchers;
     std::array<DispatcherShutdownObserver, kNumDispatchers> observers;
     for (uint32_t i = 0; i < kNumDispatchers; i++) {
-      EXPECT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
-                                       observers[i].fdf_observer(), &dispatchers[i]));
+      EXPECT_OK(driver_runtime::Dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__,
+                                                   "", observers[i].fdf_observer(),
+                                                   &dispatchers[i]));
       EXPECT_EQ(i + 1,
                 driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads());
     }
     driver_runtime::Dispatcher* no_dispatcher = nullptr;
-    ASSERT_EQ(ZX_ERR_NO_RESOURCES, fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS,
-                                                          __func__, "", nullptr, &no_dispatcher));
+    ASSERT_EQ(ZX_ERR_NO_RESOURCES,
+              driver_runtime::Dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__,
+                                                 "", nullptr, &no_dispatcher));
     ASSERT_EQ(nullptr, no_dispatcher);
 
     ASSERT_EQ(kNumDispatchers,
@@ -3628,12 +3630,13 @@ TEST_F(DispatcherTest, AddDispatcherRace) {
         auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
 
         zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
-            {}, "", [&](fdf_dispatcher_t* dispatcher) { dispatcher->Destroy(); }, "role");
+            {}, "", [&](fdf_dispatcher_t* dispatcher) { dispatcher->GetDispatcher()->Destroy(); },
+            "role");
         ASSERT_FALSE(dispatcher.is_error());
 
         // The dispatcher is destroyed in the shutdown handler.
         fdf_dispatcher_t* d = dispatcher->release();
-        d->ShutdownAsync();
+        d->GetDispatcher()->ShutdownAsync();
       }
     });
   }
@@ -3642,4 +3645,484 @@ TEST_F(DispatcherTest, AddDispatcherRace) {
     t.join();
   }
   fdf_internal_wait_until_all_dispatchers_destroyed();
+}
+
+static libsync::Completion* g_suspend_completion = nullptr;
+
+TEST_F(DispatcherTest, SuspendResume) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  // We need to use DispatcherBuilder to set the owner.
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  auto async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  // Start a managed thread to run the loop, avoiding fdf_testing_run.
+  StartAdditionalManagedThread();
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Post a task that should be deferred.
+  std::atomic_bool ran = false;
+  ASSERT_OK(async::PostTask(async_dispatcher, [&] { ran = true; }));
+
+  // Wait a bit to ensure it doesn't run.
+  zx::nanosleep(zx::deadline_after(zx::msec(50)));
+  ASSERT_FALSE(ran);
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  // Post another task with a completion to wait for it.
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(async_dispatcher, [&] { task_done.Signal(); }));
+
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+  ASSERT_TRUE(ran);  // The first task should have run too!
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+}
+
+TEST_F(DispatcherTest, AlwaysOnDispatcher) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  fdf_dispatcher_t* always_on_dispatcher =
+      fdf_dispatcher_get_always_on_dispatcher(dispatcher->get());
+  ASSERT_NOT_NULL(always_on_dispatcher);
+
+  // Calling fdf_dispatcher_get_always_on_dispatcher on a veneer should be safe
+  // and return the veneer itself.
+  fdf_dispatcher_t* always_on_dispatcher2 =
+      fdf_dispatcher_get_always_on_dispatcher(always_on_dispatcher);
+  EXPECT_EQ(always_on_dispatcher, always_on_dispatcher2);
+
+  async_dispatcher_t* always_on_async = fdf_dispatcher_get_async_dispatcher(always_on_dispatcher);
+  ASSERT_NOT_NULL(always_on_async);
+
+  StartAdditionalManagedThread();
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Post a task to the always-on dispatcher. It should run even when suspended.
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(always_on_async, [&] { task_done.Signal(); }));
+
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+}
+
+TEST_F(DispatcherTest, AlwaysOnDispatcherGetCurrentDispatcher) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  fdf_dispatcher_t* always_on_dispatcher =
+      fdf_dispatcher_get_always_on_dispatcher(dispatcher->get());
+  ASSERT_NOT_NULL(always_on_dispatcher);
+
+  async_dispatcher_t* always_on_async = fdf_dispatcher_get_async_dispatcher(always_on_dispatcher);
+  ASSERT_NOT_NULL(always_on_async);
+
+  StartAdditionalManagedThread();
+
+  // Post a task to the always-on dispatcher.
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(always_on_async, [&] {
+    // Inside the always-on task, fdf_dispatcher_get_current_dispatcher()
+    // should return the parent dispatcher, not the veneer.
+    EXPECT_EQ(fdf_dispatcher_get_current_dispatcher(), dispatcher->get());
+    task_done.Signal();
+  }));
+
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+}
+
+TEST_F(DispatcherTest, WakeVectorTriggersResume) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  auto async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  // Register the event as a wake vector.
+  ASSERT_OK(fdf_dispatcher_register_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  // Register a resume requester.
+  static libsync::Completion* g_resume_requested = nullptr;
+  libsync::Completion resume_requested;
+  g_resume_requested = &resume_requested;
+
+  fdf_env_resume_requester_t requester = {
+      .handler = [](fdf_env_resume_requester_t* r) -> int {
+        g_resume_requested->Signal();
+        return 0;
+      },
+  };
+  fdf_env_register_resume_requester(fake_driver, &requester);
+
+  StartAdditionalManagedThread();
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Post a wait on the event.
+  async::WaitOnce wait(event.get(), ZX_USER_SIGNAL_0);
+  std::atomic_bool wait_triggered = false;
+  ASSERT_OK(wait.Begin(async_dispatcher,
+                       [&](async_dispatcher_t* d, async::WaitOnce* w, zx_status_t status,
+                           const zx_packet_signal_t* signal) { wait_triggered = true; }));
+
+  // Signal the event. This should trigger the wake vector and call the resume requester.
+  ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_0));
+
+  // Verify that the resume requester was called.
+  ASSERT_OK(resume_requested.Wait(zx::time::infinite()));
+
+  // Verify that the wait has NOT triggered yet (since we are suspended).
+  zx::nanosleep(zx::deadline_after(zx::msec(50)));
+  ASSERT_FALSE(wait_triggered);
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  // Verify that the wait triggers after resume.
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(async_dispatcher, [&] { task_done.Signal(); }));
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+
+  ASSERT_TRUE(wait_triggered);
+
+  // Unregister wake vector.
+  ASSERT_OK(
+      fdf_dispatcher_unregister_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+  g_resume_requested = nullptr;
+}
+
+TEST_F(DispatcherTest, WakeVectorRegistrationConstraints) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  StartAdditionalManagedThread();
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Try to register a wake vector while suspended. Should fail.
+  ASSERT_EQ(ZX_ERR_BAD_STATE,
+            fdf_dispatcher_register_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  // Register wake vector. Should succeed.
+  ASSERT_OK(fdf_dispatcher_register_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  // Suspend again.
+  suspend_completion.Reset();
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Try to unregister wake vector while suspended. Should succeed.
+  ASSERT_OK(
+      fdf_dispatcher_unregister_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+}
+
+TEST_F(DispatcherTest, TimersDuringSuspend) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  auto async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  fdf_dispatcher_t* always_on_dispatcher =
+      fdf_dispatcher_get_always_on_dispatcher(dispatcher->get());
+  ASSERT_NOT_NULL(always_on_dispatcher);
+
+  async_dispatcher_t* always_on_async = fdf_dispatcher_get_async_dispatcher(always_on_dispatcher);
+  ASSERT_NOT_NULL(always_on_async);
+
+  StartAdditionalManagedThread();
+
+  // Post a normal delayed task.
+  std::atomic_bool normal_ran = false;
+  ASSERT_OK(async::PostDelayedTask(async_dispatcher, [&] { normal_ran = true; }, zx::msec(10)));
+
+  // Post an always-on delayed task.
+  std::atomic_bool always_on_ran = false;
+  ASSERT_OK(async::PostDelayedTask(always_on_async, [&] { always_on_ran = true; }, zx::msec(10)));
+
+  // Suspend the driver.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+  suspend_completion.Wait();
+
+  // Wait enough time for the delays to expire.
+  zx::nanosleep(zx::deadline_after(zx::msec(50)));
+
+  // Verify that the always-on task ran.
+  ASSERT_TRUE(always_on_ran);
+
+  // Verify that the normal task did NOT run.
+  ASSERT_FALSE(normal_ran);
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  // Verify that the normal task triggers after resume.
+  libsync::Completion task_done;
+  ASSERT_OK(async::PostTask(async_dispatcher, [&] { task_done.Signal(); }));
+  ASSERT_OK(task_done.Wait(zx::time::infinite()));
+
+  ASSERT_TRUE(normal_ran);
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+}
+
+TEST_F(DispatcherTest, SuspendResumeMultipleCycles) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  auto async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  StartAdditionalManagedThread();
+
+  constexpr int kCycles = 3;
+  for (int i = 0; i < kCycles; i++) {
+    std::atomic_bool ran = false;
+
+    // Suspend the driver.
+    libsync::Completion suspend_completion;
+    g_suspend_completion = &suspend_completion;
+
+    fdf_env_suspend_completer_t completer = {
+        .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+    };
+
+    fdf_env_driver_suspend(fake_driver, &completer);
+    suspend_completion.Wait();
+
+    // Post task AFTER suspend.
+    ASSERT_OK(async::PostTask(async_dispatcher, [&] { ran = true; }));
+
+    // Verify it doesn't run while suspended.
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    ASSERT_FALSE(ran);
+
+    // Now resume.
+    fdf_env_driver_resume(fake_driver);
+
+    // Verify it runs after resume.
+    libsync::Completion task_done;
+    ASSERT_OK(async::PostTask(async_dispatcher, [&] { task_done.Signal(); }));
+    ASSERT_OK(task_done.Wait(zx::time::infinite()));
+
+    ASSERT_TRUE(ran);
+
+    g_suspend_completion = nullptr;
+  }
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+}
+
+TEST_F(DispatcherTest, WakeVectorTriggeredBeforeSuspend) {
+  auto fake_driver = CreateFakeDriver();
+  libsync::Completion shutdown_completion;
+  auto destructed_handler = [&](fdf_dispatcher_t* dispatcher) { shutdown_completion.Signal(); };
+
+  auto dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      fake_driver, {}, "dispatcher", destructed_handler);
+  ASSERT_FALSE(dispatcher.is_error());
+
+  auto async_dispatcher = dispatcher->async_dispatcher();
+  ASSERT_NOT_NULL(async_dispatcher);
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  // Register the event as a wake vector.
+  ASSERT_OK(fdf_dispatcher_register_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  // Register a resume requester.
+  static libsync::Completion* g_resume_requested = nullptr;
+  libsync::Completion resume_requested;
+  g_resume_requested = &resume_requested;
+
+  fdf_env_resume_requester_t requester = {
+      .handler = [](fdf_env_resume_requester_t* r) -> int {
+        g_resume_requested->Signal();
+        return 0;
+      },
+  };
+  fdf_env_register_resume_requester(fake_driver, &requester);
+
+  StartAdditionalManagedThread();
+
+  libsync::Completion callback_started;
+  libsync::Completion allow_callback_to_finish;
+
+  // Post a wait on the event.
+  async::WaitOnce wait(event.get(), ZX_USER_SIGNAL_0);
+  std::atomic_bool wait_triggered = false;
+  ASSERT_OK(wait.Begin(async_dispatcher, [&](async_dispatcher_t* d, async::WaitOnce* w,
+                                             zx_status_t status, const zx_packet_signal_t* signal) {
+    callback_started.Signal();
+    allow_callback_to_finish.Wait();
+    wait_triggered = true;
+  }));
+
+  // Signal the event.
+  ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_0));
+
+  // Wait for the callback to start executing.
+  ASSERT_OK(callback_started.Wait(zx::time::infinite()));
+
+  // Now suspend. The callback is executing, so it should trigger resume.
+  libsync::Completion suspend_completion;
+  g_suspend_completion = &suspend_completion;
+
+  fdf_env_suspend_completer_t completer = {
+      .handler = [](fdf_env_suspend_completer_t* c) { g_suspend_completion->Signal(); },
+  };
+
+  fdf_env_driver_suspend(fake_driver, &completer);
+
+  // Verify that the resume requester was called (because it found a running wake vector).
+  ASSERT_OK(resume_requested.Wait(zx::time::infinite()));
+
+  // The suspend operation is waiting for the callback to finish.
+  ASSERT_FALSE(suspend_completion.signaled());
+
+  // Let the callback finish.
+  allow_callback_to_finish.Signal();
+
+  // Now suspend should complete.
+  suspend_completion.Wait();
+
+  // Verify that the wait triggered.
+  ASSERT_TRUE(wait_triggered);
+
+  // Now resume.
+  fdf_env_driver_resume(fake_driver);
+
+  // Unregister wake vector.
+  ASSERT_OK(
+      fdf_dispatcher_unregister_wake_vector(dispatcher->get(), event.get(), ZX_USER_SIGNAL_0));
+
+  dispatcher->ShutdownAsync();
+  shutdown_completion.Wait();
+
+  g_suspend_completion = nullptr;
+  g_resume_requested = nullptr;
 }

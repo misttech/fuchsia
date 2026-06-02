@@ -208,7 +208,7 @@ zx_status_t Channel::Read(uint32_t options, fdf_arena_t** out_arena, void** out_
   return ZX_OK;
 }
 
-zx_status_t Channel::WaitAsync(struct fdf_dispatcher* dispatcher, fdf_channel_read_t* channel_read,
+zx_status_t Channel::WaitAsync(Dispatcher* dispatcher, fdf_channel_read_t* channel_read,
                                uint32_t options) {
   fbl::RefPtr<Dispatcher> dispatcher_ref;
   bool queue_callback = false;
@@ -482,8 +482,14 @@ std::unique_ptr<driver_runtime::CallbackRequest> Channel::TakeCallbackRequestLoc
           std::unique_ptr<driver_runtime::CallbackRequest> callback_request, zx_status_t status) {
         channel->DispatcherCallback(std::move(callback_request), status);
       };
-  callback_request_->SetCallback(static_cast<fdf_dispatcher_t*>(dispatcher_.get()),
-                                 std::move(callback));
+
+  if (wait_options_ & FDF_CHANNEL_WAIT_OPTION_ALWAYS_ON) {
+    callback_request_->set_request_type(CallbackRequest::RequestType::kAlwaysOnOther);
+  } else {
+    callback_request_->set_request_type(CallbackRequest::RequestType::kOther);
+  }
+
+  callback_request_->SetCallback(dispatcher_.get(), std::move(callback));
   return std::move(callback_request_);
 }
 
@@ -491,6 +497,7 @@ void Channel::ResetCallbackRequestStateLocked(std::unique_ptr<CallbackRequest> c
   ZX_ASSERT(callback_request != nullptr);
   ZX_ASSERT(!callback_request_);
   callback_request->Reset();
+  callback_request->set_request_type(CallbackRequest::RequestType::kOther);
   callback_request_ = std::move(callback_request);
   callback_request_pending_queue_ = false;
 }
@@ -520,7 +527,7 @@ void Channel::DispatcherCallback(std::unique_ptr<driver_runtime::CallbackRequest
   ZX_ASSERT(channel_read);
   ZX_ASSERT(channel_read->handler);
 
-  channel_read->handler(static_cast<fdf_dispatcher_t*>(dispatcher.get()), channel_read, status);
+  channel_read->handler(dispatcher->to_fdf_dispatcher(), channel_read, status);
   {
     fbl::AutoLock lock(get_lock());
     ZX_ASSERT(num_pending_callbacks_ > 0);

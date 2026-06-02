@@ -61,6 +61,10 @@ static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK = 1u << 0;
 // it started on.
 static const uint32_t FDF_CHANNEL_WAIT_OPTION_FORCE_ASYNC_CANCEL = 1u << 0;
 
+// This flag indicates that the channel wait was scheduled on an always-on
+// dispatcher.
+static const uint32_t FDF_CHANNEL_WAIT_OPTION_ALWAYS_ON = 1u << 1;
+
 __END_CDECLS
 
 #endif  // LIB_FDF_TYPES_H_

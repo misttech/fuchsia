@@ -84,7 +84,11 @@ zx_status_t fdf_channel_wait_async(struct fdf_dispatcher* dispatcher,
       driver_runtime::Handle::GetObject<driver_runtime::Channel>(channel_read->channel, &channel);
   // TODO(https://fxbug.dev/42168124): we may want to consider killing the process.
   ZX_ASSERT_MSG(status == ZX_OK, "%s", zx_status_get_string(status));
-  return channel->WaitAsync(dispatcher, channel_read, options);
+  if (dispatcher->IsVeneer()) {
+    options |= FDF_CHANNEL_WAIT_OPTION_ALWAYS_ON;
+  }
+  auto concrete_dispatcher = dispatcher->GetDispatcher();
+  return channel->WaitAsync(concrete_dispatcher, channel_read, options);
 }
 
 __EXPORT zx_status_t fdf_channel_call(fdf_handle_t channel_handle, uint32_t options,
@@ -144,57 +148,78 @@ __EXPORT zx_status_t fdf_dispatcher_create(uint32_t options, const char* name, s
   if (status != ZX_OK) {
     return status;
   }
-  *out_dispatcher = static_cast<fdf_dispatcher*>(dispatcher);
+  *out_dispatcher = dispatcher->to_fdf_dispatcher();
   return ZX_OK;
 }
 
 __EXPORT async_dispatcher_t* fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_t* dispatcher) {
-  return dispatcher->GetAsyncDispatcher();
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  return interface->GetAsyncDispatcher();
 }
 
 __EXPORT fdf_dispatcher_t* fdf_dispatcher_downcast_async_dispatcher(
     async_dispatcher_t* dispatcher) {
-  return static_cast<fdf_dispatcher*>(fdf_dispatcher::DowncastAsyncDispatcher(dispatcher));
+  return driver_runtime::DispatcherInterface::DowncastAsyncDispatcher(dispatcher);
 }
 
 __EXPORT uint32_t fdf_dispatcher_get_options(const fdf_dispatcher_t* dispatcher) {
-  return dispatcher->options();
+  auto interface = reinterpret_cast<const driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->options();
 }
 
 __EXPORT void fdf_dispatcher_shutdown_async(fdf_dispatcher_t* dispatcher) {
-  return dispatcher->ShutdownAsync();
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->ShutdownAsync();
 }
 
-__EXPORT void fdf_dispatcher_destroy(fdf_dispatcher_t* dispatcher) { return dispatcher->Destroy(); }
+__EXPORT void fdf_dispatcher_destroy(fdf_dispatcher_t* dispatcher) {
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->Destroy();
+}
 
 __EXPORT fdf_dispatcher_t* fdf_dispatcher_get_current_dispatcher() {
-  return static_cast<fdf_dispatcher_t*>(thread_context::GetCurrentDispatcher());
+  auto* current = thread_context::GetCurrentDispatcher();
+  return current ? current->to_fdf_dispatcher() : nullptr;
 }
 
 __EXPORT zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t option) {
-  return dispatcher->Seal(option);
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->Seal(option);
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 __EXPORT fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* dispatcher) {
-  return dispatcher;
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->GetAlwaysOnDispatcher();
 }
 
 __EXPORT zx_status_t fdf_dispatcher_register_wake_vector(fdf_dispatcher_t* dispatcher,
                                                          zx_handle_t handle, zx_signals_t signals) {
-  return ZX_OK;
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->RegisterWakeVector(handle, signals);
 }
 
 __EXPORT zx_status_t fdf_dispatcher_unregister_wake_vector(fdf_dispatcher_t* dispatcher,
                                                            zx_handle_t handle,
                                                            zx_signals_t signals) {
-  return ZX_OK;
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->UnregisterWakeVector(handle, signals);
 }
 #endif
 
 __EXPORT zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                         fdf_token_t* handler) {
-  return driver_runtime::DispatcherCoordinator::TokenRegister(token, dispatcher, handler);
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return driver_runtime::DispatcherCoordinator::TokenRegister(
+      token, reinterpret_cast<fdf_dispatcher_t*>(concrete_dispatcher), handler);
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(29)
@@ -233,13 +258,15 @@ __EXPORT zx_status_t fdf_env_dispatcher_create_with_owner(
   if (status != ZX_OK) {
     return status;
   }
-  *out_dispatcher = static_cast<fdf_dispatcher*>(dispatcher);
+  *out_dispatcher = dispatcher->to_fdf_dispatcher();
   return ZX_OK;
 }
 
 __EXPORT void fdf_env_dispatcher_dump(fdf_dispatcher_t* dispatcher) {
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
   std::vector<std::string> dump;
-  dispatcher->DumpToString(&dump);
+  concrete_dispatcher->DumpToString(&dump);
   for (auto& str : dump) {
     LOGF(INFO, "%s", str.c_str());
   }
@@ -247,8 +274,10 @@ __EXPORT void fdf_env_dispatcher_dump(fdf_dispatcher_t* dispatcher) {
 
 __EXPORT void fdf_env_dispatcher_get_dump_deprecated(fdf_dispatcher_t* dispatcher,
                                                      char** out_dump) {
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
   std::vector<std::string> dump;
-  dispatcher->DumpToString(&dump);
+  concrete_dispatcher->DumpToString(&dump);
 
   std::string result = "";
   for (auto& str : dump) {
@@ -272,7 +301,9 @@ __EXPORT void fdf_env_destroy_all_dispatchers() {
 }
 
 __EXPORT bool fdf_env_dispatcher_has_queued_tasks(fdf_dispatcher_t* dispatcher) {
-  return dispatcher->HasQueuedTasks();
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->HasQueuedTasks();
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
@@ -303,7 +334,7 @@ __EXPORT zx_status_t fdf_testing_create_unmanaged_dispatcher(
   if (status != ZX_OK) {
     return status;
   }
-  *out_dispatcher = static_cast<fdf_dispatcher*>(dispatcher);
+  *out_dispatcher = dispatcher->to_fdf_dispatcher();
   return ZX_OK;
 }
 
@@ -311,8 +342,13 @@ __EXPORT zx_status_t fdf_testing_set_default_dispatcher(fdf_dispatcher_t* dispat
   if (!thread_context::IsCallStackEmpty()) {
     return ZX_ERR_BAD_STATE;
   }
-
-  thread_context::SetDefaultTestingDispatcher(static_cast<driver_runtime::Dispatcher*>(dispatcher));
+  if (!dispatcher) {
+    thread_context::SetDefaultTestingDispatcher(nullptr);
+    return ZX_OK;
+  }
+  auto interface = reinterpret_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  thread_context::SetDefaultTestingDispatcher(concrete_dispatcher);
   return ZX_OK;
 }
 
@@ -389,15 +425,23 @@ __EXPORT void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* stall_scan
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 __EXPORT void fdf_env_register_resume_requester(const void* driver,
-                                                fdf_env_resume_requester_t* requester) {}
+                                                fdf_env_resume_requester_t* requester) {
+  driver_runtime::DispatcherCoordinator::RegisterResumeRequester(driver, requester);
+}
 
 __EXPORT void fdf_env_driver_suspend(const void* driver, fdf_env_suspend_completer_t* completer) {
-  if (completer && completer->handler) {
-    completer->handler(completer);
+  zx_status_t status =
+      driver_runtime::DispatcherCoordinator::SuspendDispatchersAsync(driver, completer);
+  if (status != ZX_OK) {
+    if (completer && completer->handler) {
+      completer->handler(completer);
+    }
   }
 }
 
-__EXPORT void fdf_env_driver_resume(const void* driver) {}
+__EXPORT void fdf_env_driver_resume(const void* driver) {
+  driver_runtime::DispatcherCoordinator::ResumeDispatchers(driver);
+}
 #endif
 
 __END_CDECLS

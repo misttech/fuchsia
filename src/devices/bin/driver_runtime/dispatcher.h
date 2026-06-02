@@ -39,14 +39,44 @@
 #include "src/devices/bin/driver_runtime/token_manager.h"
 
 namespace driver_runtime {
+class Dispatcher;
 
-class Dispatcher : public async_dispatcher_t,
+struct DispatcherInterface : public async_dispatcher_t {
+  bool IsVeneer() const;
+  Dispatcher* GetDispatcher();
+  const Dispatcher* GetDispatcher() const;
+  async_dispatcher_t* GetAsyncDispatcher();
+  static fdf_dispatcher_t* DowncastAsyncDispatcher(async_dispatcher_t* dispatcher);
+};
+
+}  // namespace driver_runtime
+
+struct fdf_dispatcher : public driver_runtime::DispatcherInterface {
+  // NOTE: Intentionally empty, do not add to this.
+};
+
+namespace driver_runtime {
+
+// CRITICAL: Dispatcher inherits from DispatcherInterface as its first base class.
+// This layout is relied upon by the Veneer implementation to allow safe casting
+// between Dispatcher* and Veneer* for specific methods. Do not change the base class order!
+class Dispatcher : public DispatcherInterface,
                    public fbl::RefCounted<Dispatcher>,
                    public fbl::DoublyLinkedListable<fbl::RefPtr<Dispatcher>> {
+  friend struct DispatcherInterface;
+
   // Forward Declaration
   class AsyncWait;
 
  public:
+  // CRITICAL: The layout of this struct is relied upon by `GetDispatcher`
+  // and `GetAsyncDispatcher`. `async_dispatcher` MUST be the first member!
+  struct Veneer {
+    DispatcherInterface async_dispatcher;
+    Dispatcher* dispatcher;
+    fbl::Canary<fbl::magic("FDFV")> canary_;
+  };
+
   enum class DispatcherState {
     // The dispatcher is running and accepting new requests.
     kRunning,
@@ -56,6 +86,13 @@ class Dispatcher : public async_dispatcher_t,
     kShutdown,
     // The dispatcher is about to be destroyed.
     kDestroyed,
+  };
+
+  enum class SuspendState : uint8_t {
+    // The dispatcher is active and processing tasks.
+    kNone,
+    // The dispatcher is suspended and not processing power-managed tasks.
+    kSuspended,
   };
 
   // Indirect irq object which is used to ensure irqs are tracked and synchronize irqs on
@@ -76,7 +113,8 @@ class Dispatcher : public async_dispatcher_t,
                   const zx_packet_interrupt_t* packet);
 
     // Returns a callback request representing the triggered irq.
-    std::unique_ptr<driver_runtime::CallbackRequest> CreateCallbackRequest(Dispatcher& dispatcher);
+    std::unique_ptr<driver_runtime::CallbackRequest> CreateCallbackRequest(Dispatcher& dispatcher,
+                                                                           bool locked = false);
 
     fbl::RefPtr<Dispatcher> GetDispatcherRef() {
       fbl::AutoLock lock(&lock_);
@@ -496,20 +534,28 @@ class Dispatcher : public async_dispatcher_t,
       uint32_t options, std::string_view name,
       fdf_dispatcher_shutdown_observer_t* shutdown_observer, Dispatcher** out_dispatcher);
 
-  // |dispatcher| must have been retrieved via `GetAsyncDispatcher`.
-  static Dispatcher* DowncastAsyncDispatcher(async_dispatcher_t* dispatcher);
-  async_dispatcher_t* GetAsyncDispatcher();
   void ShutdownAsync();
   // If |user_initiated| is true, |Destroy| was called by the user via |fdf_dispatcher_destroy|
   // otherwise |Destroy| was called by the environment via |fdf_env_destroy_all_dispatchers|.
   void Destroy(bool user_initiated = true);
   zx_status_t Seal(uint32_t option);
+  fdf_dispatcher_t* GetAlwaysOnDispatcher() {
+    return static_cast<fdf_dispatcher_t*>(&veneer_.async_dispatcher);
+  }
+  fdf_dispatcher_t* to_fdf_dispatcher() {
+    return static_cast<fdf_dispatcher_t*>(static_cast<DispatcherInterface*>(this));
+  }
+  void SuspendAsync(fit::closure completion_callback);
+  void Resume();
+  void SetResumeRequester(fdf_env_resume_requester_t* requester);
+  zx_status_t RegisterWakeVector(zx_handle_t handle, zx_signals_t signals);
+  zx_status_t UnregisterWakeVector(zx_handle_t handle, zx_signals_t signals);
 
   // async_dispatcher_t implementation
   zx_time_t GetTime();
-  zx_status_t BeginWait(async_wait_t* wait);
+  zx_status_t BeginWait(async_wait_t* wait, bool is_always_on = false);
   zx_status_t CancelWait(async_wait_t* wait);
-  zx_status_t PostTask(async_task_t* task);
+  zx_status_t PostTask(async_task_t* task, bool is_always_on = false);
   zx_status_t CancelTask(async_task_t* task);
   zx_status_t QueuePacket(async_receiver_t* receiver, const zx_packet_user_t* data);
   zx_status_t BindIrq(async_irq_t* irq);
@@ -705,8 +751,8 @@ class Dispatcher : public async_dispatcher_t,
 
   // A task which will be triggered at some point in the future.
   struct DelayedTask : public CallbackRequest {
-    DelayedTask(zx::time deadline)
-        : CallbackRequest(CallbackRequest::RequestType::kTask), deadline(deadline) {}
+    explicit DelayedTask(zx::time deadline, RequestType request_type = RequestType::kTask)
+        : CallbackRequest(request_type), deadline(deadline) {}
     zx::time deadline;
   };
 
@@ -766,7 +812,9 @@ class Dispatcher : public async_dispatcher_t,
   };
 
   zx::time GetNextTimeoutLocked() const __TA_REQUIRES(&callback_lock_);
-  void ResetTimerLocked() __TA_REQUIRES(&callback_lock_);
+  void ResetTimerLocked(bool force = false) __TA_REQUIRES(&callback_lock_);
+  bool IsWakeVectorLocked(zx_handle_t handle, zx_signals_t signals) const
+      __TA_REQUIRES(&callback_lock_);
   void InsertDelayedTaskSortedLocked(std::unique_ptr<DelayedTask> task)
       __TA_REQUIRES(&callback_lock_);
   void CheckDelayedTasksLocked() __TA_REQUIRES(&callback_lock_);
@@ -865,6 +913,30 @@ class Dispatcher : public async_dispatcher_t,
   // TODO(https://fxbug.dev/42180016): consider using std::atomic.
   DispatcherState state_ __TA_GUARDED(&callback_lock_) = DispatcherState::kRunning;
 
+  SuspendState suspend_state_ __TA_GUARDED(&callback_lock_) = SuspendState::kNone;
+
+  // Queued callback requests that are deferred while the dispatcher is suspended.
+  fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> sleep_queue_
+      __TA_GUARDED(&callback_lock_);
+
+  // Queued callback requests for wake vectors that triggered while suspended.
+  fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> wake_queue_ __TA_GUARDED(&callback_lock_);
+
+  // Tasks originating from the always-on veneer which should move into callback_queue as soon as
+  // they are ready.
+  fbl::DoublyLinkedList<std::unique_ptr<CallbackRequest>> always_on_delayed_tasks_
+      __TA_GUARDED(&callback_lock_);
+
+  // Number of power-managed tasks currently executing.
+  size_t executing_power_managed_tasks_ __TA_GUARDED(&callback_lock_) = 0;
+  size_t executing_wake_vectors_ __TA_GUARDED(&callback_lock_) = 0;
+
+  std::unordered_map<zx_handle_t, zx_signals_t> wake_vectors_ __TA_GUARDED(&callback_lock_);
+
+  fdf_env_resume_requester_t* resume_requester_ __TA_GUARDED(&callback_lock_) = nullptr;
+
+  fit::closure suspend_completion_callback_ __TA_GUARDED(&callback_lock_);
+
   // If a call to |Destroy| has been made, this will store the name of the dispatcher that made the
   // call.
   std::string dispatcher_destroy_context_ __TA_GUARDED(callback_lock_);
@@ -890,6 +962,8 @@ class Dispatcher : public async_dispatcher_t,
   // Tokens registered with the token manager, that are waiting for fdf handles to
   // be transferred,
   std::unordered_set<fdf_token_t*> registered_tokens_ __TA_GUARDED(&callback_lock_);
+
+  Veneer veneer_;
 
   fbl::Canary<fbl::magic("FDFD")> canary_;
 };
@@ -931,6 +1005,10 @@ class DispatcherCoordinator {
   static zx_status_t TestingResetQuit();
   static zx_status_t ShutdownDispatchersAsync(const void* driver,
                                               fdf_env_driver_shutdown_observer_t* observer);
+  static zx_status_t SuspendDispatchersAsync(const void* driver,
+                                             fdf_env_suspend_completer_t* completer);
+  static void ResumeDispatchers(const void* driver);
+  static void RegisterResumeRequester(const void* driver, fdf_env_resume_requester_t* requester);
 
   // Implementation of fdf_token_*.
   static zx_status_t TokenRegister(zx_handle_t token, fdf_dispatcher_t* dispatcher,
@@ -998,6 +1076,9 @@ class DispatcherCoordinator {
     using DriverShutdownCallback = fit::inline_callback<void(void), sizeof(void*) * 3>;
 
     explicit DriverState(const void* driver) : driver_(driver) {}
+
+    void SetResumeRequester(fdf_env_resume_requester_t* r) { resume_requester_ = r; }
+    fdf_env_resume_requester_t* GetResumeRequester() const { return resume_requester_; }
 
     // Required to instantiate fbl::DefaultKeyedObjectTraits.
     const void* GetKey() const { return driver_; }
@@ -1090,6 +1171,8 @@ class DispatcherCoordinator {
     // The number of threads currently calling a dispatcher shutdown observer handler
     // for a dispatcher.
     uint32_t num_pending_observer_calls_ = 0;
+
+    fdf_env_resume_requester_t* resume_requester_ = nullptr;
   };
 
   // Make sure this destructs after |loop_|. This is as dispatchers will remove themselves
@@ -1129,8 +1212,50 @@ DispatcherCoordinator& GetDispatcherCoordinator();
 
 }  // namespace driver_runtime
 
-struct fdf_dispatcher : public driver_runtime::Dispatcher {
-  // NOTE: Intentionally empty, do not add to this.
-};
+namespace driver_runtime {
+extern const async_ops_t g_veneer_ops;
+}  // namespace driver_runtime
+
+inline bool driver_runtime::DispatcherInterface::IsVeneer() const {
+  return ops == &driver_runtime::g_veneer_ops;
+}
+
+inline driver_runtime::Dispatcher* driver_runtime::DispatcherInterface::GetDispatcher() {
+  if (IsVeneer()) {
+    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(this);
+    return veneer->dispatcher;
+  }
+  return static_cast<driver_runtime::Dispatcher*>(this);
+}
+
+inline const driver_runtime::Dispatcher* driver_runtime::DispatcherInterface::GetDispatcher()
+    const {
+  if (IsVeneer()) {
+    auto veneer = reinterpret_cast<const driver_runtime::Dispatcher::Veneer*>(this);
+    return veneer->dispatcher;
+  }
+  return static_cast<const driver_runtime::Dispatcher*>(this);
+}
+
+inline async_dispatcher_t* driver_runtime::DispatcherInterface::GetAsyncDispatcher() {
+  if (IsVeneer()) {
+    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(this);
+    return &veneer->async_dispatcher;
+  }
+  return static_cast<async_dispatcher_t*>(this);
+}
+
+inline fdf_dispatcher_t* driver_runtime::DispatcherInterface::DowncastAsyncDispatcher(
+    async_dispatcher_t* dispatcher) {
+  auto interface = static_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  if (interface->IsVeneer()) {
+    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(interface);
+    veneer->canary_.Assert();
+    return static_cast<fdf_dispatcher_t*>(interface);
+  }
+  auto concrete = static_cast<driver_runtime::Dispatcher*>(interface);
+  concrete->canary_.Assert();
+  return static_cast<fdf_dispatcher*>(interface);
+}
 
 #endif  // SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_
