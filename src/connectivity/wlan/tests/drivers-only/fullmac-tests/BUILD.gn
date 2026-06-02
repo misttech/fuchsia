@@ -45,8 +45,9 @@ rust_wlan_integration_test("fullmac-tests") {
       max_severity = "ERROR"
     }
 
-    # When test cases run in parallel, the logs from their test realms are interleaved.
-    # This disables parallelism so that failing test cases are easier to debug.
+    # When test cases run in parallel, the logs from their test realms are
+    # interleaved. This disables parallelism so that failing test cases are
+    # easier to debug.
     parallel = 1
   }
 }

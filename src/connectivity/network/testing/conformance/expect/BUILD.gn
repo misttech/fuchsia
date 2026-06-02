@@ -19,8 +19,8 @@ go_test("expect_test") {
 group("tests") {
   testonly = true
 
-  # network-conformance tests only run on Linux hosts, so we only care about asserting Expect's
-  # existence in Linux environments.
+  # network-conformance tests only run on Linux hosts, so we only care about
+  # asserting Expect's existence in Linux environments.
   if (host_os == "linux") {
     deps = [ ":expect_test($host_toolchain)" ]
   }

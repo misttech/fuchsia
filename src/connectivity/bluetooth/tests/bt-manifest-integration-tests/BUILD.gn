@@ -142,10 +142,10 @@ fuchsia_test_package("bt-hfp-audio-gateway-smoke-test") {
     "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:default_config_values",
   ]
 
-  # The max severity is set to ERROR due to the HFP component's ERROR log message
-  # when the Profile service is dropped. In some test runs, the Profile service
-  # goes away before the HFP component terminates, resulting in the log. This does not
-  # indicate a bug and is expected behavior.
+  # The max severity is set to ERROR due to the HFP component's ERROR log
+  # message when the Profile service is dropped. In some test runs, the Profile
+  # service goes away before the HFP component terminates, resulting in the log.
+  # This does not indicate a bug and is expected behavior.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -238,7 +238,8 @@ fuchsia_test_package("bt-a2dp-smoke-test") {
   deps = [
     ":bt-a2dp-topology-fake",
 
-    # The AVRCP-Target component is used by A2DP to provide the `Lifecycle` service.
+    # The AVRCP-Target component is used by A2DP to provide the `Lifecycle`
+    # service.
     "//src/connectivity/bluetooth/profiles/bt-avrcp-target:component",
   ]
 }
@@ -316,8 +317,8 @@ fuchsia_test_package("bt-init-smoke-test") {
   test_components = [ ":bt-init-smoke-test-component" ]
   test_specs = {
     log_settings = {
-      # Test teardown may cause some errors to be logged that do not impact the test
-      # validity. See b/339072885 for more information.
+      # Test teardown may cause some errors to be logged that do not impact the
+      # test validity. See b/339072885 for more information.
       max_severity = "ERROR"
     }
   }

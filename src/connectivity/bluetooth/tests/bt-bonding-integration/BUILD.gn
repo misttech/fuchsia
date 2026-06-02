@@ -27,8 +27,9 @@ fuchsia_test_component("bt-bonding-integration-tests-component") {
 }
 
 fuchsia_test_package("bt-bonding-integration-tests") {
-  # These tests intentionally provide malformed bonding data to bt-host. Because this data is only
-  # expected to come from trusted sources in prod, bt-host logs this failure at an ERROR level.
+  # These tests intentionally provide malformed bonding data to bt-host. Because
+  # this data is only expected to come from trusted sources in prod, bt-host
+  # logs this failure at an ERROR level.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

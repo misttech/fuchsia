@@ -12,10 +12,12 @@ import("//build/drivers.gni")
 # * brcmfmac-nvram-copy
 # * brcmfmac-clm-copy
 #
-# which copy the firmware, NVRAM definition, and CLM blob respectively.  They are either copy()
-# targets, or empty group() targets, for use in the driver_driver_package() targets below.
+# which copy the firmware, NVRAM definition, and CLM blob respectively. They are
+# either copy() targets, or empty group() targets, for use in the
+# driver_driver_package() targets below.
 #
-# All files that must be included as libraries in the driver_driver_package() target are added to the
+# All files that must be included as libraries in the driver_driver_package()
+# target are added to the
 # driver_library_files list.
 
 template("brcmfmac_driver") {

@@ -22,11 +22,12 @@ template("donut_lib_target") {
              "//third_party/rust_crates:serde_json",
            ] + invoker.deps
 
-    # Most of the functionality in this library can be shared between the host tools and the Fuchsia
-    # platform.  However, the unit tests make use of TestExecutor::run_single_threaded which does not
-    # appear to be supported for the host.  The wlan_common library is used only for assisting in
-    # these tests and itself includes many Fuchsia-specific libraries.  As such, there attributes
-    # should only be included when the build targets Fuchsia.
+    # Most of the functionality in this library can be shared between the host
+    # tools and the Fuchsia platform. However, the unit tests make use of
+    # TestExecutor::run_single_threaded which does not appear to be supported
+    # for the host. The wlan_common library is used only for assisting in these
+    # tests and itself includes many Fuchsia-specific libraries. As such, there
+    # attributes should only be included when the build targets Fuchsia.
     if (current_os == "fuchsia") {
       with_unit_tests = true
       test_deps = [

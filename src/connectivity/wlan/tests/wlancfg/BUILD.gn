@@ -62,9 +62,9 @@ antlion_host_test("saved_networks_test") {
   ]
 }
 
-# This is a helper group so developers can easily add all tests to their build. It is not run by
-# infra. You should not directly add tests here, but rather to one of the other groups below so it
-# runs in infra.
+# This is a helper group so developers can easily add all tests to their build.
+# It is not run by infra. You should not directly add tests here, but rather to
+# one of the other groups below so it runs in infra.
 group("tests_host") {
   testonly = true
   public_deps = [

@@ -4,8 +4,9 @@
 import(
     "//src/connectivity/wlan/tests/helpers/build/rust_wlan_integration_test.gni")
 
-# NOTE: This is kebab case (rather than snake case to match the name of the folder)
-# because this needs to match the names of the generated packages on old releases for CTF.
+# NOTE: This is kebab case (rather than snake case to match the name of the
+# folder) because this needs to match the names of the generated packages on old
+# releases for CTF.
 rust_wlan_integration_test("simulate-scan") {
   edition = "2024"
   binary_deps = [

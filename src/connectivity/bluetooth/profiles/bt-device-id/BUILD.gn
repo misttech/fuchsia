@@ -56,7 +56,8 @@ fuchsia_structured_config_rust_lib("bt_device_id_profile_config") {
   cm_label = ":manifest"
 }
 
-# The default structured config for this component disables the default DI advertisement.
+# The default structured config for this component disables the default DI
+# advertisement.
 fuchsia_structured_config_values("default_config_values") {
   cm_label = ":manifest"
   values = {

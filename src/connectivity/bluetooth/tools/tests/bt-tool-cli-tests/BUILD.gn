@@ -29,7 +29,8 @@ fuchsia_test_component("bt-tool-cli-tests-component") {
 fuchsia_test_package("bt-tool-cli-tests") {
   test_components = [ ":bt-tool-cli-tests-component" ]
   deps = [
-    # include these binaries in our package so we aren't dependent on the /bin ones.
+    # include these binaries in our package so we aren't dependent on the /bin
+    # ones.
     "//src/connectivity/bluetooth/tools/bt-avrcp-controller:bin",
     "//src/connectivity/bluetooth/tools/bt-snoop-cli:bin",
   ]

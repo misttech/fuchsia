@@ -6,10 +6,11 @@ import("//build/rust/rustc_test.gni")
 import("./wlan_integration_test_component.gni")
 import("./wlan_integration_test_package.gni")
 
-# Creates a WLAN integration test package where the test suite is defined in a Rust binary.
+# Creates a WLAN integration test package where the test suite is defined in a
+# Rust binary.
 #
-# Ideally, this should look as close as the `rustc_test` template as possible. As such,
-# this forwards all parameters except:
+# Ideally, this should look as close as the `rustc_test` template as possible.
+# As such, this forwards all parameters except:
 #
 #    binary_deps (optional)
 #      Dependencies for the test suite binary, forwarded to rustc_test.
@@ -41,9 +42,9 @@ template("rust_wlan_integration_test") {
     binary_deps = invoker.binary_deps
   }
 
-  # NOTE: If $target_name is in kebab case, rustc_test will format it to be snake_case
-  # even if we manually set output_name = $target_name. So we convert $test_binary_name
-  # to snake_case here.
+  # NOTE: If $target_name is in kebab case, rustc_test will format it to be
+  # snake_case even if we manually set output_name = $target_name. So we convert
+  # $test_binary_name to snake_case here.
   test_binary_name = string_replace("${target_name}_test_suite", "-", "_")
 
   rustc_test(test_binary_name) {

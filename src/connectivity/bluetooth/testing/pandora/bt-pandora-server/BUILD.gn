@@ -6,8 +6,8 @@ import("//build/components.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 # To enable an experimental Pandora API, copy its .proto definition into
-# third_party/github.com/google/bt-test-interfaces/src/pandora/ and set the corresponding variable
-# below.
+# third_party/github.com/google/bt-test-interfaces/src/pandora/ and set the
+# corresponding variable below.
 #
 # TODO(https://fxbug.dev/444046268): Include experimental APIs by default.
 pandora_with_gatt = false

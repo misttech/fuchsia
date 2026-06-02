@@ -184,8 +184,9 @@ group("tests") {
     ":bt-a2dp-encoding-tests",
     ":bt-a2dp-tests",
 
-    # The `bt-a2dp-encoding-tests` use the CFv2 Codec Factory component which is part of this
-    # package. See `include_codecfactory.shard.cml` for the list of provided capabilities.
+    # The `bt-a2dp-encoding-tests` use the CFv2 Codec Factory component which is
+    # part of this package. See `include_codecfactory.shard.cml` for the list of
+    # provided capabilities.
     "//src/media/codec:codec_factory",
   ]
 }

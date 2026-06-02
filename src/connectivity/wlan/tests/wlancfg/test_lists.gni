@@ -39,7 +39,8 @@ wlancfg_tests_for_wlan_cq = [
 # If you're writing a new test, add it to FYI first until it has a sufficient
 # number of passing runs (either here in FYI or via `fx test-remote`). Tests in
 # FYI don't cause any alerting if they break, so having the test here doesn't
-# provide much of a safety net. Consider moving it to one of the CQ groups above.
+# provide much of a safety net. Consider moving it to one of the CQ groups
+# above.
 wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",

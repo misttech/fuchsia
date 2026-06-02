@@ -42,9 +42,9 @@ group("core") {
   ]
 }
 
-# Core is the group that is required for any Bluetooth functionality. This group is used for
-# testing scenarios in which testonly capabilities are exposed to the system.
-# This group includes all of the non-driver components.
+# Core is the group that is required for any Bluetooth functionality. This group
+# is used for testing scenarios in which testonly capabilities are exposed to
+# the system. This group includes all of the non-driver components.
 group("core-testonly") {
   deps = [
     "core/bt-gap",

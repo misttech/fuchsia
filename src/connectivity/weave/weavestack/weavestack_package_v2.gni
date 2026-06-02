@@ -56,8 +56,8 @@ template("_weavestack_package_v2") {
   }
 }
 
-# Creates a 'weavestack' package. All packages created with this template will be identical, except
-# for the addition of selected applet modules.
+# Creates a 'weavestack' package. All packages created with this template will
+# be identical, except for the addition of selected applet modules.
 #
 # Example:
 # ```

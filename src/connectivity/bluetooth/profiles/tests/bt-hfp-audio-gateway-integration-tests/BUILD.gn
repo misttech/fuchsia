@@ -48,10 +48,10 @@ fuchsia_test_package("bt-hfp-audio-gateway-integration-tests") {
   test_components = [ ":bt_hfp_audio_gateway_integration_tests" ]
 
   test_specs = {
-    # The max severity is set to ERROR due to the HFP component's ERROR log message
-    # when the Profile service is dropped. In some test runs, the Profile service
-    # goes away before the HFP component terminates, resulting in the log. This does not
-    # indicate a bug and is expected behavior.
+    # The max severity is set to ERROR due to the HFP component's ERROR log
+    # message when the Profile service is dropped. In some test runs, the
+    # Profile service goes away before the HFP component terminates, resulting
+    # in the log. This does not indicate a bug and is expected behavior.
     log_settings = {
       max_severity = "ERROR"
     }
@@ -65,10 +65,12 @@ fuchsia_test_package("bt-hfp-audio-gateway-integration-tests") {
     "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:component",
     "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:default_config_values",
 
-    # The RFCOMM component that is the intermediary for HFP and test driven peers.
+    # The RFCOMM component that is the intermediary for HFP and test driven
+    # peers.
     "//src/connectivity/bluetooth/profiles/bt-rfcomm:component",
 
-    # The component mock for the `fuchsia.bluetooth.internal.a2dp.Controller` capability.
+    # The component mock for the `fuchsia.bluetooth.internal.a2dp.Controller`
+    # capability.
     "//src/connectivity/bluetooth/testing/mock-a2dp-controller",
 
     # Mock Piconet Server

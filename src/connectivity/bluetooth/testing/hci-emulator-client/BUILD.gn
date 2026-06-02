@@ -49,7 +49,8 @@ fuchsia_unittest_package("hci-emulator-client-tests") {
   deps = [
     ":hci-emulator-client_test",
 
-    # No bt-host driver because we want to check the HCI device lifecycle directly.
+    # No bt-host driver because we want to check the HCI device lifecycle
+    # directly.
     "//src/devices/bus/drivers/platform",
   ]
 
@@ -57,7 +58,8 @@ fuchsia_unittest_package("hci-emulator-client-tests") {
 
   test_specs = {
     log_settings = {
-      # Spurious error logs expected during driver shutdown as it races with bind.
+      # Spurious error logs expected during driver shutdown as it races with
+      # bind.
       max_severity = "ERROR"
     }
   }

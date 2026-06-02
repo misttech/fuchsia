@@ -4,8 +4,8 @@
 import("//build/components.gni")
 import("//sdk/ctf/build/ctf.gni")
 
-# This generates a fuchsia_test_package that conforms to the architecture required for
-# Test Realm Factory tests.
+# This generates a fuchsia_test_package that conforms to the architecture
+# required for Test Realm Factory tests.
 # See https://fuchsia.dev/fuchsia-src/development/testing/components/test_realm_factory for details.
 #
 # This template will generate:

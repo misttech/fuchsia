@@ -39,10 +39,11 @@ fuchsia_test_component("bt-a2dp-source-integration-test-component") {
 fuchsia_test_package("bt-a2dp-source-integration-tests") {
   test_components = [ ":bt-a2dp-source-integration-test-component" ]
 
-  # The max severity is set to ERROR due to the Cobalt connector ERROR message if the `Logger`
-  # capability is unavailable. This occurs in some cases when the `fake-cobalt` component exits
-  # (because the test has completed) before the A2DP component attempts to connect to it. This is
-  # not a bug in the test, and may be fixed if we enforce ordering in component shut down.
+  # The max severity is set to ERROR due to the Cobalt connector ERROR message
+  # if the `Logger` capability is unavailable. This occurs in some cases when
+  # the `fake-cobalt` component exits (because the test has completed) before
+  # the A2DP component attempts to connect to it. This is not a bug in the test,
+  # and may be fixed if we enforce ordering in component shut down.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -67,7 +68,8 @@ group("tests") {
   deps = [
     ":bt-a2dp-source-integration-tests",
 
-    # Codec Factory component which provides the `fuchsia.mediacodec.CodecFactory` capability.
+    # Codec Factory component which provides the
+    # `fuchsia.mediacodec.CodecFactory` capability.
     "//src/media/codec:codec_factory",
   ]
 }

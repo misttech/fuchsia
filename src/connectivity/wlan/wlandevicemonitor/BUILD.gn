@@ -17,8 +17,8 @@ metrics_registry("wlan_metrics_registry") {
   project_id = 3708719327
   generate_rust = true
 
-  # We don't need to include a copy of our projects's Cobalt registry in our package because we
-  # rely on it being packaged with Cobalt itself
+  # We don't need to include a copy of our projects's Cobalt registry in our
+  # package because we rely on it being packaged with Cobalt itself
   generate_binarypb = false
 }
 

@@ -62,7 +62,8 @@ template("fuchsia_netemul_guest_test_package") {
     }
 
     subpackages = [
-      # guest-manager is used by netemul-guest to create and interact with guests.
+      # guest-manager is used by netemul-guest to create and interact with
+      # guests.
       "//src/virtualization/bin/guest_manager:debian_guest_manager",
     ]
   }

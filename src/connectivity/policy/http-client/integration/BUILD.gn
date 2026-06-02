@@ -37,9 +37,10 @@ fuchsia_test_component("component") {
   deps = [ ":http_client_integration_test" ]
 }
 
-# fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but the unit
-# tests don't actually make https connections and so don't need any certs so we can just give them
-# an empty file instead of making them a system test and giving them the system certs.
+# fuchsia_hyper::new_https_client fails if there isn't a file at
+# /config/ssl/cert.pem, but the unit tests don't actually make https connections
+# and so don't need any certs so we can just give them an empty file instead of
+# making them a system test and giving them the system certs.
 resource("fake-ssl-certs") {
   sources = [ "fake_cert_for_test.pem" ]
   outputs = [ "fake-ssl-certs/cert.pem" ]
@@ -59,14 +60,15 @@ fuchsia_test_package("http-client-integration-tests") {
   ]
 }
 
-# A component providing configuration that the http client should never stop itself on idle.
+# A component providing configuration that the http client should never stop
+# itself on idle.
 fuchsia_component_manifest("config_never_idle") {
   component_name = "http-client-config-never-idle"
   manifest = "meta/config_never_idle.cml"
 }
 
-# A component providing configuration that the http client should stop itself if it did not
-# receive requests for 1 milliseconds.
+# A component providing configuration that the http client should stop itself if
+# it did not receive requests for 1 milliseconds.
 fuchsia_component_manifest("config_idle_1ms") {
   component_name = "http-client-config-idle-1ms"
   manifest = "meta/config_idle_1ms.cml"
