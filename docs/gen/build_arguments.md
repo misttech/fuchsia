@@ -14,7 +14,7 @@ From //zircon/system/ulib/acpica/acpica.gni:7
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:48
+From //build/images/args.gni:49
 
 ### add_qemu_to_build_archives
 
@@ -23,7 +23,7 @@ archives.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:54
+From //build/images/args.gni:55
 
 ### additional_bazel_sdk_labels
 
@@ -44,7 +44,7 @@ with specific boards, due to driver and hardware challenges.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:60
+From //build/images/args.gni:61
 
 ### additional_default_targets
 
@@ -106,7 +106,7 @@ Build boot images that prefer Zedboot over local boot (only for EFI).
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:69
+From //build/images/args.gni:70
 
 ### amlogic_decoder_firmware_path
 
@@ -164,7 +164,7 @@ suitable for flashing through fastboot for eMMC devices.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:77
+From //build/images/args.gni:78
 
 ### assembly_generate_fvm_nand
 
@@ -176,7 +176,7 @@ room to initialize on boot.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:84
+From //build/images/args.gni:85
 
 ### assembly_partitions_configs
 
@@ -281,7 +281,7 @@ From //boards/arm64.gni:25
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:124
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
@@ -289,7 +289,7 @@ From //boards/riscv64.gni:32
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:124
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
@@ -297,7 +297,7 @@ From //boards/x64.gni:28
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:123
+From //build/images/args.gni:124
 
 ### bazel_product_bundle_full
 
@@ -326,7 +326,7 @@ The actual bazel_product_bundle used for Bazel assembly is:
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:120
+From //build/images/args.gni:121
 
 ### bazel_product_bundle_prefix
 
@@ -336,7 +336,7 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:122
+From //build/images/args.gni:123
 
 **Current value for `target_cpu = "riscv64"`:** `"//products/minimal:product_bundle"`
 
@@ -344,7 +344,7 @@ From //products/minimal.gni:33
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:122
+From //build/images/args.gni:123
 
 **Current value for `target_cpu = "x64"`:** `"//products/core:product_bundle"`
 
@@ -352,13 +352,13 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:122
+From //build/images/args.gni:123
 
 ### bazel_product_bundle_root
 
 **Current value (from the default):** `"//"`
 
-From //build/images/args.gni:121
+From //build/images/args.gni:122
 
 ### bazel_rbe_download_outputs
 
@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:227
+From //build/bazel/bazel_root_targets_list.gni:222
 
 ### bazel_upload_build_events
 
@@ -766,7 +766,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:135
+From //zircon/kernel/params.gni:139
 
 ### check_output_dir_leaks
 
@@ -1737,7 +1737,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.lsan.a"
@@ -1775,7 +1775,7 @@ Makes clippy targets fail to build when any "deny" lints are found
 
 **Current value (from the default):** `true`
 
-From //build/rust/config.gni:76
+From //build/rust/config.gni:75
 
 ### clippy_force_warn_all
 
@@ -1785,20 +1785,20 @@ should only be used to collect stats about clippy lints in our source tree.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:73
+From //build/rust/config.gni:72
 
 ### clippy_ignore_rustc
 
-By default building clippy targets prints lints as well as any rustc diagnostics
-that were emitted by check-building the crate. This flag makes the output in the
-build only contain lints to avoid duplicating the diagnostics from rustc
-(which will be emitted when the actual target is built). Note that `fx clippy`
-will still emit rustc diagnostics alongside clippy lints, they just wont show
-up in ninja's stderr
+By default building clippy targets prints lints as well as any rustc
+diagnostics that were emitted by check-building the crate. This flag makes
+the output in the build only contain lints to avoid duplicating the
+diagnostics from rustc (which will be emitted when the actual target is
+built). Note that `fx clippy` will still emit rustc diagnostics alongside
+clippy lints, they just wont show up in ninja's stderr
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:93
+From //build/rust/config.gni:92
 
 ### clippy_warn_all
 
@@ -1807,7 +1807,7 @@ Note: setting lint levels in source takes precedence over this.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:68
+From //build/rust/config.gni:67
 
 ### cobalt_environment
 
@@ -2110,23 +2110,6 @@ From //build/config/compiler.gni:82
 
 ### default_bazel_root_host_targets
 
-A list of scopes describing Bazel host targets that can be built directly
-with Bazel, without invoking Ninja. These *cannot* depend on any Ninja
-artifact. Schema is:
-
-   bazel_label [string]: A Bazel target label, must begin with @
-
-   bazel_name [string]: Optional filename of Bazel artifact file, in case
-      it does not match the label.
-
-   ninja_name [GN path]: Optional filename for Ninja hard-link to Bazel
-      artifact, which will appear under $NINJA_BUILD_DIR/bazel_artifacts/,
-      defaults to bazel_name.
-
-   install_host_tool [boolean]: Optional, set to true to make it available
-      to the `fx host-tool <ninja_name>` command.
-
-
 **Current value (from the default):**
 
 ```none
@@ -2253,7 +2236,7 @@ artifact. Schema is:
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:50
+From //build/bazel/bazel_root_targets_list.gni:51
 
 ### default_configs
 
@@ -2287,7 +2270,7 @@ This arg is for local developer only, products should not set this arg.
 
 **Current value (from the default):** `1`
 
-From //build/images/args.gni:66
+From //build/images/args.gni:67
 
 ### deny_warnings
 
@@ -3637,7 +3620,7 @@ TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
 
 **Current value (from the default):** `false`
 
-From //build/testing/boot_tests/kernel_zbi_test.gni:22
+From //build/testing/boot_tests/kernel_zbi_test.gni:23
 
 ### disable_xattr_for_rbe
 
@@ -3797,11 +3780,12 @@ From //zircon/kernel/params.gni:18
 
 ### enable_lock_dep_metadata_only
 
-Enable kernel lock dependency metadata only (ignored if enable_lock_dep is true).
+Enable kernel lock dependency metadata only (ignored if enable_lock_dep is
+true).
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:21
+From //zircon/kernel/params.gni:22
 
 ### enable_lock_dep_tests
 
@@ -3812,7 +3796,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:143
+From //zircon/kernel/params.gni:147
 
 ### enable_mdns_trace
 
@@ -3825,11 +3809,12 @@ From //src/connectivity/network/mdns/service/BUILD.gn:14
 
 ### enable_netboot
 
-The netboot zbi has been deprecated.  This GN arg is now used to generate a warning.
+The netboot zbi has been deprecated. This GN arg is now used to generate a
+warning.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:167
+From //build/images/args.gni:169
 
 ### enable_netstack2_tracing
 
@@ -4139,7 +4124,7 @@ in development and not yet ready for use in production.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:114
+From //zircon/kernel/params.gni:115
 
 ### enable_sestarnix_userspace_tests_on_linux
 
@@ -4185,19 +4170,21 @@ From //zircon/vdso/vdso.gni:9
 
 ### experimental_channel_call_propagation_enabled
 
-Propagate bandwidth and enable run queue promotion for threads making channel calls.
+Propagate bandwidth and enable run queue promotion for threads making
+channel calls.
 
 **Current value (from the default):** `true`
 
-From //zircon/kernel/params.gni:123
+From //zircon/kernel/params.gni:127
 
 ### experimental_continuous_per_vmo_attribution_enabled
 
-Add in-kernel support for querying a per-VMO populated bytes high-water mark.
+Add in-kernel support for querying a per-VMO populated bytes high-water
+mark.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:120
+From //zircon/kernel/params.gni:123
 
 ### experimental_cxx_version
 
@@ -4250,24 +4237,26 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:131
+From //zircon/kernel/params.gni:135
 
 ### experimental_mem_enabled
 
 If true, experimental memory optimization features like the
-`kernel.oom.experimental_expand_memory_stall` kernel argument will be enabled.
+`kernel.oom.experimental_expand_memory_stall` kernel argument will be
+enabled.
 
 **Current value (from the default):** `false`
 
-From //build/assembly/tools/assembly/BUILD.gn:20
+From //build/assembly/tools/assembly/BUILD.gn:21
 
 ### experimental_thread_sampler_enabled
 
-Include a mechanism for the kernel to sample threads and write the results to a buffer
+Include a mechanism for the kernel to sample threads and write the results
+to a buffer
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:117
+From //zircon/kernel/params.gni:119
 
 ### export_bazel_host_tests
 
@@ -4305,7 +4294,7 @@ useful for including verification and other Bazel assembly specific targets.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:127
+From //build/images/args.gni:128
 
 ### extra_bazel_build_action_labels
 
@@ -4321,13 +4310,14 @@ From //build/bazel/bazel_build_action_labels.gni:11
 
 ### extra_kernel_test_images
 
-Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided list of kernel
-images; this list unconditionally extends that selection. This enables devs and builders to
-introduce more kinds of tests in the GN graph without affecting gen times by default.
+Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided
+list of kernel images; this list unconditionally extends that selection.
+This enables devs and builders to introduce more kinds of tests in the GN
+graph without affecting gen times by default.
 
 **Current value (from the default):** `[]`
 
-From //build/testing/boot_tests/kernel_zbi_test.gni:27
+From //build/testing/boot_tests/kernel_zbi_test.gni:29
 
 ### extra_package_labels
 
@@ -4348,7 +4338,7 @@ From //build/config/BUILDCONFIG.gn:538
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:49
+From //build/images/args.gni:50
 
 ### fat_lto_objects
 
@@ -4464,13 +4454,13 @@ TODO(johngro): document
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:59
+From //zircon/kernel/params.gni:60
 
 ### fvm_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:46
+From //build/images/args.gni:47
 
 ### fxfs_blob
 
@@ -4486,7 +4476,7 @@ From //src/storage/fshost/generated_fshost_config.gni:17
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:47
+From //build/images/args.gni:48
 
 ### gcc_tool_dir
 
@@ -4501,22 +4491,23 @@ From //build/toolchain/zircon/gcc.gni:10
 
 ### generate_cuckoo_tests
 
-Defines the default value of `kernel_zbi_test()` template `generate_cuckoo` parameters.
-When true, all instances of `kernel_zbi_tests()` will default to generating a `cuckoo_zbi_test()`
-which is a full system image generated for exfiltrating instrumentation data from a target system.
+Defines the default value of `kernel_zbi_test()` template `generate_cuckoo`
+parameters. When true, all instances of `kernel_zbi_tests()` will default to
+generating a `cuckoo_zbi_test()` which is a full system image generated for
+exfiltrating instrumentation data from a target system.
 
 **Current value (from the default):** `false`
 
-From //build/testing/boot_tests/kernel_zbi_test.gni:18
+From //build/testing/boot_tests/kernel_zbi_test.gni:19
 
 ### generate_licenses_spdx_stubs
 
 When true, generated_licenses_spdx template will generate stub SPDX files
-with placeholder license. License gathering will be skipped.
-Since license gathering is resource intensive, this is useful for non-production
-builds that would run faster.
-The global configuration can be overwritten in specific `generated_licenses_spdx`
-template invocation via the `generate_stub` parameter.
+with placeholder license. License gathering will be skipped. Since license
+gathering is resource intensive, this is useful for non-production builds
+that would run faster. The global configuration can be overwritten in
+specific `generated_licenses_spdx` template invocation via the
+`generate_stub` parameter.
 
 **Current value (from the default):** `true`
 
@@ -5021,7 +5012,7 @@ LINT.IfChange
 
 **Current value (from the default):** `["arm64", "riscv64", "x64"]`
 
-From //build/sdk/config.gni:71
+From //build/sdk/config.gni:72
 
 ### in_default_toolchain
 
@@ -5044,17 +5035,18 @@ Include an account partition in the FVM image if set to true.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:72
+From //build/images/args.gni:73
 
 ### include_clippy
 
-Turns rust targets into a group with both the normal target and clippy target. This
-causes clippy targets to get included in the build. This gets enabled by default with
-`fx set`, but is defaulted off in GN so it won't be on in infra.
+Turns rust targets into a group with both the normal target and clippy
+target. This causes clippy targets to get included in the build. This gets
+enabled by default with `fx set`, but is defaulted off in GN so it won't be
+on in infra.
 
 **Current value (from the default):** `false`
 
-From //build/rust/rust_auxiliary_args.gni:16
+From //build/rust/rust_auxiliary_args.gni:17
 
 ### include_internal_fonts
 
@@ -5072,7 +5064,7 @@ subtargets.
 
 **Current value (from the default):** `false`
 
-From //build/rust/rust_auxiliary_args.gni:21
+From //build/rust/rust_auxiliary_args.gni:22
 
 ### include_zxdb_large_tests
 
@@ -5147,7 +5139,7 @@ From //build/config/BUILDCONFIG.gn:30
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:161
+From //build/images/args.gni:162
 
 ### is_perfetto_build_generator
 
@@ -5194,31 +5186,31 @@ value regardless of whether persistent tracing is enabled or not.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:100
+From //zircon/kernel/params.gni:101
 
 ### jtrace_last_entry_storage
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:101
+From //zircon/kernel/params.gni:102
 
 ### jtrace_target_buffer_size
 
 **Current value (from the default):** `"auto"`
 
-From //zircon/kernel/params.gni:102
+From //zircon/kernel/params.gni:103
 
 ### jtrace_use_large_entries
 
 **Current value (from the default):** `"auto"`
 
-From //zircon/kernel/params.gni:103
+From //zircon/kernel/params.gni:104
 
 ### jtrace_use_mono_timestamps
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:104
+From //zircon/kernel/params.gni:105
 
 ### kernel_debug_print_level
 
@@ -5230,7 +5222,7 @@ the more dprintf messages emitted. Valid values are 0-2 (inclusive):
 
 **Current value (from the default):** `2`
 
-From //zircon/kernel/params.gni:83
+From //zircon/kernel/params.gni:84
 
 ### kernel_extra_defines
 
@@ -5238,7 +5230,7 @@ Extra macro definitions for kernel code, e.g. "ENABLE_KERNEL_LL_DEBUG".
 
 **Current value (from the default):** `[]`
 
-From //zircon/kernel/params.gni:76
+From //zircon/kernel/params.gni:77
 
 ### kernel_memory_profiler
 
@@ -5257,7 +5249,7 @@ Build a kernel with no user-space support, for development only.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:107
+From //zircon/kernel/params.gni:108
 
 ### kernel_version_string
 
@@ -5589,7 +5581,7 @@ label.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:26
+From //zircon/kernel/params.gni:27
 
 ### log_startup_sleep
 
@@ -5646,12 +5638,12 @@ From //src/graphics/lib/magma/gnbuild/magma.gni:18
 
 ### main_pb_label
 
-Label pointing to the main product bundle to work with if the default product in a multi-product
-build is not desired.
+Label pointing to the main product bundle to work with if the default
+product in a multi-product build is not desired.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:131
+From //build/images/args.gni:132
 
 ### max_log_disk_usage
 
@@ -6528,7 +6520,7 @@ cacheline size of the target architecture.
 
 **Current value (from the default):** `128`
 
-From //zircon/kernel/params.gni:90
+From //zircon/kernel/params.gni:91
 
 ### pgo_profile_path
 
@@ -6536,13 +6528,13 @@ Profile data path that is used by PGO.
 
 **Current value (from the default):** `""`
 
-From //build/config/profile/config.gni:45
+From //build/config/profile/config.gni:47
 
 ### pre_erase_flash
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:50
+From //build/images/args.gni:51
 
 ### prebuilt_dart_sdk
 
@@ -6612,29 +6604,32 @@ From //build/assembly/developer_overrides.gni:440
 
 ### product_assembly_overrides_contents
 
-This GN arg allows the overrides template to be specified in-line within args.gn.  It is
-incompatible with the above 'product_assembly_overrides_label' argument.
+This GN arg allows the overrides template to be specified in-line within
+args.gn. It is incompatible with the above
+'product_assembly_overrides_label' argument.
 
-To use this, treat it like an 'assembly_developer_overrides()' template, and the corresponding
-template will be instantiated at `//build/assembly/overrides:inlined`, and set as the overrides
-for the "main" product assembly as if the following were set:
+To use this, treat it like an 'assembly_developer_overrides()' template, and
+the corresponding template will be instantiated at
+`//build/assembly/overrides:inlined`, and set as the overrides for the
+"main" product assembly as if the following were set:
 
   product_assembly_overrides_label = "//build/assembly/overrides:inlined"
 
 
 **Current value (from the default):** `false`
 
-From //build/assembly/developer_overrides.gni:456
+From //build/assembly/developer_overrides.gni:459
 
 ### product_assembly_overrides_label
 
-This GN arg provides a short-hand mechanism for setting the developer overrides used by the
-"main" product assembly for a product.  If this is set, and there isn't a "main" product
-assembly defined, then a GN error will be generated.
+This GN arg provides a short-hand mechanism for setting the developer
+overrides used by the "main" product assembly for a product. If this is set,
+and there isn't a "main" product assembly defined, then a GN error will be
+generated.
 
 **Current value (from the default):** `false`
 
-From //build/assembly/developer_overrides.gni:445
+From //build/assembly/developer_overrides.gni:446
 
 ### product_bundle_labels
 
@@ -6659,7 +6654,7 @@ and functions to be instrumented by `profile` variants.
 
 **Current value (from the default):** `[]`
 
-From //build/config/profile/config.gni:42
+From //build/config/profile/config.gni:44
 
 ### proprietary_codecs
 
@@ -8678,14 +8673,13 @@ From //build/config/riscv64/riscv64.gni:10
 
 ### rust_cap_lints
 
-Sets the maximum lint level.
-"deny" will make all warnings into errors, "warn" preserves them as warnings, and "allow" will
-ignore warnings.
+Sets the maximum lint level. "deny" will make all warnings into errors,
+"warn" preserves them as warnings, and "allow" will ignore warnings.
 LINT.IfChange
 
 **Current value (from the default):** `"deny"`
 
-From //build/rust/config.gni:62
+From //build/rust/config.gni:61
 
 ### rust_debug_assertions
 
@@ -8885,7 +8879,7 @@ From //build/rust/config.gni:47
 
 **Current value (from the default):** `"https://fuchsia-docs.firebaseapp.com/rust"`
 
-From //build/rust/config.gni:85
+From //build/rust/config.gni:84
 
 ### scenic_enable_vulkan_validation
 
@@ -8902,7 +8896,7 @@ debugging changes to the scheduler's behavior.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:46
+From //zircon/kernel/params.gni:47
 
 ### scheduler_lock_spin_tracing_compressed
 
@@ -8913,7 +8907,7 @@ data.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:56
+From //zircon/kernel/params.gni:57
 
 ### scheduler_lock_spin_tracing_enabled
 
@@ -8922,7 +8916,7 @@ performance analysis.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:50
+From //zircon/kernel/params.gni:51
 
 ### scheduler_queue_tracing_enabled
 
@@ -8931,7 +8925,7 @@ analysis.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:42
+From //zircon/kernel/params.gni:43
 
 ### scheduler_tracing_level
 
@@ -8948,7 +8942,7 @@ zero add increasing details at the cost of increased trace buffer use.
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:38
+From //zircon/kernel/params.gni:39
 
 ### scudo_default_options
 
@@ -9053,21 +9047,22 @@ From //build/sdk/config.gni:43
 
 ### sdk_sub_build_max_load_average
 
-When enable_jobserver is not set, value of `-l` to pass to ninja during a subbuild.
-If the system load average on the system goes beyond this value, ninja will throttle
-itself. If left blank, the subbuild script will make a guess.
+When enable_jobserver is not set, value of `-l` to pass to ninja during a
+subbuild. If the system load average on the system goes beyond this value,
+ninja will throttle itself. If left blank, the subbuild script will make a
+guess.
 
 **Current value (from the default):** `""`
 
-From //build/sdk/config.gni:55
+From //build/sdk/config.gni:56
 
 ### sdk_sub_build_parallelism
 
-When enable_jobserver is not set, value of `-j` to pass to ninja during a subbuild.
-Note that up to `sdk_max_simultaneous_sub_builds` subbuilds may be happening in
-parallel, so the number of concurrent actions may go as high as this number
-times the number of concurrent subbuilds. If left blank, the subbuild script
-will make a guess.
+When enable_jobserver is not set, value of `-j` to pass to ninja during a
+subbuild. Note that up to `sdk_max_simultaneous_sub_builds` subbuilds may be
+happening in parallel, so the number of concurrent actions may go as high as
+this number times the number of concurrent subbuilds. If left blank, the
+subbuild script will make a guess.
 
 **Current value (from the default):** `""`
 
@@ -9079,7 +9074,7 @@ Set to `true` to enable verbose logging during IDK subbuilds.
 
 **Current value (from the default):** `false`
 
-From //build/sdk/config.gni:58
+From //build/sdk/config.gni:59
 
 ### select_variant
 
@@ -9611,9 +9606,9 @@ From //build/config/clang/time_trace.gni:8
 
 ### toolchain_variant
 
-*This should never be set as a build argument.*
-It exists only to be set in `toolchain_args`.
-See //docs/concepts/build_system/internals/toolchains/build_arguments.md#toolchain_variant
+*This should never be set as a build argument.* It exists only to be set in
+`toolchain_args`. See
+//docs/concepts/build_system/internals/toolchains/build_arguments.md#toolchain_variant
 for details and documentation for each field.
 
 **Current value (from the default):**
@@ -9624,7 +9619,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:954
+From //build/config/BUILDCONFIG.gn:955
 
 ### truncate_build_info_commit_date
 
@@ -9745,7 +9740,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:96
+From //build/images/args.gni:97
 
 **Current value for `target_cpu = "riscv64"`:** `true`
 
@@ -9753,7 +9748,7 @@ From //products/minimal.gni:38
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:96
+From //build/images/args.gni:97
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -9761,7 +9756,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:96
+From //build/images/args.gni:97
 
 ### use_blink
 
@@ -9931,19 +9926,19 @@ From //build/fuchsia/sdk.gni:8
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:43
+From //build/images/args.gni:44
 
 ### vbmeta_b_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:44
+From //build/images/args.gni:45
 
 ### vbmeta_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:45
+From //build/images/args.gni:46
 
 ### verbose_image_assembly
 
@@ -9953,7 +9948,7 @@ is meant solely for developer debugging.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:89
+From //build/images/args.gni:90
 
 ### verify_depfile
 
@@ -10030,7 +10025,7 @@ zero add increasing details at the cost of increased trace buffer use.
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:73
+From //zircon/kernel/params.gni:74
 
 ### vulkan_host_runtime_dir
 
@@ -10064,7 +10059,7 @@ frequently the change depth.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:64
+From //zircon/kernel/params.gni:65
 
 ### warn_on_sdk_changes
 
@@ -10140,21 +10135,22 @@ From //build/product.gni:13
 Arguments to `fx flash` script (along with any `firmware_prebuilts` which
 specify a partition).
 
-If (exactly one of) `fvm_partition` or `fxfs_partition` is provided, the flash script will flash
-the full OS, recovery + Zircon + FVM (or Fxfs) + SSH keys. In this case, the bootloader must
-also support `fastboot oem add-staged-bootloader-file ssh.authorized_keys`.
+If (exactly one of) `fvm_partition` or `fxfs_partition` is provided, the
+flash script will flash the full OS, recovery + Zircon + FVM (or Fxfs) + SSH
+keys. In this case, the bootloader must also support `fastboot oem
+add-staged-bootloader-file ssh.authorized_keys`.
 
 Otherwise, the script will flash the recovery image to all slots, which
 doesn't require the FVM or SSH keys.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:40
+From //build/images/args.gni:41
 
 ### zircon_asserts
 
-Used internally to enable ZX_ASSERT_XXX macros provided by <zircon/assert.h>.
-This should not be set in args.gn.
+Used internally to enable ZX_ASSERT_XXX macros provided by
+<zircon/assert.h>. This should not be set in args.gn.
 
 To override the default value, GN targets should use the config label
 //build/config/fuchsia:enable_zircon_asserts, while Bazel target should use
@@ -10169,13 +10165,13 @@ From //build/config/fuchsia/zircon_asserts.gni:13
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:41
+From //build/images/args.gni:42
 
 ### zircon_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:42
+From //build/images/args.gni:43
 
 ### zircon_toolchain
 
@@ -10195,7 +10191,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:971
+From //build/config/BUILDCONFIG.gn:972
 
 ### zircon_tracelog
 
