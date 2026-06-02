@@ -120,18 +120,8 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
         super().setup_test()
         if self.access_point:
             self.access_point.stop_all_aps()
-        for ad in self.android_devices:
-            ad.droid.wakeLockAcquireBright()
-            ad.droid.wakeUpNow()
-        self.dut.wifi_toggle_state(True)
-        self.dut.disconnect()
 
     def teardown_test(self) -> None:
-        for ad in self.android_devices:
-            ad.droid.wakeLockRelease()
-            ad.droid.goToSleepNow()
-        self.dut.turn_location_off_and_scan_toggle_off()
-        self.dut.disconnect()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
