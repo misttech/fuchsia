@@ -16,6 +16,7 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
+#include <zircon/syscalls/system.h>
 #include <zircon/syscalls/types.h>
 #include <zircon/system/public/zircon/errors.h>
 #include <zircon/system/public/zircon/syscalls-next.h>
@@ -359,6 +360,126 @@ TEST(SetPowerDomainTest, BadTransitionPointer) {
           rsrc->get(), 0, &domain, p.get(), levels.data(), levels.size(),
           reinterpret_cast<zx_processor_power_level_transition_t*>(0x01), transitions.size()),
       ZX_ERR_INVALID_ARGS);
+}
+
+// Regression test for https://fxbug.dev/502355555 / https://fxbug.dev/517175842.
+// This test reproduces a race condition between setting performance limits
+// (triggering power transitions) and re-registering power domains.
+TEST(SetPowerDomainTest, PerformanceLimitRegisterRacePanicStressTest) {
+  // We skip it by default to avoid crashing the system during normal test runs.
+  ZXTEST_SKIP("Skipping test that causes kernel panic due to bug.");
+
+  NEEDS_NEXT_SKIP(zx_system_set_processor_power_domain);
+
+  auto rsrc = standalone::GetSystemResource();
+  ASSERT_TRUE(rsrc->is_valid());
+
+  zx::port p;
+  ASSERT_OK(zx::port::create(0, &p));
+
+  std::atomic<bool> stop{false};
+  std::atomic<int> packets_received{0};
+
+  auto wait_thread_func = [&]() {
+    while (!stop.load()) {
+      zx_port_packet_t packet;
+      zx_status_t status = p.wait(zx::deadline_after(zx::msec(10)), &packet);
+      if (status == ZX_OK) {
+        packets_received.fetch_add(1);
+      }
+    }
+  };
+
+  std::thread wait_threads[4];
+  for (int i = 0; i < 4; ++i) {
+    wait_threads[i] = std::thread(wait_thread_func);
+  }
+
+  size_t num_cpus = zx_system_get_num_cpus();
+  zx_processor_power_domain_t domain = {};
+  domain.cpus.mask[0] = (1ull << num_cpus) - 1;
+  domain.domain_id = 100;
+
+  std::vector<zx_processor_power_level_t> levels(2);
+  levels[0].options = 0;
+  levels[0].processing_rate = 500;
+  levels[0].power_coefficient_nw = 100;
+  levels[0].control_interface = ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER;
+  levels[0].control_argument = 0;
+  strcpy(levels[0].diagnostic_name, "Level 0");
+
+  levels[1].options = 0;
+  levels[1].processing_rate = 1000;
+  levels[1].power_coefficient_nw = 200;
+  levels[1].control_interface = ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER;
+  levels[1].control_argument = 1;
+  strcpy(levels[1].diagnostic_name, "Level 1");
+
+  std::vector<zx_processor_power_level_transition_t> transitions(2);
+  transitions[0].from = 0;
+  transitions[0].to = 1;
+  transitions[0].latency = 100;
+  transitions[0].energy_nj = 10;
+  transitions[1].from = 1;
+  transitions[1].to = 0;
+  transitions[1].latency = 100;
+  transitions[1].energy_nj = 10;
+
+  auto racer_thread_func = [&]() {
+    while (!stop.load()) {
+      // 1. Register domain.
+      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(), 2,
+                                           transitions.data(), 2);
+
+      // 2. Set initial state.
+      zx_processor_power_state_t state = {};
+      state.domain_id = 100;
+      state.control_interface = ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER;
+      state.control_argument = 1;
+      zx_system_set_processor_power_state(p.get(), &state);
+
+      // 3. Trigger transition by changing limits on all CPUs.
+      for (size_t cpu = 0; cpu < num_cpus; cpu++) {
+        zx_cpu_perf_limit_t limit = {};
+        limit.logical_cpu_number = static_cast<uint32_t>(cpu);
+        limit.limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE;
+        limit.min = 0;
+        limit.max = 500;  // Force Level 0
+        zx_system_set_performance_info(rsrc->get(), ZX_CPU_PERF_LIMIT, &limit, 1);
+      }
+
+      std::this_thread::yield();
+
+      // 4. Tight race: Re-register domain.
+      zx_system_set_processor_power_domain(rsrc->get(), 0, &domain, p.get(), levels.data(), 2,
+                                           transitions.data(), 2);
+
+      // Reset limits.
+      for (size_t cpu = 0; cpu < num_cpus; cpu++) {
+        zx_cpu_perf_limit_t limit = {};
+        limit.logical_cpu_number = static_cast<uint32_t>(cpu);
+        limit.limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE;
+        limit.min = 0;
+        limit.max = 1000;
+        zx_system_set_performance_info(rsrc->get(), ZX_CPU_PERF_LIMIT, &limit, 1);
+      }
+    }
+  };
+
+  std::thread racer_threads[4];
+  for (int i = 0; i < 4; ++i) {
+    racer_threads[i] = std::thread(racer_thread_func);
+  }
+
+  zx_nanosleep(zx_deadline_after(ZX_SEC(10)));
+  stop.store(true);
+
+  for (auto& t : racer_threads) {
+    t.join();
+  }
+  for (auto& t : wait_threads) {
+    t.join();
+  }
 }
 
 class SetPowerStateTest : public zxtest::Test {
