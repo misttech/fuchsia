@@ -27,7 +27,7 @@ from typing import (
 )
 
 import cartfs
-import logger
+import logger as logger
 import snapshotter
 from util import sanitize_filename
 
@@ -388,6 +388,57 @@ class Workspace:
         self._link_to_cartfs(
             self.cartfs_instance.mount_point / suggested_directory_name
         )
+
+        # Trigger sync if we initialized from the golden snapshot
+        if previous_cartfs_workspace_dir_name == GOLDEN_SNAPSHOT_DIR:
+            self._sync_cog_to_golden_revision()
+
+    def _sync_cog_to_golden_revision(self) -> None:
+        logger.emit_status(
+            "Syncing Cog CITC base to match golden snapshot superproject..."
+        )
+
+        superproject_dir = self.cartfs_dir / "fuchsia-cog-superproject"
+        if not superproject_dir.is_dir():
+            logger.log_error(
+                f"fuchsia-cog-superproject directory not found in CartFS at {superproject_dir}"
+            )
+            return
+
+        try:
+            # Read the superproject commit hash from our isolated snapshot in CartFS
+            superproject_commit = self._run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=superproject_dir,
+                capture_output=True,
+            ).strip()
+        except subprocess.CalledProcessError as e:
+            err_msg = e.stderr.decode("utf-8", errors="ignore").strip() or None
+            logger.log_error(
+                f"Failed to get superproject commit from CartFS snapshot: {e}. Output: {err_msg}"
+            )
+            return
+
+        logger.log_info(
+            f"Syncing Cog superproject '{self.repo_name}' to {superproject_commit}"
+        )
+        try:
+            self._run(
+                [
+                    "git-citc",
+                    "api.call",
+                    "Rebase",
+                    f'repo_root: "{self.repo_name}" new_base: "{superproject_commit}"',
+                ],
+                cwd=self.repo_dir,
+                capture_output=True,
+            )
+            logger.emit_status("Cog CITC base synced successfully.")
+        except subprocess.CalledProcessError as e:
+            err_msg = e.stderr.decode("utf-8", errors="ignore").strip() or None
+            logger.log_error(
+                f"Failed to sync Cog CITC base: {e}. Output: {err_msg}"
+            )
 
     def _init_cartfs_workspace_empty(self) -> None:
         """Links to a new, empty directory in the cartfs mount for this workspace.

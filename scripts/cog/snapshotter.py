@@ -43,6 +43,7 @@ def snapshot_workspace(
     copy_subdirs = [
         "integration",
         "fuchsia",
+        "fuchsia-cog-superproject",
         ".fuchsia_commit_hash",
         ".integration_commit_hash",
     ]

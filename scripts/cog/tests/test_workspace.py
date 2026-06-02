@@ -998,6 +998,159 @@ class TestWorkspace(unittest.TestCase):
         self.assertEqual(result, 42)
         mock_ws.lock.assert_called_once()
 
+    def test_sync_cog_to_golden_revision_success(self) -> None:
+        """Test that _sync_cog_to_golden_revision successfully rebases the superproject."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(fs.repo_dir)
+            ws.cartfs_dir = fs.cartfs_dir
+
+            # Setup fake superproject directory in CartFS
+            superproject_dir = fs.cartfs_dir / "fuchsia-cog-superproject"
+            superproject_dir.mkdir(parents=True, exist_ok=True)
+
+            target_commit = "ca69b3f0bfe3b37612bbf2e95fbd29ec8b31012d"
+
+            def mock_run(
+                cmd: list[str], cwd: Path, capture_output: bool = False
+            ) -> str:
+                if (
+                    cmd == ["git", "rev-parse", "HEAD"]
+                    and cwd == superproject_dir
+                ):
+                    return target_commit
+                return ""
+
+            with (
+                patch.object(ws, "_run", side_effect=mock_run) as mock_run_spy,
+                patch.object(workspace.logger, "emit_status") as mock_emit,
+                patch.object(workspace.logger, "log_info") as mock_log_info,
+            ):
+                ws._sync_cog_to_golden_revision()
+
+                # Verify git rev-parse HEAD was called
+                mock_run_spy.assert_any_call(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=superproject_dir,
+                    capture_output=True,
+                )
+
+                # Verify git-citc api.call Rebase was called
+                mock_run_spy.assert_any_call(
+                    [
+                        "git-citc",
+                        "api.call",
+                        "Rebase",
+                        f'repo_root: "{ws.repo_name}" new_base: "{target_commit}"',
+                    ],
+                    cwd=ws.repo_dir,
+                    capture_output=True,
+                )
+
+    def test_sync_cog_to_golden_revision_missing_dir(self) -> None:
+        """Test that _sync_cog_to_golden_revision logs error if directory missing."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(fs.repo_dir)
+            ws.cartfs_dir = fs.cartfs_dir
+            # Do NOT create the directory
+
+            with (
+                patch.object(ws, "_run") as mock_run,
+                patch.object(workspace.logger, "log_error") as mock_log_error,
+            ):
+                ws._sync_cog_to_golden_revision()
+
+                # Verify it logged the error
+                mock_log_error.assert_called_once()
+                self.assertIn(
+                    "directory not found in CartFS",
+                    mock_log_error.call_args[0][0],
+                )
+
+                # Verify no run calls were made
+                mock_run.assert_not_called()
+
+    def test_sync_cog_to_golden_revision_git_failure(self) -> None:
+        """Test that _sync_cog_to_golden_revision handles git failure gracefully."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(fs.repo_dir)
+            ws.cartfs_dir = fs.cartfs_dir
+
+            # Setup fake superproject directory in CartFS
+            superproject_dir = fs.cartfs_dir / "fuchsia-cog-superproject"
+            superproject_dir.mkdir(parents=True, exist_ok=True)
+
+            def mock_run(
+                cmd: list[str], cwd: Path, capture_output: bool = False
+            ) -> str:
+                if (
+                    cmd == ["git", "rev-parse", "HEAD"]
+                    and cwd == superproject_dir
+                ):
+                    raise subprocess.CalledProcessError(
+                        128, cmd, stderr=b"fatal: not a git repository"
+                    )
+                return ""
+
+            with (
+                patch.object(ws, "_run", side_effect=mock_run),
+                patch.object(workspace.logger, "log_error") as mock_log_error,
+            ):
+                ws._sync_cog_to_golden_revision()
+
+                # Verify error is logged and includes the stderr of the process
+                mock_log_error.assert_called_once()
+                self.assertIn(
+                    "Failed to get superproject commit from CartFS snapshot",
+                    mock_log_error.call_args[0][0],
+                )
+                self.assertIn(
+                    "fatal: not a git repository",
+                    mock_log_error.call_args[0][0],
+                )
+
+    def test_sync_cog_to_golden_revision_rebase_failure(self) -> None:
+        """Test that _sync_cog_to_golden_revision handles git-citc rebase failure gracefully."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(fs.repo_dir)
+            ws.cartfs_dir = fs.cartfs_dir
+
+            # Setup fake superproject directory in CartFS
+            superproject_dir = fs.cartfs_dir / "fuchsia-cog-superproject"
+            superproject_dir.mkdir(parents=True, exist_ok=True)
+
+            target_commit = "ca69b3f0bfe3b37612bbf2e95fbd29ec8b31012d"
+
+            def mock_run(
+                cmd: list[str], cwd: Path, capture_output: bool = False
+            ) -> str:
+                if (
+                    cmd == ["git", "rev-parse", "HEAD"]
+                    and cwd == superproject_dir
+                ):
+                    return target_commit
+                if "git-citc" in cmd:
+                    raise subprocess.CalledProcessError(
+                        1, cmd, stderr=b"Rebase failed because of conflict"
+                    )
+                return ""
+
+            with (
+                patch.object(ws, "_run", side_effect=mock_run),
+                patch.object(workspace.logger, "log_error") as mock_log_error,
+            ):
+                ws._sync_cog_to_golden_revision()
+
+                # Verify error is logged and includes the stderr of the process
+                mock_log_error.assert_called_once()
+                self.assertIn(
+                    "Failed to sync Cog CITC base",
+                    mock_log_error.call_args[0][0],
+                )
+                self.assertIn(
+                    "Rebase failed because of conflict",
+                    mock_log_error.call_args[0][0],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
