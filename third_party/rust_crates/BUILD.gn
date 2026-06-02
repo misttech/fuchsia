@@ -17910,17 +17910,23 @@ rustc_library("rustix-v1_1_4") {
   if ((current_os == "linux" || false) &&
       (false || false ||
        !(current_os == "linux" && (true || (false || false)) &&
-         (false || (current_cpu == "arm64" && true) || false ||
+         (false || (current_cpu == "arm64" &&
+                    (current_cpu == "x64" || current_cpu == "arm64")) ||
+          false || (false && false) || (false && false) || (false && false) ||
           (false && false) || (false && false) || (false && false) ||
-          (false && false) || (false && false) || (false && false) ||
-          (false && false) || false || (current_cpu == "x64" && true))))) {
+          (false && false) || false ||
+          (current_cpu == "x64" &&
+           (current_cpu == "x64" || current_cpu == "arm64")))))) {
     deps += [ ":linux-raw-sys-v0_12_1" ]
   }
   if (!false && !false && current_os == "linux" && (true || (false || false)) &&
-      (false || (current_cpu == "arm64" && true) || false || (false && false) ||
+      (false || (current_cpu == "arm64" &&
+                 (current_cpu == "x64" || current_cpu == "arm64")) || false ||
        (false && false) || (false && false) || (false && false) ||
-       (false && false) || (false && false) || (false && false) || false ||
-       (current_cpu == "x64" && true))) {
+       (false && false) || (false && false) || (false && false) ||
+       (false && false) || false ||
+       (current_cpu == "x64" &&
+        (current_cpu == "x64" || current_cpu == "arm64")))) {
     deps += [ ":errno-v0_3_14" ]
     deps += [ ":libc-v0_2_186" ]
     deps += [ ":linux-raw-sys-v0_12_1" ]
@@ -17928,10 +17934,13 @@ rustc_library("rustix-v1_1_4") {
   if (!false &&
       (false || false ||
        !(current_os == "linux" && (true || (false || false)) &&
-         (false || (current_cpu == "arm64" && true) || false ||
+         (false || (current_cpu == "arm64" &&
+                    (current_cpu == "x64" || current_cpu == "arm64")) ||
+          false || (false && false) || (false && false) || (false && false) ||
           (false && false) || (false && false) || (false && false) ||
-          (false && false) || (false && false) || (false && false) ||
-          (false && false) || false || (current_cpu == "x64" && true))))) {
+          (false && false) || false ||
+          (current_cpu == "x64" &&
+           (current_cpu == "x64" || current_cpu == "arm64")))))) {
     deps += [ ":errno-v0_3_14" ]
     deps += [ ":libc-v0_2_186" ]
   }
