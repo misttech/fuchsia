@@ -15,23 +15,23 @@ use crate::task::{
     ThreadGroup, ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
 };
 use crate::vfs::{FdFlags, FdNumber};
-use starnix_sync::{LockBefore, RwLockReadGuard, ThreadGroupLimits};
-use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
-use starnix_uapi::{tid_t, uapi};
-
+use itertools::Itertools;
 use starnix_logging::track_stub;
-use starnix_sync::{InterruptibleEvent, Locked, Unlocked, WakeReason};
+use starnix_sync::{
+    InterruptibleEvent, LockBefore, Locked, RwLockReadGuard, ThreadGroupLimits, Unlocked,
+    WakeReason,
+};
 use starnix_syscalls::SyscallResult;
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
-use starnix_uapi::user_address::{UserAddress, UserRef};
+use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::{
     __WALL, __WCLONE, __WNOTHREAD, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK,
     SI_TKILL, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK,
     WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage,
-    sigaltstack,
+    sigaltstack, tid_t, uapi,
 };
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -497,12 +497,12 @@ pub fn sys_kill(
     pid: pid_t,
     unchecked_signal: UncheckedSignal,
 ) -> Result<(), Errno> {
-    let pids = current_task.kernel().pids.read();
     match pid {
         pid if pid > 0 => {
             // "If pid is positive, then signal sig is sent to the process with
             // the ID specified by pid."
             let target_thread_group = {
+                let pids = current_task.kernel().pids.read();
                 match pids.get_process(pid) {
                     Some(ProcessEntryRef::Process(process)) => process,
 
@@ -517,7 +517,6 @@ pub fn sys_kill(
                     }
                 }
             };
-
             target_thread_group.send_signal_unchecked(current_task, unchecked_signal)?;
         }
         pid if pid == -1 => {
@@ -528,8 +527,10 @@ pub fn sys_kill(
             // signals to, except possibly for some implementation-defined
             // system processes. Linux allows a process to signal itself, but on
             // Linux the call kill(-1,sig) does not signal the calling process."
-
-            let thread_groups: Vec<_> = pids
+            let thread_groups = current_task
+                .kernel()
+                .pids
+                .read()
                 .get_thread_groups()
                 .into_iter()
                 .filter(|thread_group| {
@@ -541,7 +542,7 @@ pub fn sys_kill(
                     }
                     true
                 })
-                .collect();
+                .collect_vec();
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
         _ => {
@@ -554,11 +555,10 @@ pub fn sys_kill(
                 0 => current_task.thread_group().read().process_group.leader,
                 _ => negate_pid(pid)?,
             };
-
-            let process_group = pids.get_process_group(process_group_id);
-            let thread_groups = process_group
-                .iter()
-                .flat_map(|pg| pg.read(locked).thread_groups().collect::<Vec<_>>());
+            let process_group =
+                current_task.kernel().pids.read().get_process_group(process_group_id);
+            let thread_groups =
+                process_group.iter().flat_map(|pg| pg.read(locked).thread_groups().collect_vec());
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
     };
