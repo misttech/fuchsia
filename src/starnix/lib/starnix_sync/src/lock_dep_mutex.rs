@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::MutexLike;
+use crate::{MutexLike, RwLockLike};
 use fuchsia_sync::{
     MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, MutexGuard, RwLockReadGuard,
     RwLockWriteGuard,
@@ -272,6 +272,50 @@ mod tracking {
             }
         }
     }
+
+    pub(super) fn read_with_context<'a, T>(
+        rwlock: &'a crate::DynamicLockDepRwLock<T>,
+        context: &mut LockDepContext,
+    ) -> crate::LockDepReadGuard<'a, T> {
+        match &mut context.token {
+            token @ None => {
+                let guard = rwlock.read();
+                *token = Some(guard.token.clone());
+                guard
+            }
+            Some(token) => {
+                assert_eq!(
+                    rwlock.tracking.lock_id(),
+                    token.target_value() & !0xF,
+                    "LockDep: Cannot mix different lock levels in ordered_lock_vec"
+                );
+                let inner = rwlock.inner.read();
+                crate::LockDepReadGuard { inner, token: token.clone() }
+            }
+        }
+    }
+
+    pub(super) fn write_with_context<'a, T>(
+        rwlock: &'a crate::DynamicLockDepRwLock<T>,
+        context: &mut LockDepContext,
+    ) -> crate::LockDepWriteGuard<'a, T> {
+        match &mut context.token {
+            token @ None => {
+                let guard = rwlock.write();
+                *token = Some(guard.token.clone());
+                guard
+            }
+            Some(token) => {
+                assert_eq!(
+                    rwlock.tracking.lock_id(),
+                    token.target_value() & !0xF,
+                    "LockDep: Cannot mix different lock levels in ordered_lock_vec"
+                );
+                let inner = rwlock.inner.write();
+                crate::LockDepWriteGuard { inner, token: token.clone() }
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
@@ -321,6 +365,20 @@ mod tracking {
         _context: &mut LockDepContext,
     ) -> crate::LockDepGuard<'a, T> {
         mutex.lock()
+    }
+
+    pub(super) fn read_with_context<'a, T>(
+        rwlock: &'a crate::DynamicLockDepRwLock<T>,
+        _context: &mut LockDepContext,
+    ) -> crate::LockDepReadGuard<'a, T> {
+        rwlock.read()
+    }
+
+    pub(super) fn write_with_context<'a, T>(
+        rwlock: &'a crate::DynamicLockDepRwLock<T>,
+        _context: &mut LockDepContext,
+    ) -> crate::LockDepWriteGuard<'a, T> {
+        rwlock.write()
     }
 }
 
@@ -543,6 +601,33 @@ impl<T> DynamicLockDepRwLock<T> {
     }
 }
 
+impl<T> RwLockLike for DynamicLockDepRwLock<T> {
+    type ReadGuard<'a>
+        = LockDepReadGuard<'a, T>
+    where
+        T: 'a;
+    type WriteGuard<'a>
+        = LockDepWriteGuard<'a, T>
+    where
+        T: 'a;
+    type Context = tracking::LockDepContext;
+
+    #[inline(always)]
+    fn context() -> Self::Context {
+        Default::default()
+    }
+
+    #[inline(always)]
+    fn read(&self, context: &mut Self::Context) -> Self::ReadGuard<'_> {
+        tracking::read_with_context(self, context)
+    }
+
+    #[inline(always)]
+    fn write(&self, context: &mut Self::Context) -> Self::WriteGuard<'_> {
+        tracking::write_with_context(self, context)
+    }
+}
+
 pub struct LockDepReadGuard<'a, T> {
     inner: RwLockReadGuard<'a, T>,
     token: tracking::LockLevelToken,
@@ -611,6 +696,35 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     #[inline(always)]
     pub fn write(&self) -> LockDepWriteGuard<'_, T> {
         self.inner.write()
+    }
+}
+
+impl<T, L> RwLockLike for LockDepRwLock<T, L> {
+    type ReadGuard<'a>
+        = LockDepReadGuard<'a, T>
+    where
+        T: 'a,
+        L: 'a;
+    type WriteGuard<'a>
+        = LockDepWriteGuard<'a, T>
+    where
+        T: 'a,
+        L: 'a;
+    type Context = <DynamicLockDepRwLock<T> as RwLockLike>::Context;
+
+    #[inline(always)]
+    fn context() -> Self::Context {
+        DynamicLockDepRwLock::<T>::context()
+    }
+
+    #[inline(always)]
+    fn read(&self, context: &mut Self::Context) -> Self::ReadGuard<'_> {
+        RwLockLike::read(&self.inner, context)
+    }
+
+    #[inline(always)]
+    fn write(&self, context: &mut Self::Context) -> Self::WriteGuard<'_> {
+        RwLockLike::write(&self.inner, context)
     }
 }
 
