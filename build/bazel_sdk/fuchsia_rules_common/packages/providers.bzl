@@ -16,3 +16,10 @@ FuchsiaPackageInfo = provider(
         "package_resources": "A list of resources added to this package",
     },
 )
+
+FuchsiaPackageResourcesInfo = provider(
+    doc = "Contains a collection of resources to include in a package",
+    fields = {
+        "resources": "A list of structs containing the src and dest of the resource",
+    },
+)

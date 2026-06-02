@@ -4,6 +4,13 @@
 
 """All Fuchsia Providers."""
 
+load(
+    "@fuchsia_rules_common//packages:providers.bzl",
+    _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
+)
+
+FuchsiaPackageResourcesInfo = _FuchsiaPackageResourcesInfo
+
 FuchsiaAssembledArtifactInfo = provider(
     "Artifacts that can be included into a product. It consists of the artifact and the corresponding config data.",
     fields = {
@@ -146,13 +153,6 @@ FuchsiaCoreImageInfo = provider(
         "kernel_zbi": "Zircon image.",
         "vbmetar": "vbmeta for zirconr boot image.",
         "zirconr": "zedboot boot image.",
-    },
-)
-
-FuchsiaPackageResourcesInfo = provider(
-    "Contains a collection of resources to include in a package",
-    fields = {
-        "resources": "A list of structs containing the src and dest of the resource",
     },
 )
 
