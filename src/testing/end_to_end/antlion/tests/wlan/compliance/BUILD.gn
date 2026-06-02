@@ -491,11 +491,6 @@ antlion_host_test("wlan_phy_compliance_abg_test") {
   timeout_secs = 1200
 }
 
-antlion_host_test("regulatory_compliance_test") {
-  main_source = "RegulatoryComplianceTest.py"
-  environments = wlan_ap_envs
-}
-
 antlion_host_test("vape_interop_test") {
   main_source = "VapeInteropTest.py"
   environments = wlan_ap_envs
@@ -598,14 +593,4 @@ group("e2e_tests") {
 group("e2e_tests_quick") {
   testonly = true
   public_deps = [ ":wlan_security_compliance_abg_test_quick" ]
-}
-
-group("e2e_tests_manual") {
-  testonly = true
-  public_deps = [
-    # Running RegulatoryComplianceTest is usually only necessary when verifying
-    # new WLAN firmware patches. Take it out of automation; it takes too long
-    # otherwise.
-    ":regulatory_compliance_test",
-  ]
 }

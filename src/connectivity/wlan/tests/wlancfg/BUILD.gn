@@ -62,6 +62,13 @@ antlion_host_test("saved_networks_test") {
   ]
 }
 
+antlion_host_test("regulatory_compliance_test") {
+  main_source =
+      "//src/connectivity/wlan/tests/wlancfg/regulatory_compliance_test.py"
+  libraries =
+      [ "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test" ]
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.
@@ -72,6 +79,7 @@ group("tests_host") {
     ":tests_for_fyi_long",
     ":tests_for_general_cq",
     ":tests_for_general_cq_no_shield_box",
+    ":tests_for_release_testing",
     ":tests_for_wlan_cq",
   ]
 }
@@ -96,7 +104,19 @@ group("tests_for_fyi") {
   testonly = true
   public_deps = wlancfg_tests_for_fyi  # Edit in test_lists.gni
 }
+
 group("tests_for_fyi_long") {
   testonly = true
   public_deps = wlancfg_tests_for_fyi_long  # Edit in test_lists.gni
+}
+
+# Test cases that are not run automatically in infra, they are only used for release testing.
+group("tests_for_release_testing") {
+  testonly = true
+  public_deps = [
+    # Running RegulatoryComplianceTest is usually only necessary when verifying
+    # new WLAN firmware patches. Take it out of automation; it takes too long
+    # otherwise.
+    ":regulatory_compliance_test",
+  ]
 }

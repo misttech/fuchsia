@@ -30,7 +30,11 @@ group("e2e_tests_quick") {
   ]
 }
 
+# Test cases that are not run automatically in infra, they are only used for release testing.
 group("e2e_tests_manual") {
   testonly = true
-  public_deps = [ "wlan:e2e_tests_manual" ]
+  public_deps = [
+    "wlan:e2e_tests_manual",
+    "//src/connectivity/wlan/tests/wlancfg:tests_for_release_testing",
+  ]
 }

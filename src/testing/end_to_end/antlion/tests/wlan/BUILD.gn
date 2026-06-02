@@ -26,7 +26,6 @@ group("e2e_tests_quick") {
 group("e2e_tests_manual") {
   testonly = true
   public_deps = [
-    "compliance:e2e_tests_manual",
     "functional:e2e_tests_manual",
     "performance:e2e_tests_manual",
   ]
