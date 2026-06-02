@@ -28,6 +28,7 @@ source_set("driver_runtime_impl") {
     "arena.cc",
     "channel.cc",
     "dispatcher.cc",
+    "dispatcher_coordinator.cc",
     "dispatcher_dump.cc",
     "handle.cc",
     "message_packet.cc",

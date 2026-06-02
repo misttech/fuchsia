@@ -10,11 +10,8 @@
 #include <lib/sync/cpp/completion.h>
 
 #include "src/devices/bin/driver_runtime/dispatcher.h"
+#include "src/devices/bin/driver_runtime/dispatcher_coordinator.h"
 #include "src/devices/bin/driver_runtime/runtime_test_case.h"
-
-namespace driver_runtime {
-extern DispatcherCoordinator& GetDispatcherCoordinator();
-}
 
 class DispatcherDumpTest : public RuntimeTestCase {
  public:

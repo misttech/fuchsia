@@ -11,13 +11,9 @@
 
 #include <zxtest/zxtest.h>
 
-#include "src/devices/bin/driver_runtime/dispatcher.h"
+#include "src/devices/bin/driver_runtime/dispatcher_coordinator.h"
 #include "src/devices/bin/driver_runtime/runtime_test_case.h"
 #include "src/devices/bin/driver_runtime/thread_context.h"
-
-namespace driver_runtime {
-extern DispatcherCoordinator& GetDispatcherCoordinator();
-}
 
 class TokenTest : public RuntimeTestCase {
  public:

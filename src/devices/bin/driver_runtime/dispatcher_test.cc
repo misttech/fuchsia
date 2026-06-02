@@ -30,6 +30,7 @@
 #include "lib/async/cpp/task.h"
 #include "lib/fdf/dispatcher.h"
 #include "lib/zx/time.h"
+#include "src/devices/bin/driver_runtime/dispatcher_coordinator.h"
 #include "src/devices/bin/driver_runtime/runtime_test_case.h"
 #include "src/devices/bin/driver_runtime/thread_context.h"
 

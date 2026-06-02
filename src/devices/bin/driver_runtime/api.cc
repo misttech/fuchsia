@@ -14,6 +14,7 @@
 #include "src/devices/bin/driver_runtime/arena.h"
 #include "src/devices/bin/driver_runtime/channel.h"
 #include "src/devices/bin/driver_runtime/dispatcher.h"
+#include "src/devices/bin/driver_runtime/dispatcher_coordinator.h"
 #include "src/devices/bin/driver_runtime/handle.h"
 #include "src/devices/bin/driver_runtime/thread_context.h"
 #include "src/devices/lib/log/log.h"
