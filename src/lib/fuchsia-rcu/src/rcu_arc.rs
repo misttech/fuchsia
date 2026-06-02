@@ -53,7 +53,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     ///
     /// Concurrent readers may continue to see the old Arc pointer until the RCU state machine has
     /// made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn update_swap<'a>(&self, scope: &'a RcuReadScope, data: Arc<T>) -> &'a T {
+    pub fn update_swap<'a>(&self, scope: &'a RcuReadScope, data: Arc<T>) -> Arc<T> {
         let ptr = Self::into_ptr(data);
         // SAFETY: We can pass `Self::into_ptr` to `Self::replace_swap`.
         unsafe { self.replace_swap(scope, ptr) }
@@ -96,12 +96,13 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// # Safety
     ///
     /// The caller must have obtained the pointer from `Self::into_ptr` or from `std::ptr::null_mut`.
-    unsafe fn replace_swap<'a>(&self, scope: &'a RcuReadScope, ptr: *mut T) -> &'a T {
+    unsafe fn replace_swap<'a>(&self, scope: &'a RcuReadScope, ptr: *mut T) -> Arc<T> {
         let old_ptr_ref = self.ptr.swap(scope, ptr);
         // SAFETY: `old_ptr_ref` points to an existing `Arc<T>` with a strong reference.
-        let arc = unsafe { Arc::from_raw(old_ptr_ref.as_ptr()) };
-        rcu_drop(arc);
-        old_ptr_ref.as_ref().unwrap()
+        let rcu_arc = unsafe { Arc::from_raw(old_ptr_ref.as_ptr()) };
+        let old_arc = rcu_arc.clone();
+        rcu_drop(rcu_arc);
+        old_arc
     }
 }
 
