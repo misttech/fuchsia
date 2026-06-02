@@ -1412,7 +1412,7 @@ zx_status_t Riscv64ArchVmAspace::InitShared() {
   // necessary second level entries.
   const uint top_level = kNumPageTableLevels - 1;
   const uint start = vaddr_to_index(base_, top_level);
-  const uint end = vaddr_to_index(base_ + size_, top_level) - 1;
+  const uint end = vaddr_to_index(base_ + size_ - 1, top_level);
   for (uint i = start; i <= end; i++) {
     zx::result<paddr_t> result = AllocPageTable();
     if (result.is_error()) {
@@ -1455,9 +1455,9 @@ zx_status_t Riscv64ArchVmAspace::InitUnified(ArchVmAspaceInterface& s, ArchVmAsp
 
   const uint top_level = kNumPageTableLevels - 1;
   const uint restricted_start = vaddr_to_index(restricted.base_, top_level);
-  const uint restricted_end = vaddr_to_index(restricted.base_ + restricted.size_, top_level) - 1;
+  const uint restricted_end = vaddr_to_index(restricted.base_ + restricted.size_ - 1, top_level);
   const uint shared_start = vaddr_to_index(shared.base_, top_level);
-  const uint shared_end = vaddr_to_index(shared.base_ + shared.size_, top_level) - 1;
+  const uint shared_end = vaddr_to_index(shared.base_ + shared.size_ - 1, top_level);
   DEBUG_ASSERT(restricted_end < shared_start);
 
   // Validate that the restricted aspace is empty and set its metadata.
@@ -1571,7 +1571,7 @@ zx_status_t Riscv64ArchVmAspace::DestroyIndividual() {
   if (IsShared()) {
     const uint top_level = kNumPageTableLevels - 1;
     const uint start = vaddr_to_index(base_, top_level);
-    const uint end = vaddr_to_index(base_ + size_, top_level) - 1;
+    const uint end = vaddr_to_index(base_ + size_ - 1, top_level);
     for (uint i = start; i <= end; i++) {
       const paddr_t page_table_paddr = riscv64_pte_pa(tt_virt_[i]);
       pmm_free_page(paddr_to_vm_page(page_table_paddr));
