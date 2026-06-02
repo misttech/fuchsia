@@ -1,5 +1,24 @@
 {
     "displayTimeUnit": "ns",
+    "systemTraceEvents": {
+        "type": "fuchsia",
+        "events": [
+            {
+                "ph": "k",
+                "ts": 290,
+                "cpu": 0,
+                "out": {
+                    "tid": 0,
+                    "state": 3,
+                    "prio": -2147483648
+                },
+                "in": {
+                    "tid": 582658,
+                    "prio": 16
+                }
+            }
+        ]
+    },
     "traceEvents": [
         {
             "args": {

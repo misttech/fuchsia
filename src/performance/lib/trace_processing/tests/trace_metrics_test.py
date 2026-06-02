@@ -22,6 +22,7 @@ from trace_processing import (
     trace_importing,
     trace_metrics,
     trace_model,
+    trace_time,
     trace_utils,
 )
 
@@ -300,3 +301,64 @@ class MetricProcessorsTest(unittest.TestCase):
         self.assertEqual(docs.get("classname", ""), "TestMetricsProcessor")
         self.assertEqual(docs["doc"], "TEST")
         self.assertEqual(docs["code_path"], py_inspect.getfile(self.__class__))
+
+    def test_get_thread_running_durations(self) -> None:
+        model = trace_model.Model()
+
+        def make_switch(
+            start_us: int, incoming_tid: int, outgoing_tid: int
+        ) -> trace_model.ContextSwitch:
+            return trace_model.ContextSwitch(
+                start=trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(start_us)
+                ),
+                incoming_tid=incoming_tid,
+                outgoing_tid=outgoing_tid,
+                incoming_prio=10,
+                outgoing_prio=10,
+                outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_RUNNING,
+                args={},
+            )
+
+        model.scheduling_records[0] = [
+            make_switch(1000, 10, 0),
+            make_switch(3000, 20, 10),
+            make_switch(5000, 10, 20),
+            make_switch(6000, 0, 10),
+        ]
+
+        windows = [
+            (
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(2000)
+                ),
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(7000)
+                ),
+            ),
+            (
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(1500)
+                ),
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(4000)
+                ),
+            ),
+            (
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(800)
+                ),
+                trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_microseconds(1200)
+                ),
+            ),
+        ]
+
+        durations = scenic_metrics._get_thread_running_durations(
+            model, tid=10, windows=windows
+        )
+
+        self.assertEqual(len(durations), 3)
+        self.assertEqual(durations[0].to_microseconds(), 2000)
+        self.assertEqual(durations[1].to_microseconds(), 1500)
+        self.assertEqual(durations[2].to_microseconds(), 200)

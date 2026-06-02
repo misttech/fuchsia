@@ -9,7 +9,7 @@ import statistics
 from typing import MutableSequence, Tuple
 
 from reporting import metrics
-from trace_processing import trace_metrics, trace_model, trace_utils
+from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger("ScenicMetricsProcessor")
 _EVENT_CATEGORY: str = "gfx"
@@ -114,17 +114,26 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
             )
             return []
 
-        cpu_render_times: list[float] = []
+        frame_windows: list[
+            tuple[trace_time.TimePoint, trace_time.TimePoint]
+        ] = []
         for tracing_event in tracing_events:
             if tracing_event.render_event.duration is None:
                 continue
-            cpu_render_times.append(
-                (
-                    tracing_event.render_event.start
-                    + tracing_event.render_event.duration
-                    - tracing_event.start_event.start
-                ).to_milliseconds_f()
+            # We know `render_event` and `start_event` run on the same thread.
+            start_time = tracing_event.start_event.start
+            end_time = (
+                tracing_event.render_event.start
+                + tracing_event.render_event.duration
             )
+            frame_windows.append((start_time, end_time))
+
+        # We know `render_event` and `start_event` run on the same thread.
+        tid = tracing_events[0].render_event.tid
+        running_durations = _get_thread_running_durations(
+            model, tid, frame_windows
+        )
+        cpu_render_times = [d.to_milliseconds_f() for d in running_durations]
 
         cpu_render_mean: float = statistics.mean(cpu_render_times)
         _LOGGER.info(f"Average CPU render time: {cpu_render_mean} ms")
@@ -197,3 +206,133 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
         scenic_start_events = list(rendered_scenic_start_events.values())
         scenic_start_events.sort(key=lambda e: e.start)
         return scenic_start_events
+
+
+def _get_thread_running_durations(
+    model: trace_model.Model,
+    tid: int,
+    windows: list[tuple[trace_time.TimePoint, trace_time.TimePoint]],
+) -> list[trace_time.TimeDelta]:
+    """Calculates the active running time of a thread for a list of time windows
+    using an optimized two-pointer sweep over the thread's running segments and
+    the supplied time windows.
+
+    Args:
+      model: Trace model.
+      tid: Thread id.
+      windows: Sorted list of time windows, each containing a start and end time.
+
+    Returns:
+      List of time deltas representing the active running time of the thread
+      for each time window.
+
+    Raises:
+      ValueError: If scheduling records are missing from the trace model.
+    """
+    if not windows:
+        return []
+
+    if not model.scheduling_records:
+        raise ValueError("Scheduling records are missing from the trace model.")
+
+    # Compile the thread's running segments across all CPU cores
+    running_segments: list[
+        tuple[trace_time.TimePoint, trace_time.TimePoint]
+    ] = []
+    last_window_end = max(w[1] for w in windows)
+
+    for cpu, records in model.scheduling_records.items():
+        # Filter for target thread's context switches
+        thread_switches = [
+            r
+            for r in records
+            if isinstance(r, trace_model.ContextSwitch)
+            and (r.tid == tid or r.outgoing_tid == tid)
+        ]
+        thread_switches.sort(key=lambda r: r.start)
+
+        # Construct segments from the sorted thread switches
+        i = 0
+        while i < len(thread_switches) - 1:
+            if thread_switches[i].tid == tid:
+                # The immediately following switch must be the thread descheduled
+                if thread_switches[i + 1].outgoing_tid == tid:
+                    running_segments.append(
+                        (
+                            thread_switches[i].start,
+                            thread_switches[i + 1].start,
+                        )
+                    )
+                    i += 2
+                else:
+                    # Mismatched switch, log warning and skip
+                    _LOGGER.warning(
+                        f"Mismatched context switch detected on CPU {cpu}: "
+                        f"Consecutive incoming switches for thread {tid} without an "
+                        f"intermediate deschedule event at timestamp {thread_switches[i].start}."
+                    )
+                    i += 1
+            else:
+                # Outgoing switch without preceding incoming switch.
+                # If this is the very first switch on the CPU, it means the thread was already
+                # running when trace recording began.
+                if i == 0:
+                    # We can assume a start time of 0 for this segment, since we are comparing
+                    # intersections with `windows` and, in this case, would get the real start
+                    # time from `windows` anyway.
+                    running_segments.append(
+                        (trace_time.TimePoint(0), thread_switches[0].start)
+                    )
+                else:
+                    # Mismatched switch, log warning and skip
+                    _LOGGER.warning(
+                        f"Mismatched context switch detected on CPU {cpu}: "
+                        f"Outgoing switch for thread {tid} without a matching preceding "
+                        f"incoming switch at timestamp {thread_switches[i].start}."
+                    )
+                i += 1
+
+        # Handle the last context switch if it is Scenic starting
+        if thread_switches:
+            last_switch = thread_switches[-1]
+            if last_switch.tid == tid and last_switch.start < last_window_end:
+                running_segments.append((last_switch.start, last_window_end))
+
+    # Sort running segments chronologically.
+    running_segments.sort(key=lambda s: s[0])
+
+    # Merge overlapping segments to prevent double-counting from trace anomalies (e.g. dropped events)
+    merged_segments = [running_segments[0]]
+    for start, end in running_segments[1:]:
+        prev_start, prev_end = merged_segments[-1]
+        if start <= prev_end:
+            merged_segments[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged_segments.append((start, end))
+    running_segments = merged_segments
+    results = [trace_time.TimeDelta.zero() for _ in range(len(windows))]
+    first_active_seg_idx = 0
+    for idx, (w_start, w_end) in enumerate(windows):
+        # Advance first_active_seg_idx past segments that end before the start of this window.
+        while (
+            first_active_seg_idx < len(running_segments)
+            and running_segments[first_active_seg_idx][1] <= w_start
+        ):
+            first_active_seg_idx += 1
+
+        # Scan forward to find all segments overlapping with the current time window.
+        curr_seg_idx = first_active_seg_idx
+        while curr_seg_idx < len(running_segments):
+            s_start, s_end = running_segments[curr_seg_idx]
+
+            # Since segments are sorted chronologically, if this segment starts after the
+            # window ends, all subsequent segments will also start after the window ends.
+            if s_start >= w_end:
+                break
+
+            overlap_start = max(s_start, w_start)
+            overlap_end = min(s_end, w_end)
+            results[idx] += overlap_end - overlap_start
+            curr_seg_idx += 1
+
+    return results
