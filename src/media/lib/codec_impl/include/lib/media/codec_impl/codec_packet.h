@@ -57,7 +57,9 @@ class CodecPacket {
   void CacheFlush() const;
   void CacheFlushAndInvalidate() const;
 
- private:
+  // The rest is protected for the benefit of tests. Sub-classes outside tests
+  // are not supported.
+ protected:
   // The public section is for the core codec to call - the private section is
   // only for CodecImpl to call.
   friend class CodecImpl;

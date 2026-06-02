@@ -1133,11 +1133,12 @@ std::optional<H264MultiDecoder::DataInput> CodecAdapterH264Multi::ParseVideo(
   }
 }
 
+// The "const" on data_param means this method isn't supposed to modify the
+// data, not that the data itself isn't potentially volatile while running this
+// method.
 std::optional<H264MultiDecoder::DataInput> CodecAdapterH264Multi::ParseVideoAvcc(
-    const uint8_t* data, uint32_t length) {
-  // We don't necessarily know that is_avcc_ is true on entry to this method.
-  // We use this method to send the decoder a bunch of 0x00 sometimes, which
-  // will call this method regardless of is_avcc_ or not.
+    const uint8_t* data_param, uint32_t length) {
+  ZX_DEBUG_ASSERT(is_avcc_);
 
   // So far, the "avcC"/"AVCC" we've seen has emulation prevention bytes on it
   // already.  So we don't add those here.  But if we did need to add them, we'd
@@ -1145,8 +1146,8 @@ std::optional<H264MultiDecoder::DataInput> CodecAdapterH264Multi::ParseVideoAvcc
 
   // For now we assume the heap is pretty fast and doesn't mind the size thrash,
   // but maybe we'll want to keep a buffer around (we'll optimize only if/when
-  // we determine this is actually a problem).  We only actually use this buffer
-  // if is_avcc_ (which is not uncommon).
+  // we determine this is actually a problem).  We only use this buffer if
+  // is_avcc_.
 
   // We do parse more than one pseudo_nal per input packet.
   //
@@ -1155,6 +1156,17 @@ std::optional<H264MultiDecoder::DataInput> CodecAdapterH264Multi::ParseVideoAvcc
   // TODO(dustingreen): Allow splitting NALs across input packets (not a small
   // change).  Probably also move into a source_set for sharing with other
   // CodecAdapter(s).
+
+  // Copy before any parsing. We assume a maximally pedantic compiler here, so
+  // we avoid using memcpy for this.
+  auto data_buffer = std::make_unique<uint8_t[]>(length);
+  uint8_t* data = data_buffer.get();
+  {
+    auto* s = reinterpret_cast<const std::atomic<uint8_t>*>(data_param);
+    for (uint32_t i = 0; i < length; ++i) {
+      data[i] = s[i].load(std::memory_order_relaxed);
+    }
+  }
 
   // Count the input pseudo_nal(s)
   uint32_t pseudo_nal_count = 0;

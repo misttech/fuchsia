@@ -11,11 +11,14 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/media/codec_impl/codec_buffer.h>
+#include <lib/media/codec_impl/codec_packet.h>
 #include <zircon/types.h>
 
 #include <gtest/gtest.h>
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/media/drivers/amlogic_decoder/codec_adapter_h264_multi.h"
 #include "src/media/drivers/amlogic_decoder/device_ctx.h"
 
 namespace amlogic_decoder {
@@ -52,6 +55,50 @@ struct IncomingNamespace {
   component::OutgoingDirectory outgoing_clk_dos{async_get_default_dispatcher()};
 };
 
+constexpr uint32_t kBufferLifetimeOrdinal = 1;
+
+static CodecVmoRange VmoRangeOfSize(size_t size) {
+  zx::vmo vmo_handle;
+  zx_status_t status = zx::vmo::create(size, 0, &vmo_handle);
+  ZX_ASSERT(status == ZX_OK);
+  return CodecVmoRange(std::move(vmo_handle), 0, size);
+}
+
+class CodecBufferForTest : public CodecBuffer {
+ public:
+  CodecBufferForTest(size_t size, uint32_t index, bool is_secure)
+      : CodecBuffer(/*parent=*/nullptr,
+                    Info{.port = kOutputPort,
+                         .lifetime_ordinal = kBufferLifetimeOrdinal,
+                         .index = index,
+                         .is_secure = is_secure},
+                    VmoRangeOfSize(size)) {
+    if (!Map()) {
+      ZX_PANIC("CodecBufferForTest() failed to Map()");
+    }
+  }
+};
+
+class CodecPacketForTest : public CodecPacket {
+ public:
+  CodecPacketForTest(uint32_t index) : CodecPacket(kBufferLifetimeOrdinal, index) {}
+};
+
+class DummyEvents : public CodecAdapterEvents {
+ public:
+  void onCoreCodecFailCodec(const char* format, ...) override {}
+  void onCoreCodecFailStream(fuchsia::media::StreamError error) override {}
+  void onCoreCodecResetStreamAfterCurrentFrame() override {}
+  void onCoreCodecMidStreamOutputConstraintsChange(
+      bool buffer_constraints_action_required) override {}
+  void onCoreCodecOutputFormatChange() override {}
+  void onCoreCodecOutputPacket(CodecPacket* packet, bool error_detected_before,
+                               bool error_detected_during) override {}
+  void onCoreCodecOutputEndOfStream(bool error_detected_before) override {}
+  void onCoreCodecInputPacketDone(CodecPacket* packet) override {}
+  void onCoreCodecLogEvent(
+      media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent event_code) override {}
+};
 class BindingTest : public testing::Test {
  protected:
   void InitPdev() {
@@ -192,6 +239,190 @@ TEST_F(BindingTest, Suspend) {
   device->DdkSuspend(std::move(txn));
   child->WaitUntilSuspendReplyCalled();
 
+  root_.reset();
+}
+
+TEST_F(BindingTest, H264AdapterAvccParsing) {
+  auto device = Init();
+
+  DummyEvents events;
+  std::mutex lock;
+
+  std::unique_ptr<CodecAdapterH264Multi> adapter;
+  {
+    libsync::Completion adapter_created;
+    async::PostTask(device->driver()->shared_fidl_loop()->dispatcher(), [&] {
+      adapter = std::make_unique<CodecAdapterH264Multi>(lock, &events, device);
+      adapter_created.Signal();
+    });
+    adapter_created.Wait();
+  }
+
+  // Prepare OOB bytes in AVCC format.
+  std::vector<uint8_t> oob_bytes = {
+      1,                     // version
+      66,   0,  31,          // profile/compatibility/level
+      0xFF,                  // pseudo_nal_length_field_bytes - 1 = 3 (so 4 bytes)
+      0xE1,                  // SPS count = 1 (upper bits reserved)
+      0,    5,               // SPS length
+      10,   11, 12, 13, 14,  // SPS
+      1,                     // PPS count
+      0,    4,               // PPS length
+      20,   21, 22, 23       // PPS
+  };
+
+  fuchsia::media::FormatDetails format_details;
+  format_details.set_mime_type("video/h264");
+  format_details.set_oob_bytes(oob_bytes);
+
+  adapter->CoreCodecInit(format_details);
+  adapter->CoreCodecQueueInputFormatDetails(format_details);
+
+  // Prepare the AVCC input stream data:
+  // Length prefix = 5 (4 bytes: {0, 0, 0, 5})
+  // NAL payload = {100, 101, 102, 103, 104}
+  std::vector<uint8_t> avcc_payload = {0, 0, 0, 5, 100, 101, 102, 103, 104};
+
+  auto input_buffer = std::make_unique<CodecBufferForTest>(avcc_payload.size(), 0, false);
+  memcpy(input_buffer->base(), avcc_payload.data(), avcc_payload.size());
+
+  auto input_packet = std::make_unique<CodecPacketForTest>(0);
+  input_packet->SetBuffer(input_buffer.get());
+  input_packet->SetStartOffset(0);
+  input_packet->SetValidLengthBytes(static_cast<uint32_t>(avcc_payload.size()));
+
+  adapter->CoreCodecQueueInputPacket(input_packet.get());
+
+  // First ReadMoreInputData call processes the OOB bytes
+  auto oob_result = adapter->ReadMoreInputData();
+  ASSERT_TRUE(oob_result.has_value());
+
+  // Second ReadMoreInputData call processes the packet using ParseVideoAvcc
+  auto result = adapter->ReadMoreInputData();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(9u, result->length);  // 4 bytes AnnexB start code + 5 bytes payload = 9
+
+  // Verify that the converted Annex B output matches: {0, 0, 0, 1, 100, 101, 102, 103, 104}
+  std::vector<uint8_t> expected_annex_b = {0, 0, 0, 1, 100, 101, 102, 103, 104};
+  EXPECT_EQ(expected_annex_b, result->data);
+
+  // Done, clean up.
+  {
+    libsync::Completion adapter_deleted;
+    async::PostTask(device->driver()->shared_fidl_loop()->dispatcher(), [&] {
+      adapter.reset();
+      adapter_deleted.Signal();
+    });
+    adapter_deleted.Wait();
+  }
+  device->DdkAsyncRemove();
+  mock_ddk::ReleaseFlaggedDevices(root_.get());
+  root_.reset();
+}
+
+TEST_F(BindingTest, H264AdapterAvccToctouRace) {
+  auto device = Init();
+
+  DummyEvents events;
+  std::mutex lock;
+
+  std::unique_ptr<CodecAdapterH264Multi> adapter;
+  {
+    libsync::Completion adapter_created;
+    async::PostTask(device->driver()->shared_fidl_loop()->dispatcher(), [&] {
+      adapter = std::make_unique<CodecAdapterH264Multi>(lock, &events, device);
+      adapter_created.Signal();
+    });
+    adapter_created.Wait();
+  }
+
+  // Configure oob_bytes for pseudo_nal_length_field_bytes_ = 1
+  std::vector<uint8_t> oob_bytes = {
+      1,                     // version
+      66,   0,  31,          // profile/compatibility/level
+      0xFC,                  // pseudo_nal_length_field_bytes - 1 = 0 (1 byte)
+      0xE1,                  // SPS count = 1 (upper bits reserved)
+      0,    5,               // SPS length
+      10,   11, 12, 13, 14,  // SPS
+      1,                     // PPS count
+      0,    4,               // PPS length
+      20,   21, 22, 23       // PPS
+  };
+
+  fuchsia::media::FormatDetails format_details;
+  format_details.set_mime_type("video/h264");
+  format_details.set_oob_bytes(oob_bytes);
+
+  adapter->CoreCodecInit(format_details);
+  adapter->CoreCodecQueueInputFormatDetails(format_details);
+
+  // Prepare the input buffer of size 10040
+  auto input_buffer = std::make_unique<CodecBufferForTest>(10040, 0, false);
+
+  auto input_packet = std::make_unique<CodecPacketForTest>(0);
+  input_packet->SetBuffer(input_buffer.get());
+  input_packet->SetStartOffset(0);
+  input_packet->SetValidLengthBytes(10040);
+
+  // First ReadMoreInputData call processes the OOB bytes
+  adapter->CoreCodecQueueInputPacket(input_packet.get());
+  auto oob_result = adapter->ReadMoreInputData();
+  ASSERT_TRUE(oob_result.has_value());
+
+  // Background thread to constantly mutate the buffer content
+  std::atomic<bool> running = true;
+  std::atomic<bool> signal_mutate = false;
+  std::thread race_thread([&running, &signal_mutate, base = input_buffer->base()]() {
+    std::vector<uint8_t> state_a(10040);
+    for (int i = 0; i < 40; ++i) {
+      state_a[i * 251] = 250;
+    }
+    while (running) {
+      if (signal_mutate) {
+        // Wait for Pass 1 to finish reading State A, then switch to State B (0s)
+        zx::nanosleep(zx::deadline_after(zx::usec(5)));
+        memset(base, 0, 10040);
+        signal_mutate = false;
+      } else {
+        memcpy(base, state_a.data(), 10040);
+        zx::nanosleep(zx::deadline_after(zx::usec(1)));
+      }
+    }
+  });
+
+  // Perform the race attempts
+  for (int i = 0; i < 500; ++i) {
+    // Reset to State A
+    std::vector<uint8_t> state_a(10040);
+    for (int j = 0; j < 40; ++j) {
+      state_a[j * 251] = 250;
+    }
+    memcpy(input_buffer->base(), state_a.data(), 10040);
+
+    adapter->CoreCodecQueueInputPacket(input_packet.get());
+
+    // Signal background thread to mutate to State B in 5 microseconds
+    signal_mutate = true;
+
+    auto result = adapter->ReadMoreInputData();
+
+    signal_mutate = false;
+  }
+
+  running = false;
+  race_thread.join();
+
+  // Done, clean up.
+  {
+    libsync::Completion adapter_deleted;
+    async::PostTask(device->driver()->shared_fidl_loop()->dispatcher(), [&] {
+      adapter.reset();
+      adapter_deleted.Signal();
+    });
+    adapter_deleted.Wait();
+  }
+  device->DdkAsyncRemove();
+  mock_ddk::ReleaseFlaggedDevices(root_.get());
   root_.reset();
 }
 

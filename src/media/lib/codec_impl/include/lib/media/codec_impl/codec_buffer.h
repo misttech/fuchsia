@@ -86,7 +86,9 @@ class CodecBuffer {
   void CacheFlush(uint32_t flush_offset, uint32_t length) const;
   void CacheFlushAndInvalidate(uint32_t flush_offset, uint32_t length) const;
 
- private:
+  // The rest is protected for the benefit of tests. Sub-classes outside tests
+  // are not supported.
+ protected:
   friend class CodecImpl;
   friend class std::unique_ptr<CodecBuffer>;
   friend struct std::default_delete<CodecBuffer>;

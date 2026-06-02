@@ -75,6 +75,7 @@ source_set("codec_impl") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/vfs/cpp",
     "//src/devices/bind/fuchsia.sysmem.heap:fuchsia.sysmem.heap_cpp",
+    "//zircon/system/ulib/sync:sync-cpp",
   ]
 }
 
