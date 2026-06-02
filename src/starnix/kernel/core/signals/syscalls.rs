@@ -2127,7 +2127,7 @@ mod tests {
                 },
                 time_stats: Default::default(),
             };
-            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            child.thread_group().kill(locked, ExitStatus::Exit(1), None);
             std::mem::drop(child);
 
             assert_eq!(
@@ -2174,7 +2174,7 @@ mod tests {
                     while !task.read().is_blocked() {
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
-                    child.thread_group().exit(locked, ExitStatus::Exit(0), None);
+                    child.thread_group().kill(locked, ExitStatus::Exit(0), None);
                     child.tid
                 }
             });
@@ -2292,12 +2292,12 @@ mod tests {
         spawn_kernel_and_run(async |locked, current_task| {
             let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             let child1_pid = child1.tid;
-            child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            child1.thread_group().kill(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child1);
             let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             child2.thread_group().setsid(locked).expect("setsid");
             let child2_pid = child2.tid;
-            child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            child2.thread_group().kill(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child2);
 
             assert_eq!(
@@ -2331,12 +2331,12 @@ mod tests {
         spawn_kernel_and_run(async |locked, current_task| {
             let child1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             let child1_pid = child1.tid;
-            child1.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            child1.thread_group().kill(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child1);
             let child2 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             child2.thread_group().setsid(locked).expect("setsid");
             let child2_pid = child2.tid;
-            child2.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            child2.thread_group().kill(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child2);
 
             let address: UserRef<uapi::siginfo_t> =
@@ -2498,7 +2498,7 @@ mod tests {
 
             // Create and exit a child process, which should generate a SIGCHLD.
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            child.thread_group().kill(locked, ExitStatus::Exit(1), None);
             std::mem::drop(child);
 
             // Check which signalfds are readable.
@@ -2619,7 +2619,7 @@ mod tests {
 
             // Create and exit a child process, which should generate a SIGCHLD.
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+            child.thread_group().kill(locked, ExitStatus::Exit(1), None);
             std::mem::drop(child);
 
             // Wait for the signal to be processed.

@@ -312,7 +312,7 @@ fn process_completed_exception(
                 &current_task.thread_state.extended_pstate,
                 Some(restricted_exception),
             ) {
-                current_task.thread_group_exit(locked, status);
+                current_task.kill_thread_group(locked, status);
             }
         }
     }

@@ -296,7 +296,7 @@ pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentT
             &current_task.thread_state.extended_pstate,
             None,
         ) {
-            current_task.thread_group_exit(locked, status);
+            current_task.kill_thread_group(locked, status);
         }
     };
 }

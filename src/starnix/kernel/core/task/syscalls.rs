@@ -766,7 +766,7 @@ pub fn sys_exit_group(
     current_task: &mut CurrentTask,
     code: i32,
 ) -> Result<(), Errno> {
-    current_task.thread_group_exit(locked, ExitStatus::Exit(code as u8));
+    current_task.kill_thread_group(locked, ExitStatus::Exit(code as u8));
     Ok(())
 }
 

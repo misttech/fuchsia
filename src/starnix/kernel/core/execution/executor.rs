@@ -304,7 +304,7 @@ mod tests {
                     }
 
                     // exit the task.
-                    task.thread_group().exit(locked, ExitStatus::Exit(1), None);
+                    task.thread_group().kill(locked, ExitStatus::Exit(1), None);
                 }
             });
 

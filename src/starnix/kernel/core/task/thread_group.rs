@@ -791,11 +791,15 @@ impl ThreadGroup {
         self.stop_state.load(Ordering::Relaxed)
     }
 
-    // Causes the thread group to exit.  If this is being called from a task
-    // that is part of the current thread group, the caller should pass
-    // `current_task`.  If ownership issues prevent passing `current_task`, then
-    // callers should use CurrentTask::thread_group_exit instead.
-    pub fn exit(
+    /// Causes the thread group to exit.
+    ///
+    /// This marks the thread group as exiting and sends [`SIGKILL`] to its tasks to initiate
+    /// teardown. The thread group will not exist until the last task exits.
+    ///
+    /// If this is being called from a task that is part of the current thread group, the caller
+    /// should pass `current_task`. If ownership issues prevent passing `current_task`, then callers
+    /// should use [`CurrentTask::kill_thread_group()`] instead.
+    pub fn kill(
         &self,
         locked: &mut Locked<Unlocked>,
         exit_status: ExitStatus,
@@ -2394,7 +2398,7 @@ mod test {
     async fn test_exit_status() {
         spawn_kernel_and_run(async |locked, current_task| {
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            child.thread_group().exit(locked, ExitStatus::Exit(42), None);
+            child.thread_group().kill(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child);
             assert_eq!(
                 current_task.thread_group().read().zombie_children[0].exit_info.status,
@@ -2496,7 +2500,7 @@ mod test {
 
             assert_eq!(task3.thread_group().read().get_ppid(), task2.tid);
 
-            task2.thread_group().exit(locked, ExitStatus::Exit(0), None);
+            task2.thread_group().kill(locked, ExitStatus::Exit(0), None);
             std::mem::drop(task2);
 
             // Task3 parent should be current_task.
@@ -2519,11 +2523,11 @@ mod test {
             assert_eq!(tg2.read().get_ppid(), task1.tid);
 
             // Exit `task2` first, so that when `task1` exits, it will not be reparented to init.
-            tg2.exit(locked, ExitStatus::Exit(0), None);
+            tg2.kill(locked, ExitStatus::Exit(0), None);
             std::mem::drop(task2);
 
             // Exit `task1`, and drop the task and ThreadGroup.
-            tg1.exit(locked, ExitStatus::Exit(0), None);
+            tg1.kill(locked, ExitStatus::Exit(0), None);
             std::mem::drop(task1);
             std::mem::drop(tg1);
 

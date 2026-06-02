@@ -2031,13 +2031,13 @@ impl CurrentTask {
 
     /// Causes the current thread's thread group to exit, notifying any ptracer
     /// of this task first.
-    pub fn thread_group_exit(&mut self, locked: &mut Locked<Unlocked>, exit_status: ExitStatus) {
+    pub fn kill_thread_group(&mut self, locked: &mut Locked<Unlocked>, exit_status: ExitStatus) {
         self.ptrace_event(
             locked,
             PtraceOptions::TRACEEXIT,
             exit_status.signal_info_status() as u64,
         );
-        self.thread_group().exit(locked, exit_status, None);
+        self.thread_group().kill(locked, exit_status, None);
     }
 
     /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the

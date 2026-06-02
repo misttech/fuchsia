@@ -480,7 +480,7 @@ impl SeccompState {
             }
             SeccompAction::KillProcess => {
                 current_task
-                    .thread_group_exit(locked, ExitStatus::CoreDump(SignalInfo::kernel(SIGSYS)));
+                    .kill_thread_group(locked, ExitStatus::CoreDump(SignalInfo::kernel(SIGSYS)));
                 Some(Err(errno_from_code!(0)))
             }
             SeccompAction::Log => {
