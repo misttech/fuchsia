@@ -169,6 +169,25 @@ unsafe extern "C" {
     pub fn fdf_dispatcher_seal(dispatcher: *mut fdf_dispatcher_t, option: u32) -> zx_status_t;
 }
 unsafe extern "C" {
+    pub fn fdf_dispatcher_get_always_on_dispatcher(
+        dispatcher: *mut fdf_dispatcher_t,
+    ) -> *mut fdf_dispatcher_t;
+}
+unsafe extern "C" {
+    pub fn fdf_dispatcher_register_wake_vector(
+        dispatcher: *mut fdf_dispatcher_t,
+        handle: zx_handle_t,
+        signals: zx_signals_t,
+    ) -> zx_status_t;
+}
+unsafe extern "C" {
+    pub fn fdf_dispatcher_unregister_wake_vector(
+        dispatcher: *mut fdf_dispatcher_t,
+        handle: zx_handle_t,
+        signals: zx_signals_t,
+    ) -> zx_status_t;
+}
+unsafe extern "C" {
     pub fn fdf_handle_close(handle: fdf_handle_t);
 }
 unsafe extern "C" {
@@ -298,6 +317,41 @@ const _: () = {
     ["Offset of field: fdf_env_stall_scanner::handler"]
         [::core::mem::offset_of!(fdf_env_stall_scanner, handler) - 0usize];
 };
+pub type fdf_env_resume_requester_t = fdf_env_resume_requester;
+pub type fdf_env_resume_request = ::core::option::Option<
+    unsafe extern "C" fn(requester: *mut fdf_env_resume_requester_t) -> zx_status_t,
+>;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct fdf_env_resume_requester {
+    pub handler: fdf_env_resume_request,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of fdf_env_resume_requester"]
+        [::core::mem::size_of::<fdf_env_resume_requester>() - 8usize];
+    ["Alignment of fdf_env_resume_requester"]
+        [::core::mem::align_of::<fdf_env_resume_requester>() - 8usize];
+    ["Offset of field: fdf_env_resume_requester::handler"]
+        [::core::mem::offset_of!(fdf_env_resume_requester, handler) - 0usize];
+};
+pub type fdf_env_suspend_completer_t = fdf_env_suspend_completer;
+pub type fdf_env_suspend_complete =
+    ::core::option::Option<unsafe extern "C" fn(completer: *mut fdf_env_suspend_completer_t)>;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct fdf_env_suspend_completer {
+    pub handler: fdf_env_suspend_complete,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of fdf_env_suspend_completer"]
+        [::core::mem::size_of::<fdf_env_suspend_completer>() - 8usize];
+    ["Alignment of fdf_env_suspend_completer"]
+        [::core::mem::align_of::<fdf_env_suspend_completer>() - 8usize];
+    ["Offset of field: fdf_env_suspend_completer::handler"]
+        [::core::mem::offset_of!(fdf_env_suspend_completer, handler) - 0usize];
+};
 unsafe extern "C" {
     pub fn fdf_env_start(options: u32) -> zx_status_t;
 }
@@ -394,6 +448,21 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn fdf_env_register_stall_scanner(scanner: *mut fdf_env_stall_scanner_t);
+}
+unsafe extern "C" {
+    pub fn fdf_env_register_resume_requester(
+        driver: *const ::core::ffi::c_void,
+        requester: *mut fdf_env_resume_requester_t,
+    );
+}
+unsafe extern "C" {
+    pub fn fdf_env_driver_suspend(
+        driver: *const ::core::ffi::c_void,
+        completer: *mut fdf_env_suspend_completer_t,
+    );
+}
+unsafe extern "C" {
+    pub fn fdf_env_driver_resume(driver: *const ::core::ffi::c_void);
 }
 unsafe extern "C" {
     pub fn fdf_testing_create_unmanaged_dispatcher(

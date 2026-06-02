@@ -186,6 +186,30 @@ impl<T: 'static> Driver<T> {
         };
     }
 
+    /// Registers a callback which is triggered whenever the runtime needs to be resumed.
+    pub fn register_resume_requester(&self, requester: ResumeRequester) {
+        unsafe {
+            fdf_sys::fdf_env_register_resume_requester(
+                self.inner.as_ptr() as *const _,
+                requester.into_ptr(),
+            );
+        }
+    }
+
+    /// Asynchronously suspends the dispatchers owned by the driver.
+    pub fn driver_suspend(&self, completer: SuspendCompleter) {
+        unsafe {
+            fdf_sys::fdf_env_driver_suspend(self.inner.as_ptr() as *const _, completer.into_ptr());
+        }
+    }
+
+    /// Resumes the dispatchers owned by the driver.
+    pub fn driver_resume(&self) {
+        unsafe {
+            fdf_sys::fdf_env_driver_resume(self.inner.as_ptr() as *const _);
+        }
+    }
+
     /// Asynchronously shuts down all dispatchers owned by |driver|.
     /// |f| will be called once shutdown completes. This is guaranteed to be
     /// after all the dispatcher's shutdown observers have been called, and will be running
@@ -290,6 +314,106 @@ impl StallScanner {
 
         unsafe {
             ((*scanner).begin_fn)(duration);
+        }
+    }
+}
+
+/// A marker trait for a function type that can be used as a resume requester.
+pub trait ResumeRequesterFn: Fn() -> Result<(), Status> + Send + Sync + 'static {}
+impl<T> ResumeRequesterFn for T where T: Fn() -> Result<(), Status> + Send + Sync + 'static {}
+
+/// A resume requester for [`fdf_env_register_resume_requester`] that can call any kind of callback.
+///
+/// # Safety
+///
+/// This object relies on a specific layout to allow it to be cast between a
+/// `*mut fdf_env_resume_requester_t` and a `*mut ResumeRequester`. To that end,
+/// it is important that this struct stay both `#[repr(C)]` and that `requester` be its first member.
+#[repr(C)]
+pub struct ResumeRequester {
+    /// The underlying C structure.
+    pub requester: fdf_env_resume_requester_t,
+    resume_fn: Box<dyn ResumeRequesterFn>,
+}
+
+impl ResumeRequester {
+    /// Creates a new [`ResumeRequester`] with `f` as the callback to run when the runtime needs to be resumed.
+    pub fn new<F: ResumeRequesterFn>(f: F) -> Self {
+        let resume_fn = Box::new(f);
+        Self { requester: fdf_env_resume_requester_t { handler: Some(Self::handler) }, resume_fn }
+    }
+
+    /// Turns this object into a stable pointer suitable for passing to
+    /// [`fdf_env_register_resume_requester`] by wrapping it in a [`Box`] and leaking it to be reconstituded
+    /// by [`Self::handler`] when the runtime needs to be resumed.
+    pub fn into_ptr(self) -> *mut fdf_env_resume_requester_t {
+        Box::leak(Box::new(self)) as *mut _ as *mut _
+    }
+
+    /// The callback that is registered with the dispatcher that will be called when the runtime
+    /// needs to be resumed.
+    ///
+    /// # Safety
+    ///
+    /// The [`ResumeRequester`] object must have previously been made into a pointer by
+    /// [`Self::into_ptr`].
+    unsafe extern "C" fn handler(requester: *mut fdf_env_resume_requester_t) -> i32 {
+        let requester = requester as *mut ResumeRequester;
+        unsafe {
+            match ((*requester).resume_fn)() {
+                Ok(()) => 0,
+                Err(e) => e.into_raw(),
+            }
+        }
+    }
+}
+
+/// A marker trait for a function type that can be used as a suspend completer.
+pub trait SuspendCompleterFn: FnOnce() + Send + Sync + 'static {}
+impl<T> SuspendCompleterFn for T where T: FnOnce() + Send + Sync + 'static {}
+
+/// A suspend completer for [`fdf_env_driver_suspend`] that can call any kind of callback.
+///
+/// # Safety
+///
+/// This object relies on a specific layout to allow it to be cast between a
+/// `*mut fdf_env_suspend_completer_t` and a `*mut SuspendCompleter`. To that end,
+/// it is important that this struct stay both `#[repr(C)]` and that `completer` be its first member.
+#[repr(C)]
+pub struct SuspendCompleter {
+    completer: fdf_env_suspend_completer_t,
+    complete_fn: Box<dyn SuspendCompleterFn>,
+}
+
+impl SuspendCompleter {
+    /// Creates a new [`SuspendCompleter`] with `f` as the callback to run when the runtime finishes suspending.
+    pub fn new<F: SuspendCompleterFn>(f: F) -> Self {
+        let complete_fn = Box::new(f);
+        Self {
+            completer: fdf_env_suspend_completer_t { handler: Some(Self::handler) },
+            complete_fn,
+        }
+    }
+
+    /// Turns this object into a stable pointer suitable for passing to
+    /// [`fdf_env_driver_suspend`] by wrapping it in a [`Box`] and leaking it to be reconstituded
+    /// by [`Self::handler`] when the runtime finishes suspending.
+    pub fn into_ptr(self) -> *mut fdf_env_suspend_completer_t {
+        Box::leak(Box::new(self)) as *mut _ as *mut _
+    }
+
+    /// The callback that is registered with the dispatcher that will be called when the runtime
+    /// finishes suspending.
+    ///
+    /// # Safety
+    ///
+    /// The [`SuspendCompleter`] object must have previously been made into a pointer by
+    /// [`Self::into_ptr`].
+    unsafe extern "C" fn handler(completer: *mut fdf_env_suspend_completer_t) {
+        let completer = completer as *mut SuspendCompleter;
+        unsafe {
+            let completer = Box::from_raw(completer);
+            (completer.complete_fn)();
         }
     }
 }

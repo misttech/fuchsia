@@ -19,8 +19,8 @@ use crate::shutdown_observer::ShutdownObserver;
 
 pub use fdf_sys::fdf_dispatcher_t;
 pub use libasync::{
-    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, JoinHandle, OnDispatcher, Task,
-    WeakDispatcher,
+    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt, JoinHandle,
+    OnDispatcher, Task, WeakDispatcher,
 };
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
@@ -276,6 +276,19 @@ impl AutoReleaseDispatcher {
     pub fn as_weak(&self) -> WeakDispatcher {
         self.weak_ref.get_or_init(|| WeakDispatcher::new(self.as_async_dispatcher_ref())).clone()
     }
+
+    /// Returns the Always-On interface of this dispatcher.
+    pub fn always_on_dispatcher(&self) -> AutoReleaseDispatcher {
+        // SAFETY: `self.dispatcher.0` is a valid, active `fdf_dispatcher_t` pointer owned by this
+        // `AutoReleaseDispatcher`.
+        let dispatcher_ref = unsafe { DispatcherRef::from_raw(self.dispatcher.0) };
+        // SAFETY: The always-on dispatcher pointer returned by the runtime is guaranteed to remain
+        // valid for at least as long as the parent dispatcher is alive. Since this is an
+        // `AutoReleaseDispatcher`, the underlying dispatcher will not be shut down when dropped,
+        // and we wrap the new dispatcher in `ManuallyDrop` to ensure the same.
+        let dispatcher = unsafe { Dispatcher::from_raw(dispatcher_ref.always_on_dispatcher().0.0) };
+        Self { dispatcher: ManuallyDrop::new(dispatcher), weak_ref: Default::default() }
+    }
 }
 
 impl AsyncDispatcher for AutoReleaseDispatcher {
@@ -329,6 +342,17 @@ impl<'a> DispatcherRef<'a> {
     /// Caller is responsible for ensuring that the dispatcher handle is used safely.
     pub unsafe fn as_raw(&mut self) -> *mut fdf_dispatcher_t {
         unsafe { self.0.0.as_mut() }
+    }
+
+    /// Returns a [`DispatcherRef`] for the always-on dispatcher associated with this dispatcher,
+    /// preserving the lifetime parameter of the parent dispatcher.
+    pub fn always_on_dispatcher(&self) -> DispatcherRef<'a> {
+        // SAFETY: The pointer being passed in is valid as its coming from a DispatcherRef.
+        let ptr = unsafe { fdf_dispatcher_get_always_on_dispatcher(self.0.0.as_ptr()) };
+        DispatcherRef(
+            ManuallyDrop::new(Dispatcher(NonNull::new(ptr).expect("Always-on dispatcher is NULL"))),
+            PhantomData,
+        )
     }
 }
 
