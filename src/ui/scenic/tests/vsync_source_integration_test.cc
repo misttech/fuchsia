@@ -33,37 +33,39 @@ class VsyncSourceIntegrationTest
     // Fake display only triggers vsyncs after a config is applied. Drawing a solid fill here to
     // trigger vsyncs.
     {
-      FlatlandClientWithEventHandler root_flatland(
-          ConnectIntoRealm<fuchsia_ui_composition::Flatland>(), dispatcher());
+      root_flatland_.emplace(ConnectIntoRealm<fuchsia_ui_composition::Flatland>(), dispatcher());
       auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
       SetFlatlandDisplayContent(std::move(parent_token));
       auto parent_viewport_watcher_endpoints =
           fidl::CreateEndpoints<fuchsia_ui_composition::ParentViewportWatcher>();
       fuchsia::ui::composition::FlatlandCreateView2Request request;
-      auto res = root_flatland->CreateView2(
-          {{.token = std::move(child_token),
-            .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
-            .parent_viewport_watcher = std::move(parent_viewport_watcher_endpoints->server)}});
+      auto res = (*root_flatland_)
+                     ->CreateView2({{.token = std::move(child_token),
+                                     .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                                     .parent_viewport_watcher =
+                                         std::move(parent_viewport_watcher_endpoints->server)}});
       ASSERT_TRUE(res.is_ok());
       const fuchsia_ui_composition::TransformId kRootTransform = {1};
-      res = root_flatland->CreateTransform(kRootTransform);
+      res = (*root_flatland_)->CreateTransform(kRootTransform);
       ASSERT_TRUE(res.is_ok());
-      res = root_flatland->SetRootTransform(kRootTransform);
+      res = (*root_flatland_)->SetRootTransform(kRootTransform);
       ASSERT_TRUE(res.is_ok());
       const fuchsia_ui_composition::ContentId kFilledRectContentId = {1};
-      res = root_flatland->CreateFilledRect(kFilledRectContentId);
+      res = (*root_flatland_)->CreateFilledRect(kFilledRectContentId);
       ASSERT_TRUE(res.is_ok());
-      res = root_flatland->SetSolidFill(
-          {{.rect_id = kFilledRectContentId,
-            .color = {{.red = 1.f, .green = 0.f, .blue = 0.f, .alpha = 1.f}},
-            .size = {{.width = 100, .height = 100}}}});
+      res = (*root_flatland_)
+                ->SetSolidFill({{.rect_id = kFilledRectContentId,
+                                 .color = {{.red = 1.f, .green = 0.f, .blue = 0.f, .alpha = 1.f}},
+                                 .size = {{.width = 100, .height = 100}}}});
       ASSERT_TRUE(res.is_ok());
-      res = root_flatland->SetContent(
-          {{.transform_id = kRootTransform, .content_id = kFilledRectContentId}});
+      res =
+          (*root_flatland_)
+              ->SetContent({{.transform_id = kRootTransform, .content_id = kFilledRectContentId}});
       ASSERT_TRUE(res.is_ok());
-      BlockingPresent(this, root_flatland);
+      BlockingPresent(this, *root_flatland_);
       ASSERT_TRUE(res.is_ok());
     }
+
     vsync_source_.Bind(ConnectIntoRealm<fuds_VsyncSource>(), dispatcher(), this);
   }
 
@@ -74,6 +76,7 @@ class VsyncSourceIntegrationTest
   }
 
   fidl::Client<fuds_VsyncSource> vsync_source_;
+  std::optional<FlatlandClientWithEventHandler> root_flatland_;
   bool on_vsync_called_ = false;
   bool on_vsync_timestamp_ = 0;
 };
