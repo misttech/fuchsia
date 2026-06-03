@@ -168,6 +168,23 @@ alias(
 # Configuration conditions for the platform values above.
 # Like `"@platforms//os:fuchsia"`, the `is_fuchsia_${target_cpu}` settings are
 # true for both Fuchsia platform and Bazel SDK-using platforms.
+
+config_setting(
+    name = "is_fuchsia_with_sdk_rules",
+    constraint_values = [
+        "@platforms//os:fuchsia",
+        ":fuchsia_artifacts_build_with_sdk_rules",
+    ],
+)
+
+config_setting(
+    name = "is_fuchsia_platform",
+    constraint_values = [
+        "@platforms//os:fuchsia",
+        ":fuchsia_artifacts_build_without_sdk_rules",
+    ],
+)
+
 config_setting(
     name = "is_fuchsia_x64",
     constraint_values = [

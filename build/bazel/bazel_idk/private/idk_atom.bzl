@@ -666,7 +666,12 @@ def _idk_atom_impl(
         atom_build_deps = atom_build_deps,
         configurable_info = configurable_info,
         testonly = testonly,
-        target_compatible_with = target_compatible_with,
+        # Ensure IDK atoms are only being built for Fuchsia platform or host.
+        target_compatible_with = select({
+            "//build/bazel/platforms:is_fuchsia_platform": target_compatible_with,
+            "//build/bazel/platforms:is_host_os": target_compatible_with,
+            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": ["@platforms//:incompatible"],
+        }),
         **kwargs
     )
 
@@ -715,10 +720,18 @@ Atoms will be checked for category and API area violations when generating the I
             mandatory = False,
             configurable = False,
         ),
+        # Make this inherited attribute not configurable so that it can be
+        # used within a `select()` statement.
+        "target_compatible_with": attr.label_list(
+            doc = "Standard meaning.",
+            mandatory = True,
+            allow_empty = False,
+            configurable = False,
+        ),
     },
 )
 
-def _idk_noop_atom_impl(name, visibility, **kwargs):
+def _idk_noop_atom_impl(name, target_compatible_with, visibility, **kwargs):
     # Unlike other IDK macros, which append "_idk" `name`, `name` must end with
     # "_idk". This is to avoid buildifier `duplicated-name` errors in
     # `BUILD.bazel` files, which would occur because this macro does not wrap
@@ -732,6 +745,12 @@ def _idk_noop_atom_impl(name, visibility, **kwargs):
         name = name,
         meta_dest = "",
         type = "none",
+        # Ensure IDK atoms are only being built for Fuchsia platform or host.
+        target_compatible_with = select({
+            "//build/bazel/platforms:is_fuchsia_platform": target_compatible_with,
+            "//build/bazel/platforms:is_host_os": target_compatible_with,
+            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": ["@platforms//:incompatible"],
+        }),
         visibility = get_atom_visibility(visibility),
         **kwargs
     )
@@ -770,6 +789,9 @@ macros to handle such a target as any other IDK target.
         ),
         "target_compatible_with": attr.label_list(
             doc = "Standard meaning.",
+            mandatory = True,
+            allow_empty = False,
+            configurable = False,
         ),
         "testonly": attr.bool(
             doc = "Standard meaning.",
