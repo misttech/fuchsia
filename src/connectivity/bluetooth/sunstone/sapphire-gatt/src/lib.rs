@@ -8,13 +8,3 @@
 
 pub mod att;
 pub mod gatt;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_init() {
-        assert_eq!(2 + 2, 4);
-    }
-}

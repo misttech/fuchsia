@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 mod l2cap;
+pub mod pdu;
 
 pub mod client;
 pub mod server;
