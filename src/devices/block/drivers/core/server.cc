@@ -126,6 +126,7 @@ void Server::SendResponse(const BlockFifoResponse& response) {
 
 void Server::FinishTransaction(zx_status_t status, reqid_t reqid, groupid_t group) {
   if (group != kNoGroup) {
+    ZX_ASSERT(group < MAX_TXN_GROUP_COUNT);
     groups_[group]->Complete(status);
   } else {
     SendResponse(BlockFifoResponse{
@@ -569,7 +570,12 @@ zx_status_t Server::Serve() {
           // Operation which is not accessing a valid group.
           zxlogf(WARNING, "Serve: group %d is not valid, failing request", group);
           if (wants_reply) {
-            FinishTransaction(ZX_ERR_IO, reqid, group);
+            SendResponse(BlockFifoResponse{
+                .status = ZX_ERR_IO,
+                .reqid = reqid,
+                .group = group,
+                .count = 1,
+            });
           }
           continue;
         }

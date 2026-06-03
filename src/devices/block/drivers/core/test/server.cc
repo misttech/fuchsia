@@ -268,4 +268,37 @@ TEST(OffsetMap, RemapRequests) {
   AssertUnchangedExceptOffset(request);
 }
 
+TEST_F(ServerTestFixture, InvalidGroupId) {
+  zx::result fifo_result = server_->GetFifo();
+  ASSERT_OK(fifo_result);
+  fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo(std::move(fifo_result.value()));
+  CreateThread();
+  auto cleanup = fit::defer([&] {
+    server_->Shutdown();
+    JoinThread();
+  });
+
+  groupid_t invalid_group = MAX_TXN_GROUP_COUNT + 1;
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE,
+                  .flags = BLOCK_IO_FLAG_GROUP_ITEM | BLOCK_IO_FLAG_GROUP_LAST},
+      .reqid = 200,
+      .group = invalid_group,
+      .vmoid = BLOCK_VMOID_INVALID,
+  };
+
+  size_t actual_count = 0;
+  ASSERT_OK(fifo.write(&request, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+
+  BlockFifoResponse response;
+  zx_signals_t seen;
+  ASSERT_OK(fifo.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED, zx::time::infinite(), &seen));
+  ASSERT_OK(fifo.read_one(&response));
+
+  EXPECT_EQ(response.status, ZX_ERR_IO);
+  EXPECT_EQ(response.reqid, 200);
+  EXPECT_EQ(response.group, invalid_group);
+}
+
 }  // namespace
