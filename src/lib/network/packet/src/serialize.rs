@@ -1868,7 +1868,7 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> Serializer<C> for B 
         let tail_size = padding + constraints.footer_len();
         let mut buffer = alloc.layout_alloc(constraints.header_len(), self.len(), tail_size)?;
         buffer.copy_from(self);
-        buffer.grow_back(padding);
+        buffer.grow_back_zero(padding);
         Ok(buffer)
     }
 }
@@ -2503,6 +2503,10 @@ mod tests {
     use test_case::test_case;
     use test_util::{assert_geq, assert_leq};
 
+    fn dirty_buf_alloc(len: usize) -> Result<Buf<Vec<u8>>, Never> {
+        Ok(Buf::new(vec![0xAA; len], ..))
+    }
+
     // DummyPacketBuilder:
     // - Implements PacketBuilder with the stored constraints; it fills the
     //   header with header_byte and the footer with footer_byte
@@ -2936,7 +2940,7 @@ mod tests {
                 .serialize_new_buf(
                     &mut NoOpSerializationContext,
                     PacketConstraints::UNCONSTRAINED,
-                    new_buf_vec,
+                    dirty_buf_alloc,
                 )
                 .unwrap();
             verify(buffer0, &old_body, header_len, footer_len, min_body_len);
