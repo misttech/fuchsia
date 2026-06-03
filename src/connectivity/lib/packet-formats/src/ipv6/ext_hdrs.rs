@@ -876,7 +876,9 @@ where
         let action =
             ExtensionHeaderOptionAction::try_from((kind >> 6) & 0x3).expect("Unexpected error");
         let mutable = ((kind >> 5) & 0x1) == 0x1;
-        let kind = kind & 0x1F;
+        // Note that `kind` remains unmodified here: per RFC 8200 section 4.2,
+        // the three high-order bits parsed above are to be treated as part of
+        // the Option Type.
 
         // If our kind is a PAD1, consider it a NOP.
         if kind == Self::PAD1 {
@@ -1307,6 +1309,69 @@ mod tests {
         );
         assert_eq!(context.bytes_parsed, 3);
         assert_eq!(context.options_parsed, 1);
+
+        // Test parsing Pad1 but with upper bits set.
+        #[rustfmt::skip]
+        let buffer = [
+            // 0b11000000 -> action = 0b11, mutable = 0b0, option type = 0b00000
+            // (matching lower-order bits of Pad1).
+            0xC0,
+            1, 0,                         // Pad2
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Pad10
+        ];
+        let mut context = ExtensionHeaderOptionContext::new();
+        assert_eq!(
+            Records::<_, HopByHopOptionsImpl>::parse_with_mut_context(&buffer[..], &mut context)
+                .expect_err("Parsed successfully when we had Pad1 with upper bits set"),
+            ExtensionHeaderOptionParsingError::UnrecognizedOption {
+                pointer: 0,
+                action: ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast,
+            }
+        );
+        assert_eq!(context.bytes_parsed, 0);
+        assert_eq!(context.options_parsed, 0);
+
+        // Test parsing Pad2 but with upper bits set.
+        #[rustfmt::skip]
+        let buffer = [
+            0,                            // Pad1
+            // 0b11000001 -> action = 0b11, mutable = 0b0, option type = 0b00001
+            // (matching lower-order bits of Pad2).
+            0xC1, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Pad10
+        ];
+        let mut context = ExtensionHeaderOptionContext::new();
+        assert_eq!(
+            Records::<_, HopByHopOptionsImpl>::parse_with_mut_context(&buffer[..], &mut context)
+                .expect_err("Parsed successfully when we had Pad2 with upper bits set"),
+            ExtensionHeaderOptionParsingError::UnrecognizedOption {
+                pointer: 1,
+                action: ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast,
+            }
+        );
+        assert_eq!(context.bytes_parsed, 1);
+        assert_eq!(context.options_parsed, 1);
+
+        // Test parsing PadN but with upper bits set.
+        #[rustfmt::skip]
+        let buffer = [
+            0,                               // Pad1
+            1, 0,                            // Pad2
+            // 0b11000001 -> action = 0b11, mutable = 0b0, option type = 0b00001
+            // (matching lower-order bits of PadN).
+            0xC1, 8, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut context = ExtensionHeaderOptionContext::new();
+        assert_eq!(
+            Records::<_, HopByHopOptionsImpl>::parse_with_mut_context(&buffer[..], &mut context)
+                .expect_err("Parsed successfully when we had PadN with upper bits set"),
+            ExtensionHeaderOptionParsingError::UnrecognizedOption {
+                pointer: 3,
+                action: ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast,
+            }
+        );
+        assert_eq!(context.bytes_parsed, 3);
+        assert_eq!(context.options_parsed, 2);
     }
 
     #[test]
@@ -2121,6 +2186,23 @@ mod tests {
         assert!(!rtralrt.mutable);
         assert_eq!(rtralrt.action, ExtensionHeaderOptionAction::SkipAndContinue);
         assert_eq!(rtralrt.data, HopByHopOptionData::RouterAlert { data: 0 });
+
+        // Test that the three higher-order bits are considered part of the
+        // Option Type when parsing options.
+        let context = ExtensionHeaderOptionContext::new();
+        // 0b11000101 -> action = 0b11, mutable = 0b0, option type = 0b00101
+        // (matching lower-order bits of RouterAlert).
+        let buffer = [0xC5, 2, 0, 0];
+
+        let error = Records::<_, HopByHopOptionsImpl>::parse_with_context(&buffer[..], context)
+            .expect_err("UnrecognizedOption should have been returned");
+        assert_eq!(
+            error,
+            ExtensionHeaderOptionParsingError::UnrecognizedOption {
+                pointer: 0,
+                action: ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast
+            }
+        );
 
         // Test RouterAlert with wrong data length.
         let result = <HopByHopOptionDataImpl as ExtensionHeaderOptionDataImpl>::parse_option(
