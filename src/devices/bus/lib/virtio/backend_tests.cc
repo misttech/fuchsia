@@ -240,10 +240,10 @@ class VirtioTests : public zxtest::Test {
     }
   }
 
-  void SetUpModernQueue() {
+  void SetUpModernQueue(uint16_t size = kQueueSize) {
     auto& common_cfg_cap = kCapabilities[4];
     uint32_t queue_offset = offsetof(virtio_pci_common_cfg_t, queue_size);
-    bars_[kModernBar]->Write(kQueueSize, common_cfg_cap.offset + queue_offset);
+    bars_[kModernBar]->Write(size, common_cfg_cap.offset + queue_offset);
   }
 
   void SetUpModernMsiX() {
@@ -293,7 +293,11 @@ class VirtioTests : public zxtest::Test {
                : VIRTIO_PCI_CONFIG_OFFSET_NOMSIX;
   }
 
-  void SetUpLegacyQueue() { bars_[kLegacyBar]->Write(kQueueSize, VIRTIO_PCI_QUEUE_SIZE); }
+  void SetUpLegacyQueue(uint16_t size = kQueueSize) { bars_[kLegacyBar]->Write(size, VIRTIO_PCI_QUEUE_SIZE); }
+
+  void RunAssertZeroInitializedRing(std::unique_ptr<virtio::Backend> backend);
+  void RunGoldenAvailAllocationPattern(std::unique_ptr<virtio::Backend> backend);
+  void RunAvailUsedInterleavedOperations(std::unique_ptr<virtio::Backend> backend);
 
   std::shared_ptr<MockDevice> fake_parent_;
 
@@ -327,9 +331,168 @@ class TestVirtioDevice : public virtio::Device, public DeviceType {
 
   void DdkRelease() { delete this; }
 
+  virtio::Ring& GetRing() { return ring_; }
+
  private:
   virtio::Ring ring_{this};
 };
+
+void VirtioTests::RunAssertZeroInitializedRing(std::unique_ptr<virtio::Backend> backend) {
+  zx::bti bti{};
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+  ASSERT_OK(backend->Bind());
+  auto device =
+      std::make_unique<TestVirtioDevice>(fake_parent_.get(), std::move(bti), std::move(backend));
+  ASSERT_OK(device->Init());
+
+  uint8_t* ptr = reinterpret_cast<uint8_t*>(device->GetRing().DescFromIndex(0));
+  size_t size = vring_size(2, zx_system_get_page_size());
+
+  // Verify initial free list terminator (desc[0].next = 0xffff)
+  EXPECT_EQ(ptr[14], 0xff);
+  EXPECT_EQ(ptr[15], 0xff);
+
+  // Verify all other bytes are zero (including desc[1].next which should be 0)
+  for (size_t i = 0; i < size; ++i) {
+    if (i == 14 || i == 15)
+      continue;
+    EXPECT_EQ(ptr[i], 0);
+  }
+
+  [[maybe_unused]] auto ptr_release = device.release();
+}
+
+void VirtioTests::RunGoldenAvailAllocationPattern(std::unique_ptr<virtio::Backend> backend) {
+  zx::bti bti{};
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+  ASSERT_OK(backend->Bind());
+  auto device =
+      std::make_unique<TestVirtioDevice>(fake_parent_.get(), std::move(bti), std::move(backend));
+  ASSERT_OK(device->Init());
+
+  auto& ring = device->GetRing();
+  uint8_t* base_ptr = reinterpret_cast<uint8_t*>(ring.DescFromIndex(0));
+
+  struct vring_desc* desc = ring.DescFromIndex(0);
+  EXPECT_EQ(desc[0].next, 0xffff);
+  EXPECT_EQ(desc[1].next, 0);
+  EXPECT_EQ(desc[2].next, 1);
+  EXPECT_EQ(desc[3].next, 2);
+
+  struct vring_avail* avail = reinterpret_cast<struct vring_avail*>(base_ptr + 64);
+  avail->idx = 0xa5a5;
+
+  uint16_t* avail_ring = reinterpret_cast<uint16_t*>(base_ptr + 68);
+  avail_ring[0] = 0xa5a5;
+  avail_ring[1] = 0xa5a5;
+
+  uint16_t head_idx = 0;
+  struct vring_desc* last_desc = ring.AllocDescChain(2, &head_idx);
+  ASSERT_NOT_NULL(last_desc);
+  EXPECT_EQ(head_idx, 2);
+
+  EXPECT_EQ(desc[2].next, 3);
+  EXPECT_TRUE(desc[2].flags & VRING_DESC_F_NEXT);
+  EXPECT_EQ(desc[3].next, 0);
+  EXPECT_FALSE(desc[3].flags & VRING_DESC_F_NEXT);
+
+  ring.SubmitChain(head_idx);
+  EXPECT_EQ(avail->idx, 0xa5a6);
+  EXPECT_EQ(avail_ring[1], 2);
+  EXPECT_EQ(avail_ring[0], 0xa5a5);
+
+  [[maybe_unused]] auto ptr_release = device.release();
+}
+
+void VirtioTests::RunAvailUsedInterleavedOperations(std::unique_ptr<virtio::Backend> backend) {
+  zx::bti bti{};
+  ASSERT_OK(fake_bti_create(bti.reset_and_get_address()));
+  ASSERT_OK(backend->Bind());
+  auto device =
+      std::make_unique<TestVirtioDevice>(fake_parent_.get(), std::move(bti), std::move(backend));
+  ASSERT_OK(device->Init());
+
+  auto& ring = device->GetRing();
+  vring& vr = ring.vring_unsafe();
+
+  auto free_chain = [&](struct vring_used_elem* used_elem) {
+    uint16_t desc_index = static_cast<uint16_t>(used_elem->id);
+    while (true) {
+      struct vring_desc* desc = ring.DescFromIndex(desc_index);
+      uint16_t next_index = desc->next;
+      bool has_next = desc->flags & VRING_DESC_F_NEXT;
+      ring.FreeDesc(desc_index);
+      if (!has_next) {
+        break;
+      }
+      desc_index = next_index;
+    }
+  };
+
+  EXPECT_EQ(vr.free_count, 128);
+  EXPECT_EQ(vr.free_list, 127);
+  EXPECT_EQ(vr.avail->idx, 0);
+  EXPECT_EQ(vr.used->idx, 0);
+
+  uint16_t head1 = 0;
+  struct vring_desc* last_desc1 = ring.AllocDescChain(2, &head1);
+  ASSERT_NOT_NULL(last_desc1);
+  EXPECT_EQ(head1, 126);
+  EXPECT_EQ(vr.free_count, 126);
+  EXPECT_EQ(vr.free_list, 125);
+
+  ring.SubmitChain(head1);
+  EXPECT_EQ(vr.avail->idx, 1);
+  EXPECT_EQ(vr.avail->ring[0], 126);
+
+  uint16_t head2 = 0;
+  struct vring_desc* last_desc2 = ring.AllocDescChain(3, &head2);
+  ASSERT_NOT_NULL(last_desc2);
+  EXPECT_EQ(head2, 123);
+  EXPECT_EQ(vr.free_count, 123);
+  EXPECT_EQ(vr.free_list, 122);
+
+  ring.SubmitChain(head2);
+  EXPECT_EQ(vr.avail->idx, 2);
+  EXPECT_EQ(vr.avail->ring[1], 123);
+
+  vr.used->ring[0].id = 126;
+  vr.used->ring[0].len = 100;
+  vr.used->idx = 1;
+
+  ring.IrqRingUpdate(free_chain);
+  EXPECT_EQ(vr.free_count, 125);
+  EXPECT_EQ(vr.free_list, 127);
+
+  uint16_t head3 = 0;
+  struct vring_desc* last_desc3 = ring.AllocDescChain(1, &head3);
+  ASSERT_NOT_NULL(last_desc3);
+  EXPECT_EQ(head3, 127);
+  EXPECT_EQ(vr.free_count, 124);
+  EXPECT_EQ(vr.free_list, 126);
+
+  ring.SubmitChain(head3);
+  EXPECT_EQ(vr.avail->idx, 3);
+  EXPECT_EQ(vr.avail->ring[2], 127);
+
+  vr.used->ring[1].id = 123;
+  vr.used->ring[1].len = 200;
+  vr.used->idx = 2;
+
+  ring.IrqRingUpdate(free_chain);
+  EXPECT_EQ(vr.free_count, 127);
+  EXPECT_EQ(vr.free_list, 125);
+
+  vr.used->ring[2].id = 127;
+  vr.used->ring[2].len = 300;
+  vr.used->idx = 3;
+
+  ring.IrqRingUpdate(free_chain);
+  EXPECT_EQ(vr.free_count, 128);
+  EXPECT_EQ(vr.free_list, 127);
+
+  [[maybe_unused]] auto ptr_release = device.release();
+}
 
 class TestVirtioSharedMemoryDevice : public virtio::Device,
                                      public ddk::Device<TestVirtioSharedMemoryDevice> {
@@ -460,6 +623,120 @@ TEST_F(VirtioTests, LegacyIoBackendSuccess) {
   ASSERT_OK(device->Init());
   // Owned by the framework now.
   [[maybe_unused]] auto ptr = device.release();
+}
+
+TEST_F(VirtioTests, AssertZeroInitializedRingLegacy) {
+  SetUpProtocol();
+  SetUpLegacyBar();
+  SetUpLegacyQueue(2);
+  async_state().SyncCall([&](AsyncState* async) { async->fake_pci.AddLegacyInterrupt(); });
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  TestLegacyIoInterface interface(bars()[kLegacyBar]->View(0));
+  auto backend =
+      std::make_unique<virtio::PciLegacyBackend>(std::move(*pci), info->info(), &interface);
+
+  RunAssertZeroInitializedRing(std::move(backend));
+}
+
+TEST_F(VirtioTests, AssertZeroInitializedRingModern) {
+  SetUpProtocol();
+  SetUpModernCapabilities();
+  SetUpModernBars();
+  SetUpModernQueue(2);
+  SetUpModernMsiX();
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  auto backend =
+      std::make_unique<virtio::PciModernBackend>(std::move(*pci), info->info());
+
+  RunAssertZeroInitializedRing(std::move(backend));
+}
+
+TEST_F(VirtioTests, GoldenAvailAllocationPatternLegacy) {
+  SetUpProtocol();
+  SetUpLegacyBar();
+  SetUpLegacyQueue(4);
+  async_state().SyncCall([&](AsyncState* async) { async->fake_pci.AddLegacyInterrupt(); });
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  TestLegacyIoInterface interface(bars()[kLegacyBar]->View(0));
+  auto backend =
+      std::make_unique<virtio::PciLegacyBackend>(std::move(*pci), info->info(), &interface);
+
+  RunGoldenAvailAllocationPattern(std::move(backend));
+}
+
+TEST_F(VirtioTests, GoldenAvailAllocationPatternModern) {
+  SetUpProtocol();
+  SetUpModernCapabilities();
+  SetUpModernBars();
+  SetUpModernQueue(4);
+  SetUpModernMsiX();
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  auto backend =
+      std::make_unique<virtio::PciModernBackend>(std::move(*pci), info->info());
+
+  RunGoldenAvailAllocationPattern(std::move(backend));
+}
+
+TEST_F(VirtioTests, AvailUsedInterleavedOperationsLegacy) {
+  SetUpProtocol();
+  SetUpLegacyBar();
+  SetUpLegacyQueue(128);
+  async_state().SyncCall([&](AsyncState* async) { async->fake_pci.AddLegacyInterrupt(); });
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  TestLegacyIoInterface interface(bars()[kLegacyBar]->View(0));
+  auto backend =
+      std::make_unique<virtio::PciLegacyBackend>(std::move(*pci), info->info(), &interface);
+
+  RunAvailUsedInterleavedOperations(std::move(backend));
+}
+
+TEST_F(VirtioTests, AvailUsedInterleavedOperationsModern) {
+  SetUpProtocol();
+  SetUpModernCapabilities();
+  SetUpModernBars();
+  SetUpModernQueue(128);
+  SetUpModernMsiX();
+
+  zx::result pci = ddk::Device<void>::DdkConnectFidlProtocol<fuchsia_hardware_pci::Service::Device>(
+      fake_parent_.get());
+  ASSERT_TRUE(pci.is_ok());
+  auto info = fidl::Call(*pci)->GetDeviceInfo();
+  ASSERT_TRUE(info.is_ok());
+
+  auto backend =
+      std::make_unique<virtio::PciModernBackend>(std::move(*pci), info->info());
+
+  RunAvailUsedInterleavedOperations(std::move(backend));
 }
 
 TEST_F(VirtioTests, LegacyMsiX) {
