@@ -2,7 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.devicetree;
-using fuchsia.platform;
+composite dw_i2c;
 
-fuchsia.devicetree.FIRST_COMPATIBLE == "google,i2c";
+using fuchsia.clock;
+using fuchsia.devicetree;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.reset;
+using fuchsia.hardware.powerdomain;
+using fuchsia.gpio;
+
+primary parent "pdev" {
+  fuchsia.devicetree.FIRST_COMPATIBLE == "google,i2c";
+}
+
+parent "clock-bus" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.NAME == "bus";
+}
+
+parent "clock-registers" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.NAME == "registers";
+}
+
+parent "reset" {
+  fuchsia.hardware.reset.Service == fuchsia.hardware.reset.Service.ZirconTransport;
+}
+
+parent "power-domain" {
+  fuchsia.hardware.powerdomain.Service == fuchsia.hardware.powerdomain.Service.ZirconTransport;
+}
+
+optional parent "gpio-init-0" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+  fuchsia.BIND_GPIO_CONTROLLER == 0;
+}
+
