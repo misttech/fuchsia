@@ -21,7 +21,7 @@ pub use from_env::{AvailabilityFlag, CheckEnv};
 pub use try_from_env::{Deferred, TryFromEnv, TryFromEnvWith, deferred};
 
 // Used for deriving an FFX tool.
-pub use fho_macro::FfxTool;
+pub use fho_macro::{FfxError, FfxTool};
 
 // Re-expose the Error, Result, and FfxContext types from ffx_command
 // so you don't have to pull both in all the time.

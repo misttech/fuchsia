@@ -9,6 +9,7 @@ use quote::ToTokens;
 use structs::NamedFieldStruct;
 
 mod errors;
+mod ffx_error;
 mod structs;
 mod testing;
 mod types;
@@ -37,6 +38,16 @@ fn generate_struct_impl(ast: &syn::DeriveInput) -> Result<proc_macro2::TokenStre
 pub fn ffx_tool_derive(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input!(input as syn::DeriveInput);
     match generate_struct_impl(&ast) {
+        Ok(r) => r,
+        Err(e) => e.into_token_stream(),
+    }
+    .into()
+}
+
+#[proc_macro_derive(FfxError, attributes(unexpected, user, exit_with_code, transparent))]
+pub fn ffx_error_derive(input: TokenStream) -> TokenStream {
+    let ast = syn::parse_macro_input!(input as syn::DeriveInput);
+    match ffx_error::generate_error_impl(&ast) {
         Ok(r) => r,
         Err(e) => e.into_token_stream(),
     }
@@ -122,5 +133,109 @@ mod tests {
         );
         let res = generate_struct_impl(&ast).unwrap_err();
         assert_matches!(res, ParseError::CommandRequired(_));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_success() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            enum MyError {
+                #[unexpected]
+                Foo,
+                #[user]
+                Bar(String),
+                #[exit_with_code(5)]
+                Baz { msg: String },
+                #[transparent]
+                Quux(fho::Error),
+            }
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast).unwrap();
+        let res_str = res.to_string();
+        assert!(!res_str.contains("compile_error"));
+        assert!(res_str.contains("impl From < MyError > for fho :: macro_deps :: fho :: Error"));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_non_enum() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            struct Foo;
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast).unwrap();
+        let res_str = res.to_string();
+        assert!(res_str.contains("compile_error"));
+        assert!(res_str.contains("#[derive(FfxError)] can only be applied to enums"));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_missing_attributes() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            enum MyError {
+                Foo,
+            }
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast).unwrap();
+        let res_str = res.to_string();
+        assert!(res_str.contains("compile_error"));
+        assert!(res_str.contains("Each variant must have exactly one of"));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_multiple_attributes() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            enum MyError {
+                #[unexpected]
+                #[user]
+                Foo,
+            }
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast).unwrap();
+        let res_str = res.to_string();
+        assert!(res_str.contains("compile_error"));
+        assert!(res_str.contains("Each variant must have exactly one of"));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_transparent_invalid_fields() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            enum MyError {
+                #[transparent]
+                Foo(u32, u32),
+            }
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast).unwrap();
+        let res_str = res.to_string();
+        assert!(res_str.contains("compile_error"));
+        assert!(res_str.contains("#[transparent] variant must have exactly one field"));
+    }
+
+    #[test]
+    fn test_ffx_error_derive_invalid_exit_code() {
+        let ast = parse_macro_derive(
+            r#"
+            #[derive(FfxError)]
+            enum MyError {
+                #[exit_with_code(not_an_int)]
+                Foo,
+            }
+            "#,
+        );
+        let res = ffx_error::generate_error_impl(&ast);
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), ParseError::InvalidTargetAttr(_, _)));
     }
 }

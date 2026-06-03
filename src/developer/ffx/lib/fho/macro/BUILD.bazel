@@ -11,6 +11,7 @@ rustc_proc_macro(
     name = "lib",
     srcs = [
         "src/errors.rs",
+        "src/ffx_error.rs",
         "src/lib.rs",
         "src/structs.rs",
         "src/testing.rs",

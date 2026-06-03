@@ -9,7 +9,7 @@ use ffx_config::EnvironmentContext;
 use ffx_list_args::ListCommand;
 use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{Deferred, FfxMain, FfxTool, deferred};
+use fho::{Deferred, FfxError, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use futures::TryStreamExt;
 use target_behavior::{ConnectionBehavior, target_interface};
@@ -17,53 +17,68 @@ use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use target_holders::daemon_protocol;
 use thiserror::Error;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(FfxError, thiserror::Error, Debug)]
 pub enum ShowTargetsError {
+    #[exit_with_code(2)]
     #[error("Device {0} not found.")]
     DeviceNotFound(String),
 
+    #[exit_with_code(1)]
     #[error("Invalid arguments, you must allow at least one address type")]
     NoAddressTypes,
 
+    #[user]
     #[error("Writer error: {0}")]
     Writer(#[from] std::io::Error),
 
+    #[user]
     #[error("FFX Writer error: {0}")]
     FfxWriter(#[from] ffx_writer::Error),
 
+    #[user]
     #[error("Formatter error: {0}")]
     Formatter(#[from] target_formatter::FormatterError),
 }
 
-#[derive(Error, Debug)]
+#[derive(FfxError, Error, Debug)]
 pub enum ListError {
+    #[unexpected]
     #[error("Query parse error: {0}")]
     QueryParse(String),
 
+    #[user]
     #[error("Target collection FIDL error: {0}")]
     Fidl(#[from] fidl::Error),
 
+    #[user]
     #[error("Target formatter error: {0}")]
     Formatter(#[from] target_formatter::FormatterError),
 
+    #[unexpected]
     #[error("Failed to get default target specifier: {0}")]
     GetDefaultTargetSpecifier(#[source] anyhow::Error),
 
+    #[unexpected]
     #[error("Could not get direct connector for {0}")]
     NoDirectConnector(ffx_target::TargetInfoQuery),
 
+    #[user]
     #[error("Failed to resolve target address: {0}")]
     TargetResolution(#[from] target_behavior::TargetResolutionError),
 
+    #[unexpected]
     #[error("Failed to get target info: {0}")]
     GetTargetInfo(#[source] anyhow::Error),
 
+    #[user]
     #[error("Failed to list targets: {0}")]
     ListTargets(#[from] ffx_target::FfxTargetCrateError),
 
+    #[transparent]
     #[error(transparent)]
     ShowTargets(#[from] ShowTargetsError),
 
+    #[unexpected]
     #[error("FHO error: {0}")]
     Fho(#[from] fho::Error),
 }
@@ -81,20 +96,6 @@ pub struct ListTool {
 }
 
 fho::embedded_plugin!(ListTool, ListError);
-
-impl From<ListError> for fho::Error {
-    fn from(e: ListError) -> Self {
-        match e {
-            ListError::ShowTargets(e @ ShowTargetsError::DeviceNotFound(_)) => fho::Error::from(
-                anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 2)),
-            ),
-            ListError::ShowTargets(e @ ShowTargetsError::NoAddressTypes) => fho::Error::from(
-                anyhow::Error::from(errors::FfxError::Error(anyhow::anyhow!(e.to_string()), 1)),
-            ),
-            other => fho::Error::from(anyhow::Error::from(other)),
-        }
-    }
-}
 
 #[async_trait(?Send)]
 impl FfxMain for ListTool {

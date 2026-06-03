@@ -42,6 +42,7 @@ if (is_host) {
   rustc_macro("lib") {
     sources = [
       "src/errors.rs",
+      "src/ffx_error.rs",
       "src/lib.rs",
       "src/structs.rs",
       "src/testing.rs",
