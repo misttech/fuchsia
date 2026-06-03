@@ -344,30 +344,31 @@ TEST(PtraceTest, PtraceAttachDeniedWithoutSelinuxCapSysPtrace) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
-    pid_t parent_pid = getpid();
-    pid_t pid = fork();
-    ASSERT_GE(pid, 0);
+    test_helper::ForkHelper helper;
 
-    if (pid == 0) {
-      // Child process (tracer).
+    pid_t tracee_pid = helper.RunInForkedProcess([] { raise(SIGSTOP); });
+    ASSERT_GT(tracee_pid, 0);
 
+    pid_t tracer_pid = helper.RunInForkedProcess([&] {
       // Drop a specific capability to make child's caps a non-superset of parent's.
       test_helper::UnsetCapabilityEffective(CAP_SYSLOG);
       test_helper::UnsetCapabilityPermitted(CAP_SYSLOG);
 
       // Verify that SELinux 'capability:sys_ptrace' permission is required, even if the tracer has
       // 'CAP_SYS_PTRACE'.
-      EXPECT_THAT(ptrace(PTRACE_ATTACH, parent_pid, nullptr, nullptr),
+      EXPECT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr),
                   SyscallFailsWithErrno(EPERM));
+    });
 
-      _exit(EXIT_SUCCESS);
-    } else {
-      // Parent process (tracee).
-      int wstatus;
-      ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
-      EXPECT_TRUE(WIFEXITED(wstatus));
-      EXPECT_EQ(WEXITSTATUS(wstatus), 0);
-    }
+    // Wait for tracer to complete.
+    test_helper::ForkResult tracer_result = helper.WaitForChild(tracer_pid);
+    EXPECT_TRUE(tracer_result.determined_result);
+
+    // Tear down the tracee.
+    EXPECT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
+    helper.ExpectSignal(SIGKILL);
+    test_helper::ForkResult tracee_result = helper.WaitForChild(tracee_pid);
+    EXPECT_TRUE(tracee_result.determined_result);
   }));
 }
 
