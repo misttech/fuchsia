@@ -8,7 +8,7 @@ use netstack3_base::{AnyDevice, DeviceIdContext, FrameDestination};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::ipv6::ext_hdrs::{
     DestinationOptionData, ExtensionHeaderOption, FragmentData, HopByHopOptionData,
-    Ipv6ExtensionHeaderData,
+    Ipv6ExtensionHeaderData, RoutingData, RoutingTypeParseError,
 };
 use zerocopy::SplitByteSlice;
 
@@ -70,6 +70,10 @@ pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitB
                         packet,
                         options.iter(),
                     );
+                }
+                Ipv6ExtensionHeaderData::Routing { routing_data } => {
+                    action =
+                        handle_routing_ext_hdr(core_ctx, device, frame_dst, packet, routing_data);
                 }
                 Ipv6ExtensionHeaderData::Fragment { fragment_data } => {
                     action =
@@ -136,6 +140,22 @@ fn handle_hop_by_hop_options_ext_hdr<
     }
 
     Ipv6PacketAction::Continue
+}
+
+/// Handles a Routing extension header for a `packet`.
+fn handle_routing_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
+    _bindings_ctx: &mut CC,
+    _device: &CC::DeviceId,
+    _frame_dst: Option<FrameDestination>,
+    _packet: &Ipv6Packet<B>,
+    routing_data: &RoutingData<'a>,
+) -> Ipv6PacketAction {
+    match routing_data.routing_type() {
+        // For now, we do not support any routing types. If Segments Left is
+        // nonzero then packet parsing fails; if we're here then we must ignore
+        // the header and continue per RFC 8200 section 4.4.
+        Err(RoutingTypeParseError::UnsupportedType(_)) => Ipv6PacketAction::Continue,
+    }
 }
 
 /// Handles a fragment extension header for a `packet`.

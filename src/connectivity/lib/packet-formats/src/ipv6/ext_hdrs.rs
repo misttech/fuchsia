@@ -54,6 +54,7 @@ impl<'a> Ipv6ExtensionHeader<'a> {
 #[derive(Debug)]
 pub enum Ipv6ExtensionHeaderData<'a> {
     HopByHopOptions { options: HopByHopOptionsData<'a> },
+    Routing { routing_data: RoutingData<'a> },
     Fragment { fragment_data: FragmentData<'a> },
     DestinationOptions { options: DestinationOptionsData<'a> },
 }
@@ -225,12 +226,20 @@ impl Ipv6ExtensionHeaderImpl {
         data: &mut BV,
         context: &mut Ipv6ExtensionHeaderParsingContext,
     ) -> Result<ParsedRecord<Ipv6ExtensionHeader<'a>>, Ipv6ExtensionHeaderParsingError> {
-        // All routing extension headers (regardless of type) will have
-        // 4 bytes worth of data we need to look at.
         let (next_header, hdr_ext_len) = Self::get_next_hdr_and_len(data, context)?;
-        let routing_data =
-            data.take_front(2).ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?;
-        let segments_left = routing_data[1];
+
+        // As per RFC 8200 section 4.4, Hdr Ext Len is the length of this extension
+        // header in  8-octect units, not including the first 8 octets (where 2 of
+        // them are the Next Header and the Hdr Ext Len fields). Since we already
+        // 'took' the Next Header and Hdr Ext Len octets, we need to make sure
+        // we have (Hdr Ext Len) * 8 + 6 bytes bytes in `data`.
+        let expected_len = (hdr_ext_len as usize) * 8 + 6;
+        let bytes = data
+            .take_front(expected_len)
+            .ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?;
+        let routing_data = RoutingData { bytes };
+
+        let segments_left = routing_data.segments_left();
 
         // Currently we do not support any routing type.
         //
@@ -238,26 +247,23 @@ impl Ipv6ExtensionHeaderImpl {
         // deprecated as of RFC 5095 for security reasons.
 
         // If we receive a routing header with an unrecognized routing type,
-        // what we do depends on the segments left. If segments left is
-        // 0, we must ignore the routing header and continue processing
-        // other headers. If segments left is not 0, we need to discard
-        // this packet and send an ICMP Parameter Problem, Code 0 with a
-        // pointer to this unrecognized routing type.
+        // what we do depends on the segments left. If segments left is 0, we
+        // must ignore the routing header and continue processing other headers
+        // (note that we still return a record here to support operations that
+        // depend on the packet structure; any consumers are expected to ignore
+        // it). If segments left is not 0, we need to discard this packet and
+        // send an ICMP Parameter Problem, Code 0 with a pointer to this
+        // unrecognized routing type.
         if segments_left == 0 {
-            // Take the next 4 and 8 * `hdr_ext_len` bytes to exhaust this extension header's
-            // data so that that `data` will be at the front of the next header when this
-            // function returns.
-            let expected_len = (hdr_ext_len as usize) * 8 + 4;
-            let _: &[u8] = data
-                .take_front(expected_len)
-                .ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?;
-
             // Update context
             context.next_header = next_header;
             context.headers_parsed += 1;
-            context.bytes_parsed += expected_len;
+            context.bytes_parsed += 2 + expected_len;
 
-            Ok(ParsedRecord::Skipped)
+            Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
+                next_header,
+                data: Ipv6ExtensionHeaderData::Routing { routing_data },
+            }))
         } else {
             // As per RFC 8200, if we encounter a routing header with an unrecognized
             // routing type, and segments left is non-zero, we MUST discard the packet
@@ -637,6 +643,64 @@ impl<'a> AlignedOptionBuilder for HopByHopOption<'a> {
                 buf[i] = 0
             }
         }
+    }
+}
+
+//
+// Routing
+//
+
+/// Routing Extension header data.
+///
+/// As per RFC 8200, section 4.4 the Routing header is structured as:
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |  Next Header  |  Hdr Ext Len  |  Routing Type | Segments Left |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                                                               |
+/// .                                                               .
+/// .                       type-specific data                      .
+/// .                                                               .
+/// |                                                               |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+///
+/// where the format of the type-specific data is determined by the Routing
+/// Type.
+#[derive(Debug)]
+pub struct RoutingData<'a> {
+    bytes: &'a [u8],
+}
+
+/// Supported Routing Types.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RoutingType {}
+
+/// Error returned when the routing type failed to parse.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RoutingTypeParseError {
+    /// The Routing header has an unknown routing type and must be ignored per
+    /// RFC 8200 section 4.4.
+    UnsupportedType(u8),
+}
+
+impl TryFrom<u8> for RoutingType {
+    type Error = RoutingTypeParseError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Err(RoutingTypeParseError::UnsupportedType(value))
+    }
+}
+
+impl<'a> RoutingData<'a> {
+    /// Returns the routing type.
+    pub fn routing_type(&self) -> Result<RoutingType, RoutingTypeParseError> {
+        debug_assert!(self.bytes.len() >= 6);
+        RoutingType::try_from(self.bytes[0])
+    }
+
+    /// Returns the number of segments left.
+    pub fn segments_left(&self) -> u8 {
+        debug_assert!(self.bytes.len() >= 6);
+        self.bytes[1]
     }
 }
 
@@ -1674,7 +1738,15 @@ mod tests {
         let ext_hdrs =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .unwrap();
-        assert_eq!(ext_hdrs.iter().count(), 0);
+        let results: Vec<_> = ext_hdrs.iter().collect();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].next_header, IpProto::Tcp.into());
+        if let Ipv6ExtensionHeaderData::Routing { routing_data } = results[0].data() {
+            assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
+            assert_eq!(routing_data.segments_left(), 0);
+        } else {
+            panic!("Should have matched with RoutingExtensionHeader");
+        }
     }
 
     #[test]
@@ -2010,7 +2082,7 @@ mod tests {
                 .unwrap();
 
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = ext_hdrs.iter().collect();
-        assert_eq!(ext_hdrs.len(), 2);
+        assert_eq!(ext_hdrs.len(), 3);
 
         // Check first extension header (hop-by-hop options)
         assert_eq!(ext_hdrs[0].next_header, Ipv6ExtHdrType::Routing.into());
@@ -2021,12 +2093,18 @@ mod tests {
             panic!("Should have matched HopByHopOptions: {:?}", ext_hdrs[0].data());
         }
 
-        // Note the second extension header (routing) should have been skipped because
-        // its routing type is unrecognized, but segments left is 0.
+        // Check second extension header (routing)
+        assert_eq!(ext_hdrs[1].next_header, Ipv6ExtHdrType::DestinationOptions.into());
+        if let Ipv6ExtensionHeaderData::Routing { routing_data } = ext_hdrs[1].data() {
+            assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
+            assert_eq!(routing_data.segments_left(), 0);
+        } else {
+            panic!("Should have matched RoutingExtensionHeader: {:?}", ext_hdrs[1].data());
+        }
 
         // Check the third extension header (destination options)
-        assert_eq!(ext_hdrs[1].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[1].data() {
+        assert_eq!(ext_hdrs[2].next_header, IpProto::Tcp.into());
+        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[2].data() {
             // Everything should have been a NOP/ignore except for the unrecognized type
             let options: Vec<DestinationOption<'_>> = options.iter().collect();
             assert_eq!(options.len(), 1);

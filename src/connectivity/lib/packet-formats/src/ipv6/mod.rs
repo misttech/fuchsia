@@ -522,7 +522,8 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
                         // The next header value is located in the first byte of the
                         // extension header.
                         Ipv6ExtensionHeaderData::HopByHopOptions { .. }
-                        | Ipv6ExtensionHeaderData::DestinationOptions { .. } => {
+                        | Ipv6ExtensionHeaderData::DestinationOptions { .. }
+                        | Ipv6ExtensionHeaderData::Routing { .. } => {
                             bytes[IPV6_FIXED_HDR_LEN + ext_hdr_start] = next_ext_hdr.next_header;
                         }
                         Ipv6ExtensionHeaderData::Fragment { .. } => unreachable!(
@@ -1819,7 +1820,7 @@ mod tests {
         assert_eq!(packet.dst_ip(), DEFAULT_DST_IP);
         assert_eq!(packet.body(), [1, 2, 3, 4, 5]);
         let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = packet.iter_extension_hdrs().collect();
-        assert_eq!(ext_hdrs.len(), 2);
+        assert_eq!(ext_hdrs.len(), 3);
         // Check first extension header (hop-by-hop options)
         assert_eq!(ext_hdrs[0].next_header, Ipv6ExtHdrType::Routing.into());
         if let Ipv6ExtensionHeaderData::HopByHopOptions { options } = ext_hdrs[0].data() {
@@ -1829,12 +1830,18 @@ mod tests {
             panic!("Should have matched HopByHopOptions!");
         }
 
-        // Note the second extension header (routing) should have been skipped because
-        // it's routing type is unrecognized, but segments left is 0.
+        // Check second extension header (routing)
+        assert_eq!(ext_hdrs[1].next_header, Ipv6ExtHdrType::DestinationOptions.into());
+        if let Ipv6ExtensionHeaderData::Routing { routing_data } = ext_hdrs[1].data() {
+            assert_eq!(routing_data.routing_type(), Err(RoutingTypeParseError::UnsupportedType(0)));
+            assert_eq!(routing_data.segments_left(), 0);
+        } else {
+            panic!("Should have matched RoutingExtensionHeader: {:?}", ext_hdrs[1].data());
+        }
 
         // Check the third extension header (destination options)
-        assert_eq!(ext_hdrs[1].next_header, IpProto::Tcp.into());
-        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[1].data() {
+        assert_eq!(ext_hdrs[2].next_header, IpProto::Tcp.into());
+        if let Ipv6ExtensionHeaderData::DestinationOptions { options } = ext_hdrs[2].data() {
             // Everything should have been a NOP/ignore
             assert_eq!(options.iter().count(), 0);
         } else {
@@ -2624,6 +2631,57 @@ mod tests {
         expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN]);
         expected_bytes.extend_from_slice(&bytes[IPV6_FIXED_HDR_LEN + 8..bytes.len() - 5]);
         assert_eq!(&copied_bytes[..], &expected_bytes[..]);
+
+        //
+        // Fragment header immediately following Routing header.
+        // Regression test for https://fxbug.dev/517297331.
+        //
+
+        #[rustfmt::skip]
+        let mut bytes = [
+            // FixedHeader (will be replaced later)
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+            // HopByHop Options Extension Header
+            Ipv6ExtHdrType::Routing.into(), // Next Header (Routing)
+            0,                       // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+            0,                       // Pad1
+            1, 0,                    // Pad2
+            1, 1, 0,                 // Pad3
+
+            // Routing extension header
+            Ipv6ExtHdrType::Fragment.into(), // Next Header (Fragment)
+            4,                       // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+            0,                       // Routing Type
+            0,                       // Segments Left
+            0, 0, 0, 0,              // Reserved
+            // Addresses for Routing Header w/ Type 0
+            0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+
+            // Fragment Extension Header
+            IpProto::Tcp.into(),     // Next Header (TCP)
+            0,                       // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+            0, 0,                    // Fragment Offset, Res, M (M_flag)
+            1, 1, 1, 1,              // Identification
+
+            // Body (TCP packet mock bytes)
+            1, 2, 3, 4, 5,
+        ];
+        let mut fixed_hdr = new_fixed_hdr();
+        fixed_hdr.next_hdr = Ipv6ExtHdrType::HopByHopOptions.into();
+        fixed_hdr.payload_len = U16::new((bytes.len() - IPV6_FIXED_HDR_LEN) as u16);
+        let fixed_hdr_buf = fixed_hdr_to_bytes(fixed_hdr);
+        bytes[..IPV6_FIXED_HDR_LEN].copy_from_slice(&fixed_hdr_buf);
+        let mut buf = &bytes[..];
+        let packet = buf.parse::<Ipv6Packet<_>>().unwrap();
+        let copied_bytes = packet.copy_header_bytes_for_fragment();
+        let mut expected_bytes = Vec::new();
+        // 8 (HopByHop) + (8 + 16 + 16) (Routing).
+        expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN + 48]);
+        expected_bytes[IPV6_FIXED_HDR_LEN + 8] = IpProto::Tcp.into();
+        assert_eq!(copied_bytes, expected_bytes);
     }
 
     #[test]
