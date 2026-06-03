@@ -10,5 +10,6 @@ fidl("fuchsia.system.state") {
   sdk_area = "Drivers"
   sources = [ "system-state-transition.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
+  enable_rust_next = true
   enable_hlcpp = true
 }
