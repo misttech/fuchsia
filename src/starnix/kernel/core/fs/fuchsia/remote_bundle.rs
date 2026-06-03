@@ -19,8 +19,7 @@ use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use starnix_logging::{impossible_error, log_warn};
 use starnix_sync::{
-    DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard, LockEqualOrBefore,
-    Locked, Unlocked,
+    FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -226,8 +225,8 @@ impl FsNodeOps for File {
         _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         let memory = self.inner.lock().get_memory()?;
         let content_size = memory.get_content_size();
         let attrs = zxio_node_attributes_t {
@@ -245,7 +244,7 @@ impl FsNodeOps for File {
         };
         let mut info = info.write();
         update_info_from_attrs(&mut info, &attrs);
-        Ok(LockDepWriteGuard::downgrade(info))
+        Ok(RwLockWriteGuard::downgrade(info))
     }
 
     fn get_xattr(

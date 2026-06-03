@@ -33,8 +33,7 @@ use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
 use starnix_sync::{
-    DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard, LockEqualOrBefore,
-    Locked, RwLock, Unlocked,
+    FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
@@ -596,8 +595,8 @@ impl BaseNode {
 
     fn fetch_and_refresh_info<'a>(
         &self,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         self.info_state.maybe_refresh(
             info,
             |info| {
@@ -610,7 +609,7 @@ impl BaseNode {
                 let mut info = info.write();
                 info.pending_time_access_update = false;
                 update_info_from_fidl(&mut info, &mutable, &immutable);
-                Ok(LockDepWriteGuard::downgrade(info))
+                Ok(RwLockWriteGuard::downgrade(info))
             },
             |info| Ok(info.read()),
         )
@@ -1300,8 +1299,8 @@ impl FsNodeOps for RemoteNode {
         _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         self.node.fetch_and_refresh_info(info)
     }
 
@@ -2116,8 +2115,8 @@ impl FsNodeOps for RemoteSymlink {
         _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         self.node.fetch_and_refresh_info(info)
     }
 
@@ -2291,9 +2290,9 @@ impl InfoState {
     /// information does not need refreshing.
     fn maybe_refresh<'a, T: 'a>(
         &self,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-        refresh: impl FnOnce(&'a DynamicLockDepRwLock<FsNodeInfo>) -> Result<T, Errno>,
-        not_needed: impl FnOnce(&'a DynamicLockDepRwLock<FsNodeInfo>) -> Result<T, Errno>,
+        info: &'a RwLock<FsNodeInfo>,
+        refresh: impl FnOnce(&'a RwLock<FsNodeInfo>) -> Result<T, Errno>,
+        not_needed: impl FnOnce(&'a RwLock<FsNodeInfo>) -> Result<T, Errno>,
     ) -> Result<T, Errno> {
         let mut current = self.0.load(Ordering::Relaxed);
 
@@ -3828,8 +3827,7 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let node = BaseNode::new(io, false);
-            let info =
-                DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+            let info = RwLock::new(FsNodeInfo::default());
 
             // 1. Initial fetch. Should return cached info immediately.
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
@@ -3948,8 +3946,7 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let node = BaseNode::new(io, true);
-            let info =
-                DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+            let info = RwLock::new(FsNodeInfo::default());
 
             std::thread::scope(|s| {
                 // 1. Start Refresh Thread
@@ -4674,8 +4671,7 @@ mod test {
         }
         assert_eq!(state.0.load(Ordering::Relaxed), InfoState::TRUNCATED);
 
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = RwLock::new(FsNodeInfo::default());
         state.maybe_refresh(&info, |_| Ok(()), |_| unreachable!()).unwrap();
 
         assert_eq!(state.0.load(Ordering::Relaxed), InfoState::IN_SYNC);
@@ -4685,8 +4681,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_success() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = RwLock::new(FsNodeInfo::default());
 
         let res = state.maybe_refresh(&info, |_| Ok(42), |_| unreachable!());
         assert_eq!(res.unwrap(), 42);
@@ -4696,8 +4691,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_error() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = RwLock::new(FsNodeInfo::default());
 
         let res: Result<u32, Errno> =
             state.maybe_refresh(&info, |_| error!(EIO), |_| unreachable!());
@@ -4708,8 +4702,7 @@ mod test {
     #[test]
     fn test_info_state_maybe_refresh_not_needed() {
         let state = InfoState::new(false); // in sync
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = RwLock::new(FsNodeInfo::default());
         let res = state.maybe_refresh(&info, |_| unreachable!(), |_| Ok(123));
         assert_eq!(res.unwrap(), 123);
     }
@@ -4717,8 +4710,7 @@ mod test {
     #[test]
     fn test_info_state_concurrent_dirty_op_during_refresh() {
         let state = InfoState::new(true);
-        let info =
-            DynamicLockDepRwLock::new::<starnix_sync::FsNodeInfoLevel>(FsNodeInfo::default());
+        let info = RwLock::new(FsNodeInfo::default());
 
         state
             .maybe_refresh(

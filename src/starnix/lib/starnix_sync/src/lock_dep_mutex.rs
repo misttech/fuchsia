@@ -658,14 +658,6 @@ impl<'a, T> std::ops::DerefMut for LockDepWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> LockDepWriteGuard<'a, T> {
-    pub fn downgrade(guard: Self) -> LockDepReadGuard<'a, T> {
-        let token = guard.token;
-        let inner = RwLockWriteGuard::downgrade(guard.inner);
-        LockDepReadGuard { inner, token }
-    }
-}
-
 /// An RwLock that dynamically enforces lock ordering at runtime using types for levels.
 pub struct LockDepRwLock<T, L> {
     inner: DynamicLockDepRwLock<T>,

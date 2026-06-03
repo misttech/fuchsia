@@ -24,8 +24,8 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
-    BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, LockDepReadGuard,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, RwLock, Unlocked,
+    BeforeFsNodeAppend, FileOpsCore, FsNodeAppend, LockEqualOrBefore, Locked, RwLock,
+    RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::device_id::DeviceId;
@@ -566,7 +566,7 @@ impl FsNodeOps for OverlayNodeOps {
         node: &FsNode,
         current_task: &CurrentTask,
         access: security::PermissionFlags,
-        info: &DynamicLockDepRwLock<FsNodeInfo>,
+        info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
@@ -946,8 +946,8 @@ impl FsNodeOps for OverlayNodeOps {
         locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
-        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
-    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         self.node.as_mounter(current_task, || {
             let underlying_node = &self.node.main_entry().entry().node;
             // Work-around to ensure that mounter `getattr` access is required when a caller tries
@@ -956,7 +956,7 @@ impl FsNodeOps for OverlayNodeOps {
             let real_info = underlying_node.fetch_and_refresh_info(locked, current_task)?.clone();
             let mut lock = info.write();
             *lock = real_info;
-            Ok(LockDepWriteGuard::downgrade(lock))
+            Ok(RwLockWriteGuard::downgrade(lock))
         })
     }
 
