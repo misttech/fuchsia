@@ -975,3 +975,143 @@ async fn fallback_to_multicast_promiscuous(name: &str) {
         None
     );
 }
+
+#[netstack_test]
+async fn ethernet_frame_zero_padding(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create realm");
+
+    const MIN_TX_LEN: usize = 60;
+    let (tun, netdevice) =
+        netstack_testing_common::devices::create_tun_device_with(fnet_tun::DeviceConfig {
+            base: Some(fnet_tun::BaseDeviceConfig {
+                min_tx_buffer_length: Some(MIN_TX_LEN.try_into().unwrap()),
+                ..Default::default()
+            }),
+            blocking: Some(true),
+            ..Default::default()
+        });
+    let (tun_port, dev_port) =
+        netstack_testing_common::devices::create_eth_tun_port(&tun, 1, SOURCE_MAC_ADDRESS).await;
+
+    let device_control = netstack_testing_common::devices::install_device(&realm, netdevice);
+    let port_id = dev_port.get_info().await.expect("get info").id.expect("missing port id");
+    let (control_proxy, server_end) =
+        fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
+    device_control
+        .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
+        .expect("create interface");
+    let control = fnet_interfaces_ext::admin::Control::new(control_proxy);
+
+    assert_eq!(control.enable().await.expect("can enable"), Ok(true));
+    tun_port.set_online(true).await.expect("can set online");
+
+    let id = control.get_id().await.expect("get ID");
+    let state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+    netstack_testing_common::interfaces::wait_for_online(&state, id, true)
+        .await
+        .expect("waiting interface online");
+
+    // Configure IP address.
+    let _address_state_provider = netstack_testing_common::interfaces::add_address_wait_assigned(
+        &control,
+        fnet::Subnet { addr: to_fidl_address(INTERFACE_ADDR), prefix_len: 24 },
+        fidl_fuchsia_net_interfaces_admin::AddressParameters {
+            perform_dad: Some(false),
+            add_subnet_route: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("add subnet address");
+
+    // Add a static ARP entry for the target.
+    let target_ip = net_ip_v4!("192.168.2.2");
+    realm
+        .add_neighbor_entry(
+            id,
+            fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: target_ip.ipv4_bytes() }),
+            TARGET_MAC_ADDRESS,
+        )
+        .await
+        .expect("add_neighbor_entry failed");
+
+    // Create a UDP socket and send a small packet.
+    let sock = fasync::net::UdpSocket::bind_in_realm(
+        &realm,
+        std::net::SocketAddrV4::new(std::net::Ipv4Addr::from(INTERFACE_ADDR.ipv4_bytes()), 0)
+            .into(),
+    )
+    .await
+    .expect("failed to create socket");
+
+    // Send multiple large packets filled with non-zero bytes to dirty all TX buffers
+    // in the netstack's pool.
+    let large_msg = vec![0x55; 1000];
+    for _ in 0..300 {
+        let target_addr =
+            std::net::SocketAddrV4::new(std::net::Ipv4Addr::from(target_ip.ipv4_bytes()), 1234);
+        let sent = sock.send_to(&large_msg, target_addr.into()).await.expect("failed to send");
+        assert_eq!(sent, large_msg.len());
+    }
+    for _ in 0..300 {
+        // Read and discard the frame from tun to complete it and return it to the pool.
+        let _frame = tun.read_frame().await.expect("can read").expect("has frame");
+    }
+
+    const MSG: &[u8] = b"hello";
+    let target_addr =
+        std::net::SocketAddrV4::new(std::net::Ipv4Addr::from(target_ip.ipv4_bytes()), 1235);
+    let sent = sock.send_to(MSG, target_addr.into()).await.expect("failed to send");
+    assert_eq!(sent, MSG.len());
+
+    // Read the frame from tun.
+    let full_frame: Vec<u8> = async {
+        loop {
+            let frame = tun.read_frame().await.expect("can read").expect("has frame").data.unwrap();
+            let mut body = &frame[..];
+
+            if let Ok(ethernet) = EthernetFrame::parse(&mut body, EthernetFrameLengthCheck::NoCheck)
+            {
+                if ethernet.ethertype() == Some(EtherType::Ipv4) {
+                    let mut eth_body = ethernet.body();
+                    if let Ok(ipv4) = packet_formats::ipv4::Ipv4Packet::parse(&mut eth_body, ()) {
+                        let src_ip = ipv4.src_ip();
+                        let dst_ip = ipv4.dst_ip();
+                        let mut ip_body = ipv4.body();
+                        if let Ok(udp) = packet_formats::udp::UdpPacket::parse(
+                            &mut ip_body,
+                            packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
+                        ) {
+                            if udp.dst_port().get() == 1235 {
+                                break frame;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, || panic!("failed to find sent frame"))
+    .await;
+
+    // Verify the frame length is padded to at least MIN_TX_LEN.
+    assert!(full_frame.len() >= MIN_TX_LEN, "frame length {} < {}", full_frame.len(), MIN_TX_LEN);
+
+    const MSG_OFFSET: usize = ETHERNET_HDR_LEN_NO_TAG
+        + packet_formats::ipv4::HDR_PREFIX_LEN
+        + packet_formats::udp::HEADER_BYTES;
+    const UNPADDED_LEN: usize = MSG_OFFSET + MSG.len();
+    const EXPECTED_PADDING_LEN: usize = MIN_TX_LEN - UNPADDED_LEN;
+
+    // Verify the message content matches.
+    assert_eq!(&full_frame[MSG_OFFSET..UNPADDED_LEN], MSG);
+
+    // The frame should be padded with zeros.
+    assert!(full_frame.len() >= UNPADDED_LEN);
+    let padding = &full_frame[UNPADDED_LEN..];
+    assert_eq!(padding, &[0; EXPECTED_PADDING_LEN], "padding is not zero: {:?}", padding);
+}
