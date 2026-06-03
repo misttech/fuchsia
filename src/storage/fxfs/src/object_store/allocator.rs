@@ -305,7 +305,9 @@ pub type AllocatorKey = AllocatorKeyV32;
     Deserialize,
     Eq,
     Hash,
+    Ord,
     PartialEq,
+    PartialOrd,
     Serialize,
     TypeFingerprint,
     SerializeKey,
@@ -383,8 +385,7 @@ impl LayerKey for AllocatorKey {
     }
 
     fn overlaps(&self, other: &Self) -> bool {
-        self.device_range.start < other.device_range.end
-            && self.device_range.end > other.device_range.start
+        self.device_range.overlap(&other.device_range).is_some()
     }
 }
 
@@ -403,25 +404,7 @@ impl OrdLowerBound for AllocatorKey {
         // the heap ordering that feeds into our merge function and
         // a total ordering over range lets us remove a symmetry case from
         // the allocator merge function.
-        self.device_range
-            .start
-            .cmp(&other.device_range.start)
-            .then(self.device_range.end.cmp(&other.device_range.end))
-    }
-}
-
-impl Ord for AllocatorKey {
-    fn cmp(&self, other: &AllocatorKey) -> std::cmp::Ordering {
-        self.device_range
-            .start
-            .cmp(&other.device_range.start)
-            .then(self.device_range.end.cmp(&other.device_range.end))
-    }
-}
-
-impl PartialOrd for AllocatorKey {
-    fn partial_cmp(&self, other: &AllocatorKey) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+        self.device_range.cmp(&other.device_range)
     }
 }
 
