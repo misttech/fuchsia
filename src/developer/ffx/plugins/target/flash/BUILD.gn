@@ -47,6 +47,7 @@ ffx_plugin("ffx_flash") {
     "//third_party/rust_crates:signal-hook",
     "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:termion",
+    "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tokio",
     "//third_party/rust_crates:url",
   ]

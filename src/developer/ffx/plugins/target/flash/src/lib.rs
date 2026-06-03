@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{Context, Result, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use discovery::query::TargetInfoQuery;
@@ -25,7 +25,7 @@ use ffx_flash_args::FlashCommand;
 use ffx_flash_manifest::OemFile;
 use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
+use fho::{FfxContext, FfxError, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
 use futures::channel::oneshot;
 use futures::try_join;
@@ -42,6 +42,7 @@ use structured_ui::{Interface, TextUi};
 use target_holders::fdomain::moniker;
 use tempfile::TempDir;
 use termion::{color, style};
+use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use url::Url;
@@ -50,6 +51,7 @@ const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
 
 #[derive(FfxTool)]
 #[target(None)]
+#[main_error(FlashError)]
 pub struct FlashTool {
     #[command]
     cmd: FlashCommand,
@@ -60,7 +62,7 @@ pub struct FlashTool {
     device_proxy: fho::Deferred<DeviceProxy>,
 }
 
-fho::embedded_plugin!(FlashTool);
+fho::embedded_plugin!(FlashTool, FlashError);
 
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -148,7 +150,7 @@ impl ProgressIndicator {
         self.bytes_progress += bytes_written;
     }
 
-    fn present<I: Interface>(&mut self, ui: &mut I) -> Result<()> {
+    fn present<I: Interface>(&mut self, ui: &mut I) -> anyhow::Result<()> {
         // Don't rerender the progress bar if we're done flashing.
         // Since the TUI is cleared before each `present()` in
         // `handle_event_text()`.
@@ -176,34 +178,153 @@ impl ProgressIndicator {
     }
 }
 
+#[derive(FfxError, Error, Debug)]
+pub enum PreflightError {
+    #[exit_with_code(1)]
+    #[error("Writer error: {0}")]
+    Writer(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("the manifest must be specified either by positional argument or the --manifest flag")]
+    ManifestSpecifiedTwice,
+}
+
+#[derive(FfxError, Error, Debug)]
+pub enum ProductBundleError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("Invalid GS URL: {0}")]
+    UrlParse(#[from] url::ParseError),
+
+    #[exit_with_code(1)]
+    #[error("GS URL \"{url}\" is missing a host (bucket name)")]
+    GcsUrlMissingHost { url: String },
+
+    #[exit_with_code(1)]
+    #[error("GS URL \"{url}\" is missing a filename")]
+    GcsUrlMissingFilename { url: String },
+
+    #[exit_with_code(1)]
+    #[error("Failed to initialize GCS download client: {0}")]
+    GcsClientInitialization(#[source] anyhow::Error),
+
+    #[exit_with_code(1)]
+    #[error("Failed to fetch GCS access token: {0}")]
+    GcsAccessTokenFetch(#[source] anyhow::Error),
+
+    #[exit_with_code(1)]
+    #[error("Failed to download product bundle from GCS: {0}")]
+    GcsDownloadFailed(#[source] anyhow::Error),
+
+    #[exit_with_code(1)]
+    #[error("Failed to clear progress indicators from UI: {0}")]
+    UiClearFailed(#[source] anyhow::Error),
+
+    #[exit_with_code(1)]
+    #[error("SSH key setup failed: {0}")]
+    SshKey(#[from] ffx_ssh::SshKeyError),
+
+    #[exit_with_code(1)]
+    #[error("Config resolution failed: {0}")]
+    Config(#[from] ffx_config::ConfigError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error("Cannot find SSH key \"{path}\": {error}")]
+    SshKeyNotFound { path: String, error: std::io::Error },
+
+    #[exit_with_code(1)]
+    #[error("Both the SSH key and the SSH OEM Stage flags were set. Only use one.")]
+    SshKeyAndOemStageSet,
+
+    #[exit_with_code(1)]
+    #[error("Both the SSH key and Skip Uploading Authorized Keys flags were set. Only use one.")]
+    SshKeyAndSkipUploadSet,
+
+    #[exit_with_code(1)]
+    #[error("We requested ssh keys to be created but they were not")]
+    SshKeysNotCreated,
+
+    #[exit_with_code(1)]
+    #[error(
+        "Both the SSH OEM Stage and Skip Uploading Authorized Keys flags were set. Only use one."
+    )]
+    OemStageAndSkipUploadSet,
+
+    #[exit_with_code(1)]
+    #[error("Manifest path: {path} does not exist")]
+    ManifestPathDoesNotExist { path: PathBuf },
+
+    #[exit_with_code(1)]
+    #[error("SSH key path \"{path:?}\" contains invalid UTF-8")]
+    SshKeyPathInvalidUtf8 { path: std::ffi::OsString },
+}
+
+#[derive(FfxError, Error, Debug)]
+pub enum FlashError {
+    #[exit_with_code(1)]
+    #[error("Preflight validation failed: {0}")]
+    Preflight(#[from] PreflightError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to resolve or download product bundle: {0}")]
+    ProductBundleResolution(#[from] ProductBundleError),
+
+    #[exit_with_code(1)]
+    #[error("Fastboot target discovery failed: {0}")]
+    FastbootDiscovery(#[from] ffx_target::FfxTargetCrateError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to reboot target to bootloader: {0}")]
+    TargetReboot(#[source] fho::Error),
+
+    #[exit_with_code(1)]
+    #[error("Fastboot flashing execution failed: {0}")]
+    FlashExecution(#[from] ffx_fastboot::error::FfxFastbootError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[transparent]
+    #[error(transparent)]
+    Fho(#[from] fho::Error),
+}
+
 #[async_trait(?Send)]
 impl FfxMain for FlashTool {
     // TODO(https://fxbug.dev/380444711): Add tests for schema
     type Writer = VerifiedMachineWriter<FlashMessage>;
-    type Error = ::fho::Error;
+    type Error = FlashError;
 
-    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
         // Checks
         preflight_checks(&self.cmd, &mut writer)?;
 
         // Massage FlashCommand
         let cmd = preprocess_flash_cmd(&self.ctx, &mut writer, &self.cmd).await?;
 
-        self.flash_plugin_impl(cmd, &mut writer).await
+        self.flash_plugin_impl(cmd, &mut writer).await.map_err(FlashError::from)
     }
 }
 
-fn preflight_checks<W: Write>(cmd: &FlashCommand, mut writer: W) -> Result<()> {
+fn preflight_checks<W: Write>(
+    cmd: &FlashCommand,
+    mut writer: W,
+) -> Result<(), PreflightError> {
     if cmd.manifest_path.is_some() {
         // TODO(https://fxbug.dev/42076631)
         writeln!(writer, "{}WARNING:{} specifying the flash manifest via a positional argument is deprecated. Use the --manifest flag instead (https://fxbug.dev/42076631)", color::Fg(color::Red), style::Reset)
-.with_context(||"writing warning to users")
-.map_err(fho::Error::from)?;
+            .map_err(PreflightError::Writer)?;
     }
     if cmd.manifest_path.is_some() && cmd.manifest.is_some() {
-        ffx_bail!(
-            "Error: the manifest must be specified either by positional argument or the --manifest flag"
-        )
+        return Err(PreflightError::ManifestSpecifiedTwice);
     }
     Ok(())
 }
@@ -212,7 +333,7 @@ async fn preprocess_flash_cmd(
     ctx: &EnvironmentContext,
     writer: &mut VerifiedMachineWriter<FlashMessage>,
     i_cmd: &FlashCommand,
-) -> Result<FlashCommand> {
+) -> Result<FlashCommand, ProductBundleError> {
     let cmd: &mut FlashCommand = &mut i_cmd.clone();
 
     if cmd.product_bundle.is_some()
@@ -238,21 +359,28 @@ async fn preprocess_flash_cmd(
     // Download product bundle from gs:// if necessary.
     if let Some(product_bundle) = &cmd.product_bundle {
         if product_bundle.starts_with("gs://") {
-            let dir = TempDir::new()?.into_path();
-            let file_name =
-                product_bundle.split('/').next_back().ok_or_else(|| anyhow!("Invalid GS URL"))?;
+            let dir = TempDir::new().map_err(ProductBundleError::Io)?.into_path();
+            let url = Url::parse(product_bundle)?;
+            let bucket = url.host_str().filter(|h| !h.is_empty()).ok_or_else(|| {
+                ProductBundleError::GcsUrlMissingHost { url: product_bundle.clone() }
+            })?;
+            let file_name = url
+                .path_segments()
+                .and_then(|mut s| s.next_back())
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| ProductBundleError::GcsUrlMissingFilename {
+                    url: product_bundle.clone(),
+                })?;
             let local_path = dir.join(file_name);
 
-            let client = Client::initial()?;
-            let url = Url::parse(product_bundle).context("parsing gs url")?;
-            let bucket = url.host_str().context("getting bucket from gs url")?;
+            let client = Client::initial().map_err(ProductBundleError::GcsClientInitialization)?;
             let object = &url.path()[1..]; // Strip leading slash
 
             log::debug!("Downloading {}...", product_bundle);
             let access_token =
                 handle_new_access_token(&AuthFlowChoice::Pkce, &structured_ui::MockUi::new())
                     .await
-                    .context("Getting new access token.")?;
+                    .map_err(|e| ProductBundleError::GcsAccessTokenFetch(e.into()))?;
             client.set_access_token(access_token).await;
             let mut input = stdin();
             let mut output = stdout();
@@ -266,8 +394,9 @@ async fn preprocess_flash_cmd(
                     ui.present(&structured_ui::Presentation::Progress(p))?;
                     Ok(ProgressResponse::Continue)
                 })
-                .await?;
-            ui.clear_progress()?;
+                .await
+                .map_err(ProductBundleError::GcsDownloadFailed)?;
+            ui.clear_progress().map_err(ProductBundleError::UiClearFailed)?;
 
             log::debug!("Downloaded to {}", local_path.display());
 
@@ -280,69 +409,66 @@ async fn preprocess_flash_cmd(
             let ssh_file = match std::fs::canonicalize(ssh) {
                 Ok(path) => path,
                 Err(err) => {
-                    ffx_bail!("Cannot find SSH key \"{}\": {}", ssh, err);
+                    return Err(ProductBundleError::SshKeyNotFound {
+                        path: ssh.to_string(),
+                        error: err,
+                    });
                 }
             };
             if cmd.oem_stage.iter().any(|f| f.command() == SSH_OEM_COMMAND) {
-                ffx_bail!("Both the SSH key and the SSH OEM Stage flags were set. Only use one.");
+                return Err(ProductBundleError::SshKeyAndOemStageSet);
             }
             if cmd.skip_authorized_keys {
-                ffx_bail!(
-                    "Both the SSH key and Skip Uploading Authorized Keys flags were set. Only use one."
-                );
+                return Err(ProductBundleError::SshKeyAndSkipUploadSet);
             }
-            cmd.oem_stage.push(OemFile::new(
-                SSH_OEM_COMMAND.to_string(),
-                ssh_file
-                    .into_os_string()
-                    .into_string()
-                    .map_err(|s| anyhow!("Cannot convert OsString \"{:?}\" to String", s))?,
-            ));
+            let ssh_path_string = ssh_file
+                .into_os_string()
+                .into_string()
+                .map_err(|s| ProductBundleError::SshKeyPathInvalidUtf8 { path: s })?;
+            cmd.oem_stage.push(OemFile::new(SSH_OEM_COMMAND.to_string(), ssh_path_string));
         }
         None => {
             if !cmd.oem_stage.iter().any(|f| f.command() == SSH_OEM_COMMAND) {
                 if cmd.skip_authorized_keys {
                     log::warn!("Skipping uploading authorized keys");
                 } else {
-                    let ssh_keys =
-                        SshKeyFiles::load(ctx).context("finding ssh authorized_keys file.")?;
-                    ssh_keys.create_keys_if_needed(false).context("creating ssh keys if needed")?;
+                    let ssh_keys = SshKeyFiles::load(ctx).map_err(ProductBundleError::SshKey)?;
+                    ssh_keys.create_keys_if_needed(false).map_err(ProductBundleError::SshKey)?;
                     if ssh_keys.authorized_keys.exists() {
                         let k = ssh_keys.authorized_keys.display().to_string();
                         log::debug!("No `--authorized-keys` flag, using {}", k);
                         cmd.oem_stage.push(OemFile::new(SSH_OEM_COMMAND.to_string(), k));
                     } else {
                         // Since the key will be initialized, this should never happen.
-                        ffx_bail!("We requested ssh keys to be created but they were not");
+                        return Err(ProductBundleError::SshKeysNotCreated);
                     }
                 }
             } else if cmd.skip_authorized_keys {
                 // We have both skip authorized-keys and the OEM command including
                 // the authorized keys... this is a problem.
-                ffx_bail!(
-                    "Both the SSH OEM Stage and Skip Uploading Authorized Keys flags were set. Only use one."
-                );
+                return Err(ProductBundleError::OemStageAndSkipUploadSet);
             }
         }
     };
 
     if cmd.manifest_path.is_some() {
         if !std::path::Path::exists(cmd.manifest_path.clone().unwrap().as_path()) {
-            ffx_bail!(
-                "Manifest path: {} does not exist",
-                cmd.manifest_path.clone().unwrap().display()
-            )
+            return Err(ProductBundleError::ManifestPathDoesNotExist {
+                path: cmd.manifest_path.clone().unwrap(),
+            });
         }
     }
 
     if cmd.product_bundle.is_none() && cmd.manifest_path.is_none() && cmd.manifest.is_none() {
-        let product_path: String = ctx.get("product.path")?;
+        let product_path: String = ctx.get("product.path").map_err(ProductBundleError::Config)?;
         let message = format!(
             "No product bundle or manifest passed. Inferring product bundle path from config: {}",
             product_path
         );
         log::debug!("{}", message);
-        writer.machine_or(&FlashMessage::Preflight { message: message.clone() }, message)?;
+        writer
+            .machine_or(&FlashMessage::Preflight { message: message.clone() }, message)
+            .map_err(ProductBundleError::Writer)?;
 
         cmd.product_bundle = Some(product_path);
     }
@@ -701,7 +827,7 @@ fn time(duration: Duration) -> String {
 async fn handle_event_text(
     writer: &mut VerifiedMachineWriter<FlashMessage>,
     mut rec: Receiver<Event>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let mut input = stdin();
     // TUI progress presentations are noop in non-TTY cases, so we won't need to
     // worry about noisy output in non-interactive flash use-cases like CI/CQ.
@@ -782,7 +908,7 @@ async fn handle_event_text(
 async fn handle_event_machine(
     writer: &mut VerifiedMachineWriter<FlashMessage>,
     mut rec: Receiver<Event>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     loop {
         match rec.recv().await {
             Some(event) => match event {
@@ -901,7 +1027,8 @@ mod test {
         let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(builder);
         let env = builder.build().expect("Failed to initialize test env");
         let buffers = TestBuffers::default();
-        let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
         let cmd = preprocess_flash_cmd(
             &env.context,
             &mut writer,
@@ -917,19 +1044,21 @@ mod test {
         let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
         let env = builder.build().expect("Failed to initialize test env");
         let buffers = TestBuffers::default();
-        let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(
-            preprocess_flash_cmd(
-                &env.context,
-                &mut writer,
-                &FlashCommand {
-                    manifest_path: Some(PathBuf::from("ffx_test_does_not_exist")),
-                    ..Default::default()
-                }
-            )
-            .await
-            .is_err()
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                manifest_path: Some(PathBuf::from("ffx_test_does_not_exist")),
+                ..Default::default()
+            },
         )
+        .await;
+        assert!(matches!(
+            res,
+            Err(ProductBundleError::ManifestPathDoesNotExist { path }) if path == PathBuf::from("ffx_test_does_not_exist")
+        ));
     }
 
     #[fuchsia::test]
@@ -944,7 +1073,8 @@ mod test {
         let ssh_tmp_file_name = ssh_tmp_file.path().to_string_lossy().to_string();
 
         let buffers = TestBuffers::default();
-        let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
 
         let cmd = preprocess_flash_cmd(
             &env.context,
@@ -968,20 +1098,104 @@ mod test {
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
 
         let buffers = TestBuffers::default();
-        let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(
-            preprocess_flash_cmd(
-                &env.context,
-                &mut writer,
-                &FlashCommand {
-                    manifest_path: Some(PathBuf::from(tmp_file_name)),
-                    authorized_keys: Some("ssh_does_not_exist".to_string()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .is_err()
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                manifest_path: Some(PathBuf::from(tmp_file_name)),
+                authorized_keys: Some("ssh_does_not_exist".to_string()),
+                ..Default::default()
+            },
         )
+        .await;
+        assert!(matches!(
+            res,
+            Err(ProductBundleError::SshKeyNotFound { path, .. }) if path == "ssh_does_not_exist"
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_gcs_url_invalid_syntax_throws_err() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                product_bundle: Some("gs://bucket:999999/file".to_string()),
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(res, Err(ProductBundleError::UrlParse(_))));
+    }
+
+    #[fuchsia::test]
+    async fn test_gcs_url_missing_host_throws_err() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                product_bundle: Some("gs:///filename".to_string()),
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(
+            res,
+            Err(ProductBundleError::GcsUrlMissingHost { url }) if url == "gs:///filename"
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_gcs_url_missing_filename_throws_err() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                product_bundle: Some("gs://bucket".to_string()),
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(
+            res,
+            Err(ProductBundleError::GcsUrlMissingFilename { url }) if url == "gs://bucket"
+        ));
+
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                product_bundle: Some("gs://bucket/".to_string()),
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(
+            res,
+            Err(ProductBundleError::GcsUrlMissingFilename { url }) if url == "gs://bucket/"
+        ));
     }
 
     #[fuchsia::test]
@@ -991,18 +1205,99 @@ mod test {
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
         let buffers = TestBuffers::default();
-        let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(
-            preflight_checks(
-                &FlashCommand {
-                    manifest: Some(PathBuf::from(tmp_file_name.clone())),
-                    manifest_path: Some(PathBuf::from(tmp_file_name)),
-                    ..Default::default()
-                },
-                &mut writer
-            )
-            .is_err()
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+        let res = preflight_checks(
+            &FlashCommand {
+                manifest: Some(PathBuf::from(tmp_file_name.clone())),
+                manifest_path: Some(PathBuf::from(tmp_file_name)),
+                ..Default::default()
+            },
+            &mut writer,
         );
+        assert!(matches!(res, Err(PreflightError::ManifestSpecifiedTwice)));
+    }
+
+    #[fuchsia::test]
+    async fn test_both_ssh_key_and_oem_stage_throws_error() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                manifest_path: Some(PathBuf::from(&tmp_file_name)),
+                authorized_keys: Some(tmp_file_name),
+                oem_stage: vec![OemFile::new(
+                    SSH_OEM_COMMAND.to_string(),
+                    "some_key_path".to_string(),
+                )],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(res, Err(ProductBundleError::SshKeyAndOemStageSet)));
+    }
+
+    #[fuchsia::test]
+    async fn test_ssh_key_and_skip_upload_keys_throws_error() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                manifest_path: Some(PathBuf::from(&tmp_file_name)),
+                authorized_keys: Some(tmp_file_name),
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(res, Err(ProductBundleError::SshKeyAndSkipUploadSet)));
+    }
+
+    #[fuchsia::test]
+    async fn test_oem_stage_and_skip_upload_keys_throws_error() {
+        let (builder, _tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(ffx_config::test_env());
+        let env = builder.build().expect("Failed to initialize test env");
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<FlashMessage>::new_test(Some(Format::Json), &buffers);
+
+        let res = preprocess_flash_cmd(
+            &env.context,
+            &mut writer,
+            &FlashCommand {
+                manifest_path: Some(PathBuf::from(&tmp_file_name)),
+                authorized_keys: None,
+                oem_stage: vec![OemFile::new(
+                    SSH_OEM_COMMAND.to_string(),
+                    "some_key_path".to_string(),
+                )],
+                skip_authorized_keys: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(res, Err(ProductBundleError::OemStageAndSkipUploadSet)));
     }
 
     // Refreshes the progress indicator and returns whether it contains required
