@@ -80,9 +80,6 @@ CommandBufferPool::~CommandBufferPool() {
 CommandBuffer* CommandBufferPool::GetCommandBuffer() {
   TRACE_DURATION("gfx", "escher::CommandBufferPool::GetCommandBuffer");
 
-  // TODO: perhaps do when buffer is submitted?
-  Cleanup();
-
   // Find an existing CommandBuffer for reuse, or create a new one.
   CommandBuffer* buffer = nullptr;
   if (free_buffers_.empty()) {
