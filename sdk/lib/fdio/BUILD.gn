@@ -25,16 +25,6 @@ if (is_fuchsia) {
   }
 }
 
-fdio_constants = [
-  "include/lib/fdio/limits.h",
-  "include/lib/fdio/processargs.h",
-]
-
-source_set("constants") {
-  public_configs = [ ":fdio_includes" ]
-  public = fdio_constants
-}
-
 if (!is_fuchsia) {
   source_set("fdio") {
     public_configs = [ ":fdio_includes" ]
@@ -166,4 +156,12 @@ if (is_fuchsia) {
         [ "-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir) ]
     sdk = "shared"
   }
+}
+source_set("constants") {
+  public = [
+    "include/lib/fdio/limits.h",
+    "include/lib/fdio/processargs.h",
+  ]
+  public_configs = [ ":fdio_includes" ]
+  visibility = [ "*" ]
 }

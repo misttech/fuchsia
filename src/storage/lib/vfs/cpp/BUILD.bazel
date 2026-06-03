@@ -1,0 +1,145 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "vfs_headers",
+    hdrs = [
+        "debug.h",
+        "shared_mutex.h",
+        "vfs.h",
+        "vfs_types.h",
+        "vnode.h",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "fuchsia_vfs.h",
+            "lazy_dir.h",
+            "managed_vfs.h",
+            "paged_vfs.h",
+            "paged_vnode.h",
+            "pager_thread_pool.h",
+            "pseudo_dir.h",
+            "pseudo_file.h",
+            "ref_counted.h",
+            "remote_dir.h",
+            "service.h",
+            "synchronous_vfs.h",
+            "ticker.h",
+            "vmo_file.h",
+            "watcher.h",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["."],
+    visibility = [":__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/fdio:constants",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            # Required for fs::FilesystemInfo
+            "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+            # Required for fs::FuchsiaVfs and fs::Connection
+            "//sdk/lib/async",
+            # Required for fs::PagedVnode
+            "//sdk/lib/async:async-cpp",
+            # Required for fs::Vnode
+            "//sdk/lib/file-lock:cpp",
+        ],
+        "//conditions:default": [],
+    }),
+    alwayslink = True,
+)
+
+cc_library(
+    name = "connection",
+    srcs = select({
+        "@platforms//os:fuchsia": [
+            "connection/advisory_lock.cc",
+            "connection/connection.cc",
+            "connection/directory_connection.cc",
+            "connection/file_connection.cc",
+            "connection/node_connection.cc",
+            "connection/remote_file_connection.cc",
+            "connection/stream_file_connection.cc",
+        ],
+        "//conditions:default": [],
+    }),
+    hdrs = select({
+        "@platforms//os:fuchsia": [
+            "connection/advisory_lock.h",
+            "connection/connection.h",
+            "connection/directory_connection.h",
+            "connection/file_connection.h",
+            "connection/node_connection.h",
+            "connection/remote_file_connection.h",
+            "connection/stream_file_connection.h",
+        ],
+        "//conditions:default": [],
+    }),
+    implementation_deps = [
+        "//sdk/lib/stdcompat",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/lib/fidl",
+            "//zircon/system/ulib/sync",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["."],
+    visibility = [":__pkg__"],
+    deps = [
+        ":vfs_headers",
+    ],
+    alwayslink = True,
+)
+
+# TODO(https://fxbug.dev/336617685): Once //sdk/lib/vfs is available for public use, this library
+# should be restricted with a visibility list. Most targets only use functionality that the SDK VFS
+# library provides. The SDK VFS will form the API we commit to for pseudo-filesystems.
+cc_library(
+    name = "cpp",
+
+    # Uncomment to enable some debug log messages
+    # defines = [ "FS_TRACE_DEBUG_ENABLED" ]
+    srcs = [
+        "debug.cc",
+        "vfs.cc",
+        "vfs_types.cc",
+        "vnode.cc",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "fuchsia_vfs.cc",
+            "lazy_dir.cc",
+            "managed_vfs.cc",
+            "paged_vfs.cc",
+            "paged_vnode.cc",
+            "pager_thread_pool.cc",
+            "pseudo_dir.cc",
+            "pseudo_file.cc",
+            "remote_dir.cc",
+            "service.cc",
+            "synchronous_vfs.cc",
+            "vmo_file.cc",
+            "watcher.cc",
+        ],
+        "//conditions:default": [],
+    }),
+    implementation_deps = [
+        "//sdk/lib/stdcompat",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            ":connection",
+            "//sdk/lib/fidl",
+            "//zircon/system/ulib/sync",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":vfs_headers"],
+)

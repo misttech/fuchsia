@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_shared_library_zx")
+load("//build/bazel/rules/cc:defs.bzl", "fx_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -110,4 +110,16 @@ idk_cc_shared_library_zx(
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     version_script = ":fdio.ld",
+)
+
+fx_cc_library(
+    name = "constants",
+    hdrs = [
+        "include/lib/fdio/limits.h",
+        "include/lib/fdio/processargs.h",
+    ],
+    includes = ["include"],
+    public_configs = [":fdio_includes"],  # For bazel2gn conversion only.
+    visibility = ["//visibility:public"],
+    alwayslink = True,
 )
