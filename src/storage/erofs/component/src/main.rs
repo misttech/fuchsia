@@ -4,19 +4,13 @@
 
 use anyhow::Context as _;
 use erofs::ErofsError;
+use erofs_component::{ErofsPager, ErofsVolume};
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_erofs::{ErofsMarker, ErofsRequest, ErofsRequestStream};
 use fidl_fuchsia_io as fio;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-
-mod directory;
-mod file;
-mod pager;
-mod volume;
-
-use pager::ErofsPager;
 
 fn map_to_status(error: anyhow::Error) -> zx::Status {
     if let Some(status) = error.root_cause().downcast_ref::<zx::Status>() {
@@ -101,7 +95,7 @@ fn serve_erofs(
     let root = payload.root.ok_or(zx::Status::INVALID_ARGS).context("Missing root")?;
 
     log::info!("Serving new EROFS instance");
-    volume::ErofsVolume::serve(backing_vmo, pager, root)?;
+    ErofsVolume::serve(backing_vmo, pager, root)?;
 
     Ok(())
 }

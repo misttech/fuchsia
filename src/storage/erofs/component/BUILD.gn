@@ -11,17 +11,41 @@ group("tests") {
   deps = [ ":erofs_integration_tests" ]
 }
 
+rustc_library("lib") {
+  name = "erofs_component"
+  edition = "2024"
+
+  deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/storage/erofs",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:log",
+  ]
+
+  sources = [
+    "src/directory.rs",
+    "src/file.rs",
+    "src/lib.rs",
+    "src/pager.rs",
+    "src/volume.rs",
+  ]
+}
+
 rustc_binary("bin") {
   name = "erofs_component"
   edition = "2024"
 
   deps = [
+    ":lib",
     "//sdk/fidl/fuchsia.erofs:fuchsia.erofs_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//src/storage/erofs",
     "//src/storage/lib/vfs/rust:vfs",
@@ -30,13 +54,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
-  sources = [
-    "src/directory.rs",
-    "src/file.rs",
-    "src/main.rs",
-    "src/pager.rs",
-    "src/volume.rs",
-  ]
+  sources = [ "src/main.rs" ]
 }
 
 fuchsia_component("erofs_component") {
