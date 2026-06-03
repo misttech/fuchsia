@@ -473,7 +473,7 @@ pub fn sys_setuid(
     current_task: &CurrentTask,
     uid: uid_t,
 ) -> Result<(), Errno> {
-    if uid == gid_t::MAX {
+    if uid == uid_t::MAX {
         return error!(EINVAL);
     }
     if !new_uid_allowed(&current_task, uid) {
