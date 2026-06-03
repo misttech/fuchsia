@@ -9,7 +9,7 @@ use starnix_core::vfs::{
     FsNodeHandle, FsNodeInfo, FsNodeOps, InputBuffer, OutputBuffer, fileops_impl_noop_sync,
     fileops_impl_seekless, fs_node_impl_not_dir,
 };
-use starnix_sync::{FileOpsCore, Locked, RwLock};
+use starnix_sync::{DynamicLockDepRwLock, FileOpsCore, Locked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -35,7 +35,7 @@ impl FsNodeOps for KmsgNode {
         node: &FsNode,
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
-        info: &RwLock<FsNodeInfo>,
+        info: &DynamicLockDepRwLock<FsNodeInfo>,
         reason: CheckAccessReason,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {

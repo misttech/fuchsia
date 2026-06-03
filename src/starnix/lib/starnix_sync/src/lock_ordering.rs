@@ -9,7 +9,8 @@ lock_ordering! {
     // UninterruptibleLock represents a virtual level before which lock must be interruptible.
     Unlocked => FuseFsRenameLevel,
     FuseFsRenameLevel => FuseDirEntryChildrenLevel,
-    FuseDirEntryChildrenLevel => UninterruptibleLock,
+    FuseDirEntryChildrenLevel => FuseFsNodeInfoLevel,
+    FuseFsNodeInfoLevel => UninterruptibleLock,
     // Artificial level for ResourceAccessor.add_file_with_flags(..)
     Unlocked => ResourceAccessorLevel,
     // Level for FileObject offset lock.
@@ -64,6 +65,8 @@ lock_ordering! {
     RemoteBinderHandleLevel => BinderProcsLevel,
     FileObjectOffset => BinderFsDevicesLevel,
     DirEntryChildrenLevel => BinderFsDevicesLevel,
+    BinderFsDevicesLevel => FsNodeInfoLevel,
+    FsNodeInfoLevel => TerminalLock,
     BinderFsDevicesLevel => DeviceRegistryState,
     BinderProcsLevel => BinderProcessSharedMemoryLevel,
     BinderProcessSharedMemoryLevel => BinderFreezeLevel,
@@ -80,7 +83,8 @@ lock_ordering! {
     // VFS locks
     BinderProcessSharedMemoryLevel => FsRenameRecursive,
     FsRenameRecursive => DirEntryChildrenRecursiveLevel,
-    DirEntryChildrenRecursiveLevel => FsRename,
+    DirEntryChildrenRecursiveLevel => FsNodeInfoRecursiveLevel,
+    FsNodeInfoRecursiveLevel => FsRename,
     FsRename => DirEntryChildrenLevel,
 
     // Terminal Level. No lock level should ever be defined after this. Can be used for any locks
