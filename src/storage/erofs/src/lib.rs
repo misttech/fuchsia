@@ -12,7 +12,7 @@ use thiserror::Error;
 pub mod readers;
 use readers::{Reader, ReaderError, ReaderExt};
 
-mod format;
+pub mod format;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

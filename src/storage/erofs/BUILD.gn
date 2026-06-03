@@ -10,6 +10,7 @@ group("tests") {
   deps = [
     ":erofs-tests",
     "component:tests",
+    "serializer:tests",
   ]
 }
 
