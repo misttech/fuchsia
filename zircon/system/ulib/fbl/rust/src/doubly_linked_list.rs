@@ -6,10 +6,9 @@ use crate::ptr_traits::{ManagedPtr, PtrTraits};
 use crate::sentinel::{is_sentinel_ptr, make_sentinel};
 use crate::size_tracker::{NonTrackingSize, SizeTracker, TrackingSize};
 use crate::tag::DefaultObjectTag;
-use crate::unique_ptr::UniquePtr;
 use core::cell::UnsafeCell;
 use core::pin::Pin;
-use pin_init::{PinInit, pin_data, pin_init, pinned_drop, stack_pin_init};
+use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 
 /// A node in a doubly linked list.
 #[repr(C)]
@@ -1116,7 +1115,9 @@ mod tests {
     use super::*;
     use crate::intrusive_container_test_support::*;
     use crate::ref_ptr::RefPtr;
+    use crate::unique_ptr::UniquePtr;
     use core::ffi::c_void;
+    use pin_init::stack_pin_init;
 
     #[derive(crate::DoublyLinkedListContainable, crate::Recyclable)]
     struct TestObject {

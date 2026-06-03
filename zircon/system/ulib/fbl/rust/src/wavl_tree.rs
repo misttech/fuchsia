@@ -4,7 +4,7 @@
 
 use crate::ptr_traits::{ManagedPtr, PtrTraits};
 use crate::sentinel::{is_sentinel_ptr, make_sentinel, make_sentinel_null, valid_sentinel_ptr};
-use crate::size_tracker::{NonTrackingSize, SizeTracker, TrackingSize};
+use crate::size_tracker::{NonTrackingSize, SizeTracker};
 use crate::tag::DefaultObjectTag;
 use core::cell::UnsafeCell;
 use core::pin::Pin;
@@ -2522,6 +2522,7 @@ mod tests {
     use crate::recyclable::Recyclable;
     use crate::ref_counted::HasRefCount;
     use crate::ref_ptr::RefPtr;
+    use crate::size_tracker::TrackingSize;
     use crate::unique_ptr::UniquePtr;
     use core::ffi::c_void;
     use pin_init::stack_pin_init;

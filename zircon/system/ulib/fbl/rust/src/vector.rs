@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 use core::ops::{Deref, DerefMut};
-use core::ptr::NonNull;
 use kalloc::{AllocError, Allocator, Box, DefaultAllocator};
 
 /// Macro to construct a fallible `Vector`.
@@ -354,6 +353,7 @@ mod tests {
     use super::*;
 
     use core::cell::Cell;
+    use core::ptr::NonNull;
 
     #[derive(Debug, PartialEq, Eq)]
     struct TestState {

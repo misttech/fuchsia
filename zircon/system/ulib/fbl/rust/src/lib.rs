@@ -6,6 +6,7 @@
 
 #![no_std]
 
+#[cfg(test)]
 extern crate self as fbl;
 
 mod array;
@@ -39,7 +40,7 @@ pub use conditional_select_nospec::{conditional_select_nospec_eq, conditional_se
 pub use confine_array_index::confine_array_index;
 pub use doubly_linked_list::{
     DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator,
-    ReverseIterator,
+    ReverseIterator, remove_from_container,
 };
 pub use fbl_macros::{
     DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, WavlTreeContainable,

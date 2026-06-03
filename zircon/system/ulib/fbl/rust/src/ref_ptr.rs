@@ -8,7 +8,6 @@ use crate::recyclable::Recyclable;
 use crate::ref_counted::HasRefCount;
 use core::ops::Deref;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
 use kalloc::AllocError;
 
 /// `RefPtr<T>` holds a reference to an intrusively-refcounted object of type
@@ -118,7 +117,7 @@ macro_rules! make_ref_counted {
     ($ty:ident { $($field:ident : $val:expr),* $(,)? }) => {
         // SAFETY: The macro creates a new object with a ref count of 1.
         unsafe {
-            $crate::ref_ptr::RefPtr::try_new($ty {
+            $crate::RefPtr::try_new($ty {
                 ref_count: $crate::RefCounted::new(),
                 __fbl_ref_counted_guard: (),
                 $($field : $val),*
@@ -131,6 +130,7 @@ macro_rules! make_ref_counted {
 mod tests {
     use super::*;
     use core::ffi::c_void;
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     extern crate alloc;
     use alloc::sync::Arc;
