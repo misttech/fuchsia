@@ -98,7 +98,7 @@ InterruptStatusReg DwI2c::ReadAndClearIrq() {
   if (irq.tx_abrt()) {
     // The device did not respond with an ACK to its address. This is expected for some devices, so
     // don't log an error message.
-    fdf::debug("dw-i2c: error on bus - Abort source 0x{:x}",
+    fdf::error("dw-i2c: error on bus - Abort source 0x{:x}",
                TxAbrtSourceReg::Get().ReadFrom(&mmio_.value()).reg_value());
     // ABRT_SOURCE should be read before clearing TX_ABRT.
     ClearTxAbrtReg::Get().ReadFrom(&mmio_.value());
@@ -220,18 +220,28 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
   bool done = false;
   zx_status_t error_status = ZX_OK;
   while (!done) {
-    zx::time timestamp;
-    auto status = irq_.wait(&timestamp);
-    if (status != ZX_OK) {
-      fdf::error("IRQ wait failed: {}", status);
-      error_status = status;
+    // Poll instead of wait.
+    for (uint32_t timeout = 0;; timeout++) {
+      auto raw_reg = RawInterruptStatusReg::Get().ReadFrom(&mmio_.value());
+      if (raw_reg.reg_value() & kI2cInterruptDefaultMask) {
+        break;
+      }
+      if (timeout > 1000) {  // 1 second timeout
+        fdf::error("I2C polling timeout! Raw IRQ: 0x{:x}", raw_reg.reg_value());
+        error_status = ZX_ERR_TIMED_OUT;
+        done = true;
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+    if (done) {
       break;
     }
 
     auto reg = ReadAndClearIrq();
 
     if (reg.tx_abrt()) {
-      fdf::debug("I2C transaction aborted");
+      fdf::error("I2C transaction aborted");
       error_status = ZX_ERR_IO;
       done = true;
     }
@@ -255,7 +265,6 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
         done = true;
       }
     }
-    irq_.ack();
   }
 
   if (auto result = Disable(); result.is_error()) {
