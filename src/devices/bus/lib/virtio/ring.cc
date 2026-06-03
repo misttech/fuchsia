@@ -120,38 +120,32 @@ void Ring::FreeDesc(uint16_t desc_index) {
 }
 
 struct vring_desc* Ring::AllocDescChain(uint16_t count, uint16_t* start_index) {
-  if (ring_.free_count < count)
+  if (count == 0 || ring_.free_count < count) {
     return nullptr;
-
-  /* start popping entries off the chain */
-  struct vring_desc* last = 0;
-  uint16_t last_index = 0;
-  while (count > 0) {
-    uint16_t i = ring_.free_list;
-    assert(i < ring_.num);
-
-    struct vring_desc* desc = &ring_.desc[i];
-
-    ring_.free_list = desc->next;
-    ring_.free_count--;
-
-    if (last) {
-      desc->flags |= VRING_DESC_F_NEXT;
-      desc->next = last_index;
-    } else {
-      // first one
-      desc->flags &= static_cast<uint16_t>(~VRING_DESC_F_NEXT);
-      desc->next = 0;
-    }
-    last = desc;
-    last_index = i;
-    count--;
   }
 
-  if (start_index)
-    *start_index = last_index;
+  uint16_t head_index = ring_.free_list;
+  uint16_t curr_index = head_index;
 
-  return last;
+  // Mark all but the last descriptor as part of the sequence.
+  for (uint16_t i = 0; i < count - 1; i++) {
+    assert(curr_index < ring_.num);
+    ring_.desc[curr_index].flags |= VRING_DESC_F_NEXT;
+    curr_index = ring_.desc[curr_index].next;
+  }
+  assert(curr_index < ring_.num);
+
+  ring_.free_list = ring_.desc[curr_index].next;
+  // Clear the flag to signal the end of the sequence.
+  ring_.desc[curr_index].flags &= static_cast<uint16_t>(~VRING_DESC_F_NEXT);
+  ring_.desc[curr_index].next = 0;
+  ring_.free_count -= count;
+
+  if (start_index) {
+    *start_index = head_index;
+  }
+
+  return &ring_.desc[head_index];
 }
 
 void Ring::SubmitChain(uint16_t desc_index) {
