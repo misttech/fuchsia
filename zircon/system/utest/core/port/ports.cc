@@ -608,6 +608,7 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
   ASSERT_OK(zx::channel::create(0, &ch2_req, &ch2_rep));
 
   std::atomic<bool> keep_running = true;
+  std::atomic<uint32_t> message_count = 0;
 
   // Thread C (Event thread)
   std::thread t_c([&]() {
@@ -620,6 +621,7 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
     while (keep_running) {
       ch2_rep.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), &observed);
       ch2_rep.read(0, buf, nullptr, 8, 0, &act_bytes, &act_handles);
+      message_count.fetch_sub(1);
     }
   });
 
@@ -674,7 +676,14 @@ TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
       // Call 2: trigger Event::Signal on Thread C
       for (int i = 0; i < 50; i++) {
         ch2_req.call(0, zx::deadline_after(zx::usec(10)), &args, &act_bytes, &act_handles);
-        zx::nanosleep(zx::deadline_after(zx::usec(10)));  // Wait for C to read and block again
+        // Wait for C to read and block again
+        zx::nanosleep(zx::deadline_after(zx::usec(10)));
+        // If the outstanding message count is getting high, wait for C to catch up.
+        if (uint32_t count = message_count.fetch_add(1); count > 2000) {
+          while (message_count.load() > 1000) {
+            std::this_thread::yield();
+          }
+        }
       }
     });
 
