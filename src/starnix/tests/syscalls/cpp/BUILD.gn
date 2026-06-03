@@ -378,6 +378,8 @@ source_set("test_utils") {
     "capabilities_helper.h",
     "fault_test.h",
     "fault_test_suite.h",
+    "io_uring_helper.cc",
+    "io_uring_helper.h",
     "proc_test_base.h",
     "syscall_matchers.h",
     "task_test.h",
