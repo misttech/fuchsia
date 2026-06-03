@@ -6,7 +6,10 @@
 #define SRC_DEVICES_BOARD_DRIVERS_MACHINA_MACHINA_H_
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
+#include <lib/pci/root_host.h>
 #include <zircon/types.h>
+
+#include <memory>
 
 namespace machina {
 
@@ -30,7 +33,10 @@ enum {
 
 typedef struct {
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> client;
+  std::unique_ptr<PciRootHost> pci_root_host;
 } machina_board_t;
+
+zx_status_t machina_pci_init(zx_device_t* parent, machina_board_t* board);
 
 }  // namespace machina
 

@@ -26,13 +26,17 @@ fuchsia_cc_driver("machina-driver") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "machina.cc" ]
+  sources = [
+    "machina-pci.cc",
+    "machina.cc",
+  ]
   deps = [
     ":machina_board_bind",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/devices/pci/lib/pci",
     "//src/lib/ddk",
   ]
 }

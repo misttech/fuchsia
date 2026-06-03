@@ -28,51 +28,6 @@
 namespace machina {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
-static zx_status_t machina_pci_init(zx_device_t* parent) {
-  zx_status_t status;
-
-  zx_pci_init_arg_t* arg;
-  // Room for one addr window.
-  uint32_t arg_size = sizeof(*arg) + sizeof(arg->addr_windows[0]);
-  arg = static_cast<zx_pci_init_arg_t*>(calloc(1, arg_size));
-  if (!arg) {
-    return ZX_ERR_NO_MEMORY;
-  }
-  auto defer = fit::defer([arg]() { free(arg); });
-
-  status = zx_pci_add_subtract_io_range(get_mmio_resource(parent), true /* mmio */,
-                                        PCIE_MMIO_BASE_PHYS, PCIE_MMIO_SIZE, true /* add */);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // Initialize our swizzle table
-  zx_pci_irq_swizzle_lut_t* lut = &arg->dev_pin_to_global_irq;
-  for (unsigned dev_id = 0; dev_id < ZX_PCI_MAX_DEVICES_PER_BUS; dev_id++) {
-    for (unsigned func_id = 0; func_id < ZX_PCI_MAX_FUNCTIONS_PER_DEVICE; func_id++) {
-      for (unsigned pin = 0; pin < ZX_PCI_MAX_LEGACY_IRQ_PINS; pin++) {
-        (*lut)[dev_id][func_id][pin] = PCIE_INT_BASE + dev_id;
-      }
-    }
-  }
-  arg->num_irqs = 0;
-  arg->addr_window_count = 1;
-  arg->addr_windows[0].cfg_space_type = PCI_CFG_SPACE_TYPE_MMIO;
-  arg->addr_windows[0].has_ecam = true;
-  arg->addr_windows[0].base = PCIE_ECAM_BASE_PHYS;
-  arg->addr_windows[0].size = PCIE_ECAM_SIZE;
-  arg->addr_windows[0].bus_start = 0;
-  arg->addr_windows[0].bus_end = (PCIE_ECAM_SIZE / ZX_PCI_ECAM_BYTE_PER_BUS) - 1;
-
-  status = zx_pci_init(get_mmio_resource(parent), arg, arg_size);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: error %d in zx_pci_init", __FUNCTION__, status);
-    return status;
-  }
-
-  return status;
-}
-
 static void machina_board_release(void* ctx) { delete static_cast<machina_board_t*>(ctx); }
 
 static zx_protocol_device_t machina_board_device_protocol = {
@@ -100,34 +55,10 @@ static const fpbus::Node pl031_dev = []() {
 static int machina_start_thread(void* arg) {
   machina_board_t* bus = static_cast<machina_board_t*>(arg);
 
-  std::vector<fpbus::Bti> pci_btis = {
-      {{
-          .iommu_id = 0,
-          .bti_id = 0,
-      }},
-  };
-
-  fpbus::Node pci_dev;
-  pci_dev.name() = "pci";
-  pci_dev.vid() = PDEV_VID_GENERIC;
-  pci_dev.pid() = PDEV_PID_GENERIC;
-  pci_dev.did() = PDEV_DID_KPCI;
-  pci_dev.bti() = std::move(pci_btis);
-
   fdf::Arena arena('MACH');
   fidl::Arena<> fidl_arena;
 
-  auto result = bus->client.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pci_dev));
-  if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd request failed: %s", __func__, result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd failed: %s", __func__, zx_status_get_string(result->error_value()));
-    return result->error_value();
-  }
-
-  result = bus->client.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pl031_dev));
+  auto result = bus->client.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pl031_dev));
 
   if (!result.ok()) {
     zxlogf(ERROR, "%s: NodeAdd request failed: %s", __func__, result.FormatDescription().data());
@@ -162,7 +93,7 @@ static zx_status_t machina_board_bind(void* ctx, zx_device_t* parent) {
 
   bus->client.Bind(std::move(endpoints->client));
 
-  status = machina_pci_init(parent);
+  status = machina_pci_init(parent, bus.get());
   if (status != ZX_OK) {
     zxlogf(ERROR, "machina_pci_init failed: %d", status);
   }
@@ -170,6 +101,7 @@ static zx_status_t machina_board_bind(void* ctx, zx_device_t* parent) {
   device_add_args_t args = {
       .version = DEVICE_ADD_ARGS_VERSION,
       .name = "machina",
+      .ctx = bus.get(),
       .ops = &machina_board_device_protocol,
       .flags = DEVICE_ADD_NON_BINDABLE,
   };
@@ -187,6 +119,8 @@ static zx_status_t machina_board_bind(void* ctx, zx_device_t* parent) {
   if (thrd_rc != thrd_success) {
     status = thrd_status_to_zx_status(thrd_rc);
     printf("machina_board_bind failed %d\n", status);
+    // Since device_add succeeded, the DDK release callback will free raw_bus when the device is
+    // removed.
     return status;
   }
 
