@@ -410,7 +410,7 @@ static int build_map(FTLN ftl) {
 
       // Retrieve MPN and check that it is valid.
       mpn = GET_SA_VPN(ftl->spare_buf);
-      if (mpn > ftl->num_map_pgs) {
+      if (mpn >= ftl->num_map_pgs) {
         if (ftln_debug() > 1) {
           ftl->logger.debug(__FILE__, __LINE__, "build_map: b = %u, po = %u, mpn = %u, max = %u", b,
                             po, mpn, ftl->num_map_pgs);
