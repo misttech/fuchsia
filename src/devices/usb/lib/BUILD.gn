@@ -7,6 +7,7 @@ group("tests") {
   deps = [
     "usb:tests",
     "usb-endpoint:tests",
+    "usb-inspect:tests",
     "usb-monitor-util:tests",
   ]
 }
