@@ -591,6 +591,134 @@ impl BinderDriver {
                 }
                 _ => None,
             };
+        match request {
+            uapi::BINDER_FREEZE => {
+                if user_arg.is_null() {
+                    return error!(EINVAL);
+                }
+
+                let user_ref = UserRef::<binder_freeze_info>::new(user_arg);
+                let binder_freeze_info { pid, enable, timeout_ms } = binder_proc
+                    .get_memory_accessor(current_task, remote_memory_accessor)
+                    .read_object(user_ref)?;
+                let freezing = match enable {
+                    0 => false,
+                    1 => true,
+                    _ => return error!(EINVAL),
+                };
+
+                let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
+                if target_binder_procs.is_empty() {
+                    return error!(EINVAL);
+                }
+
+                let mut pending_notifications = Vec::with_capacity(target_binder_procs.len());
+
+                let res = release_iter_after!(target_binder_procs, current_task.kernel(), {
+                    let freeze_locks =
+                        target_binder_procs.iter().map(|p| &p.freeze_state).collect::<Vec<_>>();
+                    // Do not allow freezing process with more than 16 binders as lockdep
+                    // doesn't support it.
+                    if freeze_locks.len() > 16 {
+                        return error!(ENOTSUP);
+                    }
+                    let mut target_binder_procs_freeze_locked = ordered_lock_vec(&freeze_locks);
+
+                    if !freezing {
+                        target_binder_procs_freeze_locked.iter_mut().for_each(|bp| {
+                            pending_notifications.extend(bp.thaw());
+                        });
+                        return Ok(SUCCESS);
+                    }
+
+                    let state_locks =
+                        target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
+                    let target_binder_procs_state_locked = ordered_lock_vec(&state_locks);
+
+                    // Clone threads in the proc to lock them all until freeze is done.
+                    let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_state_locked
+                        .iter()
+                        .map(|p| p.thread_pool.threads.values().map(|t| OwnedRef::share(t)))
+                        .flatten()
+                        .collect();
+                    release_iter_after!(threads, current_task.kernel(), {
+                        let threads_locks = threads.iter().map(|t| &t.state).collect::<Vec<_>>();
+                        let threads_locked = ordered_lock_vec(&threads_locks);
+
+                        // Avoid freezing the target procs if there is any pending transaction
+                        if target_binder_procs_state_locked
+                            .iter()
+                            .any(|binder_process| binder_process.has_pending_transactions())
+                            || threads_locked
+                                .iter()
+                                .any(|binder_thread| binder_thread.has_pending_transactions())
+                        {
+                            if timeout_ms > 0 {
+                                track_stub!(
+                                    TODO("https://fxbug.dev/391657004"),
+                                    "BINDER_FREEZE timeout"
+                                );
+                            }
+                            return error!(EAGAIN);
+                        }
+
+                        target_binder_procs_freeze_locked.iter_mut().for_each(|bp| {
+                            pending_notifications.extend(bp.freeze());
+                        });
+                        Ok(SUCCESS)
+                    })
+                });
+
+                if res.is_ok() {
+                    for (proc, cmd) in pending_notifications {
+                        proc.enqueue_command(cmd);
+                        proc.release(current_task.kernel());
+                    }
+                } else {
+                    for (proc, _) in pending_notifications {
+                        proc.release(current_task.kernel());
+                    }
+                }
+                return res;
+            }
+            uapi::BINDER_GET_FROZEN_INFO => {
+                if user_arg.is_null() {
+                    return error!(EINVAL);
+                }
+
+                let user_ref = UserRef::<binder_frozen_status_info>::new(user_arg);
+                let memory_accessor =
+                    binder_proc.get_memory_accessor(current_task, remote_memory_accessor);
+                let binder_frozen_status_info { pid, .. } =
+                    memory_accessor.read_object(user_ref)?;
+                let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
+                if target_binder_procs.is_empty() {
+                    return error!(EINVAL);
+                }
+                let mut has_sync_recv = false;
+                let mut has_async_recv = false;
+                release_iter_after!(target_binder_procs, current_task.kernel(), {
+                    target_binder_procs.iter().for_each(|binder_proc| {
+                        let freeze_state = binder_proc.freeze_state.lock();
+                        has_sync_recv |= freeze_state.freeze_status.has_sync_recv;
+                        has_async_recv |= freeze_state.freeze_status.has_async_recv;
+                    });
+                });
+                memory_accessor.write_object(
+                    user_ref,
+                    &binder_frozen_status_info {
+                        pid,
+                        // TODO(https://fxbug.dev/391657004): After timeout is supported, use
+                        // the second right bit as the indicator whether it has any pending
+                        // transactions.
+                        sync_recv: has_sync_recv as u32,
+                        async_recv: has_async_recv as u32,
+                    },
+                )?;
+                return Ok(SUCCESS);
+            }
+            _ => {}
+        }
         let binder_thread = binder_proc.lock().find_or_register_thread(&current_task.task)?;
         release_after!(binder_thread, current_task.kernel(), {
             match request {
@@ -738,115 +866,7 @@ impl BinderDriver {
                     );
                     error!(EOPNOTSUPP)
                 }
-                uapi::BINDER_FREEZE => {
-                    if user_arg.is_null() {
-                        return error!(EINVAL);
-                    }
 
-                    let user_ref = UserRef::<binder_freeze_info>::new(user_arg);
-                    let binder_freeze_info { pid, enable, timeout_ms } = binder_proc
-                        .get_memory_accessor(current_task, remote_memory_accessor)
-                        .read_object(user_ref)?;
-                    let freezing = match enable {
-                        0 => false,
-                        1 => true,
-                        _ => return error!(EINVAL),
-                    };
-
-                    let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
-                    if target_binder_procs.is_empty() {
-                        return error!(EINVAL);
-                    }
-
-                    release_iter_after!(target_binder_procs, current_task.kernel(), {
-                        let freeze_locks =
-                            target_binder_procs.iter().map(|p| &p.freeze_state).collect::<Vec<_>>();
-                        // Do not allow freezing process with more than 16 binders as lockdep
-                        // doesn't support it.
-                        if freeze_locks.len() > 16 {
-                            return error!(ENOTSUP);
-                        }
-                        let mut target_binder_procs_freeze_locked = ordered_lock_vec(&freeze_locks);
-                        if !freezing {
-                            target_binder_procs_freeze_locked.iter_mut().for_each(|bp| bp.thaw());
-                            return Ok(SUCCESS);
-                        }
-
-                        let state_locks =
-                            target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
-                        let target_binder_procs_state_locked = ordered_lock_vec(&state_locks);
-
-                        // Clone threads in the proc to lock them all until freeze is done.
-                        let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_state_locked
-                            .iter()
-                            .map(|p| p.thread_pool.threads.values().map(|t| OwnedRef::share(t)))
-                            .flatten()
-                            .collect();
-                        release_iter_after!(threads, current_task.kernel(), {
-                            let threads_locks =
-                                threads.iter().map(|t| &t.state).collect::<Vec<_>>();
-                            let threads_locked = ordered_lock_vec(&threads_locks);
-
-                            // Avoid freezing the target procs if there is any pending transaction
-                            if target_binder_procs_state_locked
-                                .iter()
-                                .any(|binder_process| binder_process.has_pending_transactions())
-                                || threads_locked
-                                    .iter()
-                                    .any(|binder_thread| binder_thread.has_pending_transactions())
-                            {
-                                if timeout_ms > 0 {
-                                    track_stub!(
-                                        TODO("https://fxbug.dev/391657004"),
-                                        "BINDER_FREEZE timeout"
-                                    );
-                                }
-                                return error!(EAGAIN);
-                            }
-
-                            target_binder_procs_freeze_locked.iter_mut().for_each(|bp| {
-                                bp.freeze();
-                            });
-                            Ok(SUCCESS)
-                        })
-                    })
-                }
-                uapi::BINDER_GET_FROZEN_INFO => {
-                    if user_arg.is_null() {
-                        return error!(EINVAL);
-                    }
-
-                    let user_ref = UserRef::<binder_frozen_status_info>::new(user_arg);
-                    let memory_accessor =
-                        binder_proc.get_memory_accessor(current_task, remote_memory_accessor);
-                    let binder_frozen_status_info { pid, .. } =
-                        memory_accessor.read_object(user_ref)?;
-                    let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
-                    if target_binder_procs.is_empty() {
-                        return error!(EINVAL);
-                    }
-                    let mut has_sync_recv = false;
-                    let mut has_async_recv = false;
-                    release_iter_after!(target_binder_procs, current_task.kernel(), {
-                        target_binder_procs.iter().for_each(|binder_proc| {
-                            let freeze_state = binder_proc.freeze_state.lock();
-                            has_sync_recv |= freeze_state.freeze_status.has_sync_recv;
-                            has_async_recv |= freeze_state.freeze_status.has_async_recv;
-                        });
-                    });
-                    memory_accessor.write_object(
-                        user_ref,
-                        &binder_frozen_status_info {
-                            pid,
-                            // TODO(https://fxbug.dev/391657004): After timeout is supported, use
-                            // the second right bit as the indicator whether it has any pending
-                            // transactions.
-                            sync_recv: has_sync_recv as u32,
-                            async_recv: has_async_recv as u32,
-                        },
-                    )?;
-                    Ok(SUCCESS)
-                }
                 _ => {
                     track_stub!(
                         TODO("https://fxbug.dev/322874384"),
@@ -968,10 +988,10 @@ impl BinderDriver {
         };
 
         if let Err(err) = &result {
-            // TODO(https://fxbug.dev/42068804): Right now there are many errors that happen that are due to
-            // errors in the kernel driver and not because of an issue in userspace. Until the
-            // driver is more stable, log these.
-            log_error!("binder command {:#x} failed: {:?}", command, err);
+            // Downgrade to TRACE level as the driver is stable and standard userspace IPC
+            // command failures (e.g. expected ENOENT/EAGAIN races during teardown/freeze)
+            // must not flood the Fuchsia system log at ERROR level (fixes VIM3 logspam b/409499623).
+            log_trace!("binder command {:#x} failed: {:?}", command, err);
         }
         result
     }

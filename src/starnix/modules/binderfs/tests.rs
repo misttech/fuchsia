@@ -4407,7 +4407,11 @@ pub mod tests {
                 Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
             );
 
-            owner.proc.freeze_state.lock().freeze();
+            let pending_notifications = owner.proc.freeze_state.lock().freeze();
+            for (proc, cmd) in pending_notifications {
+                proc.enqueue_command(cmd);
+                proc.release(current_task.kernel());
+            }
 
             // The client process should have a notification waiting.
             assert_matches!(
@@ -4484,6 +4488,63 @@ pub mod tests {
             assert!(client.thread.lock().command_queue.is_empty());
             // The client process should have no notification.
             assert!(client.proc.lock().command_queue.is_empty());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn freeze_notification_is_cleared_after_process_dead() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new(locked, current_task, &device);
+            let client = BinderProcessFixture::new(locked, current_task, &device);
+
+            // Register an object with the owner.
+            let guard = owner.proc.lock().find_or_register_object(
+                &owner.thread,
+                LocalBinderObject {
+                    weak_ref_addr: UserAddress::from(0x0000000000000001),
+                    strong_ref_addr: UserAddress::from(0x0000000000000002),
+                },
+                BinderObjectFlags::empty(),
+            );
+
+            // Insert a handle to the object in the receiver. This also retains a strong reference.
+            let handle = client
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            const FREEZE_NOTIFICATION_COOKIE: binder_uintptr_t = 0xAAAAAAAA;
+
+            // Register a freeze notification handler.
+            client
+                .proc
+                .handle_request_freeze_notification(handle, FREEZE_NOTIFICATION_COOKIE)
+                .expect("request freeze notification");
+
+            // The client process should acknowledge the request.
+            assert_matches!(
+                client.proc.lock().command_queue.pop_front(),
+                Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
+            );
+
+            // Now let the owner process die!
+            drop(owner);
+
+            // Clear the freeze notification handler. Since the owner is dead,
+            // this should quietly succeed and return Ok(()) under our fix.
+            client
+                .proc
+                .handle_clear_freeze_notification(handle, FREEZE_NOTIFICATION_COOKIE)
+                .expect("clear freeze notification on dead process should succeed");
+
+            // Check that the client received the ClearFreezeNotificationDone acknowledgement.
+            assert_matches!(
+                client.proc.lock().command_queue.pop_front(),
+                Some(Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE))
+            );
         })
         .await;
     }

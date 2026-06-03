@@ -81,38 +81,50 @@ pub struct BinderFreezeState {
 }
 
 impl BinderFreezeState {
-    pub fn freeze(&mut self) {
+    pub fn freeze(&mut self) -> Vec<(OwnedRef<BinderProcess>, Command)> {
         self.freeze_status.frozen = true;
         self.freeze_status.has_async_recv = false;
         self.freeze_status.has_sync_recv = false;
+        let mut pending_notifications = Vec::new();
         self.freeze_subscribers.retain(|(proc, cookie)| {
-            let Some(p) = proc.upgrade() else {
-                return false; // remove if the process is already dead
-            };
-            p.enqueue_command(Command::FrozenBinder(binder_frozen_state_info {
-                cookie: *cookie,
-                is_frozen: 1,
-                reserved: 0,
-            }));
-            true
+            if let Some(p) = proc.re_own() {
+                pending_notifications.push((
+                    p,
+                    Command::FrozenBinder(binder_frozen_state_info {
+                        cookie: *cookie,
+                        is_frozen: 1,
+                        reserved: 0,
+                    }),
+                ));
+                true
+            } else {
+                false
+            }
         });
+        pending_notifications
     }
 
-    pub fn thaw(&mut self) {
+    pub fn thaw(&mut self) -> Vec<(OwnedRef<BinderProcess>, Command)> {
         self.freeze_status.frozen = false;
         self.freeze_status.has_async_recv = false;
         self.freeze_status.has_sync_recv = false;
+        let mut pending_notifications = Vec::new();
         self.freeze_subscribers.retain(|(proc, cookie)| {
-            let Some(proc) = proc.upgrade() else {
-                return false; // remove if the process is already dead
-            };
-            proc.enqueue_command(Command::FrozenBinder(binder_frozen_state_info {
-                cookie: *cookie,
-                is_frozen: 0,
-                reserved: 0,
-            }));
-            true
+            if let Some(p) = proc.re_own() {
+                pending_notifications.push((
+                    p,
+                    Command::FrozenBinder(binder_frozen_state_info {
+                        cookie: *cookie,
+                        is_frozen: 0,
+                        reserved: 0,
+                    }),
+                ));
+                true
+            } else {
+                false
+            }
         });
+        pending_notifications
     }
 }
 
@@ -730,15 +742,15 @@ impl BinderProcess {
                 self.lock().handles.get_owner(index).ok_or_else(|| errno!(ENOENT))?
             }
         };
-        let owner = owner.upgrade().ok_or_else(|| errno!(ENOENT))?;
-        let mut owner_freeze_state = owner.freeze_state.lock();
-        if let Some((idx, _)) = owner_freeze_state
-            .freeze_subscribers
-            .iter()
-            .enumerate()
-            .find(|(_idx, (proc, c))| proc.as_ptr() == self.weak_self.as_ptr() && *c == cookie)
-        {
-            owner_freeze_state.freeze_subscribers.swap_remove(idx);
+        if let Some(owner) = owner.upgrade() {
+            let mut owner_freeze_state = owner.freeze_state.lock();
+            if let Some((idx, _)) =
+                owner_freeze_state.freeze_subscribers.iter().enumerate().find(
+                    |(_idx, (proc, c))| proc.as_ptr() == self.weak_self.as_ptr() && *c == cookie,
+                )
+            {
+                owner_freeze_state.freeze_subscribers.swap_remove(idx);
+            }
         }
         self.enqueue_command(Command::ClearFreezeNotificationDone(cookie));
         Ok(())
