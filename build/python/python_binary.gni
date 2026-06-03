@@ -184,6 +184,11 @@ template("python_binary") {
     if (defined(mypy_checker)) {
       validations = [ ":${mypy_checker}" ]
     }
+    metadata = {
+      # Ensure validation dependencies are excluded from metadata walk!
+      # TODO(https://fxbug.dev/517150685): Remove this once new GN binary has rolled.
+      library_info_barrier = deps
+    }
   }
 
   if (defined(mypy_checker)) {

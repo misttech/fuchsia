@@ -192,7 +192,7 @@ template("python_library") {
       }
 
       # Collect library_info from any libraries that are needed.
-      library_info_barrier = library_deps
+      library_info_barrier = deps
     }
     sources = _full_source_paths + _full_stub_paths
   }
@@ -210,6 +210,10 @@ template("python_library") {
     output_conversion = "json"
     data_keys = [ "library_info" ]
     walk_keys = [ "library_info_barrier" ]
+
+    metadata = {
+      library_info_barrier = public_deps
+    }
   }
 
   validate_python_library(_labels.mypy_checker) {
@@ -245,6 +249,11 @@ template("python_library") {
     if (_enable_mypy) {
       # Run python type checks using Mypy if enable_mypy flag is set.
       validations = [ ":${_labels.mypy_checker}" ]
+    }
+    metadata = {
+      # Ensure validation dependencies are excluded from metadata walk!
+      # TODO(https://fxbug.dev/517150685): Remove this once new GN binary has rolled
+      library_info_barrier = deps
     }
   }
 }
