@@ -34,10 +34,10 @@ where
     }
 
     /// Consumes this builder and returns all the values that were interned.
-    pub fn build(mut self) -> Vec<T> {
+    pub fn build(self) -> Vec<T> {
         let mut table = Vec::default();
         table.resize_with(self.index.len(), Default::default);
-        self.index.drain().for_each(|(element, index)| {
+        self.index.into_iter().for_each(|(element, index)| {
             table[index] = element;
         });
         table
