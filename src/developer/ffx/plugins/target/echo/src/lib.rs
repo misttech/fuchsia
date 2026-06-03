@@ -2,15 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use ffx_target_echo_args::EchoCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxMain, FfxTool};
+use fho::{FfxError, FfxMain, FfxTool};
 use schemars::JsonSchema;
 use serde::Serialize;
 use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
+use thiserror::Error;
+
+#[derive(FfxError, Error, Debug)]
+pub enum EchoError {
+    #[exit_with_code(1)]
+    #[error("Failed to establish connection to Remote Control Service: {0}")]
+    TargetConnectionFailed(#[source] fho::Error),
+
+    #[exit_with_code(1)]
+    #[error("Echo capability failed: {0}")]
+    EchoCapabilityFailed(#[from] fidl::Error),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+}
 
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -24,27 +39,27 @@ pub enum EchoMessage {
 }
 
 #[derive(FfxTool)]
+#[main_error(EchoError)]
 pub struct EchoTool {
     #[command]
     cmd: EchoCommand,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
 }
 
-fho::embedded_plugin!(EchoTool);
+fho::embedded_plugin!(EchoTool, EchoError);
 
 #[async_trait(?Send)]
 impl FfxMain for EchoTool {
     type Writer = VerifiedMachineWriter<EchoMessage>;
+    type Error = EchoError;
 
-    type Error = ::fho::Error;
-
-    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
         match echo_impl(self.rcs_proxy, self.cmd, &mut writer).await {
             Ok(()) => Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
-                let _ = writer.machine_or(&EchoMessage::UnexpectedError(error_msg), e);
-                fho::exit_with_code!(1)
+                let _ = writer.machine_or(&EchoMessage::UnexpectedError(error_msg), &e);
+                Err(e)
             }
         }
     }
@@ -54,7 +69,7 @@ async fn echo_impl(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     cmd: EchoCommand,
     writer: &mut VerifiedMachineWriter<EchoMessage>,
-) -> Result<()> {
+) -> Result<(), EchoError> {
     let echo_text = cmd.text.unwrap_or_else(|| "Ffx".to_string());
     // This outer loop retries connecting to the target every time the
     // connection fails. If we only connect once it only runs once.
@@ -88,7 +103,8 @@ async fn echo_impl(
                     .map_err(|e| fho::Error::User(e.into()))?;
                 Ok(())
             })
-            .await?;
+            .await
+            .map_err(EchoError::TargetConnectionFailed)?;
 
         // This inner loop handles the repetition part of the --repeat argument.
         // If that argument wasn't specified then this too only runs once.
@@ -107,7 +123,7 @@ async fn echo_impl(
                     if cmd.repeat {
                         break;
                     } else {
-                        return Err(anyhow!(message));
+                        return Err(EchoError::EchoCapabilityFailed(e));
                     }
                 }
             }
@@ -124,7 +140,7 @@ async fn echo_impl(
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::Context;
+    use anyhow::{Context, Result};
     use fdomain_fuchsia_developer_remotecontrol::{
         RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
     };
@@ -147,6 +163,24 @@ mod test {
                             .send(value.as_ref())
                             .context("error sending response")
                             .expect("should send");
+                    }
+                    _ => panic!("unexpected request: {:?}", req),
+                }
+            }
+        })
+        .detach();
+        proxy
+    }
+
+    async fn setup_failing_fake_service(client: Arc<fdomain_client::Client>) -> RemoteControlProxy {
+        use futures::TryStreamExt;
+        let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
+        fuchsia_async::Task::local(async move {
+            while let Ok(Some(req)) = stream.try_next().await {
+                match req {
+                    RemoteControlRequest::EchoString { value: _, responder } => {
+                        // Intentionally drop the responder to trigger ClientChannelClosed
+                        drop(responder);
                     }
                     _ => panic!("unexpected request: {:?}", req),
                 }
@@ -180,7 +214,7 @@ mod test {
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
         let buffers = TestBuffers::default();
-        let writer = <EchoTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<EchoMessage>::new_test(None, &buffers);
 
         let result = tool.main(writer).await;
         assert!(result.is_ok());
@@ -228,7 +262,7 @@ mod test {
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
         let tool = EchoTool { cmd, rcs_proxy: connector };
         let buffers = TestBuffers::default();
-        let writer = <EchoTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+        let writer = VerifiedMachineWriter::<EchoMessage>::new_test(Some(Format::Json), &buffers);
 
         let result = tool.main(writer).await;
         assert!(result.is_ok());
@@ -238,7 +272,7 @@ mod test {
         let err = format!("schema not valid {output}");
         let json = serde_json::from_str(&output).expect(&err);
         let err = format!("json must adhere to schema: {json}");
-        <EchoTool as FfxMain>::Writer::verify_schema(&json).expect(&err);
+        VerifiedMachineWriter::<EchoMessage>::verify_schema(&json).expect(&err);
 
         let want = EchoMessage::Message("test".into());
         assert_eq!(json, json!(want));
@@ -270,13 +304,50 @@ mod test {
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
         let buffers = TestBuffers::default();
-        let writer = <EchoTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<EchoMessage>::new_test(None, &buffers);
 
         let result = tool.main(writer).await;
 
         match result {
-            Err(fho::Error::ExitWithCode(1)) => {}
-            _ => panic!("Expected Err(ExitWithCode(1)), got {:?}", result),
+            Err(EchoError::TargetConnectionFailed(_)) => {}
+            _ => panic!("Expected Err(EchoError::TargetConnectionFailed), got {:?}", result),
+        }
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_echo_capability_failure() -> Result<()> {
+        let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
+        let client = fdomain_local::local_client_empty();
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(setup_failing_fake_service(Arc::clone(&client)).map(Ok))
+            }),
+            ..Default::default()
+        });
+
+        let env = FhoEnvironment::new_with_args(
+            &ffx_config::EnvironmentContext::no_context(
+                ffx_config::environment::ExecutableKind::Test,
+                Default::default(),
+                None,
+                true,
+            )?,
+            &["some", "test"],
+        );
+        let target_env = target_behavior::target_interface(&env);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
+
+        let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
+        let tool = EchoTool { cmd, rcs_proxy: connector };
+        let buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::<EchoMessage>::new_test(None, &buffers);
+
+        let result = tool.main(writer).await;
+
+        match result {
+            Err(EchoError::EchoCapabilityFailed(_)) => {}
+            _ => panic!("Expected Err(EchoError::EchoCapabilityFailed), got {:?}", result),
         }
         Ok(())
     }
