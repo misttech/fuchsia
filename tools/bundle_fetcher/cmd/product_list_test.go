@@ -184,11 +184,34 @@ func TestExecuteWithSink(t *testing.T) {
 			"path": "obj/build/images/fuchsia/product_bundle",
 			"product_version": "fake_version"
 		  }`),
+		"builds/999/build_api/product_bundles.json": []byte(`[{
+			"label": "//build/images/fuchsia:product_bundle(//build/toolchain/fuchsia:x64)",
+			"name": "custom_product.x64",
+			"path": "obj/build/images/fuchsia/product_bundle",
+			"product_version": "fake_version",
+			"transfer_manifest_path": "obj/build/images/fuchsia/transfer.json",
+			"transfer_manifest_url": "file://obj/build/images/fuchsia/transfer.json"
+		  },
+		  {
+			"label": "//build/images/fuchsia:product_bundle(//build/toolchain/fuchsia:x64)",
+			"name": "another_product.x64",
+			"path": "obj/build/images/fuchsia/product_bundle",
+			"product_version": "fake_version",
+			"transfer_manifest_path": "obj/build/images/fuchsia/transfer.json",
+			"transfer_manifest_url": "file://obj/build/images/fuchsia/transfer.json"
+		  }]`),
+		"builds/999/product_bundles/custom_product.x64/transfer.json": []byte(`{
+			"content": "fake"
+		  }`),
+		"builds/999/product_bundles/another_product.x64/transfer.json": []byte(`{
+			"content": "fake"
+		  }`),
 	}
 	ctx := context.Background()
 	var tests = []struct {
 		name               string
 		buildIDs           string
+		productBundles     string
 		dataSinkErr        error
 		expectedOutput     *build.ProductBundlesManifest
 		expectedErrMessage string
@@ -214,6 +237,23 @@ func TestExecuteWithSink(t *testing.T) {
 			buildIDs:           "789",
 			expectedErrMessage: "unable to read product bundle metdadata for build_id 789: builds/789/build_api/product_bundles.json json: cannot unmarshal object into Go value of type []build.ProductBundle",
 		},
+		{
+			name:           "valid_product_bundles_with_arg",
+			buildIDs:       "999",
+			productBundles: "custom_product.x64,another_product.x64",
+			expectedOutput: &build.ProductBundlesManifest{
+				build.ProductBundle{
+					Name:                "custom_product.x64",
+					ProductVersion:      "fake_version",
+					TransferManifestUrl: "gs://orange/builds/999/product_bundles/custom_product.x64/transfer.json",
+				},
+				build.ProductBundle{
+					Name:                "another_product.x64",
+					ProductVersion:      "fake_version",
+					TransferManifestUrl: "gs://orange/builds/999/product_bundles/another_product.x64/transfer.json",
+				},
+			},
+		},
 	}
 
 	dir, err := os.MkdirTemp("", "bundle_fetcher_dir")
@@ -232,6 +272,7 @@ func TestExecuteWithSink(t *testing.T) {
 			sink := bundler.NewMemSink(contents, test.dataSinkErr, "")
 			cmd := productListCmd{
 				buildIDs:                  test.buildIDs,
+				productBundles:            test.productBundles,
 				gcsBucket:                 "orange",
 				outDir:                    dir,
 				outputProductListFileName: productBundlesJSONName,

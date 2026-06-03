@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
@@ -47,6 +48,7 @@ type productBundleMetadataV2 struct {
 type productListCmd struct {
 	gcsBucket                 string
 	buildIDs                  string
+	productBundles            string
 	outDir                    string
 	outputProductListFileName string
 }
@@ -67,12 +69,13 @@ func (*productListCmd) Synopsis() string {
 }
 
 func (*productListCmd) Usage() string {
-	return "bundle_fetcher product-list -bucket <GCS_BUCKET> -build_ids <build_ids>\n"
+	return "bundle_fetcher product-list -bucket <GCS_BUCKET> -build_ids <build_ids> [-product_bundles <product_bundles>]\n"
 }
 
 func (cmd *productListCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&cmd.gcsBucket, "bucket", "", "GCS bucket from which to read the files from.")
 	f.StringVar(&cmd.buildIDs, "build_ids", "", "Comma separated list of build_ids.")
+	f.StringVar(&cmd.productBundles, "product_bundles", "", "Comma separated list of product bundles.")
 	f.StringVar(&cmd.outDir, "out_dir", "", "Directory to write out_file_name to.")
 	f.StringVar(&cmd.outputProductListFileName, "out_file_name", "product_bundles.json", "Name of the output file containing the product bundle to transfer lookup information.")
 }
@@ -127,6 +130,15 @@ func (cmd *productListCmd) execute(ctx context.Context) error {
 func (cmd *productListCmd) executeWithSink(ctx context.Context, sink bundler.DataSink) error {
 	productList := build.ProductBundlesManifest{}
 
+	var flagProductNames []string
+	if cmd.productBundles != "" {
+		for _, p := range strings.Split(cmd.productBundles, ",") {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				flagProductNames = append(flagProductNames, trimmed)
+			}
+		}
+	}
+
 	buildIDsList := strings.Split(cmd.buildIDs, ",")
 	for _, buildID := range buildIDsList {
 		buildID = strings.TrimSpace(buildID)
@@ -137,19 +149,23 @@ func (cmd *productListCmd) executeWithSink(ctx context.Context, sink bundler.Dat
 			return fmt.Errorf("unable to read product bundle metdadata for build_id %s: %s %w", buildID, productBundlePath, err)
 		}
 
-		buildInfoPath := path.Join(buildsDirName, buildID, buildApiDirName, buildInfoJSONName)
-		productName, err := getProductNameFromJSON(ctx, sink, buildInfoPath)
-		if err != nil {
-			return fmt.Errorf("unable to read build info for build_id %s: %s %w", buildID, buildInfoPath, err)
+		productNames := flagProductNames
+		if len(productNames) == 0 {
+			buildInfoPath := path.Join(buildsDirName, buildID, buildApiDirName, buildInfoJSONName)
+			productName, err := getProductNameFromJSON(ctx, sink, buildInfoPath)
+			if err != nil {
+				return fmt.Errorf("unable to read build info for build_id %s: %s %w", buildID, buildInfoPath, err)
+			}
+			productNames = []string{productName}
 		}
 
-		transferManifestUrl := getTransferManifestPath(ctx, cmd.gcsBucket, buildsDirName, buildID, productName)
-
 		for _, productBundle := range *productBundles {
-			// Only include "main" product bundle of each build
-			if productBundle.Name != productName {
+			if !slices.Contains(productNames, productBundle.Name) {
 				continue
 			}
+
+			transferManifestUrl := getTransferManifestPath(ctx, cmd.gcsBucket, buildsDirName, buildID, productBundle.Name)
+
 			productEntry := build.ProductBundle{
 				// Entries for Label and TransferManifestPath are not needed.
 				Name:                productBundle.Name,
