@@ -1656,6 +1656,14 @@ pub async fn replace_child<'a, S: HandleOwner>(
     let mut sub_dirs_delta: i64 = 0;
     let now = Timestamp::now();
 
+    let is_same_dir_casefold_rename = if let Some((src_dir, src_name)) = src {
+        src_dir.object_id() == dst.0.object_id()
+            && src_dir.dir_type().is_casefold()
+            && fxfs_unicode::casefold_cmp(src_name, dst.1) == std::cmp::Ordering::Equal
+    } else {
+        false
+    };
+
     let src = if let Some((src_dir, src_name)) = src {
         let store_id = dst.0.store().store_object_id();
         assert_eq!(store_id, src_dir.store().store_object_id());
@@ -1719,7 +1727,15 @@ pub async fn replace_child<'a, S: HandleOwner>(
     } else {
         None
     };
-    replace_child_with_object(transaction, src, dst, sub_dirs_delta, now).await
+    replace_child_with_object(
+        transaction,
+        src,
+        dst,
+        sub_dirs_delta,
+        is_same_dir_casefold_rename,
+        now,
+    )
+    .await
 }
 
 /// Replaces dst.0/dst.1 with the given object, or unlinks if `src` is None.
@@ -1736,9 +1752,14 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
     src: Option<(u64, ObjectDescriptor)>,
     dst: (&'a Directory<S>, &str),
     mut sub_dirs_delta: i64,
+    is_same_dir_casefold_rename: bool,
     timestamp: Timestamp,
 ) -> Result<ReplacedChild, Error> {
-    let deleted_id_and_descriptor = dst.0.lookup(dst.1).await?;
+    let deleted_id_and_descriptor = if is_same_dir_casefold_rename {
+        None
+    } else {
+        dst.0.lookup(dst.1).await?
+    };
     let store_id = dst.0.store().store_object_id();
     // There might be optimizations here that allow us to skip the graveyard where we can delete an
     // object in a single transaction (which should be the common case).
@@ -2425,6 +2446,7 @@ mod tests {
                 Some((src_child.0, src_child.1)),
                 (&parent_directory, &encrypted_dst_name.expect("dst child not found")),
                 0,
+                false,
                 Timestamp::now(),
             )
             .await
@@ -4577,6 +4599,7 @@ mod tests {
                 Some((oid, ObjectDescriptor::Directory)),
                 (&root_directory, "foo"),
                 0,
+                false,
                 Timestamp::now(),
             )
             .await
@@ -4907,5 +4930,108 @@ mod tests {
             );
         }
         fs.close().await.expect("close failed");
+    }
+
+    /// Verifies that renaming a file to a casefold-equivalent casing variant within
+    /// the same directory works.
+    #[fuchsia::test]
+    async fn test_casefold_same_dir_rename() -> Result<(), Error> {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", NewChildStoreOptions::default()).await.unwrap();
+
+        let dir = {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            let dir =
+                Directory::create(&mut transaction, &store, None).await.expect("create failed");
+            transaction.commit().await.expect("commit");
+            dir
+        };
+
+        // 1. Enable casefolding on the directory
+        dir.set_casefold(true).await.expect("set casefold");
+
+        // 2. Create a child file "FOO" (casing: uppercase)
+        let file_id = {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file =
+                dir.create_child_file(&mut transaction, "FOO").await.expect("create file failed");
+            transaction.commit().await.expect("commit failed");
+            file.object_id()
+        };
+
+        // 3. Confirm target can be looked up under both "FOO" and "foo" (due to case-insensitivity)
+        let (lookup_id_foo, _, _) = dir.lookup("foo").await.unwrap().unwrap();
+        assert_eq!(lookup_id_foo, file_id);
+        let (lookup_id_foo_upper, _, _) = dir.lookup("FOO").await.unwrap().unwrap();
+        assert_eq!(lookup_id_foo_upper, file_id);
+
+        // 4. Execute the same-directory casefolded rename "FOO" -> "foo" (lowercase)
+        {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store.store_object_id(), dir.object_id()),
+                        LockKey::object(store.store_object_id(), file_id),
+                    ],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+
+            replace_child(&mut transaction, Some((&dir, "FOO")), (&dir, "foo"))
+                .await
+                .expect("same-dir casefold rename failed");
+
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // 5. Assert the file was NOT purged (lookup still succeeds!)
+        let (final_id_foo, _, _) = dir.lookup("foo").await.unwrap().unwrap();
+        assert_eq!(final_id_foo, file_id);
+
+        // Verify survival of the underlying node handle (ObjectStore::open_object)
+        let file_handle =
+            ObjectStore::open_object(&dir.owner(), file_id, HandleOptions::default(), None)
+                .await
+                .expect("Underlying file object was prematurely tombstoned / graveyarded!");
+
+        // Assert reference count is exactly 1.
+        let properties = file_handle.get_properties().await.unwrap();
+        assert_eq!(properties.refs, 1);
+
+        // Assert the graveyard is completely empty (proves NO graveyard tombstone leak occurred!)
+        assert_eq!(dir.store().graveyard_count(), 0);
+
+        // 6. Verify the internal casing entry was updated to "foo"
+        let mut count = 0;
+        let mut found_casing = String::new();
+        let layer_set = dir.store().tree().layer_set();
+        let mut merger = layer_set.merger();
+        let mut iter = dir.iter(&mut merger).await.expect("iter");
+        while let Some(entry) = iter.get() {
+            count += 1;
+            found_casing = entry.0.to_string();
+            iter.advance().await.expect("advance");
+        }
+        assert_eq!(count, 1);
+        assert_eq!(found_casing, "foo"); // mapping has successfully changed from "FOO" to "foo".
+
+        fs.close().await.expect("Close failed");
+        Ok(())
     }
 }

@@ -380,6 +380,7 @@ impl DeliveryBlobWriter {
             Some((object_id, ObjectDescriptor::File)),
             (dir.directory().directory(), &name),
             0,
+            false,
             Timestamp::now(),
         )
         .await

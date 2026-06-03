@@ -242,6 +242,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                 Some((handle.object_id(), ObjectDescriptor::File)),
                 (&profile_dir, name),
                 0,
+                false,
                 Timestamp::now(),
             )
             .await?;
