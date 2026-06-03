@@ -13,6 +13,10 @@ use vfs::execution_scope::ExecutionScope;
 
 mod directory;
 mod file;
+mod pager;
+mod volume;
+
+use pager::ErofsPager;
 
 fn map_to_status(error: anyhow::Error) -> zx::Status {
     if let Some(status) = error.root_cause().downcast_ref::<zx::Status>() {
@@ -34,12 +38,16 @@ async fn main() -> Result<(), anyhow::Error> {
         fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleType::DirectoryRequest.into())
             .context("missing DirectoryRequest startup handle")?;
 
+    let pager = Arc::new(ErofsPager::new().context("Failed to create ErofsPager")?);
+
     let export = vfs::pseudo_directory! {
         "svc" => vfs::pseudo_directory! {
             ErofsMarker::PROTOCOL_NAME => {
+                let pager = pager.clone();
                 vfs::service::host(move |stream: ErofsRequestStream| {
+                    let pager = pager.clone();
                     async move {
-                        if let Err(e) = handle_request_stream(stream).await {
+                        if let Err(e) = handle_request_stream(stream, pager).await {
                             log::error!("Error handling stream: {:?}", e);
                         }
                     }
@@ -60,12 +68,15 @@ async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn handle_request_stream(mut stream: ErofsRequestStream) -> Result<(), anyhow::Error> {
+async fn handle_request_stream(
+    mut stream: ErofsRequestStream,
+    pager: Arc<ErofsPager>,
+) -> Result<(), anyhow::Error> {
     while let Some(request) = stream.try_next().await? {
         match request {
             ErofsRequest::Serve { payload, responder } => {
                 log::debug!("Received Serve request");
-                match serve_erofs(payload) {
+                match serve_erofs(payload, pager.clone()) {
                     Ok(()) => {
                         responder.send(Ok(()))?;
                     }
@@ -81,24 +92,16 @@ async fn handle_request_stream(mut stream: ErofsRequestStream) -> Result<(), any
     Ok(())
 }
 
-fn serve_erofs(payload: fidl_fuchsia_erofs::ErofsServeRequest) -> Result<(), anyhow::Error> {
+fn serve_erofs(
+    payload: fidl_fuchsia_erofs::ErofsServeRequest,
+    pager: Arc<ErofsPager>,
+) -> Result<(), anyhow::Error> {
     let backing_vmo =
         payload.backing_vmo.ok_or(zx::Status::INVALID_ARGS).context("Missing backing_vmo")?;
     let root = payload.root.ok_or(zx::Status::INVALID_ARGS).context("Missing root")?;
 
     log::info!("Serving new EROFS instance");
-    let reader = Arc::new(
-        erofs::readers::VmoReader::new(Arc::new(backing_vmo))
-            .context("Failed to create VmoReader")?,
-    );
-    let parser = Arc::new(erofs::ErofsParser::new(reader).context("Failed to create ErofsParser")?);
-    let root_node = parser.root_node();
-    let root_dir = Arc::new(directory::ErofsDirectory::new(parser, root_node));
-
-    // Serve the root directory. EROFS is read-only, so we only allow read permissions. We use a
-    // separate execution scope per erofs instance.
-    let scope = ExecutionScope::new();
-    vfs::directory::serve_on(root_dir, fio::PERM_READABLE, scope, root);
+    volume::ErofsVolume::serve(backing_vmo, pager, root)?;
 
     Ok(())
 }

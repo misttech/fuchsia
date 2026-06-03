@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::file::ErofsFile;
+use crate::volume::ErofsVolume;
 use erofs::{DirectoryNode, FileType, Node};
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
@@ -17,13 +18,13 @@ use vfs::path::Path;
 
 /// A directory in the EROFS filesystem.
 pub struct ErofsDirectory {
-    parser: Arc<erofs::ErofsParser>,
+    volume: Arc<ErofsVolume>,
     node: DirectoryNode,
 }
 
 impl ErofsDirectory {
-    pub fn new(parser: Arc<erofs::ErofsParser>, node: DirectoryNode) -> Self {
-        Self { parser, node }
+    pub fn new(volume: Arc<ErofsVolume>, node: DirectoryNode) -> Self {
+        Self { volume, node }
     }
 }
 
@@ -78,7 +79,8 @@ impl Directory for ErofsDirectory {
 
         // Lookup the child in the EROFS image.
         let child_node = self
-            .parser
+            .volume
+            .parser()
             .lookup(&self.node, name)
             .map_err(|e| {
                 log::error!("Lookup failed for '{}': {:?}", name, e);
@@ -89,14 +91,14 @@ impl Directory for ErofsDirectory {
         // Delegate the remaining path traversal to the child.
         match child_node {
             Node::Directory(dir_node) => {
-                let child_dir = Arc::new(ErofsDirectory::new(self.parser.clone(), dir_node));
+                let child_dir = Arc::new(ErofsDirectory::new(self.volume.clone(), dir_node));
                 child_dir.open(scope, path, flags, object_request)
             }
             Node::File(file_node) => {
                 if !path.is_empty() {
                     return Err(zx::Status::NOT_DIR);
                 }
-                let child_file = Arc::new(ErofsFile::new(self.parser.clone(), file_node));
+                let child_file = ErofsFile::new(self.volume.clone(), file_node)?;
                 vfs::file::serve(child_file, scope, &flags, object_request)
             }
         }
@@ -119,7 +121,8 @@ impl Directory for ErofsDirectory {
 
         loop {
             let filled = self
-                .parser
+                .volume
+                .parser()
                 .read_directory(&self.node, entry_offset as usize, &mut buffer)
                 .map_err(|e| {
                     log::error!("Read directory failed at offset {}: {:?}", entry_offset, e);
@@ -136,7 +139,7 @@ impl Directory for ErofsDirectory {
                 };
 
                 // We have to go parse the child inode entry to find the ino.
-                let child = self.parser.node(entry.nid).map_err(|e| {
+                let child = self.volume.parser().node(entry.nid).map_err(|e| {
                     log::error!("Failed to lookup child node {} for ino: {:?}", entry.nid, e);
                     e.to_status()
                 })?;

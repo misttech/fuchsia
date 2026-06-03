@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_erofs::{ErofsMarker, ErofsProxy, ErofsServeRequest};
 use fidl_fuchsia_io as fio;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
 use fuchsia_fs::directory::{DirEntry, DirentKind, readdir, readdir_inclusive};
 use std::fs;
+use std::io::Read as _;
+use test_case::test_case;
 
 async fn setup_realm() -> (ErofsProxy, fuchsia_component_test::RealmInstance) {
     let builder = RealmBuilder::new().await.expect("Failed to create RealmBuilder");
@@ -96,15 +98,14 @@ async fn test_erofs_directory_traversal() {
 }
 
 #[fuchsia::test]
-async fn test_erofs_file_stub() {
+async fn test_erofs_file_get_backing_memory() {
     let (root_client, _realm) = setup_erofs().await;
 
     let file = fuchsia_fs::directory::open_file(&root_client, "file1", fio::PERM_READABLE)
         .await
         .expect("Failed to open file1");
 
-    let read_result = file.read(100).await.expect("FIDL call to read failed");
-    assert_eq!(read_result, Err(zx::Status::NOT_SUPPORTED.into_raw()));
+    let expected = fs::read("/pkg/data/simple/file1").expect("Failed to read file1 source");
 
     let (_, immut_attrs) = file
         .get_attributes(fio::NodeAttributesQuery::all())
@@ -113,11 +114,81 @@ async fn test_erofs_file_stub() {
         .map_err(zx::Status::from_raw)
         .expect("get_attributes returned error");
 
-    assert_eq!(immut_attrs.content_size, Some(15)); // "this is a file\n" is 15 bytes
+    assert_eq!(immut_attrs.content_size, Some(expected.len() as u64));
     assert_eq!(
         immut_attrs.abilities,
         Some(fio::Operations::GET_ATTRIBUTES | fio::Operations::READ_BYTES)
     );
     assert!(immut_attrs.id.is_some());
     assert!(immut_attrs.id.unwrap() > 0);
+
+    let paged_vmo = file
+        .get_backing_memory(fio::VmoFlags::READ)
+        .await
+        .expect("get_backing_memory FIDL call failed")
+        .map_err(zx::Status::from_raw)
+        .expect("get_backing_memory returned error");
+
+    let info = paged_vmo.info().expect("Failed to query VMO info");
+    assert_eq!(info.committed_bytes, 0);
+
+    let mut buf = vec![0u8; expected.len()];
+    paged_vmo.read(&mut buf, 0).expect("Failed to read paged VMO");
+    assert_eq!(buf, expected);
+}
+
+#[test_case("file1")]
+#[test_case("photosynthesis")]
+#[test_case("quantum")]
+#[fuchsia::test]
+async fn test_erofs_file_read(filename: &str) {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let file = fuchsia_fs::directory::open_file(&root_client, filename, fio::PERM_READABLE)
+        .await
+        .expect("Failed to open file");
+
+    let file_channel = file.into_channel().unwrap().into_zx_channel();
+    let fd = fdio::create_fd(file_channel.into()).expect("Failed to create FD from VMO connection");
+    let mut std_file: std::fs::File = fd.into();
+
+    let mut content = Vec::new();
+    std_file.read_to_end(&mut content).expect("Failed to read std_file using std::io::Read");
+
+    let expected =
+        fs::read(format!("/pkg/data/simple/{}", filename)).expect("Failed to read source file");
+    assert_eq!(content, expected);
+}
+
+#[fuchsia::test]
+async fn test_erofs_file_paging_after_close() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    // Open "photosynthesis", which spans two pages (4128 bytes).
+    let file = fuchsia_fs::directory::open_file(&root_client, "photosynthesis", fio::PERM_READABLE)
+        .await
+        .expect("Failed to open photosynthesis");
+
+    // Request backing VMO memory
+    let paged_vmo = file
+        .get_backing_memory(fio::VmoFlags::READ)
+        .await
+        .expect("get_backing_memory FIDL call failed")
+        .map_err(zx::Status::from_raw)
+        .expect("get_backing_memory returned error");
+
+    // Verify no pages are committed initially.
+    let info = paged_vmo.info().expect("Failed to query VMO info");
+    assert_eq!(info.committed_bytes, 0);
+
+    // Close the connection to the file. This should drop the file proxy on our end, and on the
+    // server, the VFS connection to the ErofsFile is dropped. If lifecycle tracking works
+    // properly, the ErofsFile stays alive because of the active VMO child reference, and it will
+    // continue to page in data.
+    drop(file);
+
+    // Read page 2 from the VMO (offset 4100). This forces a page-in.
+    let mut buf = [0u8; 10];
+    paged_vmo.read(&mut buf, 4100).expect("Failed to read VMO after closing file connection");
+    assert_ne!(buf, [0u8; 10]); // The read should succeed and return actual data.
 }

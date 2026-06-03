@@ -12,3 +12,13 @@ resource("simple_erofs_image") {
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }
+
+# The raw source files that were packed into simple.erofs.
+resource("simple_raw_files") {
+  sources = [
+    "data/simple/file1",
+    "data/simple/photosynthesis",
+    "data/simple/quantum",
+  ]
+  outputs = [ "data/simple/{{source_file_part}}" ]
+}
