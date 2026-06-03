@@ -19,10 +19,41 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test cases for suspend and resume."""
 
-    async def test_suspend_resume(self) -> None:
-        await power.suspend_resume(
-            self.dut, Deadline.from_timeout(timedelta(minutes=1))
+    def _set_display_power(self, device: FuchsiaDevice, power_on: bool) -> None:
+        """Power on/off the display panel.
+
+        Args:
+            device: Fuchsia device object.
+            power_on: True to power on the display, False to power off.
+        """
+        state = "on" if power_on else "off"
+        _LOGGER.info(
+            "Setting display panel power to %s on %s...",
+            state,
+            device.device_name,
         )
+        try:
+            device.ffx.run_ssh_cmd(f"display-tweak panel --power {state}")
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.warning("Failed to power %s display panel: %s", state, e)
+
+    async def test_suspend_resume(self) -> None:
+        """Must run on workbench products."""
+
+        # TODO(https://fxbug.dev/519249679): Find a better way to
+        # separate out product-specific test logic.
+        #
+        # On workbench, the display panel must be manually powered off
+        # before suspend. Otherwise, the device will not suspend.
+        self._set_display_power(self.dut, power_on=False)
+        try:
+            await power.suspend_resume(
+                self.dut, Deadline.from_timeout(timedelta(minutes=1))
+            )
+        finally:
+            # On workbench, the display panel must be manually powered on after
+            # resume.
+            self._set_display_power(self.dut, power_on=True)
 
     async def test_no_suspend_on_usb(self) -> None:
         before_on_usb_idle_stats = await power.get_sag_suspend_stats(self.dut)
