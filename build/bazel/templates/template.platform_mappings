@@ -29,14 +29,14 @@ platforms:
   //build/bazel/platforms:linux_arm64
     --cpu=aarch64
 
-  # Fuchsia platforms
-  //build/bazel/platforms:fuchsia_x64
+  # Fuchsia platforms for building artifacts using the Bazel SDK
+  //build/bazel/platforms:fuchsia_sdk_x64
     --cpu=k8
 
-  //build/bazel/platforms:fuchsia_arm64
+  //build/bazel/platforms:fuchsia_sdk_arm64
     --cpu=aarch64
 
-  //build/bazel/platforms:fuchsia_riscv64
+  //build/bazel/platforms:fuchsia_sdk_riscv64
     --cpu=riscv64
 
   # Platforms for building Fuchsia platform binaries

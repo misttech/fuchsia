@@ -1219,9 +1219,10 @@ class BazelrcFromGnConfigGenerator(object):
         "linux_x64",
         "linux_arm64",
         "fuchsia",
-        "fuchsia_x64",
-        "fuchsia_arm64",
-        "fuchsia_riscv64",
+        "fuchsia_sdk",
+        "fuchsia_sdk_x64",
+        "fuchsia_sdk_arm64",
+        "fuchsia_sdk_riscv64",
         "fuchsia_platform",
         "fuchsia_platform_x64",
         "fuchsia_platform_arm64",
@@ -1241,7 +1242,8 @@ class BazelrcFromGnConfigGenerator(object):
 
         --config=host: Matching the current host platform.
 
-        --config=fuchsia_x64, --config=fuchsia_arm64, --config=fuchsia_riscv64
+        --config=fuchsia_sdk_x64, --config=fuchsia_sdk_arm64, --config=fuchsia_sdk_riscv64
+        --config=fuchsia_platform_x64, --config=fuchsia_platform_arm64, --config=fuchsia_platform_riscv64
             Matching different Fuchsia platforms.
 
         Args:
@@ -1285,14 +1287,22 @@ class BazelrcFromGnConfigGenerator(object):
                 else "host_config_args"
             )
 
-            if platform in ("fuchsia", "fuchsia_platform"):
-                # As a special case, make "--config=fuchsia" and "--config=fuchsia_platform"
-                # the same as "--config=fuchsia_${target_cpu}" and
+            if platform in ("fuchsia_sdk", "fuchsia_platform", "fuchsia"):
+                # As a special case, make "--config=fuchsia_sdk" and
+                # "--config=fuchsia_platform" the same as
+                # "--config=fuchsia_sdk_${target_cpu}" and
                 # "--config=fuchsia_platform_${target_cpu}", respectively.
                 platform_base = "fuchsia"
                 values = config_values[platform_base]
                 current_cpu = values["current_cpu"]
                 platform_name = f"{platform}_{current_cpu}"
+
+                # As a very special case, allow the legacy config name "fuchsia"
+                # to be used as an alias for "fuchsia_sdk" until we have
+                # migrated people off of it. Override `platform` since there are
+                # no "fuchsia_$CPU" platforms.
+                if platform == "fuchsia":
+                    platform_name = f"fuchsia_sdk_{current_cpu}"
             else:
                 platform_name = platform
             output += f"common:{platform} --config={config_args_name} --platforms=//build/bazel/platforms:{platform_name}\n"

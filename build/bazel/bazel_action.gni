@@ -283,7 +283,8 @@ template("bazel_action") {
       # Since this template can only be used on the default toolchain, the
       # platform is always Fuchsia.
       _bazel_platform_config = "fuchsia_config_args"
-      _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
+      _bazel_platform_label =
+          "//build/bazel/platforms:fuchsia_sdk_${current_cpu}"
     }
     if (defined(invoker.bazel_platform)) {
       _bazel_platform_label =

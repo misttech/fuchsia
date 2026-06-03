@@ -802,10 +802,11 @@ class BazelrcFromGnConfigGeneratorTest(unittest.TestCase):
         # Create configurations and their content.
         platforms = [
             "host",
-            "fuchsia",
+            "fuchsia",  # Legacy alias for "fuchsia_sdk".
+            "fuchsia_sdk",
             "fuchsia_platform",
             "linux_first_cpu",
-            "fuchsia_second_cpu",
+            "fuchsia_sdk_second_cpu",
         ]
 
         configs = {
@@ -843,10 +844,11 @@ common:fuchsia_config_args --common_flag
 build:fuchsia_config_args --configured_flag
 
 common:host --config=host_config_args --platforms=//build/bazel/platforms:host
-common:fuchsia --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
+common:fuchsia --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_sdk_second_cpu
+common:fuchsia_sdk --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_sdk_second_cpu
 common:fuchsia_platform --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_platform_second_cpu
 common:linux_first_cpu --config=host_config_args --platforms=//build/bazel/platforms:linux_first_cpu
-common:fuchsia_second_cpu --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
+common:fuchsia_sdk_second_cpu --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_sdk_second_cpu
 """,
         )
 
