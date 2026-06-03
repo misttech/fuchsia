@@ -46,7 +46,6 @@ config("ring-config") {
 }
 
 static_library("ring-core") {
-  complete_static_lib = true
   configs += [ ":ring-config" ]
 
   include_dirs = [
