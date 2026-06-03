@@ -178,7 +178,7 @@ CRATE_ANNOTATIONS = {
             # dependency. See https://fxbug.dev/345712835.
             gen_build_script = False,
             deps = [
-                "//third_party/rust_crates:ring-core",
+                "//third_party/rust_crates/compat/ring-0.17.8:ring-core",
             ],
             rustc_env = {
                 "RING_CORE_PREFIX": "ring_core_0_17_8_",
