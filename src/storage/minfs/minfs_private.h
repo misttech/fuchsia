@@ -239,12 +239,12 @@ class Minfs final : public TransactionalFs {
 
   // Writes back an inode into the inode table on persistent storage.
   // Does not modify inode bitmap.
-  void InodeUpdate(PendingWork* transaction, ino_t ino, const Inode* inode) {
-    inodes_->Update(transaction, ino, inode);
+  zx::result<> InodeUpdate(PendingWork* transaction, ino_t ino, const Inode* inode) {
+    return inodes_->Update(transaction, ino, inode);
   }
 
   // Reads an inode from the inode table into memory.
-  void InodeLoad(ino_t ino, Inode* out) const { inodes_->Load(ino, out); }
+  zx::result<Inode> InodeLoad(ino_t ino) const { return inodes_->Load(ino); }
 
   void ValidateBno(blk_t bno) const {
     ZX_DEBUG_ASSERT(bno != 0);

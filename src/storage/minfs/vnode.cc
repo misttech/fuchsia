@@ -59,7 +59,7 @@ void VnodeMinfs::InodeSync(PendingWork* transaction, uint32_t flags) {
     }
   }
 
-  fs_->InodeUpdate(transaction, ino_, &inode_);
+  ZX_ASSERT(fs_->InodeUpdate(transaction, ino_, &inode_).is_ok());
 }
 
 // Delete all blocks (relative to a file) from "start" (inclusive) to the end of
@@ -634,18 +634,22 @@ void VnodeMinfs::Allocate(Minfs* fs, uint32_t type, fbl::RefPtr<VnodeMinfs>* out
   }
 }
 
-void VnodeMinfs::Recreate(Minfs* fs, ino_t ino, fbl::RefPtr<VnodeMinfs>* out) {
-  Inode inode;
-  fs->InodeLoad(ino, &inode);
-  if (inode.magic == kMinfsMagicDir) {
-    *out = fbl::AdoptRef(new Directory(fs));
-  } else {
-    *out = fbl::AdoptRef(new File(fs));
+zx::result<fbl::RefPtr<VnodeMinfs>> VnodeMinfs::Recreate(Minfs* fs, ino_t ino) {
+  auto inode = fs->InodeLoad(ino);
+  if (inode.is_error()) {
+    return inode.take_error();
   }
-  memcpy(&(*out)->inode_, &inode, sizeof(inode));
 
-  (*out)->ino_ = ino;
-  (*out)->SetSize(static_cast<uint32_t>((*out)->inode_.size));
+  fbl::RefPtr<VnodeMinfs> out;
+  if (inode->magic == kMinfsMagicDir) {
+    out = fbl::AdoptRef(new Directory(fs));
+  } else {
+    out = fbl::AdoptRef(new File(fs));
+  }
+  out->inode_ = *inode;
+  out->ino_ = ino;
+  out->SetSize(static_cast<uint32_t>(out->inode_.size));
+  return zx::ok(std::move(out));
 }
 
 zx::result<> VnodeMinfs::TruncateInternal(Transaction* transaction, size_t len) {

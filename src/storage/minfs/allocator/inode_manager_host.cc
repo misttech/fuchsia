@@ -29,11 +29,15 @@ zx::result<std::unique_ptr<InodeManager>> InodeManager::Create(
     return inode_allocator_or.take_error();
   }
   mgr->inode_allocator_ = std::move(inode_allocator_or.value());
+  mgr->inode_count_ = inodes;
 
   return zx::ok(std::move(mgr));
 }
 
-void InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inode) {
+zx::result<> InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inode) {
+  if (ino >= inode_count_) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
   // Obtain the offset of the inode within its containing block
   const uint32_t off_of_ino = (ino % kMinfsInodesPerBlock) * kMinfsInodeSize;
   const blk_t inoblock_rel = ino / kMinfsInodesPerBlock;
@@ -46,18 +50,22 @@ void InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inod
   (void)bc_->Readblk(inoblock_abs, inodata.get());
   memcpy(inodata.get() + off_of_ino, inode, kMinfsInodeSize);
   (void)bc_->Writeblk(inoblock_abs, inodata.get());
+  return zx::ok();
 }
 
 const Allocator* InodeManager::GetInodeAllocator() const { return inode_allocator_.get(); }
 
-void InodeManager::Load(ino_t ino, Inode* out) const {
+zx::result<Inode> InodeManager::Load(ino_t ino) const {
+  if (ino >= inode_count_) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
   // obtain the block of the inode table we need
   uint32_t off_of_ino = (ino % kMinfsInodesPerBlock) * kMinfsInodeSize;
   auto inodata = std::make_unique<uint8_t[]>(BlockSize());
   (void)bc_->Readblk(start_block_ + (ino / kMinfsInodesPerBlock), inodata.get());
   const Inode* inode =
       reinterpret_cast<const Inode*>(reinterpret_cast<uintptr_t>(inodata.get()) + off_of_ino);
-  memcpy(out, inode, kMinfsInodeSize);
+  return zx::ok(*inode);
 }
 
 zx_status_t InodeManager::Grow(size_t inodes) { return ZX_ERR_NO_SPACE; }

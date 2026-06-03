@@ -192,13 +192,15 @@ zx::result<Inode> MinfsChecker::GetInode(ino_t ino, bool check_magic) const {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  Inode inode;
-  fs_.GetInodeManager()->Load(ino, &inode);
-  if (check_magic && (inode.magic != kMinfsMagicFile) && (inode.magic != kMinfsMagicDir)) {
-    FX_LOGS(ERROR) << "check: ino " << ino << " has bad magic 0x" << std::hex << inode.magic;
+  auto inode = fs_.GetInodeManager()->Load(ino);
+  if (inode.is_error()) {
+    return inode.take_error();
+  }
+  if (check_magic && (inode->magic != kMinfsMagicFile) && (inode->magic != kMinfsMagicDir)) {
+    FX_LOGS(ERROR) << "check: ino " << ino << " has bad magic 0x" << std::hex << inode->magic;
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
-  return zx::ok(inode);
+  return inode;
 }
 
 #define CD_DUMP 1
@@ -293,9 +295,12 @@ zx::result<> MinfsChecker::CheckDirectory(Inode* inode, ino_t ino, ino_t parent,
   bool dotdot = false;
   uint32_t dirent_count = 0;
 
-  zx::result<> status;
   fbl::RefPtr<VnodeMinfs> vn;
-  VnodeMinfs::Recreate(&fs_, ino, &vn);
+  auto recreated = VnodeMinfs::Recreate(&fs_, ino);
+  if (recreated.is_error()) {
+    return recreated.take_error();
+  }
+  vn = *std::move(recreated);
 
   size_t off = 0;
   bool is_last = false;
@@ -303,7 +308,7 @@ zx::result<> MinfsChecker::CheckDirectory(Inode* inode, ino_t ino, ino_t parent,
   Dirent* de = &dirent_buffer->dirent;
   do {
     size_t actual;
-    status = vn->ReadInternal(nullptr, de, kMinfsDirentSize, off, &actual);
+    zx::result status = vn->ReadInternal(nullptr, de, kMinfsDirentSize, off, &actual);
     if (status.is_ok() && actual == 0 && inode->link_count == 0 && parent == 0) {
       // This is OK as it's an unlinked directory.
       break;

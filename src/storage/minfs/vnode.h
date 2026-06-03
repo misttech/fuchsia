@@ -69,7 +69,7 @@ class VnodeMinfs : public fs::Vnode,
   // Allocates a Vnode, loading |ino| from storage.
   //
   // Doesn't update create / modify times of the node.
-  static void Recreate(Minfs* fs, ino_t ino, fbl::RefPtr<VnodeMinfs>* out);
+  static zx::result<fbl::RefPtr<VnodeMinfs>> Recreate(Minfs* fs, ino_t ino);
 
   bool IsUnlinked() const { return inode_.link_count == 0; }
 

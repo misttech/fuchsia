@@ -67,5 +67,28 @@ TEST(MountTest, ReadsExceptForSuperBlockFail) {
   EXPECT_EQ(fs_or.status_value(), ZX_ERR_IO);
 }
 
+TEST(MountTest, CorruptUnlinkedHeadFailsMount) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  auto device = std::make_unique<FakeBlockDevice>(kBlockCount, kBlockSize);
+  auto bcache_or = Bcache::Create(std::move(device), kBlockCount);
+  ASSERT_TRUE(bcache_or.is_ok());
+  ASSERT_TRUE(Mkfs(bcache_or.value().get()).is_ok());
+
+  auto superblock_or = LoadSuperblock(bcache_or.value().get());
+  ASSERT_TRUE(superblock_or.is_ok());
+
+  // Set unlinked_head to a huge out-of-bounds value.
+  superblock_or->unlinked_head = superblock_or->inode_count + 100;
+  UpdateChecksum(&superblock_or.value());
+  ASSERT_TRUE(bcache_or->Writeblk(kSuperblockStart, &superblock_or.value()).is_ok());
+
+  MountOptions options = {};
+  // This should fail to mount cleanly because of the out-of-bounds unlinked head
+  // instead of crashing the driver.
+  auto fs_or = Runner::Create(loop.dispatcher(), std::move(bcache_or.value()), options);
+  EXPECT_TRUE(fs_or.is_error());
+}
+
 }  // namespace
 }  // namespace minfs

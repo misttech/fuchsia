@@ -772,7 +772,7 @@ zx::result<> Minfs::InoFree(Transaction* transaction, VnodeMinfs* vn) {
   if (status.is_error())
     return status;
   vn->MarkPurged();
-  InodeUpdate(transaction, vn->GetIno(), vn->GetInode());
+  ZX_ASSERT(InodeUpdate(transaction, vn->GetIno(), vn->GetInode()).is_ok());
 
   ZX_DEBUG_ASSERT(vn->GetInode()->block_count == 0);
   ZX_DEBUG_ASSERT(vn->IsUnlinked());
@@ -849,7 +849,11 @@ zx::result<> Minfs::PurgeUnlinked() {
 
   // Loop through the unlinked list and free all allocated resources.
   fbl::RefPtr<VnodeMinfs> vn;
-  VnodeMinfs::Recreate(this, next_ino, &vn);
+  auto recreated = VnodeMinfs::Recreate(this, next_ino);
+  if (recreated.is_error()) {
+    return recreated.take_error();
+  }
+  vn = *std::move(recreated);
   ZX_DEBUG_ASSERT(vn->GetInode()->last_inode == 0);
 
   do {
@@ -874,10 +878,17 @@ zx::result<> Minfs::PurgeUnlinked() {
       sb_->MutableInfo()->unlinked_tail = 0;
     } else {
       // Fix the last_inode pointer in the next inode.
-      VnodeMinfs::Recreate(this, next_ino, &vn);
+      auto recreated = VnodeMinfs::Recreate(this, next_ino);
+      if (recreated.is_error()) {
+        return recreated.take_error();
+      }
+      vn = *std::move(recreated);
       ZX_DEBUG_ASSERT(vn->GetInode()->last_inode == last_ino);
       vn->GetMutableInode()->last_inode = 0;
-      InodeUpdate(transaction_or.value().get(), next_ino, vn->GetInode());
+      auto update_status = InodeUpdate(transaction_or.value().get(), next_ino, vn->GetInode());
+      if (update_status.is_error()) {
+        return update_status.take_error();
+      }
     }
     CommitTransaction(std::move(transaction_or.value()));
     unlinked_count++;
@@ -963,7 +974,7 @@ void Minfs::InoNew(Transaction* transaction, const Inode* inode, ino_t* out_ino)
   size_t allocated_ino = transaction->AllocateInode();
   *out_ino = static_cast<ino_t>(allocated_ino);
   // Write the inode back to storage.
-  InodeUpdate(transaction, *out_ino, inode);
+  ZX_ASSERT(InodeUpdate(transaction, *out_ino, inode).is_ok());
 }
 
 zx::result<fbl::RefPtr<VnodeMinfs>> Minfs::VnodeNew(Transaction* transaction, uint32_t type) {
@@ -1024,7 +1035,11 @@ zx::result<fbl::RefPtr<VnodeMinfs>> Minfs::VnodeGet(ino_t ino) {
     return zx::ok(std::move(vn));
   }
 
-  VnodeMinfs::Recreate(this, ino, &vn);
+  auto recreated = VnodeMinfs::Recreate(this, ino);
+  if (recreated.is_error()) {
+    return recreated.take_error();
+  }
+  vn = *std::move(recreated);
 
   if (vn->IsUnlinked()) {
     // If a vnode we have recreated from disk is unlinked, something has gone wrong during the

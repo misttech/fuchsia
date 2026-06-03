@@ -35,6 +35,7 @@ zx::result<std::unique_ptr<InodeManager>> InodeManager::Create(
     return inode_allocator_or.take_error();
   }
   mgr->inode_allocator_ = std::move(inode_allocator_or.value());
+  mgr->inode_count_ = inodes;
 
   uint64_t inoblks =
       (static_cast<uint64_t>(inodes) + kMinfsInodesPerBlock - 1) / kMinfsInodesPerBlock;
@@ -65,7 +66,10 @@ zx::result<std::unique_ptr<InodeManager>> InodeManager::Create(
   return zx::ok(std::move(mgr));
 }
 
-void InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inode) {
+zx::result<> InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inode) {
+  if (ino >= inode_count_) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
   // Obtain the offset of the inode within its containing block.
   const uint32_t off_of_ino = (ino % kMinfsInodesPerBlock) * kMinfsInodeSize;
   const blk_t inoblock_rel = ino / kMinfsInodesPerBlock;
@@ -84,17 +88,21 @@ void InodeManager::Update(PendingWork* transaction, ino_t ino, const Inode* inod
   };
   UnownedVmoBuffer buffer(zx::unowned_vmo(inode_table_.vmo()));
   transaction->EnqueueMetadata(operation, &buffer);
+  return zx::ok();
 }
 
 const Allocator* InodeManager::GetInodeAllocator() const { return inode_allocator_.get(); }
 
-void InodeManager::Load(ino_t ino, Inode* out) const {
+zx::result<Inode> InodeManager::Load(ino_t ino) const {
+  if (ino >= inode_count_) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
   // Obtain the block of the inode table we need.
   uint32_t off_of_ino = (ino % kMinfsInodesPerBlock) * kMinfsInodeSize;
   const char* inodata = reinterpret_cast<const char*>(inode_table_.start()) +
                         ino / kMinfsInodesPerBlock * static_cast<size_t>(BlockSize());
   const Inode* inode = reinterpret_cast<const Inode*>(inodata + off_of_ino);
-  memcpy(out, inode, kMinfsInodeSize);
+  return zx::ok(*inode);
 }
 
 zx_status_t InodeManager::Grow(size_t inodes) {
@@ -103,6 +111,7 @@ zx_status_t InodeManager::Grow(size_t inodes) {
     FX_LOGS(WARNING) << "InodeManager::Grow: failed: " << status;
     return ZX_ERR_NO_SPACE;
   }
+  inode_count_ = inodes;
   return ZX_OK;
 }
 

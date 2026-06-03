@@ -8,6 +8,8 @@
 #ifndef SRC_STORAGE_MINFS_ALLOCATOR_INODE_MANAGER_H_
 #define SRC_STORAGE_MINFS_ALLOCATOR_INODE_MANAGER_H_
 
+#include <lib/zx/result.h>
+
 #include <cstdio>
 #include <memory>
 
@@ -33,7 +35,7 @@ class InspectableInodeManager {
   virtual const Allocator* GetInodeAllocator() const = 0;
 
   // Loads the inode from storage.
-  virtual void Load(ino_t inode_num, Inode* out) const = 0;
+  virtual zx::result<Inode> Load(ino_t inode_num) const = 0;
 
   // Checks if the inode is allocated.
   virtual bool CheckAllocated(uint32_t inode_num) const = 0;
@@ -79,12 +81,12 @@ class InodeManager : public InspectableInodeManager {
   }
 
   // Persist the inode to storage.
-  void Update(PendingWork* transaction, ino_t ino, const Inode* inode);
+  zx::result<> Update(PendingWork* transaction, ino_t ino, const Inode* inode);
 
   // InspectableInodeManager interface:
   const Allocator* GetInodeAllocator() const final;
 
-  void Load(ino_t ino, Inode* out) const final;
+  zx::result<Inode> Load(ino_t ino) const final;
 
   bool CheckAllocated(uint32_t inode_num) const final {
     return inode_allocator_->CheckAllocated(inode_num);
@@ -125,6 +127,7 @@ class InodeManager : public InspectableInodeManager {
 #else
   Bcache* bc_;
 #endif
+  size_t inode_count_ = 0;
 };
 
 }  // namespace minfs
