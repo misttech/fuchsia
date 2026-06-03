@@ -245,11 +245,16 @@ async fn main() -> Result<(), Error> {
                         Ok(reporter) => {
                             let report = fidl_fuchsia_feedback::CrashReport {
                                 program_name: Some("starnix_kernel".to_string()),
-                                crash_signature: Some("thread_lockup_detector".to_string()),
+                                crash_signature: Some(
+                                    "fuchsia-starnix_kernel-thread-lockup".to_string(),
+                                ),
                                 is_fatal: Some(false),
                                 annotations: Some(vec![fidl_fuchsia_feedback::Annotation {
-                                    key: "lockup_koids".to_string(),
-                                    value: format!("{:?}", koids),
+                                    key: "starnix.lockup_koids".to_string(),
+                                    value: format!(
+                                        "{:?}",
+                                        koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>()
+                                    ),
                                 }]),
                                 ..Default::default()
                             };
