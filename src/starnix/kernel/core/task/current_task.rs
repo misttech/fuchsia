@@ -51,10 +51,10 @@ use starnix_uapi::signals::{
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
-    CLONE_CHILD_CLEARTID, CLONE_CHILD_SETTID, CLONE_FILES, CLONE_FS, CLONE_INTO_CGROUP,
-    CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS, CLONE_SIGHAND,
-    CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED, FUTEX_TID_MASK,
-    ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
+    CLONE_CHILD_CLEARTID, CLONE_CHILD_SETTID, CLONE_CLEAR_SIGHAND, CLONE_FILES, CLONE_FS,
+    CLONE_INTO_CGROUP, CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS,
+    CLONE_SIGHAND, CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED,
+    FUTEX_TID_MASK, ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
     SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, clone_args, errno, error, pid_t,
     sock_filter, ucred,
 };
@@ -1514,7 +1514,7 @@ impl CurrentTask {
         L: LockBefore<TaskRelease>,
         L: LockBefore<ProcessGroupState>,
     {
-        const IMPLEMENTED_FLAGS: u64 = (CLONE_VM
+        const IMPLEMENTED_FLAGS: u64 = ((CLONE_VM
             | CLONE_FS
             | CLONE_FILES
             | CLONE_SIGHAND
@@ -1528,7 +1528,8 @@ impl CurrentTask {
             | CLONE_CHILD_SETTID
             | CLONE_VFORK
             | CLONE_NEWUTS
-            | CLONE_PTRACE) as u64;
+            | CLONE_PTRACE) as u64)
+            | CLONE_CLEAR_SIGHAND;
 
         // A mask with all valid flags set, because we want to return a different error code for an
         // invalid flag vs an unimplemented flag. Subtracting 1 from the largest valid flag gives a
@@ -1553,6 +1554,7 @@ impl CurrentTask {
         let clone_vfork = flags & (CLONE_VFORK as u64) != 0;
         let clone_newuts = flags & (CLONE_NEWUTS as u64) != 0;
         let clone_into_cgroup = flags & CLONE_INTO_CGROUP != 0;
+        let clone_clear_sighand = flags & (CLONE_CLEAR_SIGHAND as u64) != 0;
 
         if clone_ptrace {
             track_stub!(TODO("https://fxbug.dev/322874630"), "CLONE_PTRACE");
@@ -1567,6 +1569,9 @@ impl CurrentTask {
         }
 
         if clone_sighand && !clone_vm {
+            return error!(EINVAL);
+        }
+        if clone_clear_sighand && clone_sighand {
             return error!(EINVAL);
         }
         if clone_thread && !clone_sighand {
@@ -1702,6 +1707,10 @@ impl CurrentTask {
                 std::mem::drop(state);
                 let signal_actions = if clone_sighand {
                     self.thread_group().signal_actions.clone()
+                } else if clone_clear_sighand {
+                    let actions = self.thread_group().signal_actions.fork();
+                    actions.reset_for_exec();
+                    actions
                 } else {
                     self.thread_group().signal_actions.fork()
                 };
