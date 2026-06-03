@@ -190,6 +190,62 @@ class TestLogger(unittest.TestCase):
             self.assertIn("Initial debug message", log_content)
             self.assertIn("Message after file setup", log_content)
 
+    def test_get_log_path_before_file_setup(self) -> None:
+        import logging
+        import os
+
+        logger.init_logger(log_level=logging.DEBUG)
+        logger.log_info("Test log entry before file setup")
+
+        temp_log_path = logger.get_log_path()
+        self.addCleanup(
+            lambda: os.remove(temp_log_path) if temp_log_path.exists() else None
+        )
+        self.assertTrue(temp_log_path.is_absolute())
+        self.assertTrue(temp_log_path.exists())
+
+        log_content = temp_log_path.read_text()
+        self.assertIn("Test log entry before file setup", log_content)
+
+        # Log another entry and call get_log_path again
+        logger.log_info("Another test log entry")
+        temp_log_path_2 = logger.get_log_path()
+        self.addCleanup(
+            lambda: os.remove(temp_log_path_2)
+            if temp_log_path_2.exists()
+            else None
+        )
+        self.assertTrue(temp_log_path_2.is_absolute())
+        self.assertTrue(temp_log_path_2.exists())
+        # The two paths should be different
+        self.assertNotEqual(temp_log_path, temp_log_path_2)
+
+        log_content_2 = temp_log_path_2.read_text()
+        self.assertIn("Test log entry before file setup", log_content_2)
+        self.assertIn("Another test log entry", log_content_2)
+
+    def test_get_log_path_after_file_setup(self) -> None:
+        import logging
+        import os
+        import tempfile
+        from pathlib import Path
+
+        logger.init_logger(log_level=logging.DEBUG)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_path = Path(tmpdir)
+            logger.setup_file_logging(workspace_path)
+
+            log_path = logger.get_log_path()
+            # The path should be relative to CWD
+            self.assertFalse(log_path.is_absolute())
+
+            # Verify it matches the relative path of workspace_setup.log to CWD
+            expected_path = Path(
+                os.path.relpath(workspace_path / "workspace_setup.log")
+            )
+            self.assertEqual(log_path, expected_path)
+
 
 if __name__ == "__main__":
     unittest.main()

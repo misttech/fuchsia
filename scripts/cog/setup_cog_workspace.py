@@ -9,6 +9,7 @@
 import argparse
 import logging
 import os
+import shlex
 import sys
 
 import logger
@@ -43,6 +44,7 @@ def main() -> int:
         colors=args.color,
         enable_status_updates=args.enable_status_updates,
     )
+    logger.log_debug(f"===== main ===== {shlex.join(sys.argv)}")
 
     try:
         if preflight.check_all(require_grpc_cli=args.snapshot):
@@ -73,14 +75,8 @@ def main() -> int:
         return 0
     except Exception:
         logger.log_exception("An unexpected error occurred:")
-        maybe_add_env_var = (
-            "rerun the command with FUCHSIA_COG_DEBUG=1 and "
-            if logger.get_log_level() > logging.DEBUG
-            else ""
-        )
         logger.log_warn(
-            f"To file a bug, please {maybe_add_env_var}upload command output to "
-            "http://go/fuchsia-cog-bug"
+            f"To file a bug, please attach `{logger.get_log_path()}` to http://go/fuchsia-cog-bug"
         )
         return 1
     except KeyboardInterrupt:

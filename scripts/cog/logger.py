@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 from logging.handlers import MemoryHandler
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -62,8 +63,6 @@ def add_args(
         parser: The parser to add arguments to.
         default_log_level: The default log level to use.
     """
-    if os.environ.get("FUCHSIA_COG_DEBUG") == "1":
-        default_log_level = logging.DEBUG
     parser.set_defaults(log_level=default_log_level)
 
     group = parser.add_mutually_exclusive_group()
@@ -201,6 +200,32 @@ def setup_file_logging(workspace_root: Path) -> None:
         _file_handler = file_handler
     except Exception as e:
         _logger.warning(f"Failed to initialize file logging: {e}")
+
+
+def get_log_path() -> Path:
+    """Returns a path to the log file.
+
+    Returns:
+        The relative path of the log file to CWD if `setup_file_logging` has been called.
+        Otherwise, dumps the logs so far into a temporary file and returns that absolute path.
+    """
+    if _file_handler:
+        abs_path = Path(_file_handler.baseFilename)
+        return Path(os.path.relpath(abs_path))
+
+    try:
+        fd, temp_path = tempfile.mkstemp(suffix=".log", prefix="cog_")
+        if _memory_handler:
+            formatter = _create_formatter(colors=False)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                for record in _memory_handler.buffer:
+                    f.write(formatter.format(record) + "\n")
+        else:
+            os.close(fd)
+        return Path(temp_path)
+    except OSError as e:
+        print(f"Failed to create temporary log file: {e}")
+        return Path("<unknown>")
 
 
 def get_log_level() -> int:
