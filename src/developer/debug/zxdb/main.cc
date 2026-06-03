@@ -244,6 +244,11 @@ int ConsoleMain(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     } else {
+      if (isatty(STDIN_FILENO) && tcgetpgrp(STDIN_FILENO) != getpgrp()) {
+        fprintf(stderr, "Error: This program cannot be run in the background.\n");
+        loop.Cleanup();
+        return EXIT_FAILURE;
+      }
       console = std::make_unique<ConsoleImpl>(session.get());
     }
 

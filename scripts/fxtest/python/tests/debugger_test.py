@@ -43,6 +43,11 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
         mkfifo_patch.start()
         self.addCleanup(mkfifo_patch.stop)
 
+        # Mock out os.tcsetpgrp since we won't have a tty in tests.
+        tcsetpgrp_patch = mock.patch("debugger.os.tcsetpgrp")
+        self.tcsetpgrp_mock_ = tcsetpgrp_patch.start()
+        self.addCleanup(tcsetpgrp_patch.stop)
+
         return super().setUp()
 
     async def test_break_on_failure(self) -> None:
@@ -85,7 +90,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 
@@ -142,7 +147,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 
@@ -193,7 +198,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 
@@ -247,7 +252,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 
@@ -335,7 +340,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 
@@ -389,7 +394,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
 
         self.subprocess_mock_.assert_called_with(
             args=expected_args,
-            start_new_session=True,
+            preexec_fn=os.setpgrp,
             stderr=subprocess.STDOUT,
         )
 

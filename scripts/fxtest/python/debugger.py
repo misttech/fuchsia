@@ -154,12 +154,23 @@ def spawn(
     for bp in breakpoints:
         zxdb_args += ["--execute", f"break {bp}"]
 
-    # Use start_new_session, rather than just using os.setpgrp as a preexec function. This enables
-    # the subprocess to also control the tty, which zxdb requires, as well as terminating the entire
-    # process group when all the tests have finished.
+    # Use os.setpgrp instead of start_new_session=True, because we're going to explicitly handoff
+    # control of the foreground terminal to zxdb (and take it back during _cleanup below). Using
+    # start_new_session=True would create the process in a separate session, which will raise EPERM
+    # if we try to give it our TTY.
     debugger_process = subprocess.Popen(
-        args=zxdb_args, start_new_session=True, stderr=subprocess.STDOUT
+        args=zxdb_args, preexec_fn=os.setpgrp, stderr=subprocess.STDOUT
     )
+
+    # Give control of the tty to zxdb. This lets zxdb know that it has control of the TTY that we
+    # started with.
+    #
+    # Note that we do NOT need to set this back to our pgrp since our output will be routed through
+    # zxdb until the very end. If we try to call tcsetpgrp again during shutdown, we'll race with
+    # the shell and could leave a job suspended while waiting on an unnecessary SIGTTOU. This has no
+    # effect when running in debug_adapter mode since zxdb will not make use of terminal features in
+    # this mode.
+    os.tcsetpgrp(sys.stdin.fileno(), debugger_process.pid)
 
     daemon_manager: DaemonManager | None = None
 
