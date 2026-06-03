@@ -5,8 +5,11 @@
 #ifndef SRC_DEVICES_I2C_DRIVERS_DW_I2C_DW_I2C_H_
 #define SRC_DEVICES_I2C_DRIVERS_DW_I2C_DW_I2C_H_
 
+#include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
+#include <fidl/fuchsia.hardware.reset/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -158,6 +161,10 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
   std::optional<fdf::StopCompleter> completer_;
   fdf_metadata::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata_server_;
   bool send_restart_ = false;
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_bus_;
+  fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_regs_;
+  fidl::WireSyncClient<fuchsia_hardware_reset::Reset> reset_;
+  fidl::WireSyncClient<fuchsia_hardware_powerdomain::Domain> powerdomain_;
 };
 
 }  // namespace dw_i2c

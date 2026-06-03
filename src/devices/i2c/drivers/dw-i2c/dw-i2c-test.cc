@@ -4,7 +4,10 @@
 
 #include "dw-i2c.h"
 
+#include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/fake-powerdomain/cpp/fake-powerdomain.h>
+#include <lib/driver/fake-reset/cpp/fake-reset.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
@@ -65,11 +68,23 @@ class TestEnvironment : public fdf_testing::Environment {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
     EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
         pdev_.GetInstanceHandler(dispatcher), "pdev"));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
+        clock_bus_.CreateInstanceHandler(dispatcher), "clock-bus"));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
+        clock_regs_.CreateInstanceHandler(dispatcher), "clock-registers"));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_powerdomain::Service>(
+        powerdomain_.CreateInstanceHandler(), "power-domain"));
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_reset::Service>(
+        reset_.CreateInstanceHandler(), "reset"));
     return zx::ok();
   }
 
  private:
   fdf_fake::FakePDev pdev_;
+  fdf_fake::FakeClock clock_bus_;
+  fdf_fake::FakeClock clock_regs_;
+  fdf_fake::FakePowerDomain powerdomain_;
+  fdf_fake::FakeReset reset_;
 };
 
 class TestConfig final {

@@ -19,6 +19,11 @@
             ],
         },
     ],
+    use: [
+        { service: "fuchsia.hardware.clock.Service" },
+        { service: "fuchsia.hardware.powerdomain.Service" },
+        { service: "fuchsia.hardware.reset.Service" },
+    ],
     expose: [
         {
             service: [

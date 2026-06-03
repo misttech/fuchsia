@@ -513,6 +513,76 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
 
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
+  // Connect and enable power domain.
+  {
+    zx::result domain_client =
+        incoming->Connect<fuchsia_hardware_powerdomain::Service::Domain>("power-domain");
+    if (domain_client.is_error()) {
+      fdf::error("Failed to connect to power-domain: {}", domain_client.status_string());
+      return domain_client.take_error();
+    }
+    powerdomain_ = fidl::WireSyncClient(std::move(domain_client.value()));
+    auto result = powerdomain_->Enable();
+    if (!result.ok() || result->is_error()) {
+      fdf::error(
+          "Failed to enable power domain: {}",
+          result.ok() ? zx_status_get_string(result->error_value()) : result.status_string());
+      return zx::error(result.ok() ? result->error_value() : result.status());
+    }
+  }
+
+  // Connect and enable clocks.
+  {
+    zx::result clock_bus_client =
+        incoming->Connect<fuchsia_hardware_clock::Service::Clock>("clock-bus");
+    if (clock_bus_client.is_error()) {
+      fdf::error("Failed to connect to clock-bus: {}", clock_bus_client.status_string());
+      return clock_bus_client.take_error();
+    }
+    clock_bus_ = fidl::WireSyncClient(std::move(clock_bus_client.value()));
+    auto result = clock_bus_->Enable();
+    if (!result.ok() || result->is_error()) {
+      fdf::error("Failed to enable clock-bus: {}", result.ok()
+                                                       ? zx_status_get_string(result->error_value())
+                                                       : result.status_string());
+      return zx::error(result.ok() ? result->error_value() : result.status());
+    }
+  }
+
+  {
+    zx::result clock_regs_client =
+        incoming->Connect<fuchsia_hardware_clock::Service::Clock>("clock-registers");
+    if (clock_regs_client.is_error()) {
+      fdf::error("Failed to connect to clock-registers: {}", clock_regs_client.status_string());
+      return clock_regs_client.take_error();
+    }
+    clock_regs_ = fidl::WireSyncClient(std::move(clock_regs_client.value()));
+    auto result = clock_regs_->Enable();
+    if (!result.ok() || result->is_error()) {
+      fdf::error(
+          "Failed to enable clock-registers: {}",
+          result.ok() ? zx_status_get_string(result->error_value()) : result.status_string());
+      return zx::error(result.ok() ? result->error_value() : result.status());
+    }
+  }
+
+  // Connect and release reset.
+  {
+    zx::result reset_client = incoming->Connect<fuchsia_hardware_reset::Service::Reset>("reset");
+    if (reset_client.is_error()) {
+      fdf::error("Failed to connect to reset: {}", reset_client.status_string());
+      return reset_client.take_error();
+    }
+    reset_ = fidl::WireSyncClient(std::move(reset_client.value()));
+    auto result = reset_->Deassert();
+    if (!result.ok() || result->is_error()) {
+      fdf::error("Failed to deassert reset: {}", result.ok()
+                                                     ? zx_status_get_string(result->error_value())
+                                                     : result.status_string());
+      return zx::error(result.ok() ? result->error_value() : result.status());
+    }
+  }
+
   if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
     fdf::error("Failed to set metadata for metadata server: {}", result);
     return result.take_error();
