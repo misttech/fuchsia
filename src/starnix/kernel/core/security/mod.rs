@@ -77,22 +77,10 @@ pub struct BpfMapState {
     state: selinux_hooks::BpfMapState,
 }
 
-impl BpfMapState {
-    pub fn sid(&self) -> selinux::SecurityId {
-        self.state.sid
-    }
-}
-
 /// Opaque structure holding security state for a bpf [`crate::bpf::program::Program`].
 #[derive(Debug)]
 pub struct BpfProgState {
     state: selinux_hooks::BpfProgState,
-}
-
-impl BpfProgState {
-    pub fn sid(&self) -> selinux::SecurityId {
-        self.state.sid
-    }
 }
 
 /// Opaque structure holding security state for a PerfEventFileState.
@@ -105,11 +93,4 @@ pub struct PerfEventState {
 #[derive(Default, Debug)]
 pub struct CurrentTaskState {
     pub state: selinux_hooks::CurrentTaskState,
-}
-
-#[derive(PartialEq)]
-pub enum FileSecurityObject {
-    FsNode,
-    BpfMap { sid: SecurityId },
-    BpfProgram { sid: SecurityId },
 }

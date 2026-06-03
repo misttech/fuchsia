@@ -29,7 +29,6 @@ use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::endpoints::ProtocolMarker as _;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
-
 use starnix_logging::{
     CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
 };
@@ -141,11 +140,6 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         _file: &FileObjectState,
         _current_task: &CurrentTask,
     ) {
-    }
-
-    /// Returns the security object classification for this file.
-    fn security_object(&self) -> crate::security::FileSecurityObject {
-        crate::security::FileSecurityObject::FsNode
     }
 
     /// Called every time close() is called on this file, even if the file is not ready to be

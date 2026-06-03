@@ -9,7 +9,7 @@ use crate::bpf::syscalls::BpfTypeFormat;
 use crate::bpf::{BpfMapHandle, ProgramHandle};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{PAGE_SIZE, ProtectionFlags};
-use crate::security::{self, FileSecurityObject, PermissionFlags};
+use crate::security::{self, PermissionFlags};
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, WaitCanceler, Waiter,
 };
@@ -101,15 +101,10 @@ impl BpfHandle {
         match self {
             Self::Map(bpf_map) => security::check_bpf_map_access(
                 current_task,
-                security::current_task_sid(current_task),
-                bpf_map.security_state.sid(),
+                &bpf_map,
                 permission_flags.unwrap_or_else(|| bpf_map.schema.flags.into()),
             ),
-            Self::Program(program) => security::check_bpf_prog_access(
-                current_task,
-                security::current_task_sid(current_task),
-                program.security_state.sid(),
-            ),
+            Self::Program(program) => security::check_bpf_prog_access(current_task, &program),
             _ => Ok(()),
         }
     }
@@ -136,17 +131,6 @@ impl From<BpfTypeFormat> for BpfHandle {
 impl FileOps for BpfHandle {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
-
-    fn security_object(&self) -> FileSecurityObject {
-        match self {
-            Self::Map(bpf_map) => FileSecurityObject::BpfMap { sid: bpf_map.security_state.sid() },
-            Self::Program(program) => {
-                FileSecurityObject::BpfProgram { sid: program.security_state.sid() }
-            }
-            _ => FileSecurityObject::FsNode,
-        }
-    }
-
     fn read(
         &self,
         _locked: &mut Locked<FileOpsCore>,

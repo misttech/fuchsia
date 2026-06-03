@@ -5,16 +5,17 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
+use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
     FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, build_permission_check,
     check_permission, current_task_state, fs_node_effective_sid_and_class,
     has_file_ioctl_permission, has_file_permissions, permissions_from_flags,
 };
+use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
     ProcessPermission, check_self_permission, has_fs_node_permissions,
 };
-use crate::security::{FileSecurityObject, check_bpf_map_access, check_bpf_prog_access};
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
 use linux_uapi::{
@@ -75,38 +76,39 @@ pub(in crate::security) fn file_receive(
     // BPF resources are wrapped into file descriptors for interaction with userspace,
     // but have a distinct set of permissions associated with the underlying objects rather
     // than on the `FsNode`.
-    match file.ops().security_object() {
-        FileSecurityObject::BpfMap { sid } => {
-            has_file_permissions(
-                &permission_check,
-                current_task,
-                receiving_sid,
-                file,
-                NO_PERMISSIONS,
-                current_task.into(),
-            )?;
-            check_bpf_map_access(current_task, receiving_sid, sid, permission_flags)
-        }
-        FileSecurityObject::BpfProgram { sid } => {
-            has_file_permissions(
-                &permission_check,
-                current_task,
-                receiving_sid,
-                file,
-                NO_PERMISSIONS,
-                current_task.into(),
-            )?;
-            check_bpf_prog_access(current_task, receiving_sid, sid)
-        }
-        FileSecurityObject::FsNode => has_file_permissions(
+    if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
+        has_file_permissions(
             &permission_check,
             current_task,
             receiving_sid,
             file,
-            &permissions_from_flags(permission_flags, fs_node_class),
+            NO_PERMISSIONS,
             current_task.into(),
-        ),
+        )?;
+        match *bpf_handle {
+            BpfHandle::Map(map) => check_bpf_map_access(
+                security_server,
+                current_task,
+                receiving_sid,
+                map,
+                permission_flags,
+            )?,
+            BpfHandle::Program(prog) => {
+                check_bpf_prog_access(security_server, current_task, receiving_sid, prog)?
+            }
+            _ => {}
+        }
+        return Ok(());
     }
+
+    has_file_permissions(
+        &permission_check,
+        current_task,
+        receiving_sid,
+        file,
+        &permissions_from_flags(permission_flags, fs_node_class),
+        current_task.into(),
+    )
 }
 
 /// Returns whether `current_task` can issue an ioctl to `file`.
@@ -168,7 +170,7 @@ pub(in crate::security) fn check_file_lock_access(
     file: &FileObject,
 ) -> Result<(), Errno> {
     // BPF supports some locking, but without the file "lock" permission.
-    if file.ops().security_object() != FileSecurityObject::FsNode {
+    if file.downcast_file::<BpfHandle>().is_some() {
         return Ok(());
     }
     let permission_check = build_permission_check(current_task, security_server);
@@ -225,7 +227,7 @@ pub(in crate::security) fn check_file_fcntl_access(
         | F_OFD_SETLK | F_OFD_SETLKW | F_SETLEASE => {
             // BPF implements some lock operations but does not require file "lock"
             // permission.
-            if file.ops().security_object() != FileSecurityObject::FsNode {
+            if file.downcast_file::<BpfHandle>().is_some() {
                 return Ok(());
             }
             // TODO: https://fxbug.dev/512798827 - Integrate file_lock() in VFS and remove this.
@@ -310,26 +312,26 @@ pub(in crate::security) fn mmap_file(
     if let Some(file) = file {
         let current_sid = current_task_state(current_task).current_sid;
         // The `map` permission shouldn't be checked for BPF handles.
-        match file.ops().security_object() {
-            FileSecurityObject::BpfMap { sid } => {
-                check_bpf_map_access(
+        if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
+            match *bpf_handle {
+                BpfHandle::Map(map) => check_bpf_map_access(
+                    security_server,
                     current_task,
                     current_sid,
-                    sid,
+                    map,
                     PermissionFlags::READ | PermissionFlags::WRITE,
-                )?;
+                )?,
+                _ => {}
             }
-            FileSecurityObject::BpfProgram { .. } => {}
-            FileSecurityObject::FsNode => {
-                has_file_permissions(
-                    &build_permission_check(current_task, security_server),
-                    &current_task,
-                    current_sid,
-                    file,
-                    &[CommonFsNodePermission::Map],
-                    current_task.into(),
-                )?;
-            }
+        } else {
+            has_file_permissions(
+                &build_permission_check(current_task, security_server),
+                &current_task,
+                current_sid,
+                file,
+                &[CommonFsNodePermission::Map],
+                current_task.into(),
+            )?;
         }
     }
     let fs_node: Option<&FsNodeHandle> = file.map(|f| f.node());
