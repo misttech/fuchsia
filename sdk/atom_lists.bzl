@@ -13,6 +13,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/async-loop:async-loop-cpp_idk",
     "//sdk/lib/async-loop:async-loop_idk",
     "//sdk/lib/component/incoming/cpp:cpp_idk",
+    "//sdk/lib/component/outgoing/cpp:cpp_idk",
     "//sdk/lib/fidl:fidl_idk",
     "//sdk/lib/fidl/cpp:cpp_base_idk",
     "//sdk/lib/fidl/cpp:cpp_idk",
@@ -46,6 +47,7 @@ CC_PREBUILT_SHARED_LIBRARY_ATOMS = [
     # buildifier: keep sorted
     "//sdk/lib/async-default:async-default_idk",
     "//sdk/lib/fdio:fdio_idk",
+    "//sdk/lib/svc:svc_idk",
     "//sdk/lib/syslog/cpp:backend_fuchsia_globals_idk",
 ]
 

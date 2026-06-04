@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/bazel_idk:defs.bzl",
+    "idk_cc_shared_library",
+)
+
+idk_cc_shared_library(
+    name = "svc",
+    srcs = ["dir.cc"],
+    hdrs = ["include/lib/svc/dir.h"],
+    api_area = "Component Framework",
+    category = "partner",
+    idk_name = "svc",
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/storage/lib/vfs/cpp",
+        "//zircon/system/ulib/fbl",
+    ],
+    libcxx_linkage = "static",
+    public_configs = [
+        ":include",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/lib/async",
+    ],
+)
