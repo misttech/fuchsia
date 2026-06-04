@@ -19,6 +19,7 @@ if (is_host) {
       "cli.py",
     ]
     deps = [
+      "//scripts/debug/zxdb_cli/daemon_manager",
       "//scripts/debug/zxdb_cli/shared:protocol_lib",
       "//scripts/lib/fx_cmd",
     ]

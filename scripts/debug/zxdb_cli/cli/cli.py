@@ -5,18 +5,14 @@
 import argparse
 import asyncio
 import json
-import os
-import subprocess
 import sys
-from pathlib import Path
 from typing import Final
 
-from fx_cmd.lib import FxCmd
+from daemon_manager.manager import UDS_PATH, DaemonManager, DaemonManagerError
 from shared.protocol import (
-    PROTOCOL_VERSION,
     BaseRequest,
-    HelloRequest,
     StartRequest,
+    StopRequest,
     deserialize_request,
     make_request,
     serialize,
@@ -26,8 +22,6 @@ from shared.protocol import (
 # how long we will wait for the daemon to write into the pipe FD that we pass to it when we start
 # the new process.
 DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 10.0
-# TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
-UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 
 async def main(args: list[str]) -> int:
@@ -108,11 +102,16 @@ async def main(args: list[str]) -> int:
     parsed_args = parser.parse_args(args)
 
     if parsed_args.json and parsed_args.command:
-        print("Error: --json and command are mutually exclusive")
+        print(
+            "Error: --json and command are mutually exclusive", file=sys.stderr
+        )
         return 1
 
     if not parsed_args.json and not parsed_args.command:
-        print("Error: Either --json or a command must be provided")
+        print(
+            "Error: Either --json or a command must be provided",
+            file=sys.stderr,
+        )
         return 1
 
     # Process the parsed arguments and dispatch to commands.
@@ -122,20 +121,24 @@ async def main(args: list[str]) -> int:
             req = deserialize_request(parsed_args.json)
             if isinstance(req, StartRequest):
                 return await start_daemon(req.port, req.connect)
+            elif isinstance(req, StopRequest):
+                return await stop_daemon()
         except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON: {e}")
+            print(f"Error: Invalid JSON: {e}", file=sys.stderr)
             return 1
         except ValueError as e:
-            print(f"Error: {e}")
+            print(f"Error: {e}", file=sys.stderr)
             return 1
     elif parsed_args.command == "start":
         return await start_daemon(parsed_args.port, parsed_args.connect)
+    elif parsed_args.command == "stop":
+        return await stop_daemon()
     elif parsed_args.command:
         try:
             args_dict = vars(parsed_args)
             req = make_request(args_dict)
         except ValueError as e:
-            print(f"Error: {e}")
+            print(f"Error: {e}", file=sys.stderr)
             return 1
 
     assert req is not None
@@ -145,226 +148,120 @@ async def main(args: list[str]) -> int:
     return await send_command(req)
 
 
-async def _try_connect_and_handshake() -> bool | None:
-    """Attempts to connect to the UDS and perform handshake.
-
-    Returns:
-        True if handshake succeeded.
-        False if handshake failed (version mismatch or error response).
-        None if connection failed (socket not ready yet).
-    """
-    try:
-        reader, writer = await asyncio.open_unix_connection(UDS_PATH)
-    except (ConnectionRefusedError, FileNotFoundError):
-        return None
-    except Exception as e:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "message": f"Error connecting to daemon: {e}",
-                }
-            )
-        )
-        return False
-
-    try:
-        req = HelloRequest(version=PROTOCOL_VERSION)
-        writer.write(serialize(req).encode("utf-8"))
-        await writer.drain()
-
-        response_line = await reader.readline()
-        writer.close()
-        await writer.wait_closed()
-
-        if not response_line:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": "No response received during handshake",
-                    }
-                )
-            )
-            return False
-
-        resp_dict = json.loads(response_line.decode("utf-8"))
-        if not resp_dict.get("success"):
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": f"Handshake failed: {resp_dict.get('message')}",
-                    }
-                )
-            )
-            return False
-
-        body = resp_dict.get("body", {})
-        daemon_version = body.get("protocol_version")
-        if daemon_version != PROTOCOL_VERSION:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": f"Protocol version mismatch. CLI: {PROTOCOL_VERSION}, Daemon: {daemon_version}",
-                    }
-                )
-            )
-            return False
-
-        return True
-    except Exception as e:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "message": f"Error during handshake: {e}",
-                }
-            )
-        )
-        return False
-
-
 async def start_daemon(
     port: int | None, connect_to_existing: bool = False
 ) -> int:
     """Spawns the daemon process and waits for it to be ready."""
-    # Check if a daemon is already running. If the socket file exists, attempt
-    # to connect to it to verify if it is active. If the connection is refused,
-    # the socket is stale (e.g., from a crash or rapid restart) and can be safely removed.
-    if UDS_PATH.exists():
-        try:
-            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
-            writer.close()
-            await writer.wait_closed()
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": f"Daemon socket already exists at {UDS_PATH}",
-                    }
-                )
-            )
-            return 1
-        except (ConnectionRefusedError, FileNotFoundError):
-            UDS_PATH.unlink(missing_ok=True)
-
-    fx_cmd = FxCmd()
-    args = ["zxdb-daemon"]
-    if port is not None:
-        args.extend(["--port", str(port)])
-
-    # Create a pipe for synchronization
-    read_fd, write_fd = os.pipe()
-    os.set_inheritable(write_fd, True)
-    args.append(f"--ready-fd={write_fd}")
-
-    command_line = fx_cmd.command_line(*args)
-
+    manager = DaemonManager(
+        socket_path=UDS_PATH,
+        port=port,
+        connect_to_existing=connect_to_existing,
+        startup_timeout=DAEMON_STARTUP_TIMEOUT_SECS,
+    )
     try:
-        # Spawn daemon process in background
-        subprocess.Popen(
-            command_line,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            pass_fds=[write_fd],  # Ensure FD is passed to child
-        )
-        print("Spawning daemon...")
-
-        # Close write end in parent
-        os.close(write_fd)
-
-        # Wait for signal on the pipe with timeout
-        loop = asyncio.get_running_loop()
-        try:
-            # Read 1 byte from the pipe
-            await asyncio.wait_for(
-                loop.run_in_executor(None, os.read, read_fd, 1),
-                timeout=DAEMON_STARTUP_TIMEOUT_SECS,
-            )
-        except asyncio.TimeoutError:
+        proc = await manager.start()
+        if proc is None:
             print(
                 json.dumps(
                     {
-                        "success": False,
-                        "message": "Timed out waiting for daemon to signal readiness.",
+                        "success": True,
+                        "message": "Connected to existing daemon",
                     }
                 )
             )
-            os.close(read_fd)
-            return 1
-        except Exception as e:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": f"Error reading from pipe: {e}",
-                    }
-                )
-            )
-            os.close(read_fd)
-            return 1
-        finally:
-            try:
-                os.close(read_fd)
-            except OSError:
-                pass
-
-        # Now that daemon signaled readiness, perform handshake
-        result = await _try_connect_and_handshake()
-        if result is True:
-            start_req = StartRequest(port=port, connect=connect_to_existing)
-            return await send_command(start_req)
-        elif result is None:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "message": "Daemon started but failed to respond to handshake in time.",
-                    }
-                )
-            )
-            return 1
         else:
-            return 1
+            print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "message": "Daemon started successfully",
+                    }
+                )
+            )
+        return 0
+    except DaemonManagerError as e:
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "message": str(e),
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 1
     except Exception as e:
-        print(f"Failed to start daemon: {e}")
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "message": f"Failed to start daemon: {e}",
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+
+async def stop_daemon() -> int:
+    """Stops the daemon using DaemonManager.
+
+    Note: We do not wait for the process directly because the CLI is a
+    short-lived invocation and we do not persist the DaemonManager's process
+    handle across commands. Instead, `manager.stop()` gracefully requests the
+    daemon stop via UDS, which drains the socket connection before shutdown.
+    """
+    manager = DaemonManager(socket_path=UDS_PATH)
+    try:
+        await manager.stop()
+        return 0
+    except Exception as e:
+        print(f"Error stopping daemon: {e}", file=sys.stderr)
         return 1
 
 
 async def send_command(req: BaseRequest) -> int:
     if not UDS_PATH.exists():
-        print(f"Daemon socket not found at {UDS_PATH}. Is it running?")
+        print(
+            f"Daemon socket not found at {UDS_PATH}. Is it running?",
+            file=sys.stderr,
+        )
         return 1
 
     try:
         reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+    except Exception as e:
+        print(f"Error communicating with daemon: {e}", file=sys.stderr)
+        return 1
+
+    try:
         writer.write(serialize(req).encode("utf-8"))
         await writer.drain()
 
-        response_line = await reader.readline()
+        try:
+            response_line = await asyncio.wait_for(
+                reader.readline(), timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print(
+                "Timed out waiting for response from daemon.", file=sys.stderr
+            )
+            return 1
+
         if response_line:
             print(response_line.decode("utf-8").strip())
         else:
-            print("No response received from daemon.")
-
-        if req.command == "stop":
-            # Wait for daemon to close connection (EOF)
-            try:
-                await asyncio.wait_for(reader.read(), timeout=5.0)
-            except asyncio.TimeoutError:
-                print(
-                    "Warning: Timed out waiting for daemon to close connection."
-                )
-
-        writer.close()
-        await writer.wait_closed()
+            print("No response received from daemon.", file=sys.stderr)
         return 0
     except Exception as e:
-        print(f"Error communicating with daemon: {e}")
+        print(f"Error communicating with daemon: {e}", file=sys.stderr)
         return 1
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
