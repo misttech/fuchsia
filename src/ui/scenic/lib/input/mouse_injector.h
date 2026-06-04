@@ -15,7 +15,7 @@ class MouseInjector : public Injector {
  public:
   MouseInjector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                 inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
-                fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+                fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
                 fit::function<void(InternalMouseEvent, StreamId stream_id,
                                    const view_tree::Snapshot& snapshot)>
                     inject,
@@ -24,15 +24,15 @@ class MouseInjector : public Injector {
 
  protected:
   // |Injector|
-  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
-                    const view_tree::Snapshot& snapshot) override;
+  void ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot, uint64_t trace_flow_id) override;
   // |Injector|
   void CancelStream(uint32_t pointer_id, StreamId stream_id,
                     const view_tree::Snapshot& snapshot) override;
 
  private:
   InternalMouseEvent PointerInjectorEventToInternalMouseEvent(
-      fuchsia::ui::pointerinjector::Event& event);
+      fuchsia_ui_pointerinjector::wire::Event& event);
 
   // Used to inject the event into InputSystem for dispatch to clients.
   const fit::function<void(InternalMouseEvent, StreamId, const view_tree::Snapshot&)> inject_;

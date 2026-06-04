@@ -28,7 +28,9 @@ struct Extents {
   // Maximum (bottom right) corner.
   glm::vec2 max = glm::vec2(0);
   Extents() = default;
-  Extents(std::array<std::array<float, 2>, 2> extents) {
+
+  template <typename T>
+  Extents(const T& extents) {
     min = {extents[0][0], extents[0][1]};
     max = {extents[1][0], extents[1][1]};
   }

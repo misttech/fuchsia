@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/input/mouse_injector.h"
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
@@ -31,7 +32,7 @@ ScrollInfo CreateScrollInfo(const fuchsia::input::report::Axis& axis,
 MouseInjector::MouseInjector(
     std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
     InjectorSettings settings, Viewport viewport,
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+    fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
     fit::function<void(InternalMouseEvent, StreamId stream_id, const view_tree::Snapshot& snapshot)>
         inject,
     fit::function<void(StreamId stream_id)> cancel_stream, fit::function<void()> on_channel_closed)
@@ -40,11 +41,11 @@ MouseInjector::MouseInjector(
       inject_(std::move(inject)),
       cancel_stream_(std::move(cancel_stream)) {
   FX_DCHECK(inject_);
-  FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::MOUSE);
+  FX_DCHECK(settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kMouse);
 }
 
-void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
-                                 const view_tree::Snapshot& snapshot) {
+void MouseInjector::ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot, uint64_t trace_flow_id) {
   TRACE_DURATION("input", "MouseInjector::ForwardEvent");
   {  // For CANCEL and REMOVE phase we need to cancel the stream. Otherwise inject normally.
     FX_DCHECK(event.has_data());
@@ -52,8 +53,8 @@ void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, Str
     if (data.is_pointer_sample()) {
       FX_DCHECK(data.pointer_sample().has_phase());
       const auto phase = data.pointer_sample().phase();
-      if (phase == fuchsia::ui::pointerinjector::EventPhase::CANCEL ||
-          phase == fuchsia::ui::pointerinjector::EventPhase::REMOVE) {
+      if (phase == fuchsia_ui_pointerinjector::wire::EventPhase::kCancel ||
+          phase == fuchsia_ui_pointerinjector::wire::EventPhase::kRemove) {
         cancel_stream_(stream_id);
         return;
       }
@@ -64,7 +65,7 @@ void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, Str
 }
 
 InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
-    fuchsia::ui::pointerinjector::Event& event) {
+    fuchsia_ui_pointerinjector::wire::Event& event) {
   FX_DCHECK(event.has_data());
   FX_DCHECK(event.data().is_pointer_sample());
 
@@ -72,7 +73,7 @@ InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
   const InjectorSettings& settings = Injector::settings();
 
   if (event.has_wake_lease()) {
-    internal_event.wake_lease = std::move(*event.mutable_wake_lease());
+    internal_event.wake_lease = std::move(event.wake_lease());
   }
 
   // General
@@ -81,7 +82,8 @@ InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
   internal_event.context = settings.context_koid;
   internal_event.target = settings.target_koid;
 
-  const fuchsia::ui::pointerinjector::PointerSample& pointer_sample = event.data().pointer_sample();
+  const fuchsia_ui_pointerinjector::wire::PointerSample& pointer_sample =
+      event.data().pointer_sample();
   // Coordinates
   internal_event.viewport = viewport();
   internal_event.position_in_viewport = {pointer_sample.position_in_viewport()[0],
@@ -90,7 +92,8 @@ InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
   // Buttons
   internal_event.buttons = {.identifiers = settings.button_identifiers};
   if (pointer_sample.has_pressed_buttons()) {
-    internal_event.buttons.pressed = pointer_sample.pressed_buttons();
+    const auto& pressed = pointer_sample.pressed_buttons();
+    internal_event.buttons.pressed = std::vector<uint8_t>(pressed.begin(), pressed.end());
   }
 
   // Scroll V

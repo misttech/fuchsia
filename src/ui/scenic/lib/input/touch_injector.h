@@ -15,7 +15,7 @@ class TouchInjector : public Injector {
  public:
   TouchInjector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                 inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
-                fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+                fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
                 fit::function<void(InternalTouchEvent, StreamId stream_id,
                                    const view_tree::Snapshot& snapshot)>
                     inject,
@@ -23,15 +23,15 @@ class TouchInjector : public Injector {
 
  protected:
   // |Injector|
-  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
-                    const view_tree::Snapshot& snapshot) override;
+  void ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot, uint64_t trace_flow_id) override;
   // |Injector|
   void CancelStream(uint32_t pointer_id, StreamId stream_id,
                     const view_tree::Snapshot& snapshot) override;
 
  private:
   InternalTouchEvent PointerInjectorEventToInternalTouchEvent(
-      fuchsia::ui::pointerinjector::Event& event);
+      fuchsia_ui_pointerinjector::wire::Event& event, uint64_t trace_flow_id);
 
   // Used to inject the event into InputSystem for dispatch to clients.
   const fit::function<void(InternalTouchEvent, StreamId, const view_tree::Snapshot&)> inject_;

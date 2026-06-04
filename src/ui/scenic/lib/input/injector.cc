@@ -9,16 +9,15 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
-#include <src/lib/fostr/fidl/fuchsia/ui/pointerinjector/formatting.h>
-
 #include "src/ui/scenic/lib/input/constants.h"
+#include "src/ui/scenic/lib/utils/fidl_array_cast.h"
 #include "src/ui/scenic/lib/utils/math.h"
 
 #include <glm/glm.hpp>
 
 namespace scenic_impl::input {
 
-using fuchsia::ui::pointerinjector::EventPhase;
+using fuchsia_ui_pointerinjector::wire::EventPhase;
 
 namespace {
 
@@ -55,7 +54,8 @@ InjectorInspector::InjectorInspector(inspect::Node node)
           kLatencyHistogramInitialStep.to_usecs(), kLatencyHistogramStepMultiplier,
           kLatencyHistogramBuckets)) {}
 
-void InjectorInspector::OnPointerInjectorEvent(const fuchsia::ui::pointerinjector::Event& event) {
+void InjectorInspector::OnPointerInjectorEvent(
+    const fuchsia_ui_pointerinjector::wire::Event& event) {
   FX_DCHECK(event.has_data() && event.has_timestamp());
   FX_DCHECK(async_get_default_dispatcher());
 
@@ -111,11 +111,11 @@ void InjectorInspector::ReportStats(inspect::Inspector& inspector) const {
 
 namespace {
 
-bool HasRequiredFields(const fuchsia::ui::pointerinjector::PointerSample& pointer) {
+bool HasRequiredFields(const fuchsia_ui_pointerinjector::wire::PointerSample& pointer) {
   return pointer.has_pointer_id() && pointer.has_phase() && pointer.has_position_in_viewport();
 }
 
-bool AreValidExtents(const std::array<std::array<float, 2>, 2>& extents) {
+bool AreValidExtents(const fidl::Array<fidl::Array<float, 2>, 2>& extents) {
   for (auto& point : extents) {
     for (float f : point) {
       if (!std::isfinite(f)) {
@@ -135,12 +135,25 @@ bool AreValidExtents(const std::array<std::array<float, 2>, 2>& extents) {
 
 Injector::Injector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                    inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
-                   fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+                   fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
                    fit::function<void()> on_channel_closed)
     : snapshot_holder_(std::move(snapshot_holder)),
       settings_(std::move(settings)),
       viewport_(std::move(viewport)),
-      binding_(this, std::move(device)),
+      binding_(async_get_default_dispatcher(), std::move(device), this,
+               [this](fidl::UnbindInfo info) {
+                 if (info.status() != ZX_OK && info.status() != ZX_ERR_PEER_CLOSED) {
+                   FX_LOGS(ERROR) << "Injector : Unbind handler called with status: "
+                                  << info.status();
+                 }
+                 // Clean up ongoing streams before calling the supplied error handler.
+                 if (!ongoing_streams_.empty()) {
+                   auto snapshot = GetViewTreeSnapshot();
+                   CancelOngoingStreams(*snapshot);
+                 }
+                 // NOTE: Triggers destruction of this object.
+                 on_channel_closed_();
+               }),
       on_channel_closed_(std::move(on_channel_closed)),
       inspector_(std::move(inspect_node)) {
   FX_DCHECK(snapshot_holder_);
@@ -150,33 +163,25 @@ Injector::Injector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                 << " Dispatch Policy: " << static_cast<uint32_t>(settings_.dispatch_policy)
                 << " Context koid: " << settings_.context_koid
                 << " and Target koid: " << settings_.target_koid;
-
-  binding_.set_error_handler([this](zx_status_t) {
-    // Clean up ongoing streams before calling the supplied error handler.
-    if (!ongoing_streams_.empty()) {
-      auto snapshot = GetViewTreeSnapshot();
-      CancelOngoingStreams(*snapshot);
-    }
-    // NOTE: Triggers destruction of this object.
-    on_channel_closed_();
-  });
 }
 
-void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
-                      InjectCallback callback) {
+void Injector::Inject(InjectRequestView request, InjectCompleter::Sync& completer) {
   TRACE_DURATION("input", "Injector::Inject");
-  {
-    InjectEvents(std::move(events));
-  }
-  {
-    TRACE_DURATION("input", "Injector::Inject[callback]");
-    callback();
+  InjectEvents(request->events);
+  if (!channel_closed_) {
+    completer.Reply();
   }
 }
 
-// TODO: b/465440651 - revisit if we need to add flow control here since no flow control on caller
-// side.
-void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
+// TODO(https://fxbug.dev/465440651): revisit if we need to add flow control here since there is
+// no flow control on caller side.
+void Injector::InjectEvents(InjectEventsRequestView request,
+                            InjectEventsCompleter::Sync& completer) {
+  InjectEvents(request->events);
+  // One-way method; no reply expected.
+}
+
+void Injector::InjectEvents(fidl::VectorView<fuchsia_ui_pointerinjector::wire::Event> events) {
   TRACE_DURATION("input", "Injector::InjectEvents");
 
   auto snapshot = GetViewTreeSnapshot();
@@ -217,9 +222,12 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
           return;
         }
       }
-      viewport_ = {.extents = {new_viewport.extents()},
-                   .context_from_viewport_transform = utils::ColumnMajorMat3ArrayToMat4(
-                       new_viewport.viewport_to_context_transform())};
+
+      // Update viewport from event data.
+      viewport_ = {
+          .extents = Extents(new_viewport.extents()),
+          .context_from_viewport_transform = utils::ColumnMajorMat3ArrayToMat4(
+              utils::ReinterpretFidlArrayAsStdArray(new_viewport.viewport_to_context_transform()))};
       continue;
     } else if (event.data().is_pointer_sample()) {
       TRACE_DURATION("input", "Injector::InjectEvents[pointer_sample]");
@@ -231,14 +239,13 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
         return;
       }
 
+      uint64_t trace_flow_id = event.has_trace_flow_id() ? event.trace_flow_id() : TRACE_NONCE();
       if (event.has_trace_flow_id()) {
-        TRACE_FLOW_END("input", "dispatch_event_to_scenic", event.trace_flow_id());
-      } else {
-        event.set_trace_flow_id(TRACE_NONCE());
+        TRACE_FLOW_END("input", "dispatch_event_to_scenic", trace_flow_id);
       }
-      TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", event.trace_flow_id());
+      TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", trace_flow_id);
 
-      ForwardEvent(event, stream_id, *snapshot);
+      ForwardEvent(event, stream_id, *snapshot, trace_flow_id);
       continue;
     } else {
       // Should be unreachable.
@@ -248,7 +255,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
 }
 
 std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
-    const fuchsia::ui::pointerinjector::PointerSample& pointer_sample) {
+    const fuchsia_ui_pointerinjector::wire::PointerSample& pointer_sample) {
   TRACE_DURATION("input", "Injector::ValidatePointerSample");
   if (!HasRequiredFields(pointer_sample)) {
     FX_LOGS(ERROR)
@@ -256,7 +263,8 @@ std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
     return {ZX_ERR_INVALID_ARGS, kInvalidStreamId};
   }
 
-  const auto [x, y] = pointer_sample.position_in_viewport();
+  const float x = pointer_sample.position_in_viewport()[0];
+  const float y = pointer_sample.position_in_viewport()[1];
   if (!std::isfinite(x) || !std::isfinite(y)) {
     FX_LOGS(ERROR) << "fuchsia::ui::pointerinjector::PointerSample contained a NaN or inf value";
     return {ZX_ERR_INVALID_ARGS, kInvalidStreamId};
@@ -274,8 +282,8 @@ std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
 StreamId Injector::ValidateEventStream(uint32_t pointer_id, EventPhase phase) {
   TRACE_DURATION("input", "Injector::ValidateEventStream");
   const bool stream_is_ongoing = ongoing_streams_.contains(pointer_id);
-  const bool double_add = stream_is_ongoing && phase == EventPhase::ADD;
-  const bool invalid_start = !stream_is_ongoing && phase != EventPhase::ADD;
+  const bool double_add = stream_is_ongoing && phase == EventPhase::kAdd;
+  const bool invalid_start = !stream_is_ongoing && phase != EventPhase::kAdd;
   if (double_add) {
     FX_LOGS(ERROR) << "Inject() called with invalid event stream: double-add, ptr-id: "
                    << pointer_id << ", stream-event-count: " << ongoing_streams_.count(pointer_id)
@@ -291,10 +299,10 @@ StreamId Injector::ValidateEventStream(uint32_t pointer_id, EventPhase phase) {
 
   // Update stream state.
   StreamId stream_id = kInvalidStreamId;
-  if (phase == EventPhase::ADD) {
+  if (phase == EventPhase::kAdd) {
     ongoing_streams_.emplace(pointer_id, NewStreamId());
     stream_id = ongoing_streams_.at(pointer_id);
-  } else if (phase == EventPhase::REMOVE || phase == EventPhase::CANCEL) {
+  } else if (phase == EventPhase::kRemove || phase == EventPhase::kCancel) {
     stream_id = ongoing_streams_.at(pointer_id);
     ongoing_streams_.erase(pointer_id);
   } else {
@@ -314,13 +322,18 @@ void Injector::CancelOngoingStreams(const view_tree::Snapshot& snapshot) {
 }
 
 void Injector::CloseChannel(zx_status_t epitaph, const view_tree::Snapshot& snapshot) {
+  if (epitaph != ZX_OK) {
+    FX_LOGS(ERROR) << "Injector : CloseChannel called with epitaph: " << epitaph;
+  }
+  channel_closed_ = true;
+  // NOTE: the binding's `close_handler` also cancels streams.  However, receiving the `snapshot`
+  // arg implies that the call stack above us has already checked out a `view_tree::SnapshotRef`, so
+  // there will be a DCHECK if the binding's `close_handler` tries to check out its own ref.
   CancelOngoingStreams(snapshot);
   binding_.Close(epitaph);
-  // NOTE: Triggers destruction of this object.
-  on_channel_closed_();
 }
 
-zx_status_t Injector::IsValidViewport(const fuchsia::ui::pointerinjector::Viewport& viewport) {
+zx_status_t Injector::IsValidViewport(const fuchsia_ui_pointerinjector::wire::Viewport& viewport) {
   TRACE_DURATION("input", "Injector::IsValidViewport");
   if (!viewport.has_extents() || !viewport.has_viewport_to_context_transform()) {
     FX_LOGS(ERROR) << "Provided fuchsia::ui::pointerinjector::Viewport had missing fields";
@@ -344,8 +357,8 @@ zx_status_t Injector::IsValidViewport(const fuchsia::ui::pointerinjector::Viewpo
   }
 
   // Must be invertible, i.e. determinant must be non-zero.
-  const glm::mat4 viewport_to_context_transform =
-      utils::ColumnMajorMat3ArrayToMat4(viewport.viewport_to_context_transform());
+  const glm::mat4 viewport_to_context_transform = utils::ColumnMajorMat3ArrayToMat4(
+      utils::ReinterpretFidlArrayAsStdArray(viewport.viewport_to_context_transform()));
   if (fabs(glm::determinant(viewport_to_context_transform)) <=
       std::numeric_limits<float>::epsilon()) {
     FX_LOGS(ERROR) << "Provided fuchsia::ui::pointerinjector::Viewport had a non-invertible matrix";

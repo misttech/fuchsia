@@ -4,12 +4,13 @@
 
 #include "src/ui/scenic/lib/input/touch_injector.h"
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
 namespace scenic_impl::input {
 
-using InjectorEventPhase = fuchsia::ui::pointerinjector::EventPhase;
+using InjectorEventPhase = fuchsia_ui_pointerinjector::wire::EventPhase;
 
 namespace {
 
@@ -30,7 +31,7 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 TouchInjector::TouchInjector(
     std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
     InjectorSettings settings, Viewport viewport,
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+    fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
     fit::function<void(InternalTouchEvent, StreamId stream_id, const view_tree::Snapshot& snapshot)>
         inject,
     fit::function<void()> on_channel_closed)
@@ -38,30 +39,29 @@ TouchInjector::TouchInjector(
                std::move(viewport), std::move(device), std::move(on_channel_closed)),
       inject_(std::move(inject)) {
   FX_DCHECK(inject_);
-  FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::TOUCH);
+  FX_DCHECK(settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kTouch);
 }
 
-void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
-                                 const view_tree::Snapshot& snapshot) {
+void TouchInjector::ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot, uint64_t trace_flow_id) {
   TRACE_DURATION("input", "TouchInjector::ForwardEvent");
   FX_DCHECK(stream_id != kInvalidStreamId);
-  inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id, snapshot);
+  inject_(PointerInjectorEventToInternalTouchEvent(event, trace_flow_id), stream_id, snapshot);
 }
 
 InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
-    fuchsia::ui::pointerinjector::Event& event) {
+    fuchsia_ui_pointerinjector::wire::Event& event, uint64_t trace_flow_id) {
   const InjectorSettings& settings = Injector::settings();
   InternalTouchEvent internal_event;
   if (event.has_wake_lease()) {
-    internal_event.wake_lease = std::move(*event.mutable_wake_lease());
+    internal_event.wake_lease = std::move(event.wake_lease());
   }
   internal_event.timestamp = event.timestamp();
   internal_event.device_id = settings.device_id;
-  if (event.has_trace_flow_id()) {
-    internal_event.trace_flow_id = event.trace_flow_id();
-  }
+  internal_event.trace_flow_id = trace_flow_id;
 
-  const fuchsia::ui::pointerinjector::PointerSample& pointer_sample = event.data().pointer_sample();
+  const fuchsia_ui_pointerinjector::wire::PointerSample& pointer_sample =
+      event.data().pointer_sample();
   internal_event.pointer_id = pointer_sample.pointer_id();
   internal_event.viewport = viewport();
   internal_event.position_in_viewport = {pointer_sample.position_in_viewport()[0],
@@ -70,19 +70,19 @@ InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
   internal_event.target = settings.target_koid;
 
   switch (pointer_sample.phase()) {
-    case InjectorEventPhase::ADD: {
+    case InjectorEventPhase::kAdd: {
       internal_event.phase = Phase::kAdd;
       break;
     }
-    case InjectorEventPhase::CHANGE: {
+    case InjectorEventPhase::kChange: {
       internal_event.phase = Phase::kChange;
       break;
     }
-    case InjectorEventPhase::REMOVE: {
+    case InjectorEventPhase::kRemove: {
       internal_event.phase = Phase::kRemove;
       break;
     }
-    case InjectorEventPhase::CANCEL: {
+    case InjectorEventPhase::kCancel: {
       internal_event.phase = Phase::kCancel;
       break;
     }

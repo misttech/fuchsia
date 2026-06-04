@@ -4,6 +4,9 @@
 
 #include "src/ui/scenic/lib/input/pointerinjector_registry.h"
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointerinjector/cpp/hlcpp_conversion.h>
+#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
@@ -58,7 +61,11 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
     return false;
   }
 
-  if (Injector::IsValidViewport(config.viewport()) != ZX_OK) {
+  fuchsia::ui::pointerinjector::Viewport viewport_copy;
+  fidl::Clone(config.viewport(), &viewport_copy);
+  fidl::Arena arena;
+  auto wire_viewport = fidl::ToWire(arena, fidl::HLCPPToNatural(std::move(viewport_copy)));
+  if (Injector::IsValidViewport(wire_viewport) != ZX_OK) {
     // Errors printed in IsValidViewport. Just return result here.
     return false;
   }
@@ -119,64 +126,73 @@ void PointerinjectorRegistry::Register(
   }
 
   const InjectorId id = ++last_injector_id_;
-  InjectorSettings settings{.dispatch_policy = config.dispatch_policy(),
-                            .device_id = config.device_id(),
-                            .device_type = config.device_type(),
-                            .context_koid = context_koid,
-                            .target_koid = target_koid};
+  auto server_end = fidl::ServerEnd<fuchsia_ui_pointerinjector::Device>(injector.TakeChannel());
+
+  std::optional<fuchsia::input::report::Axis> scroll_v_range;
+  if (config.has_scroll_v_range()) {
+    scroll_v_range = config.scroll_v_range();
+  }
+  std::optional<fuchsia::input::report::Axis> scroll_h_range;
+  if (config.has_scroll_h_range()) {
+    scroll_h_range = config.scroll_h_range();
+  }
+
+  InjectorSettings settings{
+      .dispatch_policy =
+          static_cast<fuchsia_ui_pointerinjector::wire::DispatchPolicy>(config.dispatch_policy()),
+      .device_id = config.device_id(),
+      .device_type =
+          static_cast<fuchsia_ui_pointerinjector::wire::DeviceType>(config.device_type()),
+      .context_koid = context_koid,
+      .target_koid = target_koid,
+      .scroll_v_range = scroll_v_range,
+      .scroll_h_range = scroll_h_range,
+      .button_identifiers = config.has_buttons() ? config.buttons() : std::vector<uint8_t>()};
+
   Viewport viewport{
-      .extents = {config.viewport().extents()},
+      .extents = Extents(config.viewport().extents()),
       .context_from_viewport_transform =
           utils::ColumnMajorMat3ArrayToMat4(config.viewport().viewport_to_context_transform()),
   };
 
   fit::function<void()> on_channel_closed = [this, id] { injectors_.erase(id); };
 
-  if (settings.device_type == fuchsia::ui::pointerinjector::DeviceType::TOUCH) {
+  if (settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kTouch) {
     const auto [_, success] = injectors_.emplace(
-        id,
-        std::make_unique<TouchInjector>(
-            snapshot_holder_,
-            inspect_node_.CreateChild(inspect_node_.UniqueName("touch-injector-")),
-            std::move(settings), std::move(viewport), std::move(injector),
-            /*inject=*/
-            [&inject_func = settings.dispatch_policy ==
-                                    fuchsia::ui::pointerinjector::DispatchPolicy::EXCLUSIVE_TARGET
-                                ? inject_touch_exclusive_
-                                : inject_touch_hit_tested_](
-                InternalTouchEvent event, StreamId stream_id, const view_tree::Snapshot& snapshot) {
-              TRACE_DURATION("input", "TouchInjector::inject_");
-              inject_func(std::move(event), stream_id, snapshot);
-            },
-            std::move(on_channel_closed)));
+        id, std::make_unique<TouchInjector>(
+                snapshot_holder_,
+                inspect_node_.CreateChild(inspect_node_.UniqueName("touch-injector-")), settings,
+                std::move(viewport), std::move(server_end),
+                /*inject=*/
+                [&inject_func =
+                     settings.dispatch_policy ==
+                             fuchsia_ui_pointerinjector::wire::DispatchPolicy::kExclusiveTarget
+                         ? inject_touch_exclusive_
+                         : inject_touch_hit_tested_](InternalTouchEvent event, StreamId stream_id,
+                                                     const view_tree::Snapshot& snapshot) {
+                  TRACE_DURATION("input", "TouchInjector::inject_");
+                  inject_func(std::move(event), stream_id, snapshot);
+                },
+                std::move(on_channel_closed)));
     FX_CHECK(success) << "Injector already exists.";
-  } else if (settings.device_type == fuchsia::ui::pointerinjector::DeviceType::MOUSE) {
-    if (config.has_buttons()) {
-      settings.button_identifiers = config.buttons();
-    }
-    if (config.has_scroll_v_range()) {
-      settings.scroll_v_range = config.scroll_v_range();
-    }
-    if (config.has_scroll_h_range()) {
-      settings.scroll_h_range = config.scroll_h_range();
-    }
+  } else if (settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kMouse) {
     const auto [_, success] = injectors_.emplace(
-        id,
-        std::make_unique<MouseInjector>(
-            snapshot_holder_,
-            inspect_node_.CreateChild(inspect_node_.UniqueName("mouse-injector-")),
-            std::move(settings), std::move(viewport), std::move(injector),
-            /*inject=*/
-            [&inject_func = settings.dispatch_policy ==
-                                    fuchsia::ui::pointerinjector::DispatchPolicy::EXCLUSIVE_TARGET
-                                ? inject_mouse_exclusive_
-                                : inject_mouse_hit_tested_](
-                InternalMouseEvent event, StreamId stream_id, const view_tree::Snapshot& snapshot) {
-              TRACE_DURATION("input", "MouseInjector::inject_");
-              inject_func(std::move(event), stream_id, snapshot);
-            },
-            /*cancel_stream=*/[this](StreamId stream_id) { cancel_mouse_stream_(stream_id); },
-            /*on_channel_closed=*/std::move(on_channel_closed)));
+        id, std::make_unique<MouseInjector>(
+                snapshot_holder_,
+                inspect_node_.CreateChild(inspect_node_.UniqueName("mouse-injector-")), settings,
+                std::move(viewport), std::move(server_end),
+                /*inject=*/
+                [&inject_func =
+                     settings.dispatch_policy ==
+                             fuchsia_ui_pointerinjector::wire::DispatchPolicy::kExclusiveTarget
+                         ? inject_mouse_exclusive_
+                         : inject_mouse_hit_tested_](InternalMouseEvent event, StreamId stream_id,
+                                                     const view_tree::Snapshot& snapshot) {
+                  TRACE_DURATION("input", "MouseInjector::inject_");
+                  inject_func(std::move(event), stream_id, snapshot);
+                },
+                /*cancel_stream=*/[this](StreamId stream_id) { cancel_mouse_stream_(stream_id); },
+                /*on_channel_closed=*/std::move(on_channel_closed)));
     FX_CHECK(success) << "Injector already exists.";
   } else {
     FX_NOTREACHED();
