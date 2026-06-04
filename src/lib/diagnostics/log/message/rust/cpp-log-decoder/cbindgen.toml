@@ -14,6 +14,7 @@ language = "CPP"
 style = "type"
 
 sys_includes = [ "zircon/types.h" ]
+after_includes = "struct Bump;"
 
 [parse]
 parse_deps = true

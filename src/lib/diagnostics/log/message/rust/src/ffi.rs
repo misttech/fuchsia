@@ -3,27 +3,25 @@
 // found in the LICENSE file.
 
 use crate::error::MessageError;
+use crate::{ExtendedMetadata, MessageFormatter};
 use bumpalo::Bump;
 use bumpalo::collections::{String as BumpaloString, Vec as BumpaloVec};
 use diagnostics_data::{ExtendedMoniker, Severity};
 use diagnostics_log_encoding::{Argument, Record, Value};
 use flyweights::FlyStr;
+use static_assertions::const_assert;
+use std::fmt::Write;
+use std::marker::PhantomData;
 use std::str;
 use zx::BootInstant;
 
 pub use crate::constants::*;
 
-struct ExtendedMetadata<'a> {
-    moniker: &'a str,
-    url: &'a str,
-    rolled_out_logs: u64,
-}
-
 /// Array for FFI purposes between C++ and Rust.
 /// If len is 0, ptr is allowed to be nullptr,
 /// otherwise, ptr must be valid.
 #[repr(C)]
-pub struct CPPArray<T> {
+pub struct CPPArray<'a, T> {
     /// Number of elements in the array
     pub len: usize,
     /// Pointer to the first element in the array,
@@ -31,9 +29,17 @@ pub struct CPPArray<T> {
     /// but is not guaranteed to always be null of
     /// len is 0.
     pub ptr: *const T,
+
+    phantom: PhantomData<&'a T>,
 }
 
-impl CPPArray<u8> {
+impl<T> Default for CPPArray<'_, T> {
+    fn default() -> Self {
+        CPPArray { len: 0, ptr: std::ptr::null(), phantom: PhantomData }
+    }
+}
+
+impl CPPArray<'_, u8> {
     /// # Safety
     ///
     /// input must refer to a valid string, sized according to len.
@@ -46,25 +52,27 @@ impl CPPArray<u8> {
     }
 }
 
-impl From<&str> for CPPArray<u8> {
-    fn from(value: &str) -> Self {
-        CPPArray { len: value.len(), ptr: value.as_ptr() }
+impl<'a> From<&'a str> for CPPArray<'a, u8> {
+    fn from(value: &'a str) -> Self {
+        value.as_bytes().into()
     }
 }
 
-impl From<Option<&str>> for CPPArray<u8> {
-    fn from(value: Option<&str>) -> Self {
-        if let Some(value) = value {
-            CPPArray { len: value.len(), ptr: value.as_ptr() }
-        } else {
-            CPPArray { len: 0, ptr: std::ptr::null() }
-        }
+impl<'a> From<Option<&'a str>> for CPPArray<'a, u8> {
+    fn from(value: Option<&'a str>) -> Self {
+        value.map(|v| v.into()).unwrap_or_default()
     }
 }
 
-impl<T> From<&Vec<T>> for CPPArray<T> {
-    fn from(value: &Vec<T>) -> Self {
-        CPPArray { len: value.len(), ptr: value.as_ptr() }
+impl<'a, T> From<&'a [T]> for CPPArray<'a, T> {
+    fn from(value: &'a [T]) -> Self {
+        CPPArray { len: value.len(), ptr: value.as_ptr(), phantom: PhantomData }
+    }
+}
+
+impl<'a> From<BumpaloString<'a>> for CPPArray<'a, u8> {
+    fn from(value: BumpaloString<'a>) -> Self {
+        value.into_bump_str().into()
     }
 }
 
@@ -74,7 +82,7 @@ pub struct LogMessage<'a> {
     /// Severity of a log message.
     severity: u8,
     /// Tags in a log message, guaranteed to be non-null.
-    tags: CPPArray<CPPArray<u8>>,
+    tags: CPPArray<'a, CPPArray<'a, u8>>,
     /// Process ID from a LogMessage, or 0 if unknown
     pid: u64,
     /// Thread ID from a LogMessage, or 0 if unknown
@@ -82,26 +90,14 @@ pub struct LogMessage<'a> {
     /// Number of dropped log messages.
     dropped: u64,
     /// The UTF-encoded log message, guaranteed to be valid UTF-8.
-    message: CPPArray<u8>,
+    message: CPPArray<'a, u8>,
     /// Timestamp on the boot timeline of the log message,
     /// in nanoseconds.
     timestamp: i64,
-    /// Pointer to the builder is owned by this CPPLogMessage.
-    /// Dropping this CPPLogMessage will free the builder.
-    builder: *mut CPPLogMessageBuilder<'a>,
 }
 
-impl Drop for LogMessage<'_> {
-    fn drop(&mut self) {
-        unsafe {
-            // SAFETY: Rust guarantees destructors only run once in sound code.
-            // Initializing the CPPLogMessage requires the builder to be set
-            // to a valid pointer, so it is safe to drop the CPPLogMessageBuilder
-            // in the destructor to free resources on the Rust side of the FFI boundary.
-            std::ptr::drop_in_place(self.builder);
-        }
-    }
-}
+// These are allocated using the Bumpalo allocator.
+const_assert!(!std::mem::needs_drop::<LogMessage<'_>>());
 
 pub struct CPPLogMessageBuilder<'a> {
     severity: u8,
@@ -114,12 +110,12 @@ pub struct CPPLogMessageBuilder<'a> {
     moniker: Option<BumpaloString<'a>>,
     message: Option<String>,
     timestamp: i64,
-    kvps: BumpaloVec<'a, Argument<'a>>,
+    kvps: String,
     allocator: &'a Bump,
 }
 
 // Escape quotes in a string per the Feedback format
-fn escape_quotes(input: &str, output: &mut BumpaloString<'_>) {
+fn escape_quotes(input: &str, output: &mut String) {
     for ch in input.chars() {
         if ch == '"' {
             output.push('\\');
@@ -129,16 +125,6 @@ fn escape_quotes(input: &str, output: &mut BumpaloString<'_>) {
 }
 
 impl<'a> CPPLogMessageBuilder<'a> {
-    fn convert_string_vec(&self, strings: &[BumpaloString<'_>]) -> CPPArray<CPPArray<u8>> {
-        CPPArray {
-            len: strings.len(),
-            ptr: self
-                .allocator
-                .alloc_slice_fill_iter(strings.iter().map(|value| value.as_str().into()))
-                .as_ptr(),
-        }
-    }
-
     fn set_raw_severity(mut self, raw_severity: u8) -> Self {
         self.severity = raw_severity;
         self
@@ -179,8 +165,36 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    fn add_kvp(mut self, kvp: Argument<'a>) -> Self {
-        self.kvps.push(kvp);
+    fn add_kvp(mut self, kvp: &Argument<'_>) -> Self {
+        if !self.kvps.is_empty() {
+            self.kvps.push(' ');
+        }
+
+        self.kvps.push_str(kvp.name());
+        self.kvps.push('=');
+        match kvp.value() {
+            Value::Text(value) => {
+                self.kvps.push('"');
+                escape_quotes(&value, &mut self.kvps);
+                self.kvps.push('"');
+            }
+            Value::SignedInt(value) => {
+                write!(self.kvps, "{value}").unwrap();
+            }
+            Value::UnsignedInt(value) => {
+                write!(self.kvps, "{value}").unwrap();
+            }
+            Value::Floating(value) => {
+                write!(self.kvps, "{value}").unwrap();
+            }
+            Value::Boolean(value) => {
+                if value {
+                    write!(self.kvps, "true").unwrap();
+                } else {
+                    write!(self.kvps, "false").unwrap();
+                }
+            }
+        }
         self
     }
 
@@ -189,46 +203,17 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    fn build(self) -> &'a mut LogMessage<'a> {
+    pub fn build(mut self) -> &'a mut LogMessage<'a> {
         let allocator = self.allocator;
-        let builder = allocator.alloc(self);
 
         // Format the message in accordance with the Feedback format
-        let msg_str = builder
+        let msg_str = self
             .message
             .as_ref()
             .map(|value| bumpalo::format!(in &allocator,"{value}",))
             .unwrap_or_else(|| BumpaloString::new_in(allocator));
 
-        let mut kvp_str = BumpaloString::new_in(allocator);
-        for kvp in &builder.kvps {
-            kvp_str = bumpalo::format!(in &allocator, "{kvp_str} {}=", kvp.name());
-            match kvp.value() {
-                Value::Text(value) => {
-                    kvp_str.push('"');
-                    escape_quotes(&value, &mut kvp_str);
-                    kvp_str.push('"');
-                }
-                Value::SignedInt(value) => {
-                    kvp_str.push_str(&bumpalo::format!(in &allocator, "{}",value))
-                }
-                Value::UnsignedInt(value) => {
-                    kvp_str.push_str(&bumpalo::format!(in &allocator, "{}",value))
-                }
-                Value::Floating(value) => {
-                    kvp_str.push_str(&bumpalo::format!(in &allocator, "{}",value))
-                }
-                Value::Boolean(value) => {
-                    if value {
-                        kvp_str.push_str("true");
-                    } else {
-                        kvp_str.push_str("false");
-                    }
-                }
-            }
-        }
-
-        let mut output = match (&builder.file, &builder.line) {
+        let mut output = match (&self.file, &self.line) {
             (Some(file), Some(line)) => {
                 let mut value = bumpalo::format!(in &allocator, "[{file}({line})]",);
                 if !msg_str.is_empty() {
@@ -240,29 +225,32 @@ impl<'a> CPPLogMessageBuilder<'a> {
         };
 
         output.push_str(&msg_str);
-        output.push_str(&kvp_str);
+        if !msg_str.is_empty() && !self.kvps.is_empty() {
+            output.push(' ');
+        }
+        output.push_str(&self.kvps);
 
-        if let Some(moniker) = &builder.moniker {
+        if let Some(moniker) = &self.moniker {
             let component_name = moniker.split("/").last();
             if let Some(component_name) = component_name
-                && !builder.tags.iter().any(|value| value.as_str() == component_name)
+                && !self.tags.iter().any(|value| value.as_str() == component_name)
             {
-                builder.tags.insert(0, bumpalo::format!(in &allocator, "{}", component_name));
+                self.tags.insert(0, bumpalo::format!(in &allocator, "{}", component_name));
             }
         }
 
-        let log_message = LogMessage {
-            builder,
-            severity: builder.severity,
-            dropped: builder.dropped,
-            tags: builder.convert_string_vec(&builder.tags),
-            pid: builder.pid.unwrap_or(0),
-            tid: builder.tid.unwrap_or(0),
-            message: output.as_str().into(),
-            timestamp: builder.timestamp,
-        };
+        let tags: &[_] =
+            self.allocator.alloc_slice_fill_iter(self.tags.drain(..).map(|s| s.into()));
 
-        allocator.alloc(log_message)
+        allocator.alloc(LogMessage {
+            severity: self.severity,
+            dropped: self.dropped,
+            tags: tags.into(),
+            pid: self.pid.unwrap_or(0),
+            tid: self.tid.unwrap_or(0),
+            message: output.into(),
+            timestamp: self.timestamp,
+        })
     }
 }
 
@@ -286,18 +274,18 @@ impl<'a> CPPLogMessageBuilderBuilder<'a> {
             timestamp: timestamp.into_nanos(),
             line: None,
             allocator: self.0,
-            kvps: BumpaloVec::new_in(self.0),
+            kvps: String::new(),
             moniker: moniker.map(|value| bumpalo::format!(in self.0,"{}", value)),
             message: None,
         })
     }
 }
 
-fn build_logs_data<'a>(
-    input: Record<'a>,
-    source: Option<ExtendedMetadata<'_>>,
+pub fn build_logs_data<'a>(
+    input: &Record<'_>,
+    source: Option<ExtendedMetadata>,
     allocator: &'a Bump,
-) -> Result<CPPLogMessageBuilder<'a>, MessageError> {
+) -> Result<&'a mut LogMessage<'a>, MessageError> {
     let builder = CPPLogMessageBuilderBuilder(allocator);
     let (raw_severity, severity) = Severity::parse_exact(input.severity);
     let (maybe_moniker, maybe_url, _) = source
@@ -306,12 +294,13 @@ fn build_logs_data<'a>(
     let mut builder =
         builder.configure(maybe_url.map(FlyStr::new), None, severity, input.timestamp)?;
     if let Some(moniker) = maybe_moniker {
-        builder = builder.set_moniker(moniker);
+        builder = builder.set_moniker(moniker.as_ref());
     }
     if let Some(raw_severity) = raw_severity {
         builder = builder.set_raw_severity(raw_severity);
     }
-    for argument in input.arguments.into_iter() {
+
+    for argument in input.arguments.iter() {
         match argument {
             Argument::Tag(tag) => {
                 builder = builder.add_tag(tag.as_ref());
@@ -323,13 +312,13 @@ fn build_logs_data<'a>(
                 builder = builder.set_tid(tid.raw_koid());
             }
             Argument::Dropped(dropped) => {
-                builder = builder.set_dropped(dropped);
+                builder = builder.set_dropped(*dropped);
             }
             Argument::File(file) => {
                 builder = builder.set_file(file.as_ref());
             }
             Argument::Line(line) => {
-                builder = builder.set_line(line);
+                builder = builder.set_line(*line);
             }
             Argument::Message(msg) => {
                 builder = builder.set_message(msg.as_ref());
@@ -338,7 +327,7 @@ fn build_logs_data<'a>(
         }
     }
 
-    Ok(builder)
+    Ok(builder.build())
 }
 
 /// Constructs a `CPPLogsMessage` from the provided bytes, assuming the bytes
@@ -346,10 +335,10 @@ fn build_logs_data<'a>(
 ///
 /// an Archivist LogStream with moniker, URL, and dropped logs output enabled.
 /// [log encoding] https://fuchsia.dev/fuchsia-src/development/logs/encodings
-pub fn ffi_from_extended_record<'a>(
+pub fn ffi_from_extended_record<'a, 'b>(
     bytes: &'a [u8],
-    allocator: &'a Bump,
-) -> Result<(&'a mut LogMessage<'a>, &'a [u8]), MessageError> {
+    allocator: &'b Bump,
+) -> Result<(&'b mut LogMessage<'b>, &'a [u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
     let (source, new_remaining) = if remaining.len() >= 16 {
         let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
@@ -362,10 +351,259 @@ pub fn ffi_from_extended_record<'a>(
         let url = str::from_utf8(&remaining[offset..offset + component_url_len])?;
         let component_url_padded_len = (component_url_len + 7) & !7;
         offset += component_url_padded_len;
-        (Some(ExtendedMetadata { moniker, url, rolled_out_logs }), &remaining[offset..])
+        (
+            Some(ExtendedMetadata {
+                moniker: ExtendedMoniker::parse_str(moniker)?,
+                url: url.into(),
+                rolled_out_logs,
+            }),
+            &remaining[offset..],
+        )
     } else {
         (None, remaining)
     };
-    let record = build_logs_data(input, source, allocator)?.build();
+    let record = build_logs_data(&input, source, allocator)?;
     Ok((record, new_remaining))
+}
+
+pub struct CPPMessageFormatter<'a>(pub &'a Bump);
+impl<'a> MessageFormatter for &CPPMessageFormatter<'a> {
+    type Result = &'a mut LogMessage<'a>;
+
+    fn format(
+        &mut self,
+        record: &Record<'_>,
+        metadata: Option<ExtendedMetadata>,
+    ) -> Result<Self::Result, MessageError> {
+        build_logs_data(record, metadata, self.0)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::MessageParser;
+    use bumpalo::Bump;
+    use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
+    use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+    use std::io::Cursor;
+    use zx::BootInstant;
+
+    fn overwrite_header_tag(bytes: &mut [u8], tag: u32) {
+        if bytes.len() >= 8 {
+            let mut header = Header(u64::from_le_bytes(bytes[0..8].try_into().unwrap()));
+            header.set_tag(tag);
+            bytes[0..8].copy_from_slice(&header.0.to_le_bytes());
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_short_read() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+        let bytes = vec![0u8; 7];
+        let res = parser.parse_next(&bytes, &formatter);
+        assert!(matches!(res, Err(MessageError::ShortRead { len: 7 })));
+    }
+
+    #[fuchsia::test]
+    fn test_normal_parsing() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(72),
+            severity: 0x30,
+            arguments: vec![Argument::message("hello world")],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let res = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(res.0.is_some());
+        let log_message = res.0.unwrap();
+        assert_eq!(unsafe { log_message.message.as_utf8_str() }, "hello world");
+        assert_eq!(log_message.timestamp, 72);
+        assert_eq!(log_message.severity, 0x30);
+    }
+
+    #[fuchsia::test]
+    fn test_control_message_tags() {
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+        let mut parser = MessageParser::default();
+
+        let tag_id = 0;
+
+        let control_record = Record {
+            timestamp: BootInstant::from_nanos(72),
+            severity: 0x30,
+            arguments: vec![
+                Argument::new("moniker", "test/moniker"),
+                Argument::new("url", "fuchsia-pkg://test"),
+            ],
+        };
+
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(control_record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        overwrite_header_tag(&mut bytes, LOG_CONTROL_BIT);
+
+        let (log, _) = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(log.is_none());
+
+        let tag_data = parser.tag_map.get(&tag_id).unwrap();
+        assert_eq!(tag_data.moniker, ExtendedMoniker::parse_str("test/moniker").unwrap());
+        assert_eq!(tag_data.url, "fuchsia-pkg://test");
+
+        let rolled_out_record = Record {
+            timestamp: BootInstant::from_nanos(73),
+            severity: 0x30,
+            arguments: vec![Argument::new("rolled_out", 5u64)],
+        };
+
+        let mut buffer2 = Cursor::new(vec![0u8; 1024]);
+        let mut encoder2 = Encoder::new(&mut buffer2, EncoderOpts::default());
+        encoder2.write_record(rolled_out_record).unwrap();
+
+        let len2 = buffer2.position() as usize;
+        let mut bytes2 = buffer2.into_inner();
+        bytes2.truncate(len2);
+
+        overwrite_header_tag(&mut bytes2, LOG_CONTROL_BIT);
+
+        let (log2, _) = parser.parse_next(&bytes2, &formatter).unwrap();
+        assert!(log2.is_some());
+
+        let tag_data2 = parser.tag_map.get(&tag_id).unwrap();
+        assert_eq!(unsafe { log2.unwrap().message.as_utf8_str() }, "rolled_out=5");
+        assert_eq!(tag_data2.moniker, ExtendedMoniker::parse_str("test/moniker").unwrap());
+
+        let normal_record = Record {
+            timestamp: BootInstant::from_nanos(74),
+            severity: 0x30,
+            arguments: vec![Argument::message("some log with tag")],
+        };
+
+        let mut buffer3 = Cursor::new(vec![0u8; 1024]);
+        let mut encoder3 = Encoder::new(&mut buffer3, EncoderOpts::default());
+        encoder3.write_record(normal_record).unwrap();
+
+        let len3 = buffer3.position() as usize;
+        let mut bytes3 = buffer3.into_inner();
+        bytes3.truncate(len3);
+
+        overwrite_header_tag(&mut bytes3, tag_id);
+
+        let (log3, _) = parser.parse_next(&bytes3, &formatter).unwrap();
+
+        let log_msg3 = log3.unwrap();
+        assert_eq!(unsafe { log_msg3.message.as_utf8_str() }, "some log with tag");
+        assert_eq!(log_msg3.tags.len, 1);
+        let tag_str = unsafe { (*log_msg3.tags.ptr).as_utf8_str() };
+        assert_eq!(tag_str, "moniker");
+    }
+
+    #[fuchsia::test]
+    fn test_message_with_kvps() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(100),
+            severity: 0x10,
+            arguments: vec![
+                Argument::message("A message"),
+                Argument::new("key1", "value1"),
+                Argument::new("key2", 123u64),
+            ],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let res = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(res.0.is_some());
+        let log_message = res.0.unwrap();
+        assert_eq!(
+            unsafe { log_message.message.as_utf8_str() },
+            "A message key1=\"value1\" key2=123"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_file_line_message_with_kvps() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(100),
+            severity: 0x10,
+            arguments: vec![
+                Argument::file("src/file.rs"),
+                Argument::line(42),
+                Argument::message("Another message"),
+                Argument::new("temp", 30.5),
+                Argument::new("valid", true),
+            ],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let res = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(res.0.is_some());
+        let log_message = res.0.unwrap();
+        assert_eq!(
+            unsafe { log_message.message.as_utf8_str() },
+            "[src/file.rs(42)] Another message temp=30.5 valid=true"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_only_kvps() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(100),
+            severity: 0x10,
+            arguments: vec![Argument::new("status", "ok"), Argument::new("code", 200i64)],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let res = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(res.0.is_some());
+        let log_message = res.0.unwrap();
+        assert_eq!(unsafe { log_message.message.as_utf8_str() }, "status=\"ok\" code=200");
+    }
 }

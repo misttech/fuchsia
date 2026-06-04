@@ -16,12 +16,36 @@
 #include <cstdlib>
 #include <new>
 #include <ostream>
+struct Bump;
 
-struct CPPLogMessageBuilder;
-
-/// Memory-managed state to be free'd on the Rust side
-/// when the log messages are destroyed.
-struct ManagedState;
+/// A stateful parser that reconstructs fully attributed `LogsData` records from a stream of
+/// FXT log packets.
+///
+/// # Background & Architecture
+///
+/// In the Fuchsia Trace Format (FXT) structured logging protocol, log attribution metadata is
+/// separated from the actual log payload to optimize transmission overhead. Instead of repeating
+/// the full moniker and component URL on every log record, the system transmits two distinct
+/// types of records:
+///
+/// 1. **Manifest/Control Records**: Sent with the `LOG_CONTROL_BIT` set. These records map a
+///    numeric base tag ID to component identity metadata (`ExtendedMoniker` and URL).
+/// 2. **Legacy Log Records**: Contain the message content, severity, timestamp, and
+///    arguments, along with a tag ID indicating which component produced the log.
+///
+/// # Stateful Parsing
+///
+/// `MessageParser` maintains an internal `tag_map` to track the active association between
+/// numeric tag IDs and their component identity (`ExtendedMetadata`).
+///
+/// - When parsing a manifest record (`is_control == true`), `MessageParser` updates its state
+///   mapping for the derived base tag. If the record also reports rolled out (dropped) logs, a
+///   `LogsData` payload representing those dropped logs is returned. Otherwise, it registers
+///   the attribution mapping and returns `Ok((None, remaining))`.
+/// - When parsing a legacy log record (`is_control == false`), `MessageParser` resolves the
+///   record's tag to retrieve the component's identity from the internal mapping, constructing
+///   a fully attributed `LogsData` containing the correct component moniker and URL.
+struct MessageParser;
 
 /// Array for FFI purposes between C++ and Rust.
 /// If len is 0, ptr is allowed to be nullptr,
@@ -54,9 +78,12 @@ struct LogMessage {
   /// Timestamp on the boot timeline of the log message,
   /// in nanoseconds.
   int64_t timestamp;
-  /// Pointer to the builder is owned by this CPPLogMessage.
-  /// Dropping this CPPLogMessage will free the builder.
-  CPPLogMessageBuilder *builder;
+};
+
+/// Like `Box` except that it can be moved when there are live pointers.
+template <typename T>
+struct AliasableBox {
+  T *_0;
 };
 
 /// LogMessages struct containing log messages
@@ -68,8 +95,8 @@ struct LogMessage {
 /// the LogMessages are free'd.
 struct LogMessages {
   CPPArray<LogMessage *> messages;
-  ManagedState *state;
-  char *error_str;
+  const char *error_str;
+  AliasableBox<Bump> allocator;
 };
 
 extern "C" {
@@ -85,7 +112,18 @@ extern "C" {
 ///   documentation of pointer::offset.
 extern "C" char *fuchsia_decode_log_message_to_json(const uint8_t *msg, uintptr_t size);
 
+extern "C" MessageParser *fuchsia_new_message_parser();
+
 /// # Safety
+///
+/// This should only be called with a pointer obtained through
+/// `fuchsia_new_message_parser`.
+extern "C" void fuchsia_free_message_parser(MessageParser *parser);
+
+/// # Safety
+///
+/// - This function is NOT thread-safe. The caller must ensure that it is not called
+///   concurrently with the same `parser` pointer.
 ///
 /// Same as for `std::slice::from_raw_parts`. Summarizing in terms of this API:
 ///
@@ -103,8 +141,10 @@ extern "C" char *fuchsia_decode_log_message_to_json(const uint8_t *msg, uintptr_
 /// * Frees memory associated with each individual log message
 /// * Frees the bump allocator itself (and everything allocated from it), as well as
 /// the message array itself.
+/// If a malformed message is passed, returns nullptr.
 extern "C" LogMessages fuchsia_decode_log_messages_to_struct(const uint8_t *msg, uintptr_t size,
-                                                             bool expect_extended_attribution);
+                                                             bool expect_extended_attribution,
+                                                             MessageParser *parser);
 
 /// # Safety
 ///
@@ -114,7 +154,7 @@ extern "C" void fuchsia_free_decoded_log_message(char *msg);
 
 /// # Safety
 ///
-/// This should only be called with a pointer obtained through
+/// This should only be called with `input` obtained through
 /// `fuchsia_decode_log_messages_to_struct`.
 extern "C" void fuchsia_free_log_messages(LogMessages input);
 

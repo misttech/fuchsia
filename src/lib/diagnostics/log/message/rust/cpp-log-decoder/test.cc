@@ -39,6 +39,10 @@ TEST(LogDecoder, DecodesCorrectly) {
 }
 
 int RustStrcmp(CPPArray<uint8_t> rust_string, const char* c_str) {
+  size_t c_len = strlen(c_str);
+  if (rust_string.len != c_len) {
+    return rust_string.len < c_len ? -1 : 1;
+  }
   return strncmp(reinterpret_cast<const char*>(rust_string.ptr), c_str, rust_string.len);
 }
 
@@ -66,7 +70,8 @@ TEST(LogDecoder, DecodesArchivistArguments) {
   memcpy(new_buffer.data() + current_offset, kTestUrl, url_len);
   current_offset += (url_len + 7) & ~7;
 
-  auto messages = fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true);
+  auto messages =
+      fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true, nullptr);
   ASSERT_EQ(messages.messages.len, static_cast<size_t>(1));
   ASSERT_EQ(messages.messages.ptr[0]->tags.len, static_cast<size_t>(1));
   EXPECT_EQ(RustStrcmp(messages.messages.ptr[0]->tags.ptr[0], kTestMoniker), 0);
@@ -77,11 +82,10 @@ TEST(LogDecoder, DecodesArchivistArguments) {
 TEST(LogDecoder, HandlesInvalidInput) {
   // A simple invalid byte sequence. A valid log message would have a different structure.
   const uint8_t invalid_data[] = {0xDE, 0xAD, 0xBE, 0xEF};
-  auto messages = fuchsia_decode_log_messages_to_struct(invalid_data, sizeof(invalid_data), false);
-  ASSERT_EQ(messages.state, nullptr);
-  ASSERT_EQ(std::string(messages.error_str), std::string("found invalid header"));
-  fuchsia_free_decoded_log_message(messages.error_str);
-  // fuchsia_free_log_messages should not be called here, as the state is null.
+  auto messages =
+      fuchsia_decode_log_messages_to_struct(invalid_data, sizeof(invalid_data), true, nullptr);
+  ASSERT_EQ(std::string(messages.error_str), std::string("couldn't parse message: InvalidHeader"));
+  fuchsia_free_log_messages(messages);
 }
 
 }  // namespace

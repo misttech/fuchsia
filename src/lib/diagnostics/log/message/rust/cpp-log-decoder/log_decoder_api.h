@@ -18,7 +18,7 @@ std::string StringFromRustString(CPPArray<uint8_t> rust_string) {
 }
 
 inline fpromise::result<fuchsia::logger::LogMessage, std::string> ToFidlLogMessage(
-    LogMessage* message) {
+    const LogMessage* message) {
   std::vector<std::string> tags;
   for (size_t i = 0; i < message->tags.len; i++) {
     tags.push_back(StringFromRustString(message->tags.ptr[i]));

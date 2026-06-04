@@ -5,7 +5,8 @@
 use crate::error::MessageError;
 use byteorder::{ByteOrder, LittleEndian};
 use diagnostics_data::{
-    BuilderArgs, ExtendedMoniker, LogsData, LogsDataBuilder, LogsField, LogsProperty, Severity,
+    BuilderArgs, Data, ExtendedMoniker, Logs, LogsData, LogsDataBuilder, LogsField, LogsProperty,
+    Severity,
 };
 use diagnostics_log_encoding::{
     ARCHIVIST_URL, Argument, Header, LOG_CONTROL_BIT, MONIKER, ROLLED_OUT, Record, URL, Value,
@@ -57,9 +58,10 @@ pub fn from_logger(source: MonikerWithUrl, msg: LoggerMessage) -> LogsData {
 }
 
 #[derive(Clone)]
-struct ExtendedMetadata {
-    moniker: ExtendedMoniker,
-    url: FlyStr,
+pub struct ExtendedMetadata {
+    pub moniker: ExtendedMoniker,
+    pub url: FlyStr,
+    pub rolled_out_logs: u64,
 }
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -107,7 +109,7 @@ fn parse_archivist_args<'a>(
     Ok((builder, archivist_argument_count))
 }
 
-fn parse_logs_data<'a>(
+pub fn parse_logs_data<'a>(
     input: &'a Record<'a>,
     source: Option<ExtendedMetadata>,
     rolled_out: u64,
@@ -213,6 +215,32 @@ pub struct MessageParser {
     tag_map: HashMap<u32, ExtendedMetadata>,
 }
 
+pub trait MessageFormatter {
+    type Result;
+
+    fn format(
+        &mut self,
+        record: &Record<'_>,
+        metadata: Option<ExtendedMetadata>,
+    ) -> Result<Self::Result, MessageError>;
+}
+
+#[derive(Default)]
+pub struct RustMessageFormatter;
+
+impl MessageFormatter for RustMessageFormatter {
+    type Result = Data<Logs>;
+
+    fn format(
+        &mut self,
+        record: &Record<'_>,
+        metadata: Option<ExtendedMetadata>,
+    ) -> Result<Self::Result, MessageError> {
+        let rolled_out = metadata.as_ref().map(|value| value.rolled_out_logs).unwrap_or(0);
+        parse_logs_data(record, metadata, rolled_out)
+    }
+}
+
 impl MessageParser {
     /// Parses the next log record from the given `bytes`.
     ///
@@ -230,10 +258,11 @@ impl MessageParser {
     ///   if a log message was parsed, or `None` if it was an Archivist manifest record. The
     ///   second element is the remaining slice of bytes after parsing the record.
     /// * `Err(MessageError)`: An error if parsing failed.
-    pub fn parse_next<'a>(
+    pub fn parse_next<'a, F: MessageFormatter>(
         &mut self,
         bytes: &'a [u8],
-    ) -> Result<(Option<LogsData>, &'a [u8]), MessageError> {
+        mut formatter: F,
+    ) -> Result<(Option<F::Result>, &'a [u8]), MessageError> {
         if bytes.len() < 8 {
             return Err(MessageError::ShortRead { len: bytes.len() });
         }
@@ -272,8 +301,9 @@ impl MessageParser {
                             moniker::Moniker::parse_str("/UNKNOWN").unwrap(),
                         ),
                         url: flyweights::FlyStr::new(ARCHIVIST_URL),
+                        rolled_out_logs: count,
                     });
-                let data = parse_logs_data(&input, Some(metadata), count)?;
+                let data = formatter.format(&input, Some(metadata))?;
                 return Ok((Some(data), remaining));
             }
             if let (Some(m), Some(u)) = (moniker, url)
@@ -281,13 +311,17 @@ impl MessageParser {
             {
                 self.tag_map.insert(
                     base_tag,
-                    ExtendedMetadata { moniker: extended_moniker, url: FlyStr::new(u) },
+                    ExtendedMetadata {
+                        moniker: extended_moniker,
+                        url: FlyStr::new(u),
+                        rolled_out_logs: 0,
+                    },
                 );
             }
             Ok((None, remaining))
         } else {
             let metadata = self.tag_map.get(&base_tag).cloned();
-            let data = parse_logs_data(&input, metadata, 0)?;
+            let data = formatter.format(&input, metadata)?;
             Ok((Some(data), remaining))
         }
     }
@@ -313,6 +347,7 @@ pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageEr
             Some(ExtendedMetadata {
                 moniker: ExtendedMoniker::parse_str(moniker)?,
                 url: FlyStr::new(url),
+                rolled_out_logs: 0,
             }),
             &remaining[offset..],
             rolled_out_logs,
@@ -332,7 +367,7 @@ pub fn from_structured(source: MonikerWithUrl, bytes: &[u8]) -> Result<LogsData,
     let (input, _remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
     let record = parse_logs_data(
         &input,
-        Some(ExtendedMetadata { moniker: source.moniker, url: source.url }),
+        Some(ExtendedMetadata { moniker: source.moniker, url: source.url, rolled_out_logs: 0 }),
         0,
     )?;
     Ok(record)

@@ -12,7 +12,7 @@ use diagnostics_data::{DiagnosticsData, LogsData};
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
 use diagnostics_message as _;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
-use diagnostics_message::from_extended_record;
+use diagnostics_message::{RustMessageFormatter, from_extended_record};
 use fidl_fuchsia_diagnostics::{
     ArchiveAccessorMarker, ArchiveAccessorProxy, BatchIteratorMarker, BatchIteratorProxy,
     ClientSelectorConfiguration, Format, FormattedContent, PerformanceConfiguration, ReaderError,
@@ -662,7 +662,7 @@ fn drain_batch_iterator_for_logs(
 
             while !current_slice.is_empty() {
                 if _format == Some(Format::Fxt) {
-                    match parser.parse_next(current_slice) {
+                    match parser.parse_next(current_slice, RustMessageFormatter) {
                         Ok((maybe_data, remaining)) => {
                             assert!(remaining.len() < current_slice.len(), "Parser must advance");
                             if let Some(data) = maybe_data {

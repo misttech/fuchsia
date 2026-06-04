@@ -32,11 +32,11 @@ alternately use the nightly Rust toolchain instead.
 
 ## Install cbindgen
 
-We currently pin cbindgen at version 0.26.0 to avoid unexpected
+We currently pin cbindgen at version 0.29.0 to avoid unexpected
 behavior with cbindgen updates. You can install it with the following:
 
 ```
-cargo install --version 0.26.0 --force cbindgen
+cargo install --version 0.29.0 --force cbindgen
 ```
 
 ## Generate the local `Cargo.toml` manifest for `cpp-log-decoder`
