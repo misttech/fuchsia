@@ -2278,6 +2278,10 @@ assembly_input_bundle(
                     "source": "//src/diagnostics/config/persistence:network_policy.persist",
                     "destination": "network_policy.persist",
                 },
+                {
+                    "source": "//src/diagnostics/config/persistence:memory.persist",
+                    "destination": "memory.persist",
+                },
             ],
         },
     ],

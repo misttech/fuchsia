@@ -5,6 +5,7 @@
 exports_files(
     [
         "dhcp_client.persist",
+        "memory.persist",
         "netstack.persist",
         "netstack3.persist",
         "wlan.persist",
