@@ -39,7 +39,6 @@ load(
     ":utils.bzl",
     "append_suffix_to_label",
     "fuchsia_cpu_from_ctx",
-    "label_name",
     "stub_executable",
 )
 
@@ -149,7 +148,7 @@ def fuchsia_package(
     fuchsia_package_tasks(
         name = name,
         package = "%s_fuchsia_package" % name,
-        component_run_tags = [label_name(c) for c in components],
+        component_run_tags = [Label(c).name for c in components],
         tools = {tool: tool for tool in tools},
         package_repository_name = package_repository_name,
         disable_repository_name = disable_repository_name,
@@ -247,7 +246,7 @@ def fuchsia_test_package(
 """
     _fuchsia_test_package(
         name = name,
-        _test_component_mapping = {label_name(component): component for component in test_components},
+        _test_component_mapping = {Label(component).name: component for component in test_components},
         _components = components,
         fuchsia_api_level = fuchsia_api_level,
         platform = platform,

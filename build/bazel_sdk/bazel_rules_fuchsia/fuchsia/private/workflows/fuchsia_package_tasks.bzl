@@ -18,10 +18,10 @@ load(":fuchsia_task_test_enumerated_components.bzl", "fuchsia_task_test_enumerat
 load(":fuchsia_task_verbs.bzl", "make_help_executable", "verbs")
 load(":fuchsia_workflow.bzl", "fuchsia_workflow", "fuchsia_workflow_rule")
 load(":providers.bzl", "FuchsiaWorkflowInfo")
-load(":utils.bzl", "flatten", "label_name", "normalized_target_name")
+load(":utils.bzl", "flatten", "normalized_target_name")
 
 def _to_verb(label):
-    return verbs.custom(label_name(label))
+    return verbs.custom(Label(label).name)
 
 def _fuchsia_package_help_impl(ctx, make_shell_task):
     components = ctx.attr.package[FuchsiaPackageInfo].packaged_components

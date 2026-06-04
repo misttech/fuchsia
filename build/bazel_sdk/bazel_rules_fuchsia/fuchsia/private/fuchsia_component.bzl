@@ -19,7 +19,6 @@ load(
     "FuchsiaComponentManifestInfo",
     "FuchsiaPackageResourcesInfo",
 )
-load(":utils.bzl", "label_name")
 
 def _manifest_target(name, manifest_in, tags, testonly):
     target_name = name + "_ensure_compiled_manifest"
@@ -164,7 +163,7 @@ def _fuchsia_component_impl(ctx):
         is_driver = ctx.attr.is_driver,
         is_test = ctx.attr.is_test,
         moniker = ctx.attr.moniker.format(COMPONENT_NAME = component_name),
-        run_tag = label_name(str(ctx.label)),
+        run_tag = ctx.label.name,
     ) + [
         merge_debug_symbol_infos(ctx.attr.deps),
     ]

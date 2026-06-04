@@ -28,13 +28,6 @@ def normalized_target_name(label):
         label = label.replace(c, ".")
     return label
 
-def label_name(label):
-    # convert the label to a single word
-    # //foo/bar -> bar
-    # :bar -> bar
-    # //foo:bar -> bar
-    return label.split("/")[-1].split(":")[-1]
-
 def append_suffix_to_label(label_str, suffix, separator = "."):
     """ Canonicalizes a label given at the macro-level and appends a suffix.
 
@@ -51,7 +44,7 @@ def append_suffix_to_label(label_str, suffix, separator = "."):
     Returns:
         The new name with the suffix appended
     """
-    unqualified_name = separator.join([label_name(label_str), suffix])
+    unqualified_name = separator.join([Label(label_str).name, suffix])
     if label_str.startswith(":"):
         return ":{}".format(unqualified_name)
     elif label_str.startswith("//"):
