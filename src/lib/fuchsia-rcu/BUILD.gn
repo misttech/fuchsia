@@ -40,6 +40,7 @@ rustc_library("fuchsia-rcu") {
     "src/rcu_option_box.rs",
     "src/rcu_ptr.rs",
     "src/rcu_read_scope.rs",
+    "src/rcu_weak.rs",
     "src/read_counters.rs",
     "src/state_machine.rs",
   ]
