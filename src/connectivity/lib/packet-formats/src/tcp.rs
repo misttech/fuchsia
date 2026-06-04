@@ -859,9 +859,10 @@ impl<A: IpAddress, O: InnerPacketBuilder, C: TcpSerializationContext> PartialPac
     for TcpSegmentBuilderWithOptions<A, O>
 {
     fn partial_serialize(&self, context: &mut C, body_len: usize, mut buffer: &mut [u8]) {
-        self.prefix_builder.partial_serialize(context, body_len, &mut buffer[..HDR_PREFIX_LEN]);
-
         let opt_len = self.options.bytes_len();
+        let hdr_len = HDR_PREFIX_LEN + opt_len;
+        self.prefix_builder.partial_serialize(context, body_len, &mut buffer[..hdr_len]);
+
         let options = (&mut buffer).take_back_zero(opt_len).expect("too few bytes for TCP options");
         self.options.serialize(options)
     }
@@ -2245,5 +2246,28 @@ mod tests {
             buf.parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)),
             Err(ParseError::Format)
         );
+    }
+
+    // Regression test for https://fxbug.dev/517244297.
+    //
+    // Ensure that partial_serialization of a segment with options correctly
+    // sets the data_offset field.
+    #[test]
+    fn test_partial_serialize_data_offset() {
+        use packet::PartialPacketBuilder;
+
+        let prefix_builder = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4);
+        // MSS option takes 4 bytes.
+        let options_builder = TcpOptionsBuilder { mss: Some(1460), ..Default::default() };
+        let builder = TcpSegmentBuilderWithOptions::new(prefix_builder, options_builder).unwrap();
+
+        let header_len = HDR_PREFIX_LEN + builder.options().bytes_len();
+        assert_eq!(header_len, 24); // 20 (prefix) + 4 (MSS)
+
+        let mut buf = vec![0u8; header_len];
+        builder.partial_serialize(&mut NoOpSerializationContext, 0, &mut buf[..]);
+
+        let prefix = Ref::<_, HeaderPrefix>::from_bytes(&buf[..HDR_PREFIX_LEN]).unwrap();
+        assert_eq!(prefix.data_offset(), 6); // 24 bytes / 4.
     }
 }
