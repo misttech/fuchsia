@@ -21,11 +21,15 @@ use futures::stream::TryStreamExt;
 use hooks::{Event, EventPayload, EventType, Hook, HooksRegistration};
 use log::{error, warn};
 use moniker::{ExtendedMoniker, Moniker};
+use rand::Rng;
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{DirConnector, Router};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
+use std::fmt::Write;
+use std::path::Path;
 use std::sync::{Arc, Weak};
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{
@@ -40,6 +44,60 @@ use vfs::directory::immutable::simple::{
 const OPEN_SERVICE_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::Flags::PROTOCOL_DIRECTORY);
+
+/// Safely extracts a string from a VFS event without allocating
+/// unless ownership is explicitly required.
+pub fn extract_event_filename<'a>(path: &'a Path) -> Option<Cow<'a, str>> {
+    let s = path.to_str()?;
+    if s == "." {
+        // Return a borrowed reference, no allocation
+        Some(Cow::Borrowed("."))
+    } else {
+        // We can still borrow here, deferring .to_owned() until the caller
+        // proves they need it.
+        Some(Cow::Borrowed(s))
+    }
+}
+
+/// A zero-reallocation builder for extending paths in loops.
+pub struct ReusablePathBuffer {
+    buffer: String,
+}
+
+impl ReusablePathBuffer {
+    pub fn new(base: &RelativePath) -> Self {
+        // Pre-allocate enough space for most capability paths
+        let mut buffer = String::with_capacity(128);
+        write!(&mut buffer, "{}", base).expect("writing to a String buffer never fails");
+        Self { buffer }
+    }
+
+    pub fn push_segment(&mut self, segment: &str) {
+        if self.buffer == "." {
+            self.buffer.clear();
+        } else if !self.buffer.ends_with('/') {
+            self.buffer.push('/');
+        }
+        self.buffer.push_str(segment);
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.buffer
+    }
+}
+
+/// Generates a hex-encoded 128-bit ID using exactly one allocation.
+pub fn generate_hex_name(rng: &mut impl Rng) -> Name {
+    let mut num: [u8; 16] = [0; 16];
+    rng.fill_bytes(&mut num);
+
+    let mut hex_string = String::with_capacity(32);
+    for byte in num {
+        write!(&mut hex_string, "{:02x}", byte).unwrap();
+    }
+
+    Name::new(hex_string).expect("hex string is valid Name syntax")
+}
 
 /// Represents a routed service capability from an anonymized aggregate defined in a component.
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -387,6 +445,8 @@ impl AnonymizedAggregateServiceDir {
                 let source_component = target.find_absolute(moniker).await?;
 
                 let mut cur_path = RelativePath::dot();
+                let mut path_buf = ReusablePathBuffer::new(&cur_path);
+
                 for segment in capability.source_path().unwrap().iter_segments() {
                     let (proxy, server_end) =
                         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
@@ -395,7 +455,7 @@ impl AnonymizedAggregateServiceDir {
                         .open_outgoing(OpenRequest::new(
                             source_component.execution_scope.clone(),
                             FLAGS,
-                            cur_path.to_string().try_into().map_err(|_| ModelError::BadPath)?,
+                            path_buf.as_str().try_into().map_err(|_| ModelError::BadPath)?,
                             &mut object_request,
                         ))
                         .await?;
@@ -433,9 +493,9 @@ impl AnonymizedAggregateServiceDir {
                             match entry.event {
                                 fuchsia_fs::directory::WatchEvent::ADD_FILE
                                 | fuchsia_fs::directory::WatchEvent::EXISTING => {
-                                    let filename =
-                                        entry.filename.as_path().to_str().unwrap().to_owned();
-                                    if filename.as_str() != segment.as_str() {
+                                    let filename = extract_event_filename(entry.filename.as_path())
+                                        .expect("filename must be valid utf8");
+                                    if filename.as_ref() != segment.as_ref() {
                                         return Ok(());
                                     }
 
@@ -467,6 +527,8 @@ impl AnonymizedAggregateServiceDir {
                                     keyword: "source_path from service watcher (this should be impossible)".into(),
                                 }.into());
                             }
+
+                            path_buf.push_segment(segment.as_str());
                             continue;
                         }
                         Err(StreamErrorType::StreamError(err)) => {
@@ -557,7 +619,9 @@ impl AnonymizedAggregateServiceDir {
         let result = watcher
             .map_err(|e| Some(e))
             .try_for_each(|message| async move {
-                let filename = message.filename.as_path().to_str().unwrap().to_owned();
+                let filename = extract_event_filename(message.filename.as_path())
+                    .expect("filename must be valid utf8");
+
                 let mut inner = self.inner.lock();
                 if !inner.watchers_spawned.contains_key(&instance) {
                     // Our task entry doesn't exist, it is removed in |on_stopped_async|,
@@ -580,18 +644,18 @@ impl AnonymizedAggregateServiceDir {
                     | fuchsia_fs::directory::WatchEvent::EXISTING => {
                         let instance_key = ServiceInstanceDirectoryKey::<AggregateInstance> {
                             source_id: instance.clone(),
-                            service_instance: Name::new(&filename).unwrap(),
+                            service_instance: Name::new(filename.as_ref()).unwrap(),
                         };
 
                         // Check for duplicate entries.
                         if inner.entries.contains_key(&instance_key) {
                             return Ok(());
                         }
-                        let name = Self::generate_instance_id(&mut rand::rng());
+                        let name = generate_hex_name(&mut rand::rng());
 
                         let Ok(child_proxy) = fuchsia_fs::directory::open_directory_async(
                             proxy,
-                            &filename,
+                            filename.as_ref(),
                             fio::PERM_READABLE,
                         ) else {
                             // Our connection to the directory has been broken, so we can exit.
@@ -678,14 +742,6 @@ impl AnonymizedAggregateServiceDir {
             .await;
             Ok(())
         })
-    }
-
-    /// Generates a 128-bit uuid as a hex string.
-    fn generate_instance_id(rng: &mut impl rand::Rng) -> Name {
-        let mut num: [u8; 16] = [0; 16];
-        rng.fill_bytes(&mut num);
-        Name::new(num.iter().map(|byte| format!("{:02x}", byte)).collect::<Vec<String>>().join(""))
-            .unwrap()
     }
 
     async fn on_started_async(
@@ -2069,11 +2125,11 @@ mod tests {
         #[test]
         fn service_instance_id(seed in 0..u64::MAX) {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-            let instance = AnonymizedAggregateServiceDir::generate_instance_id(&mut rng);
+            let instance = generate_hex_name(&mut rng);
             assert!(is_instance_id(instance.as_str()), "{}", instance);
 
             // Verify it's random
-            let instance2 = AnonymizedAggregateServiceDir::generate_instance_id(&mut rng);
+            let instance2 = generate_hex_name(&mut rng);
             assert!(is_instance_id(instance2.as_str()), "{}", instance2);
             assert_ne!(instance, instance2);
         }

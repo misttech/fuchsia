@@ -15,7 +15,23 @@ use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjTrait};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::prelude::*;
+use std::borrow::Cow;
+use std::path::Path;
 use std::sync::Arc;
+
+/// Safely extracts a string from a VFS event without allocating
+/// unless ownership is explicitly required.
+fn extract_event_filename<'a>(path: &'a Path) -> Option<Cow<'a, str>> {
+    let s = path.to_str()?;
+    if s == "." {
+        // Return a borrowed reference, no allocation
+        Some(Cow::Borrowed("."))
+    } else {
+        // We can still borrow here, deferring .to_owned() until the caller
+        // proves they need it.
+        Some(Cow::Borrowed(s))
+    }
+}
 
 async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
     const INPUT_SERVICE: &str = "input";
@@ -27,11 +43,10 @@ async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
         watcher.map(|result| result.context("failed to get watcher event")).try_filter_map(|msg| {
             futures::future::ok(match msg.event {
                 WatchEvent::EXISTING | WatchEvent::ADD_FILE => {
-                    if msg.filename == std::path::Path::new(".") {
-                        None
-                    } else {
-                        Some(msg.filename)
-                    }
+                    let filename = extract_event_filename(msg.filename.as_path())
+                        .expect("filename must be valid utf8");
+
+                    if filename.as_ref() == "." { None } else { Some(filename.into_owned()) }
                 }
                 _ => None,
             })
@@ -41,8 +56,7 @@ async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
         format_err!("Watcher stream closed unexpectedly before finding an instance")
     })?;
 
-    let filename = first.to_str().ok_or_else(|| format_err!("to_str for filename failed"))?;
-    Ok(format!("{INPUT_SERVICE}/{filename}"))
+    Ok(format!("{INPUT_SERVICE}/{first}"))
 }
 
 async fn connect_request(
