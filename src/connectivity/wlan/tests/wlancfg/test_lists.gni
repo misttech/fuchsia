@@ -30,6 +30,7 @@ wlancfg_tests_for_general_cq_no_shield_box = []
 # we should optimize for maximum bang for our buck (e.g. add a
 # reboot test here, but only for wpa2, not for every single security type).
 wlancfg_tests_for_wlan_cq = [
+  "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
 
   # Though this test is defined in honeydew, it exercises wlancfg
@@ -42,7 +43,6 @@ wlancfg_tests_for_wlan_cq = [
 # provide much of a safety net. Consider moving it to one of the CQ groups
 # above.
 wlancfg_tests_for_fyi = [
-  "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
 ]
