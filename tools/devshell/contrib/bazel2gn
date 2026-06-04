@@ -54,29 +54,29 @@ function main {
     shift
   done
 
-  # If no directories are provided by user, sync all known directories.
-  # Read known directories to sync from $BAZEL2GN_DIR_LIST.
-  if [[ -z "${directories}" ]]; then
+  local use_dir_list=false
+  if [[ "${#directories[@]}" -eq 0 ]]; then
     fx-gen # To make sure `BAZEL2GN_DIR_LIST` is up-to-date.
-    while IFS= read -r dir; do
-      directories+=("${dir}")
-    done < "${BAZEL2GN_DIR_LIST}"
+    use_dir_list=true
   fi
 
+  # This Bazel build needs to run after `fx-gen`, which can clear out the symlinks in bazel-bin.
   if [[ "${build}" == "true" ]]; then
     fx-run-bazel false "$(fx-get-bazel)" build --config=host "${BAZEL2GN_TARGET}"
   fi
 
-  for dir in "${directories[@]}"; do
-    build_bazel="${FUCHSIA_DIR}/${dir}/BUILD.bazel"
-    build_gn="${FUCHSIA_DIR}/${dir}/BUILD.gn"
-
+  if [[ "${use_dir_list}" == "true" ]]; then
     "${BAZEL2GN_BIN}" \
-      --bazel_input_path "${build_bazel}" \
-      --gn_output_path "${build_gn}" \
+      --directory_list "${BAZEL2GN_DIR_LIST}" \
+      --fuchsia_dir "${FUCHSIA_DIR}" \
       --gn_bin "${PREBUILT_GN}" \
       --buildifier_bin "${PREBUILT_BUILDIFIER}"
-  done
+  else
+    "${BAZEL2GN_BIN}" \
+      --gn_bin "${PREBUILT_GN}" \
+      --buildifier_bin "${PREBUILT_BUILDIFIER}" \
+      "${directories[@]}"
+  fi
 }
 
 main "$@"

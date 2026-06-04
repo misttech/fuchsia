@@ -7,11 +7,14 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -21,12 +24,19 @@ import (
 )
 
 var (
-	gnBin          = flag.String("gn_bin", "", "Path to the GN binary.")
-	buildifierBin  = flag.String("buildifier_bin", "", "Path to the buildifier binary. If provided, formats the input BUILD.bazel file before parsing.")
-	bazelInputPath = flag.String("bazel_input_path", "", "Path to read the BUILD.bazel file from.")
-	gnOutputPath   = flag.String("gn_output_path", "", "Path to output the converted GN targets to.")
-	checkOnly      = flag.Bool("check_only", false, "When true, compare generated GN content with the input GN file without writing to it")
-	diffOutputPath = flag.String("diff_output_path", "", "Path to write the diff to, only useful when checkOnly is true")
+	gnBin         = flag.String("gn_bin", "", "Path to the GN binary.")
+	buildifierBin = flag.String("buildifier_bin", "", "Path to the buildifier binary. If provided, formats the input BUILD.bazel file before parsing.")
+	checkOnly     = flag.Bool("check_only", false, "When true, compare generated GN content with the input GN file without writing to it")
+
+	// Single mode flags
+	bazelInputPath = flag.String("bazel_input_path", "", "[Single-file mode] Path to read the BUILD.bazel file from.")
+	gnOutputPath   = flag.String("gn_output_path", "", "[Single-file mode] Path to output the converted GN targets to.")
+	diffOutputPath = flag.String("diff_output_path", "", "[Single-file mode] Path to write the diff to, only useful when checkOnly is true")
+
+	// Batch mode flags
+	directoryList = flag.String("directory_list", "", "[Batch mode] Path to a file containing a list of directories to sync, directory paths are relative to --fuchsia_dir.")
+	fuchsiaDir    = flag.String("fuchsia_dir", "", "[Batch mode] Path to the Fuchsia root directory.")
+	workers       = flag.Int("workers", runtime.NumCPU(), "[Batch mode] Number of parallel workers. Defaults to runtime.NumCPU().")
 )
 
 // commonFileHeader is the header to add to the top of every BUILD.gn file
@@ -70,14 +80,6 @@ func main() {
 	flag.Parse()
 	log := logger.NewLogger(logger.InfoLevel, color.NewColor(color.ColorAuto), os.Stdout, os.Stderr, "[bazel2gn] ")
 
-	if *bazelInputPath == "" {
-		log.Fatalf("--bazel_input_path is required, see --help")
-	}
-
-	if *gnOutputPath == "" {
-		log.Fatalf("--gn_output_path is required, see --help")
-	}
-
 	if *gnBin == "" {
 		log.Fatalf("--gn_bin is required, see --help")
 	}
@@ -90,60 +92,117 @@ func main() {
 		log.Fatalf("--diff_output_path is set to %s, but --check_only is not set", *diffOutputPath)
 	}
 
+	commonParams := syncParams{
+		buildifierBin:  *buildifierBin,
+		gnBin:          *gnBin,
+		checkOnly:      *checkOnly,
+		diffOutputPath: *diffOutputPath,
+		log:            log,
+	}
+
+	isBatch := *directoryList != ""
+	if isBatch {
+		if *bazelInputPath != "" || *gnOutputPath != "" {
+			log.Fatalf("Cannot specify both batch mode (--directory_list) and single file mode (--bazel_input_path or --gn_output_path)")
+		}
+
+		// This is racy in batch mode (multiple goroutines writing to the same file), so we don't
+		// support it for simplicity.
+		if *diffOutputPath != "" {
+			log.Fatalf("--diff_output_path is not supported in batch mode")
+		}
+
+		if *fuchsiaDir == "" {
+			log.Fatalf("--fuchsia_dir is required in batch mode, see --help")
+		}
+
+		if err := runBatch(context.Background(), *directoryList, *fuchsiaDir, *workers, commonParams); err != nil {
+			log.Fatalf("%v", err)
+		}
+	} else {
+		// Single-file mode
+		if *directoryList != "" || *fuchsiaDir != "" {
+			log.Fatalf("Cannot specify batch mode flags (--directory_list or --fuchsia_dir) in single-file mode, see --help")
+		}
+
+		if *bazelInputPath == "" {
+			log.Fatalf("--bazel_input_path is required in single-file mode, see --help")
+		}
+		if *gnOutputPath == "" {
+			log.Fatalf("--gn_output_path is required in single-file mode, see --help")
+		}
+		if err := syncDirectory(context.Background(), *bazelInputPath, *gnOutputPath, commonParams); err != nil {
+			log.Fatalf("Failed to sync: %v", err)
+		}
+	}
+}
+
+type syncParams struct {
+	buildifierBin  string
+	gnBin          string
+	checkOnly      bool
+	diffOutputPath string
+	log            *logger.Logger
+}
+
+func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath string, p syncParams) error {
 	// Format the input BUILD.bazel file first to ensure consistent output.
 	//
 	// For example, buildifier can reorder attributes of targets in BUILD.bazel,
 	// resulting in different BUILD.gn outputs since `gn format` doesn't care
 	// about field order.
-	if err := formatBazelFileInPlace(*buildifierBin, *bazelInputPath); err != nil {
-		log.Fatalf("Failed to format input Bazel file %s with buildifier: %v", *bazelInputPath, err)
+	if err := formatBazelFileInPlace(p.buildifierBin, bazelInputPath); err != nil {
+		return fmt.Errorf("formatting %s in-place: %v", bazelInputPath, err)
 	}
 
-	bazelIn, err := bazel2gn.Parse(*bazelInputPath)
+	bazelIn, err := bazel2gn.Parse(bazelInputPath)
 	if err != nil {
-		log.Fatalf("Parsing input Bazel file %s: %v", *bazelInputPath, err)
+		return fmt.Errorf("parsing input Bazel file %s: %v", bazelInputPath, err)
 	}
 
 	var finalLines []string
-
 	for _, stmt := range bazelIn.Stmts {
 		lines, err := bazel2gn.StmtToGN(stmt)
 		if err != nil {
-			log.Fatalf("Failed to convert top-level statement in Bazel file %s to GN: %v", *bazelInputPath, err)
+			return fmt.Errorf("converting statement in %s to GN: %v", bazelInputPath, err)
 		}
 		finalLines = append(finalLines, lines...)
 	}
 
 	// Open the GN build file with readonly first, to read the GN targets that
 	// need to be preserved.
-	gnOut, err := os.Open(*gnOutputPath)
+	gnOut, err := os.Open(gnOutputPath)
 	if err != nil {
-		log.Fatalf("Failed to open %s for reading: %v", *gnOutputPath, err)
+		return fmt.Errorf("opening %s for reading: %v", gnOutputPath, err)
 	}
 	toPreserve, err := gnTargetsToPreserve(gnOut)
+	gnOut.Close()
 	if err != nil {
-		log.Fatalf("Failed to read GN targets to preserve: %v", err)
+		return fmt.Errorf("reading GN targets to preserve from %s: %v", gnOutputPath, err)
 	}
+
 	finalContent, err := gnFormatted(
-		context.Background(),
-		*gnBin,
+		ctx,
+		p.gnBin,
 		toPreserve+"\n"+sentinelComment+"\n"+bazel2gnComment+"\n"+strings.Join(finalLines, "\n"),
 	)
 	if err != nil {
-		log.Fatalf("Formatting final GN targets: %v", err)
+		return fmt.Errorf("formatting GN targets for %s: %v", gnOutputPath, err)
 	}
 
-	gnOut, err = os.Open(*gnOutputPath)
+	gnOut, err = os.Open(gnOutputPath)
 	if err != nil {
-		log.Fatalf("Failed to open %s for reading: %v", *gnOutputPath, err)
+		return fmt.Errorf("opening %s for reading actual content: %v", gnOutputPath, err)
 	}
 	actual, err := io.ReadAll(gnOut)
+	gnOut.Close()
 	if err != nil {
-		log.Fatalf("Failed to read full content of %s", *gnOutputPath)
+		return fmt.Errorf("reading actual content of %s: %v", gnOutputPath, err)
 	}
+
 	diff := cmp.Diff(string(actual), finalContent)
 
-	if *checkOnly {
+	if p.checkOnly {
 		diffPrintout := ""
 		if diff != "" {
 			diffPrintout = fmt.Sprintf(`
@@ -159,30 +218,99 @@ Make sure you update the BUILD.bazel file, then run this command to sync BUILD.g
 Diff of GN targets (-actual, +expected):
 
 %s`,
-				*bazelInputPath, *gnOutputPath, diff)
+				bazelInputPath, gnOutputPath, diff)
 		}
-		if *diffOutputPath != "" {
-			if err := writeDiffOutput(*diffOutputPath, diffPrintout); err != nil {
-				log.Fatalf("Failed to write diff output: %v", err)
+		if p.diffOutputPath != "" {
+			if err := writeDiffOutput(p.diffOutputPath, diffPrintout); err != nil {
+				return fmt.Errorf("writing diff output to %s: %v", p.diffOutputPath, err)
 			}
 		}
 		if diffPrintout != "" {
-			log.Fatalf("%s", diffPrintout)
+			return errors.New(diffPrintout)
 		}
 	} else {
-		//  Avoid touching BUILD.gn when no changes are made, which can trigger unnecessary `gn gen`s.
+		// Avoid touching BUILD.gn when no changes are made, which can trigger unnecessary `gn gen`s.
 		if diff == "" {
-			return
+			return nil
 		}
 		// Open the GN file again for write.
-		gnOut, err := os.OpenFile(*gnOutputPath, os.O_WRONLY|os.O_TRUNC, 0)
+		gnOut, err = os.OpenFile(gnOutputPath, os.O_WRONLY|os.O_TRUNC, 0)
 		if err != nil {
-			log.Fatalf("Failed to open %s for writing: %v", *gnOutputPath, err)
+			return fmt.Errorf("opening %s for writing: %v", gnOutputPath, err)
 		}
+		defer gnOut.Close()
 		if _, err := io.WriteString(gnOut, finalContent); err != nil {
-			log.Fatalf("Failed to write final GN build file: %v", err)
+			return fmt.Errorf("writing final GN build file to %s: %v", gnOutputPath, err)
 		}
 	}
+	return nil
+}
+
+// runBatch runs syncDirectory in parallel over a list of directories specified by `directoryList`,
+// which is a text file with one directory path per line, relative to `fuchsiaDir`.
+// `workers` controls the maximum number of goroutines to run in parallel.
+func runBatch(ctx context.Context, directoryList string, fuchsiaDir string, workers int, p syncParams) error {
+	var dirs []string
+	f, err := os.Open(directoryList)
+	if err != nil {
+		return fmt.Errorf("opening directory list file %s: %v", directoryList, err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" { // Ignore empty lines.
+			dirs = append(dirs, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading directory list file %s: %v", directoryList, err)
+	}
+
+	if len(dirs) == 0 {
+		return fmt.Errorf("no directories found in directory list file %s", directoryList)
+	}
+
+	sem := make(chan struct{}, workers)
+	errChan := make(chan error, len(dirs))
+	for _, dir := range dirs {
+		sem <- struct{}{}
+		go func(d string) {
+			defer func() { <-sem }()
+
+			var absDir string
+			if filepath.IsAbs(d) {
+				absDir = d
+			} else {
+				absDir = filepath.Join(fuchsiaDir, d)
+			}
+
+			bazelInput := filepath.Join(absDir, "BUILD.bazel")
+			gnOutput := filepath.Join(absDir, "BUILD.gn")
+			if err := syncDirectory(ctx, bazelInput, gnOutput, p); err != nil {
+				errChan <- fmt.Errorf("syncing directory %s: %w", d, err)
+			}
+		}(dir)
+	}
+	for i := 0; i < workers; i++ {
+		sem <- struct{}{}
+	}
+	close(sem)
+	close(errChan)
+
+	var errs []error
+	for err := range errChan {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		var sb strings.Builder
+		sb.WriteString("syncing in batch mode:\n")
+		for _, err := range errs {
+			sb.WriteString(fmt.Sprintf("* %v\n", err))
+		}
+		return errors.New(sb.String())
+	}
+	return nil
 }
 
 func writeDiffOutput(path string, content string) error {
@@ -190,8 +318,9 @@ func writeDiffOutput(path string, content string) error {
 	if err != nil {
 		return fmt.Errorf("opening %s for writing: %v", path, err)
 	}
+	defer diffOut.Close()
 	if _, err := io.WriteString(diffOut, content); err != nil {
-		return fmt.Errorf("writing diff to %s: %v", *diffOutputPath, err)
+		return fmt.Errorf("writing diff to %s: %v", path, err)
 	}
 	return nil
 }
