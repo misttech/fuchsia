@@ -922,8 +922,11 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
     /// The update is based on an existing estimate_transform, meaning it's
     /// an externally synchronized value.
     async fn update_rtc(&mut self, estimate_transform: &UtcTransform) {
+        // This version of `now` is mockable through fake time executors. Flip side,
+        // it only works in async contexts.
+        let boot_now = fasync::BootInstant::now();
         // Note RTC only applies to primary so we don't include the track in our log messages.
-        let estimate_utc = estimate_transform.synthetic(zx::BootInstant::get());
+        let estimate_utc = estimate_transform.synthetic(boot_now.into());
         self.set_rtc_infallible(estimate_utc).await;
     }
 
