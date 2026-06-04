@@ -30,6 +30,7 @@ if (is_host) {
       "src/main.rs",
       "src/md_element.rs",
       "src/parser.rs",
+      "src/path_ext.rs",
       "src/yaml.rs",
       "src/yaml/toc_checker.rs",
     ]
@@ -72,7 +73,9 @@ if (is_host) {
     sources = [
       "doc_checker_test_data/docs/README.md",
       "doc_checker_test_data/docs/_common/_included.md",
+      "doc_checker_test_data/docs/_hidden_dir/unreachable.md",
       "doc_checker_test_data/docs/_toc.yaml",
+      "doc_checker_test_data/docs/_unreachable_hidden.md",
       "doc_checker_test_data/docs/cycle/_toc.yaml",
       "doc_checker_test_data/docs/cycle/nested/_toc.yaml",
       "doc_checker_test_data/docs/gen/build_arguments.md",

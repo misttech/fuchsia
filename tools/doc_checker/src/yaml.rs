@@ -10,6 +10,7 @@ use crate::link_checker::{
     LinkReference, PUBLISHED_DOCS_HOST, check_external_links, do_check_link, do_in_tree_check,
     is_intree_link,
 };
+use crate::path_ext::DocPathExt;
 use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -18,8 +19,9 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_yaml::{Mapping, Value};
 use std::collections::{HashMap, HashSet};
+#[allow(unused_imports)]
 use std::ffi::OsStr;
-use std::path::{self, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 mod toc_checker;
 
@@ -465,19 +467,9 @@ impl DocYamlCheck for YamlChecker {
         markdown_file_set
             .iter()
             .filter(|f| **f != &code_of_conduct_md && **f != &contrib_md)
-            .filter(|p| {
-                if let Some(name) = p.file_name() {
-                    name != "navbar.md" && !name.to_str().unwrap_or_default().starts_with('_')
-                } else {
-                    false
-                }
-            })
-            .filter(|p| {
-                !p.components().any(|c| c == path::Component::Normal(OsStr::new("_common")))
-            })
-            // Ignore SKILL.md files situated under any 'skills' directory as they
-            // are developer-facing agent tools and not part of the published docs set.
-            .filter(|p| !p.components().any(|c| c == path::Component::Normal(OsStr::new("skills"))))
+            .filter(|p| !p.is_navbar_doc())
+            .filter(|p| !p.is_hidden_doc(&self.root_dir, self.reference_docs_root.as_deref()))
+            .filter(|p| !p.is_ignored_doc())
             .filter(|p| !p.ends_with("gen/build_arguments.md"))
             .copied()
             .for_each(|f| {

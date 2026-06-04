@@ -7,6 +7,7 @@
 
 pub(crate) use crate::checker::{DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel};
 pub(crate) use crate::md_element::DocContext;
+pub(crate) use crate::path_ext::DocPathExt;
 use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use glob::glob;
@@ -19,6 +20,7 @@ mod include_checker;
 mod link_checker;
 mod md_element;
 mod parser;
+pub(crate) mod path_ext;
 mod yaml;
 
 // path_helper includes methods to check path attributes
@@ -188,56 +190,24 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
 
     // Find all the markdown in the docs folder.
     let pattern = format!("{}/**/*.md", docs_dir.to_string_lossy());
-    let mut markdown_files: Vec<PathBuf> = glob(&pattern)?
-        // Keep only non-error results, mapping to Option<PathBuf>
-        .filter_map(|p| p.ok())
-        // Keep paths with file names, mapped to str&
-        // and drop the hidden files that macs sometime make.
-        .filter_map(|p| {
-            if let Some(name) = p.file_name()?.to_str() {
-                if !name.starts_with("._") { Some(p) } else { None }
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut markdown_files: Vec<PathBuf> =
+        glob(&pattern)?.filter_map(|p| p.ok()).filter(|p| !p.is_macos_hidden_doc()).collect();
 
     // Find all the .yaml files.
     let yaml_pattern = format!("{}/**/*.yaml", docs_dir.to_string_lossy());
-    let mut yaml_files: Vec<PathBuf> = glob(&yaml_pattern)?
-        .filter_map(|p| p.ok())
-        .filter(|p| {
-            // Exclude YAML files located inside 'skills' directories (e.g., local developer agent
-            // tool assets/metadata). Since these are not standard, published documentation YAMLs
-            // (like _toc.yaml), letting the doc-checker analyze them would trigger validation panics.
-            !p.components()
-                .any(|c| c == std::path::Component::Normal(std::ffi::OsStr::new("skills")))
-        })
-        .collect();
+    let mut yaml_files: Vec<PathBuf> =
+        glob(&yaml_pattern)?.filter_map(|p| p.ok()).filter(|p| !p.is_ignored_doc()).collect();
 
     if let Some(reference_root) = &opt.reference_docs_root {
         eprintln!("Also checking reference docs in {reference_root:?}.");
         let pattern = format!("{}/**/*.md", reference_root.to_string_lossy());
-        let reference_markdown = glob(&pattern)?
-            // Keep only non-error results, mapping to Option<PathBuf>
-            .filter_map(|p| p.ok())
-            // Keep paths with file names, mapped to str&
-            // and rop the hidden files that macs sometime make.
-            .filter_map(|p| {
-                if let Some(name) = p.file_name()?.to_str() {
-                    if !name.starts_with("._") { Some(p) } else { None }
-                } else {
-                    None
-                }
-            });
+        let reference_markdown =
+            glob(&pattern)?.filter_map(|p| p.ok()).filter(|p| !p.is_macos_hidden_doc());
         markdown_files.extend(reference_markdown);
 
         let yaml_pattern = format!("{}/**/*.yaml", reference_root.to_string_lossy());
-        yaml_files.extend(glob(&yaml_pattern)?.filter_map(|p| p.ok()).filter(|p| {
-            // Exclude YAML files located inside 'skills' directories under reference docs.
-            !p.components()
-                .any(|c| c == std::path::Component::Normal(std::ffi::OsStr::new("skills")))
-        }));
+        yaml_files
+            .extend(glob(&yaml_pattern)?.filter_map(|p| p.ok()).filter(|p| !p.is_ignored_doc()));
     }
     eprintln!(
         "Checking {} markdown files and {} yaml files",
