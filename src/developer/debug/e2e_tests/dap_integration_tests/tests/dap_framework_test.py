@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 import asyncio
+import gc
 import unittest
+from typing import Any, Dict
 from unittest.mock import AsyncMock, Mock
 
 from dap_test_framework import DapTestFramework, RequestFuture
@@ -169,6 +171,71 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(2.0):
             _, event = await asyncio.gather(put_event(), fut)
             self.assertEqual(event["event"], "initialized")
+
+    async def test_dispose_response_silences_warning(self) -> None:
+        loop = asyncio.get_running_loop()
+        captured_exceptions = []
+
+        def custom_handler(
+            loop: asyncio.AbstractEventLoop, context: Dict[str, Any]
+        ) -> None:
+            captured_exceptions.append(context)
+
+        loop.set_exception_handler(custom_handler)
+
+        try:
+            fut = RequestFuture(self.framework, "test_cmd", 1)
+            fut.set_exception(ValueError("Test exception to be silenced"))
+            self.framework.pending_futures.append(fut)
+
+            self.framework.dispose_response(fut)
+
+            del fut
+            gc.collect()
+
+            for context in captured_exceptions:
+                message = context.get("message", "")
+                self.assertNotIn(
+                    "Future exception was never retrieved", message
+                )
+
+        finally:
+            loop.set_exception_handler(None)
+
+    async def test_unretrieved_exception_warning_control(self) -> None:
+        loop = asyncio.get_running_loop()
+        captured_exceptions = []
+
+        def custom_handler(
+            loop: asyncio.AbstractEventLoop, context: Dict[str, Any]
+        ) -> None:
+            captured_exceptions.append(context)
+
+        loop.set_exception_handler(custom_handler)
+
+        try:
+            fut = RequestFuture(self.framework, "test_cmd", 1)
+            fut.set_exception(ValueError("Test exception to trigger warning"))
+            self.framework.pending_futures.append(fut)
+
+            self.framework.pending_futures.remove(fut)
+
+            del fut
+            gc.collect()
+
+            warning_found = False
+            for context in captured_exceptions:
+                message = context.get("message", "")
+                if "Future exception was never retrieved" in message:
+                    warning_found = True
+                    break
+            self.assertTrue(
+                warning_found,
+                "Expected 'Future exception was never retrieved' warning but it was not logged.",
+            )
+
+        finally:
+            loop.set_exception_handler(None)
 
 
 if __name__ == "__main__":
