@@ -46,7 +46,8 @@ if (is_fuchsia) {
   }
 }
 
-# Enable SSSE3 and AVX2 instructions for tests that use dynamic dispatch to test vector extensions.
+# Enable SSSE3 and AVX2 instructions for tests that use dynamic dispatch to test
+# vector extensions.
 config("enable-vector-extensions") {
   if (current_cpu == "x64") {
     cflags = [
