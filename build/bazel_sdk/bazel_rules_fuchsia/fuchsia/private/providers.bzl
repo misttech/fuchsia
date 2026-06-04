@@ -12,10 +12,20 @@ load(
 )
 load(
     "@fuchsia_rules_common//packages:providers.bzl",
+    _FuchsiaCollectedPackageResourcesInfo = "FuchsiaCollectedPackageResourcesInfo",
+    _FuchsiaComponentInfo = "FuchsiaComponentInfo",
+    _FuchsiaDriverToolInfo = "FuchsiaDriverToolInfo",
     _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
+    _FuchsiaPackagedComponentInfo = "FuchsiaPackagedComponentInfo",
+    _FuchsiaStructuredConfigInfo = "FuchsiaStructuredConfigInfo",
 )
 
+FuchsiaCollectedPackageResourcesInfo = _FuchsiaCollectedPackageResourcesInfo
+FuchsiaComponentInfo = _FuchsiaComponentInfo
+FuchsiaDriverToolInfo = _FuchsiaDriverToolInfo
 FuchsiaPackageResourcesInfo = _FuchsiaPackageResourcesInfo
+FuchsiaPackagedComponentInfo = _FuchsiaPackagedComponentInfo
+FuchsiaStructuredConfigInfo = _FuchsiaStructuredConfigInfo
 
 FuchsiaAssembledArtifactInfo = provider(
     "Artifacts that can be included into a product. It consists of the artifact and the corresponding config data.",
@@ -33,32 +43,11 @@ FuchsiaConfigDataInfo = provider(
     },
 )
 
-FuchsiaComponentInfo = provider(
-    "Contains information about a fuchsia component",
-    fields = {
-        "name": "name of the component",
-        "manifest": "A file representing the compiled component manifest file",
-        "resources": "any additional resources the component needs",
-        "moniker": "The moniker to run the non-driver, non-test, non-session component in",
-        "is_driver": "True if this is a driver",
-        "is_test": "True if this is a test component",
-        "run_tag": "A tag used to identify the component when put in a package to be later used by the run command",
-    },
-)
-
 FuchsiaDeviceTreeSegmentInfo = provider(
     "Contains information about a fuchsia devicetree fragment",
     fields = {
         "includes": "A depset of include directory paths used when compiling the devicetree binary.",
         "files": "A depset of transitive dependencies needed for future devicetree compile.",
-    },
-)
-
-FuchsiaPackagedComponentInfo = provider(
-    "Contains information about a fuchsia component that has been included in a package",
-    fields = {
-        "component_info": "The original FuchsiaComponentInfo provider if this is built locally. Otherwise it will be empty",
-        "dest": "The install location for this component in a package (meta/foo.cm)",
     },
 )
 
@@ -114,17 +103,6 @@ FuchsiaCoreImageInfo = provider(
         "kernel_zbi": "Zircon image.",
         "vbmetar": "vbmeta for zirconr boot image.",
         "zirconr": "zedboot boot image.",
-    },
-)
-
-FuchsiaCollectedPackageResourcesInfo = provider(
-    """A provider which represents a package resource and all of its transitive resources.
-
-    This provider should not be directly created. If a rule wants to expose a set
-    of resources it should create a FuchsiaPackageResourcesInfo provider instead.
-    """,
-    fields = {
-        "collected_resources": "A depset containing the direct and transitive resources",
     },
 )
 
@@ -212,13 +190,6 @@ FuchsiaRunnableInfo = provider(
     },
 )
 
-FuchsiaDriverToolInfo = provider(
-    doc = "A provider which contains information about a driver tool.",
-    fields = {
-        "tool_path": "A tool's binary package-relative path (e.g. 'bin/tool').",
-    },
-)
-
 FuchsiaProductBundleInfo = provider(
     doc = "Product Bundle Info.",
     fields = {
@@ -229,13 +200,5 @@ FuchsiaProductBundleInfo = provider(
         "product_version_file": "A path to a file containing the version of the product to use.",
         "repository": "The name of the repository to host extra packages in the product bundle.",
         "build_id_dirs": "Directories containing the debug symbols",
-    },
-)
-
-FuchsiaStructuredConfigInfo = provider(
-    doc = "A provider which contains the generated cvf for structured configs.",
-    fields = {
-        "cvf_source": "The generated cvf",
-        "cvf_dest": "The location where the cvf is stored within a fuchsia package archive.",
     },
 )
