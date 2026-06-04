@@ -49,7 +49,7 @@ impl<D> Drop for DriverUnderTest<'_, D> {
         let destroy_fn = self.registration.v1.destroy.unwrap();
         let driver_token = self.token;
         self.driver.take().expect("driver").shutdown(move |driver_ref| {
-            // SAFTEY: we created this through Box::into_raw below inside of new.
+            // SAFETY: we created this through Box::into_raw below inside of new.
             let driver_value = unsafe { Box::from_raw(driver_ref.0 as *mut u32) };
             assert_eq!(*driver_value, 0x1337);
 

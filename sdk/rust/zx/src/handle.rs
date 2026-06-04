@@ -551,10 +551,10 @@ impl TryFrom<NullableHandle> for Handle {
 }
 
 struct NameProperty();
+// SAFETY: this type is correctly sized and the kernel guarantees that it will be
+// null-terminated like the type requires.
 unsafe impl PropertyQuery for NameProperty {
     const PROPERTY: Property = Property::NAME;
-    // SAFETY: this type is correctly sized and the kernel guarantees that it will be
-    // null-terminated like the type requires.
     type PropTy = Name;
 }
 

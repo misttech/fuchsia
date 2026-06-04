@@ -105,10 +105,10 @@ impl<T: 'static> DriverShutdownObserver<T> {
         // Note: this relies on the assumption that `self.observer` is at the beginning of the
         // struct.
         let this = Box::into_raw(Box::new(self)) as *mut _;
-        // SAFTEY: driver is owned by the driver framework and will be kept alive until the handler
+        // SAFETY: driver is owned by the driver framework and will be kept alive until the handler
         // callback is triggered
         if let Err(e) = Status::ok(unsafe { fdf_env_shutdown_dispatchers_async(driver, this) }) {
-            // SAFTEY: The framework didn't actually take ownership of the object if the call
+            // SAFETY: The framework didn't actually take ownership of the object if the call
             // fails, so we can recover it to avoid leaking.
             let _ = unsafe { Box::from_raw(this as *mut DriverShutdownObserver<T>) };
             return Err(e);

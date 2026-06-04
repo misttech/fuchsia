@@ -84,7 +84,7 @@ fn run_in_driver_raw<T: Send + 'static>(
     let res = finished_rx.recv().unwrap();
 
     driver.shutdown(move |driver| {
-        // SAFTEY: driver lives on the stack, it's safe to dereference it.
+        // SAFETY: driver lives on the stack, it's safe to dereference it.
         assert!(unsafe { *driver.0 } == 0x1337);
         shutdown_tx.send(()).unwrap();
     });

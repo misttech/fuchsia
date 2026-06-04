@@ -218,7 +218,7 @@ impl<D> Drop for TestHarness<D> {
     fn drop(&mut self) {
         let (shutdown_tx, shutdown_rx) = mpsc::channel();
         self.driver.take().expect("driver").shutdown(move |driver_ref| {
-            // SAFTEY: we created this through Box::into_raw below inside of new.
+            // SAFETY: we created this through Box::into_raw below inside of new.
             let driver_value = unsafe { Box::from_raw(driver_ref.0 as *mut u32) };
             assert_eq!(*driver_value, 0x1234);
             shutdown_tx.send(()).unwrap();
