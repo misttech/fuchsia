@@ -444,9 +444,7 @@ class CodecImpl : public fuchsia::media::StreamProcessor,
     std::unique_ptr<fuchsia::media::StreamBufferPartialSettings> partial_settings_;
 
     // This is in a unique_ptr<> because ~PortSettings does an async post to the fidl thread to send
-    // a Close() - the error handler comes from CodecImpl, but is wrapped to prevent CodecImpl's
-    // error handler from running if gone_marker_ (see below) has been deleted already (in which
-    // case CodecImpl doesn't expect its error handler to be run).
+    // a Release().
     std::unique_ptr<Client<fuchsia_sysmem2::BufferCollection>> buffer_collection_;
 
     // In the case of partial_settings_, the remainder of the settings arrive
@@ -456,12 +454,6 @@ class CodecImpl : public fuchsia::media::StreamProcessor,
     std::unique_ptr<fuchsia_sysmem2::BufferCollectionInfo> buffer_collection_info_;
 
     bool is_complete_seen_output_ = false;
-
-    // Because ~PortSettings defers unbind until after sending Close() async, the error handler of
-    // buffer_collection_ can run after Any error handler or similar that bypasses the
-    // shared_fidl_queue_ must take a weak_ptr<> from gone_marker_, and check gone_marker_ before
-    // accessing any part of "this".
-    std::shared_ptr<std::monostate> gone_marker_;
   };
 
   // While we list this first in the member variables to hint that this gets

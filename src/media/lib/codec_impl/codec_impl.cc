@@ -3901,8 +3901,7 @@ CodecImpl::PortSettings::PortSettings(CodecImpl* parent, CodecPort port,
     : parent_(parent),
       port_(port),
       partial_settings_(std::make_unique<fuchsia::media::StreamBufferPartialSettings>(
-          std::move(partial_settings))),
-      gone_marker_(std::make_shared<std::monostate>()) {
+          std::move(partial_settings))) {
   // nothing else to do here
 }
 
@@ -3995,24 +3994,8 @@ CodecImpl::PortSettings::NewBufferCollectionRequest(
   auto collection_endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
   ZX_ASSERT(collection_endpoints.is_ok());
   buffer_collection_ = std::make_unique<Client<fuchsia_sysmem2::BufferCollection>>();
-  auto wrapping_error_handler = [this, weak_gone_marker = std::weak_ptr(gone_marker_),
-                                 on_error = std::move(on_error)](fidl::UnbindInfo unbind_info) {
-    if (!weak_gone_marker.lock()) {
-      // ~on_error - don't call CodecImpl's error handler because CodecImpl already deleted "this",
-      // so doesn't expect its error handler to be called.
-      return;
-    }
-    // We're on the fidl thread so "this" isn't gone yet (the lock() above isn't sufficient alone,
-    // even if we held the shared_ptr until here, since it's not a shared_ptr<CodecImpl>). Go ahead
-    // and use "this" to be able to assert we're on the expected thread, and hope that if we're not
-    // on the expected thread, that parent_ is still alive so we can fail this assert, or that we
-    // crash here so we'd know something is wrong.
-    ZX_DEBUG_ASSERT(thrd_current() == parent_->fidl_thread());
-    // Call CodecImpl's error handler, but only if "this" still exists (see above).
-    on_error(unbind_info);
-  };
   buffer_collection_->Bind(std::move(collection_endpoints->client), dispatcher,
-                           std::move(wrapping_error_handler));
+                           std::move(on_error));
   return std::move(collection_endpoints->server);
 }
 
