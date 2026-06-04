@@ -552,7 +552,8 @@ zx::result<std::unique_ptr<PageLoader>> PageLoader::Create(
 
 uint32_t PageLoader::AllocateWorker() {
   std::lock_guard l(worker_allocation_lock_);
-  ZX_DEBUG_ASSERT(worker_id_allocator_ < workers_.size());
+  ZX_ASSERT_MSG(worker_id_allocator_ < workers_.size(),
+                "Was TransferPages called from a non-pager thread?");
   return worker_id_allocator_++;
 }
 
