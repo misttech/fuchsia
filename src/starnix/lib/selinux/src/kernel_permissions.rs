@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+///! Kernel classes and permissions are added here when the relevant hook and enforcement is added.
 use crate::policy::AccessVector;
 use paste::paste;
 use strum_macros::VariantArray;
@@ -893,14 +894,7 @@ socket_class_permission_enum! {
 
 socket_class_permission_enum! {
     SctpSocketPermission for SctpSocket {
-        // keep-sorted start
-        /// Permission to create an SCTP association.
-        Associate("associate"),
-        /// Permission to `connect()` or `connectx()` an SCTP socket.
-        NameConnect("name_connect"),
-        /// Permission to `bind()` or `bindx()` an SCTP socket.
-        NodeBind("node_bind"),
-        // keep-sorted end
+
     }
 }
 
@@ -945,10 +939,7 @@ socket_class_permission_enum! {
 
 socket_class_permission_enum! {
     IcmpSocketPermission for IcmpSocket {
-        // keep-sorted start
-        /// Permission to `bind()` an ICMP socket.
-        NodeBind("node_bind"),
-        // keep-sorted end
+
     }
 }
 
@@ -969,8 +960,6 @@ macro_rules! file_class_permission_enum {
             Link("link"),
             /// Permission to use as mount point; only useful for directories and files.
             MountOn("mounton"),
-            /// Permission to open a file.
-            Open("open"),
             /// Permission to rename a file.
             Rename("rename"),
             /// Permission to delete a file or remove a hard link.
@@ -1093,6 +1082,7 @@ class_permission_enum! {
 class_permission_enum! {
     PerfEventPermission for PerfEvent {
         // keep-sorted start
+
         /// Permission to monitor the cpu.
         Cpu("cpu"),
         /// Permission to monitor the kernel.
@@ -1101,8 +1091,6 @@ class_permission_enum! {
         Open("open"),
         /// Permission to read a perf event.
         Read("read"),
-        /// Permission to set tracepoints.
-        Tracepoint("tracepoint"),
         /// Permission to write a perf event.
         Write("write"),
         // keep-sorted end
