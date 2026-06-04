@@ -364,6 +364,10 @@ impl MapImpl for RingBuffer {
         let consumer_position = state.consumer_position().load(Ordering::Acquire);
         let producer_position = state.producer_position().load(Ordering::Acquire);
 
+        if consumer_position % 8 != 0 {
+            return Some(false);
+        }
+
         // Read the header at the consumer position, and check that the entry is not busy.
         let can_read = consumer_position < producer_position
             && ((*state.header_mut(consumer_position).length.get_mut()) & BPF_RINGBUF_BUSY_BIT
@@ -580,5 +584,29 @@ mod test {
         let state = ringbuf.state().read();
         let expected_pos = state.data_position(8) + BPF_RINGBUF_HDR_SZ as usize;
         assert_eq!(data_pos, expected_pos);
+    }
+
+    #[fuchsia::test]
+    fn test_ring_buffer_unaligned_consumer() {
+        let schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+
+        let ringbuf = RingBuffer::new(&schema, "test_ringbuf_unaligned").unwrap();
+
+        // Set producer at 8, consumer at 5 (unaligned!)
+        {
+            let state = ringbuf.state().read();
+            state.producer_position().store(8, Ordering::Release);
+            state.consumer_position().store(5, Ordering::Release);
+        }
+
+        // can_read should return false because the consumer position is invalid (unaligned).
+        let result = ringbuf.can_read();
+        assert_eq!(result, Some(false));
     }
 }
