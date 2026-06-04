@@ -1460,7 +1460,7 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         root_dir: opt.root.clone(),
         docs_folder: opt.docs_folder.clone(),
         project: opt.project.clone(),
-        check_external_links: !opt.local_links_only,
+        check_external_links: opt.check_external_links,
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
         reference_docs_root: opt.reference_docs_root.clone(),
         external_links: vec![],

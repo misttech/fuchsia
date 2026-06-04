@@ -10,6 +10,7 @@ use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine};
 use anyhow::{Result, bail};
 use async_trait::async_trait;
 use fuchsia_hyper::{HttpsClient, TcpOptions, new_https_client_from_tcp_options};
+use futures::StreamExt;
 use http::uri::Uri;
 use http::{Request, StatusCode};
 use hyper::Body;
@@ -787,6 +788,9 @@ pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocC
     let client: HttpsClient = new_https_client_from_tcp_options(tcp_options());
     let mut domain_futures = vec![];
 
+    const CONCURRENT_DOMAINS: usize = 10;
+    const CONCURRENT_REQUESTS_PER_DOMAIN: usize = 10;
+
     for (authority, links) in domain_sorted_links {
         let client = client.clone();
         domain_futures.push(async move {
@@ -796,11 +800,17 @@ pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocC
                 let p = check_url_link(client.clone(), link);
                 pending_requests.push(p);
             }
-            futures::future::join_all(pending_requests).await
+            futures::stream::iter(pending_requests)
+                .buffer_unordered(CONCURRENT_REQUESTS_PER_DOMAIN)
+                .collect::<Vec<_>>()
+                .await
         });
     }
 
-    let results = futures::future::join_all(domain_futures).await;
+    let results = futures::stream::iter(domain_futures)
+        .buffer_unordered(CONCURRENT_DOMAINS)
+        .collect::<Vec<_>>()
+        .await;
     errors.extend(results.into_iter().flatten().flatten());
 
     if errors.is_empty() { None } else { Some(errors) }
@@ -855,7 +865,7 @@ pub(crate) fn register_markdown_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<d
         root_dir: opt.root.clone(),
         project: opt.project.clone(),
         docs_folder: opt.docs_folder.clone(),
-        check_remote_links: !opt.local_links_only,
+        check_remote_links: opt.check_external_links,
         links: vec![],
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
     };
@@ -927,7 +937,7 @@ mod tests {
             root: PathBuf::from("/path/to/fuchsia"),
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
-            local_links_only: true,
+            check_external_links: false,
             json: false,
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
@@ -1003,7 +1013,7 @@ mod tests {
             root: PathBuf::from("/path/to/fuchsia"),
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
-            local_links_only: true,
+            check_external_links: false,
             json: false,
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
@@ -1167,7 +1177,7 @@ mod tests {
             root: PathBuf::from("/path/to/fuchsia"),
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
-            local_links_only: true,
+            check_external_links: false,
             json: false,
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
@@ -1260,7 +1270,7 @@ mod tests {
             root: PathBuf::from("/path/to/fuchsia/somewhere/else"),
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
-            local_links_only: true,
+            check_external_links: false,
             json: false,
             allow_fuchsia_src_links: true,
             reference_docs_root: None,

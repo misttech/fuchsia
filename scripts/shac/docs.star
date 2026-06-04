@@ -18,7 +18,7 @@ def _doc_checker(ctx):
         return
 
     exe = compiled_tool_path(ctx, "doc-checker")
-    res = os_exec(ctx, [exe, "--json", "--local-links-only", "--root", get_fuchsia_dir(ctx)], ok_retcodes = [0, 1]).wait()
+    res = os_exec(ctx, [exe, "--json", "--root", get_fuchsia_dir(ctx)], ok_retcodes = [0, 1]).wait()
     findings = json.decode(res.stdout, default = None)
     if not findings and res.retcode:
         fail("doc-checker failed:\n%s" % res.stderr)

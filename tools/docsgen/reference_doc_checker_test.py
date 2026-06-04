@@ -116,7 +116,6 @@ def run_docchecker(doc_checker_bin, outpath, src_root):
             doc_checker_bin,
             "--reference-docs-root",
             outpath,
-            "--local-links-only",
             "--allow-fuchsia-src-links",
             "--root",
             src_root,

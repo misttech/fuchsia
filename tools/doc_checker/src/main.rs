@@ -95,9 +95,9 @@ pub struct DocCheckerArgs {
     #[argh(option, default = r#"PathBuf::from("docs")"#)]
     pub docs_folder: PathBuf,
 
-    /// do not resolve http(s) links
+    /// resolve http(s) links
     #[argh(switch)]
-    pub local_links_only: bool,
+    pub check_external_links: bool,
 
     /// output in JSON format
     #[argh(switch)]
@@ -348,7 +348,7 @@ mod test {
             root: PathBuf::from("doc_checker_test_data"),
             project: "fuchsia".to_string(),
             docs_folder: PathBuf::from("docs"),
-            local_links_only: true,
+            check_external_links: false,
             json: false,
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
