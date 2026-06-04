@@ -7,7 +7,7 @@
 use crate::manifest::{OtaManifest, OtaManifestError, parse_ota_manifest};
 use ota_manifest_proto::fuchsia::update::manifest as proto;
 use prost::Message as _;
-use ring::signature::UnparsedPublicKey;
+use ring::signature::{KeyPair as _, UnparsedPublicKey};
 use zerocopy::byteorder::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -65,8 +65,11 @@ pub enum SignedManifestError {
     #[error("failed to deserialize signatures")]
     InvalidSignatures(#[source] prost::DecodeError),
 
-    #[error("no valid signature found")]
-    SignatureVerificationFailed,
+    #[error("root signature verification failed")]
+    RootSignatureVerificationFailed,
+
+    #[error("manifest signature verification failed")]
+    ManifestSignatureVerificationFailed,
 
     #[error("invalid manifest")]
     InvalidManifest(#[from] OtaManifestError),
@@ -79,7 +82,7 @@ pub struct RawManifest<'a> {
     /// The unparsed OTA manifest payload.
     pub manifest_payload: &'a [u8],
     /// The signatures found in the signed manifest.
-    pub signatures: Vec<Vec<u8>>,
+    pub signatures: proto::Signatures,
     /// The bytes that are signed: magic, version, manifest_size, and manifest_payload.
     pub signed_bytes: &'a [u8],
 }
@@ -91,12 +94,25 @@ impl<'a> RawManifest<'a> {
         &self,
         public_keys: &[UnparsedPublicKey<Vec<u8>>],
     ) -> Result<(), SignedManifestError> {
-        if !self.signatures.iter().any(|signature| {
-            public_keys.iter().any(|key| key.verify(self.signed_bytes, signature).is_ok())
+        if !public_keys.iter().any(|root_key| {
+            root_key
+                .verify(
+                    &self.signatures.manifest_public_key,
+                    &self.signatures.manifest_key_signature,
+                )
+                .is_ok()
         }) {
-            return Err(SignedManifestError::SignatureVerificationFailed);
+            return Err(SignedManifestError::RootSignatureVerificationFailed);
         }
-        Ok(())
+
+        let manifest_public_key =
+            UnparsedPublicKey::new(&ring::signature::ED25519, &self.signatures.manifest_public_key);
+        match manifest_public_key.verify(self.signed_bytes, &self.signatures.manifest_signature) {
+            Ok(()) => Ok(()),
+            Err(ring::error::Unspecified) => {
+                Err(SignedManifestError::ManifestSignatureVerificationFailed)
+            }
+        }
     }
 }
 
@@ -160,12 +176,7 @@ pub fn parse_raw(bytes: &[u8]) -> Result<RawManifest<'_>, SignedManifestError> {
     // The signed portion comprises the magic, version, manifest_size, and manifest bytes.
     let signed_bytes = &bytes[..std::mem::size_of::<Header>() + manifest_size];
 
-    Ok(RawManifest {
-        version,
-        manifest_payload,
-        signatures: signatures_msg.signatures,
-        signed_bytes,
-    })
+    Ok(RawManifest { version, manifest_payload, signatures: signatures_msg, signed_bytes })
 }
 
 /// Parse and verify a `SignedManifest`.
@@ -183,7 +194,8 @@ pub fn parse_and_verify(
 /// Helper function to generate a valid `SignedManifest` bytes for testing.
 pub fn generate(
     manifest: OtaManifest,
-    key: &ring::signature::Ed25519KeyPair,
+    manifest_key: &ring::signature::Ed25519KeyPair,
+    root_key: &ring::signature::Ed25519KeyPair,
 ) -> Result<Vec<u8>, SignedManifestError> {
     let manifest_bytes = manifest.serialize();
     if manifest_bytes.len() > MAX_MANIFEST_SIZE {
@@ -198,9 +210,12 @@ pub fn generate(
     signed_bytes.extend_from_slice(header.as_bytes());
     signed_bytes.extend_from_slice(&manifest_bytes);
 
-    let signature = key.sign(&signed_bytes);
+    let manifest_signature = manifest_key.sign(&signed_bytes).as_ref().to_vec();
+    let manifest_public_key = manifest_key.public_key().as_ref().to_vec();
+    let manifest_key_signature = root_key.sign(&manifest_public_key).as_ref().to_vec();
 
-    let signatures_msg = proto::Signatures { signatures: vec![signature.as_ref().to_vec()] };
+    let signatures_msg =
+        proto::Signatures { manifest_signature, manifest_public_key, manifest_key_signature };
     let signatures_bytes = signatures_msg.encode_to_vec();
     if signatures_bytes.len() > MAX_SIGNATURE_SIZE {
         return Err(SignedManifestError::SignatureSizeTooLarge(signatures_bytes.len()));
@@ -217,7 +232,6 @@ pub fn generate(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use ring::signature::KeyPair as _;
 
     fn make_ota_manifest() -> OtaManifest {
         OtaManifest {
@@ -243,38 +257,41 @@ mod tests {
 
     #[test]
     fn test_parse_and_verify_success() {
-        let keypair = make_keypair();
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes = generate(manifest.clone(), &keypair).unwrap();
+        let bytes = generate(manifest.clone(), &manifest_key, &root_key).unwrap();
 
-        let trusted_keys = vec![make_public_key(&keypair)];
+        let trusted_keys = vec![make_public_key(&root_key)];
         let parsed = parse_and_verify(&bytes, &trusted_keys).unwrap();
         assert_eq!(parsed, manifest);
     }
 
     #[test]
     fn test_parse_and_verify_wrong_magic() {
-        let keypair = make_keypair();
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
         let manifest = make_ota_manifest();
-        let mut bytes = generate(manifest.clone(), &keypair).unwrap();
+        let mut bytes = generate(manifest, &manifest_key, &root_key).unwrap();
 
         bytes[0] ^= 0xff;
 
-        let trusted_keys = vec![make_public_key(&keypair)];
+        let trusted_keys = vec![make_public_key(&root_key)];
         let err = parse_and_verify(&bytes, &trusted_keys).unwrap_err();
         assert_matches!(err, SignedManifestError::InvalidMagic(_));
     }
 
     #[test]
     fn test_parse_and_verify_wrong_version() {
-        let keypair = make_keypair();
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
         let manifest = make_ota_manifest();
-        let mut bytes = generate(manifest.clone(), &keypair).unwrap();
+        let mut bytes = generate(manifest, &manifest_key, &root_key).unwrap();
 
         // Version starts at byte offset 4, length 4, little endian.
         bytes[4] ^= 0x01;
 
-        let trusted_keys = vec![make_public_key(&keypair)];
+        let trusted_keys = vec![make_public_key(&root_key)];
         let err = parse_and_verify(&bytes, &trusted_keys).unwrap_err();
         assert_matches!(err, SignedManifestError::UnknownVersion(_));
     }
@@ -289,28 +306,47 @@ mod tests {
 
     #[test]
     fn test_parse_and_verify_truncated_signature() {
-        let keypair = make_keypair();
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
         let manifest = make_ota_manifest();
-        let mut bytes = generate(manifest.clone(), &keypair).unwrap();
+        let mut bytes = generate(manifest, &manifest_key, &root_key).unwrap();
 
         // Truncate the signature payload
         bytes.truncate(bytes.len() - 1);
 
-        let trusted_keys = vec![make_public_key(&keypair)];
+        let trusted_keys = vec![make_public_key(&root_key)];
         let err = parse_and_verify(&bytes, &trusted_keys).unwrap_err();
         assert_matches!(err, SignedManifestError::Truncated { .. });
     }
 
     #[test]
-    fn test_parse_and_verify_bad_signature() {
-        let keypair = make_keypair();
+    fn test_parse_and_verify_bad_root_signature() {
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes = generate(manifest.clone(), &keypair).unwrap();
+        let bytes = generate(manifest, &manifest_key, &root_key).unwrap();
 
-        let wrong_keypair = make_keypair();
-        let trusted_keys = vec![make_public_key(&wrong_keypair)];
+        let wrong_root_key = make_keypair();
+        let trusted_keys = vec![make_public_key(&wrong_root_key)];
 
         let err = parse_and_verify(&bytes, &trusted_keys).unwrap_err();
-        assert_matches!(err, SignedManifestError::SignatureVerificationFailed);
+        assert_matches!(err, SignedManifestError::RootSignatureVerificationFailed);
+    }
+
+    #[test]
+    fn test_parse_and_verify_bad_manifest_signature() {
+        let manifest_key = make_keypair();
+        let root_key = make_keypair();
+        let manifest = make_ota_manifest();
+        let mut bytes = generate(manifest, &manifest_key, &root_key).unwrap();
+
+        // Corrupt one byte of the manifest payload (which starts after the header)
+        let payload_start = std::mem::size_of::<Header>();
+        bytes[payload_start] ^= 0xFF;
+
+        let trusted_keys = vec![make_public_key(&root_key)];
+
+        let err = parse_and_verify(&bytes, &trusted_keys).unwrap_err();
+        assert_matches!(err, SignedManifestError::ManifestSignatureVerificationFailed);
     }
 }

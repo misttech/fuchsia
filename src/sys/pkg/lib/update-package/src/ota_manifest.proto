@@ -91,7 +91,14 @@ message Blob {
   uint64 uncompressed_size = 2;
 }
 
-// A list of Ed25519 signatures.
+// Signatures containing the delegation chain: Root Key -> Manifest Key -> Manifest.
 message Signatures {
-  repeated bytes signatures = 1;
+  // The Ed25519 signature of the manifest, signed by the manifest key.
+  bytes manifest_signature = 1;
+
+  // The public key of the manifest signing key.
+  bytes manifest_public_key = 2;
+
+  // The Ed25519 signature of the manifest public key, signed by the root key.
+  bytes manifest_key_signature = 3;
 }

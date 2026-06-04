@@ -17,7 +17,7 @@ use update_package::manifest::{Blob, Image, ImageType, Slot};
 #[derive(Serialize)]
 pub struct OtaManifestOutput {
     manifest_version: u32,
-    signatures: Vec<String>,
+    signatures: SignaturesOutput,
     build_info_version: String,
     board: String,
     epoch: u64,
@@ -25,6 +25,13 @@ pub struct OtaManifestOutput {
     blob_base_url: String,
     images: Vec<ImageOutput>,
     blobs: Vec<BlobOutput>,
+}
+
+#[derive(Serialize)]
+struct SignaturesOutput {
+    manifest_signature: String,
+    manifest_public_key: String,
+    manifest_key_signature: String,
 }
 
 #[derive(Serialize)]
@@ -45,9 +52,14 @@ impl OtaManifestOutput {
         raw: update_package::signed_manifest::RawManifest<'_>,
     ) -> Result<Self, update_package::manifest::OtaManifestError> {
         let manifest = update_package::manifest::parse_ota_manifest(raw.manifest_payload)?;
+        let signatures = SignaturesOutput {
+            manifest_signature: hex::encode(&raw.signatures.manifest_signature),
+            manifest_public_key: hex::encode(&raw.signatures.manifest_public_key),
+            manifest_key_signature: hex::encode(&raw.signatures.manifest_key_signature),
+        };
         Ok(Self {
             manifest_version: raw.version,
-            signatures: raw.signatures.into_iter().map(hex::encode).collect(),
+            signatures,
             build_info_version: manifest.build_info_version.to_string(),
             board: manifest.board,
             epoch: manifest.epoch,
@@ -140,9 +152,9 @@ fn write_table(
     show_blobs: bool,
 ) -> std::io::Result<()> {
     writeln!(writer, "Manifest Version: {}", output.manifest_version)?;
-    for (i, sig) in output.signatures.iter().enumerate() {
-        writeln!(writer, "Signature {}: {}", i, sig)?;
-    }
+    writeln!(writer, "Manifest Signature: {}", output.signatures.manifest_signature)?;
+    writeln!(writer, "Manifest Public Key: {}", output.signatures.manifest_public_key)?;
+    writeln!(writer, "Manifest Key Signature: {}", output.signatures.manifest_key_signature)?;
     writeln!(writer, "Build Info Version: {}", output.build_info_version)?;
     writeln!(writer, "Board: {}", output.board)?;
     writeln!(writer, "Epoch: {}", output.epoch)?;
@@ -256,10 +268,13 @@ mod tests {
 
         let keypair = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes = update_package::signed_manifest::generate(manifest, &keypair).unwrap();
+        let bytes =
+            update_package::signed_manifest::generate(manifest, &keypair, &keypair).unwrap();
 
         let raw_manifest = update_package::signed_manifest::parse_raw(&bytes).unwrap();
-        let expected_sig = hex::encode(&raw_manifest.signatures[0]);
+        let expected_sig = hex::encode(&raw_manifest.signatures.manifest_signature);
+        let expected_pubkey = hex::encode(&raw_manifest.signatures.manifest_public_key);
+        let expected_keysig = hex::encode(&raw_manifest.signatures.manifest_key_signature);
 
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
@@ -278,7 +293,11 @@ mod tests {
         let out_json: serde_json::Value = serde_json::from_str(&out).expect("valid JSON output");
         let expected_json = json!({
             "manifest_version": 1,
-            "signatures": [expected_sig],
+            "signatures": {
+                "manifest_signature": expected_sig,
+                "manifest_public_key": expected_pubkey,
+                "manifest_key_signature": expected_keysig,
+            },
             "build_info_version": "1.2.3.4",
             "board": "test-board",
             "epoch": 1,
@@ -320,10 +339,13 @@ mod tests {
     async fn test_show_table() {
         let keypair = make_keypair();
         let manifest = make_ota_manifest();
-        let bytes = update_package::signed_manifest::generate(manifest, &keypair).unwrap();
+        let bytes =
+            update_package::signed_manifest::generate(manifest, &keypair, &keypair).unwrap();
 
         let raw_manifest = update_package::signed_manifest::parse_raw(&bytes).unwrap();
-        let expected_sig = hex::encode(&raw_manifest.signatures[0]);
+        let expected_sig = hex::encode(&raw_manifest.signatures.manifest_signature);
+        let expected_pubkey = hex::encode(&raw_manifest.signatures.manifest_public_key);
+        let expected_keysig = hex::encode(&raw_manifest.signatures.manifest_key_signature);
 
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
@@ -341,7 +363,9 @@ mod tests {
 
         let expected_table = format!(
             r#"Manifest Version: 1
-Signature 0: {expected_sig}
+Manifest Signature: {expected_sig}
+Manifest Public Key: {expected_pubkey}
+Manifest Key Signature: {expected_keysig}
 Build Info Version: 1.2.3.4
 Board: test-board
 Epoch: 1
@@ -358,7 +382,6 @@ Blobs (2 items, total uncompressed size: 18023 bytes):
  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  12345
 
 "#,
-            expected_sig = expected_sig
         );
         assert_eq!(out, expected_table);
     }

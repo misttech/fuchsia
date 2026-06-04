@@ -197,7 +197,8 @@ pub fn write_ota_manifest(
     let pem = pem::parse(key_bytes).context("parsing pem")?;
     let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents())
         .map_err(|e| anyhow::anyhow!("parsing pkcs8: {e}"))?;
-    let signed_manifest_bytes = update_package::signed_manifest::generate(manifest, &key_pair)?;
+    let signed_manifest_bytes =
+        update_package::signed_manifest::generate(manifest, &key_pair, &key_pair)?;
     std::fs::write(&out_path, &signed_manifest_bytes).context("writing signed ota manifest")?;
     Ok(())
 }
