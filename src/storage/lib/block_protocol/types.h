@@ -15,9 +15,9 @@ using groupid_t = uint16_t;
 using vmoid_t = uint16_t;
 
 struct BlockFifoCommand {
-  uint8_t opcode;
-  uint8_t padding_to_satisfy_zerocopy[3];
-  uint32_t flags;
+  uint8_t opcode = 0;
+  uint8_t padding_to_satisfy_zerocopy[3] = {0, 0, 0};
+  uint32_t flags = 0;
 };
 
 // * Reads with Decompression *
@@ -42,45 +42,45 @@ struct BlockFifoCommand {
 //
 // There is a 128 MiB limit on the total compressed amount.
 struct BlockFifoRequest {
-  BlockFifoCommand command;
-  reqid_t reqid;
-  groupid_t group;
-  vmoid_t vmoid;
-  uint32_t length;  // In blocks.
+  BlockFifoCommand command = {};
+  reqid_t reqid = 0;
+  groupid_t group = 0;
+  vmoid_t vmoid = 0;
+  uint32_t length = 0;  // In blocks.
 
   // The total number of compressed bytes across all requests in the group (only applicable for the
   // first request in a group). This does *not* include any padding at either the beginning or end.
-  uint32_t total_compressed_bytes;
+  uint32_t total_compressed_bytes = 0;
 
-  uint64_t vmo_offset;
-  uint64_t dev_offset;
-  uint64_t trace_flow_id;
+  uint64_t vmo_offset = 0;
+  uint64_t dev_offset = 0;
+  uint64_t trace_flow_id = 0;
   // The data unit number used as an inline crypto tweak. Only used if the request flags include
   // `INLINE_ENCRYPTION_ENABLED`.
-  uint32_t dun;
+  uint32_t dun = 0;
   // The keyslot for the key used to encrypt/decrypt the request's data if the request flags include
   // `INLINE_ENCRYPTION_ENABLED`.
-  uint8_t slot;
-  uint8_t padding;
+  uint8_t slot = 0;
+  uint8_t padding = 0;
 
   // The number of bytes to skip at the beginning (only applicable for the first request in a
   // group).
-  uint16_t compressed_prefix_bytes;
+  uint16_t compressed_prefix_bytes = 0;
 
   // The total number of uncompressed bytes for this request (only applicable for the first request
   // in a group).
-  uint32_t uncompressed_bytes;
+  uint32_t uncompressed_bytes = 0;
 
-  uint32_t padding2;
+  uint32_t padding2 = 0;
 };
 
 struct BlockFifoResponse {
-  zx_status_t status;
-  reqid_t reqid;
-  groupid_t group;
-  uint16_t padding_to_satisfy_zerocopy;
-  uint32_t count;
-  uint64_t padding_to_match_request_size_and_alignment[6];
+  zx_status_t status = 0;
+  reqid_t reqid = 0;
+  groupid_t group = 0;
+  uint16_t padding_to_satisfy_zerocopy = 0;
+  uint32_t count = 0;
+  uint64_t padding_to_match_request_size_and_alignment[6] = {0, 0, 0, 0, 0, 0};
 };
 
 // Notify humans to update Rust bindings because there's no bindgen automation.

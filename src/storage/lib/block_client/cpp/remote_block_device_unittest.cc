@@ -10,6 +10,7 @@
 #include <lib/fzl/fifo.h>
 #include <lib/zx/vmo.h>
 
+#include <cstring>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -377,6 +378,70 @@ TEST(RemoteBlockDeviceTest, NoHangForErrorsWithMultipleThreads) {
   for (auto& thread : threads) {
     thread.join();
   }
+}
+
+TEST(RemoteBlockDeviceTest, TransactionSanitizesPaddingAndReqids) {
+  auto [client, server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+
+  MockBlockDevice mock_device;
+  mock_device.BindServer(std::move(server));
+
+  zx::result device = RemoteBlockDevice::Create(
+      fidl::ClientEnd<fuchsia_storage_block::Block>{client.TakeChannel()});
+  ASSERT_TRUE(device.is_ok()) << device.status_string();
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
+
+  storage::OwnedVmoid vmoid;
+  ASSERT_EQ(device->BlockAttachVmo(vmo, &vmoid.GetReference(device.value().get())), ZX_OK);
+  ASSERT_EQ(kGoldenVmoid, vmoid.get());
+
+  alignas(BlockFifoRequest) uint8_t request_buffer[sizeof(BlockFifoRequest) * 2];
+  memset(request_buffer, 0xAB, sizeof(request_buffer));
+  BlockFifoRequest* requests = new (request_buffer) BlockFifoRequest[2]();
+
+  requests[0].command.opcode = BLOCK_OPCODE_READ;
+  requests[0].command.flags = 0;
+  requests[0].vmoid = vmoid.get();
+  requests[0].length = 1;
+  requests[0].vmo_offset = 0;
+  requests[0].dev_offset = 0;
+
+  requests[1].command.opcode = BLOCK_OPCODE_READ;
+  requests[1].command.flags = 0;
+  requests[1].vmoid = vmoid.get();
+  requests[1].length = 1;
+  requests[1].vmo_offset = 0;
+  requests[1].dev_offset = 1;
+
+  std::thread server_thread([&mock_device] {
+    BlockFifoRequest server_requests[2];
+    size_t actual;
+    EXPECT_EQ(mock_device.ReadFifoRequests(server_requests, &actual), ZX_OK);
+    EXPECT_EQ(actual, 2u);
+
+    for (BlockFifoRequest& server_request : server_requests) {
+      EXPECT_EQ(server_request.command.padding_to_satisfy_zerocopy[0], 0u);
+      EXPECT_EQ(server_request.command.padding_to_satisfy_zerocopy[1], 0u);
+      EXPECT_EQ(server_request.command.padding_to_satisfy_zerocopy[2], 0u);
+      EXPECT_EQ(server_request.padding, 0u);
+      EXPECT_EQ(server_request.padding2, 0u);
+      // Ensure reqid does not contain junk despite maybe being zero.
+      EXPECT_NE(server_request.reqid, 0xABABABABu);
+    }
+
+    BlockFifoResponse response;
+    response.status = ZX_OK;
+    response.reqid = server_requests[1].reqid;
+    response.group = server_requests[1].group;
+    response.count = 1;
+    EXPECT_EQ(mock_device.WriteFifoResponse(response), ZX_OK);
+  });
+
+  ASSERT_EQ(device->FifoTransaction(requests, 2), ZX_OK);
+  vmoid.TakeId();
+  server_thread.join();
 }
 
 }  // namespace
