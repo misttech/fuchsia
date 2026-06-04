@@ -220,12 +220,20 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
     async def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
         if isinstance(self._connection_test_kit.access_point, AccessPoint):
-            self._connection_test_kit.access_point.download_ap_logs(
-                self.log_path
-            )
+            try:
+                self._connection_test_kit.access_point.download_ap_logs(
+                    self.log_path
+                )
+            except Exception as e:
+                logger.warning(f"Failed to download AP logs: {e}")
             self._connection_test_kit.access_point.stop_all_aps()
         elif isinstance(self._connection_test_kit.access_point, OpenWrtAP):
-            self._connection_test_kit.access_point.download_logs(self.log_path)
+            try:
+                self._connection_test_kit.access_point.download_logs(
+                    self.log_path
+                )
+            except Exception as e:
+                logger.warning(f"Failed to download OpenWrt logs: {e}")
         (
             await self._connection_test_kit.client_sme.disconnect(
                 reason=fw_sme.UserDisconnectReason.UNKNOWN

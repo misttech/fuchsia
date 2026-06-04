@@ -263,7 +263,7 @@ class SshConnection(Runner):
                     self.log.error(f"Ping result: {ping_output}")
                     if attempts > 1:
                         self._cleanup_main_ssh()
-                        self.run(
+                        return self.run(
                             command,
                             stdin,
                             timeout_sec,

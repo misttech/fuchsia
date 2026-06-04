@@ -71,15 +71,24 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     def _download_ap_logs(self, directory: str) -> None:
         """Downloads the DHCP and hostapd logs from all access points."""
         for access_point in self.access_points:
-            access_point.download_ap_logs(directory)
+            try:
+                access_point.download_ap_logs(directory)
+            except Exception as e:
+                logging.warning(f"Failed to download DHCP/hostapd logs: {e}")
         for openwrt_ap in self.openwrt_aps:
-            openwrt_ap.download_logs(directory, start_marker=None)
+            try:
+                openwrt_ap.download_logs(directory, start_marker=None)
+            except Exception as e:
+                logging.warning(f"Failed to download OpenWrt logs: {e}")
 
     async def teardown_test(self) -> None:
         for openwrt_ap in self.openwrt_aps:
-            openwrt_ap.download_logs(
-                self.test_case_path, start_marker=self.test_start_marker
-            )
+            try:
+                openwrt_ap.download_logs(
+                    self.test_case_path, start_marker=self.test_start_marker
+                )
+            except Exception as e:
+                logging.warning(f"Failed to download OpenWrt logs: {e}")
         await super().teardown_test()
 
     async def teardown_class(self) -> None:
