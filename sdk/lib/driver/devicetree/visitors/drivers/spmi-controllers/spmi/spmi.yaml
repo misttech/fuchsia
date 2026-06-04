@@ -34,8 +34,10 @@ patternProperties:
         const: 1
 
       reg:
+        minItems: 1
+        maxItems: 16
         items:
-          - items:
+          items:
             - description: Target ID from 0-15.
               minimum: 0
               maximum: 15
@@ -62,8 +64,8 @@ examples:
       #size-cells = <0>;
 
       pmic@0 {
-        reg = <0 SPMI_USID>;
-        reg-names = "pmic";
+        reg = <0 SPMI_USID>, <1 SPMI_USID>;
+        reg-names = "pmic-a", "pmic-b";
         #address-cells = <1>;
         #size-cells = <1>;
 

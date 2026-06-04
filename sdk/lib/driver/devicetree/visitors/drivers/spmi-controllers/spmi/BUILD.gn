@@ -108,10 +108,32 @@ resource("spmi-target-with-non-spmi-child-dtb-file") {
   deps = [ ":spmi-target-with-non-spmi-child-dtb" ]
 }
 
+dtb("spmi-multi-reg-dtb") {
+  sources = [ "test/dts/spmi-multi-reg.dts.S" ]
+}
+
+resource("spmi-multi-reg-dtb-file") {
+  sources = get_target_outputs(":spmi-multi-reg-dtb")
+  outputs = [ "test-data/{{source_file_part}}" ]
+  deps = [ ":spmi-multi-reg-dtb" ]
+}
+
+dtb("spmi-multi-reg-with-child-dtb") {
+  sources = [ "test/dts/spmi-multi-reg-with-child.dts.S" ]
+}
+
+resource("spmi-multi-reg-with-child-dtb-file") {
+  sources = get_target_outputs(":spmi-multi-reg-with-child-dtb")
+  outputs = [ "test-data/{{source_file_part}}" ]
+  deps = [ ":spmi-multi-reg-with-child-dtb" ]
+}
+
 fuchsia_unittest_package("spmi-visitor-test") {
   component_name = "spmi-visitor-test"
   deps = [
     ":spmi-dtb-file",
+    ":spmi-multi-reg-dtb-file",
+    ":spmi-multi-reg-with-child-dtb-file",
     ":spmi-reference-has-compatible-property-dtb-file",
     ":spmi-reference-target-dtb-file",
     ":spmi-sub-target-spmi-address-out-of-range-dtb-file",

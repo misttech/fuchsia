@@ -31,21 +31,26 @@ as:
 spmi@0xffff0000 {
     /* The new node is below */
     $TARGET_DEVICE_TYPE@$TARGET_ID {
-        reg = <$TARGET_ID SPMI_USID>;
-        reg-names = "$TARGET_NAME";
+        reg = <$TARGET_ID_0 SPMI_USID>, <$TARGET_ID_1 SPMI_USID>;
+        reg-names = "$TARGET_NAME_0", "$TARGET_NAME_1";
     };
 };
 ```
 
+A target can have multiple `reg` entries (up to 16), allowing a single devicetree
+node to represent multiple SPMI targets (SIDs).
+
 Your driver should connect to [fuchsia.hardware.spmi.TargetService][spmi.fidl],
 and have an entry for it in its component manifest. The SPMI controller driver
-will add a node for your target with the following bind properties:
+will add a node for each target. The SPMI visitor will generate a composite
+node specification for your device with a parent for each target, using the
+following bind properties for each parent:
 
 | Property | Optional | Purpose |
 | -------- | -------- | ------- |
 | `fuchsia.hardware.spmi.TargetService` | N | The SPMI target service. |
 | `fuchsia.spmi.TARGET_ID` | N | The SPMI target ID. |
-| `fuchsia.spmi.TARGET_NAME` | Y | A string name for the target. On devicetree platforms, this is generated from the target node's `reg-names` property. |
+| `fuchsia.spmi.TARGET_NAME` | Y | A string name for the target. On devicetree platforms, this is generated from the target node's `reg-names` property. If multiple targets are defined, the corresponding name from `reg-names` is used. |
 
 ### Sub-target device
 
@@ -115,6 +120,12 @@ sub-target or reference property with the following bind properties:
 Register accesses through [fuchsia.hardware.spmi.Device][spmi.fidl] will be
 mapped to the sub-target's starting address, and limited to the range assigned
 to the sub-target.
+
+Both sub-targets and their parent targets can have multiple `reg` entries, but
+they cannot be used together: a parent target with multiple SIDs is not allowed
+to have sub-targets. If a parent target has sub-targets, it must have a single
+SID, although the sub-targets themselves can still have multiple `reg` entries
+(regions).
 
 
 #### Sub-target devicetree bindings

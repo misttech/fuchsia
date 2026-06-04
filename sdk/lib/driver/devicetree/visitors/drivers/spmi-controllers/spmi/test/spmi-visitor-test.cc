@@ -489,4 +489,156 @@ TEST(SpmiVisitorTest, TargetWithNonSpmiChild) {
   ASSERT_EQ(1u, eeprom.parents2()->size());
 }
 
+TEST(SpmiVisitorTest, MultiRegTarget) {
+  fdf_devicetree::VisitorRegistry visitors;
+  ASSERT_TRUE(
+      visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>()).is_ok());
+  ASSERT_TRUE(visitors.RegisterVisitor(std::make_unique<fdf_devicetree::MmioVisitor>()).is_ok());
+
+  SpmiVisitorTester* const spmi_tester = new SpmiVisitorTester("/pkg/test-data/spmi-multi-reg.dtb");
+  ASSERT_TRUE(visitors.RegisterVisitor(std::unique_ptr<SpmiVisitorTester>{spmi_tester}).is_ok());
+
+  ASSERT_TRUE(spmi_tester->manager()->Walk(visitors).is_ok());
+  ASSERT_TRUE(spmi_tester->DoPublish().is_ok());
+
+  // Controller metadata
+  auto pbus_node_list = spmi_tester->GetPbusNodes("spmi-abcd0000");
+  ASSERT_EQ(1u, pbus_node_list.size());
+  const auto& pbus_node = pbus_node_list[0];
+
+  ASSERT_TRUE(pbus_node.metadata());
+  ASSERT_EQ(pbus_node.metadata()->size(), 1u);
+
+  const std::vector<uint8_t>& metadata = *(*pbus_node.metadata())[0].data();
+  const auto controller =
+      fidl::Unpersist<fuchsia_hardware_spmi::ControllerInfo>({metadata.data(), metadata.size()});
+  ASSERT_TRUE(controller.is_ok());
+
+  ASSERT_TRUE(controller->id());
+  const uint32_t controller_id = *controller->id();
+
+  ASSERT_TRUE(controller->targets());
+  // We expect 4 targets now: 0, 1 from target-a, and 3, 4 from target-b.
+  ASSERT_EQ(controller->targets()->size(), 4u);
+
+  const std::optional<fuchsia_hardware_spmi::TargetInfo> target_0 = FindTargetById(0, *controller);
+  ASSERT_TRUE(target_0);
+  EXPECT_EQ(*target_0->name(), "pmic-a");
+
+  const std::optional<fuchsia_hardware_spmi::TargetInfo> target_1 = FindTargetById(1, *controller);
+  ASSERT_TRUE(target_1);
+  EXPECT_EQ(*target_1->name(), "pmic-b");
+
+  const std::optional<fuchsia_hardware_spmi::TargetInfo> target_3 = FindTargetById(3, *controller);
+  ASSERT_TRUE(target_3);
+  EXPECT_EQ(*target_3->name(), "vreg-1");
+
+  const std::optional<fuchsia_hardware_spmi::TargetInfo> target_4 = FindTargetById(4, *controller);
+  ASSERT_TRUE(target_4);
+  EXPECT_EQ(*target_4->name(), "vreg-2");
+
+  // target-b has no children, so it should have composite node spec.
+  // Since target-b has multiple SIDs (3 and 4), it should have separate parent specs for each.
+  auto target_b_list = spmi_tester->GetCompositeNodeSpecs("target-b-3");
+  ASSERT_EQ(1u, target_b_list.size());
+  const auto& target_b = target_b_list[0];
+
+  ASSERT_TRUE(target_b.parents2());
+  // 1 parent from default visitor (compatible) + 2 parents from SPMI (one for each SID) = 3
+  // parents.
+  ASSERT_EQ(target_b.parents2()->size(), 3u);
+
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                                  bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 3u),
+      },
+      (*target_b.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                             bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 3u),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "vreg-1"),
+      },
+      (*target_b.parents2())[1].properties(), false));
+
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                                  bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 4u),
+      },
+      (*target_b.parents2())[2].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                             bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 4u),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "vreg-2"),
+      },
+      (*target_b.parents2())[2].properties(), false));
+
+  // target-a has no children, so it should have composite node spec.
+  // Since target-a has multiple SIDs (0 and 1), it should have separate parent specs for each.
+  auto target_a_list = spmi_tester->GetCompositeNodeSpecs("target-a-0");
+  ASSERT_EQ(1u, target_a_list.size());
+  const auto& target_a = target_a_list[0];
+
+  ASSERT_TRUE(target_a.parents2());
+  // 1 parent from default visitor (compatible) + 2 parents from SPMI (one for each SID) = 3
+  // parents.
+  ASSERT_EQ(target_a.parents2()->size(), 3u);
+
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                                  bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
+      },
+      (*target_a.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                             bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "pmic-a"),
+      },
+      (*target_a.parents2())[1].properties(), false));
+
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                                  bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 1u),
+      },
+      (*target_a.parents2())[2].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
+                             bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 1u),
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "pmic-b"),
+      },
+      (*target_a.parents2())[2].properties(), false));
+}
+
+TEST(SpmiVisitorTest, MultiRegTargetWithChildFail) {
+  fdf_devicetree::VisitorRegistry visitors;
+  ASSERT_TRUE(
+      visitors.RegisterVisitor(std::make_unique<fdf_devicetree::BindPropertyVisitor>()).is_ok());
+  ASSERT_TRUE(visitors.RegisterVisitor(std::make_unique<fdf_devicetree::MmioVisitor>()).is_ok());
+
+  SpmiVisitorTester* const spmi_tester =
+      new SpmiVisitorTester("/pkg/test-data/spmi-multi-reg-with-child.dtb");
+  ASSERT_TRUE(visitors.RegisterVisitor(std::unique_ptr<SpmiVisitorTester>{spmi_tester}).is_ok());
+
+  EXPECT_FALSE(spmi_tester->manager()->Walk(visitors).is_ok());
+}
+
 }  // namespace spmi_dt

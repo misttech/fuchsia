@@ -148,44 +148,58 @@ zx::result<> SpmiVisitor::ParseController(fdf_devicetree::Node& node) {
       return reg.take_error();
     }
 
-    if (reg->size() != 2) {
+    if (reg->empty() || reg->size() % 2 != 0) {
       fdf::error("SPMI target \"{}\" reg property has invalid size: {}", child.name(), reg->size());
 
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    const uint32_t target_id = (*reg)[0];
-    const uint32_t target_type = (*reg)[1];
+    std::vector<std::string> reg_names = GetRegNames(child);
+    if (!reg_names.empty() && reg_names.size() != reg->size() / 2) {
+      fdf::error("SPMI target \"{}\" has mismatched reg and reg-names properties", child.name());
 
-    if (target_id >= fuchsia_hardware_spmi::kMaxTargets) {
-      fdf::error("SPMI target ID {} for \"{}\" out of range", target_id, node.name());
-
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
-    }
-    if (target_type != SPMI_USID) {
-      fdf::error("Unsupported SPMI target type {} for \"{}\"", target_id, node.name());
-
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
-    if (used_target_ids & (1 << target_id)) {
-      fdf::error("Duplicate SPMI target ID {} for \"{}\"", target_id, node.name());
+    for (size_t i = 0; i < reg->size(); i += 2) {
+      const uint32_t target_id = (*reg)[i];
+      const uint32_t target_type = (*reg)[i + 1];
 
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
+      if (target_id >= fuchsia_hardware_spmi::kMaxTargets) {
+        fdf::error("SPMI target ID {} for \"{}\" out of range", target_id, child.name());
+
+        return zx::error(ZX_ERR_ALREADY_EXISTS);
+      }
+      if (target_type != SPMI_USID) {
+        fdf::error("Unsupported SPMI target type {} for \"{}\"", target_type, child.name());
+
+        return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
+
+      if (used_target_ids & (1 << target_id)) {
+        fdf::error("Duplicate SPMI target ID {} for \"{}\"", target_id, child.name());
+
+        return zx::error(ZX_ERR_ALREADY_EXISTS);
+      }
+
+      used_target_ids |= (1 << target_id);
+
+      std::optional<std::string> target_name;
+      if (!reg_names.empty()) {
+        target_name = reg_names[i / 2];
+      }
+
+      zx::result<fuchsia_hardware_spmi::TargetInfo> target =
+          ParseTarget(controller_id, target_id, target_name, child);
+      if (target.is_error()) {
+        return target.take_error();
+      }
+
+      if (!controller.targets()) {
+        controller.targets().emplace();
+      }
+      controller.targets()->push_back(*std::move(target));
     }
-
-    used_target_ids |= (1 << target_id);
-
-    zx::result<fuchsia_hardware_spmi::TargetInfo> target =
-        ParseTarget(controller_id, target_id, child);
-    if (target.is_error()) {
-      return target.take_error();
-    }
-
-    if (!controller.targets()) {
-      controller.targets().emplace();
-    }
-    controller.targets()->push_back(*std::move(target));
   }
 
   fit::result<fidl::Error, std::vector<uint8_t>> metadata = fidl::Persist(controller);
@@ -206,22 +220,16 @@ zx::result<> SpmiVisitor::ParseController(fdf_devicetree::Node& node) {
 }
 
 zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
-    uint32_t controller_id, uint32_t target_id, fdf_devicetree::ChildNode& node) {
-  std::vector<std::string> reg_names = GetRegNames(node);
-  if (reg_names.size() > 1) {
-    fdf::error("SPMI target \"{}\" has mismatched reg and reg-names properties", node.name());
-
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
+    uint32_t controller_id, uint32_t target_id, std::optional<std::string> target_name,
+    fdf_devicetree::ChildNode& node) {
   node.set_register_type(fdf_devicetree::RegisterType::kSpmi);
 
   fuchsia_hardware_spmi::TargetInfo target{{
       .id = target_id,
       .display_name = node.fdf_name(),
   }};
-  if (!reg_names.empty()) {
-    target.name() = reg_names[0];
+  if (target_name) {
+    target.name() = *target_name;
   }
 
   // SPMI target nodes might have children that are not SPMI sub-targets (register blocks), but are
@@ -243,6 +251,15 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
     }
   }
 
+  if (has_sub_targets) {
+    auto reg = node.GetProperty<std::vector<uint32_t>>("reg");
+    if (reg.is_ok() && reg->size() > 2) {
+      fdf::error("SPMI target \"{}\" has multiple SIDs and sub-targets, which is not allowed",
+                 node.name());
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+  }
+
   if (!has_sub_targets) {
     // This target has no sub-target children, so add a node spec for it.
     fuchsia_driver_framework::ParentSpec2 target_spec{{
@@ -261,9 +278,9 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
             },
     }};
 
-    if (!reg_names.empty()) {
+    if (target_name) {
       target_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, reg_names[0]));
+          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, *target_name));
     }
 
     node.GetNode()->AddNodeSpec(target_spec);

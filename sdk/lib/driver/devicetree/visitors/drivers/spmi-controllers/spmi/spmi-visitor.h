@@ -35,6 +35,7 @@ class SpmiVisitor : public fdf_devicetree::Visitor {
   zx::result<> ParseReferenceProperty(fdf_devicetree::Node& node);
   zx::result<fuchsia_hardware_spmi::TargetInfo> ParseTarget(uint32_t controller_id,
                                                             uint32_t target_id,
+                                                            std::optional<std::string> target_name,
                                                             fdf_devicetree::ChildNode& node);
   zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> ParseSubTarget(
       uint32_t controller_id, const fuchsia_hardware_spmi::TargetInfo& parent,
