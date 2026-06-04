@@ -152,8 +152,7 @@ class PhysHandoffPtr {
     requires(kCanDeref)
   {
     if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
-      ZX_DEBUG_ASSERT_MSG(gPhysHandoff,
-                          "Pointer no longer valid; phys hand-off has already ended!");
+      ZX_ASSERT_MSG(gPhysHandoff, "Pointer no longer valid; phys hand-off has already ended!");
     }
     return ptr_;
   }
