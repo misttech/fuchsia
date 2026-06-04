@@ -6,9 +6,7 @@
 
 import logging
 
-from antlion import utils
 from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
@@ -53,7 +51,6 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
             raise signals.TestAbortClass("Requires at least one access point")
 
     def teardown_test(self) -> None:
-        self.dut.disconnect()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -103,7 +100,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         Bug: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=71233
         """
         # Setup a WPA3 network
-        wpa3_ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_5G)
+        wpa3_ssid = AccessPointConfig.random_string(8)
         wpa3_password = AccessPointConfig.random_string()
         self.setup_ap(
             channel=DEFAULT_5G_CHANNEL,
@@ -125,7 +122,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
             self.access_point.stop_all_aps()
 
         # Setup a WPA2 Network
-        wpa2_ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_5G)
+        wpa2_ssid = AccessPointConfig.random_string(8)
         wpa2_password = AccessPointConfig.random_string()
         self.setup_ap(
             channel=DEFAULT_5G_CHANNEL,
