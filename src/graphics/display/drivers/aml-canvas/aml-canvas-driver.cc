@@ -119,6 +119,7 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AmlCanvasD
 }
 
 zx::result<> AmlCanvasDriver::Start(fdf::DriverContext context) {
+  component_inspector_.emplace(context.CreateInspector(this, inspector_));
   std::shared_ptr<fdf::Namespace> incoming_ptr(context.take_incoming());
   zx::result<> compat_server_init_result =
       compat_server_.Initialize(incoming_ptr, outgoing(), context.node_name(), name());
