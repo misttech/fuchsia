@@ -5807,7 +5807,7 @@ mod tests {
     use core::u16;
 
     use ip_test_macro::ip_test;
-    use net_declare::net_ip_v6;
+    use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ip, IpAddr, IpVersion, Ipv4, Ipv4SourceAddr, Ipv6, Ipv6SourceAddr, Mtu};
     use net_types::{LinkLocalAddr, Witness};
     use netstack3_base::sync::{DynDebugReferences, Mutex};
@@ -10051,5 +10051,64 @@ mod tests {
             None,
         )
         .expect("failed to deliver bytes");
+    }
+
+    #[ip_test(I)]
+    fn multicast_syn_ignored<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<I, TcpBindingsCtx<FakeDeviceId>>
+            + TcpContext<I::OtherVersion, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+        let local_ip = I::TEST_ADDRS.local_ip;
+        let remote_ip = I::TEST_ADDRS.remote_ip;
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(local_ip, remote_ip));
+        let mut api = ctx.tcp_api::<I>();
+        let listener = api.create(Default::default());
+        api.bind(&listener, None, Some(PORT_1)).expect("bind should succeed");
+        api.listen(&listener, NonZeroUsize::new(5).unwrap()).unwrap();
+
+        let multicast_ip = I::map_ip((), |()| net_ip_v4!("224.0.0.1"), |()| net_ip_v6!("ff02::1"));
+        let multicast_addr = SpecifiedAddr::new(multicast_ip).unwrap();
+
+        let mut builder =
+            TcpSegmentBuilder::new(*remote_ip, *multicast_addr, PORT_2, PORT_1, 1, None, u16::MAX);
+        builder.syn(true);
+        let syn = builder
+            .wrap_body(Buf::new(vec![], ..))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .into_inner();
+
+        let (core_ctx, bindings_ctx) = api.contexts();
+
+        <TcpIpTransportContext as IpTransportContext<I, _, _>>::receive_ip_packet(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            I::recv_src_addr(*remote_ip),
+            multicast_addr,
+            syn,
+            &mut Default::default(),
+            None,
+        )
+        .expect("failed to deliver bytes");
+
+        assert_eq!(
+            CounterContext::<TcpCountersWithoutSocket<I>>::counters(core_ctx)
+                .as_ref()
+                .invalid_ip_addrs_received
+                .get(),
+            1
+        );
+
+        assert_matches!(
+            &listener.get().deref().socket_state,
+            TcpSocketStateInner::Listener(Listener { accept_queue, .. }) => {
+                assert_eq!(accept_queue.ready_len(), 0);
+                assert_eq!(accept_queue.pending_len(), 0);
+            }
+        );
     }
 }

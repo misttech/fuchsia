@@ -11,7 +11,7 @@ use core::num::NonZeroU16;
 use assert_matches::assert_matches;
 use log::{debug, error, warn};
 use net_types::ip::Ip;
-use net_types::{SpecifiedAddr, Witness as _};
+use net_types::{MulticastAddress as _, SpecifiedAddr, Witness as _};
 use netstack3_base::socket::{
     AddrIsMappedError, AddrVec, AddrVecIter, ConnAddr, ConnIpAddr, InsertError, IpAddrVec,
     ListenerAddr, ListenerIpAddr, SocketIpAddr, SocketIpAddrExt as _,
@@ -147,11 +147,27 @@ where
             );
         }
 
+        // Per RFC 9293, Section 3.9.2.3 (referencing RFC 1122):
+        //   A TCP implementation MUST silently discard an incoming SYN
+        //   segment that is addressed to a broadcast or multicast address
+        //   [(MUST-57)].
+        //
+        // and
+        //
+        //   ... this guidance is applicable to all incoming segments, not just
+        //   SYNs ...
         if broadcast.is_some() {
             CounterContext::<TcpCountersWithoutSocket<I>>::counters(core_ctx)
                 .invalid_ip_addrs_received
                 .increment();
             debug!("tcp: dropping broadcast TCP packet");
+            return Ok(());
+        }
+        if local_ip.is_multicast() {
+            CounterContext::<TcpCountersWithoutSocket<I>>::counters(core_ctx)
+                .invalid_ip_addrs_received
+                .increment();
+            debug!("tcp: dropping multicast TCP packet");
             return Ok(());
         }
 
