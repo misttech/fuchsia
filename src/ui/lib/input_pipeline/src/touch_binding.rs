@@ -7,7 +7,6 @@ use crate::utils::{self, Position, Size};
 use crate::{Transport, metrics, mouse_binding};
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
-use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -554,13 +553,13 @@ impl TouchBinding {
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-        previous_report: Option<InputReport>,
+        previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         feature_flags: &input_device::InputPipelineFeatureFlags,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!(
             "input",
             "touch-binding-process-report",
@@ -569,7 +568,7 @@ impl TouchBinding {
         match device_descriptor {
             input_device::InputDeviceDescriptor::TouchScreen(_) => process_touch_screen_reports(
                 reports,
-                previous_report,
+                previous_state,
                 device_descriptor,
                 input_event_sender,
                 inspect_status,
@@ -578,9 +577,9 @@ impl TouchBinding {
             ),
             input_device::InputDeviceDescriptor::Touchpad(_) => {
                 // TODO(b/512925135): support touchpad in starnix
-                (previous_report, None)
+                (previous_state, None)
             }
-            _ => (previous_report, None),
+            _ => (previous_state, None),
         }
     }
 
@@ -646,25 +645,25 @@ fn has_pressed_buttons(event: &InputEvent) -> bool {
 
 fn process_touch_screen_reports(
     reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-    mut previous_report: Option<InputReport>,
+    mut previous_state: Option<input_device::PreviousDeviceState>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
     enable_merge_touch_events: bool,
-) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
     let num_reports = reports.len();
     let mut batch: Vec<InputEvent> = Vec::with_capacity(num_reports);
     for report in reports {
         inspect_status.count_received_report_wire(report);
-        let (prev_report, event) = process_single_touch_screen_report(
+        let (prev_state, event) = process_single_touch_screen_report(
             report,
-            previous_report,
+            previous_state,
             device_descriptor,
             inspect_status,
             metrics_logger,
         );
-        previous_report = prev_report;
+        previous_state = prev_state;
         if let Some(event) = event {
             batch.push(event);
         }
@@ -749,16 +748,16 @@ fn process_touch_screen_reports(
             );
         }
     }
-    (previous_report, None)
+    (previous_state, None)
 }
 
 fn process_single_touch_screen_report(
     report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-    previous_report: Option<InputReport>,
+    previous_state: Option<input_device::PreviousDeviceState>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
-) -> (Option<InputReport>, Option<InputEvent>) {
+) -> (Option<input_device::PreviousDeviceState>, Option<InputEvent>) {
     fuchsia_trace::flow_end!(
         "input",
         "input_report",
@@ -775,49 +774,36 @@ fn process_single_touch_screen_report(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return (previous_report, None);
+            return (previous_state, None);
         }
     };
 
     let (previous_contacts, previous_buttons): (
         SortedVecMap<u32, TouchContact>,
         Vec<fidl_next_fuchsia_input_report::TouchButton>,
-    ) = previous_report
-        .as_ref()
-        .and_then(|unwrapped_report| unwrapped_report.touch.as_ref())
-        .map(|touch_report| {
-            touch_contacts_and_buttons_from_touch_report(touch_report, metrics_logger)
-        })
-        .unwrap_or_default();
+    ) = match &previous_state {
+        Some(input_device::PreviousDeviceState::TouchScreen {
+            active_contacts,
+            pressed_buttons,
+        }) => {
+            let contacts =
+                SortedVecMap::from_iter(active_contacts.iter().map(|c| (c.id, c.clone())));
+            (contacts, pressed_buttons.clone())
+        }
+        _ => (SortedVecMap::new(), vec![]),
+    };
     let (current_contacts, current_buttons): (
         SortedVecMap<u32, TouchContact>,
         Vec<fidl_next_fuchsia_input_report::TouchButton>,
     ) = touch_contacts_and_buttons_from_touch_report_wire(touch_report, metrics_logger);
 
-    // Don't send an event if there are no new contacts or pressed buttons.
     if previous_contacts.is_empty()
         && current_contacts.is_empty()
         && previous_buttons.is_empty()
         && current_buttons.is_empty()
     {
         inspect_status.count_filtered_report();
-        // Since we are returning the unchanged report, we first convert it to natural type.
-        let natural_report = utils::input_report_to_natural(report);
-        return (Some(natural_report), None);
-    }
-
-    let mut natural_report = utils::input_report_to_natural(report);
-
-    // A touch input report containing button state should persist prior contact state,
-    // for the sake of pointer event continuity in future reports containing contact data.
-    if current_contacts.is_empty()
-        && !previous_contacts.is_empty()
-        && (!current_buttons.is_empty() || !previous_buttons.is_empty())
-    {
-        if let Some(touch_report) = natural_report.touch.as_mut() {
-            touch_report.contacts =
-                previous_report.unwrap().touch.as_ref().unwrap().contacts.clone();
-        }
+        return (previous_state, None);
     }
 
     // Contacts which exist only in current.
@@ -842,6 +828,15 @@ fn process_single_touch_screen_report(
                 && !current_contacts.contains_key(&contact.id)
         }));
 
+    let active_contacts: Vec<TouchContact> = if current_contacts.is_empty()
+        && !previous_contacts.is_empty()
+        && (!current_buttons.is_empty() || !previous_buttons.is_empty())
+    {
+        previous_contacts.values().cloned().collect()
+    } else {
+        added_contacts.iter().chain(moved_contacts.iter()).cloned().collect()
+    };
+
     let trace_id = fuchsia_trace::Id::new();
     let event = create_touch_screen_event(
         SortedVecMap::from_iter(vec![
@@ -856,43 +851,18 @@ fn process_single_touch_screen_report(
             (pointerinjector::EventPhase::Change, moved_contacts),
             (pointerinjector::EventPhase::Remove, removed_contacts),
         ]),
-        current_buttons,
+        current_buttons.clone(),
         device_descriptor,
         trace_id,
         wake_lease,
     );
 
-    (Some(natural_report), Some(event))
-}
+    let next_previous_state = input_device::PreviousDeviceState::TouchScreen {
+        active_contacts,
+        pressed_buttons: current_buttons,
+    };
 
-fn touch_contacts_and_buttons_from_touch_report(
-    touch_report: &fidl_next_fuchsia_input_report::TouchInputReport,
-    metrics_logger: &metrics::MetricsLogger,
-) -> (SortedVecMap<u32, TouchContact>, Vec<fidl_next_fuchsia_input_report::TouchButton>) {
-    let mut contacts = Vec::with_capacity(touch_report.contacts.as_ref().map_or(0, |v| v.len()));
-    if let Some(unwrapped_contacts) = &touch_report.contacts {
-        for contact in unwrapped_contacts {
-            match TouchContact::try_from(contact) {
-                Ok(c) => contacts.push(c),
-                Err(e) => {
-                    metrics_logger.log_warn(
-                        InputPipelineErrorMetricDimensionEvent::TouchReportContactMissingField,
-                        std::format!("failed to convert touch contact: {:?}", e),
-                    );
-                }
-            }
-        }
-    } else {
-        metrics_logger.log_warn(
-            InputPipelineErrorMetricDimensionEvent::TouchReportMissingContact,
-            "contacts missing in touch input report",
-        );
-    }
-
-    (
-        SortedVecMap::from_iter(contacts.into_iter().map(|contact| (contact.id, contact))),
-        touch_report.pressed_buttons.clone().unwrap_or_default(),
-    )
+    (Some(next_previous_state), Some(event))
 }
 
 fn touch_contacts_and_buttons_from_touch_report_wire(
@@ -1005,12 +975,6 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn process_empty_reports() {
-        let previous_report_time = zx::MonotonicInstant::get().into_nanos();
-        let previous_report = create_touch_input_report(
-            vec![],
-            /* pressed_buttons= */ None,
-            previous_report_time,
-        );
         let report_time = zx::MonotonicInstant::get().into_nanos();
         let report =
             create_touch_input_report(vec![], /* pressed_buttons= */ None, report_time);
@@ -1027,18 +991,29 @@ mod tests {
         let mut inspect_status = InputDeviceStatus::new(test_node);
         inspect_status.health_node.set_ok();
 
+        let previous_state = input_device::PreviousDeviceState::TouchScreen {
+            active_contacts: vec![],
+            pressed_buttons: vec![],
+        };
+
         let reports_wire = crate::testing_utilities::reports_to_wire(vec![report]);
-        let (returned_report, _) = TouchBinding::process_reports(
+        let (returned_state, _) = TouchBinding::process_reports(
             &reports_wire,
-            Some(previous_report),
+            Some(previous_state),
             &descriptor,
             &mut event_sender,
             &inspect_status,
             &metrics::MetricsLogger::default(),
             &input_device::InputPipelineFeatureFlags::default(),
         );
-        assert!(returned_report.is_some());
-        assert_eq!(returned_report.unwrap().event_time, Some(report_time));
+        assert!(returned_state.is_some());
+        assert_eq!(
+            returned_state.unwrap(),
+            input_device::PreviousDeviceState::TouchScreen {
+                active_contacts: vec![],
+                pressed_buttons: vec![]
+            }
+        );
 
         // Assert there are no pending events on the receiver.
         let event = event_receiver.try_next();
@@ -1261,13 +1236,6 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn sent_event_has_trace_id() {
-        let previous_report_time = zx::MonotonicInstant::get().into_nanos();
-        let previous_report = create_touch_input_report(
-            vec![],
-            /* pressed_buttons= */ None,
-            previous_report_time,
-        );
-
         let report_time = zx::MonotonicInstant::get().into_nanos();
         let contact = fidl_fuchsia_input_report::ContactInputReport {
             contact_id: Some(222),
@@ -1290,10 +1258,15 @@ mod tests {
         let mut inspect_status = InputDeviceStatus::new(test_node);
         inspect_status.health_node.set_ok();
 
+        let previous_state = input_device::PreviousDeviceState::TouchScreen {
+            active_contacts: vec![],
+            pressed_buttons: vec![],
+        };
+
         let reports_wire = crate::testing_utilities::reports_to_wire(vec![report]);
         let _ = TouchBinding::process_reports(
             &reports_wire,
-            Some(previous_report),
+            Some(previous_state),
             &descriptor,
             &mut event_sender,
             &inspect_status,

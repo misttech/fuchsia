@@ -6,11 +6,11 @@ use super::types::Rgbc;
 use crate::input_device::{
     self, Handled, InputDeviceBinding, InputDeviceDescriptor, InputDeviceStatus, InputEvent,
 };
-use crate::{metrics, utils};
+use crate::metrics;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use derivative::Derivative;
-use fidl_next_fuchsia_input_report::{InputReport, SensorType};
+use fidl_next_fuchsia_input_report::SensorType;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
@@ -121,7 +121,7 @@ impl LightSensorBinding {
             metrics_logger,
             feature_flags,
             move |reports,
-                  previous_report,
+                  previous_state,
                   device_descriptor,
                   input_event_sender,
                   inspect_status,
@@ -129,7 +129,7 @@ impl LightSensorBinding {
                   _feature_flags| {
                 Self::process_reports(
                     reports,
-                    previous_report,
+                    previous_state,
                     device_descriptor,
                     input_event_sender,
                     device_proxy.clone(),
@@ -280,7 +280,7 @@ impl LightSensorBinding {
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-        mut previous_report: Option<InputReport>,
+        mut previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         device_proxy: fidl_next::Client<
@@ -289,12 +289,12 @@ impl LightSensorBinding {
         >,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "light-sensor-binding-process-reports", "num_reports" => reports.len());
         for report in reports {
-            previous_report = Self::process_report(
+            previous_state = Self::process_report(
                 report,
-                previous_report,
+                previous_state,
                 device_descriptor,
                 input_event_sender,
                 device_proxy.clone(),
@@ -302,12 +302,12 @@ impl LightSensorBinding {
                 metrics_logger,
             );
         }
-        (previous_report, None)
+        (previous_state, None)
     }
 
     fn process_report(
         report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-        previous_report: Option<InputReport>,
+        previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         device_proxy: fidl_next::Client<
@@ -316,7 +316,7 @@ impl LightSensorBinding {
         >,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> Option<InputReport> {
+    ) -> Option<input_device::PreviousDeviceState> {
         if let Some(trace_id) = report.trace_id() {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
@@ -335,7 +335,7 @@ impl LightSensorBinding {
         let sensor = match report.sensor() {
             None => {
                 inspect_status.count_filtered_report();
-                return previous_report;
+                return previous_state;
             }
             Some(sensor) => sensor,
         };
@@ -374,7 +374,6 @@ impl LightSensorBinding {
             );
         }
 
-        let natural_report = utils::input_report_to_natural(report);
-        Some(natural_report)
+        Some(input_device::PreviousDeviceState::LightSensor)
     }
 }

@@ -851,7 +851,7 @@ macro_rules! assert_input_report_sequence_generates_events_with_feature_flags {
         // The feature flags.
         feature_flags: $feature_flags:expr,
     ) => {
-        let previous_report: Option<fidl_next_fuchsia_input_report::InputReport> = None;
+        let previous_state: Option<input_device::PreviousDeviceState> = None;
         let num_reports = $input_reports.len();
         let num_events = $expected_events.len();
         let (event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
@@ -876,7 +876,7 @@ macro_rules! assert_input_report_sequence_generates_events_with_feature_flags {
         let inspect_receiver: Option<UnboundedReceiver<InputEvent>>;
         (_, inspect_receiver) = <$DeviceType>::process_reports(
             &decoded,
-            previous_report,
+            previous_state,
             &$device_descriptor,
             &mut event_sender.clone(),
             &inspect_status,

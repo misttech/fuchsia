@@ -7,7 +7,6 @@ use crate::{Transport, metrics, utils};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::ConsumerControlButton;
-use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 
@@ -259,35 +258,35 @@ impl ConsumerControlsBinding {
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-        mut previous_report: Option<InputReport>,
+        mut previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         _feature_flags: &input_device::InputPipelineFeatureFlags,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "consumer-controls-binding-process-report", "num_reports" => reports.len());
         for report in reports {
-            previous_report = Self::process_report(
+            previous_state = Self::process_report(
                 report,
-                previous_report,
+                previous_state,
                 device_descriptor,
                 input_event_sender,
                 inspect_status,
                 metrics_logger,
             );
         }
-        (previous_report, None)
+        (previous_state, None)
     }
 
     fn process_report(
         report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-        previous_report: Option<InputReport>,
+        previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> Option<InputReport> {
+    ) -> Option<input_device::PreviousDeviceState> {
         if let Some(trace_id) = report.trace_id() {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
@@ -314,7 +313,7 @@ impl ConsumerControlsBinding {
                 .unwrap_or_default(),
             None => {
                 inspect_status.count_filtered_report();
-                return previous_report;
+                return previous_state;
             }
         };
 
@@ -322,7 +321,7 @@ impl ConsumerControlsBinding {
         fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
         send_consumer_controls_event(
-            pressed_buttons,
+            pressed_buttons.clone(),
             wake_lease,
             device_descriptor,
             input_event_sender,
@@ -331,8 +330,7 @@ impl ConsumerControlsBinding {
             trace_id,
         );
 
-        let natural_report = utils::input_report_to_natural(report);
-        Some(natural_report)
+        Some(input_device::PreviousDeviceState::ConsumerControls { pressed_buttons })
     }
 }
 

@@ -8,7 +8,6 @@ use crate::{Transport, metrics};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_sync::Mutex;
@@ -423,35 +422,35 @@ impl MouseBinding {
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-        mut previous_report: Option<InputReport>,
+        mut previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         _feature_flags: &input_device::InputPipelineFeatureFlags,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "mouse-binding-process-reports", "num_reports" => reports.len());
         for report in reports {
-            previous_report = Self::process_report(
+            previous_state = Self::process_report(
                 report,
-                previous_report,
+                previous_state,
                 device_descriptor,
                 input_event_sender,
                 inspect_status,
                 metrics_logger,
             );
         }
-        (previous_report, None)
+        (previous_state, None)
     }
 
     fn process_report(
         report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-        previous_report: Option<InputReport>,
+        previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> Option<InputReport> {
+    ) -> Option<input_device::PreviousDeviceState> {
         if let Some(trace_id) = report.trace_id() {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
@@ -467,12 +466,14 @@ impl MouseBinding {
             Some(mouse) => mouse,
             None => {
                 inspect_status.count_filtered_report();
-                return previous_report;
+                return previous_state;
             }
         };
 
-        let previous_buttons: SortedVecSet<MouseButton> =
-            buttons_from_optional_report(&previous_report.as_ref());
+        let previous_buttons: SortedVecSet<MouseButton> = match previous_state {
+            Some(input_device::PreviousDeviceState::Mouse { pressed_buttons }) => pressed_buttons,
+            _ => SortedVecSet::new(),
+        };
         let current_buttons: SortedVecSet<MouseButton> =
             buttons_from_mouse_report_wire(mouse_report);
 
@@ -579,8 +580,7 @@ impl MouseBinding {
             wake_lease,
         );
 
-        let natural_report = utils::input_report_to_natural(report);
-        Some(natural_report)
+        Some(input_device::PreviousDeviceState::Mouse { pressed_buttons: current_buttons })
     }
 }
 
@@ -667,23 +667,6 @@ fn buttons_from_mouse_report_wire(
     mouse_report
         .pressed_buttons()
         .map(|buttons| SortedVecSet::from_iter(buttons.iter().copied()))
-        .unwrap_or_default()
-}
-
-/// Returns the set of pressed buttons present in the given input report.
-///
-/// # Parameters
-/// - `report`: The input report to parse the mouse buttons from.
-fn buttons_from_optional_report(
-    input_report: &Option<&fidl_next_fuchsia_input_report::InputReport>,
-) -> SortedVecSet<MouseButton> {
-    input_report
-        .as_ref()
-        .and_then(|unwrapped_report| unwrapped_report.mouse.as_ref())
-        .and_then(|mouse_report| match &mouse_report.pressed_buttons {
-            Some(buttons) => Some(SortedVecSet::from(buttons.clone())),
-            None => None,
-        })
         .unwrap_or_default()
 }
 

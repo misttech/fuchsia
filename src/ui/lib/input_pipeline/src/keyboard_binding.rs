@@ -8,7 +8,6 @@ use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3 as fidl_ui_input3;
 use fidl_fuchsia_ui_input3::KeyEventType;
-use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
@@ -435,20 +434,20 @@ impl KeyboardBinding {
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-        mut previous_report: Option<InputReport>,
+        mut previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         _feature_flags: &input_device::InputPipelineFeatureFlags,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> (Option<input_device::PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "keyboard-binding-process-report", "num_reports" => reports.len());
         let (inspect_sender, inspect_receiver) = futures::channel::mpsc::unbounded();
 
         for report in reports {
-            previous_report = Self::process_report(
+            previous_state = Self::process_report(
                 report,
-                previous_report,
+                previous_state,
                 device_descriptor,
                 input_event_sender,
                 inspect_status,
@@ -456,18 +455,18 @@ impl KeyboardBinding {
                 inspect_sender.clone(),
             );
         }
-        (previous_report, Some(inspect_receiver))
+        (previous_state, Some(inspect_receiver))
     }
 
     fn process_report(
         report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-        previous_report: Option<InputReport>,
+        previous_state: Option<input_device::PreviousDeviceState>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         inspect_sender: UnboundedSender<InputEvent>,
-    ) -> Option<InputReport> {
+    ) -> Option<input_device::PreviousDeviceState> {
         if let Some(trace_id) = report.trace_id() {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
@@ -480,7 +479,7 @@ impl KeyboardBinding {
         match report.keyboard() {
             None => {
                 inspect_status.count_filtered_report();
-                return previous_report;
+                return previous_state;
             }
             _ => (),
         };
@@ -491,21 +490,21 @@ impl KeyboardBinding {
                 // It's OK for the report to contain an empty vector of keys, but it's not OK for
                 // the report to not have the appropriate fields set.
                 //
-                // In this case the report is treated as malformed, and the previous report is not
+                // In this case the report is treated as malformed, and the previous state is not
                 // updated.
                 metrics_logger.log_error(
                     InputPipelineErrorMetricDimensionEvent::KeyboardFailedToParse,
                     std::format!("Failed to parse keyboard keys: {:?}", report),
                 );
                 inspect_status.count_filtered_report();
-                return previous_report;
+                return previous_state;
             }
         };
 
-        let previous_keys: Vec<fidl_fuchsia_input::Key> = previous_report
-            .as_ref()
-            .and_then(|unwrapped_report| KeyboardBinding::parse_pressed_keys(&unwrapped_report))
-            .unwrap_or_default();
+        let previous_keys: Vec<fidl_fuchsia_input::Key> = match previous_state {
+            Some(input_device::PreviousDeviceState::Keyboard { pressed_keys }) => pressed_keys,
+            _ => vec![],
+        };
 
         KeyboardBinding::send_key_events(
             &new_keys,
@@ -518,23 +517,7 @@ impl KeyboardBinding {
             tracing_id,
         );
 
-        let natural_report = utils::input_report_to_natural(report);
-        Some(natural_report)
-    }
-
-    /// Parses the currently pressed [`fidl_fuchsia_input3::Key`]s from an input report.
-    ///
-    /// # Parameters
-    /// - `input_report`: The input report to parse the keyboard keys from.
-    ///
-    /// # Returns
-    /// Returns `None` if any of the required input report fields are `None`. If all the
-    /// required report fields are present, but there are no pressed keys, an empty vector
-    /// is returned.
-    fn parse_pressed_keys(input_report: &InputReport) -> Option<Vec<fidl_fuchsia_input::Key>> {
-        let keyboard = input_report.keyboard.as_ref()?;
-        let keys = keyboard.pressed_keys3.as_ref()?;
-        Some(keys.iter().map(utils::key_to_old).collect())
+        Some(input_device::PreviousDeviceState::Keyboard { pressed_keys: new_keys })
     }
 
     fn parse_pressed_keys_wire(

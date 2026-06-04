@@ -9,7 +9,7 @@ use crate::{
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
-use fidl_next_fuchsia_input_report::{InputDevice, InputReport};
+use fidl_next_fuchsia_input_report::InputDevice;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
     ExponentialHistogramParams, HistogramProperty as _, NumericProperty, Property,
@@ -18,6 +18,7 @@ use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
+use sorted_vec_map::SortedVecSet;
 use std::path::PathBuf;
 use strum_macros::{Display, EnumCount};
 
@@ -162,6 +163,26 @@ impl InputDeviceStatus {
     pub fn count_wake_lease_leak(&self) {
         self.wake_lease_leak_count.add(1);
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PreviousDeviceState {
+    Keyboard {
+        pressed_keys: Vec<fidl_fuchsia_input::Key>,
+    },
+    Mouse {
+        pressed_buttons: SortedVecSet<mouse_binding::MouseButton>,
+    },
+    TouchScreen {
+        active_contacts: Vec<touch_binding::TouchContact>,
+        pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
+    },
+    ConsumerControls {
+        pressed_buttons: Vec<fidl_fuchsia_input_report::ConsumerControlButton>,
+    },
+    LightSensor,
+    #[cfg(test)]
+    Fake,
 }
 
 /// An [`InputEvent`] holds information about an input event and the device that produced the event.
@@ -365,16 +386,17 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
         + Send
         + for<'de> FnMut(
             &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
-            Option<InputReport>,
+            Option<PreviousDeviceState>,
             &InputDeviceDescriptor,
             &mut UnboundedSender<Vec<InputEvent>>,
             &InputDeviceStatus,
             &metrics::MetricsLogger,
             &InputPipelineFeatureFlags,
-        ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>),
+        )
+            -> (Option<PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>),
 {
     Dispatcher::spawn_local(async move {
-        let mut previous_report: Option<InputReport> = None;
+        let mut previous_state: Option<PreviousDeviceState> = None;
         let (report_reader, server_end) = fidl_next::fuchsia::create_channel();
         let report_reader = Dispatcher::client_from_zx_channel(report_reader);
         let result = device_proxy.get_input_reports_reader(server_end).await;
@@ -399,48 +421,16 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                         fuchsia_trace::duration!("input", "input-device-process-reports");
                         // TODO: b/513602239 - use InputEvent instead of InputReport for previous
                         // report. To avoid wire to natural type conversion.
-                        let (prev_report, inspect_receiver) = process_reports(
+                        let (prev_state, inspect_receiver) = process_reports(
                             response.reports.as_slice(),
-                            previous_report,
+                            previous_state,
                             &device_descriptor,
                             &mut event_sender,
                             &inspect_status,
                             &metrics_logger,
                             &feature_flags,
                         );
-                        previous_report = prev_report;
-
-                        if let Some(previous_report) = previous_report.as_ref() {
-                            if previous_report.wake_lease.is_some() {
-                                inspect_status.count_wake_lease_leak();
-
-                                let error_code = match device_descriptor {
-                                    InputDeviceDescriptor::TouchScreen(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::TouchscreenPreviousReportHasWakeLease)
-                                    }
-                                    InputDeviceDescriptor::Touchpad(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::TouchpadPreviousReportHasWakeLease)
-                                    }
-                                    InputDeviceDescriptor::Mouse(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::MousePreviousReportHasWakeLease)
-                                    }
-                                    InputDeviceDescriptor::Keyboard(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::KeyboardPreviousReportHasWakeLease)
-                                    }
-                                    InputDeviceDescriptor::ConsumerControls(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::ButtonPreviousReportHasWakeLease)
-                                    }
-                                    InputDeviceDescriptor::LightSensor(_) => {
-                                        Some(InputPipelineMetricDimensionEvent::LightSensorPreviousReportHasWakeLease)
-                                    }
-                                    #[cfg(test)]
-                                    InputDeviceDescriptor::Fake => None,
-                                };
-                                if let Some(error_code) = error_code {
-                                    metrics_logger.log_error(error_code, std::format!("previous_report must not have a wake lease but does: {:?}", previous_report));
-                                }
-                            }
-                        }
+                        previous_state = prev_state;
 
                         // If a report generates multiple events asynchronously, we send them over a mpsc channel
                         // to inspect_receiver. We update the event count on inspect_status here since we cannot
@@ -454,7 +444,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                             None => (),
                         };
                     }
-                }
+                },
             }
         }
         // TODO(https://fxbug.dev/42131965): Add signaling for when this loop exits, since it means the device
@@ -719,6 +709,7 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
     use fidl_fuchsia_input_report as fidl_input_report;
+    use fidl_next_fuchsia_input_report::InputReport;
     use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;

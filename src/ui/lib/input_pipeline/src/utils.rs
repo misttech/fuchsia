@@ -18,28 +18,6 @@ pub fn duplicate_wake_lease(
     })
 }
 
-/// Converts a wire `InputReport` to its natural equivalent.
-///
-/// Note that the `wake_lease` is dropped during this conversion (i.e. set to `None`
-/// in the returned natural report).
-pub fn input_report_to_natural(
-    report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
-) -> fidl_next_fuchsia_input_report::InputReport {
-    fidl_next_fuchsia_input_report::InputReport {
-        event_time: report.event_time().map(|x| x.0),
-        mouse: report.mouse().map(|m| fidl_next::FromWireRef::from_wire_ref(m)),
-        sensor: report.sensor().map(|s| fidl_next::FromWireRef::from_wire_ref(s)),
-        touch: report.touch().map(|t| fidl_next::FromWireRef::from_wire_ref(t)),
-        keyboard: report.keyboard().map(|k| fidl_next::FromWireRef::from_wire_ref(k)),
-        consumer_control: report
-            .consumer_control()
-            .map(|c| fidl_next::FromWireRef::from_wire_ref(c)),
-        trace_id: report.trace_id().map(|t| t.0),
-        report_id: report.report_id().map(|r| *r),
-        wake_lease: None,
-    }
-}
-
 pub fn duplicate_view_ref_next(
     view_ref: &fidl_next_fuchsia_ui_views::ViewRef,
 ) -> Result<fidl_next_fuchsia_ui_views::ViewRef, fidl::Status> {
