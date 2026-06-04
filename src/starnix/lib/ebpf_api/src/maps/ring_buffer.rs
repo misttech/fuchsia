@@ -16,7 +16,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 // Signal used on ring buffer VMOs to indicate that the buffer has
 // incoming data.
@@ -43,23 +43,23 @@ impl RingBufferState {
 
     /// The never decreasing position of the read head of the ring buffer. This is updated
     /// exclusively from userspace.
-    fn consumer_position(&self) -> &AtomicU32 {
+    fn consumer_position(&self) -> &AtomicU64 {
         // SAFETY: `RingBuffer::state()` wraps `self` in a lock, which
         // guarantees that the lock is acquired here.
-        unsafe { &*((self.base_addr + *MapBuffer::PAGE_SIZE) as *const AtomicU32) }
+        unsafe { &*((self.base_addr + *MapBuffer::PAGE_SIZE) as *const AtomicU64) }
     }
 
     /// The never decreasing position of the writing head of the ring buffer. This is updated
     /// exclusively from the kernel.
-    fn producer_position(&self) -> &AtomicU32 {
+    fn producer_position(&self) -> &AtomicU64 {
         // SAFETY: `RingBuffer::state()` wraps `self` in a lock, which
         // guarantees that the lock is acquired here.
-        unsafe { &*((self.base_addr + *MapBuffer::PAGE_SIZE * 2) as *const AtomicU32) }
+        unsafe { &*((self.base_addr + *MapBuffer::PAGE_SIZE * 2) as *const AtomicU64) }
     }
 
     /// Address of the specified `position` within the buffer.
-    fn data_position(&self, position: u32) -> usize {
-        self.data_addr() + ((position & self.mask) as usize)
+    fn data_position(&self, position: u64) -> usize {
+        self.data_addr() + ((position & (self.mask as u64)) as usize)
     }
 
     fn is_consumer_position(&self, addr: usize) -> bool {
@@ -67,12 +67,13 @@ impl RingBufferState {
             return false;
         };
         let position = position as u32;
-        let consumer_position = self.consumer_position().load(Ordering::Acquire) & self.mask;
-        position == consumer_position
+        let consumer_position =
+            self.consumer_position().load(Ordering::Acquire) & (self.mask as u64);
+        u64::from(position) == consumer_position
     }
 
     /// Access the memory at `position` as a `RingBufferRecordHeader`.
-    fn header_mut(&mut self, position: u32) -> &mut RingBufferRecordHeader {
+    fn header_mut(&mut self, position: u64) -> &mut RingBufferRecordHeader {
         // SAFETY
         //
         // Reading / writing to the header is safe because the access is exclusive thanks to the
@@ -383,11 +384,10 @@ impl MapImpl for RingBuffer {
         let mut state = self.state().write();
         let consumer_position = state.consumer_position().load(Ordering::Acquire);
         let producer_position = state.producer_position().load(Ordering::Acquire);
-        let max_size = self.mask + 1;
+        let max_size = (self.mask + 1) as u64;
 
         // Available size on the ringbuffer.
-        let consumed_size =
-            producer_position.checked_sub(consumer_position).ok_or(MapError::InvalidParam)?;
+        let consumed_size = producer_position.wrapping_sub(consumer_position);
         let available_size = max_size.checked_sub(consumed_size).ok_or(MapError::InvalidParam)?;
 
         const HEADER_ALIGNMENT: u32 = std::mem::size_of::<u64>() as u32;
@@ -397,7 +397,7 @@ impl MapImpl for RingBuffer {
         let total_size: u32 = (size + BPF_RINGBUF_HDR_SZ + HEADER_ALIGNMENT - 1) / HEADER_ALIGNMENT
             * HEADER_ALIGNMENT;
 
-        if total_size > available_size {
+        if u64::from(total_size) > available_size {
             return Err(MapError::SizeLimit);
         }
         let data_position = state.data_position(producer_position) + BPF_RINGBUF_HDR_SZ as usize;
@@ -408,7 +408,9 @@ impl MapImpl for RingBuffer {
         let header = state.header_mut(producer_position);
         *header.length.get_mut() = data_length;
         header.page_count = page_count;
-        state.producer_position().store(producer_position + total_size, Ordering::Release);
+        state
+            .producer_position()
+            .store(producer_position + u64::from(total_size), Ordering::Release);
         Ok(data_position)
     }
 }
@@ -495,5 +497,88 @@ mod test {
         let producer_pos = ringbuf.state().read().producer_position().load(Ordering::Acquire);
         ringbuf.state().write().consumer_position().store(producer_pos, Ordering::Release);
         assert_eq!(ringbuf.can_read(), Some(false));
+    }
+
+    #[fuchsia::test]
+    fn test_ring_buffer_wrapping() {
+        let schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+
+        let ringbuf = RingBuffer::new(&schema, "test_ringbuf_wrapping").unwrap();
+
+        // Set producer and consumer positions close to wrapping
+        // Use multiples of 8 to avoid alignment panic!
+        {
+            let state = ringbuf.state().read();
+            state.producer_position().store(0xFFFFFFFFFFFFFFF8, Ordering::Release);
+            state.consumer_position().store(0xFFFFFFFFFFFFFFF0, Ordering::Release);
+        }
+
+        // Available size on the ringbuffer should be accounted correctly.
+        // producer = 0xFFFFFFFFFFFFFFF8, consumer = 0xFFFFFFFFFFFFFFF0.
+        // consumed = 8.
+
+        // Now simulate producer wrapping around!
+        {
+            let state = ringbuf.state().read();
+            state.producer_position().store(8, Ordering::Release);
+        }
+        // Now producer = 8, consumer = 0xFFFFFFFFFFFFFFF0.
+        // The difference should be 8 - 0xFFFFFFFFFFFFFFF0 = 24 (modulo 2^64).
+
+        // ringbuf_reserve should SUCCEED because there is plenty of space!
+        // But in current code it will fail with InvalidParam because 8 < 0xFFFFFFFFFFFFFFF0!
+        let result = ringbuf.ringbuf_reserve(16, 0);
+        assert!(
+            result.is_ok(),
+            "Expected ringbuf_reserve to succeed despite wrapping, but got {:?}",
+            result
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_ring_buffer_consumer_advance_wrap() {
+        let schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+
+        let ringbuf = RingBuffer::new(&schema, "test_ringbuf_advance").unwrap();
+
+        // Set producer at 8 (wrapped), consumer at 0xFFFFFFFFFFFFFFF0 (not wrapped)
+        {
+            let state = ringbuf.state().read();
+            state.producer_position().store(8, Ordering::Release);
+            state.consumer_position().store(0xFFFFFFFFFFFFFFF0, Ordering::Release);
+        }
+
+        // Simulate user space advancing consumer to 0 (wrapped)
+        {
+            let state = ringbuf.state().read();
+            state.consumer_position().store(0, Ordering::Release);
+        }
+
+        // Now producer = 8, consumer = 0.
+        // Both are in the same cycle.
+        // consumed_size = 8 - 0 = 8.
+        // available_size = 4096 - 8 = 4088.
+
+        // ringbuf_reserve should SUCCEED in current code because 8 >= 0.
+        let result = ringbuf.ringbuf_reserve(16, 0);
+        assert!(result.is_ok(), "Expected ringbuf_reserve to succeed, but got {:?}", result);
+
+        // Check that it allocated at the correct position (producer was 8)
+        let data_pos = result.unwrap();
+        let state = ringbuf.state().read();
+        let expected_pos = state.data_position(8) + BPF_RINGBUF_HDR_SZ as usize;
+        assert_eq!(data_pos, expected_pos);
     }
 }
