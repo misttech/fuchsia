@@ -17,6 +17,8 @@ const SSH_CONTROLMASTER_MODE: &str = "ssh.controlmaster.mode";
 const SSH_CONTROLMASTER_PATH: &str = "ssh.controlmaster.path";
 const SSH_CONTROLMASTER_DIR: &str = "ssh.controlmaster.dir";
 pub const KEEPALIVE_TIMEOUT_CONFIG: &str = "ssh.keepalive_timeout";
+pub const CONNECT_TIMEOUT_CONFIG: &str = "ssh.connect_timeout";
+pub const CONNECTION_ATTEMPTS_CONFIG: &str = "ssh.connection_attempts";
 
 #[derive(Error, Debug)]
 pub enum SshCommandError {
@@ -162,6 +164,7 @@ async fn spawn_controlmaster(
     controlmaster_dir: PathBuf,
     ssh_keys: &[String],
     addr: &ScopedSocketAddr,
+    config: &SshConfig,
 ) -> Result<PathBuf, SpawnControlMasterError> {
     // Okay we need to create the socket path, but unix sockets
     // have a limit of 109 characters, which an ipv6 address will eat the
@@ -203,8 +206,7 @@ async fn spawn_controlmaster(
     // No config file
     c.args(["-F", "none"]);
     // Use our custom Ssh Config
-    let cfg = SshConfig::new()?;
-    c.args(cfg.to_args());
+    c.args(config.to_args());
 
     // Add identity keys
     for key in ssh_keys {
@@ -287,6 +289,7 @@ async fn get_controlmaster_path(
     ssh_path: &str,
     addr: &ScopedSocketAddr,
     ssh_keys: &Vec<String>,
+    config: &SshConfig,
 ) -> Result<Option<PathBuf>, ManageSshControlMasterError> {
     let controlmaster_mode_string: Option<String> = env.get(SSH_CONTROLMASTER_MODE)?;
     let controlmaster_mode = match controlmaster_mode_string {
@@ -316,9 +319,14 @@ async fn get_controlmaster_path(
             let Some(controlmaster_dir) = controlmaster_dir else {
                 return Err(ManageSshControlMasterError::ControlMasterDirNotSpecified);
             };
-            let path =
-                Box::pin(spawn_controlmaster(ssh_path, controlmaster_dir.into(), &ssh_keys, addr))
-                    .await?;
+            let path = Box::pin(spawn_controlmaster(
+                ssh_path,
+                controlmaster_dir.into(),
+                &ssh_keys,
+                addr,
+                config,
+            ))
+            .await?;
             Ok(Some(path))
         }
     }
@@ -340,7 +348,17 @@ async fn build_ssh_command_with_ssh_config_and_env(
     if let Some(keepalive_timeout) =
         env.query(KEEPALIVE_TIMEOUT_CONFIG).build().get::<Option<u64>>(env)?
     {
-        config.set_server_alive_count_max(keepalive_timeout as u16)?
+        config.set_server_alive_count_max(keepalive_timeout as u16)?;
+    }
+    if let Some(connect_timeout) =
+        env.query(CONNECT_TIMEOUT_CONFIG).build().get::<Option<u64>>(env)?
+    {
+        config.set("ConnectTimeout", connect_timeout.to_string())?;
+    }
+    if let Some(connection_attempts) =
+        env.query(CONNECTION_ATTEMPTS_CONFIG).build().get::<Option<u64>>(env)?
+    {
+        config.set("ConnectionAttempts", connection_attempts.to_string())?;
     }
 
     // Okay there are two ways we can get here
@@ -348,7 +366,7 @@ async fn build_ssh_command_with_ssh_config_and_env(
     // if we have config value ssh.controlmaster_dir, check the contents of that dir for a
     // properly named socket, use that one. Otherwise create one and then use iter
     // if neither of those config values are set, just dont use a ControlMaster
-    let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys).await?;
+    let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys, config).await?;
 
     let mut c = Command::new(ssh_path);
     apply_auth_sock(&mut c, env);
@@ -647,8 +665,15 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res =
-            get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await.unwrap();
+        let res = get_controlmaster_path(
+            &env.context,
+            "ssh",
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, None);
     }
 
@@ -665,8 +690,15 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res =
-            get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await.unwrap();
+        let res = get_controlmaster_path(
+            &env.context,
+            "ssh",
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, Some(PathBuf::from(expected_path)));
     }
 
@@ -681,7 +713,14 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
+        let res = get_controlmaster_path(
+            &env.context,
+            "ssh",
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await;
         assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterPathNotSpecified)));
     }
 
@@ -697,7 +736,14 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
+        let res = get_controlmaster_path(
+            &env.context,
+            "ssh",
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await;
         assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterDirNotSpecified)));
     }
 
@@ -714,7 +760,14 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
+        let res = get_controlmaster_path(
+            &env.context,
+            "ssh",
+            &scoped_addr,
+            &ssh_keys,
+            &SshConfig::default(),
+        )
+        .await;
         assert!(matches!(
             res,
             Err(ManageSshControlMasterError::SpawnError(

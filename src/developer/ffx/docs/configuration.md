@@ -246,6 +246,10 @@ ffx config env get
     |                                         | on the device where authorized_keys|
     |                                         | are served for ssh key             |
     |                                         | verification. Defaults to 9797     |
+    | `ssh.connect_timeout`                   | SSH ConnectTimeout (in seconds).   |
+    |                                         | Defaults to `20` seconds.          |
+    | `ssh.connection_attempts`               | SSH ConnectionAttempts.            |
+    |                                         | Defaults to `3`.                   |
     | `ssh.controlmaster.dir`                 | Directory for control sockets.     |
     |                                         | Defaults to                        |
     |                                         | `${XDG_RUNTIME_DIR}/ffx`.          |
