@@ -30,8 +30,8 @@ use starnix_core::vfs::{
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::{
-    AtomicMonotonicInstant, FileOpsCore, LockEqualOrBefore, Locked, Mutex, MutexGuard, RwLock,
-    RwLockReadGuard, RwLockWriteGuard, Unlocked,
+    AtomicMonotonicInstant, DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard,
+    LockEqualOrBefore, Locked, Mutex, MutexGuard, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{NANOS_PER_SECOND, duration_from_timespec, time_from_timespec};
@@ -617,7 +617,7 @@ impl FuseNode {
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
-        info: &RwLock<FsNodeInfo>,
+        info: &DynamicLockDepRwLock<FsNodeInfo>,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
         let info = self.refresh_expired_node_attributes(locked, current_task, info)?;
@@ -628,8 +628,8 @@ impl FuseNode {
         &self,
         locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        info: &'a RwLock<FsNodeInfo>,
-    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
         // Relaxed because the attributes valid until atomic is not used to synchronize
         // anything. Its final access is protected by the info lock anyways.
         const VALID_UNTIL_LOAD_ORDERING: Ordering = Ordering::Relaxed;
@@ -662,8 +662,8 @@ impl FuseNode {
         &self,
         locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        info: &'a RwLock<FsNodeInfo>,
-    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
         let response = self.connection.lock().execute_operation(
             locked,
             current_task,
@@ -683,7 +683,7 @@ impl FuseNode {
             attr_valid_to_duration(attr_valid, attr_valid_nsec)?,
             &self.attributes_valid_until,
         )?;
-        Ok(RwLockWriteGuard::downgrade(info))
+        Ok(LockDepWriteGuard::downgrade(info))
     }
 
     fn invalidate_attributes(&self) {
@@ -1209,7 +1209,7 @@ impl FsNodeOps for FuseNode {
         node: &FsNode,
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
-        info: &RwLock<FsNodeInfo>,
+        info: &DynamicLockDepRwLock<FsNodeInfo>,
         reason: CheckAccessReason,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
@@ -1572,8 +1572,8 @@ impl FsNodeOps for FuseNode {
         locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         current_task: &CurrentTask,
-        info: &'a RwLock<FsNodeInfo>,
-    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
         // NOTE: Do not be tempted to always refresh information here; sadly, there are CTS tests
         // that rely on this only updating attributes if they have expired, and this matches what
         // Linux appears to do.

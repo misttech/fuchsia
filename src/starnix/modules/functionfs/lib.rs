@@ -581,21 +581,22 @@ impl FsNodeOps for FunctionFsRootDir {
         name: &FsStr,
     ) -> Result<starnix_core::vfs::FsNodeHandle, Errno> {
         let name = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
+        let cred = node.info().cred();
         match name {
             CONTROL_ENDPOINT => Ok(node.fs().create_node(
                 CONTROL_ENDPOINT_NODE_ID,
                 FunctionFsControlEndpoint,
-                FsNodeInfo::new(mode!(IFREG, 0o600), node.info().cred()),
+                FsNodeInfo::new(mode!(IFREG, 0o600), cred),
             )),
             OUTPUT_ENDPOINT => Ok(node.fs().create_node(
                 OUTPUT_ENDPOINT_NODE_ID,
                 FunctionFsOutputEndpoint,
-                FsNodeInfo::new(mode!(IFREG, 0o600), node.info().cred()),
+                FsNodeInfo::new(mode!(IFREG, 0o600), cred),
             )),
             INPUT_ENDPOINT => Ok(node.fs().create_node(
                 INPUT_ENDPOINT_NODE_ID,
                 FunctionFsInputEndpoint,
-                FsNodeInfo::new(mode!(IFREG, 0o600), node.info().cred()),
+                FsNodeInfo::new(mode!(IFREG, 0o600), cred),
             )),
             _ => error!(ENOENT),
         }

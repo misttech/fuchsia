@@ -14,9 +14,9 @@ use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard, RwQueueWriteGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
     DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps, FileSystem,
-    FileSystemHandle, FileWriteGuardState, FsStr, FsString, MAX_LFS_FILESIZE, MountInfo,
-    NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks, WeakFileHandle,
-    checked_add_offset_and_length, inotify,
+    FileSystemHandle, FileWriteGuardState, FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE,
+    MountInfo, NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks,
+    WeakFileHandle, checked_add_offset_and_length, inotify,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -27,8 +27,9 @@ use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
-    BeforeFsNodeAppend, FileOpsCore, FsNodeAppend, LockEqualOrBefore, Locked, Mutex, RwLock,
-    RwLockReadGuard, Unlocked,
+    BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, FsNodeInfoLevel,
+    FsNodeInfoRecursiveLevel, FuseFsNodeInfoLevel, LockDepReadGuard, LockEqualOrBefore, Locked,
+    Mutex, Unlocked,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
@@ -104,7 +105,7 @@ pub struct FsNode {
     /// Mutable information about this node.
     ///
     /// This data is used to populate the uapi::stat structure.
-    info: RwLock<FsNodeInfo>,
+    info: DynamicLockDepRwLock<FsNodeInfo>,
 
     /// Data associated with an FsNode that is rarely needed.
     rare_data: OnceLock<Box<FsNodeRareData>>,
@@ -565,7 +566,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         node: &FsNode,
         current_task: &CurrentTask,
         access: security::PermissionFlags,
-        info: &RwLock<FsNodeInfo>,
+        info: &DynamicLockDepRwLock<FsNodeInfo>,
         reason: CheckAccessReason,
         audit_context: security::Auditable<'_>,
     ) -> Result<(), Errno> {
@@ -782,8 +783,8 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
         _current_task: &CurrentTask,
-        info: &'a RwLock<FsNodeInfo>,
-    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
+        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
         Ok(info.read())
     }
 
@@ -946,7 +947,7 @@ macro_rules! fs_node_impl_dir_readonly {
             node: &$crate::vfs::FsNode,
             current_task: &$crate::task::CurrentTask,
             permission_flags: $crate::security::PermissionFlags,
-            info: &starnix_sync::RwLock<$crate::vfs::FsNodeInfo>,
+            info: &starnix_sync::DynamicLockDepRwLock<$crate::vfs::FsNodeInfo>,
             reason: $crate::vfs::CheckAccessReason,
             audit_context: $crate::security::Auditable<'_>,
         ) -> Result<(), starnix_uapi::errors::Errno> {
@@ -1243,10 +1244,15 @@ impl FsNode {
         flags: FsNodeFlags,
     ) -> Self {
         // Allow the FsNodeOps to populate initial info.
-        let info = {
-            let mut info = info;
-            ops.initial_info(&mut info);
-            info
+        let mut info = info;
+        ops.initial_info(&mut info);
+
+        let fs_lockdep_type =
+            fs.upgrade().map(|fs| fs.fs_lockdep_type()).unwrap_or(FsLockDepType::Normal);
+        let info_lock = match fs_lockdep_type {
+            FsLockDepType::Normal => DynamicLockDepRwLock::new::<FsNodeInfoLevel>(info),
+            FsLockDepType::Fuse => DynamicLockDepRwLock::new::<FuseFsNodeInfoLevel>(info),
+            FsLockDepType::Recursive => DynamicLockDepRwLock::new::<FsNodeInfoRecursiveLevel>(info),
         };
 
         // The linter will fail in non test mode as it will not see the lock check.
@@ -1257,7 +1263,7 @@ impl FsNode {
                 flags,
                 ops,
                 fs,
-                info: RwLock::new(info),
+                info: info_lock,
                 append_lock: Default::default(),
                 rare_data: Default::default(),
                 write_guard_state: Default::default(),
@@ -1965,7 +1971,7 @@ impl FsNode {
         current_task: &CurrentTask,
         permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
-        info: RwLockReadGuard<'_, FsNodeInfo>,
+        info: LockDepReadGuard<'_, FsNodeInfo>,
         audit_context: Auditable<'_>,
     ) -> Result<(), Errno> {
         let (node_uid, node_gid, mode) = (info.uid, info.gid, info.mode);
@@ -2572,7 +2578,7 @@ impl FsNode {
     }
 
     /// Returns current `FsNodeInfo`.
-    pub fn info(&self) -> RwLockReadGuard<'_, FsNodeInfo> {
+    pub fn info(&self) -> LockDepReadGuard<'_, FsNodeInfo> {
         self.info.read()
     }
 
@@ -2581,7 +2587,7 @@ impl FsNode {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
-    ) -> Result<RwLockReadGuard<'_, FsNodeInfo>, Errno>
+    ) -> Result<LockDepReadGuard<'_, FsNodeInfo>, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
