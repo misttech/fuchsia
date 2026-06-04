@@ -31,6 +31,7 @@ def _codegen_impl(ctx):
         inputs = [bind_source],
         outputs = [header],
         mnemonic = "BindcGenCc",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     return [

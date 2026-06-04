@@ -504,6 +504,7 @@ def _build_fuchsia_package_impl(ctx):
         ],
         mnemonic = "FuchsiaFfxPackageBuild",
         progress_message = "Building package for %s" % ctx.label,
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     artifact_inputs = [r.src for r in package_resources] + [
@@ -528,6 +529,7 @@ def _build_fuchsia_package_impl(ctx):
         outputs = [far_file, ffx_isolate_archive_dir],
         mnemonic = "FuchsiaFfxPackageArchiveCreate",
         progress_message = "Archiving package for %{label}",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     output_files = [

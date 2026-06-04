@@ -54,6 +54,7 @@ def _fidl_impl(context):
         inputs = inputs,
         outputs = [ir],
         mnemonic = "Fidlc",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     return [

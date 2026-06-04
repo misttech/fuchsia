@@ -66,6 +66,7 @@ def _fuchsia_driver_bind_bytecode_impl(ctx):
             ctx.outputs.output,
         ],
         mnemonic = "Bindcbc",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
     return [
         FuchsiaPackageResourcesInfo(

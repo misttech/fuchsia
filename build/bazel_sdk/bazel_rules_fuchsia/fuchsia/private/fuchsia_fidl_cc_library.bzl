@@ -152,6 +152,7 @@ def _codegen_impl(ctx):
         inputs = [ir],
         outputs = headers + sources,
         mnemonic = "FidlGenCc",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     return [

@@ -92,6 +92,7 @@ def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
             ],
             outputs = [manifest_merged],
             mnemonic = "CmcMergeManifests",
+            toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
         )
         manifest_in = manifest_merged
 
@@ -128,6 +129,7 @@ def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
             manifest_out,
         ],
         mnemonic = "CmcCompile",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     return [

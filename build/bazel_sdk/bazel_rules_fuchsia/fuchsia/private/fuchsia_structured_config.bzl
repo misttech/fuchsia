@@ -45,6 +45,7 @@ def _cvf_impl(ctx):
         inputs = [ctx.file.cm_label, ctx.file.value_file],
         outputs = [compiled_output],
         mnemonic = "ConfigcCVF",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     resources = [
@@ -109,6 +110,7 @@ def _fidl_config_client_lib_source_impl(ctx):
         inputs = [ctx.file.cm_label, sdk.fidl_format],
         outputs = [source_file],
         mnemonic = "FidlClientLibSource",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
     return DefaultInfo(files = depset([source_file]))
 
@@ -163,6 +165,7 @@ def _cpp_config_client_lib_source_impl(ctx):
         inputs = [ctx.file.cm_label, ctx.executable._clang_format],
         outputs = [h_source_file, cc_source_file],
         mnemonic = "ConfigcClientLibSource",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
     return DefaultInfo(files = depset([h_source_file, cc_source_file]))
 

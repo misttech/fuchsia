@@ -33,6 +33,7 @@ def _bindlibgen_impl(ctx):
         inputs = [ir],
         outputs = [bindlib],
         mnemonic = "FidlGenBindlib",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
     )
 
     return [

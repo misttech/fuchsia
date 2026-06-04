@@ -124,6 +124,7 @@ def _pack_prebuilt_package_impl(ctx):
         outputs = [far_file, ffx_isolate_dir],
         mnemonic = "FuchsiaFfxPackageArchiveCreate",
         progress_message = "Archiving package for %{label}",
+        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
         **LOCAL_ONLY_ACTION_KWARGS
     )
 
