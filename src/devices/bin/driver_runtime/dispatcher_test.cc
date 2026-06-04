@@ -3300,8 +3300,7 @@ TEST_F(DispatcherTest, MaximumThreads) {
 
     ASSERT_EQ(1, driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads());
 
-    constexpr uint32_t kNumDispatchers =
-        driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit;
+    constexpr uint32_t kNumDispatchers = driver_runtime::ThreadPool::kDefaultThreadLimit;
 
     ASSERT_EQ(kNumDispatchers,
               driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit());
@@ -3333,7 +3332,7 @@ TEST_F(DispatcherTest, MaximumThreads) {
 }
 
 TEST_F(DispatcherTest, GetDefaultThreadPoolSize) {
-  ASSERT_EQ(driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit,
+  ASSERT_EQ(driver_runtime::ThreadPool::kDefaultThreadLimit,
             driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit());
 }
 

@@ -42,7 +42,7 @@ void DispatcherCoordinator::WaitUntilDispatchersDestroyed() {
 
 // static
 zx_status_t DispatcherCoordinator::TestingRun(zx::time deadline, bool once) {
-  std::optional<Dispatcher::ThreadPool>& unmanaged_thread_pool =
+  std::optional<ThreadPool>& unmanaged_thread_pool =
       GetDispatcherCoordinator().unmanaged_thread_pool_;
   if (unmanaged_thread_pool.has_value()) {
     return unmanaged_thread_pool.value().loop()->Run(deadline, once);
@@ -53,7 +53,7 @@ zx_status_t DispatcherCoordinator::TestingRun(zx::time deadline, bool once) {
 
 // static
 zx_status_t DispatcherCoordinator::TestingRunUntilIdle() {
-  std::optional<Dispatcher::ThreadPool>& unmanaged_thread_pool =
+  std::optional<ThreadPool>& unmanaged_thread_pool =
       GetDispatcherCoordinator().unmanaged_thread_pool_;
   if (unmanaged_thread_pool.has_value()) {
     return unmanaged_thread_pool.value().loop()->RunUntilIdle();
@@ -64,7 +64,7 @@ zx_status_t DispatcherCoordinator::TestingRunUntilIdle() {
 
 // static
 void DispatcherCoordinator::TestingQuit() {
-  std::optional<Dispatcher::ThreadPool>& unmanaged_thread_pool =
+  std::optional<ThreadPool>& unmanaged_thread_pool =
       GetDispatcherCoordinator().unmanaged_thread_pool_;
   if (unmanaged_thread_pool.has_value()) {
     unmanaged_thread_pool.value().loop()->Quit();
@@ -73,7 +73,7 @@ void DispatcherCoordinator::TestingQuit() {
 
 // static
 zx_status_t DispatcherCoordinator::TestingResetQuit() {
-  std::optional<Dispatcher::ThreadPool>& unmanaged_thread_pool =
+  std::optional<ThreadPool>& unmanaged_thread_pool =
       GetDispatcherCoordinator().unmanaged_thread_pool_;
   if (unmanaged_thread_pool.has_value()) {
     return unmanaged_thread_pool.value().loop()->ResetQuit();
@@ -253,8 +253,8 @@ zx_status_t DispatcherCoordinator::AddDispatcher(
     std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
   fbl::AutoLock lock(&lock_);
 
-  Dispatcher::ThreadPool* thread_pool = default_thread_pool();
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+  ThreadPool* thread_pool = default_thread_pool();
+  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
     auto result = GetOrCreateThreadPoolLocked(scheduler_role);
     if (result.is_error()) {
       return result.status_value();
@@ -285,7 +285,7 @@ zx_status_t DispatcherCoordinator::AddDispatcher(
     return status;
   }
 
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole && dispatchers_before == 0) {
+  if (scheduler_role != ThreadPool::kNoSchedulerRole && dispatchers_before == 0) {
     status = async::PostTask(thread_pool->loop()->dispatcher(), [dispatcher]() mutable {
       // Each thread in the thread pool will check whether it needs to set the scheduler
       // role when it wakes up. If this is the first dispatcher, we might as well
@@ -311,7 +311,7 @@ zx_status_t DispatcherCoordinator::AddUnmanagedDispatcher(
 }
 
 zx_status_t DispatcherCoordinator::RegisterDispatcherLocked(
-    fbl::RefPtr<Dispatcher> dispatcher, Dispatcher::ThreadPool* thread_pool,
+    fbl::RefPtr<Dispatcher> dispatcher, ThreadPool* thread_pool,
     std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
   auto driver_state = drivers_.find(dispatcher->owner());
   if (driver_state == drivers_.end()) {
@@ -355,10 +355,10 @@ uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) 
   fbl::AutoLock lock(&coordinator.lock_);
 
   auto thread_pool = coordinator.default_thread_pool();
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
     auto iter = coordinator.role_to_thread_pool_.find(std::string(scheduler_role));
     if (iter == coordinator.role_to_thread_pool_.end()) {
-      return Dispatcher::ThreadPool::kDefaultThreadLimit;
+      return ThreadPool::kDefaultThreadLimit;
     }
     thread_pool = &(*iter);
   }
@@ -372,7 +372,7 @@ zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_rol
   fbl::AutoLock lock(&coordinator.lock_);
 
   auto thread_pool = coordinator.default_thread_pool();
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
     auto result = coordinator.GetOrCreateThreadPoolLocked(scheduler_role);
     if (result.is_error()) {
       return result.error_value();
@@ -388,7 +388,7 @@ uint32_t DispatcherCoordinator::GetSchedulerRoleOpts(std::string_view scheduler_
   fbl::AutoLock lock(&coordinator.lock_);
 
   auto thread_pool = coordinator.default_thread_pool();
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
     auto iter = coordinator.role_to_thread_pool_.find(std::string(scheduler_role));
     if (iter == coordinator.role_to_thread_pool_.end()) {
       return 0;
@@ -405,7 +405,7 @@ zx_status_t DispatcherCoordinator::SetSchedulerRoleOpts(std::string_view schedul
   fbl::AutoLock lock(&coordinator.lock_);
 
   auto thread_pool = coordinator.default_thread_pool();
-  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
     auto result = coordinator.GetOrCreateThreadPoolLocked(scheduler_role);
     if (result.is_error()) {
       return result.error_value();
@@ -573,8 +573,7 @@ void DispatcherCoordinator::Reset() {
   options_ = 0;
 }
 
-std::optional<Dispatcher::ThreadPool*> DispatcherCoordinator::GetThreadPool(
-    std::string_view scheduler_role) {
+std::optional<ThreadPool*> DispatcherCoordinator::GetThreadPool(std::string_view scheduler_role) {
   fbl::AutoLock al(&lock_);
   auto iter = role_to_thread_pool_.find(std::string(scheduler_role));
   if (iter != role_to_thread_pool_.end()) {
@@ -583,13 +582,13 @@ std::optional<Dispatcher::ThreadPool*> DispatcherCoordinator::GetThreadPool(
   return std::nullopt;
 }
 
-zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool(
+zx::result<ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool(
     std::string_view scheduler_role) {
   fbl::AutoLock al(&lock_);
   return GetOrCreateThreadPoolLocked(scheduler_role);
 }
 
-zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPoolLocked(
+zx::result<ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPoolLocked(
     std::string_view scheduler_role) {
   auto iter = role_to_thread_pool_.find(std::string(scheduler_role));
   if (iter != role_to_thread_pool_.end()) {
@@ -600,7 +599,7 @@ zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
 
-  auto thread_pool = std::make_unique<Dispatcher::ThreadPool>(scheduler_role);
+  auto thread_pool = std::make_unique<ThreadPool>(scheduler_role);
   zx_status_t status = thread_pool->AddThread();
   if (status != ZX_OK) {
     return zx::error(status);
@@ -610,7 +609,7 @@ zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool
   return zx::ok(thread_pool_ptr);
 }
 
-void DispatcherCoordinator::DestroyThreadPool(Dispatcher::ThreadPool* thread_pool) {
+void DispatcherCoordinator::DestroyThreadPool(ThreadPool* thread_pool) {
   if (thread_pool == default_thread_pool()) {
     return;
   }
@@ -621,8 +620,7 @@ void DispatcherCoordinator::DestroyThreadPool(Dispatcher::ThreadPool* thread_poo
 
   // We should immediately remove the thread pool from the coordinator
   // map, so that a new driver doesn't try to use a destructing thread pool.
-  std::unique_ptr<Dispatcher::ThreadPool> owned_thread_pool =
-      role_to_thread_pool_.erase(*thread_pool);
+  std::unique_ptr<ThreadPool> owned_thread_pool = role_to_thread_pool_.erase(*thread_pool);
   ZX_ASSERT(owned_thread_pool != nullptr);
 
   // Ensure we are running on a default thread pool thread.

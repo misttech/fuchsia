@@ -33,6 +33,7 @@ source_set("driver_runtime_impl") {
     "handle.cc",
     "message_packet.cc",
     "thread_context.cc",
+    "thread_pool.cc",
     "token_manager.cc",
   ]
   public_configs = [ ":include" ]

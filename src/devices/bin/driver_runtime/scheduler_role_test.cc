@@ -151,8 +151,7 @@ class MultipleDispatchersThreadPoolTest : public RuntimeTestCase {
   zx::result<fdf::Unowned<fdf::SynchronizedDispatcher>> CreateTestDispatcher(
       std::string_view scheduler_role, fdf::SynchronizedDispatcher::Options options);
 
-  driver_runtime::Dispatcher::ThreadPool* GetThreadPool(
-      fdf::Unowned<fdf::SynchronizedDispatcher>& dispatcher) {
+  driver_runtime::ThreadPool* GetThreadPool(fdf::Unowned<fdf::SynchronizedDispatcher>& dispatcher) {
     return dispatcher->get()->GetDispatcher()->thread_pool();
   }
 
@@ -206,7 +205,7 @@ TEST_F(MultipleDispatchersThreadPoolTest, ManyDispatchers) {
   constexpr std::string_view kBadSchedulerRole = "fuchsia.test-role:not-found";
   constexpr uint32_t kNumDispatchers = 5;
 
-  driver_runtime::Dispatcher::ThreadPool* want_thread_pool = nullptr;
+  driver_runtime::ThreadPool* want_thread_pool = nullptr;
 
   for (uint32_t i = 0; i < kNumDispatchers; i++) {
     auto dispatcher = CreateTestDispatcher(kSchedulerRole, {});

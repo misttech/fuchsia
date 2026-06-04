@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_COORDINATOR_H_
 
 #include "dispatcher.h"
+#include "thread_pool.h"
 #include "token_manager.h"
 
 namespace driver_runtime {
@@ -80,19 +81,19 @@ class DispatcherCoordinator {
   void Reset();
 
   // Returns the thread pool for |scheduler_role| if it exists.
-  std::optional<Dispatcher::ThreadPool*> GetThreadPool(std::string_view scheduler_role);
+  std::optional<ThreadPool*> GetThreadPool(std::string_view scheduler_role);
   // Returns the thread pool for |scheduler_role|.
   // If the thread pool does not exists, creates the thread pool and starts the initial thread.
-  zx::result<Dispatcher::ThreadPool*> GetOrCreateThreadPool(std::string_view scheduler_role);
+  zx::result<ThreadPool*> GetOrCreateThreadPool(std::string_view scheduler_role);
   // This will schedule the thread pool to be deleted on a thread on the default thread pool.
-  void DestroyThreadPool(Dispatcher::ThreadPool* thread_pool) __TA_REQUIRES(&lock_);
+  void DestroyThreadPool(ThreadPool* thread_pool) __TA_REQUIRES(&lock_);
 
-  Dispatcher::ThreadPool* default_thread_pool() { return &default_thread_pool_; }
+  ThreadPool* default_thread_pool() { return &default_thread_pool_; }
 
   // Returns the unmanaged thread pool. Creates it first if it doesn't exist.
-  Dispatcher::ThreadPool* GetOrCreateUnmanagedThreadPool() {
+  ThreadPool* GetOrCreateUnmanagedThreadPool() {
     if (!unmanaged_thread_pool_.has_value()) {
-      unmanaged_thread_pool_.emplace(Dispatcher::ThreadPool::kNoSchedulerRole, /*unmanaged*/ true);
+      unmanaged_thread_pool_.emplace(ThreadPool::kNoSchedulerRole, /*unmanaged*/ true);
     }
 
     return &unmanaged_thread_pool_.value();
@@ -220,19 +221,17 @@ class DispatcherCoordinator {
   fbl::ConditionVariable drivers_destroyed_event_ __TA_GUARDED(&lock_);
 
   // Thread pools which have scheduler roles.
-  fbl::WAVLTree<std::string, std::unique_ptr<Dispatcher::ThreadPool>> role_to_thread_pool_
-      __TA_GUARDED(&lock_);
+  fbl::WAVLTree<std::string, std::unique_ptr<ThreadPool>> role_to_thread_pool_ __TA_GUARDED(&lock_);
   // Thread pool which has no scheduler role applied.
   // This must come after |role_thread_pools_|, so that we shutdown the loop first,
   // in case we have any scheduled tasks to delete thread pools.
-  Dispatcher::ThreadPool default_thread_pool_;
+  ThreadPool default_thread_pool_;
   // Thread pool that is not managed.
-  std::optional<Dispatcher::ThreadPool> unmanaged_thread_pool_;
-  zx::result<Dispatcher::ThreadPool*> GetOrCreateThreadPoolLocked(std::string_view scheduler_role)
+  std::optional<ThreadPool> unmanaged_thread_pool_;
+  zx::result<ThreadPool*> GetOrCreateThreadPoolLocked(std::string_view scheduler_role)
       __TA_REQUIRES(&lock_);
 
-  zx_status_t RegisterDispatcherLocked(fbl::RefPtr<Dispatcher> dispatcher,
-                                       Dispatcher::ThreadPool* thread_pool,
+  zx_status_t RegisterDispatcherLocked(fbl::RefPtr<Dispatcher> dispatcher, ThreadPool* thread_pool,
                                        std::unique_ptr<Dispatcher::EventWaiter> event_waiter)
       __TA_REQUIRES(&lock_);
 
