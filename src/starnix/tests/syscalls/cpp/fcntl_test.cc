@@ -347,4 +347,33 @@ TEST_F(FcntlTest, SetOwnExPidZeroPreservesType) {
   close(fd);
 }
 
+#ifndef F_GETOWN_EX
+#define F_GETOWN_EX 16
+#endif
+
+#ifndef F_OWNER_TID
+#define F_OWNER_TID 0
+#endif
+
+struct my_f_owner_ex {
+  int type;
+  pid_t pid;
+};
+
+TEST_F(FcntlTest, GetOwnExDefault) {
+  int fd = OpenTestFile();
+  ASSERT_GE(fd, 0);
+
+  struct my_f_owner_ex owner;
+  // Initialize with non-zero values to make sure they are overwritten.
+  owner.type = -1;
+  owner.pid = -1;
+
+  ASSERT_THAT(fcntl(fd, F_GETOWN_EX, &owner), SyscallSucceeds());
+
+  EXPECT_EQ(owner.type, F_OWNER_TID);
+  EXPECT_EQ(owner.pid, 0);
+
+  close(fd);
+}
 }  // namespace
