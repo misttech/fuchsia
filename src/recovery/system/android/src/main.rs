@@ -117,6 +117,7 @@ struct RecoveryViewAssistant {
     svc_dir: Arc<vfs::directory::simple::Simple>,
     main_menu_items: &'static [menu::MenuItem],
     main_menu_message: Option<String>,
+    show_text: bool,
 }
 
 impl RecoveryViewAssistant {
@@ -157,6 +158,7 @@ impl RecoveryViewAssistant {
             svc_dir,
             main_menu_items: menu::MAIN_MENU,
             main_menu_message: None,
+            show_text: true,
         };
 
         // *NOTE*: Handling recovery actions may trigger immediate action without user intervention
@@ -231,6 +233,25 @@ impl ViewAssistant for RecoveryViewAssistant {
         Some(self.scene.get_or_insert_with(|| {
             let mut builder =
                 SceneBuilder::new().background_color(BG_COLOR).round_scene_corners(true);
+            if !self.show_text {
+                if let Some(message) = &self.message {
+                    builder.group().stack().expand().center().contents(|builder| {
+                        builder.text(
+                            self.font_face.clone(),
+                            message.as_str(),
+                            28.0,
+                            Point::zero(),
+                            TextFacetOptions {
+                                color: Color::white(),
+                                horizontal_alignment: TextHorizontalAlignment::Center,
+                                ..TextFacetOptions::default()
+                            },
+                        );
+                    });
+                }
+                return builder.build();
+            }
+
             builder.group().column().max_size().main_align(MainAxisAlignment::Start).contents(
                 |builder| {
                     if let Some(logo_file) = &self.logo_file {
@@ -265,8 +286,6 @@ impl ViewAssistant for RecoveryViewAssistant {
                             ..TextFacetOptions::default()
                         },
                     );
-
-                    builder.space(size2(size.width, 10.0));
 
                     builder
                         .group()
@@ -410,7 +429,7 @@ impl ViewAssistant for RecoveryViewAssistant {
         _event: &input::Event,
         mouse_event: &input::mouse::Event,
     ) -> Result<(), Error> {
-        if self.logs.is_some() {
+        if self.logs.is_some() || !self.show_text {
             return Ok(());
         }
         match mouse_event.phase {
@@ -435,7 +454,7 @@ impl ViewAssistant for RecoveryViewAssistant {
         _event: &input::Event,
         touch_event: &input::touch::Event,
     ) -> Result<(), Error> {
-        if self.logs.is_some() {
+        if self.logs.is_some() || !self.show_text {
             return Ok(());
         }
         match *touch_event.contacts {
@@ -499,6 +518,9 @@ impl ViewAssistant for RecoveryViewAssistant {
         _event: &input::Event,
         consumer_control_event: &input::consumer_control::Event,
     ) -> Result<(), Error> {
+        if !self.show_text {
+            return Ok(());
+        }
         if self.logs.is_some() {
             if self.waiting_for_confirmation
                 && consumer_control_event.phase == input::consumer_control::Phase::Up
@@ -655,6 +677,8 @@ impl RecoveryActionHandler for RecoveryViewAssistant {
     fn wipe_data(&mut self) {
         // We immediately start the wipe data flow in this case without user intervention.
         log::info!("Starting factory data reset...");
+        self.show_text = false;
+        self.message = Some("Erasing".to_string());
         self.handle_message(carnelian::make_message(RecoveryMessages::WipeData))
     }
 
