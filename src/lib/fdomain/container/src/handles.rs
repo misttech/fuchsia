@@ -107,9 +107,30 @@ impl HandleType for fidl::Socket {
     }
 
     fn read_socket(&self, max_bytes: u64) -> Result<Option<Vec<u8>>, proto::Error> {
-        let mut buf = vec![0u8; max_bytes as usize];
-        match self.read(&mut buf) {
+        let mut buf = Vec::with_capacity(max_bytes.try_into().unwrap_or(usize::MAX));
+        // SAFETY: We've derived this pointer and length from a vec in a way
+        // that should guarantee they are valid.
+        #[cfg(target_os = "fuchsia")]
+        let read = unsafe {
+            let buf_ptr = buf.spare_capacity_mut();
+            let max_bytes = buf_ptr.len();
+            let buf_ptr = buf_ptr.as_mut_ptr().cast::<u8>();
+            self.read_raw(buf_ptr, max_bytes)
+        };
+        #[cfg(not(target_os = "fuchsia"))]
+        let read = {
+            buf.resize(max_bytes.try_into().unwrap_or(usize::MAX), 0);
+            self.read(&mut buf)
+        };
+        match read {
             Ok(size) => {
+                // SAFETY: The `read_raw` call should guarantee that this many
+                // bytes in the capacity have now been initialized.
+                #[cfg(target_os = "fuchsia")]
+                unsafe {
+                    buf.set_len(size);
+                }
+                #[cfg(not(target_os = "fuchsia"))]
                 buf.truncate(size);
                 Ok(Some(buf))
             }
