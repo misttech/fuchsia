@@ -13,7 +13,7 @@ use core::ops::RangeInclusive;
 
 use bitflags::bitflags;
 use derivative::Derivative;
-use net_types::ip::{IpAddr, IpAddress, Ipv4Addr, Ipv6Addr, Subnet};
+use net_types::ip::{Ip, IpAddr, IpAddress, Ipv4Addr, Ipv6Addr, Subnet};
 
 use crate::{InspectableValue, Inspector, Mark, MarkDomain, MarkStorage, Marks};
 
@@ -607,6 +607,16 @@ pub struct AddressMatcher<A: IpAddress> {
     /// if the matcher criteria do *not* apply, it *is* considered a match, and
     /// vice versa).
     pub invert: bool,
+}
+
+impl<A: IpAddress> AddressMatcher<A> {
+    /// Creates a matcher that matches all IP addresses.
+    pub fn match_all() -> Self {
+        Self {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(A::Version::ALL_ADDRS_SUBNET)),
+            invert: false,
+        }
+    }
 }
 
 impl<A: IpAddress> InspectableValue for AddressMatcher<A> {

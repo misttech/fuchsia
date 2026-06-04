@@ -91,7 +91,7 @@ pub(crate) struct Matcher<S> {
 }
 
 impl Matcher<NoState> {
-    fn new(fidl_def: Matchers) -> Self {
+    pub(crate) fn new(fidl_def: Matchers) -> Self {
         Matcher { ebpf_program: None, fidl_def, state: NoState }
     }
 }

@@ -2444,3 +2444,88 @@ async fn local_traffic_skips_forwarding<I: RouterTestIpExt, M: MatcherDefinition
 }
 
 generate_test_cases_for_all_matchers!(local_traffic_skips_forwarding);
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn inverted_ip_matcher_matches_other_ip_version<I: TestIpExt>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let network = sandbox.create_network("net").await.expect("create network");
+
+    let mut net = TestNet::new::<I>(
+        &sandbox,
+        &network,
+        &name,
+        Some(IpHook::Ingress),
+        None, /* nat_hook */
+    )
+    .await;
+
+    // Send from the client to server and back; assert that we have two-way
+    // connectivity when no filtering has been configured.
+    let _handles = net.run_test::<I, UdpSocket>(ExpectedConnectivity::TwoWay).await;
+
+    // Matcher that uses the other IP version's subnet, with invert = true.
+    #[derive(Clone, Copy, Debug)]
+    struct MismatchedIpInvertedSrcAddressSubnet;
+
+    impl MatcherDefinition for MismatchedIpInvertedSrcAddressSubnet {
+        type State = crate::matchers::NoState;
+        type SocketType = UdpSocket;
+
+        async fn create_matcher<IpGeneric: Ip>(
+            &self,
+            _interfaces: Interfaces<'_>,
+            _subnets: Subnets,
+            _ports: Ports,
+        ) -> Matcher<crate::matchers::NoState> {
+            let other_ip_subnet = match IpGeneric::VERSION {
+                IpVersion::V4 => {
+                    fidl_subnet!("2001:db8::/32")
+                }
+                IpVersion::V6 => {
+                    fidl_subnet!("192.0.2.0/24")
+                }
+            };
+
+            Matcher::new(Matchers {
+                src_addr: Some(fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                        other_ip_subnet.try_into().expect("subnet should be valid"),
+                    ),
+                    invert: true,
+                }),
+                ..Default::default()
+            })
+        }
+    }
+
+    // Prepend a rule that *drops* traffic using the mismatched inverted matcher
+    // on both client and server. Since the matcher has `invert: true` on the
+    // other IP version, it should match all packets of this IP version, and
+    // thus all traffic should be dropped.
+    let _handles = net
+        .run_test_with::<I, UdpSocket, _, _>(
+            ExpectedConnectivity::None,
+            |TestNet { client, server }, addrs, ()| {
+                Box::pin(async move {
+                    let _client_matcher = client
+                        .install_rule_for_incoming_traffic::<I, _>(
+                            HIGH_RULE_PRIORITY,
+                            &MismatchedIpInvertedSrcAddressSubnet,
+                            addrs.server_ports(),
+                            Action::Drop,
+                        )
+                        .await;
+                    let _server_matcher = server
+                        .install_rule_for_incoming_traffic::<I, _>(
+                            HIGH_RULE_PRIORITY,
+                            &MismatchedIpInvertedSrcAddressSubnet,
+                            addrs.client_ports(),
+                            Action::Drop,
+                        )
+                        .await;
+                })
+            },
+        )
+        .await;
+}

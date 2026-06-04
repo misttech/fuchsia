@@ -91,13 +91,35 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                 netstack3_core::ip::AddressMatcherEither::V4(matcher) => {
                     Wrap(Ok(ConversionResult::State(matcher)))
                 }
-                netstack3_core::ip::AddressMatcherEither::V6(_) => {
-                    Wrap(ip_version_strictness.mismatch_result())
+                netstack3_core::ip::AddressMatcherEither::V6(
+                    netstack3_core::ip::AddressMatcher { matcher: _, invert },
+                ) => {
+                    Wrap(match ip_version_strictness.mismatch_result() {
+                        Ok(_) if invert => {
+                            // A negative match on an IPv6 address should match
+                            // all IPv4 addresses.
+                            Ok(ConversionResult::State(
+                                netstack3_core::ip::AddressMatcher::match_all(),
+                            ))
+                        }
+                        mismatch => mismatch,
+                    })
                 }
             },
             |either_matcher| match either_matcher {
-                netstack3_core::ip::AddressMatcherEither::V4(_) => {
-                    Wrap(ip_version_strictness.mismatch_result())
+                netstack3_core::ip::AddressMatcherEither::V4(
+                    netstack3_core::ip::AddressMatcher { matcher: _, invert },
+                ) => {
+                    Wrap(match ip_version_strictness.mismatch_result() {
+                        Ok(_) if invert => {
+                            // A negative match on an IPv4 address should match
+                            // all IPv6 addresses.
+                            Ok(ConversionResult::State(
+                                netstack3_core::ip::AddressMatcher::match_all(),
+                            ))
+                        }
+                        mismatch => mismatch,
+                    })
                 }
                 netstack3_core::ip::AddressMatcherEither::V6(matcher) => {
                     Wrap(Ok(ConversionResult::State(matcher)))
