@@ -105,7 +105,8 @@ class ClientTest : public ::testing::Test {
         fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
     coordinator_client_end_ = std::move(coordinator_client_end);
 
-    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
+    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
+                        inspect::Inspector{});
 
     zx::result<> create_result = controller_->CreateClient(display::ClientPriority::kCompositor,
                                                            std::move(coordinator_server_end),

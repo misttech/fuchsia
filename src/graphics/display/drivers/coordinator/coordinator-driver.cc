@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/result.h>
 #include <zircon/types.h>
 
@@ -23,6 +24,9 @@ CoordinatorDriver::CoordinatorDriver()
 CoordinatorDriver::~CoordinatorDriver() = default;
 
 zx::result<> CoordinatorDriver::Start(fdf::DriverContext context) {
+  inspect::Inspector inspector;
+  inspect::ComponentInspector component_inspector = context.CreateInspector(this, inspector);
+
   std::shared_ptr<fdf::Namespace> incoming_ptr(context.take_incoming());
   auto create_engine_driver_client_result = EngineDriverClient::Create(incoming_ptr);
   if (create_engine_driver_client_result.is_error()) {
@@ -30,8 +34,9 @@ zx::result<> CoordinatorDriver::Start(fdf::DriverContext context) {
     return create_engine_driver_client_result.take_error();
   }
 
-  zx::result<std::unique_ptr<Controller>> create_controller_result = Controller::Create(
-      std::move(create_engine_driver_client_result).value(), driver_dispatcher()->borrow());
+  zx::result<std::unique_ptr<Controller>> create_controller_result =
+      Controller::Create(std::move(create_engine_driver_client_result).value(),
+                         driver_dispatcher()->borrow(), std::move(inspector));
   if (create_controller_result.is_error()) {
     fdf::error("Failed to create Controller: {}", create_controller_result);
     return create_controller_result.take_error();

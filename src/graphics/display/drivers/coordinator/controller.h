@@ -74,14 +74,15 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // `driver_dispatcher` must be shut down when `Stop()` is called.
   static zx::result<std::unique_ptr<Controller>> Create(
       std::unique_ptr<EngineDriverClient> engine_driver_client,
-      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+      fdf::UnownedSynchronizedDispatcher driver_dispatcher, inspect::Inspector inspector);
 
   // Creates a new coordinator Controller instance. It creates a new Inspector
   // which will be solely owned by the Controller instance.
   //
   // `engine_driver_client` must not be null.
   explicit Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
-                      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+                      fdf::UnownedSynchronizedDispatcher driver_dispatcher,
+                      inspect::Inspector inspector);
 
   Controller(const Controller&) = delete;
   Controller& operator=(const Controller&) = delete;

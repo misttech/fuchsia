@@ -37,7 +37,8 @@ class InspectTest : public ::testing::Test {
     auto [coordinator_client_end, coordinator_server_end] =
         fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
 
-    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
+    controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
+                        inspect::Inspector{});
   }
 
   void TearDown() override {
