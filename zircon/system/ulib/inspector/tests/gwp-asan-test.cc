@@ -9,7 +9,13 @@
 #include <lib/zx/exception.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
+#include <zircon/status.h>
 #include <zircon/syscalls/exception.h>
+
+#include <array>
+#include <sstream>
+#include <string>
+#include <variant>
 
 #include <gwp_asan/common.h>
 #include <zxtest/zxtest.h>
@@ -17,6 +23,46 @@
 namespace inspector {
 
 namespace {
+
+std::string GetErrorString(const GwpAsanError& error) {
+  return std::visit(
+      [](auto&& arg) -> std::string {
+        using T = std::decay_t<decltype(arg)>;
+        std::stringstream ss;
+
+        if constexpr (std::is_same_v<T, GwpAsanInfoAddressNotFound>) {
+          return "GWP-ASan info address not found (libc.so or GWP-ASan ELF note missing)";
+        } else if constexpr (std::is_same_v<T, LibcGwpAsanInfoReadFailed>) {
+          ss << "Failed to read LibcGwpAsanInfo at 0x" << std::hex << arg.libc_gwp_asan_info_addr
+             << " (status: " << zx_status_get_string(arg.status) << ", got " << std::dec
+             << arg.actual_size << " bytes)";
+          return ss.str();
+        } else if constexpr (std::is_same_v<T, AllocatorStateReadFailed>) {
+          ss << "Failed to read AllocatorState at 0x" << std::hex << arg.address
+             << " (status: " << zx_status_get_string(arg.status) << ", got " << std::dec
+             << arg.actual_size << " bytes)";
+          return ss.str();
+        } else if constexpr (std::is_same_v<T, ValidationFailed>) {
+          ss << "GWP-ASan validation failed. Magic: 0x" << std::hex << arg.magic[0] << arg.magic[1]
+             << arg.magic[2] << arg.magic[3] << std::dec << ", Version: " << arg.version
+             << ", MaxAllocations: " << arg.max_allocations;
+          return ss.str();
+        } else if constexpr (std::is_same_v<T, MetadataReadFailed>) {
+          ss << "Failed to read Metadata List at 0x" << std::hex << arg.address << std::dec
+             << " (status: " << zx_status_get_string(arg.status) << ", expected "
+             << arg.expected_size << " bytes, got " << arg.actual_size << ")";
+          return ss.str();
+        } else if constexpr (std::is_same_v<T, MetadataMappingFailed>) {
+          ss << "Failed to map faulting address 0x" << std::hex << arg.faulting_addr
+             << " to metadata";
+          return ss.str();
+        }
+        __builtin_unreachable();
+      },
+      error);
+}
+
+class GwpAsanTest : public zxtest::Test {};
 
 constexpr const char* kUseAfterFree = "/pkg/bin/gwp-asan-test-use-after-free";
 constexpr const char* kDoubleFreePath = "/pkg/bin/gwp-asan-test-double-free";
@@ -66,7 +112,7 @@ void launch_proc_and_wait_for_exception(const char* path, zx::job* test_job,
                             sizeof(zx_exception_report_t), nullptr, nullptr) != ZX_OK);
 }
 
-TEST(GwpAsanTest, GwpAsanException) {
+TEST_F(GwpAsanTest, GwpAsanException) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -78,14 +124,16 @@ TEST(GwpAsanTest, GwpAsanException) {
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "Failed to retrieve GWP-ASan crash info: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(gwp_asan::ErrorToString(gwp_asan::Error::USE_AFTER_FREE), info.error_type);
   ASSERT_GT(info.allocation_trace.size(), 3);
   ASSERT_GT(info.deallocation_trace.size(), 3);
 }
 
 // Tests that GWP-ASan ignores errors when the system runs out of memory.
-TEST(GwpAsanTest, GwpAsanOOMException) {
+TEST_F(GwpAsanTest, GwpAsanOOMException) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -102,12 +150,14 @@ TEST(GwpAsanTest, GwpAsanOOMException) {
   exception_report.context.synth_code = static_cast<uint32_t>(ZX_ERR_NO_MEMORY);
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "GWP-ASan OOM check failed: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(nullptr, info.error_type);
 }
 
 // TODO(https://fxbug.dev/42082446): Enable once the crash is correctly detected.
-TEST(GwpAsanTest, DISABLED_GwpAsanDoubleFree) {
+TEST_F(GwpAsanTest, DISABLED_GwpAsanDoubleFree) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -119,12 +169,14 @@ TEST(GwpAsanTest, DISABLED_GwpAsanDoubleFree) {
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "Failed to retrieve GWP-ASan crash info: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(gwp_asan::ErrorToString(gwp_asan::Error::DOUBLE_FREE), info.error_type);
 }
 
 // TODO(https://fxbug.dev/42082446): Enable once the crash is correctly detected.
-TEST(GwpAsanTest, DISABLED_GwpAsanInvalidFree) {
+TEST_F(GwpAsanTest, DISABLED_GwpAsanInvalidFree) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -136,11 +188,13 @@ TEST(GwpAsanTest, DISABLED_GwpAsanInvalidFree) {
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "Failed to retrieve GWP-ASan crash info: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(gwp_asan::ErrorToString(gwp_asan::Error::INVALID_FREE), info.error_type);
 }
 
-TEST(GwpAsanTest, GwpAsanBufferOverflow) {
+TEST_F(GwpAsanTest, GwpAsanBufferOverflow) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -153,11 +207,13 @@ TEST(GwpAsanTest, GwpAsanBufferOverflow) {
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "Failed to retrieve GWP-ASan crash info: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(gwp_asan::ErrorToString(gwp_asan::Error::BUFFER_OVERFLOW), info.error_type);
 }
 
-TEST(GwpAsanTest, GwpAsanBufferUnderflow) {
+TEST_F(GwpAsanTest, GwpAsanBufferUnderflow) {
   if constexpr (!HAS_GWP_ASAN) {
     return;
   }
@@ -170,7 +226,9 @@ TEST(GwpAsanTest, GwpAsanBufferUnderflow) {
   auto auto_call_kill_job = fit::defer([&test_job]() { test_job.kill(); });
 
   GwpAsanInfo info;
-  ASSERT_TRUE(inspector_get_gwp_asan_info(test_process, exception_report, &info));
+  auto result = inspector_get_gwp_asan_info(test_process, exception_report, &info);
+  ASSERT_TRUE(result.is_ok(), "Failed to retrieve GWP-ASan crash info: %s",
+              GetErrorString(result.error_value()).c_str());
   ASSERT_EQ(gwp_asan::ErrorToString(gwp_asan::Error::BUFFER_UNDERFLOW), info.error_type);
 }
 

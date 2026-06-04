@@ -134,7 +134,7 @@ zx::vmo GenerateMinidump(const zx::exception& exception,
   }
 
   inspector::GwpAsanInfo gwp_asan_info;
-  if (inspector::inspector_get_gwp_asan_info(process, report, &gwp_asan_info) &&
+  if (inspector::inspector_get_gwp_asan_info(process, report, &gwp_asan_info).is_ok() &&
       gwp_asan_info.error_type) {
     *gwp_asan_exception_type = gwp_asan_info.error_type;
   }

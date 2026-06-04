@@ -288,7 +288,8 @@ void print_exception_report(FILE* out, const zx_exception_report_t& report,
 void print_gwp_asan_info(FILE* out, const zx::process& process,
                          const zx_exception_report_t& exception_report) {
   inspector::GwpAsanInfo info;
-  if (inspector_get_gwp_asan_info(process, exception_report, &info) && info.error_type) {
+  if (inspector::inspector_get_gwp_asan_info(process, exception_report, &info).is_ok() &&
+      info.error_type) {
     fprintf(out, "GWP-ASan Error: %s at %#lx\n", info.error_type, info.faulting_addr);
     fprintf(out, "Allocated at %lu with size %lu here:\n", info.allocation_address,
             info.allocation_size);

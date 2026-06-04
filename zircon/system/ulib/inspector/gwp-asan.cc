@@ -16,8 +16,9 @@
 
 namespace inspector {
 
-bool inspector_get_gwp_asan_info(const zx::process& process,
-                                 const zx_exception_report_t& exception_report, GwpAsanInfo* info) {
+fit::result<GwpAsanError> inspector_get_gwp_asan_info(const zx::process& process,
+                                                      const zx_exception_report_t& exception_report,
+                                                      GwpAsanInfo* info) {
   // The address of __libc_gwp_asan_info.
   uint64_t libc_gwp_asan_info_addr = 0;
 
@@ -26,7 +27,7 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
   if (exception_report.header.type == ZX_EXCP_FATAL_PAGE_FAULT &&
       static_cast<zx_status_t>(exception_report.context.synth_code) == ZX_ERR_NO_MEMORY) {
     info->error_type = nullptr;
-    return true;
+    return fit::ok();
   }
 
   // Find the GWP-ASan note.
@@ -65,24 +66,32 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
   });
 
   if (!libc_gwp_asan_info_addr) {
-    return false;
+    return fit::error(GwpAsanInfoAddressNotFound{});
   }
 
   // Read the __libc_gwp_asan_info.
   gwp_asan::LibcGwpAsanInfo libc_gwp_asan_info;
   size_t actual;
-  if (process.read_memory(libc_gwp_asan_info_addr, &libc_gwp_asan_info, sizeof(libc_gwp_asan_info),
-                          &actual) != ZX_OK ||
-      actual != sizeof(libc_gwp_asan_info)) {
-    return false;
+  zx_status_t status = process.read_memory(libc_gwp_asan_info_addr, &libc_gwp_asan_info,
+                                           sizeof(libc_gwp_asan_info), &actual);
+  if (status != ZX_OK || actual != sizeof(libc_gwp_asan_info)) {
+    return fit::error(LibcGwpAsanInfoReadFailed{
+        .status = status,
+        .libc_gwp_asan_info_addr = libc_gwp_asan_info_addr,
+        .actual_size = actual,
+    });
   }
 
   // Read the allocator state.
   gwp_asan::AllocatorState state;
-  if (process.read_memory(reinterpret_cast<uintptr_t>(libc_gwp_asan_info.state), &state,
-                          sizeof(state), &actual) != ZX_OK ||
-      actual != sizeof(state)) {
-    return false;
+  uintptr_t state_addr = reinterpret_cast<uintptr_t>(libc_gwp_asan_info.state);
+  status = process.read_memory(state_addr, &state, sizeof(state), &actual);
+  if (status != ZX_OK || actual != sizeof(state)) {
+    return fit::error(AllocatorStateReadFailed{
+        .status = status,
+        .address = state_addr,
+        .actual_size = actual,
+    });
   }
 
   // Check the MaxSimultaneousAllocations, the magic and the version.
@@ -91,7 +100,13 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
   if (state.MaxSimultaneousAllocations == 0 ||
       memcmp(state.VersionMagic.Magic, AllocatorVersionMagic::kAllocatorVersionMagic, 4) != 0 ||
       state.VersionMagic.Version != AllocatorVersionMagic::kAllocatorVersion) {
-    return false;
+    std::array<uint8_t, 4> magic;
+    memcpy(magic.data(), state.VersionMagic.Magic, 4);
+    return fit::error(ValidationFailed{
+        .magic = magic,
+        .version = state.VersionMagic.Version,
+        .max_allocations = state.MaxSimultaneousAllocations,
+    });
   }
 
   uint64_t faulting_addr = 0;
@@ -109,17 +124,22 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
 
   if (!__gwp_asan_error_is_mine(&state, faulting_addr)) {
     info->error_type = nullptr;
-    return true;
+    return fit::ok();
   }
 
   // Read the allocator metadata.
   using gwp_asan::AllocationMetadata;
   std::vector<AllocationMetadata> metadata_list(state.MaxSimultaneousAllocations);
-  if (process.read_memory(reinterpret_cast<uintptr_t>(libc_gwp_asan_info.metadata),
-                          metadata_list.data(), sizeof(AllocationMetadata) * metadata_list.size(),
-                          &actual) != ZX_OK ||
-      actual != sizeof(AllocationMetadata) * metadata_list.size()) {
-    return false;
+  uintptr_t metadata_addr = reinterpret_cast<uintptr_t>(libc_gwp_asan_info.metadata);
+  size_t expected_size = sizeof(AllocationMetadata) * metadata_list.size();
+  status = process.read_memory(metadata_addr, metadata_list.data(), expected_size, &actual);
+  if (status != ZX_OK || actual != expected_size) {
+    return fit::error(MetadataReadFailed{
+        .status = status,
+        .address = metadata_addr,
+        .expected_size = expected_size,
+        .actual_size = actual,
+    });
   }
 
   if (!faulting_addr) {
@@ -134,7 +154,9 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
   const AllocationMetadata* metadata =
       __gwp_asan_get_metadata(&state, metadata_list.data(), faulting_addr);
   if (!metadata) {
-    return false;
+    return fit::error(MetadataMappingFailed{
+        .faulting_addr = faulting_addr,
+    });
   }
   info->allocation_address = __gwp_asan_get_allocation_address(metadata);
   info->allocation_size = __gwp_asan_get_allocation_size(metadata);
@@ -155,7 +177,7 @@ bool inspector_get_gwp_asan_info(const zx::process& process,
     info->deallocation_trace.resize(0);
   }
 
-  return true;
+  return fit::ok();
 }
 
 }  // namespace inspector
