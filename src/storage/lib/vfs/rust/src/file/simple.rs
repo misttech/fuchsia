@@ -7,7 +7,7 @@ use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenReque
 use crate::execution_scope::ExecutionScope;
 use crate::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode};
 use crate::node::Node;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::sync::Arc;
 use zx_status::Status;
 

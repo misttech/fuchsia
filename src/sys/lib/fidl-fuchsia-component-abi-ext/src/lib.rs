@@ -1,12 +1,13 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
 use fuchsia_fs::file::ReadError;
 use fuchsia_fs::node::OpenError;
 use thiserror::Error;
 use version_history::AbiRevision;
 use zx_status::Status;
-use {fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_io as fio};
 
 #[derive(Error, Debug)]
 pub enum AbiRevisionFileError {
@@ -70,7 +71,7 @@ mod tests {
               }
           }
         };
-        vfs::directory::serve_read_only(dir)
+        vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new())
     }
 
     const ABI_REV_MAX: &'static [u8] = &u64::MAX.to_le_bytes();

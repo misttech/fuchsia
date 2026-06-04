@@ -16,11 +16,11 @@ use crate::execution_scope::{ExecutionScope, yield_to_executor};
 use crate::node::OpenNode;
 use crate::object_request::Representation;
 use crate::path::Path;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
+use flex_client::fidl::DiscoverableProtocolMarker as _;
 
 use anyhow::Error;
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_io as fio;
 use storage_trace::{self as trace, TraceFutureExt};
 use zx_status::Status;
 
@@ -315,7 +315,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         Ok(ConnectionState::Alive)
     }
 
-    fn handle_clone(&mut self, object: fidl::Channel) {
+    fn handle_clone(&mut self, object: flex_client::Channel) {
         let flags = fio::Flags::from(&self.options);
         ObjectRequest::new(flags, &Default::default(), object)
             .handle(|req| self.directory.clone().open(self.scope.clone(), Path::dot(), flags, req));
@@ -466,7 +466,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     async fn handle_link(
         &self,
         source_name: &str,
-        target_parent_token: fidl::NullableHandle,
+        target_parent_token: flex_client::NullableHandle,
         target_name: String,
     ) -> Result<(), Status> {
         if source_name.contains('/') || target_name.contains('/') {
@@ -576,20 +576,32 @@ mod tests {
     use super::*;
     use crate::directory::immutable::Simple;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_io as fio;
+    use flex_fuchsia_io as fio;
+
+    #[cfg(not(feature = "fdomain"))]
+    use fuchsia_fs::directory;
+    #[cfg(feature = "fdomain")]
+    use fuchsia_fs_fdomain::directory;
+
+    fn test_scope() -> crate::execution_scope::ExecutionScope {
+        #[cfg(feature = "fdomain")]
+        let client = flex_local::local_client_empty();
+        #[cfg(feature = "fdomain")]
+        return crate::execution_scope::ExecutionScope::new(client);
+        #[cfg(not(feature = "fdomain"))]
+        return crate::execution_scope::ExecutionScope::new();
+    }
 
     #[fuchsia::test]
     async fn test_open_not_found() {
         let dir = Simple::new();
-        let dir_proxy = crate::directory::serve(dir, fio::PERM_READABLE);
+        let scope = test_scope();
+        let dir_proxy = crate::directory::serve(dir, scope.clone(), fio::PERM_READABLE);
 
         // Try to open a file that doesn't exist.
-        let node_proxy = fuchsia_fs::directory::open_async::<fio::NodeMarker>(
-            &dir_proxy,
-            "foo",
-            fio::PERM_READABLE,
-        )
-        .unwrap();
+        let node_proxy =
+            directory::open_async::<fio::NodeMarker>(&dir_proxy, "foo", fio::PERM_READABLE)
+                .unwrap();
 
         // The channel is closed with a NOT_FOUND epitaph.
         assert_matches!(
@@ -605,10 +617,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_open_with_send_representation_not_found() {
         let dir = Simple::new();
-        let dir_proxy = crate::directory::serve(dir, fio::PERM_READABLE);
+        let scope = test_scope();
+        let dir_proxy = crate::directory::serve(dir, scope.clone(), fio::PERM_READABLE);
 
         // Try to open a file that doesn't exist.
-        let node_proxy = fuchsia_fs::directory::open_async::<fio::NodeMarker>(
+        let node_proxy = directory::open_async::<fio::NodeMarker>(
             &dir_proxy,
             "foo",
             fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION,

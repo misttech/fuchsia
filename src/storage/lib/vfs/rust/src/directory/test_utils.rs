@@ -9,7 +9,7 @@
 //! instead of `assert_something(arg).await`.
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::convert::TryInto as _;
 use std::io::Write;
 

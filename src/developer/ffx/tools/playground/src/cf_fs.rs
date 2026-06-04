@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use component_debug::realm::{GetAllInstancesError, Instance};
+use component_debug_fdomain::realm::{GetAllInstancesError, Instance};
+use fdomain_fuchsia_io as fio;
+use fdomain_fuchsia_sys2 as sys2;
 use futures::channel::oneshot;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -17,7 +19,6 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::immutable_attributes;
 use vfs::node::Node;
 use zx_status::Status;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as sys2};
 
 /// This contains a cache of the entire component hierarchy, as a map from
 /// path-like string keys to instance information. We refresh this cache every
@@ -173,7 +174,7 @@ impl CFDirectory {
                     let _ = receiver.await;
                 }
                 NextAction::Refresh(proxy, mut stale) => {
-                    let mut cache = component_debug::realm::get_all_instances(&proxy)
+                    let mut cache = component_debug_fdomain::realm::get_all_instances(&proxy)
                         .await?
                         .into_iter()
                         .map(|x| {
@@ -272,7 +273,7 @@ impl CFDirectory {
                             return;
                         };
                         let proxy = self.inner.lock().unwrap().proxy.clone();
-                        let Ok(dir) = component_debug::dirs::open_instance_directory(
+                        let Ok(dir) = component_debug_fdomain::dirs::open_instance_directory(
                             &local_path,
                             ty.into(),
                             &proxy,
@@ -484,10 +485,10 @@ mod test {
     // TODO(https://fxbug.dev/330828033): component_debug has functions like this in its test_utils module
     // but the module is marked test only, and doesn't build on host.
     fn serve_instance_iterator(
+        client: Arc<fdomain_client::Client>,
         instances: Vec<sys2::Instance>,
-    ) -> fidl::endpoints::ClientEnd<sys2::InstanceIteratorMarker> {
-        let (client, mut stream) =
-            fidl::endpoints::create_request_stream::<sys2::InstanceIteratorMarker>();
+    ) -> fdomain_client::fidl::ClientEnd<sys2::InstanceIteratorMarker> {
+        let (client, mut stream) = client.create_request_stream::<sys2::InstanceIteratorMarker>();
         fuchsia_async::Task::spawn(async move {
             let sys2::InstanceIteratorRequest::Next { responder } =
                 stream.next().await.unwrap().unwrap();
@@ -502,11 +503,12 @@ mod test {
 
     // TODO(https://fxbug.dev/330828033): See above.
     fn serve_realm_query(
+        fdomain_client: Arc<fdomain_client::Client>,
         instances: Vec<sys2::Instance>,
         dirs: HashMap<(String, sys2::OpenDirType), fio::DirectoryProxy>,
     ) -> sys2::RealmQueryProxy {
         let (client, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<sys2::RealmQueryMarker>();
+            fdomain_client.create_proxy_and_stream::<sys2::RealmQueryMarker>();
 
         let mut instance_map = HashMap::new();
         for instance in instances {
@@ -529,7 +531,7 @@ mod test {
                     sys2::RealmQueryRequest::GetAllInstances { responder } => {
                         eprintln!("GetAllInstances call");
                         let instances = instance_map.values().cloned().collect();
-                        let iterator = serve_instance_iterator(instances);
+                        let iterator = serve_instance_iterator(fdomain_client.clone(), instances);
                         responder.send(Ok(iterator)).unwrap();
                     }
                     sys2::RealmQueryRequest::OpenDirectory {
@@ -557,8 +559,9 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ns_access() {
+        let client = fdomain_local::local_client_empty();
         let core_foo_ns_dir = vfs::pseudo_directory! {
-            "top_dir" => vfs::pseudo_directory!{
+            "top_dir" => vfs::pseudo_directory! {
                 "bottom_dir" => vfs::pseudo_directory! {
                     "bottom_dir_file" => vfs::file::read_only("bottom dir file contents"),
                 },
@@ -566,7 +569,8 @@ mod test {
             },
             "root_file" => vfs::file::read_only("root file contents"),
         };
-        let core_foo_ns_dir = vfs::directory::serve_read_only(core_foo_ns_dir);
+        let core_foo_ns_dir =
+            vfs::directory::serve_read_only(core_foo_ns_dir, ExecutionScope::new(client.clone()));
 
         let instances = vec![
             sys2::Instance {
@@ -595,6 +599,7 @@ mod test {
             },
         ];
         let query = serve_realm_query(
+            client.clone(),
             instances.clone(),
             [(("/core/foo".to_owned(), sys2::OpenDirType::NamespaceDir), core_foo_ns_dir)]
                 .into_iter()
@@ -602,20 +607,23 @@ mod test {
         );
 
         let root = CFDirectory::new_root(query);
-        let proxy = vfs::directory::serve_read_only(root);
+        let proxy = vfs::directory::serve_read_only(root, ExecutionScope::new(client.clone()));
 
-        let root_file =
-            fuchsia_fs::directory::open_file(&proxy, "/core/foo/:ns/root_file", fio::PERM_READABLE)
-                .await
-                .unwrap();
-        let top_dir_file = fuchsia_fs::directory::open_file(
+        let root_file = fuchsia_fs_fdomain::directory::open_file(
+            &proxy,
+            "/core/foo/:ns/root_file",
+            fio::PERM_READABLE,
+        )
+        .await
+        .unwrap();
+        let top_dir_file = fuchsia_fs_fdomain::directory::open_file(
             &proxy,
             "/core/foo/:ns/top_dir/top_dir_file",
             fio::PERM_READABLE,
         )
         .await
         .unwrap();
-        let bottom_dir_file = fuchsia_fs::directory::open_file(
+        let bottom_dir_file = fuchsia_fs_fdomain::directory::open_file(
             &proxy,
             "/core/foo/:ns/top_dir/bottom_dir/bottom_dir_file",
             fio::PERM_READABLE,
@@ -625,20 +633,21 @@ mod test {
 
         assert_eq!(
             "root file contents",
-            &fuchsia_fs::file::read_to_string(&root_file).await.unwrap()
+            &fuchsia_fs_fdomain::file::read_to_string(&root_file).await.unwrap()
         );
         assert_eq!(
             "top dir file contents",
-            &fuchsia_fs::file::read_to_string(&top_dir_file).await.unwrap()
+            &fuchsia_fs_fdomain::file::read_to_string(&top_dir_file).await.unwrap()
         );
         assert_eq!(
             "bottom dir file contents",
-            &fuchsia_fs::file::read_to_string(&bottom_dir_file).await.unwrap()
+            &fuchsia_fs_fdomain::file::read_to_string(&bottom_dir_file).await.unwrap()
         );
     }
 
     #[fuchsia::test]
     async fn test_component_tree() {
+        let client = fdomain_local::local_client_empty();
         let instances = vec![
             sys2::Instance {
                 moniker: Some("/".to_owned()),
@@ -673,18 +682,21 @@ mod test {
                 ..Default::default()
             },
         ];
-        let query = serve_realm_query(instances.clone(), HashMap::new());
+        let query = serve_realm_query(client.clone(), instances.clone(), HashMap::new());
 
         let root = CFDirectory::new_root(query);
-        let proxy = vfs::directory::serve_read_only(root);
+        let proxy = vfs::directory::serve_read_only(root, ExecutionScope::new(client.clone()));
 
         for instance in &instances {
             let instance_moniker = instance.moniker.as_deref().unwrap();
-            let proxy =
-                fuchsia_fs::directory::open_directory(&proxy, instance_moniker, fio::PERM_READABLE)
-                    .await
-                    .unwrap();
-            let mut items = fuchsia_fs::directory::readdir(&proxy)
+            let proxy = fuchsia_fs_fdomain::directory::open_directory(
+                &proxy,
+                instance_moniker,
+                fio::PERM_READABLE,
+            )
+            .await
+            .unwrap();
+            let mut items = fuchsia_fs_fdomain::directory::readdir(&proxy)
                 .await
                 .unwrap()
                 .into_iter()
@@ -707,38 +719,38 @@ mod test {
                         continue;
                     }
                     let root = items.remove(child_moniker).unwrap();
-                    assert_eq!(fuchsia_fs::directory::DirentKind::Directory, root.kind);
+                    assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, root.kind);
                 }
             }
 
             let url = items.remove(".url").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::File, url.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::File, url.kind);
 
             let environment = items.remove(".environment").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::File, environment.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::File, environment.kind);
 
             let instance_id = items.remove(".instance_id").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::File, instance_id.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::File, instance_id.kind);
 
             let out = items.remove(":out").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::Directory, out.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, out.kind);
 
             let rt = items.remove(":rt").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::Directory, rt.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, rt.kind);
 
             let ex = items.remove(":ex").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::Directory, ex.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, ex.kind);
 
             let pkg = items.remove(":pkg").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::Directory, pkg.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, pkg.kind);
 
             let ns = items.remove(":ns").unwrap();
-            assert_eq!(fuchsia_fs::directory::DirentKind::Directory, ns.kind);
+            assert_eq!(fuchsia_fs_fdomain::directory::DirentKind::Directory, ns.kind);
 
             assert!(items.is_empty());
 
-            let fuchsia_fs::node::OpenError::OpenError(url_isnt_a_folder) =
-                fuchsia_fs::directory::open_file(&proxy, ".url/foo", fio::PERM_READABLE)
+            let fuchsia_fs_fdomain::node::OpenError::OpenError(url_isnt_a_folder) =
+                fuchsia_fs_fdomain::directory::open_file(&proxy, ".url/foo", fio::PERM_READABLE)
                     .await
                     .unwrap_err()
             else {
@@ -746,26 +758,33 @@ mod test {
             };
             assert_eq!(Status::NOT_DIR, url_isnt_a_folder);
 
-            let url =
-                fuchsia_fs::directory::open_file(&proxy, ".url", fio::PERM_READABLE).await.unwrap();
-            assert_eq!(instance.url, fuchsia_fs::file::read_to_string(&url).await.ok());
+            let url = fuchsia_fs_fdomain::directory::open_file(&proxy, ".url", fio::PERM_READABLE)
+                .await
+                .unwrap();
+            assert_eq!(instance.url, fuchsia_fs_fdomain::file::read_to_string(&url).await.ok());
 
-            let environment =
-                fuchsia_fs::directory::open_file(&proxy, ".environment", fio::PERM_READABLE)
-                    .await
-                    .unwrap();
+            let environment = fuchsia_fs_fdomain::directory::open_file(
+                &proxy,
+                ".environment",
+                fio::PERM_READABLE,
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 instance.environment,
-                fuchsia_fs::file::read_to_string(&environment).await.ok()
+                fuchsia_fs_fdomain::file::read_to_string(&environment).await.ok()
             );
 
-            let instance_id =
-                fuchsia_fs::directory::open_file(&proxy, ".instance_id", fio::PERM_READABLE)
-                    .await
-                    .unwrap();
+            let instance_id = fuchsia_fs_fdomain::directory::open_file(
+                &proxy,
+                ".instance_id",
+                fio::PERM_READABLE,
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 instance.instance_id,
-                fuchsia_fs::file::read_to_string(&instance_id).await.ok()
+                fuchsia_fs_fdomain::file::read_to_string(&instance_id).await.ok()
             );
         }
     }

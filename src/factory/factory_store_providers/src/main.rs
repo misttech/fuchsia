@@ -20,6 +20,8 @@ use fidl_fuchsia_factory::{
     WeaveFactoryStoreProviderRequestStream, WidevineFactoryStoreProviderMarker,
     WidevineFactoryStoreProviderRequest, WidevineFactoryStoreProviderRequestStream,
 };
+use fidl_fuchsia_feedback as ffeedback;
+use fidl_fuchsia_io as fio;
 use fuchsia_bootfs::BootfsParser;
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
@@ -29,7 +31,6 @@ use std::sync::Arc;
 use vfs::directory;
 use vfs::file::vmo::read_only;
 use vfs::tree_builder::TreeBuilder;
-use {fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_io as fio};
 
 const CONCURRENT_LIMIT: usize = 10_000;
 const DEFAULT_BOOTFS_FACTORY_ITEM_EXTRA: u32 = 0;
@@ -161,7 +162,7 @@ async fn apply_config(
         let context = config.into_context().expect("Failed to convert config into context");
         create_dir_from_context(&context, &*dir_ref).await
     };
-    vfs::directory::serve_read_only(dir)
+    vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new())
 }
 
 async fn handle_request_stream<RS, G>(
@@ -199,7 +200,10 @@ async fn open_factory_source(factory_config: FactoryConfig) -> Result<fio::Direc
                     directory::immutable::simple()
                 }
             };
-            Ok(vfs::directory::serve_read_only(factory_items_directory))
+            Ok(vfs::directory::serve_read_only(
+                factory_items_directory,
+                vfs::execution_scope::ExecutionScope::new(),
+            ))
         }
         FactoryConfig::FactoryVerity => {
             log::info!("reading from factory verity");
@@ -385,7 +389,8 @@ mod tests {
                 "c" => read_only("c content"),
             },
         };
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let ns = fdio::Namespace::installed().unwrap();
         ns.bind("/factory", dir_proxy.into_client_end().unwrap()).unwrap();
 

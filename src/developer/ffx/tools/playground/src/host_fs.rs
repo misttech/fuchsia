@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl_fuchsia_io as fio;
+use fdomain_fuchsia_io as fio;
 use futures::future::BoxFuture;
 use std::any::Any;
 use std::future::ready;
@@ -440,7 +440,7 @@ impl MutableDirectory for HostDirectory {
         &self,
         _name: String,
         _target: Vec<u8>,
-        _connection: Option<fidl::endpoints::ServerEnd<fio::SymlinkMarker>>,
+        _connection: Option<fdomain_client::fidl::ServerEnd<fio::SymlinkMarker>>,
     ) -> Result<(), Status> {
         Err(Status::NOT_SUPPORTED)
     }
@@ -452,12 +452,16 @@ mod test {
 
     #[fuchsia::test]
     async fn list_dir() {
+        let client = fdomain_local::local_client_empty();
         let tmp_dir = tempfile::tempdir().unwrap();
         let _ = std::fs::File::create(tmp_dir.path().join("A")).unwrap();
         let _ = std::fs::File::create(tmp_dir.path().join("B")).unwrap();
         let _ = std::fs::File::create(tmp_dir.path().join("C")).unwrap();
-        let client = vfs::directory::serve_read_only(HostDirectory::new(tmp_dir.path()));
-        let mut dirs: Vec<_> = fuchsia_fs::directory::readdir(&client)
+        let client = vfs::directory::serve_read_only(
+            HostDirectory::new(tmp_dir.path()),
+            vfs::execution_scope::ExecutionScope::new(client.clone()),
+        );
+        let mut dirs: Vec<_> = fuchsia_fs_fdomain::directory::readdir(&client)
             .await
             .unwrap()
             .into_iter()
@@ -469,17 +473,22 @@ mod test {
 
     #[fuchsia::test]
     async fn list_subdir() {
+        let client = fdomain_local::local_client_empty();
         let tmp_dir = tempfile::tempdir().unwrap();
         let sub_path = tmp_dir.path().join("subdir");
         let _ = std::fs::create_dir(&sub_path).unwrap();
         let _ = std::fs::File::create(sub_path.join("A")).unwrap();
         let _ = std::fs::File::create(sub_path.join("B")).unwrap();
         let _ = std::fs::File::create(sub_path.join("C")).unwrap();
-        let client = vfs::directory::serve_read_only(HostDirectory::new(tmp_dir.path()));
-        let sub_dir = fuchsia_fs::directory::open_directory(&client, "subdir", fio::PERM_READABLE)
-            .await
-            .unwrap();
-        let mut dirs: Vec<_> = fuchsia_fs::directory::readdir(&sub_dir)
+        let client = vfs::directory::serve_read_only(
+            HostDirectory::new(tmp_dir.path()),
+            vfs::execution_scope::ExecutionScope::new(client.clone()),
+        );
+        let sub_dir =
+            fuchsia_fs_fdomain::directory::open_directory(&client, "subdir", fio::PERM_READABLE)
+                .await
+                .unwrap();
+        let mut dirs: Vec<_> = fuchsia_fs_fdomain::directory::readdir(&sub_dir)
             .await
             .unwrap()
             .into_iter()
@@ -491,35 +500,45 @@ mod test {
 
     #[fuchsia::test]
     async fn open_file() {
+        let client = fdomain_local::local_client_empty();
         let tmp_dir = tempfile::tempdir().unwrap();
         let mut f = std::fs::File::create(tmp_dir.path().join("A")).unwrap();
         let test_str =
             b"I literally can't leave this room, so I'm just going to ignore my feelings.";
         f.write_all(test_str).unwrap();
-        let client = vfs::directory::serve_read_only(HostDirectory::new(tmp_dir.path()));
-        let file =
-            fuchsia_fs::directory::open_file(&client, "A", fio::PERM_READABLE).await.unwrap();
+        let client = vfs::directory::serve_read_only(
+            HostDirectory::new(tmp_dir.path()),
+            vfs::execution_scope::ExecutionScope::new(client.clone()),
+        );
+        let file = fuchsia_fs_fdomain::directory::open_file(&client, "A", fio::PERM_READABLE)
+            .await
+            .unwrap();
 
-        let got = fuchsia_fs::file::read(&file).await.unwrap();
+        let got = fuchsia_fs_fdomain::file::read(&file).await.unwrap();
         assert_eq!(test_str, got.as_slice());
     }
 
     #[fuchsia::test]
     async fn split_read() {
+        let client = fdomain_local::local_client_empty();
         let tmp_dir = tempfile::tempdir().unwrap();
         let mut f = std::fs::File::create(tmp_dir.path().join("A")).unwrap();
         let test_str =
             b"I literally can't leave this room, so I'm just going to ignore my feelings.";
         f.write_all(test_str).unwrap();
-        let client = vfs::directory::serve_read_only(HostDirectory::new(tmp_dir.path()));
-        let file =
-            fuchsia_fs::directory::open_file(&client, "A", fio::PERM_READABLE).await.unwrap();
+        let client = vfs::directory::serve_read_only(
+            HostDirectory::new(tmp_dir.path()),
+            vfs::execution_scope::ExecutionScope::new(client.clone()),
+        );
+        let file = fuchsia_fs_fdomain::directory::open_file(&client, "A", fio::PERM_READABLE)
+            .await
+            .unwrap();
 
         let split_len = test_str.len() / 2;
 
-        let got = fuchsia_fs::file::read_num_bytes(&file, split_len as u64).await.unwrap();
+        let got = fuchsia_fs_fdomain::file::read_num_bytes(&file, split_len as u64).await.unwrap();
         assert_eq!(&test_str[..split_len], got.as_slice());
-        let got = fuchsia_fs::file::read(&file).await.unwrap();
+        let got = fuchsia_fs_fdomain::file::read(&file).await.unwrap();
         assert_eq!(&test_str[split_len..], got.as_slice());
     }
 }

@@ -432,7 +432,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_error() {
         let test_dir = MockDirectory::new();
-        let client = vfs::directory::serve_read_only(test_dir);
+        let client = vfs::directory::serve_read_only(test_dir, ExecutionScope::new());
         let mut w = Watcher::new(&client).await.unwrap();
         let msg = w.next().await.expect("the stream yielded no next item");
         assert!(!w.is_terminated());

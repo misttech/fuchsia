@@ -22,7 +22,7 @@ use vfs::path::Path;
 use vfs::remote::RemoteLike;
 use vfs::symlink::Symlink;
 use vfs::{ObjectRequestRef, pseudo_directory};
-use zx::Status;
+use zx::{self as zx, Status};
 
 #[fuchsia::test]
 async fn test_symlink() {
@@ -254,7 +254,7 @@ async fn test_read_link_error() {
         "error_symlink" => Arc::new(ErrorSymlink),
     };
 
-    let dir_proxy = vfs::directory::serve_read_only(dir);
+    let dir_proxy = vfs::directory::serve_read_only(dir, ExecutionScope::new());
     fasync::unblock(|| {
         let handle = dir_proxy.into_channel().unwrap().into_zx_channel().into_handle();
         let dir_zxio = Zxio::create(handle).expect("create failed");
@@ -532,7 +532,8 @@ async fn test_allocate_file() {
     let dir = pseudo_directory! {
         "foo" => AllocateFile::new(Ok(())),
     };
-    let dir_proxy = vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+    let dir_proxy =
+        vfs::directory::serve(dir, ExecutionScope::new(), fio::PERM_READABLE | fio::PERM_WRITABLE);
 
     fasync::unblock(|| {
         let handle = dir_proxy.into_channel().unwrap().into_zx_channel().into_handle();
@@ -553,7 +554,8 @@ async fn test_allocate_file_not_sup() {
     let dir = pseudo_directory! {
         "foo" => AllocateFile::new(Err(Status::NOT_SUPPORTED)),
     };
-    let dir_proxy = vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+    let dir_proxy =
+        vfs::directory::serve(dir, ExecutionScope::new(), fio::PERM_READABLE | fio::PERM_WRITABLE);
 
     fasync::unblock(|| {
         let handle = dir_proxy.into_channel().unwrap().into_zx_channel().into_handle();

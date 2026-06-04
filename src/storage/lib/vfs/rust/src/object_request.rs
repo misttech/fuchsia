@@ -5,9 +5,12 @@
 use crate::ProtocolsExt;
 use crate::execution_scope::ExecutionScope;
 use crate::node::{self, Node};
-use fidl::endpoints::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
-use fidl_fuchsia_io as fio;
+#[cfg(feature = "fdomain")]
+use flex_client::AsHandleRef;
+use flex_client::fidl::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
+use flex_fuchsia_io as fio;
+#[cfg(not(feature = "fdomain"))]
 use fuchsia_async as fasync;
 use futures::FutureExt;
 use std::future::Future;
@@ -15,12 +18,31 @@ use std::sync::Arc;
 use zx_status::Status;
 
 /// Wraps the channel provided in the open methods and provide convenience methods for sending
+pub trait IntoAsyncChannel {
+    fn into_async_channel(self) -> flex_client::AsyncChannel;
+}
+
+#[cfg(not(feature = "fdomain"))]
+impl IntoAsyncChannel for flex_client::Channel {
+    fn into_async_channel(self) -> flex_client::AsyncChannel {
+        fasync::Channel::from_channel(self)
+    }
+}
+
+#[cfg(feature = "fdomain")]
+impl IntoAsyncChannel for flex_client::Channel {
+    fn into_async_channel(self) -> flex_client::AsyncChannel {
+        self
+    }
+}
+
+/// Wraps the channel provided in the open methods and provide convenience methods for sending
 /// appropriate responses.  It also records actions that should be taken upon successful connection
 /// such as truncating file objects.
 #[derive(Debug)]
 pub struct ObjectRequest {
     // The channel.
-    object_request: fidl::Channel,
+    object_request: flex_client::Channel,
 
     // What should be sent first.
     what_to_send: ObjectRequestSend,
@@ -37,19 +59,28 @@ pub struct ObjectRequest {
 
 impl ObjectRequest {
     pub(crate) fn new_deprecated(
-        object_request: fidl::Channel,
+        object_request: flex_client::Channel,
         what_to_send: ObjectRequestSend,
         attributes: fio::NodeAttributesQuery,
         create_attributes: Option<&fio::MutableNodeAttributes>,
         truncate: bool,
     ) -> Self {
-        assert!(!object_request.as_handle_ref().is_invalid());
         let create_attributes = create_attributes.map(|a| Box::new(a.clone()));
-        Self { object_request, what_to_send, attributes, create_attributes, truncate }
+        Self {
+            object_request: object_request,
+            what_to_send,
+            attributes,
+            create_attributes,
+            truncate,
+        }
     }
 
     /// Create a new [`ObjectRequest`] from a set of [`fio::Flags`] and [`fio::Options`]`.
-    pub fn new(flags: fio::Flags, options: &fio::Options, object_request: fidl::Channel) -> Self {
+    pub fn new(
+        flags: fio::Flags,
+        options: &fio::Options,
+        object_request: flex_client::Channel,
+    ) -> Self {
         Self::new_deprecated(
             object_request,
             if flags.contains(fio::Flags::FLAG_SEND_REPRESENTATION) {
@@ -91,9 +122,7 @@ impl ObjectRequest {
         self,
         connection: &T,
     ) -> Result<<T::Protocol as ProtocolMarker>::RequestStream, Status> {
-        let stream = fio::NodeRequestStream::from_channel(fasync::Channel::from_channel(
-            self.object_request,
-        ));
+        let stream = fio::NodeRequestStream::from_channel(self.object_request.into_async_channel());
         match self.what_to_send {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
@@ -120,16 +149,17 @@ impl ObjectRequest {
             }
             ObjectRequestSend::Nothing => {}
         }
-        Ok(stream.cast_stream())
+        let (inner, is_terminated) = stream.into_inner();
+        Ok(<<T as Representation>::Protocol as flex_client::fidl::ProtocolMarker>::RequestStream::from_inner(inner, is_terminated))
     }
 
     /// Converts to ServerEnd<T>.
-    pub fn into_server_end<T>(self) -> ServerEnd<T> {
+    pub fn into_server_end<T: ProtocolMarker>(self) -> ServerEnd<T> {
         ServerEnd::new(self.object_request)
     }
 
     /// Extracts the channel (without sending on_open).
-    pub fn into_channel(self) -> fidl::Channel {
+    pub fn into_channel(self) -> flex_client::Channel {
         self.object_request
     }
 
@@ -138,10 +168,8 @@ impl ObjectRequest {
     pub fn into_channel_after_sending_on_open(
         self,
         node_info: fio::NodeInfoDeprecated,
-    ) -> Result<fidl::Channel, Status> {
-        let stream = fio::NodeRequestStream::from_channel(fasync::Channel::from_channel(
-            self.object_request,
-        ));
+    ) -> Result<flex_client::Channel, Status> {
+        let stream = fio::NodeRequestStream::from_channel(self.object_request.into_async_channel());
         send_on_open(&stream.control_handle(), node_info)?;
         let (inner, _is_terminated) = stream.into_inner();
         // It's safe to unwrap here because inner is clearly the only Arc reference left.
@@ -205,22 +233,22 @@ impl ObjectRequest {
         if !matches!(self.what_to_send, ObjectRequestSend::Nothing) {
             return true;
         }
-        let signals = fasync::OnSignalsRef::new(
-            self.object_request.as_handle_ref(),
+        flex_client::wait_for_signals(
+            &self.object_request.as_handle_ref(),
             fidl::Signals::OBJECT_READABLE | fidl::Signals::CHANNEL_PEER_CLOSED,
         )
         .await
-        .unwrap();
-        signals.contains(fidl::Signals::OBJECT_READABLE)
+        .map(|x| x.contains(fidl::Signals::OBJECT_READABLE))
+        .unwrap_or(false)
     }
 
     /// Take the ObjectRequest.  The caller is responsible for sending errors.
     pub fn take(&mut self) -> ObjectRequest {
-        assert!(!self.object_request.as_handle_ref().is_invalid());
+        // assert!(!self.object_request.as_handle_ref().is_invalid());
         Self {
             object_request: std::mem::replace(
                 &mut self.object_request,
-                fidl::NullableHandle::invalid().into(),
+                flex_client::NullableHandle::invalid().into(),
             ),
             what_to_send: self.what_to_send,
             attributes: self.attributes,
@@ -243,7 +271,7 @@ impl ObjectRequest {
         C: ConnectionCreator<N>,
         N: Node,
     {
-        assert!(!self.object_request.as_handle_ref().is_invalid());
+        // assert!(!self.object_request.as_handle_ref().is_invalid());
         if protocols.is_node() {
             node::Connection::create(scope, node, protocols, self).await
         } else {
@@ -268,7 +296,7 @@ impl ObjectRequest {
         C: ConnectionCreator<N>,
         N: Node,
     {
-        assert!(!self.object_request.as_handle_ref().is_invalid());
+        // assert!(!self.object_request.as_handle_ref().is_invalid());
         if protocols.is_node() {
             self.create_connection_sync_or_spawn::<node::Connection<N>, N>(scope, node, protocols);
         } else {
@@ -325,11 +353,17 @@ pub trait Representation {
 ///
 /// If [`fio::Options`] need to be specified, use [`ObjectRequest::new`].
 pub trait ToObjectRequest: ProtocolsExt {
-    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest;
+    fn to_object_request(
+        &self,
+        object_request: impl Into<flex_client::NullableHandle>,
+    ) -> ObjectRequest;
 }
 
 impl ToObjectRequest for fio::OpenFlags {
-    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest {
+    fn to_object_request(
+        &self,
+        object_request: impl Into<flex_client::NullableHandle>,
+    ) -> ObjectRequest {
         ObjectRequest::new_deprecated(
             object_request.into().into(),
             #[cfg(any(
@@ -354,7 +388,10 @@ impl ToObjectRequest for fio::OpenFlags {
 }
 
 impl ToObjectRequest for fio::Flags {
-    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest {
+    fn to_object_request(
+        &self,
+        object_request: impl Into<flex_client::NullableHandle>,
+    ) -> ObjectRequest {
         ObjectRequest::new(*self, &Default::default(), object_request.into().into())
     }
 }
@@ -405,14 +442,20 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_run_synchronous_future_or_spawn_with_sync_future() {
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
         run_synchronous_future_or_spawn(scope.clone(), ready(()));
         scope.wait().await;
     }
 
     #[fuchsia::test]
     async fn test_run_synchronous_future_or_spawn_with_async_future() {
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
         run_synchronous_future_or_spawn(scope.clone(), yield_to_executor());
         scope.wait().await;
     }

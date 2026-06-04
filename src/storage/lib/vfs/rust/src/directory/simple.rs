@@ -26,8 +26,8 @@ use crate::node::Node;
 use crate::path::Path;
 use crate::protocols::ProtocolsExt;
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -399,7 +399,6 @@ mod tests {
     use crate::directory::immutable::Simple;
     use crate::file;
     use crate::object_request::ObjectRequest;
-    use fidl::endpoints::create_endpoints;
 
     #[test]
     fn add_entry_success() {
@@ -446,7 +445,10 @@ mod tests {
         dir.add_entry("file", file::read_only(b"test"))
             .expect("add entry with valid filename should succeed");
 
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
 
         for (path, expectation) in vec![
             (".", None),
@@ -456,10 +458,16 @@ mod tests {
             ("dir/does-not-exist", Some("dir/does-not-exist".to_string())),
         ] {
             log::info!("{path}");
+            #[cfg(feature = "fdomain")]
+            let (_proxy, server_end) = {
+                let client = scope.domain();
+                client.create_proxy::<fio::NodeMarker>()
+            };
+            #[cfg(not(feature = "fdomain"))]
             let (_proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
             let flags = fio::Flags::PROTOCOL_NODE | fio::Flags::FLAG_SEND_REPRESENTATION;
             let path = Path::validate_and_split(path).unwrap();
-            ObjectRequest::new(flags, &fio::Options::default(), server_end.into())
+            ObjectRequest::new(flags, &fio::Options::default(), server_end.into_channel().into())
                 .handle(|request| dir.clone().open(scope.clone(), path, flags, request));
 
             assert_eq!(expectation, path_mutex.lock().take());
@@ -503,12 +511,27 @@ mod tests {
 
         let dir = Simple::new();
 
-        dir.add_entry("foo", Arc::new(MockEntry(ExecutionScope::new()))).expect("add_entry failed");
+        #[cfg(feature = "fdomain")]
+        let dummy_scope =
+            crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let dummy_scope = crate::execution_scope::ExecutionScope::new();
 
-        let (_client, server) = create_endpoints::<fio::DirectoryMarker>();
-        let mut request =
-            ObjectRequest::new(fio::Flags::empty(), &fio::Options::default(), server.into());
-        dir.open(ExecutionScope::new(), Path::dot(), fio::Flags::empty(), &mut request)
-            .expect("open succeeded");
+        dir.add_entry("foo", Arc::new(MockEntry(dummy_scope))).expect("add_entry failed");
+
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let (_proxy, server) = scope.domain().create_proxy::<fio::DirectoryMarker>();
+        #[cfg(not(feature = "fdomain"))]
+        let (_client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        let mut request = ObjectRequest::new(
+            fio::Flags::empty(),
+            &fio::Options::default(),
+            server.into_channel().into(),
+        );
+        dir.open(scope, Path::dot(), fio::Flags::empty(), &mut request).expect("open succeeded");
     }
 }

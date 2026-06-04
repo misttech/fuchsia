@@ -48,6 +48,11 @@ impl Handle {
         Handle { id: 0, client: Weak::new() }
     }
 
+    /// Check whether this handle is valid.
+    pub fn is_invalid(&self) -> bool {
+        !self.has_client()
+    }
+
     /// Convert this into an unowned handle (one that is borrowed and will not close when dropped).
     ///
     /// An example:

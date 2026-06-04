@@ -1155,7 +1155,7 @@ mod tests {
         let used = 10;
         let total = 1000;
         let fake_dir = Arc::new(FakeDir { used, total });
-        let storage_admin = vfs::directory::serve_read_only(fake_dir);
+        let storage_admin = vfs::directory::serve_read_only(fake_dir, ExecutionScope::new());
         let status = StorageAdmin::get_storage_status(&storage_admin).await.unwrap();
         assert_eq!(status.used_size.unwrap(), used);
         assert_eq!(status.total_size.unwrap(), total);

@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_wlan_device as fidl_wlan_dev;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use futures::future::TryFutureExt as _;
 use futures::stream::{Stream, TryStreamExt as _};
 use log::error;
 use std::hash::{Hash as _, Hasher as _};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_wlan_device as fidl_wlan_dev};
 
 pub struct NewPhyDevice {
     pub id: u16,
@@ -50,7 +51,7 @@ pub fn watch_phy_devices(
                                 Ok(None)
                             }
                             e => Err(e.into()),
-                        }
+                        };
                     }
                 };
                 // TODO(https://fxbug.dev/42075598): remove the assumption that devices have numeric IDs.
@@ -150,7 +151,8 @@ mod tests {
     }
 
     fn serve_and_bind_vfs(vfs_dir: Arc<dyn Directory>, path: &'static str) {
-        let client = vfs::directory::serve_read_only(vfs_dir);
+        let client =
+            vfs::directory::serve_read_only(vfs_dir, vfs::execution_scope::ExecutionScope::new());
         let ns = fdio::Namespace::installed().expect("failed to get installed namespace");
         ns.bind(path, client.into_client_end().unwrap()).expect("Failed to bind dev in namespace");
     }

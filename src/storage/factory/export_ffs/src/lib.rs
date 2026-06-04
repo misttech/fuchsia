@@ -433,7 +433,11 @@ mod tests {
                 "c" => read_only("c content"),
             },
         };
-        let dir_proxy = vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let dir_proxy = vfs::directory::serve(
+            dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
         let ramdisk = RamdiskClient::create(512, 1 << 16).await.unwrap();
         let channel = ramdisk.open().unwrap();
 
@@ -449,7 +453,11 @@ mod tests {
                 "c" => read_only("c content"),
             },
         };
-        let dir_proxy = vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let dir_proxy = vfs::directory::serve(
+            dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
         let entries = get_entries(&dir_proxy).await.unwrap();
 
         assert_eq!(

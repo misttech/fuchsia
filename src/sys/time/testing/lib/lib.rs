@@ -28,7 +28,7 @@ use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use time_metrics_registry::PROJECT_ID;
 use vfs::pseudo_directory;
-use zx::Rights;
+use zx::{self as zx, Rights};
 
 /// URL for timekeeper.
 const TIMEKEEPER_URL: &str = "#meta/timekeeper_for_integration.cm";
@@ -557,7 +557,13 @@ async fn setup_rtc(
                     async move {
                         let _ = &handles;
                         let mut fs = ServiceFs::new();
-                        fs.add_remote("dev", vfs::directory::serve_read_only(rtc_dir));
+                        fs.add_remote(
+                            "dev",
+                            vfs::directory::serve_read_only(
+                                rtc_dir,
+                                vfs::execution_scope::ExecutionScope::new(),
+                            ),
+                        );
                         fs.serve_connection(handles.outgoing_dir)
                             .expect("failed to serve fake RTC ServiceFs");
                         fs.collect::<()>().await;

@@ -551,8 +551,11 @@ impl DiskBuilder {
             // Format the volume manager in the gpt partition named "fvm".
             let partitions_dir = vfs::directory::immutable::simple();
             let manager = GptManager::new(server.connect(), partitions_dir.clone()).await.unwrap();
-            let dir =
-                vfs::directory::serve(partitions_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+            let dir = vfs::directory::serve(
+                partitions_dir,
+                vfs::execution_scope::ExecutionScope::new(),
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            );
             gpt = Some((manager, fuchsia_fs::directory::clone(&dir).unwrap()));
             Box::new(DirBasedBlockConnector::new(dir, "part-000/volume".to_string()))
         } else {
@@ -947,8 +950,11 @@ pub async fn list_all_fxfs_volumes(disk: &Disk) -> HashSet<String> {
 
     let partitions_dir = vfs::directory::immutable::simple();
     let manager = GptManager::new(server.connect(), partitions_dir.clone()).await.unwrap();
-    let dir =
-        vfs::directory::serve(partitions_dir.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE);
+    let dir = vfs::directory::serve(
+        partitions_dir.clone(),
+        vfs::execution_scope::ExecutionScope::new(),
+        fio::PERM_READABLE | fio::PERM_WRITABLE,
+    );
 
     let partitions = fuchsia_fs::directory::readdir(&dir).await.unwrap().into_iter().map(|entry| {
         let dir = fuchsia_fs::directory::clone(&dir).unwrap();

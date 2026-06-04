@@ -6,18 +6,20 @@
 
 use crate::execution_scope::ExecutionScope;
 use crate::node::Node;
-use crate::object_request::{ObjectRequestRef, ToObjectRequest as _};
+use crate::object_request::ObjectRequestRef;
+#[cfg(test)]
+use crate::object_request::ToObjectRequest;
 use crate::protocols::ProtocolsExt;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::future::{Future, ready};
 use std::sync::Arc;
 use zx_status::Status;
 
 /// File nodes backed by VMOs.
-#[cfg(target_os = "fuchsia")]
+#[cfg(not(feature = "fdomain"))]
 pub mod vmo;
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(feature = "fdomain")]
 pub mod simple;
 
 mod common;
@@ -26,7 +28,7 @@ pub mod connection;
 
 pub use connection::{FidlIoConnection, RawIoConnection};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(not(feature = "fdomain"))]
 pub use connection::{GetVmo, StreamIoConnection};
 
 /// Creates a new read-only `SimpleFile` with the specified `content`.
@@ -40,12 +42,12 @@ pub use connection::{GetVmo, StreamIoConnection};
 /// let from_string = read_only(String::from("owned"));
 /// let from_vec = read_only(vec![0u8; 2]);
 /// ```
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(feature = "fdomain")]
 pub fn read_only(content: impl AsRef<[u8]>) -> Arc<simple::SimpleFile> {
     simple::SimpleFile::read_only(content)
 }
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(not(feature = "fdomain"))]
 pub use vmo::read_only;
 
 /// FileOptions include options that are relevant after the file has been opened. Flags like
@@ -137,7 +139,7 @@ pub trait File: Node {
     }
 
     /// Called when the file is going to be accessed, typically by a new connection.
-    /// Flags is the same as the flags passed to `fidl_fuchsia_io.Node/Open`.
+    /// Flags is the same as the flags passed to `flex_fuchsia_io.Node/Open`.
     /// The following flags are handled by the connection and do not need to be handled inside
     /// open():
     /// * OPEN_FLAG_TRUNCATE - A call to truncate() will be made immediately after open().
@@ -298,9 +300,53 @@ pub fn serve(
 }
 
 /// Serve the provided file object on a new execution scope with `flags`.
+#[cfg(test)]
+#[cfg(not(feature = "fdomain"))]
 pub fn serve_proxy(file: Arc<impl FileLike>, flags: fio::Flags) -> fio::FileProxy {
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+
+    #[cfg(feature = "fdomain")]
+    let (proxy, server) = {
+        let client = scope.domain();
+        client.create_proxy::<fio::FileMarker>()
+    };
+    #[cfg(not(feature = "fdomain"))]
     let (proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+
     let request = flags.to_object_request(server);
-    request.handle(|request| serve(file, ExecutionScope::new(), &flags, request));
+
+    request.handle(|request| serve(file, scope, &flags, request));
+    proxy
+}
+
+/// Serve the provided file object on a new execution scope with `flags`.
+#[cfg(test)]
+#[cfg(feature = "fdomain")]
+pub fn serve_proxy(file: Arc<impl FileLike>, flags: fio::Flags) -> fio::FileProxy {
+    let client = fdomain_local::local_client_empty();
+    let (proxy, server) = client.create_proxy::<fio::FileMarker>();
+    let request = flags.to_object_request(server);
+    request.handle(|request| serve(file, ExecutionScope::new(client.clone()), &flags, request));
+    proxy
+}
+
+#[cfg(test)]
+pub fn serve_proxy_with_scope(
+    file: Arc<impl FileLike>,
+    flags: fio::Flags,
+    scope: &ExecutionScope,
+) -> fio::FileProxy {
+    #[cfg(feature = "fdomain")]
+    let client = scope.domain();
+    #[cfg(feature = "fdomain")]
+    let (proxy, server) = client.create_proxy::<fio::FileMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let (proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+
+    let request = flags.to_object_request(server);
+    request.handle(|request| serve(file, scope.clone(), &flags, request));
     proxy
 }

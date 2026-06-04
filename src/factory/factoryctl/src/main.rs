@@ -14,11 +14,12 @@ use fidl_fuchsia_factory::{
     WeaveFactoryStoreProviderMarker, WeaveFactoryStoreProviderProxy,
     WidevineFactoryStoreProviderMarker, WidevineFactoryStoreProviderProxy,
 };
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_fs::directory::DirentKind;
 use futures::stream::TryStreamExt;
 use nom::HexDisplay;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[derive(Debug, Parser)]
 #[command(name = "factoryctl", version = "1.0.0", about = "Commands to view factory contents")]
@@ -240,7 +241,7 @@ mod tests {
         tree.add_entry(&name.split("/").collect::<Vec<&str>>(), read_only(contents)).unwrap();
         tree.add_entry(&name2.split("/").collect::<Vec<&str>>(), read_only(contents2)).unwrap();
         let test_dir = tree.build();
-        vfs::directory::serve_read_only(test_dir)
+        vfs::directory::serve_read_only(test_dir, vfs::execution_scope::ExecutionScope::new())
     }
 
     async fn items_mock(handles: LocalComponentHandles) -> Result<(), Error> {

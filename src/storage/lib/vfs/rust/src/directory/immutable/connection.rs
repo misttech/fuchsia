@@ -13,8 +13,8 @@ use crate::object_request::ConnectionCreator;
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequestRef, ProtocolsExt};
 
-use fidl_fuchsia_io as fio;
 use fio::DirectoryRequest;
+use flex_fuchsia_io as fio;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;

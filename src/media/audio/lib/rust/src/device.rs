@@ -830,7 +830,8 @@ mod test {
             },
         };
 
-        let dev_class = vfs::directory::serve_read_only(dev_class_vfs);
+        let execution_scope = vfs::execution_scope::ExecutionScope::new();
+        let dev_class = vfs::directory::serve_read_only(dev_class_vfs, execution_scope);
         let selectors = list_devfs(&dev_class).await.unwrap();
 
         assert_eq!(

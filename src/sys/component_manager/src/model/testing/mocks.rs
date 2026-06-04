@@ -94,8 +94,11 @@ impl MockResolver {
             let sub_dir = pseudo_directory!(
                 "fake_file" => read_only(b"content"),
             );
-            let sub_dir_proxy =
-                vfs::directory::serve(sub_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+            let sub_dir_proxy = vfs::directory::serve(
+                sub_dir,
+                vfs::execution_scope::ExecutionScope::new(),
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            );
             let client = sub_dir_proxy.into_client_end().unwrap();
 
             let maybe_blocker = { guard.blockers.get_mut(name).and_then(|b| b.take()) };

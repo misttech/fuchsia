@@ -197,7 +197,7 @@ mod tests {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn directory_entry_open_self() {
         let (_env, validation) = TestEnv::new().await;
-        let proxy = vfs::directory::serve(validation, fio::PERM_READABLE);
+        let proxy = vfs::directory::serve(validation, ExecutionScope::new(), fio::PERM_READABLE);
         assert_eq!(
             fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
             vec![fuchsia_fs::directory::DirEntry {
@@ -217,8 +217,11 @@ mod tests {
             fio::PERM_WRITABLE,
             fio::PERM_EXECUTABLE,
         ] {
-            let proxy =
-                vfs::directory::serve(validation.clone(), fio::PERM_READABLE | invalid_flags);
+            let proxy = vfs::directory::serve(
+                validation.clone(),
+                ExecutionScope::new(),
+                fio::PERM_READABLE | invalid_flags,
+            );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
                 Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
@@ -232,7 +235,11 @@ mod tests {
 
         // Requesting to open with `PROTOCOL_FILE` should return a `NOT_FILE` error.
         {
-            let proxy = vfs::directory::serve(validation.clone(), fio::Flags::PROTOCOL_FILE);
+            let proxy = vfs::directory::serve(
+                validation.clone(),
+                ExecutionScope::new(),
+                fio::Flags::PROTOCOL_FILE,
+            );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
                 Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_FILE, .. })
@@ -241,7 +248,11 @@ mod tests {
 
         // Opening with file flags is also invalid.
         for file_flags in [fio::Flags::FILE_APPEND, fio::Flags::FILE_TRUNCATE] {
-            let proxy = vfs::directory::serve(validation.clone(), fio::PERM_READABLE | file_flags);
+            let proxy = vfs::directory::serve(
+                validation.clone(),
+                ExecutionScope::new(),
+                fio::PERM_READABLE | file_flags,
+            );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
                 Err(fidl::Error::ClientChannelClosed { status: zx::Status::INVALID_ARGS, .. })
@@ -263,6 +274,7 @@ mod tests {
         let proxy = vfs::serve_file(
             validation.clone(),
             VfsPath::validate_and_split("missing").unwrap(),
+            ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         assert_eq!(

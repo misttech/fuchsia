@@ -976,28 +976,37 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn image_packages_detects_missing_manifest() {
-        let proxy = vfs::directory::serve_read_only(pseudo_directory! {});
+        let proxy = vfs::directory::serve_read_only(
+            pseudo_directory! {},
+            vfs::execution_scope::ExecutionScope::new(),
+        );
 
         assert_matches!(image_packages(&proxy).await, Err(ImagePackagesError::NotFound));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn image_packages_detects_invalid_json() {
-        let proxy = vfs::directory::serve_read_only(pseudo_directory! {
-            "images.json" => read_only("not json!"),
-        });
+        let proxy = vfs::directory::serve_read_only(
+            pseudo_directory! {
+                "images.json" => read_only("not json!"),
+            },
+            vfs::execution_scope::ExecutionScope::new(),
+        );
 
         assert_matches!(image_packages(&proxy).await, Err(ImagePackagesError::Parse(_)));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn image_packages_loads_valid_manifest() {
-        let proxy = vfs::directory::serve_read_only(pseudo_directory! {
-            "images.json" => read_only(r#"{
+        let proxy = vfs::directory::serve_read_only(
+            pseudo_directory! {
+                "images.json" => read_only(r#"{
 "version": "1",
 "contents": { "partitions" : [], "firmware" : [] }
 }"#),
-        });
+            },
+            vfs::execution_scope::ExecutionScope::new(),
+        );
 
         assert_eq!(
             image_packages(&proxy).await.unwrap(),

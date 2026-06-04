@@ -18,8 +18,8 @@ use crate::protocols::ToFileOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequestRef, ProtocolsExt};
 use anyhow::Error;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::{DiscoverableProtocolMarker as _, ServerEnd};
+use flex_fuchsia_io as fio;
 use static_assertions::assert_eq_size;
 use std::convert::TryInto as _;
 use std::future::Future;
@@ -974,7 +974,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
 
     async fn handle_link_into(
         &mut self,
-        target_parent_token: fidl::Event,
+        target_parent_token: flex_client::Event,
         target_name: String,
     ) -> Result<(), Status> {
         let target_name = parse_name(target_name).map_err(|_| Status::INVALID_ARGS)?;
@@ -1362,9 +1362,12 @@ mod tests {
 
     fn init_mock_file(callback: MockCallbackType, flags: fio::Flags) -> TestEnv {
         let file = MockFile::new(callback);
-        let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
 
-        let scope = ExecutionScope::new();
+        let (proxy, server_end) = scope.domain().create_proxy::<fio::FileMarker>();
 
         flags.to_object_request(server_end).create_connection_sync::<FidlIoConnection<_>, _>(
             scope.clone(),
@@ -1984,9 +1987,13 @@ mod tests {
 
         fn init_mock_stream_file(vmo: zx::Vmo, flags: fio::Flags) -> TestEnv {
             let file = MockFile::new_with_vmo(Box::new(always_succeed_callback), vmo);
-            let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+            #[cfg(feature = "fdomain")]
+            let scope =
+                crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+            #[cfg(not(feature = "fdomain"))]
+            let scope = crate::execution_scope::ExecutionScope::new();
 
-            let scope = ExecutionScope::new();
+            let (proxy, server_end) = scope.domain().create_proxy::<fio::FileMarker>();
 
             let cloned_file = file.clone();
             let cloned_scope = scope.clone();

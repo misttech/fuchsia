@@ -148,7 +148,13 @@ mod tests {
             blobfs_fake.add_blob(metafar_blob.merkle, metafar_blob.contents);
             let root_dir = RootDir::new(blobfs_client, metafar_blob.merkle).await.unwrap();
             let meta_as_dir = MetaAsDir::new(root_dir);
-            (Self { _blobfs_fake: blobfs_fake }, vfs::directory::serve_read_only(meta_as_dir))
+            (
+                Self { _blobfs_fake: blobfs_fake },
+                vfs::directory::serve_read_only(
+                    meta_as_dir,
+                    vfs::execution_scope::ExecutionScope::new(),
+                ),
+            )
         }
     }
 
@@ -169,7 +175,7 @@ mod tests {
         let meta_as_dir =
             MetaAsDir::new(RootDir::new(blobfs_client, metafar_blob.merkle).await.unwrap());
         for flags in [fio::PERM_WRITABLE, fio::PERM_EXECUTABLE] {
-            let proxy = vfs::directory::serve(meta_as_dir.clone(), flags);
+            let proxy = vfs::directory::serve(meta_as_dir.clone(), ExecutionScope::new(), flags);
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
                 Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })

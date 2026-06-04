@@ -213,6 +213,7 @@ mod tests {
     use futures::StreamExt;
     use std::sync::Arc;
     use vfs::directory::helper::DirectlyMutable;
+    use vfs::execution_scope::ExecutionScope;
     use vfs::service;
 
     pub fn block_protocol() -> Arc<service::Service> {
@@ -285,15 +286,16 @@ mod tests {
             },
         };
 
-        let client =
-            vfs::directory::serve_read_only(class_block_and_nand).into_client_end().unwrap();
+        let client = vfs::directory::serve_read_only(class_block_and_nand, ExecutionScope::new())
+            .into_client_end()
+            .unwrap();
 
         {
             let ns = fdio::Namespace::installed().expect("failed to get installed namespace");
             ns.bind("/test-dev", client).expect("failed to bind dev in namespace");
         }
 
-        let client = vfs::directory::serve_read_only(partitions_dir);
+        let client = vfs::directory::serve_read_only(partitions_dir, ExecutionScope::new());
         let (_watcher, mut device_stream) = Watcher::new(vec![
             Box::new(PathSource::new("/test-dev/class/block", PathSourceType::Block, None)),
             Box::new(PathSource::new("/test-dev/class/nand", PathSourceType::Nand, None)),
@@ -362,8 +364,9 @@ mod tests {
             },
         };
 
-        let client =
-            vfs::directory::serve_read_only(class_block_and_nand).into_client_end().unwrap();
+        let client = vfs::directory::serve_read_only(class_block_and_nand, ExecutionScope::new())
+            .into_client_end()
+            .unwrap();
 
         {
             let ns = fdio::Namespace::installed().expect("failed to get installed namespace");

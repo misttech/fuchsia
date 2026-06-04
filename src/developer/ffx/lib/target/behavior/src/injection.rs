@@ -401,13 +401,11 @@ mod test {
         TargetCollectionRequest, TargetCollectionRequestStream, TargetConnectionError,
         TargetMarker, TargetRequest, VersionInfo,
     };
-    use fidl_fuchsia_developer_remotecontrol::RemoteControlRequestStream;
     use fuchsia_async::Task;
     use futures::{AsyncReadExt, StreamExt, TryStreamExt};
     use netext::{TokioAsyncReadExt, UnixListenerStream};
     use std::path::PathBuf;
     use tokio::net::UnixListener;
-    use vfs::directory::helper::DirectlyMutable;
 
     /// Retry a future until it succeeds or retries run out.
     async fn retry_with_backoff<E, F>(
@@ -1022,25 +1020,5 @@ mod test {
         )
         .await
         .detach();
-
-        let injection = Injection::new(
-            test_env.context.clone(),
-            test_version_info(),
-            local_node,
-            Some("".into()),
-        );
-
-        let dir = vfs::directory::immutable::simple();
-        dir.add_entry(
-            "fuchsia.developer.remotecontrol.RemoteControl",
-            vfs::service::host(|mut request_stream: RemoteControlRequestStream| async move {
-                while let Ok(Some(request)) = request_stream.try_next().await {
-                    eprintln!("Got a request for RCS proxy: {request:?}");
-                }
-            }),
-        )
-        .unwrap();
-        let dir_proxy = vfs::directory::serve_read_only(Arc::clone(&dir));
-        assert!(injection.remote_factory_fdomain_inner(dir_proxy).await.is_ok());
     }
 }

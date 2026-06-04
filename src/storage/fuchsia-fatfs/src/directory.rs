@@ -1269,7 +1269,7 @@ mod tests {
         let fs = disk.into_fatfs();
         let dir = fs.get_root().expect("get_root OK");
 
-        let proxy = vfs::directory::serve_read_only(dir.clone());
+        let proxy = vfs::directory::serve_read_only(dir.clone(), ExecutionScope::new());
         proxy
             .close()
             .await
@@ -1277,7 +1277,7 @@ mod tests {
             .map_err(Status::from_raw)
             .expect("First close OK");
 
-        let proxy = vfs::directory::serve_read_only(dir.clone());
+        let proxy = vfs::directory::serve_read_only(dir.clone(), ExecutionScope::new());
         proxy
             .close()
             .await
@@ -1297,7 +1297,7 @@ mod tests {
         let root = fs.get_root().expect("get_root failed");
 
         // Open and close root.
-        let proxy = vfs::directory::serve_read_only(root.clone());
+        let proxy = vfs::directory::serve_read_only(root.clone(), ExecutionScope::new());
         proxy
             .close()
             .await
@@ -1309,6 +1309,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             root.clone(),
             Path::validate_and_split("test").unwrap(),
+            ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         proxy
@@ -1363,7 +1364,11 @@ mod tests {
 
         let fs = disk.into_fatfs();
         let root = fs.get_root().expect("get_root failed");
-        let proxy = vfs::directory::serve(root.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let proxy = vfs::directory::serve(
+            root.clone(),
+            ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         let mut new_attrs = fio::MutableNodeAttributes {
             creation_time: Some(
@@ -1405,6 +1410,7 @@ mod tests {
         let proxy = vfs::serve_file(
             root.clone(),
             Path::validate_and_split("test_file").unwrap(),
+            ExecutionScope::new(),
             fio::PERM_WRITABLE,
         );
 

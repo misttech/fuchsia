@@ -1055,11 +1055,15 @@ mod tests {
         };
 
         // Create a Watcher on the pseudo directory.
-        let dir_proxy_for_watcher = vfs::directory::serve_read_only(dir.clone());
+        let dir_proxy_for_watcher = vfs::directory::serve_read_only(
+            dir.clone(),
+            vfs::execution_scope::ExecutionScope::new(),
+        );
         let device_watcher = Watcher::new(&dir_proxy_for_watcher).await.unwrap();
         // Get a proxy to the pseudo directory for the input pipeline. The input pipeline uses this
         // proxy to get connections to input devices.
-        let dir_proxy_for_pipeline = vfs::directory::serve_read_only(dir);
+        let dir_proxy_for_pipeline =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
         let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
@@ -1163,11 +1167,15 @@ mod tests {
         };
 
         // Create a Watcher on the pseudo directory.
-        let dir_proxy_for_watcher = vfs::directory::serve_read_only(dir.clone());
+        let dir_proxy_for_watcher = vfs::directory::serve_read_only(
+            dir.clone(),
+            vfs::execution_scope::ExecutionScope::new(),
+        );
         let device_watcher = Watcher::new(&dir_proxy_for_watcher).await.unwrap();
         // Get a proxy to the pseudo directory for the input pipeline. The input pipeline uses this
         // proxy to get connections to input devices.
-        let dir_proxy_for_pipeline = vfs::directory::serve_read_only(dir);
+        let dir_proxy_for_pipeline =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
         let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));

@@ -139,10 +139,13 @@ pub fn exec_server(quiet: bool) -> LocalFDomainTransport {
     LocalFDomainTransport(FDomainCodec::new(FDomain::new(move || {
         log::info!("Spawning vfs client");
         Ok(fidl::endpoints::ClientEnd::new(
-            vfs::directory::serve_read_only(Arc::clone(&namespace))
-                .into_channel()
-                .unwrap()
-                .into_zx_channel(),
+            vfs::directory::serve_read_only(
+                Arc::clone(&namespace),
+                vfs::execution_scope::ExecutionScope::new(),
+            )
+            .into_channel()
+            .unwrap()
+            .into_zx_channel(),
         ))
     })))
 }

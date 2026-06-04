@@ -9,9 +9,9 @@ use async_trait::async_trait;
 use buf_read_ext::BufReadExt as _;
 use crossterm::tty::IsTty;
 use errors::ffx_bail;
+use fdomain_client::fidl::Proxy;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl::endpoints::Proxy;
 use fidl_codec_fdomain::library as lib;
 use fuchsia_async as fasync;
 use futures::AsyncReadExt;
@@ -24,7 +24,7 @@ use std::fs::File;
 use std::io::{self, BufReader, stdin};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use vfs::directory::helper::DirectlyMutable;
 
 mod analytics;
@@ -128,7 +128,8 @@ pub async fn exec_playground(
     }
 
     let remote_proxy = Arc::new(remote_proxy);
-    let query = rcs::root_realm_query(&remote_proxy, std::time::Duration::from_secs(5)).await?;
+    let query =
+        rcs_fdomain::root_realm_query(&remote_proxy, std::time::Duration::from_secs(5)).await?;
     let toolbox = toolbox_directory(&*remote_proxy, &query).await?;
     let cf_root = cf_fs::CFDirectory::new_root(query);
     let fs_root_simple = vfs::directory::immutable::simple();
@@ -136,13 +137,12 @@ pub async fn exec_playground(
     fs_root_simple.add_entry("toolbox", toolbox)?;
     fs_root_simple.add_entry("cf", cf_root)?;
 
-    // TODO(448274640): When VFS is ported to FDomain, use the connection
-    // FDomain instead of this nonsense.
-    let fdomain = fdomain_local::local_client(move || {
-        Ok(vfs::directory::serve_read_only(Arc::clone(&fs_root_simple)).into_client_end().unwrap())
-    });
-
-    let root_dir_client = fdomain.namespace().await?;
+    let root_dir_client = vfs::directory::serve_read_only(
+        Arc::clone(&fs_root_simple),
+        vfs::execution_scope::ExecutionScope::new(remote_proxy.domain()),
+    )
+    .into_client_end()
+    .unwrap();
 
     let (interpreter, runner) = Interpreter::new(lib_namespace, root_dir_client.into()).await;
     fasync::Task::spawn(runner).detach();

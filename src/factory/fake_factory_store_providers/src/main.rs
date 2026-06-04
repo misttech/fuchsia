@@ -52,7 +52,7 @@ fn start_test_dir(config_path: &str) -> fio::DirectoryProxy {
     }
 
     let test_dir = tree.build();
-    vfs::directory::serve_read_only(test_dir)
+    vfs::directory::serve_read_only(test_dir, vfs::execution_scope::ExecutionScope::new())
 }
 
 async fn run_server(req: IncomingServices, dir_mtx: LockedDirectoryProxy) -> Result<(), Error> {

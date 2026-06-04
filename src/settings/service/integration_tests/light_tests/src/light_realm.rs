@@ -7,11 +7,13 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hardware_light::{
     Capability, Info as HardwareInfo, LightError, LightRequest, LightRequestStream, Rgb,
 };
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_settings::{LightGroup, LightMarker, LightProxy, LightValue};
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryMarker, DeviceListenerRegistryRequest,
     DeviceListenerRegistryRequestStream, MediaButtonsListenerProxy,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability as ComponentCapability, ChildOptions, LocalComponentHandles, RealmBuilder,
@@ -23,7 +25,6 @@ use futures::{FutureExt, StreamExt, TryStreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::{pseudo_directory, service};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[derive(Clone, Debug)]
 pub struct HardwareLight {
@@ -282,8 +283,14 @@ impl LightRealm {
             }
         };
         let mut fs = ServiceFs::new();
-        let _ = fs
-            .add_remote("dev", vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE));
+        let _ = fs.add_remote(
+            "dev",
+            vfs::directory::serve(
+                dir,
+                vfs::execution_scope::ExecutionScope::new(),
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            ),
+        );
         let _ = fs.serve_connection(handles.outgoing_dir).expect("failed to serve dev");
         fs.collect::<()>().await;
         Ok(())

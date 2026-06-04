@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdomain_client::fidl::ClientEnd;
+use fdomain_client::fidl::{ClientEnd, Proxy};
 use fdomain_fuchsia_io as fio;
 use fidl_codec_fdomain::library as lib;
 use std::future::Future;
@@ -151,8 +151,6 @@ impl<T: AsRef<str>> Test<T> {
 
     /// Set `$fs_root` with a set of standard test directories.
     pub async fn with_standard_test_dirs(mut self) -> Self {
-        use fidl::endpoints::Proxy;
-
         let simple = vfs::directory::immutable::simple();
         let test_subdir = vfs::directory::immutable::simple();
         let foo_subdir = vfs::directory::immutable::simple();
@@ -175,15 +173,13 @@ impl<T: AsRef<str>> Test<T> {
         simple.add_entry("test", test_subdir).unwrap();
         simple.add_entry("imports", import_subdir).unwrap();
 
-        let new_client = fdomain_local::local_client(move || {
-            Ok(vfs::directory::serve_read_only(Arc::clone(&simple)).into_client_end().unwrap())
-        });
-        let client_end = new_client.namespace().await.unwrap();
-        self.fdomain_client = new_client;
-        assert!(
-            self.with_dirs.replace(fdomain_client::fidl::ClientEnd::new(client_end)).is_none(),
-            "Set directory root twice!"
-        );
+        let client_end = vfs::directory::serve_read_only(
+            Arc::clone(&simple),
+            vfs::execution_scope::ExecutionScope::new(self.fdomain_client.clone()),
+        )
+        .into_client_end()
+        .unwrap();
+        assert!(self.with_dirs.replace(client_end).is_none(), "Set directory root twice!");
         self
     }
 

@@ -119,7 +119,8 @@ mod test {
                 "bootfs_packages" => read_only(data),
             },
         };
-        let dir_client = vfs::directory::serve_read_only(boot_dir);
+        let dir_client =
+            vfs::directory::serve_read_only(boot_dir, vfs::execution_scope::ExecutionScope::new());
         fasync::unblock(move || {
             let channel = dir_client.into_channel().unwrap().into_zx_channel();
             let client: File = fdio::create_fd(channel.into()).unwrap().into();
@@ -166,7 +167,8 @@ mod test {
                 "b21b34f8370687249a9cd9d4b306dee4c81f1f854f84de4626dc00c000c902fe" => read_only(far_contents),
             }
         };
-        let dir_client = vfs::directory::serve_read_only(boot_dir);
+        let dir_client =
+            vfs::directory::serve_read_only(boot_dir, vfs::execution_scope::ExecutionScope::new());
         fasync::unblock(move || {
             let channel = dir_client.into_channel().unwrap().into_zx_channel();
             let client: File = fdio::create_fd(channel.into()).unwrap().into();

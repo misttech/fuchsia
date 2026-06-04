@@ -5,7 +5,7 @@
 //! Common utilities for implementing file nodes and connections.
 
 use crate::file::FileOptions;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use zx_status::Status;
 
 /// Validate that the requested flags for a new connection are valid. This includes permission
@@ -97,7 +97,7 @@ mod tests {
     use crate::test_utils::build_flag_combinations;
 
     use assert_matches::assert_matches;
-    use fidl_fuchsia_io as fio;
+    use flex_fuchsia_io as fio;
     use zx_status::Status;
 
     fn options_to_rights(options: FileOptions) -> (bool, bool, bool) {

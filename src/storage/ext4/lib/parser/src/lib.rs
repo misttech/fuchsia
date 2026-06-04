@@ -158,7 +158,11 @@ mod tests {
 
         let tree = construct_fs(buffer, true, &fuchsia_inspect::Inspector::default())
             .expect("construct_fs parses the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
 
         let expected = vec![
             DirEntry { name: String::from("file1"), kind: DirentKind::File },
@@ -182,7 +186,11 @@ mod tests {
 
         let tree = construct_fs(buffer, true, &fuchsia_inspect::Inspector::default())
             .expect("construct_fs parses the VMO");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
 
         let expected_entries = vec![
             DirEntry { name: String::from("dir_1000"), kind: DirentKind::Directory },
@@ -263,7 +271,11 @@ mod tests {
             &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
         let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
             .await
             .expect("failed to open file");
@@ -303,7 +315,11 @@ mod tests {
             &fuchsia_inspect::Inspector::default(),
         )
         .expect("construct_fs parses the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
         let file =
             open_file(&root, "file1", fio::PERM_READABLE).await.expect("failed to open file");
         let mut expected_bytes = original_contents.as_bytes().to_vec();
@@ -345,7 +361,11 @@ mod tests {
             &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
         let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
             .await
             .expect("failed to open file");
@@ -392,7 +412,11 @@ mod tests {
             &fuchsia_inspect::Inspector::default(),
         )
         .expect("construct_fs parses the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
         let file =
             open_file(&root, "file1", fio::PERM_READABLE).await.expect("failed to open file");
         assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
@@ -434,7 +458,11 @@ mod tests {
             &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
         let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
             .await
             .expect("failed to open file");
@@ -501,7 +529,11 @@ mod tests {
             &inspector,
         )
         .expect("failed to parse the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         let file1 = open_file(
             &root,
@@ -596,7 +628,11 @@ mod tests {
             &inspector,
         )
         .expect("failed to parse the vmo");
-        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         // Check original contents
         let file = open_file(&root, "file1", fio::PERM_READABLE).await.expect("open failed");

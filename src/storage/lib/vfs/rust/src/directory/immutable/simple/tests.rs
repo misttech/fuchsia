@@ -18,9 +18,15 @@ use crate::{
     assert_write,
 };
 use assert_matches::assert_matches;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::DiscoverableProtocolMarker as _;
+use flex_fuchsia_io as fio;
+#[cfg(not(feature = "fdomain"))]
 use fuchsia_fs::directory::{
+    WatchEvent, WatchMessage, Watcher, open_directory, open_directory_async, open_file,
+    open_file_async,
+};
+#[cfg(feature = "fdomain")]
+use fuchsia_fs_fdomain::directory::{
     WatchEvent, WatchMessage, Watcher, open_directory, open_directory_async, open_file,
     open_file_async,
 };
@@ -61,15 +67,37 @@ async fn assert_open_directory_err(
 
 #[fuchsia::test]
 async fn empty_directory() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn empty_directory_get_attr() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_get_attr!(
         root,
         fio::NodeAttributes {
@@ -82,13 +110,25 @@ async fn empty_directory_get_attr() {
             modification_time: 0,
         }
     );
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn empty_directory_with_custom_inode_get_attr() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new_with_inode(12345);
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_get_attr!(
         root,
         fio::NodeAttributes {
@@ -101,21 +141,45 @@ async fn empty_directory_with_custom_inode_get_attr() {
             modification_time: 0,
         }
     );
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn empty_directory_describe() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_query!(root, fio::DirectoryMarker::PROTOCOL_NAME);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_empty_directory_with_describe() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir, fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION);
     assert_matches!(
         root.take_event_stream().next().await,
         Some(Ok(fio::DirectoryEvent::OnRepresentation { .. }))
@@ -124,51 +188,101 @@ async fn open_empty_directory_with_describe() {
 
 #[fuchsia::test]
 async fn clone() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let file = open_file(&root, "file", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "Content");
     assert_close!(file);
 
+    #[cfg(feature = "fdomain")]
+    let (root_clone, server) = {
+        let client = scope.domain();
+        client.create_proxy::<fio::DirectoryMarker>()
+    };
+    #[cfg(not(feature = "fdomain"))]
     let (root_clone, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     root.clone(server.into_channel().into()).unwrap();
     let file = open_file(&root_clone, "file", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "Content");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(root);
+    let _ = &client;
     assert_close!(root_clone);
 }
 
 #[fuchsia::test]
 async fn one_file_open_existing() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let file = open_file(&root, "file", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "Content");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn one_file_open_missing() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only("Content"),
     };
 
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_open_file_err(&root, "file2", fio::PERM_READABLE, Status::NOT_FOUND).await;
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn one_file_open_missing_not_found_handler() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let last_handler_value = Arc::new(Mutex::new(None));
     let last_handler_value_clone = last_handler_value.clone();
     let dir = Simple::new_with_not_found_handler(move |path| {
@@ -176,14 +290,26 @@ async fn one_file_open_missing_not_found_handler() {
     });
     dir.add_entry("file", file::read_only("Content")).unwrap();
 
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_open_file_err(&root, "file2", fio::PERM_READABLE, Status::NOT_FOUND).await;
+    let _ = &client;
     assert_close!(root);
     assert_eq!(Some("file2".to_string()), *last_handler_value.lock());
 }
 
 #[fuchsia::test]
 async fn small_tree_traversal() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
@@ -193,7 +319,11 @@ async fn small_tree_traversal() {
         },
         "uname" => file::read_only(b"Fuchsia"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     async fn assert_contents(root: &fio::DirectoryProxy, path: &str, expected_contents: &str) {
         let file = open_file(&root, path, fio::PERM_READABLE).await.unwrap();
@@ -207,12 +337,21 @@ async fn small_tree_traversal() {
     let ssh_dir = open_directory(&root, "etc/ssh", fio::PERM_READABLE).await.unwrap();
     assert_contents(&ssh_dir, "sshd_config", "# Empty").await;
 
+    let _ = &client;
     assert_close!(ssh_dir);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_writable_in_subdir() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = {
         pseudo_directory! {
             "etc" => pseudo_directory! {
@@ -222,7 +361,11 @@ async fn open_writable_in_subdir() {
             }
         }
     };
-    let root = serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE);
     let ssh_dir =
         open_directory(&root, "etc/ssh", fio::PERM_READABLE | fio::PERM_WRITABLE).await.unwrap();
     let file =
@@ -235,75 +378,135 @@ async fn open_writable_in_subdir() {
 
 #[fuchsia::test]
 async fn open_non_existing_path() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "file1" => file::read_only(b"Content 1"),
         },
         "file2" => file::read_only(b"Content 2"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "non-existing", fio::PERM_READABLE, Status::NOT_FOUND).await;
     assert_open_file_err(&root, "dir/file10", fio::PERM_READABLE, Status::NOT_FOUND).await;
     assert_open_file_err(&root, "dir/dir/file10", fio::PERM_READABLE, Status::NOT_FOUND).await;
     assert_open_file_err(&root, "dir/dir/file1", fio::PERM_READABLE, Status::NOT_FOUND).await;
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_empty_path() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file_foo" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     assert_open_file_err(&root, "", fio::PERM_READABLE, Status::INVALID_ARGS).await;
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_path_within_a_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "file1" => file::read_only(b"Content 1"),
         },
         "file2" => file::read_only(b"Content 2"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "file2/file1", fio::PERM_READABLE, Status::NOT_DIR).await;
     assert_open_file_err(&root, "dir/file1/file3", fio::PERM_READABLE, Status::NOT_DIR).await;
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_file_as_directory() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "file1" => file::read_only(b"Content 1"),
         },
         "file2" => file::read_only(b"Content 2"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_directory_err(&root, "file2", fio::PERM_READABLE, Status::NOT_DIR).await;
     assert_open_directory_err(&root, "dir/file1", fio::PERM_READABLE, Status::NOT_DIR).await;
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_directory_as_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "dir2" => pseudo_directory! {},
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "dir", fio::PERM_READABLE, Status::NOT_FILE).await;
     assert_open_file_err(&root, "dir/dir2", fio::PERM_READABLE, Status::NOT_FILE).await;
 
+    let _ = &client;
     assert_close!(root);
 }
 
@@ -312,11 +515,22 @@ async fn open_directory_as_file() {
 // Either enable this test when it does or delete/modify it if we decide on a different policy.
 #[ignore]
 async fn trailing_slash_means_directory() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only(b"Content"),
         "dir" => pseudo_directory! {},
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "file/", fio::PERM_READABLE, Status::NOT_DIR).await;
 
@@ -325,70 +539,127 @@ async fn trailing_slash_means_directory() {
     assert_close!(file);
 
     let sub_dir = open_directory(&root, "dir/", fio::PERM_READABLE).await.unwrap();
+    let _ = &client;
     assert_close!(sub_dir);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn no_dots_in_open() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only(b"Content"),
         "dir" => pseudo_directory! {
             "dir2" => pseudo_directory! {},
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_directory_err(&root, "dir/../dir2", fio::PERM_READABLE, Status::INVALID_ARGS).await;
     assert_open_directory_err(&root, "dir/./dir2", fio::PERM_READABLE, Status::INVALID_ARGS).await;
     assert_open_directory_err(&root, "./dir2", fio::PERM_READABLE, Status::INVALID_ARGS).await;
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn no_consecutive_slashes_in_open() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "dir2" => pseudo_directory! {},
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_directory_err(&root, "dir//dir2", fio::PERM_READABLE, Status::INVALID_ARGS).await;
     assert_open_directory_err(&root, "dir/dir2//", fio::PERM_READABLE, Status::INVALID_ARGS).await;
     assert_open_directory_err(&root, "//dir/dir2", fio::PERM_READABLE, Status::INVALID_ARGS).await;
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn directories_restrict_nested_read_permissions() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "file" => file::read_only(b"Content"),
         },
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
     assert_open_file_err(&root, "dir/file", fio::PERM_READABLE, Status::ACCESS_DENIED).await;
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn directories_restrict_nested_write_permissions() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "dir" => pseudo_directory! {
             "file" => Arc::new(MockWritableFile),
         },
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
     assert_open_file_err(&root, "dir/file", fio::PERM_WRITABLE, Status::ACCESS_DENIED).await;
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn directories_remove_nested() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     // Test dynamic removal of a subdirectory under another directory.
     let root = pseudo_directory! {
         "dir" => pseudo_directory! {
@@ -406,6 +677,13 @@ async fn directories_remove_nested() {
 
 #[fuchsia::test]
 async fn flag_inherit_write_means_writable() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = {
         pseudo_directory! {
         "nested" => pseudo_directory! {
@@ -413,7 +691,11 @@ async fn flag_inherit_write_means_writable() {
             }
         }
     };
-    let root = serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE);
     let sub_dir =
         open_directory(&root, "nested", fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE)
             .await
@@ -425,18 +707,31 @@ async fn flag_inherit_write_means_writable() {
     assert_write!(file, "new content");
 
     assert_close!(file);
+    let _ = &client;
     assert_close!(sub_dir);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn flag_inherit_write_does_not_add_writable_to_read_only() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "nested" => pseudo_directory! {
             "file" => Arc::new(MockWritableFile),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let sub_dir =
         open_directory(&root, "nested", fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE)
             .await
@@ -453,12 +748,21 @@ async fn flag_inherit_write_does_not_add_writable_to_read_only() {
     assert_read!(file, MOCK_FILE_CONTENTS);
 
     assert_close!(file);
+    let _ = &client;
     assert_close!(sub_dir);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn read_dirents_large_buffer() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
@@ -472,7 +776,11 @@ async fn read_dirents_large_buffer() {
         "more" => file::read_only(b"Content"),
         "uname" => file::read_only(b"Fuchsia"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected
@@ -492,26 +800,40 @@ async fn read_dirents_large_buffer() {
         .add(fio::DirentType::File, b"shells")
         .add(fio::DirentType::Directory, b"ssh");
     assert_read_dirents!(etc_dir, 1000, expected.into_vec());
+    let _ = &client;
     assert_close!(etc_dir);
 
     let ssh_dir = open_directory(&root, "etc/ssh", fio::PERM_READABLE).await.unwrap();
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected.add(fio::DirentType::Directory, b".").add(fio::DirentType::File, b"sshd_config");
     assert_read_dirents!(ssh_dir, 1000, expected.into_vec());
+    let _ = &client;
     assert_close!(ssh_dir);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn read_dirents_small_buffer() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! { },
         "files" => file::read_only(b"Content"),
         "more" => file::read_only(b"Content"),
         "uname" => file::read_only(b"Fuchsia"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     // Entry header is 10 bytes + length of the name in bytes.
@@ -532,30 +854,54 @@ async fn read_dirents_small_buffer() {
     assert_read_dirents!(root, 100, expected.into_vec());
 
     assert_read_dirents!(root, 100, vec![]);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn read_dirents_very_small_buffer() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let (status, entries) = root.read_dirents(8).await.expect("read_dirents fidl error");
     assert_eq!(Status::from_raw(status), Status::BUFFER_TOO_SMALL);
     assert_eq!(entries.len(), 0);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn read_dirents_rewind() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! { },
         "files" => file::read_only(b"Content"),
         "more" => file::read_only(b"Content"),
         "uname" => file::read_only(b"Fuchsia"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     // Entry header is 10 bytes + length of the name in bytes.
@@ -588,11 +934,19 @@ async fn read_dirents_rewind() {
     assert_read_dirents!(root, 200, expected.into_vec());
 
     assert_read_dirents!(root, 100, vec![]);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn add_entry_too_long_error() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     assert_eq_size!(u64, usize);
 
     // It is annoying to have to write `as u64` or `as usize` everywhere.  Converting
@@ -632,17 +986,33 @@ async fn add_entry_too_long_error() {
 
     // Make sure that after we have seen an error, the entry is not actually inserted.
 
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected.add(fio::DirentType::Directory, b".");
     assert_read_dirents!(root, 1000, expected.into_vec());
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn simple_add_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir.clone(), fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir.clone(), scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "file", fio::PERM_READABLE, Status::NOT_FOUND).await;
 
@@ -651,18 +1021,30 @@ async fn simple_add_file() {
 
     let proxy = open_file(&root, "file", fio::PERM_READABLE).await.unwrap();
     assert_read!(proxy, "Content");
+    let _ = &client;
     assert_close!(proxy);
 }
 
 #[fuchsia::test]
 async fn add_file_to_empty() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             etc -> /* empty */
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "etc/fstab", fio::PERM_READABLE, Status::NOT_FOUND).await;
 
@@ -671,11 +1053,19 @@ async fn add_file_to_empty() {
 
     let proxy = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
     assert_read!(proxy, "/dev/fs /");
+    let _ = &client;
     assert_close!(proxy);
 }
 
 #[fuchsia::test]
 async fn in_tree_open() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let ssh;
     let _root = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -686,15 +1076,27 @@ async fn in_tree_open() {
         },
     };
 
-    let ssh_dir = serve(ssh, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let ssh_dir = serve(ssh, scope.clone(), fio::PERM_READABLE);
     let file = open_file(&ssh_dir, "sshd_config", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "# Empty");
     assert_close!(file);
+    let _ = &client;
     assert_close!(ssh_dir);
 }
 
 #[fuchsia::test]
 async fn in_tree_open_path_one_component() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let _root = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -706,15 +1108,27 @@ async fn in_tree_open_path_one_component() {
     };
 
     let path = Path::validate_and_split("ssh").unwrap();
-    let ssh_dir = crate::serve_directory(etc, path, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let ssh_dir = crate::serve_directory(etc, path, scope.clone(), fio::PERM_READABLE);
     let file = open_file(&ssh_dir, "sshd_config", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "# Empty");
     assert_close!(file);
+    let _ = &client;
     assert_close!(ssh_dir);
 }
 
 #[fuchsia::test]
 async fn in_tree_open_path_two_components() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let _root = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -726,13 +1140,24 @@ async fn in_tree_open_path_two_components() {
     };
 
     let path = Path::validate_and_split("ssh/sshd_config").unwrap();
-    let file = crate::serve_file(etc, path, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let file = crate::serve_file(etc, path, scope.clone(), fio::PERM_READABLE);
     assert_read!(file, "# Empty");
     assert_close!(file);
 }
 
 #[fuchsia::test]
 async fn in_tree_add_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -743,7 +1168,11 @@ async fn in_tree_add_file() {
             "passwd" => file::read_only(b"[redacted]"),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "etc/fstab", fio::PERM_READABLE, Status::NOT_FOUND).await;
     let file = open_file(&root, "etc/passwd", fio::PERM_READABLE).await.unwrap();
@@ -760,11 +1189,19 @@ async fn in_tree_add_file() {
     assert_read!(file, "[redacted]");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn in_tree_remove_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -773,7 +1210,11 @@ async fn in_tree_remove_file() {
             "passwd" => file::read_only(b"[redacted]"),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let file = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "/dev/fs /");
@@ -796,11 +1237,19 @@ async fn in_tree_remove_file() {
     assert_read!(file, "/dev/fs /");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn in_tree_move_file() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -808,7 +1257,11 @@ async fn in_tree_move_file() {
             "fstab" => file::read_only(b"/dev/fs /"),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "etc/passwd", fio::PERM_READABLE, Status::NOT_FOUND).await;
     let file = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
@@ -828,29 +1281,49 @@ async fn in_tree_move_file() {
     assert_read!(file, "/dev/fs /");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_empty() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = Simple::new();
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let mut watcher = Watcher::new(&root).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_non_empty() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
@@ -860,31 +1333,43 @@ async fn watch_non_empty() {
         },
         "files" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let mut watcher = Watcher::new(&root).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("etc") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("etc")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("files") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("files")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_two_watchers() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
@@ -894,50 +1379,62 @@ async fn watch_two_watchers() {
         },
         "files" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let mut watcher = Watcher::new(&root).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("etc") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("etc")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("files") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("files")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
     let mut watcher2 = Watcher::new(&root).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher2.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher2.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("etc") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("etc")
     );
-    assert_eq!(
+    assert_matches!(
         watcher2.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("files") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("files")
     );
-    assert_eq!(
+    assert_matches!(
         watcher2.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_addition() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -948,7 +1445,11 @@ async fn watch_addition() {
             "passwd" => file::read_only(b"[redacted]"),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     assert_open_file_err(&root, "etc/fstab", fio::PERM_READABLE, Status::NOT_FOUND).await;
     let file = open_file(&root, "etc/passwd", fio::PERM_READABLE).await.unwrap();
@@ -958,29 +1459,29 @@ async fn watch_addition() {
     let etc_proxy = open_directory(&root, "etc", fio::PERM_READABLE).await.unwrap();
     let mut watcher = Watcher::new(&etc_proxy).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("passwd") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("passwd")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("ssh") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("ssh")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
     let fstab = file::read_only(b"/dev/fs /");
     etc.add_entry("fstab", fstab).unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::ADD_FILE, filename: PathBuf::from("fstab") }))
+        Some(Ok(WatchMessage { event: WatchEvent::ADD_FILE, filename })) if filename == PathBuf::from("fstab")
     );
 
     let file = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
@@ -990,12 +1491,16 @@ async fn watch_addition() {
     assert_read!(file, "[redacted]");
     assert_close!(file);
 
+    let _ = &client;
     assert_close!(etc_proxy);
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_removal() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
     let etc;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
@@ -1004,7 +1509,11 @@ async fn watch_removal() {
             "passwd" => file::read_only(b"[redacted]"),
         },
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let file = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
     assert_read!(file, "/dev/fs /");
@@ -1016,21 +1525,21 @@ async fn watch_removal() {
     let etc_proxy = open_directory(&root, "etc", fio::PERM_READABLE).await.unwrap();
     let mut watcher = Watcher::new(&etc_proxy).await.unwrap();
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from(".") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from(".")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("fstab") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("fstab")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename: PathBuf::from("passwd") }))
+        Some(Ok(WatchMessage { event: WatchEvent::EXISTING, filename })) if filename == PathBuf::from("passwd")
     );
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename })) if filename == PathBuf::new()
     );
 
     let o_passwd = etc.remove_entry("passwd", false).unwrap();
@@ -1042,12 +1551,9 @@ async fn watch_removal() {
         }
     }
 
-    assert_eq!(
+    assert_matches!(
         watcher.next().await,
-        Some(Ok(WatchMessage {
-            event: WatchEvent::REMOVE_FILE,
-            filename: PathBuf::from("passwd")
-        }))
+        Some(Ok(WatchMessage { event: WatchEvent::REMOVE_FILE, filename })) if filename == PathBuf::from("passwd")
     );
 
     let file = open_file(&root, "etc/fstab", fio::PERM_READABLE).await.unwrap();
@@ -1061,6 +1567,13 @@ async fn watch_removal() {
 
 #[fuchsia::test]
 async fn watch_with_mask() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "etc" => pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
@@ -1070,50 +1583,80 @@ async fn watch_with_mask() {
         },
         "files" => file::read_only(b"Content"),
     };
-    let root = serve(dir, fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::PERM_READABLE);
 
     let mask = fio::WatchMask::IDLE | fio::WatchMask::ADDED | fio::WatchMask::REMOVED;
     let mut watcher = Watcher::new_with_mask(&root, mask).await.unwrap();
     assert_eq!(
-        watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }))
+        watcher.next().await.unwrap().unwrap(),
+        WatchMessage { event: WatchEvent::IDLE, filename: PathBuf::new() }
     );
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn watch_remove_all_entries() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {
         "file1" => file::read_only(""),
         "file2" => file::read_only(""),
     };
-    let root = serve(dir.clone(), fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir.clone(), scope.clone(), fio::PERM_READABLE);
     let mut watcher = Watcher::new_with_mask(&root, fio::WatchMask::REMOVED).await.unwrap();
 
     dir.remove_all_entries();
 
     assert_eq!(
-        watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::REMOVE_FILE, filename: PathBuf::from("file1") }))
+        watcher.next().await.unwrap().unwrap(),
+        WatchMessage { event: WatchEvent::REMOVE_FILE, filename: PathBuf::from("file1") }
     );
     assert_eq!(
-        watcher.next().await,
-        Some(Ok(WatchMessage { event: WatchEvent::REMOVE_FILE, filename: PathBuf::from("file2") }))
+        watcher.next().await.unwrap().unwrap(),
+        WatchMessage { event: WatchEvent::REMOVE_FILE, filename: PathBuf::from("file2") }
     );
 
+    let _ = &client;
     assert_close!(root);
 }
 
 #[fuchsia::test]
 async fn open_directory_containing_itself() {
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
+    let client = flex_client::fidl::ZirconClient;
+    let _ = &client;
     let dir = pseudo_directory! {};
     dir.add_entry("dir", dir.clone()).unwrap();
 
-    let root = serve(dir.clone(), fio::PERM_READABLE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir.clone(), scope.clone(), fio::PERM_READABLE);
     let sub_dir = open_directory(&root, "dir/dir/dir/dir", fio::PERM_READABLE).await.unwrap();
 
+    let _ = &client;
     assert_close!(sub_dir);
+    let _ = &client;
     assert_close!(root);
 
     dir.remove_entry("dir", true).unwrap();

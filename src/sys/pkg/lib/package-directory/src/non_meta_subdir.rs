@@ -144,7 +144,13 @@ mod tests {
             }
             let root_dir = RootDir::new(blobfs_client, metafar_blob.merkle).await.unwrap();
             let sub_dir = NonMetaSubdir::new(root_dir, "dir0/".to_string());
-            (Self { _blobfs_fake: blobfs_fake }, vfs::directory::serve_read_only(sub_dir))
+            (
+                Self { _blobfs_fake: blobfs_fake },
+                vfs::directory::serve_read_only(
+                    sub_dir,
+                    vfs::execution_scope::ExecutionScope::new(),
+                ),
+            )
         }
     }
 
@@ -166,7 +172,7 @@ mod tests {
         }
         let root_dir = RootDir::new(blobfs_client, metafar_blob.merkle).await.unwrap();
         let sub_dir = NonMetaSubdir::new(root_dir, "dir0/".to_string());
-        let proxy = vfs::directory::serve(sub_dir, fio::PERM_WRITABLE);
+        let proxy = vfs::directory::serve(sub_dir, ExecutionScope::new(), fio::PERM_WRITABLE);
         assert_matches!(
             proxy.take_event_stream().try_next().await,
             Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })

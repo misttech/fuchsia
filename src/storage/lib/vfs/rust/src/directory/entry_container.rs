@@ -13,8 +13,8 @@ use crate::object_request::ObjectRequestRef;
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use crate::object_request::ToObjectRequest as _;
 use crate::path::Path;
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_io as fio;
 use futures::future::BoxFuture;
 use std::any::Any;
 use std::future::{Future, ready};
@@ -22,25 +22,26 @@ use std::sync::Arc;
 use zx_status::Status;
 
 mod private {
-    use fidl_fuchsia_io as fio;
+    use flex_fuchsia_io as fio;
 
     /// A type-preserving wrapper around [`fuchsia_async::Channel`].
     #[derive(Debug)]
     pub struct DirectoryWatcher {
-        channel: fuchsia_async::Channel,
+        channel: flex_client::AsyncChannel,
     }
 
     impl DirectoryWatcher {
         /// Provides access to the underlying channel.
-        pub fn channel(&self) -> &fuchsia_async::Channel {
+        pub fn channel(&self) -> &flex_client::AsyncChannel {
             let Self { channel } = self;
             channel
         }
     }
 
-    impl From<fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>> for DirectoryWatcher {
-        fn from(server_end: fidl::endpoints::ServerEnd<fio::DirectoryWatcherMarker>) -> Self {
-            let channel = fuchsia_async::Channel::from_channel(server_end.into_channel());
+    impl From<flex_client::fidl::ServerEnd<fio::DirectoryWatcherMarker>> for DirectoryWatcher {
+        fn from(server_end: flex_client::fidl::ServerEnd<fio::DirectoryWatcherMarker>) -> Self {
+            use crate::object_request::IntoAsyncChannel;
+            let channel = server_end.into_channel().into_async_channel();
             Self { channel }
         }
     }

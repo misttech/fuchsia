@@ -4,7 +4,6 @@
 
 use fidl_fuchsia_fdomain as proto;
 use fidl_message::TransactionHeader;
-use fuchsia_async as _;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use futures::channel::oneshot::Sender as OneshotSender;

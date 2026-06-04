@@ -143,6 +143,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use vfs::directory::immutable::simple;
+    use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
 
@@ -151,7 +152,7 @@ mod tests {
         let dir = pseudo_directory! {
             "dir" => simple(),
         };
-        let dir = vfs::directory::serve_read_only(dir);
+        let dir = vfs::directory::serve_read_only(dir, ExecutionScope::new());
         let dir = open_directory_async(&dir, "dir", fio::Rights::empty()).unwrap();
         fuchsia_fs::directory::close(dir).await.unwrap();
     }
@@ -161,7 +162,7 @@ mod tests {
         let dir = pseudo_directory! {
             "dir" => simple(),
         };
-        let dir = vfs::directory::serve_read_only(dir);
+        let dir = vfs::directory::serve_read_only(dir, ExecutionScope::new());
         let dir = open_directory_async(&dir, "fake", fio::Rights::empty()).unwrap();
         // The open error is not detected until the proxy is interacted with.
         assert_matches!(fuchsia_fs::directory::close(dir).await, Err(_));
@@ -172,7 +173,7 @@ mod tests {
         let dir = pseudo_directory! {
             "file" => read_only("read_only"),
         };
-        let dir = vfs::directory::serve_read_only(dir);
+        let dir = vfs::directory::serve_read_only(dir, ExecutionScope::new());
         let file = open_file_async(&dir, "file", fio::Rights::READ_BYTES).unwrap();
         fuchsia_fs::file::close(file).await.unwrap();
     }
@@ -182,7 +183,7 @@ mod tests {
         let dir = pseudo_directory! {
             "file" => read_only("read_only"),
         };
-        let dir = vfs::directory::serve_read_only(dir);
+        let dir = vfs::directory::serve_read_only(dir, ExecutionScope::new());
         let fake = open_file_async(&dir, "fake", fio::Rights::READ_BYTES).unwrap();
         // The open error is not detected until the proxy is interacted with.
         assert_matches!(fuchsia_fs::file::close(fake).await, Err(_));

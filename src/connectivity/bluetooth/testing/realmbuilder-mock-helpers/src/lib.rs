@@ -84,7 +84,10 @@ pub async fn mock_dev(
     dev_directory: Arc<dyn Directory>,
 ) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
-    let _ = fs.add_remote("dev", vfs::directory::serve_read_only(dev_directory));
+    let _ = fs.add_remote(
+        "dev",
+        vfs::directory::serve_read_only(dev_directory, vfs::execution_scope::ExecutionScope::new()),
+    );
     let _ = fs.serve_connection(handles.outgoing_dir)?;
     fs.collect::<()>().await;
     Ok(())

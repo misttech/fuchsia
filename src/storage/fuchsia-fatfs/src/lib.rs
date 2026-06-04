@@ -304,7 +304,7 @@ mod tests {
 
         let fatfs = disk.into_fatfs();
         let root = fatfs.get_root().unwrap();
-        let proxy = vfs::directory::serve_read_only(root.clone());
+        let proxy = vfs::directory::serve_read_only(root.clone(), ExecutionScope::new());
         root.close();
 
         structure

@@ -34,8 +34,8 @@ rustc_library("io_conformance_util") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
-    "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:futures",
   ]
 

@@ -12,7 +12,7 @@ use crate::directory::entry::DirectoryEntry;
 use crate::directory::helper::DirectlyMutable;
 use crate::directory::immutable::Simple;
 
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use itertools::Itertools;
 use name::{Name, ParseNameError};
 use std::collections::HashMap;
@@ -84,7 +84,7 @@ where
 }
 
 pub enum TreeBuilder {
-    Directory(HashMap<Name, TreeBuilder>),
+    Directory(HashMap<Name, TreeBuilder>, #[cfg(feature = "fdomain")] Arc<flex_client::Client>),
     Leaf(Arc<dyn DirectoryEntry>),
 }
 
@@ -100,8 +100,12 @@ pub enum TreeBuilder {
 impl TreeBuilder {
     /// Constructs an empty builder.  It is always an empty [`crate::directory::immutable::Simple`]
     /// directory.
-    pub fn empty_dir() -> Self {
-        TreeBuilder::Directory(HashMap::new())
+    pub fn empty_dir(#[cfg(feature = "fdomain")] client: Arc<flex_client::Client>) -> Self {
+        TreeBuilder::Directory(
+            HashMap::new(),
+            #[cfg(feature = "fdomain")]
+            client,
+        )
     }
 
     /// Adds a [`DirectoryEntry`] at the specified path.  It can be either a file or a directory.
@@ -130,7 +134,7 @@ impl TreeBuilder {
                     .insert(name, TreeBuilder::Leaf(entry))
                 {
                     None => Ok(()),
-                    Some(TreeBuilder::Directory(_)) => {
+                    Some(TreeBuilder::Directory(..)) => {
                         Err(Error::LeafOverDirectory { path: full_path.to_string() })
                     }
                     Some(TreeBuilder::Leaf(_)) => {
@@ -138,6 +142,14 @@ impl TreeBuilder {
                     }
                 },
             ),
+        }
+    }
+
+    #[cfg(feature = "fdomain")]
+    fn domain(&self) -> Option<Arc<flex_client::Client>> {
+        match self {
+            TreeBuilder::Directory(_, client) => Some(client.clone()),
+            TreeBuilder::Leaf(_) => None,
         }
     }
 
@@ -179,6 +191,8 @@ impl TreeBuilder {
         let path = path.into();
         let traversed = vec![];
         let mut rest = path.iter();
+        #[cfg(feature = "fdomain")]
+        let client = self.domain();
         match rest.next() {
             None => Err(Error::EmptyPath),
             Some(name) => self.add_path(
@@ -186,11 +200,16 @@ impl TreeBuilder {
                 traversed,
                 name,
                 rest,
-                |entries, name, full_path, traversed| match entries
-                    .entry(name)
-                    .or_insert_with(|| TreeBuilder::Directory(HashMap::new()))
-                {
-                    TreeBuilder::Directory(_) => Ok(()),
+                |entries, name, full_path, traversed| match entries.entry(name).or_insert_with(
+                    || {
+                        TreeBuilder::Directory(
+                            HashMap::new(),
+                            #[cfg(feature = "fdomain")]
+                            client.clone().unwrap(),
+                        )
+                    },
+                ) {
+                    TreeBuilder::Directory(..) => Ok(()),
                     TreeBuilder::Leaf(_) => Err(Error::EntryInsideLeaf {
                         path: full_path.to_string(),
                         traversed: traversed.iter().join("/"),
@@ -224,14 +243,20 @@ impl TreeBuilder {
                 error,
             })?;
 
+        #[cfg(feature = "fdomain")]
+        let client = self.domain();
         match self {
-            TreeBuilder::Directory(entries) => match rest.next() {
+            TreeBuilder::Directory(entries, ..) => match rest.next() {
                 None => inserter(entries, parsed_name, full_path, traversed),
                 Some(next_component) => {
                     traversed.push(name);
                     match entries.entry(parsed_name) {
                         Entry::Vacant(slot) => {
-                            let mut child = TreeBuilder::Directory(HashMap::new());
+                            let mut child = TreeBuilder::Directory(
+                                HashMap::new(),
+                                #[cfg(feature = "fdomain")]
+                                client.unwrap(),
+                            );
                             child.add_path(full_path, traversed, next_component, rest, inserter)?;
                             slot.insert(child);
                             Ok(())
@@ -269,7 +294,7 @@ impl TreeBuilder {
         F: for<'a> FnMut(&'a str) -> u64,
     {
         match self {
-            TreeBuilder::Directory(mut entries) => {
+            TreeBuilder::Directory(mut entries, ..) => {
                 let res = Simple::new_with_inode(get_inode("."));
                 for (name, child) in entries.drain() {
                     let child = child.build_dyn(&name, get_inode);
@@ -293,7 +318,7 @@ impl TreeBuilder {
         F: for<'a> FnMut(&'a str) -> u64,
     {
         match self {
-            TreeBuilder::Directory(mut entries) => {
+            TreeBuilder::Directory(mut entries, ..) => {
                 let res = Simple::new_with_inode(get_inode(dir));
                 for (name, child) in entries.drain() {
                     let child = child.build_dyn(&name, get_inode);
@@ -361,8 +386,21 @@ mod tests {
     use crate::directory::serve;
     use crate::file;
 
-    use fidl_fuchsia_io as fio;
-    use fuchsia_fs::directory::{DirEntry, DirentKind, open_directory, readdir};
+    use flex_fuchsia_io as fio;
+    #[cfg(not(feature = "fdomain"))]
+    use fuchsia_fs::directory::{DirEntry, DirentKind, open_directory, open_file, readdir};
+    #[cfg(feature = "fdomain")]
+    use fuchsia_fs_fdomain::directory::{DirEntry, DirentKind, open_directory, open_file, readdir};
+
+    #[cfg(feature = "fdomain")]
+    fn empty_dir() -> TreeBuilder {
+        TreeBuilder::empty_dir(flex_local::local_client_empty())
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    fn empty_dir() -> TreeBuilder {
+        TreeBuilder::empty_dir()
+    }
     use vfs_macros::pseudo_directory;
 
     async fn assert_open_file_contents(
@@ -371,12 +409,19 @@ mod tests {
         flags: fio::Flags,
         expected_contents: &str,
     ) {
-        let file = fuchsia_fs::directory::open_file(&root, path, flags).await.unwrap();
+        let file = open_file(&root, path, flags).await.unwrap();
         assert_read!(file, expected_contents);
         assert_close!(file);
     }
 
-    async fn get_id_of_path(root: &fio::DirectoryProxy, path: &str) -> u64 {
+    async fn get_id_of_path(
+        root: &fio::DirectoryProxy,
+        path: &str,
+        #[cfg(feature = "fdomain")] client: &std::sync::Arc<flex_client::Client>,
+    ) -> u64 {
+        #[cfg(feature = "fdomain")]
+        let (proxy, server) = client.create_proxy::<fio::NodeMarker>();
+        #[cfg(not(feature = "fdomain"))]
         let (proxy, server) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
         root.open(path, fio::PERM_READABLE, &Default::default(), server.into_channel())
             .expect("failed to call open");
@@ -390,7 +435,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn vfs_with_custom_inodes() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_entry(&["a", "b", "file"], file::read_only(b"A content")).unwrap();
         tree.add_entry(&["a", "c", "file"], file::read_only(b"B content")).unwrap();
 
@@ -403,20 +448,55 @@ mod tests {
             }
         };
         let root = tree.build_with_inode_generator(&mut get_inode);
-        let root = serve(root, fio::PERM_READABLE);
-        assert_eq!(get_id_of_path(&root, "a").await, 1);
-        assert_eq!(get_id_of_path(&root, "a/b").await, 2);
-        assert_eq!(get_id_of_path(&root, "a/c").await, 3);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
+        assert_eq!(
+            get_id_of_path(
+                &root,
+                "a",
+                #[cfg(feature = "fdomain")]
+                &scope.domain()
+            )
+            .await,
+            1
+        );
+        assert_eq!(
+            get_id_of_path(
+                &root,
+                "a/b",
+                #[cfg(feature = "fdomain")]
+                &scope.domain()
+            )
+            .await,
+            2
+        );
+        assert_eq!(
+            get_id_of_path(
+                &root,
+                "a/c",
+                #[cfg(feature = "fdomain")]
+                &scope.domain()
+            )
+            .await,
+            3
+        );
     }
 
     #[fuchsia::test]
     async fn two_files() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_entry("a", file::read_only(b"A content")).unwrap();
         tree.add_entry("b", file::read_only(b"B content")).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -433,13 +513,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn overlapping_paths() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_entry(&["one", "two"], file::read_only(b"A")).unwrap();
         tree.add_entry(&["one", "three"], file::read_only(b"B")).unwrap();
         tree.add_entry("four", file::read_only(b"C")).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -467,6 +551,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn directory_leaf() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(feature = "fdomain")]
+        let _dummy_handle = client.create_proxy::<fio::NodeMarker>();
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
+        let _ = &client;
         let etc = pseudo_directory! {
             "fstab" => file::read_only(b"/dev/fs /"),
             "ssh" => pseudo_directory! {
@@ -474,12 +565,16 @@ mod tests {
             },
         };
 
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_entry("etc", etc).unwrap();
         tree.add_entry("uname", file::read_only(b"Fuchsia")).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -514,12 +609,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn add_empty_dir_populate_later() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_empty_dir(&["one", "two"]).unwrap();
         tree.add_entry(&["one", "two", "three"], file::read_only(b"B")).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -545,12 +644,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn add_empty_dir_already_exists() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_entry(&["one", "two", "three"], file::read_only(b"B")).unwrap();
         tree.add_empty_dir(&["one", "two"]).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -578,11 +681,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn lone_add_empty_dir() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_empty_dir(&["just-me"]).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -597,12 +704,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn add_empty_dir_inside_add_empty_dir() {
-        let mut tree = TreeBuilder::empty_dir();
+        let mut tree = empty_dir();
         tree.add_empty_dir(&["container"]).unwrap();
         tree.add_empty_dir(&["container", "nested"]).unwrap();
 
         let root = tree.build();
-        let root = serve(root, fio::PERM_READABLE);
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+        let root = serve(root, scope.clone(), fio::PERM_READABLE);
 
         assert_eq!(
             readdir(&root).await.unwrap(),
@@ -625,8 +736,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_empty_path_in_add_entry() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_empty_path_in_add_entry() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&[], file::read_only(b"Invalid"))
             .expect_err("Empty paths are not allowed.");
@@ -634,8 +745,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_empty_first_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_empty_first_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&[""], file::read_only(b"Invalid"))
             .expect_err("Empty paths are not allowed.");
@@ -650,8 +761,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_empty_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_empty_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&["a", "", "c"], file::read_only(b"Invalid"))
             .expect_err("Empty paths are not allowed.");
@@ -666,8 +777,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_slash_in_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_slash_in_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry("a/b", file::read_only(b"Invalid"))
             .expect_err("Slash in path component name.");
@@ -682,8 +793,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_slash_in_second_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_slash_in_second_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&["a", "b/c"], file::read_only(b"Invalid"))
             .expect_err("Slash in path component name.");
@@ -698,8 +809,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_component_name_too_long() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_component_name_too_long() {
+        let mut tree = empty_dir();
 
         let long_component = "abcdefghij".repeat(fio::MAX_NAME_LENGTH as usize / 10 + 1);
 
@@ -718,8 +829,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_dot_in_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_dot_in_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&["a", "."], file::read_only(b"Invalid"))
             .expect_err("Dot in path component name.");
@@ -734,8 +845,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_dot_dot_in_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_dot_dot_in_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&["a", ".."], file::read_only(b"Invalid"))
             .expect_err("Dot dot in path component name.");
@@ -750,8 +861,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_null_in_component() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_null_in_component() {
+        let mut tree = empty_dir();
         let err = tree
             .add_entry(&["a", "foo\0bar"], file::read_only(b"Invalid"))
             .expect_err("Embedded null in component.");
@@ -766,8 +877,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_leaf_over_directory() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_leaf_over_directory() {
+        let mut tree = empty_dir();
 
         tree.add_entry(&["top", "nested", "file"], file::read_only(b"Content")).unwrap();
         let err = tree
@@ -777,8 +888,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_leaf_over_leaf() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_leaf_over_leaf() {
+        let mut tree = empty_dir();
 
         tree.add_entry(&["top", "nested", "file"], file::read_only(b"Content")).unwrap();
         let err = tree
@@ -788,8 +899,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_entry_inside_leaf() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_entry_inside_leaf() {
+        let mut tree = empty_dir();
 
         tree.add_entry(&["top", "file"], file::read_only(b"Content")).unwrap();
         let err = tree
@@ -805,8 +916,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn error_entry_inside_leaf_directory() {
-        let mut tree = TreeBuilder::empty_dir();
+    async fn error_entry_inside_leaf_directory() {
+        let mut tree = empty_dir();
 
         // Even when a leaf is itself a directory the tree builder cannot insert a nested entry.
         tree.add_entry(&["top", "file"], Simple::new()).unwrap();

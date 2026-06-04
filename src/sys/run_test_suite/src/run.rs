@@ -468,7 +468,11 @@ mod test {
             "test_file.txt" => read_only("Hello, World!"),
         };
 
-        let directory_proxy = vfs::directory::serve(dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let directory_proxy = vfs::directory::serve(
+            dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         let directory_client =
             fidl::endpoints::ClientEnd::new(directory_proxy.into_channel().unwrap().into());

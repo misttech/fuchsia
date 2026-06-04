@@ -13,8 +13,10 @@ use crate::node::Node;
 use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
-use fidl::endpoints::{ControlHandle as _, DiscoverableProtocolMarker as _, Responder, ServerEnd};
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::{
+    ControlHandle as _, DiscoverableProtocolMarker as _, Responder, ServerEnd,
+};
+use flex_fuchsia_io as fio;
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -252,7 +254,7 @@ impl<T: Symlink> Connection<T> {
 
     async fn handle_link_into(
         &mut self,
-        target_parent_token: fidl::Event,
+        target_parent_token: flex_client::Event,
         target_name: String,
     ) -> Result<(), Status> {
         let target_name = parse_name(target_name).map_err(|_| Status::INVALID_ARGS)?;
@@ -390,19 +392,27 @@ pub fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::{Connection, Symlink};
+    use super::{Connection, ExecutionScope, Symlink};
     use crate::ToObjectRequest;
     use crate::directory::entry::{EntryInfo, GetEntryInfo};
-    use crate::execution_scope::ExecutionScope;
     use crate::node::Node;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{ServerEnd, create_proxy};
-    use fidl_fuchsia_io as fio;
+    use flex_client::fidl::ServerEnd;
+    use flex_fuchsia_io as fio;
     use fuchsia_sync::Mutex;
     use futures::StreamExt;
     use std::collections::HashMap;
     use std::sync::Arc;
     use zx_status::Status;
+
+    fn test_scope() -> ExecutionScope {
+        #[cfg(feature = "fdomain")]
+        let client = flex_local::local_client_empty();
+        #[cfg(feature = "fdomain")]
+        return ExecutionScope::new(client);
+        #[cfg(not(feature = "fdomain"))]
+        return ExecutionScope::new();
+    }
 
     const TARGET: &[u8] = b"target";
 
@@ -470,12 +480,17 @@ mod tests {
         }
     }
 
-    async fn serve_test_symlink() -> fio::SymlinkProxy {
-        let (client_end, server_end) = create_proxy::<fio::SymlinkMarker>();
+    async fn serve_test_symlink(client: &flex_client::ClientArg) -> fio::SymlinkProxy {
+        let (client_end, server_end) = client.create_proxy::<fio::SymlinkMarker>();
         let flags = fio::PERM_READABLE | fio::Flags::PROTOCOL_SYMLINK;
 
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(client.clone());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+
         Connection::create_sync(
-            ExecutionScope::new(),
+            scope,
             Arc::new(TestSymlink::new()),
             flags,
             flags.to_object_request(server_end),
@@ -486,7 +501,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_target() {
-        let client_end = serve_test_symlink().await;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
         assert_eq!(
             client_end.describe().await.expect("fidl failed").target.expect("missing target"),
@@ -496,10 +512,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_validate_flags() {
-        let scope = ExecutionScope::new();
+        let scope = test_scope();
 
         let check = |mut flags: fio::Flags| {
-            let (client_end, server_end) = create_proxy::<fio::SymlinkMarker>();
+            let (client_end, server_end) = scope.domain().create_proxy::<fio::SymlinkMarker>();
             flags |= fio::Flags::FLAG_SEND_REPRESENTATION;
             flags.to_object_request(server_end).create_connection_sync::<Connection<_>, _>(
                 scope.clone(),
@@ -542,7 +558,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_attr() {
-        let client_end = serve_test_symlink().await;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
         let (mutable_attrs, immutable_attrs) = client_end
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -565,7 +582,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_clone() {
-        let client_end = serve_test_symlink().await;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
         let orig_attrs = client_end
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -573,7 +591,7 @@ mod tests {
             .expect("fidl failed")
             .unwrap();
         // Clone the original connection and query it's attributes, which should match the original.
-        let (cloned_client, cloned_server) = create_proxy::<fio::SymlinkMarker>();
+        let (cloned_client, cloned_server) = client.create_proxy::<fio::SymlinkMarker>();
         client_end.clone(ServerEnd::new(cloned_server.into_channel())).unwrap();
         let cloned_attrs = cloned_client
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -585,7 +603,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_describe() {
-        let client_end = serve_test_symlink().await;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
         assert_matches!(
             client_end.describe().await.expect("fidl failed"),
@@ -598,7 +617,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_xattrs() {
-        let client_end = serve_test_symlink().await;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
         client_end
             .set_extended_attribute(
@@ -614,7 +634,7 @@ mod tests {
             fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
         );
         let (iterator_client_end, iterator_server_end) =
-            create_proxy::<fio::ExtendedAttributeIteratorMarker>();
+            client.create_proxy::<fio::ExtendedAttributeIteratorMarker>();
         client_end.list_extended_attributes(iterator_server_end).unwrap();
         assert_eq!(
             iterator_client_end.get_next().await.unwrap().unwrap(),
@@ -630,16 +650,24 @@ mod tests {
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     #[fuchsia::test]
     async fn test_open() {
-        use fidl::endpoints::Proxy;
+        let client = flex_local::local_client_empty();
+        let client_end = serve_test_symlink(&client).await;
 
-        let client_end = serve_test_symlink().await;
-
+        #[cfg(feature = "fdomain")]
+        let (object, server_end) = client.create_channel();
+        #[cfg(not(feature = "fdomain"))]
         let (object, server_end) = fidl::Channel::create();
         client_end
             .open("path", fio::Flags::empty(), &fio::Options::default(), server_end)
             .expect("fidl failed");
 
-        let requests = fio::NodeProxy::from_channel(fuchsia_async::Channel::from_channel(object));
+        #[cfg(feature = "fdomain")]
+        let requests = fio::NodeProxy::new(object);
+        #[cfg(not(feature = "fdomain"))]
+        let requests = {
+            use fidl::endpoints::Proxy;
+            fio::NodeProxy::from_channel(fuchsia_async::Channel::from_channel(object))
+        };
 
         let error = requests
             .take_event_stream()

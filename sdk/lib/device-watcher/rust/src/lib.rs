@@ -204,12 +204,13 @@ pub async fn recursive_wait_and_open<P: fidl::endpoints::ProtocolMarker>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_device as fdev;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::collections::HashSet;
     use std::str::FromStr;
     use std::sync::Arc;
     use vfs::file::vmo::read_only;
-    use {fidl_fuchsia_device as fdev, fuchsia_async as fasync};
 
     fn create_controller_service(topo_path: &'static str) -> Arc<vfs::service::Service> {
         vfs::service::host(move |mut stream: fdev::ControllerRequestStream| async move {
@@ -238,7 +239,8 @@ mod tests {
             "device_controller" => create_controller_service("/dev/test2/y/dev"),
           },
         };
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let path = wait_for_device_with(&dir_proxy, |DeviceInfo { filename, topological_path }| {
             (topological_path == "/dev/test2/x/dev").then(|| filename.to_string())
         })
@@ -254,7 +256,8 @@ mod tests {
           "b" => read_only(b"/b"),
         };
 
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         let stream = watch_for_files(&dir_proxy).await.unwrap();
         futures::pin_mut!(stream);
@@ -283,7 +286,8 @@ mod tests {
           "3" => read_only("file 3"),
         };
 
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let path = wait_for_device_with(&dir_proxy, |DeviceInfo { filename, topological_path }| {
             (topological_path == "/dev/test2/x/dev").then(|| filename.to_string())
         })
@@ -299,7 +303,8 @@ mod tests {
                 "dir" => vfs::pseudo_directory! {},
             },
         };
-        let client = vfs::directory::serve_read_only(root);
+        let client =
+            vfs::directory::serve_read_only(root, vfs::execution_scope::ExecutionScope::new());
         let directory = recursive_wait_and_open_directory(&client, "test/dir").await.unwrap();
         let () = directory.close().await.unwrap().unwrap();
     }
@@ -309,7 +314,8 @@ mod tests {
         let root = vfs::pseudo_directory! {
             "test" => vfs::pseudo_directory! {},
         };
-        let client = vfs::directory::serve_read_only(root);
+        let client =
+            vfs::directory::serve_read_only(root, vfs::execution_scope::ExecutionScope::new());
         let directory = recursive_wait_and_open_directory(&client, "/test").await.unwrap();
         let () = directory.close().await.unwrap().unwrap();
     }

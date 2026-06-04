@@ -10,7 +10,8 @@ use crate::{
     assert_write_err, file,
 };
 use assert_matches::assert_matches;
-use fidl_fuchsia_io as fio;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_io as fio;
 use futures::{FutureExt as _, StreamExt as _};
 use libc::{S_IFREG, S_IRUSR};
 use zx::Vmo;
@@ -209,7 +210,7 @@ async fn clone_inherit_access() {
     let file = read_only(FILE_CONTENTS);
     let proxy = file::serve_proxy(file, fio::PERM_READABLE);
     assert_read!(proxy, FILE_CONTENTS);
-    let (clone_proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+    let (clone_proxy, server) = proxy.domain().create_proxy::<fio::FileMarker>();
     proxy.clone(server.into_channel().into()).unwrap();
     assert_read!(clone_proxy, FILE_CONTENTS);
     assert_close!(proxy);

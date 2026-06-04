@@ -32,7 +32,10 @@ fn mock_boot_handles(
 
     async move {
         let mut fs = ServiceFs::new();
-        fs.add_remote("boot", vfs::directory::serve_read_only(dir));
+        fs.add_remote(
+            "boot",
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new()),
+        );
         fs.serve_connection(handles.outgoing_dir).expect("serve mock ServiceFs");
         fs.collect::<()>().await;
         Ok(())

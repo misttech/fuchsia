@@ -329,6 +329,16 @@ fn vmo_flags_to_rights(vmo_flags: fio::VmoFlags) -> zx::Rights {
 
 #[cfg(test)]
 mod tests {
+    use vfs::object_request::ToObjectRequest;
+
+    pub fn serve_proxy(file: Arc<ExtFile>, flags: fio::Flags) -> fio::FileProxy {
+        let scope = ExecutionScope::new();
+        let (proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+        let request = flags.to_object_request(server);
+        request.handle(|request| vfs::file::serve(file, scope, &flags, request));
+        proxy
+    }
+
     use fidl_fuchsia_io::ExtendedAttributeValue;
 
     use super::*;
@@ -351,7 +361,7 @@ mod tests {
             expected_content,
         )
         .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+        let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let content = proxy
             .read(expected_content.len() as u64)
@@ -378,7 +388,7 @@ mod tests {
             b"Read only test",
         )
         .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+        let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let attributes_query = fio::NodeAttributesQuery::ID
             | fio::NodeAttributesQuery::MODE
@@ -410,7 +420,7 @@ mod tests {
         let file =
             ExtFile::readonly_from_data(123, ExtAttributes::default(), xattrs, b"Read only test")
                 .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+        let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         let value = proxy
             .get_extended_attribute(b"attr2")
@@ -438,7 +448,7 @@ mod tests {
             expected_content,
         )
         .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+        let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         async fn assert_get_vmo(
             proxy: &fio::FileProxy,
@@ -532,12 +542,12 @@ mod tests {
         let ro_file =
             ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ true)
                 .expect("from_data error");
-        let ro_proxy = vfs::file::serve_proxy(ro_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let ro_proxy = serve_proxy(ro_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
         ro_proxy.write(b"Write some stuff").await.expect_err("write FIDL request should fail");
 
         let rw_file = ExtFile::from_processor(processor, file_ino, /* read_only=*/ false)
             .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let proxy = serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
 
         let expected_content = "file1 contents.\n";
         let content = proxy
@@ -583,7 +593,7 @@ mod tests {
             .get();
         let file =
             ExtFile::from_processor(processor, file_ino, read_only).expect("from_data error");
-        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+        let proxy = serve_proxy(file, fio::PERM_READABLE);
 
         // Read from start past the end.
         let expected_content = "file1 contents.\n";
@@ -659,7 +669,7 @@ mod tests {
         let rw_file =
             ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ false)
                 .expect("from_data error");
-        let proxy = vfs::file::serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let proxy = serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
         let original_content = proxy
             .read(1024)
             .await
@@ -694,7 +704,7 @@ mod tests {
         let ro_file =
             ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ true)
                 .expect("from_data error");
-        let ro_proxy = vfs::file::serve_proxy(ro_file, fio::PERM_READABLE);
+        let ro_proxy = serve_proxy(ro_file, fio::PERM_READABLE);
         let verify_content = ro_proxy
             .read(1024)
             .await

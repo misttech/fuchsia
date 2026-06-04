@@ -14,8 +14,8 @@ use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenReque
 use crate::execution_scope::ExecutionScope;
 use crate::path::Path;
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_io as fio;
 use std::sync::Arc;
 use zx_status::Status;
 

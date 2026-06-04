@@ -578,7 +578,8 @@ mod test {
     #[fuchsia::test]
     async fn no_rtc_configured() {
         let dir = pseudo_directory! {};
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let dir_provider = || Ok(dir_proxy);
         let result = RtcImpl::only_device_for_test(/*has_rtc*/ false, dir_provider).await;
         assert_matches!(result, Err(RtcCreationError::NotConfigured))
@@ -587,7 +588,8 @@ mod test {
     #[fuchsia::test]
     async fn no_rtc_detected() {
         let dir = pseudo_directory! {};
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let dir_provider = || Ok(dir_proxy);
         let result = RtcImpl::only_device_for_test(/*has_rtc*/ true, dir_provider).await;
         assert_matches!(result, Err(RtcCreationError::NoDevices))
@@ -599,7 +601,8 @@ mod test {
                 "deadbeef" => pseudo_directory! {
             },
         };
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
         let dir_provider = || Ok(dir_proxy);
         let result = RtcImpl::only_device_for_test(/*has_rtc*/ true, dir_provider).await;
         // Connection fails because it's a dir, not a service, but we expected

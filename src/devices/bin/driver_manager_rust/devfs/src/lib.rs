@@ -8,6 +8,10 @@ use crate::class_names::{
 };
 use driver_manager_types::StartRequestReceiver;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_device as fdevice;
+use fidl_fuchsia_device_fs as fdevfs;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -24,10 +28,6 @@ use vfs::path::Path;
 use vfs::remote::RemoteLike;
 use vfs::service::endpoint;
 use vfs::{ObjectRequestRef, pseudo_directory};
-use {
-    fidl_fuchsia_device as fdevice, fidl_fuchsia_device_fs as fdevfs, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync,
-};
 
 mod builtin_devices;
 mod class_names;
@@ -242,8 +242,11 @@ impl Devnode {
             return Err(e);
         }
 
-        let instance_dir =
-            vfs::directory::serve(instance_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let instance_dir = vfs::directory::serve(
+            instance_dir,
+            ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         if let Err(e) = devfs.outgoing.unbounded_send(OutgoingDirectoryMsg::AddServiceInstance(
             service_entry.service_name.to_string(),
@@ -494,7 +497,11 @@ impl Devfs {
     }
 
     pub fn serve(&self) -> fio::DirectoryProxy {
-        vfs::directory::serve(self.root.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE)
+        vfs::directory::serve(
+            self.root.clone(),
+            ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        )
     }
 
     pub fn set_component_controller_proxy(

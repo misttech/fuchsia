@@ -85,8 +85,13 @@ pub use protocols::ProtocolsExt;
 #[cfg(test)]
 extern crate self as vfs;
 
+#[cfg(test)]
+use flex_test_placeholders as _;
+#[cfg(all(test, feature = "fdomain"))]
+use fuchsia_fs_fdomain as _;
+
 use directory::entry_container::Directory;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::sync::Arc;
 
 /// Helper function to serve a new connection to the directory at `path` under `root` with `flags`.
@@ -97,11 +102,12 @@ use std::sync::Arc;
 pub fn serve_directory<D: Directory + ?Sized>(
     root: Arc<D>,
     path: Path,
+    scope: ExecutionScope,
     flags: fio::Flags,
 ) -> fio::DirectoryProxy {
-    let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+    let (proxy, server) = scope.domain().create_proxy::<fio::DirectoryMarker>();
     let request = flags.to_object_request(server);
-    request.handle(|request| root.open(ExecutionScope::new(), path, flags, request));
+    request.handle(|request| root.open(scope, path, flags, request));
     proxy
 }
 
@@ -113,10 +119,11 @@ pub fn serve_directory<D: Directory + ?Sized>(
 pub fn serve_file<D: Directory + ?Sized>(
     root: Arc<D>,
     path: Path,
+    scope: ExecutionScope,
     flags: fio::Flags,
 ) -> fio::FileProxy {
-    let (proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+    let (proxy, server) = scope.domain().create_proxy::<fio::FileMarker>();
     let request = flags.to_object_request(server);
-    request.handle(|request| root.open(ExecutionScope::new(), path, flags, request));
+    request.handle(|request| root.open(scope, path, flags, request));
     proxy
 }

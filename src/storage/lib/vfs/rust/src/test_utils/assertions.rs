@@ -11,7 +11,7 @@
 
 #[doc(hidden)]
 pub mod reexport {
-    pub use fidl_fuchsia_io as fio;
+    pub use flex_fuchsia_io as fio;
     pub use zx_status::Status;
 }
 
@@ -166,14 +166,14 @@ macro_rules! assert_read_dirents {
 
         assert_eq!(Status::from_raw(status), Status::OK);
         assert!(
-            entries == expected,
+            &entries[..] == &expected[..],
             "Read entries do not match the expectation.\n\
              Expected entries: {:?}\n\
              Actual entries:   {:?}\n\
              Expected as UTF-8 lossy: {:?}\n\
              Received as UTF-8 lossy: {:?}",
             expected,
-            entries,
+            &entries[..],
             String::from_utf8_lossy(&expected),
             String::from_utf8_lossy(&entries),
         );

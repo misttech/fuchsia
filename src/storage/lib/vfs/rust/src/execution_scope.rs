@@ -47,6 +47,11 @@ pub type SpawnError = task::SpawnError;
 #[derive(Clone)]
 pub struct ExecutionScope {
     executor: Arc<Executor>,
+
+    /// The FDomain client, which lets us communicate with the Fuchsia device
+    /// where the actual handles are.
+    #[cfg(feature = "fdomain")]
+    client: Arc<flex_client::Client>,
 }
 
 struct Executor {
@@ -57,8 +62,23 @@ struct Executor {
 impl ExecutionScope {
     /// Constructs an execution scope.  Use [`ExecutionScope::build()`] if you want to specify
     /// parameters.
-    pub fn new() -> Self {
-        Self::build().new()
+    pub fn new(#[cfg(feature = "fdomain")] client: Arc<flex_client::Client>) -> Self {
+        Self::build().new(
+            #[cfg(feature = "fdomain")]
+            client,
+        )
+    }
+
+    /// Return the domain for handle creation for operations in this execution scope.
+    #[cfg(feature = "fdomain")]
+    pub fn domain(&self) -> Arc<flex_client::Client> {
+        Arc::clone(&self.client)
+    }
+
+    /// Return the domain for handle creation for operations in this execution scope.
+    #[cfg(not(feature = "fdomain"))]
+    pub fn domain(&self) -> fidl::endpoints::ZirconClient {
+        fidl::endpoints::ZirconClient
     }
 
     /// Constructs a new execution scope builder, wrapping the specified executor and optionally
@@ -69,7 +89,11 @@ impl ExecutionScope {
     }
 
     pub fn as_weak(&self) -> WeakExecutionScope {
-        WeakExecutionScope { executor: Arc::downgrade(&self.executor) }
+        WeakExecutionScope {
+            executor: Arc::downgrade(&self.executor),
+            #[cfg(feature = "fdomain")]
+            client: Arc::downgrade(&self.client),
+        }
     }
 
     /// Sends a `task` to be executed in this execution scope.  This is very similar to
@@ -154,7 +178,10 @@ impl ExecutionScopeParams {
         self
     }
 
-    pub fn new(self) -> ExecutionScope {
+    pub fn new(
+        self,
+        #[cfg(feature = "fdomain")] client: Arc<flex_client::Client>,
+    ) -> ExecutionScope {
         ExecutionScope {
             executor: Arc::new(Executor {
                 token_registry: TokenRegistry::new(),
@@ -166,6 +193,8 @@ impl ExecutionScopeParams {
                 #[cfg(not(target_os = "fuchsia"))]
                 scope: Mutex::new(None),
             }),
+            #[cfg(feature = "fdomain")]
+            client,
         }
     }
 }
@@ -175,6 +204,8 @@ impl ExecutionScopeParams {
 #[derive(Clone)]
 pub struct WeakExecutionScope {
     executor: Weak<Executor>,
+    #[cfg(feature = "fdomain")]
+    client: Weak<flex_client::Client>,
 }
 
 impl WeakExecutionScope {
@@ -185,6 +216,17 @@ impl WeakExecutionScope {
         if let Some(executor) = executor {
             _ = executor.scope().spawn(task)
         }
+    }
+
+    /// Return the domain for handle creation for operations in this execution scope.
+    #[cfg(feature = "fdomain")]
+    pub fn domain(&self) -> Option<Arc<flex_client::Client>> {
+        self.client.upgrade()
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    pub fn domain(&self) -> Option<fidl::endpoints::ZirconClient> {
+        Some(fidl::endpoints::ZirconClient)
     }
 }
 
@@ -277,7 +319,10 @@ mod tests {
     {
         let mut exec = TestExecutor::new();
 
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
 
         let test = get_test(scope);
 
@@ -297,7 +342,10 @@ mod tests {
         use fuchsia_async::TimeoutExt;
         let mut exec = TestExecutor::new();
 
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
 
         // This isn't a perfect equivalent to the target version, but Tokio
         // doesn't have run_until_stalled and it sounds like it's
@@ -359,7 +407,10 @@ mod tests {
     #[test]
     fn test_wait_waits_for_tasks_to_finish() {
         let mut executor = TestExecutor::new();
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
         executor.run_singlethreaded(async {
             let (poll_sender, poll_receiver) = oneshot::channel();
             let (processing_done_sender, processing_done_receiver) = oneshot::channel();
@@ -394,7 +445,10 @@ mod tests {
     async fn test_shutdown_waits_for_channels() {
         use fuchsia_async as fasync;
 
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
         let (rx, tx) = zx::Channel::create();
         let received_msg = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = futures::channel::oneshot::channel();
@@ -419,7 +473,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_force_shutdown() {
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
         let scope_clone = scope.clone();
         let ref_count = Arc::new(());
         let ref_count_clone = ref_count.clone();

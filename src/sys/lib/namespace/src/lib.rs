@@ -6,11 +6,11 @@
 
 use cm_types::{IterablePath, NamespacePath};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess,
-};
 
 #[cfg(target_os = "fuchsia")]
 use std::sync::Arc;
@@ -385,7 +385,10 @@ mod tests {
                 "bar" => read_only(b"Fuchsia"),
             },
         };
-        let client_end = vfs::directory::serve_read_only(dir).into_client_end().unwrap();
+        let client_end =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new())
+                .into_client_end()
+                .unwrap();
 
         // Make a namespace pointing to that server.
         let mut namespace = Namespace::new();

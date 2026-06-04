@@ -4,8 +4,10 @@
 
 //! Utilities for working with the `fuchsia.mem` FIDL library.
 
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
 use std::borrow::Cow;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem, zx_status as zxs};
+use zx_status as zxs;
 
 /// Open `path` from given `parent` directory, returning an [`fmem::Data`] of the contents.
 ///
@@ -89,7 +91,7 @@ mod tests {
     use vfs::file::vmo::read_only;
     use vfs::file::{FileLike, FileOptions};
     use vfs::object_request::Representation;
-    use vfs::{pseudo_directory, ObjectRequestRef};
+    use vfs::{ObjectRequestRef, pseudo_directory};
     use zx_status::Status;
 
     #[fuchsia::test]
@@ -98,7 +100,7 @@ mod tests {
             // `read_only` is a vmo file, returns the buffer in OnOpen
             "foo" => read_only("hello, world!"),
         };
-        let directory = vfs::directory::serve_read_only(fs);
+        let directory = vfs::directory::serve_read_only(fs, ExecutionScope::new());
 
         let data = open_file_data(&directory, "foo").await.unwrap();
         match bytes_from_data(&data).unwrap() {
@@ -114,7 +116,7 @@ mod tests {
         let fs = pseudo_directory! {
             "foo" => read_only(vmo_data),
         };
-        let directory = vfs::directory::serve_read_only(fs);
+        let directory = vfs::directory::serve_read_only(fs, ExecutionScope::new());
 
         let data = open_file_data(&directory, "foo").await.unwrap();
         match bytes_from_data(&data).unwrap() {
@@ -207,7 +209,7 @@ mod tests {
         let fs = pseudo_directory! {
             "foo" => Arc::new(NonVMOTestFile),
         };
-        let directory = vfs::directory::serve_read_only(fs);
+        let directory = vfs::directory::serve_read_only(fs, ExecutionScope::new());
 
         let data = open_file_data(&directory, "foo").await.unwrap();
         let data = bytes_from_data(&data).unwrap();

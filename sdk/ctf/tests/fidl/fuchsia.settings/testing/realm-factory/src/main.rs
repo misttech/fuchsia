@@ -140,7 +140,14 @@ async fn serve_config_data(handles: LocalComponentHandles) -> Result<(), Error> 
         },
     };
     let mut fs = ServiceFs::new();
-    fs.add_remote("config", vfs::directory::serve(config_data_dir, fio::PERM_READABLE));
+    fs.add_remote(
+        "config",
+        vfs::directory::serve(
+            config_data_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        ),
+    );
     fs.serve_connection(handles.outgoing_dir).expect("failed to serve config-data");
     fs.collect::<()>().await;
     Ok(())

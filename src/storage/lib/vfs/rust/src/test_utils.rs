@@ -4,6 +4,8 @@
 
 //! Utilities used by tests in both file and directory modules.
 
+#![cfg(test)]
+
 #[cfg(test)]
 pub(crate) mod assertions;
 

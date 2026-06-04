@@ -1116,6 +1116,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use vfs::execution_scope::ExecutionScope;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
     async fn write_image_to_file(image: DeviceHolder, file: fio::FileProxy) {
@@ -1477,8 +1478,10 @@ mod tests {
             entries
         };
 
-        let dir_proxy =
-            Arc::new(vfs::directory::serve_read_only(volumes_directory.directory_node().clone()));
+        let dir_proxy = Arc::new(vfs::directory::serve_read_only(
+            volumes_directory.directory_node().clone(),
+            ExecutionScope::new(),
+        ));
         let entries = readdir(dir_proxy.clone()).await;
         assert_eq!(entries, [".", "encrypted", "unencrypted"]);
 

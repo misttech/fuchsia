@@ -204,6 +204,7 @@ mod tests {
         let proxy = vfs::serve_file(
             dir.clone(),
             vfs::Path::validate_and_split("test").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE | fio::PERM_WRITABLE,
         );
         assert!(fs.filesystem().dirty_task.lock().is_none());

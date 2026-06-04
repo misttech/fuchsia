@@ -8,7 +8,7 @@ use crate::file::FileOptions;
 use crate::node::NodeOptions;
 use crate::service::ServiceOptions;
 use crate::symlink::SymlinkOptions;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use zx_status::Status;
 
 /// Extends fio::Flags and fio::OpenFlags

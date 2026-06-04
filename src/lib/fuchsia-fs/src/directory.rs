@@ -1053,8 +1053,11 @@ mod tests {
             },
             "rw" => remote_dir(dir)
         };
-        let example_dir_proxy =
-            vfs::directory::serve(example_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let example_dir_proxy = vfs::directory::serve(
+            example_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         for (file_name, flags, should_succeed) in vec![
             ("ro/read_only", fio::PERM_READABLE, true),
@@ -1318,7 +1321,8 @@ mod tests {
                 "ignored" => read_only(""),
             },
         };
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         // run twice to check that seek offset is properly reset before reading the directory
         for _ in 0..2 {
@@ -1345,7 +1349,8 @@ mod tests {
                 "ignored" => read_only(""),
             },
         };
-        let dir_proxy = vfs::directory::serve_read_only(dir);
+        let dir_proxy =
+            vfs::directory::serve_read_only(dir, vfs::execution_scope::ExecutionScope::new());
 
         for file in &["afile", "zzz", "subdir"] {
             assert!(dir_contains(&dir_proxy, file).await.unwrap());

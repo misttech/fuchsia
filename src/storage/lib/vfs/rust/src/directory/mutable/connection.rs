@@ -17,8 +17,8 @@ use crate::token_registry::{TokenInterface, TokenRegistry, Tokenizable};
 use crate::{ObjectRequestRef, ProtocolsExt};
 
 use anyhow::Error;
-use fidl::NullableHandle;
-use fidl_fuchsia_io as fio;
+use flex_client::NullableHandle;
+use flex_fuchsia_io as fio;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -438,7 +438,11 @@ mod tests {
 
     impl MockFilesystem {
         pub fn new(events: &Arc<Events>) -> Self {
-            let scope = ExecutionScope::new();
+            #[cfg(feature = "fdomain")]
+            let scope =
+                crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+            #[cfg(not(feature = "fdomain"))]
+            let scope = crate::execution_scope::ExecutionScope::new();
             MockFilesystem { cur_id: Mutex::new(0), scope, events: Arc::downgrade(events) }
         }
 
@@ -454,7 +458,7 @@ mod tests {
             let mut cur_id = self.cur_id.lock();
             let dir = MockDirectory::new(*cur_id, self.clone());
             *cur_id += 1;
-            let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+            let (proxy, server_end) = self.scope.domain().create_proxy::<fio::DirectoryMarker>();
             flags.to_object_request(server_end).create_connection_sync::<MutableConnection<_>, _>(
                 self.scope.clone(),
                 dir.clone(),
@@ -470,10 +474,9 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "fdomain"))]
     #[fuchsia::test]
     async fn test_rename() {
-        use fidl::Event;
-
         let events = Events::new();
         let fs = Arc::new(MockFilesystem::new(&events));
 
@@ -483,7 +486,7 @@ mod tests {
         let (status, token) = proxy2.get_token().await.unwrap();
         assert_eq!(Status::from_raw(status), Status::OK);
 
-        let status = proxy.rename("src", Event::from(token.unwrap()), "dest").await.unwrap();
+        let status = proxy.rename("src", token.unwrap().into(), "dest").await.unwrap();
         assert!(status.is_ok());
 
         let events = events.0.lock();
@@ -520,6 +523,7 @@ mod tests {
         assert_eq!(*events, vec![MutableDirectoryAction::UpdateAttributes { id: 0, attributes }]);
     }
 
+    #[cfg(not(feature = "fdomain"))]
     #[fuchsia::test]
     async fn test_link() {
         let events = Events::new();

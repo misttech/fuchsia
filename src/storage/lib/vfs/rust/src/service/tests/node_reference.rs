@@ -13,11 +13,19 @@ use crate::directory::serve;
 use crate::pseudo_directory;
 
 use assert_matches::assert_matches;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use futures::StreamExt as _;
 use zx_status::Status;
 
-fn connect_at(root: &fio::DirectoryProxy, path: &str, flags: fio::Flags) -> fio::NodeProxy {
+fn connect_at(
+    root: &fio::DirectoryProxy,
+    path: &str,
+    flags: fio::Flags,
+    #[cfg(feature = "fdomain")] client: &std::sync::Arc<flex_client::Client>,
+) -> fio::NodeProxy {
+    #[cfg(feature = "fdomain")]
+    let (proxy, server_end) = client.create_proxy::<fio::NodeMarker>();
+    #[cfg(not(feature = "fdomain"))]
     let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
     root.open(path, flags, &fio::Options::default(), server_end.into_channel()).unwrap();
     proxy
@@ -28,8 +36,18 @@ async fn construction() {
     let dir = pseudo_directory! {
         "server" => endpoint(|_scope, _channel| ()),
     };
-    let root = serve(dir, fio::Flags::empty());
-    let proxy = connect_at(&root, "server", fio::Flags::PROTOCOL_NODE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let proxy = connect_at(
+        &root,
+        "server",
+        fio::Flags::PROTOCOL_NODE,
+        #[cfg(feature = "fdomain")]
+        &scope.domain(),
+    );
     assert_close!(proxy);
 }
 
@@ -38,8 +56,18 @@ async fn get_attributes() {
     let dir = pseudo_directory! {
         "server" => endpoint(|_scope, _channel| ()),
     };
-    let root = serve(dir, fio::Flags::empty());
-    let proxy = connect_at(&root, "server", fio::Flags::PROTOCOL_NODE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let proxy = connect_at(
+        &root,
+        "server",
+        fio::Flags::PROTOCOL_NODE,
+        #[cfg(feature = "fdomain")]
+        &scope.domain(),
+    );
     assert_get_attributes!(
         proxy,
         fio::NodeAttributesQuery::all(),
@@ -59,11 +87,17 @@ async fn representation() {
     let dir = pseudo_directory! {
         "server" => endpoint(|_scope, _channel| ()),
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
     let proxy = connect_at(
         &root,
         "server",
         fio::Flags::PROTOCOL_NODE | fio::Flags::FLAG_SEND_REPRESENTATION,
+        #[cfg(feature = "fdomain")]
+        &scope.domain(),
     );
     assert_matches!(
         proxy.take_event_stream().next().await,
@@ -76,8 +110,18 @@ async fn clone() {
     let dir = pseudo_directory! {
         "server" => endpoint(|_scope, _channel| ()),
     };
-    let root = serve(dir, fio::Flags::empty());
-    let proxy = connect_at(&root, "server", fio::Flags::PROTOCOL_NODE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let proxy = connect_at(
+        &root,
+        "server",
+        fio::Flags::PROTOCOL_NODE,
+        #[cfg(feature = "fdomain")]
+        &scope.domain(),
+    );
     assert_get_attributes!(
         proxy,
         fio::NodeAttributesQuery::all(),
@@ -90,6 +134,12 @@ async fn clone() {
         )
     );
 
+    #[cfg(feature = "fdomain")]
+    let (cloned_proxy, server_end) = {
+        let client = scope.domain();
+        client.create_proxy::<fio::NodeMarker>()
+    };
+    #[cfg(not(feature = "fdomain"))]
     let (cloned_proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
     proxy.clone(server_end.into_channel().into()).unwrap();
     assert_get_attributes!(
@@ -123,8 +173,18 @@ async fn update_attributes_not_supported() {
     let dir = pseudo_directory! {
         "server" => endpoint(|_scope, _channel| ()),
     };
-    let root = serve(dir, fio::Flags::empty());
-    let proxy = connect_at(&root, "server", fio::Flags::PROTOCOL_NODE);
+    #[cfg(feature = "fdomain")]
+    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = crate::execution_scope::ExecutionScope::new();
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    let proxy = connect_at(
+        &root,
+        "server",
+        fio::Flags::PROTOCOL_NODE,
+        #[cfg(feature = "fdomain")]
+        &scope.domain(),
+    );
     let response = proxy.update_attributes(&fio::MutableNodeAttributes::default()).await.unwrap();
     assert_eq!(response, Err(Status::BAD_HANDLE.into_raw()));
 }

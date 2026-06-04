@@ -29,13 +29,14 @@ pub fn canonicalize_path(path: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
     use tempfile::TempDir;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
     use vfs::remote::remote_dir;
-    use {fuchsia_async as fasync, zx_status};
+    use zx_status;
 
     #[fasync::run_singlethreaded(test)]
     async fn open_and_read_file_test() {
@@ -107,8 +108,11 @@ mod tests {
             },
             "rw" => remote_dir(dir)
         };
-        let example_dir_proxy =
-            vfs::directory::serve(example_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let example_dir_proxy = vfs::directory::serve(
+            example_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        );
 
         for (file_name, flags, should_succeed) in vec![
             ("ro/read_only", fio::PERM_READABLE, true),

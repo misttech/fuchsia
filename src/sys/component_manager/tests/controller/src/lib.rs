@@ -371,7 +371,10 @@ async fn start_with_namespace_entries() {
         "file.txt" => read_only("hippos"),
     };
 
-    let ns_proxy = vfs::directory::serve_read_only(namespace_entries);
+    let ns_proxy = vfs::directory::serve_read_only(
+        namespace_entries,
+        vfs::execution_scope::ExecutionScope::new(),
+    );
 
     let mut spawned_child = spawn_local_child_controller_from_create_child().await;
     let (_execution_controller_proxy, execution_controller_server_end) =

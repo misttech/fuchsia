@@ -668,7 +668,7 @@ mod tests {
     #[fuchsia::test]
     async fn resolve_component_fails_with_component_not_found() {
         let fs = pseudo_directory! {};
-        let dir = vfs::directory::serve_read_only(fs);
+        let dir = vfs::directory::serve_read_only(fs, ExecutionScope::new());
         assert_matches!(
             resolve_component(
                 &"fuchsia-pkg://fuchsia.com/test#meta/test.cm".parse().unwrap(),
@@ -706,7 +706,7 @@ mod tests {
                 "test_with_config.cvf" => read_only(cvf_bytes),
             }
         };
-        let dir = vfs::directory::serve_read_only(fs);
+        let dir = vfs::directory::serve_read_only(fs, ExecutionScope::new());
         assert_matches!(
             resolve_component(
                 &"fuchsia-pkg://fuchsia.example/test#meta/test_with_config.cm".parse().unwrap(),
@@ -746,7 +746,7 @@ mod tests {
                 "test_with_config.cm" => read_only(cm_bytes),
             },
         };
-        let dir = vfs::directory::serve_read_only(fs);
+        let dir = vfs::directory::serve_read_only(fs, ExecutionScope::new());
         assert_matches!(
             resolve_component(
                 &"fuchsia-pkg://fuchsia.example/test#meta/test_with_config.cm".parse().unwrap(),
@@ -772,7 +772,7 @@ mod tests {
                 "test_with_config.cvf" => read_only(cvf_bytes),
             },
         };
-        let dir = vfs::directory::serve_read_only(fs);
+        let dir = vfs::directory::serve_read_only(fs, ExecutionScope::new());
         assert_matches!(
             resolve_component(
                 &"fuchsia-pkg://fuchsia.com/test#meta/test_with_config.cm".parse().unwrap(),
@@ -796,7 +796,7 @@ mod tests {
                 }
             },
         };
-        let dir = vfs::directory::serve_read_only(fs);
+        let dir = vfs::directory::serve_read_only(fs, ExecutionScope::new());
         let resolved_component = resolve_component(
             &"fuchsia-pkg://fuchsia.com/test#meta/test.cm".parse().unwrap(),
             dir,

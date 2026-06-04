@@ -14,9 +14,9 @@ use crate::node::Node;
 use crate::object_request::ObjectRequestRef;
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use crate::object_request::ObjectRequestSend;
-use fidl::endpoints::RequestStream;
-use fidl_fuchsia_io as fio;
-use fuchsia_async::Channel;
+use flex_client::AsyncChannel as Channel;
+use flex_client::fidl::RequestStream;
+use flex_fuchsia_io as fio;
 use futures::future::Future;
 use std::sync::Arc;
 use zx_status::Status;
@@ -101,16 +101,20 @@ impl ServiceLike for Service {
             object_request
                 .take()
                 .into_channel_after_sending_on_open(fio::NodeInfoDeprecated::Service(fio::Service))
-                .map(Channel::from_channel)
+                .map(|chan| crate::object_request::IntoAsyncChannel::into_async_channel(chan))
                 .ok()
         } else {
-            Some(Channel::from_channel(object_request.take().into_channel()))
+            Some(crate::object_request::IntoAsyncChannel::into_async_channel(
+                object_request.take().into_channel(),
+            ))
         };
         #[cfg(not(any(
             fuchsia_api_level_at_least = "PLATFORM",
             not(fuchsia_api_level_at_least = "NEXT")
         )))]
-        let channel = Some(Channel::from_channel(object_request.take().into_channel()));
+        let channel = Some(crate::object_request::IntoAsyncChannel::into_async_channel(
+            object_request.take().into_channel(),
+        ));
 
         if let Some(channel) = channel {
             (self.open)(scope, channel);

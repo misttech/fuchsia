@@ -7,19 +7,30 @@
 use super::{endpoint, host};
 
 use crate::directory::serve;
+use crate::execution_scope::ExecutionScope;
 use crate::pseudo_directory;
 
 use assert_matches::assert_matches;
 use fidl::Error;
-use fidl::endpoints::RequestStream;
-use fidl_fuchsia_io as fio;
+#[cfg(not(feature = "fdomain"))]
 use fidl_test_placeholders::{EchoMarker, EchoProxy, EchoRequest, EchoRequestStream};
+use flex_client::fidl::RequestStream;
+use flex_fuchsia_io as fio;
+#[cfg(feature = "fdomain")]
+use flex_test_placeholders::{EchoMarker, EchoProxy, EchoRequest, EchoRequestStream};
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::stream::StreamExt;
 use zx_status::Status;
 
-fn connect_at(root: &fio::DirectoryProxy, path: &str) -> EchoProxy {
+fn connect_at(
+    root: &fio::DirectoryProxy,
+    path: &str,
+    #[cfg(feature = "fdomain")] client: &std::sync::Arc<flex_client::Client>,
+) -> EchoProxy {
+    #[cfg(feature = "fdomain")]
+    let (proxy, server_end) = client.create_proxy::<EchoMarker>();
+    #[cfg(not(feature = "fdomain"))]
     let (proxy, server_end) = fidl::endpoints::create_proxy::<EchoMarker>();
     root.open(
         path,
@@ -66,10 +77,23 @@ async fn simple_endpoint() {
             });
         }),
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let client = flex_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let scope = ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = ExecutionScope::new();
+
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+
+    #[cfg(feature = "fdomain")]
+    let proxy = connect_at(&root, "server", &client);
+    #[cfg(not(feature = "fdomain"))]
     let proxy = connect_at(&root, "server");
     let response = proxy.echo_string(Some("test")).await.unwrap();
     assert_eq!(response.as_deref(), Some("test"));
+    #[cfg(feature = "fdomain")]
+    drop(client);
 }
 
 #[fuchsia::test]
@@ -77,7 +101,18 @@ async fn simple_host() {
     let dir = pseudo_directory! {
         "server" => host(|requests| echo_server(requests, None, None)),
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let client = flex_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let scope = ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = ExecutionScope::new();
+
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+
+    #[cfg(feature = "fdomain")]
+    let proxy = connect_at(&root, "server", &client);
+    #[cfg(not(feature = "fdomain"))]
     let proxy = connect_at(&root, "server");
     let response = proxy.echo_string(Some("test")).await.unwrap();
     assert_eq!(response.as_deref(), Some("test"));
@@ -100,7 +135,18 @@ async fn server_state_checking() {
             )
         }),
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let client = flex_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let scope = ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = ExecutionScope::new();
+
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+
+    #[cfg(feature = "fdomain")]
+    let proxy = connect_at(&root, "server", &client);
+    #[cfg(not(feature = "fdomain"))]
     let proxy = connect_at(&root, "server");
 
     let response = proxy.echo_string(Some("message 1")).await.unwrap();
@@ -125,7 +171,17 @@ async fn test_epitaph() {
     let dir = pseudo_directory! {
         "server" => host(|requests| echo_server(requests, None, None)),
     };
-    let root = serve(dir, fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let client = flex_local::local_client_empty();
+    #[cfg(feature = "fdomain")]
+    let scope = ExecutionScope::new(client.clone());
+    #[cfg(not(feature = "fdomain"))]
+    let scope = ExecutionScope::new();
+
+    let root = serve(dir, scope.clone(), fio::Flags::empty());
+    #[cfg(feature = "fdomain")]
+    let (proxy, server_end) = client.create_proxy::<EchoMarker>();
+    #[cfg(not(feature = "fdomain"))]
     let (proxy, server_end) = fidl::endpoints::create_proxy::<EchoMarker>();
     root.open(
         "server",

@@ -28,6 +28,7 @@ pub(crate) async fn create_config_data(
             move |handles| {
                 let proxy = vfs::directory::serve(
                     config_data_dir.clone(),
+                    vfs::execution_scope::ExecutionScope::new(),
                     fio::PERM_READABLE | fio::PERM_WRITABLE,
                 );
                 async move {

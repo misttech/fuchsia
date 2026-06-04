@@ -9,7 +9,7 @@ use crate::common::stricter_or_same_rights;
 use crate::directory::entry::EntryInfo;
 
 use byteorder::{LittleEndian, WriteBytesExt as _};
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use static_assertions::assert_eq_size;
 use std::io::Write as _;
 use std::mem::size_of;

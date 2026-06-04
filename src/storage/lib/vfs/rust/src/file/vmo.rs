@@ -13,7 +13,7 @@ use crate::execution_scope::ExecutionScope;
 use crate::file::common::vmo_flags_to_rights;
 use crate::file::{File, FileLike, FileOptions, GetVmo, StreamIoConnection, SyncMode};
 use crate::node::Node;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::sync::Arc;
 use zx::{Status, Vmo};
 

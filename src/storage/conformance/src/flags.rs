@@ -29,12 +29,12 @@ impl Rights {
 
     /// Returns a vector of all valid rights combinations.
     pub fn rights_combinations(&self) -> Vec<fio::Rights> {
-        vfs::test_utils::build_flag_combinations(fio::Rights::empty(), self.rights)
+        build_flag_combinations(fio::Rights::empty(), self.rights)
     }
 
     /// Returns a vector of all valid flag combinations as `fio::Flags` flags.
     pub fn combinations(&self) -> Vec<fio::Flags> {
-        vfs::test_utils::build_flag_combinations(fio::Flags::empty(), self.all_flags())
+        build_flag_combinations(fio::Flags::empty(), self.all_flags())
     }
 
     // Returns all rights combinations that contains all the rights specified in `with_rights`.
@@ -68,6 +68,23 @@ impl Rights {
             .map(|combination| fio::Flags::from_bits_truncate(combination.bits()))
             .collect()
     }
+}
+
+/// Returns a list of flag combinations to test. Returns a vector of the aggregate of
+/// every constant flag and every combination of variable flags. For example, calling
+/// build_flag_combinations(100, 011) would return [100, 110, 101, 111] (in binary),
+/// whereas build_flag_combinations(0, 011) would return [000, 001, 010, 011].
+pub fn build_flag_combinations<T: bitflags::Flags + Copy>(
+    constant_flags: T,
+    variable_flags: T,
+) -> Vec<T> {
+    let mut vec = vec![constant_flags];
+    for flag in variable_flags.iter() {
+        for i in 0..vec.len() {
+            vec.push(vec[i].union(flag));
+        }
+    }
+    vec
 }
 
 #[cfg(test)]

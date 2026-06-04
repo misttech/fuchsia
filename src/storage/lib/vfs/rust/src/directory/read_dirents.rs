@@ -10,7 +10,7 @@ use crate::directory::dirents_sink::{self, AppendResult};
 use crate::directory::entry::EntryInfo;
 use crate::directory::traversal_position::TraversalPosition;
 
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use std::any::Any;
 use std::convert::TryInto as _;
 use zx_status::Status;
@@ -81,7 +81,7 @@ impl dirents_sink::Sealed for Done {
 ///
 /// `entries` must be the contents of the directory sorted by name, the second tuple element.
 /// `entries` must not contain ".". This fn will append "." to `sink` as the first element
-///   automatically using inode `fidl_fuchsia_io::INO_UNKNOWN`.
+///   automatically using inode `flex_fuchsia_io::INO_UNKNOWN`.
 pub fn read_dirents(
     entries: &[(EntryInfo, String)],
     pos: &TraversalPosition,

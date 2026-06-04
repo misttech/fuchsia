@@ -851,6 +851,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
@@ -1034,6 +1035,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
@@ -1109,6 +1111,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
@@ -1163,11 +1166,13 @@ mod tests {
         let part_0_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_1_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::Path::validate_and_split("part-001").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_0_proxy = connect_to_named_protocol_at_dir_root::<fpartitions::PartitionMarker>(
@@ -1277,11 +1282,13 @@ mod tests {
         let part_0_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_1_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::Path::validate_and_split("part-001").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_0_proxy = connect_to_named_protocol_at_dir_root::<fpartitions::PartitionMarker>(
@@ -1407,6 +1414,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
@@ -1548,6 +1556,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
@@ -1599,6 +1608,7 @@ mod tests {
         let part_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_block =
@@ -1666,6 +1676,7 @@ mod tests {
         let outer_part_dir = vfs::serve_directory(
             outer_partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let part_block =
@@ -1694,6 +1705,7 @@ mod tests {
         let part_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let inner_part_block =
@@ -1756,6 +1768,7 @@ mod tests {
         let part_dir = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
 
@@ -1814,6 +1827,7 @@ mod tests {
         let proxy = vfs::serve_directory(
             partitions_dir.clone(),
             vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
             fio::PERM_READABLE,
         );
         let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")

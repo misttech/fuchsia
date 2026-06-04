@@ -121,7 +121,7 @@ pub async fn main() -> std::process::ExitCode {
         .unwrap_or_else(|e| panic!("failed to add entry {name}: {e:?}"));
     }
 
-    let svc_dir = vfs::directory::serve_read_only(svc);
+    let svc_dir = vfs::directory::serve_read_only(svc, vfs::execution_scope::ExecutionScope::new());
     let handle = svc_dir.into_client_end().unwrap().into();
     actions.push(fdio::SpawnAction::add_namespace_entry(c"/svc", handle));
 

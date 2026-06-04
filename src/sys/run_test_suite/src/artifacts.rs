@@ -457,8 +457,11 @@ mod file_tests {
     #[fuchsia::test]
     async fn test_copy_dir() {
         for (name, fake_dir, expected_files) in test_cases() {
-            let directory =
-                vfs::directory::serve(fake_dir, fio::PERM_READABLE | fio::PERM_WRITABLE);
+            let directory = vfs::directory::serve(
+                fake_dir,
+                vfs::execution_scope::ExecutionScope::new(),
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            );
             let artifact = InMemoryDirectoryWriter::default();
             copy_custom_artifact_directory(directory, Box::new(artifact.clone()))
                 .await

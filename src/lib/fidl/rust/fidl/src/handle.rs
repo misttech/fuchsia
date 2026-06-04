@@ -17,8 +17,8 @@ pub use fuchsia_async::{Channel as AsyncChannel, OnSignalsRef, Socket as AsyncSo
 pub mod fuchsia_handles {
 
     pub use zx::{
-        AsHandleRef, HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid, MessageBufEtc,
-        NullableHandle, ObjectType, Peered, Rights, Signals, Status,
+        AsHandleRef, Handle, HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid,
+        MessageBufEtc, NullableHandle, ObjectType, Peered, Rights, Signals, Status,
     };
 
     pub use fuchsia_async::invoke_for_handle_types;

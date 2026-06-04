@@ -111,8 +111,9 @@ async fn run(mut stream: TestHarnessRequestStream) -> Result<(), Error> {
                 let svc_dir = simple();
                 let service = vfs::service::host(run_echo_server);
                 svc_dir.add_entry(EchoMarker::PROTOCOL_NAME, service).unwrap();
-                let svc_client =
-                    vfs::directory::serve_read_only(svc_dir).into_client_end().unwrap();
+                let svc_client = vfs::directory::serve_read_only(svc_dir, ExecutionScope::new())
+                    .into_client_end()
+                    .unwrap();
                 responder.send(svc_client).unwrap();
             }
         }

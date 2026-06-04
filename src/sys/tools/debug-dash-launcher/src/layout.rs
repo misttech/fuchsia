@@ -3,18 +3,20 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
+use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_dash::LauncherError;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fproc;
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_channel_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use log::warn;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::service::endpoint;
-use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_diagnostics as fdiagnostics,
-    fidl_fuchsia_diagnostics_host as fdiagnostics_host, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fproc, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync,
-};
 
 pub fn package_layout(
     svc_dir: fio::DirectoryProxy,
@@ -209,7 +211,7 @@ async fn inject_process_launcher_and_resolver(svc_dir: fio::DirectoryProxy) -> f
         }
     }
 
-    vfs::directory::serve_read_only(vfs)
+    vfs::directory::serve_read_only(vfs, vfs::execution_scope::ExecutionScope::new())
 }
 
 fn to_name_info(path: &str, directory: fio::DirectoryProxy) -> fproc::NameInfo {

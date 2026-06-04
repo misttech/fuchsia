@@ -629,7 +629,7 @@ async fn client_drop_channel_read() {
 async fn client_drop_signals() {
     let (client, _fault_injector) = TestFDomain::new_client();
 
-    let (_a, b) = client.create_channel();
+    let (a, b) = client.create_channel();
 
     let (notify_slept, has_slept) = futures::channel::oneshot::channel();
     let mut notify_slept = Some(notify_slept);
@@ -659,6 +659,8 @@ async fn client_drop_signals() {
     let Err(Error::Transport(None)) = task.await else {
         panic!("Wrong error type!");
     };
+
+    assert!(a.as_handle_ref().is_invalid());
 }
 
 #[fuchsia::test]

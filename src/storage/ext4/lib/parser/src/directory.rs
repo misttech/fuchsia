@@ -330,7 +330,7 @@ mod tests {
             ExtAttributes { mode: 0x8124, uid: 456, gid: 789 },
             XattrMap::default(),
         );
-        let proxy = vfs::directory::serve_read_only(directory);
+        let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
 
         let attributes_query = fio::NodeAttributesQuery::ID
             | fio::NodeAttributesQuery::MODE
@@ -360,7 +360,7 @@ mod tests {
         let xattrs =
             [(b"attr".into(), b"value".into()), (b"attr2".into(), b"value2".into())].into();
         let directory = ExtDirectory::new(123, ExtAttributes::default(), xattrs);
-        let proxy = vfs::directory::serve_read_only(directory);
+        let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
 
         let value = proxy
             .get_extended_attribute(b"attr2")

@@ -460,7 +460,7 @@ mod tests {
 
         async fn new() -> (Self, fio::DirectoryProxy) {
             let (env, root) = Self::with_subpackages(None).await;
-            (env, vfs::directory::serve_read_only(root))
+            (env, vfs::directory::serve_read_only(root, ExecutionScope::new()))
         }
     }
 
@@ -650,7 +650,7 @@ mod tests {
     #[fuchsia::test]
     async fn root_dir_cannot_be_served_as_mutable() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
-        let proxy = vfs::directory::serve(root_dir, fio::PERM_WRITABLE);
+        let proxy = vfs::directory::serve(root_dir, ExecutionScope::new(), fio::PERM_WRITABLE);
         assert_matches!(
             proxy.take_event_stream().try_next().await,
             Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })

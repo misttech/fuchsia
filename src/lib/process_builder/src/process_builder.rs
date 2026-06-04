@@ -1395,12 +1395,18 @@ mod tests {
         let dir1 = pseudo_directory! {
             "test_file1" => read_only(test_content1.clone()),
         };
-        let dir1_client = vfs::directory::serve_read_only(dir1).into_client_end().unwrap();
+        let dir1_client =
+            vfs::directory::serve_read_only(dir1, vfs::execution_scope::ExecutionScope::new())
+                .into_client_end()
+                .unwrap();
 
         let dir2 = pseudo_directory! {
             "test_file2" => read_only(test_content2.clone()),
         };
-        let dir2_client = vfs::directory::serve_read_only(dir2).into_client_end().unwrap();
+        let dir2_client =
+            vfs::directory::serve_read_only(dir2, vfs::execution_scope::ExecutionScope::new())
+                .into_client_end()
+                .unwrap();
 
         let (mut builder, proxy) = setup_test_util_builder(true)?;
         builder.add_namespace_entries(vec![

@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
-use log::warn;
 use fidl_fuchsia_dash::LauncherError;
 use fidl_fuchsia_hardware_pty::DeviceProxy;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_kernel as fkernel;
 use fuchsia_component::client::connect_to_protocol;
 use indexmap::IndexMap;
+use log::warn;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
@@ -15,7 +17,6 @@ use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::immutable::simple::Simple as PseudoDirectory;
 use vfs::file::vmo;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel};
 
 // The location of the added trampolines. The path will be of the form:
 // `/.dash/tools/<package-name>/<trampoline-name>`.
@@ -346,7 +347,11 @@ async fn make_trampoline_vfs(
     };
     let (tools_dir, path) = trampolines.make_tools_dir(resource)?;
     // Serve directory with execute rights.
-    let dir = vfs::directory::serve(tools_dir, fio::PERM_READABLE | fio::PERM_EXECUTABLE);
+    let dir = vfs::directory::serve(
+        tools_dir,
+        vfs::execution_scope::ExecutionScope::new(),
+        fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+    );
     Ok((Some(dir), Some(path)))
 }
 
@@ -390,10 +395,11 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_pkg as fpkg;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::fmt;
     use vfs::file::vmo::read_only;
-    use {fidl_fuchsia_pkg as fpkg, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn parse_url_test() {
@@ -475,8 +481,12 @@ mod tests {
     async fn make_pkg(url: &str, name: &str, root: &Arc<PseudoDirectory>) -> PkgDir {
         let (url, resource) = parse_url(url).unwrap();
         let path = vfs::path::Path::validate_and_split(name).unwrap();
-        let dir =
-            vfs::serve_directory(root.clone(), path, fio::PERM_READABLE | fio::PERM_EXECUTABLE);
+        let dir = vfs::serve_directory(
+            root.clone(),
+            path,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+        );
         PkgDir { url, dir, resource }
     }
 

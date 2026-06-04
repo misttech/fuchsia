@@ -217,7 +217,7 @@ impl TryInto<Path> for &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_io as fio;
+    use flex_fuchsia_io as fio;
 
     macro_rules! simple_construction_test {
         (path: $str:expr, $path:ident => $body:block) => {

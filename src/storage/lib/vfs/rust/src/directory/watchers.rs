@@ -13,7 +13,7 @@ pub use watcher::Controller;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::watchers::event_producers::EventProducer;
 use crate::execution_scope::ExecutionScope;
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use slab::Slab;
 use std::sync::Arc;
 
@@ -172,10 +172,21 @@ mod tests {
     fn test_unregister_watcher_on_peer_closed() {
         let mut executor = fasync::TestExecutor::new();
         let directory = FakeDirectory::new();
-        let (client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryWatcherMarker>();
+        #[cfg(feature = "fdomain")]
+        let client_domain = fdomain_local::local_client_empty();
+
+        #[cfg(feature = "fdomain")]
+        let (client, server) = client_domain.create_endpoints::<fio::DirectoryWatcherMarker>();
+        #[cfg(not(feature = "fdomain"))]
+        let (client, server) = flex_client::fidl::create_endpoints::<fio::DirectoryWatcherMarker>();
+
+        #[cfg(feature = "fdomain")]
+        let scope = ExecutionScope::new(client_domain.clone());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = ExecutionScope::new();
         directory
             .clone()
-            .register_watcher(ExecutionScope::new(), fio::WatchMask::EXISTING, server.into())
+            .register_watcher(scope, fio::WatchMask::EXISTING, server.into())
             .expect("Failed to register watcher");
         assert!(!directory.0.lock().remove_called);
         assert_eq!(directory.0.lock().watchers.0.len(), 1);
@@ -192,10 +203,21 @@ mod tests {
     fn test_unregister_watcher_on_message() {
         let mut executor = fasync::TestExecutor::new();
         let directory = FakeDirectory::new();
-        let (client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryWatcherMarker>();
+        #[cfg(feature = "fdomain")]
+        let client_domain = fdomain_local::local_client_empty();
+
+        #[cfg(feature = "fdomain")]
+        let (client, server) = client_domain.create_endpoints::<fio::DirectoryWatcherMarker>();
+        #[cfg(not(feature = "fdomain"))]
+        let (client, server) = flex_client::fidl::create_endpoints::<fio::DirectoryWatcherMarker>();
+
+        #[cfg(feature = "fdomain")]
+        let scope = ExecutionScope::new(client_domain.clone());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = ExecutionScope::new();
         directory
             .clone()
-            .register_watcher(ExecutionScope::new(), fio::WatchMask::EXISTING, server.into())
+            .register_watcher(scope, fio::WatchMask::EXISTING, server.into())
             .expect("Failed to register watcher");
         assert!(!directory.0.lock().remove_called);
         assert_eq!(directory.0.lock().watchers.0.len(), 1);

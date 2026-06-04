@@ -373,6 +373,7 @@ async fn test_gpt_on_ramdisk() {
     let part1_dir = vfs::serve_directory(
         partitions_dir.clone(),
         vfs::path::Path::validate_and_split("part-000").unwrap(),
+        vfs::execution_scope::ExecutionScope::new(),
         fio::PERM_READABLE,
     );
     let part1_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<
@@ -383,6 +384,7 @@ async fn test_gpt_on_ramdisk() {
     let part2_dir = vfs::serve_directory(
         partitions_dir.clone(),
         vfs::path::Path::validate_and_split("part-001").unwrap(),
+        vfs::execution_scope::ExecutionScope::new(),
         fio::PERM_READABLE,
     );
     let part2_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<
@@ -492,6 +494,7 @@ async fn test_gpt_passthrough_is_enabled() {
     let part_dir = vfs::serve_directory(
         partitions_dir.clone(),
         vfs::path::Path::validate_and_split("part-000").unwrap(),
+        vfs::execution_scope::ExecutionScope::new(),
         fio::PERM_READABLE,
     );
     let part_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<

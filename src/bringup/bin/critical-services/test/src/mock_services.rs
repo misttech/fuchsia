@@ -173,7 +173,10 @@ async fn main() -> Result<(), Error> {
             ).detach()
         }),
     };
-    fs.add_remote("input", vfs::directory::serve_read_only(input_dir));
+    fs.add_remote(
+        "input",
+        vfs::directory::serve_read_only(input_dir, vfs::execution_scope::ExecutionScope::new()),
+    );
     fs.take_and_serve_directory_handle()?;
     fs.collect::<()>().await;
 

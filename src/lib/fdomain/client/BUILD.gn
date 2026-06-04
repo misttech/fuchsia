@@ -136,7 +136,7 @@ rustc_library("flex_fdomain") {
   with_unit_tests = false
   deps = [
     ":client",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fidl/rust/fidl",
   ]
 }
 rustc_library("flex_fidl") {

@@ -16,8 +16,8 @@ use crate::service::{self, ServiceLike};
 use crate::symlink::{self, Symlink};
 use crate::{ObjectRequestRef, ToObjectRequest};
 
-use fidl::endpoints::{ClientEnd, create_endpoints};
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ClientEnd;
+use flex_fuchsia_io as fio;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
@@ -449,8 +449,9 @@ pub fn serve_directory(
     scope: &ExecutionScope,
     flags: fio::Flags,
 ) -> Result<ClientEnd<fio::DirectoryMarker>, Status> {
+    let client = scope.domain();
     assert_eq!(dir.entry_info().type_(), fio::DirentType::Directory);
-    let (client, server) = create_endpoints::<fio::DirectoryMarker>();
+    let (client, server) = client.create_endpoints::<fio::DirectoryMarker>();
     flags
         .to_object_request(server)
         .handle(|object_request| {
@@ -466,13 +467,12 @@ mod tests {
         DirectoryEntry, DirectoryEntryAsync, EntryInfo, OpenRequest, RequestFlags, SubNode,
     };
     use crate::directory::entry::GetEntryInfo;
-    use crate::execution_scope::ExecutionScope;
     use crate::file::read_only;
     use crate::path::Path;
     use crate::{ObjectRequest, assert_read, pseudo_directory};
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy;
-    use fidl_fuchsia_io as fio;
+
+    use flex_fuchsia_io as fio;
     use futures::StreamExt;
     use std::sync::Arc;
     use zx_status::Status;
@@ -498,9 +498,15 @@ mod tests {
             "e" => sub_node
         );
 
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
+
         let file_proxy = crate::serve_file(
             root2,
             Path::validate_and_split("e/c/d").unwrap(),
+            scope,
             fio::PERM_READABLE,
         );
         assert_read!(file_proxy, "foo");
@@ -543,9 +549,18 @@ mod tests {
             }
         }
 
-        let scope = ExecutionScope::new();
+        #[cfg(feature = "fdomain")]
+        let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
+        #[cfg(not(feature = "fdomain"))]
+        let scope = crate::execution_scope::ExecutionScope::new();
 
-        let (proxy, server) = create_proxy::<fio::NodeMarker>();
+        #[cfg(feature = "fdomain")]
+        let (proxy, server) = {
+            let client = scope.domain();
+            client.create_proxy::<fio::NodeMarker>()
+        };
+        #[cfg(not(feature = "fdomain"))]
+        let (proxy, server) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
         let flags = fio::Flags::PROTOCOL_FILE | fio::Flags::FILE_APPEND;
         let mut object_request =
             ObjectRequest::new(flags, &Default::default(), server.into_channel());

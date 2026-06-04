@@ -7,18 +7,20 @@ use fidl::endpoints::{
     ClientEnd, DiscoverableProtocolMarker as _, RequestStream as _, ServiceMarker,
     create_endpoints, create_request_stream,
 };
+use fidl_fuchsia_component_decl as fcd;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_block_volume::NodeProxy;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
+use fidl_fuchsia_storage_block as fblock;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, readdir};
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use zerocopy::FromBytes as _;
 use zerocopy::byteorder::{LE, U16, U32};
-use {
-    fidl_fuchsia_component_decl as fcd, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_hardware_block_volume as fvolume,
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync,
-};
 
 #[repr(C)]
 #[derive(
@@ -69,21 +71,24 @@ async fn run_receiver(
 ) {
     // We need to construct a directory which looks like fuchsia.hardware.block.volume.Service with
     // a single instance (backed by block_instance_dir).
-    let pseudo_dir = vfs::directory::serve_read_only(vfs::pseudo_directory! {
-        "default" => vfs::pseudo_directory! {
-            "volume" => vfs::service::endpoint(move |_, channel| {
-                if let Err(err) = block_instance_dir.open(
-                    fblock::BlockMarker::PROTOCOL_NAME,
-                    fio::Flags::PROTOCOL_SERVICE,
-                    &fio::Options::default(),
-                    channel.into(),
-                ) {
-                    log::warn!(err:?; "Failed to forward Receive request");
-                    // Nothing else to do; channel has already been consumed
-                }
-            }),
+    let pseudo_dir = vfs::directory::serve_read_only(
+        vfs::pseudo_directory! {
+            "default" => vfs::pseudo_directory! {
+                "volume" => vfs::service::endpoint(move |_, channel| {
+                    if let Err(err) = block_instance_dir.open(
+                        fblock::BlockMarker::PROTOCOL_NAME,
+                        fio::Flags::PROTOCOL_SERVICE,
+                        &fio::Options::default(),
+                        channel.into(),
+                    ) {
+                        log::warn!(err:?; "Failed to forward Receive request");
+                        // Nothing else to do; channel has already been consumed
+                    }
+                }),
+            },
         },
-    });
+        vfs::execution_scope::ExecutionScope::new(),
+    );
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
             fsandbox::DirReceiverRequest::Receive { payload, control_handle: _ } => {

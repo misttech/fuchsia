@@ -8,8 +8,8 @@ use crate::directory::entry_container::Directory;
 use crate::execution_scope::ExecutionScope;
 use crate::object_request::ToObjectRequest as _;
 use crate::path::Path;
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use flex_client::fidl::ServerEnd;
+use flex_fuchsia_io as fio;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -73,15 +73,22 @@ impl Default for DirectoryOptions {
 /// Helper function to serve a new connection to `directory` with `flags`. Errors will be
 /// communicated via epitaph on the returned proxy. A new [`crate::execution_scope::ExecutionScope`]
 /// will be created for the request.
-pub fn serve<D: Directory + ?Sized>(directory: Arc<D>, flags: fio::Flags) -> fio::DirectoryProxy {
-    crate::serve_directory(directory, Path::dot(), flags)
+pub fn serve<D: Directory + ?Sized>(
+    directory: Arc<D>,
+    scope: ExecutionScope,
+    flags: fio::Flags,
+) -> fio::DirectoryProxy {
+    crate::serve_directory(directory, Path::dot(), scope, flags)
 }
 
 /// Helper function to serve a new connection to `directory` as read-only (i.e. with
 /// [`fio::PERM_READABLE`]). Errors will be communicated via epitaph on the returned proxy. A new
 /// [`crate::execution_scope::ExecutionScope`] will be created for the request.
-pub fn serve_read_only<D: Directory + ?Sized>(directory: Arc<D>) -> fio::DirectoryProxy {
-    crate::serve_directory(directory, Path::dot(), fio::PERM_READABLE)
+pub fn serve_read_only<D: Directory + ?Sized>(
+    directory: Arc<D>,
+    scope: ExecutionScope,
+) -> fio::DirectoryProxy {
+    crate::serve_directory(directory, Path::dot(), scope, fio::PERM_READABLE)
 }
 
 /// Helper function to serve a connection to `directory` on `server_end` with specified `flags` and

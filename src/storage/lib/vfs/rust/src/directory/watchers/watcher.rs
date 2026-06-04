@@ -8,13 +8,13 @@ use crate::directory::entry_container::DirectoryWatcher;
 use crate::directory::watchers::event_producers::EventProducer;
 use crate::execution_scope::ExecutionScope;
 
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use futures::channel::mpsc::{self, UnboundedSender};
 use futures::{FutureExt, select};
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(all(not(target_os = "fuchsia"), not(feature = "fdomain")))]
 use fuchsia_async::emulated_handle::MessageBuf;
-#[cfg(target_os = "fuchsia")]
+#[cfg(all(target_os = "fuchsia", not(feature = "fdomain")))]
 use zx::MessageBuf;
 
 #[derive(Clone)]
@@ -40,13 +40,20 @@ impl Controller {
 
         let task = async move {
             let _done = CallOnDrop(Some(done));
+            #[cfg(not(feature = "fdomain"))]
             let mut buf = MessageBuf::new();
+            #[cfg(not(feature = "fdomain"))]
             let mut recv_msg = watcher.channel().recv_msg(&mut buf).fuse();
+            #[cfg(feature = "fdomain")]
+            let mut recv_msg = watcher.channel().recv_msg().fuse();
             loop {
                 select! {
                     command = receiver.next() => match command {
                         Some(message) => {
+                            #[cfg(not(feature = "fdomain"))]
                             let result = watcher.channel().write(&*message, &mut []);
+                            #[cfg(feature = "fdomain")]
+                            let result = watcher.channel().write(&*message, std::vec::Vec::new());
                             if result.is_err() {
                                 break;
                             }

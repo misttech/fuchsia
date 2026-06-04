@@ -7,7 +7,7 @@
 //! in order to avoid copying the data around, this namespace provides a more specialized version
 //! of this abstraction.
 
-use fidl_fuchsia_io as fio;
+use flex_fuchsia_io as fio;
 use static_assertions::const_assert;
 
 /// Watcher event producer, that generates buffers filled with watcher events.  Watchers use this
@@ -16,13 +16,13 @@ use static_assertions::const_assert;
 /// [`Self::mask()`] methods.
 pub trait EventProducer {
     /// Returns a mask that represents the type of events this producer can generate, as one of the
-    /// `fidl_fuchsia_io::WatchMask::*` constants.  There might be only one bit set and it should
+    /// `flex_fuchsia_io::WatchMask::*` constants.  There might be only one bit set and it should
     /// correspond to the event returned by the [`Self::event()`] method.  It is a duplication, but it
     /// helps the callers that need both masks and event IDs.
     fn mask(&self) -> fio::WatchMask;
 
     /// Returns an event ID this event producer will use to populate the buffers, as one of the
-    /// `fidl_fuchsia_io::WatchEvent::*` constants.  Must match what [`Self::mask()`], returns, see
+    /// `flex_fuchsia_io::WatchEvent::*` constants.  Must match what [`Self::mask()`], returns, see
     /// there for details.
     fn event(&self) -> fio::WatchEvent;
 
