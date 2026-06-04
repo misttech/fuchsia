@@ -6,15 +6,18 @@
 
 import logging
 
+import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import (
-    SecurityMode as DeprecatedSecurityMode,
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
 )
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+    SecurityType,
+)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
@@ -31,29 +34,34 @@ from openwrt_access_point.lib.access_point_config_mapper import (
 )
 
 
-class WlanMiscScenarioTest(base_test.WifiBaseTest):
+class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Random scenario tests, usually to reproduce certain bugs, that do not
     fit into a specific test category, but should still be run in CI to catch
     regressions.
     """
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        await self.dut.wlan_policy.set_country_code(
+            CountryCode.UNITED_STATES_OF_AMERICA
+        )
         self.log = logging.getLogger()
-        self.dut = self.get_dut(AssociationMode.POLICY)
 
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        if not self.openwrt_aps and not self.access_points:
             raise signals.TestAbortClass("Requires at least one access point")
 
-    def teardown_test(self) -> None:
-        self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
 
     def setup_ap(
         self,
@@ -93,7 +101,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
                 ),
             )
 
-    def test_connect_to_wpa2_after_wpa3_rejection(self) -> None:
+    async def test_connect_to_wpa2_after_wpa3_rejection(self) -> None:
         """Test association to non-WPA3 network after receiving a WPA3
         rejection, which was triggering a firmware hang.
 
@@ -111,12 +119,16 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
 
         # Attempt to associate with wrong password, expecting failure
         self.log.info("Attempting to associate WPA3 with wrong password.")
-        asserts.assert_false(
-            self.dut.associate(
-                wpa3_ssid, DeprecatedSecurityMode.WPA3, target_pwd="wrongpass"
-            ),
-            "Associated with WPA3 network using the wrong password",
+        await self.dut.wlan_policy.save_network(
+            wpa3_ssid,
+            SecurityType.WPA3,
+            target_pwd="wrongpass",
         )
+        with asserts.assert_raises(HoneydewWlanError):
+            await self.dut.wlan_policy.connect(
+                wpa3_ssid,
+                SecurityType.WPA3,
+            )
 
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -133,13 +145,14 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
 
         # Attempt to associate, expecting success
         self.log.info("Attempting to associate with WPA2 network.")
-        asserts.assert_true(
-            self.dut.associate(
-                wpa2_ssid,
-                DeprecatedSecurityMode.WPA2,
-                target_pwd=wpa2_password,
-            ),
-            "Failed to associate with WPA2 network after a WPA3 rejection.",
+        await self.dut.wlan_policy.save_network(
+            wpa2_ssid,
+            SecurityType.WPA2,
+            target_pwd=wpa2_password,
+        )
+        await self.dut.wlan_policy.connect(
+            wpa2_ssid,
+            SecurityType.WPA2,
         )
 
 
