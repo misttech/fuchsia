@@ -33,8 +33,8 @@ use starnix_sync::{FileOpsCore, Locked};
 use starnix_task_command::TaskCommand;
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
-    CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_REALCREDS,
-    PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
+    CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_FSCREDS, PTRACE_MODE_NOAUDIT,
+    PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -998,7 +998,7 @@ pub struct MemFile {
 
 impl MemFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_REALCREDS, |_, _, task| {
+        PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_FSCREDS, |_, _, task| {
             let mm = task.mm().ok().as_ref().map(Arc::downgrade).unwrap_or_default();
             Ok(Self { mm, task: Arc::downgrade(&task) })
         })
