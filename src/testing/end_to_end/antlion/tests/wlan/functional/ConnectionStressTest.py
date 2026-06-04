@@ -17,7 +17,6 @@ from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.utils import rand_ascii_str
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
@@ -65,7 +64,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             "whirlwind_11ag_legacy",
         ]:
             for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
-                ssid = rand_ascii_str(10)
+                ssid = AccessPointConfig.random_string(10)
                 tests.append(
                     TestParams(
                         profile=profile,
@@ -81,7 +80,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
 
         # Wrong SSID
         for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
-            ssid = rand_ascii_str(10)
+            ssid = AccessPointConfig.random_string(10)
             tests.append(
                 TestParams(
                     profile="whirlwind",
@@ -97,8 +96,8 @@ class ConnectionStressTest(base_test.WifiBaseTest):
 
         # Wrong password
         for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
-            ssid = rand_ascii_str(10)
-            password = rand_ascii_str(20)
+            ssid = AccessPointConfig.random_string(10)
+            password = AccessPointConfig.random_string(20)
             tests.append(
                 TestParams(
                     profile="whirlwind",
@@ -129,7 +128,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
         self.log = logging.getLogger()
-        self.ssid = rand_ascii_str(10)
+        self.ssid = AccessPointConfig.random_string(10)
 
         self.dut = self.get_dut(AssociationMode.POLICY)
 
@@ -149,7 +148,6 @@ class ConnectionStressTest(base_test.WifiBaseTest):
         self.log.info(f"iterations: {self.num_of_iterations}")
 
     def teardown_test(self) -> None:
-        self.dut.reset_wifi()
         self.download_logs()
         if self.openwrt_ap:
             self.openwrt_ap.stop_wifi()
