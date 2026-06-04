@@ -764,13 +764,13 @@ impl Resolution {
 
     pub async fn ensure_not_terminated(
         &self,
-        context: &EnvironmentContext,
     ) -> std::result::Result<(), crate::FfxTargetCrateError> {
-        if self.connection.lock().await.is_some() {
-            self.ensure_connected(context).await
-        } else {
-            Ok(())
+        if let Some(conn) = self.connection.lock().await.as_ref() {
+            if conn.is_terminated() {
+                return Err(crate::error::TargetResolutionError::ConnectionTerminated.into());
+            }
         }
+        Ok(())
     }
 
     pub async fn get_connection(
@@ -914,29 +914,36 @@ async fn emit_target_connection_event(ty: &str) {
     .await;
 }
 
+impl Resolution {
+    pub async fn try_from_env_context_with_cache(
+        env: &EnvironmentContext,
+        use_cache: bool,
+    ) -> ffx_command_error::Result<Self> {
+        let unspecified_target = UNSPECIFIED_TARGET_NAME.to_owned();
+        let target_spec = get_target_specifier(env)?;
+        let target_spec_unwrapped = if env.is_strict() {
+            target_spec.as_ref().ok_or(user_error!(
+                "You must specify a target via `-t <target_name>` before any command arguments"
+            ))?
+        } else {
+            target_spec.as_ref().unwrap_or(&unspecified_target)
+        };
+        log::trace!("resolving target spec address from {}", target_spec_unwrapped);
+        let spec: TargetInfoQuery = TargetInfoQuery::try_from(target_spec)
+            .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
+
+        let resolution = resolve_target_address(&spec, use_cache, env)
+            .await
+            .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
+        Ok(resolution)
+    }
+}
+
 impl TryFromEnvContext for Resolution {
     fn try_from_env_context<'a>(
         env: &'a EnvironmentContext,
     ) -> LocalBoxFuture<'a, ffx_command_error::Result<Self>> {
-        Box::pin(async {
-            let unspecified_target = UNSPECIFIED_TARGET_NAME.to_owned();
-            let target_spec = get_target_specifier(env)?;
-            let target_spec_unwrapped = if env.is_strict() {
-                target_spec.as_ref().ok_or(user_error!(
-                    "You must specify a target via `-t <target_name>` before any command arguments"
-                ))?
-            } else {
-                target_spec.as_ref().unwrap_or(&unspecified_target)
-            };
-            log::trace!("resolving target spec address from {}", target_spec_unwrapped);
-            let spec: TargetInfoQuery = TargetInfoQuery::try_from(target_spec)
-                .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
-
-            let resolution = resolve_target_address(&spec, true, env)
-                .await
-                .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
-            Ok(resolution)
-        })
+        Box::pin(async { Self::try_from_env_context_with_cache(env, true).await })
     }
 }
 

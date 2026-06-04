@@ -4,7 +4,7 @@
 
 use crate::injection::Injection;
 use ffx_command_error::{Result, bug};
-use ffx_config::{EnvironmentContext, TryFromEnvContext};
+use ffx_config::EnvironmentContext;
 use ffx_core::Injector;
 use ffx_target::Resolution;
 use fho::TryFromEnv;
@@ -45,19 +45,32 @@ impl DirectConnector {
         }))
     }
 
-    pub async fn resolution(&self) -> Result<Arc<Resolution>, TargetResolutionError> {
-        let mut resolution = self.0.resolution.lock().await;
+    // Return a pinned boxed future (LocalBoxFuture) to prevent deep recursion
+    // of compiler-generated future types. When this method is called within
+    // other complex async contexts (e.g., the ffx log or update plugins),
+    // the nested async blocks can otherwise exceed the compiler's recursion limit.
+    pub fn resolution(
+        &self,
+    ) -> futures::future::LocalBoxFuture<'_, Result<Arc<Resolution>, TargetResolutionError>> {
+        Box::pin(async move {
+            let mut resolution = self.0.resolution.lock().await;
 
-        if let Some(resolution) = &*resolution {
-            if resolution.ensure_not_terminated(&self.0.context).await.is_ok() {
-                return Ok(Arc::clone(resolution));
-            }
-        }
+            let use_cache = if let Some(resolution) = &*resolution {
+                if resolution.ensure_not_terminated().await.is_ok() {
+                    return Ok(Arc::clone(resolution));
+                }
+                false
+            } else {
+                true
+            };
 
-        let new = Arc::new(Resolution::try_from_env_context(&self.0.context).await?);
-        *resolution = Some(Arc::clone(&new));
+            let new = Arc::new(
+                Resolution::try_from_env_context_with_cache(&self.0.context, use_cache).await?,
+            );
+            *resolution = Some(Arc::clone(&new));
 
-        Ok(new)
+            Ok(new)
+        })
     }
 
     fn get_connection_if_already_established(&self) -> Option<Arc<ffx_target::Connection>> {
@@ -467,5 +480,147 @@ mod tests {
         target_env.set_direct();
         let target_env = target_interface(&fho_env);
         assert_eq!(target_env.get_direct(), true);
+    }
+
+    fn write_test_cache(context: &EnvironmentContext, nodename: &str, ip: &str) {
+        let cache_file = ffx_target::get_discovery_cache_file(context).expect("cache file path");
+        if let Some(parent) = cache_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let json = serde_json::json!({
+            "version": 2,
+            "expires": "2036-06-03T19:50:40Z",
+            "targets": [
+                {
+                    "nodename": nodename,
+                    "addresses": [
+                        {"Net": ip}
+                    ],
+                    "rcs_state": "Unknown",
+                    "target_state": "Product",
+                    "product_config": null,
+                    "board_config": null,
+                    "serial_number": null,
+                    "is_manual": false,
+                    "boot_id": null,
+                    "is_default": null
+                }
+            ]
+        });
+        let file = std::fs::File::create(cache_file).unwrap();
+        serde_json::to_writer(file, &json).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_initial_resolution_uses_cache() {
+        let mut builder = test_env();
+        let cache_dir = builder.isolate_root().join("cache");
+        let env = builder
+            .runtime_config("target.default", "test-target")
+            .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
+            .build()
+            .unwrap();
+
+        write_test_cache(&env.context, "test-target", "127.0.0.1:8082");
+
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(None),
+        }));
+
+        let res = connector.resolution().await;
+        assert!(res.is_ok(), "Expected resolution to succeed using cache, got {:?}", res);
+        let res = res.unwrap();
+        assert_eq!(res.target_spec(), "127.0.0.1:8082");
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_reconnect_bypasses_cache() {
+        let mut builder = test_env();
+        let cache_dir = builder.isolate_root().join("cache");
+        let env = builder
+            .runtime_config("target.default", "test-target")
+            .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
+            .build()
+            .unwrap();
+
+        write_test_cache(&env.context, "test-target", "127.0.0.1:8082");
+
+        #[derive(Debug)]
+        struct TerminatedConnector;
+        impl ffx_target::TargetConnector for TerminatedConnector {
+            const CONNECTION_TYPE: &'static str = "terminated";
+            async fn connect(
+                &mut self,
+            ) -> Result<ffx_target::TargetConnection, ffx_target::TargetConnectionError>
+            {
+                Ok(ffx_target::TargetConnection::FDomain(ffx_target::FDomainConnection::invalid()))
+            }
+        }
+
+        let conn = ffx_target::Connection::new(TerminatedConnector).await.unwrap();
+        fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
+        assert!(conn.is_terminated());
+
+        let resolution = Resolution::mock(|| Err(anyhow::anyhow!("reconnect failed").into()));
+
+        resolution.set_connection_for_test(Some(conn)).await;
+
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
+        }));
+
+        let res = connector.resolution().await;
+        assert!(
+            res.is_err(),
+            "Expected resolution to fail (cache bypassed), but got Ok: {:?}",
+            res
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_reresolves_on_terminated_connection() {
+        let env = test_env().runtime_config("target.default", "127.0.0.1:8082").build().unwrap();
+
+        #[derive(Debug)]
+        struct TerminatedConnector;
+        impl ffx_target::TargetConnector for TerminatedConnector {
+            const CONNECTION_TYPE: &'static str = "terminated";
+            async fn connect(
+                &mut self,
+            ) -> Result<ffx_target::TargetConnection, ffx_target::TargetConnectionError>
+            {
+                Ok(ffx_target::TargetConnection::FDomain(ffx_target::FDomainConnection::invalid()))
+            }
+        }
+
+        let conn = ffx_target::Connection::new(TerminatedConnector).await.unwrap();
+        fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
+        assert!(conn.is_terminated());
+
+        let reconnect_called = Arc::new(AtomicBool::new(false));
+        let reconnect_called_clone = reconnect_called.clone();
+        let initial_resolution = Resolution::mock(move || {
+            reconnect_called_clone.store(true, Ordering::SeqCst);
+            Err(anyhow::anyhow!("reconnect failed").into())
+        });
+
+        initial_resolution.set_connection_for_test(Some(conn)).await;
+
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(Some(Arc::new(initial_resolution))),
+        }));
+
+        let res = connector.resolution().await;
+        assert!(res.is_ok(), "Expected re-resolution to succeed for IP target, got {:?}", res);
+        let res = res.unwrap();
+        assert_eq!(res.target_spec(), "127.0.0.1:8082");
+
+        assert!(
+            !reconnect_called.load(Ordering::SeqCst),
+            "Expected no reconnection attempt on terminated connection"
+        );
     }
 }

@@ -23,6 +23,9 @@ pub enum TargetResolutionError {
 
     #[error("Timeout after {timeout:?} identifying manual target {addr}")]
     ManualTargetTimeout { addr: SocketAddr, timeout: std::time::Duration },
+
+    #[error("Connection to target was terminated")]
+    ConnectionTerminated,
 }
 
 #[derive(Debug, thiserror::Error)]
