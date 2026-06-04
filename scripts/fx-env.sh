@@ -110,10 +110,10 @@ function __fx_env_main() {
     fi
   }
 
-  ### fd: navigate to directories with autocomplete
+  ### fdir: navigate to directories with autocomplete
 
-  # $ fd --help   # for usage.
-  function fd {
+  # $ fdir --help   # for usage.
+  function fdir {
     local fd_python
     local dest
     cd "${FUCHSIA_DIR}"
@@ -123,7 +123,7 @@ function __fx_env_main() {
   }
 
   if [[ -z "${ZSH_VERSION}" ]]; then
-    function __fd {
+    function __fdir {
       local cur
       COMPREPLY=()
       cur="${COMP_WORDS[COMP_CWORD]}"
@@ -134,7 +134,7 @@ function __fx_env_main() {
         COMPREPLY=($(/bin/ls -dp1 ${cur}* 2>/dev/null | grep "/$" | xargs echo))
       fi
     }
-    complete -o nospace -F __fd fd
+    complete -o nospace -F __fdir fdir
   fi
 
   # Support command-line auto-completions for the fx command.
