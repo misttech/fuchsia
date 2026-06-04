@@ -162,6 +162,9 @@ class ScopedTempFD {
   ScopedTempFD();
   ~ScopedTempFD() { unlink(name_.c_str()); }
 
+  ScopedTempFD(ScopedTempFD &&other) noexcept;
+  ScopedTempFD &operator=(ScopedTempFD &&other) noexcept;
+
   bool is_valid() const { return fd_.is_valid(); }
   explicit operator bool() const { return is_valid(); }
 

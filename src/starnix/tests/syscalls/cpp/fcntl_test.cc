@@ -8,25 +8,13 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
-
-class FcntlTest : public ::testing::Test {
- protected:
-  void TearDown() override {
-    char *tmp = getenv("TEST_TMPDIR");
-    std::string path = tmp == nullptr ? "/tmp/fcntltest" : std::string(tmp) + "/fcntltest";
-    if (access(path.c_str(), F_OK) == 0) {
-      ASSERT_THAT(unlink(path.c_str()), SyscallSucceeds());
-    }
-  }
-};
-
-class FcntlLockTest : public FcntlTest {};
 
 bool CheckLock(int fd, short type, off_t start, off_t length, pid_t pid) {
   test_helper::ForkHelper helper;
@@ -52,24 +40,25 @@ bool CheckLock(int fd, short type, off_t start, off_t length, pid_t pid) {
 
 // Open a file to test. It will be of size 3000, and the position will be at
 // 2000.
-int OpenTestFile() {
-  char *tmp = getenv("TEST_TMPDIR");
-  std::string path = tmp == nullptr ? "/tmp/fcntltest" : std::string(tmp) + "/fcntltest";
-  int fd = open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777);
+test_helper::ScopedTempFD OpenTestFile() {
+  test_helper::ScopedTempFD temp_file;
+  EXPECT_TRUE(temp_file.is_valid());
+  int fd = temp_file.fd();
   SAFE_SYSCALL(lseek(fd, 2999, SEEK_SET));
   // Make the file 3000 bytes longs
   SAFE_SYSCALL(write(fd, &fd, 1));
   // Move to 2000
   SAFE_SYSCALL(lseek(fd, 2000, SEEK_SET));
-  return fd;
+  return temp_file;
 }
 
 // Test that exiting a processes releases locks on a file.
-TEST_F(FcntlLockTest, ChildProcessReleaseLock) {
+TEST(FcntlLockTest, ChildProcessReleaseLock) {
   for (int i = 0; i < 10; ++i) {
     test_helper::ForkHelper helper;
     helper.RunInForkedProcess([] {
-      int fd = OpenTestFile();
+      auto temp_file = OpenTestFile();
+      int fd = temp_file.fd();
 
       struct flock fl;
       fl.l_type = F_WRLCK;
@@ -83,10 +72,11 @@ TEST_F(FcntlLockTest, ChildProcessReleaseLock) {
   }
 }
 
-TEST_F(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
+TEST(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
-    int fd = OpenTestFile();
+    auto temp_file = OpenTestFile();
+    int fd = temp_file.fd();
 
     struct flock fl;
     fl.l_type = F_WRLCK;
@@ -108,10 +98,11 @@ TEST_F(FcntlLockTest, ReleaseLockInMiddleOfAnotherLock) {
   });
 }
 
-TEST_F(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
+TEST(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
-    int fd = OpenTestFile();
+    auto temp_file = OpenTestFile();
+    int fd = temp_file.fd();
 
     struct flock fl;
     fl.l_type = F_WRLCK;
@@ -134,12 +125,13 @@ TEST_F(FcntlLockTest, ChangeLockTypeInMiddleOfAnotherLock) {
   });
 }
 
-TEST_F(FcntlLockTest, CloneFiles) {
+TEST(FcntlLockTest, CloneFiles) {
   // Do all the test in another process, as it will requires closing the parent
   // process before the child one.
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
-    int fd = OpenTestFile();
+    auto temp_file = OpenTestFile();
+    int fd = temp_file.fd();
     pid_t pid = getpid();
 
     // Lock the file.
@@ -169,15 +161,16 @@ TEST_F(FcntlLockTest, CloneFiles) {
     // pid is expected to be the one of the now dead process.
     ASSERT_TRUE(CheckLock(fd, F_WRLCK, 0, 0, pid));
 
-    int new_fd = dup(fd);
+    fbl::unique_fd new_fd(dup(fd));
     // Closing fd should release the lock.
-    SAFE_SYSCALL(close(fd));
-    ASSERT_TRUE(CheckLock(new_fd, F_UNLCK, 0, 0, 0));
+    temp_file.fd_.reset();
+    ASSERT_TRUE(CheckLock(new_fd.get(), F_UNLCK, 0, 0, 0));
   });
 }
 
-TEST_F(FcntlLockTest, CheckErrors) {
-  int fd = OpenTestFile();
+TEST(FcntlLockTest, CheckErrors) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
   struct flock fl;
   fl.l_type = 42;
@@ -219,61 +212,66 @@ TEST_F(FcntlLockTest, CheckErrors) {
   ASSERT_EQ(errno, EINVAL);
 }
 
-TEST_F(FcntlTest, FdDup) {
-  int fd = OpenTestFile();
+TEST(FcntlTest, FdDup) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
-  int new_fd = SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000));
-  ASSERT_GE(new_fd, 1000);
-  new_fd = SAFE_SYSCALL(fcntl(fd, F_DUPFD, 0));
-  ASSERT_LT(new_fd, 1000);
+  fbl::unique_fd new_fd(SAFE_SYSCALL(fcntl(fd, F_DUPFD, 1000)));
+  ASSERT_GE(new_fd.get(), 1000);
+  new_fd.reset(SAFE_SYSCALL(fcntl(fd, F_DUPFD, 0)));
+  ASSERT_LT(new_fd.get(), 1000);
 }
 
-TEST_F(FcntlTest, SetFdAfterFdDup) {
-  int fd = OpenTestFile();
-  int new_fd = SAFE_SYSCALL(dup(fd));
+TEST(FcntlTest, SetFdAfterFdDup) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
+  fbl::unique_fd new_fd(SAFE_SYSCALL(dup(fd)));
 
-  int new_fd_flags_before = SAFE_SYSCALL(fcntl(new_fd, F_GETFD));
+  int new_fd_flags_before = SAFE_SYSCALL(fcntl(new_fd.get(), F_GETFD));
   int flags = SAFE_SYSCALL(fcntl(fd, F_GETFD));
   ASSERT_EQ(SAFE_SYSCALL(fcntl(fd, F_SETFD, flags ^ FD_CLOEXEC)), 0);
 
   // `F_SETFD` sets per-FD flags, in contrast to `F_SETFL`, which modifies file "status" flags which
   // are per file-description, and therefore shared by duplicated files. Changing `FD_CLOEXEC` on
   // one of the duplicated descriptors has no effect on the other.
-  int new_fd_flags = SAFE_SYSCALL(fcntl(new_fd, F_GETFD));
+  int new_fd_flags = SAFE_SYSCALL(fcntl(new_fd.get(), F_GETFD));
   EXPECT_EQ(new_fd_flags, new_fd_flags_before);
 }
 
-TEST_F(FcntlTest, SetFlAfterFdDup) {
-  int fd = OpenTestFile();
-  int new_fd = SAFE_SYSCALL(dup(fd));
+TEST(FcntlTest, SetFlAfterFdDup) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
+  fbl::unique_fd new_fd(SAFE_SYSCALL(dup(fd)));
 
-  int new_fd_flags_before = SAFE_SYSCALL(fcntl(new_fd, F_GETFL));
+  int new_fd_flags_before = SAFE_SYSCALL(fcntl(new_fd.get(), F_GETFL));
   int flags = SAFE_SYSCALL(fcntl(fd, F_GETFL));
   EXPECT_EQ(new_fd_flags_before, flags);
   ASSERT_EQ(SAFE_SYSCALL(fcntl(fd, F_SETFL, flags ^ O_NONBLOCK)), 0);
 
   // `F_SETFL` sets per-description file "status" flags, which are common to all FDs sharing the
   // same file description. Changing `O_NONBLOCK` for an FD affects any duplicates.
-  int new_fd_flags = SAFE_SYSCALL(fcntl(new_fd, F_GETFL));
+  int new_fd_flags = SAFE_SYSCALL(fcntl(new_fd.get(), F_GETFL));
   EXPECT_EQ(new_fd_flags, new_fd_flags_before ^ O_NONBLOCK);
 }
 
-TEST_F(FcntlTest, Noatime) {
-  int fd = OpenTestFile();
+TEST(FcntlTest, Noatime) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
   EXPECT_EQ(fcntl(fd, F_SETFL, O_NOATIME), 0);
 }
 
-TEST_F(FcntlTest, NoatimePermission) {
+TEST(FcntlTest, NoatimePermission) {
   if (getuid() != 0) {
     GTEST_SKIP() << "Can only be run as root.";
   }
 
-  int fd = OpenTestFile();
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
   // Fork to change UID.
   test_helper::ForkHelper helper;
-  helper.RunInForkedProcess([&] {
+  helper.RunInForkedProcess([fd] {
     ASSERT_EQ(setuid(1), 0);
 
     ASSERT_LT(fcntl(fd, F_SETFL, O_NOATIME), 0);
@@ -281,7 +279,7 @@ TEST_F(FcntlTest, NoatimePermission) {
   });
 }
 
-TEST_F(FcntlTest, RenameExchangeLockOrdering) {
+TEST(FcntlTest, RenameExchangeLockOrdering) {
   char *tmp = getenv("TEST_TMPDIR");
   std::string root_dir = tmp == nullptr ? "/tmp" : std::string(tmp);
 
@@ -328,8 +326,9 @@ TEST_F(FcntlTest, RenameExchangeLockOrdering) {
   ASSERT_THAT(rmdir(second_parent_dir.c_str()), SyscallSucceeds());
 }
 
-TEST_F(FcntlTest, SetOwnExPidZeroPreservesType) {
-  int fd = OpenTestFile();
+TEST(FcntlTest, SetOwnExPidZeroPreservesType) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
   struct f_owner_ex owner;
   owner.type = F_OWNER_PID;
@@ -343,37 +342,20 @@ TEST_F(FcntlTest, SetOwnExPidZeroPreservesType) {
 
   EXPECT_EQ(got_owner.type, F_OWNER_PID);
   EXPECT_EQ(got_owner.pid, 0);
-
-  close(fd);
 }
 
-#ifndef F_GETOWN_EX
-#define F_GETOWN_EX 16
-#endif
+TEST(FcntlTest, GetOwnExDefault) {
+  auto temp_file = OpenTestFile();
+  int fd = temp_file.fd();
 
-#ifndef F_OWNER_TID
-#define F_OWNER_TID 0
-#endif
-
-struct my_f_owner_ex {
-  int type;
-  pid_t pid;
-};
-
-TEST_F(FcntlTest, GetOwnExDefault) {
-  int fd = OpenTestFile();
-  ASSERT_GE(fd, 0);
-
-  struct my_f_owner_ex owner;
-  // Initialize with non-zero values to make sure they are overwritten.
-  owner.type = -1;
+  struct f_owner_ex owner;
+  // Initialize with values to make sure they are overwritten.
+  owner.type = F_OWNER_PID;
   owner.pid = -1;
 
   ASSERT_THAT(fcntl(fd, F_GETOWN_EX, &owner), SyscallSucceeds());
 
   EXPECT_EQ(owner.type, F_OWNER_TID);
   EXPECT_EQ(owner.pid, 0);
-
-  close(fd);
 }
 }  // namespace

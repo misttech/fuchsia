@@ -251,6 +251,15 @@ ScopedTempFD::ScopedTempFD() : name_("/tmp/proc_test_file_XXXXXX") {
   fd_ = fbl::unique_fd(mkstemp(mut_name));
 }
 
+ScopedTempFD::ScopedTempFD(ScopedTempFD &&other) noexcept
+    : name_(std::move(other.name_)), fd_(std::move(other.fd_)) {}
+
+ScopedTempFD &ScopedTempFD::operator=(ScopedTempFD &&other) noexcept {
+  name_ = std::move(other.name_);
+  fd_ = std::move(other.fd_);
+  return *this;
+}
+
 ScopedTempDir::ScopedTempDir() : ScopedTempDir(get_tmp_path()) {}
 
 ScopedTempDir::ScopedTempDir(const std::string &parent_path) {
