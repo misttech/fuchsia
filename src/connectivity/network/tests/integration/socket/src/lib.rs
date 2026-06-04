@@ -5778,3 +5778,128 @@ async fn set_so_bindtodevice_conflict(
         result.expect("expected to succeed to unbind device");
     }
 }
+
+// A regression test for https://fxbug.dev/515411156.
+//
+// Verify that Netstack3 ignores packets it receives from the network that are
+// destined to localhost.
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(I, Ip)]
+async fn ignore_localhost_traffic_from_net<N: Netstack, I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("failed to create realm");
+
+    let net = sandbox.create_network("net").await.expect("failed to create network");
+
+    const LOCAL_MAC: fnet::MacAddress = fidl_mac!("02:00:00:00:00:01");
+    const REMOTE_MAC: fnet::MacAddress = fidl_mac!("02:00:00:00:00:02");
+
+    let iface = realm
+        .join_network_with(
+            &net,
+            "if0",
+            netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(LOCAL_MAC)),
+            Default::default(),
+        )
+        .await
+        .expect("failed to join network");
+
+    let (iface_ip, domain) = match I::VERSION {
+        IpVersion::V4 => (fidl_subnet!("192.0.2.1/24"), fposix_socket::Domain::Ipv4),
+        IpVersion::V6 => (fidl_subnet!("2001:db8::1/64"), fposix_socket::Domain::Ipv6),
+    };
+
+    iface.add_address_and_subnet_route(iface_ip).await.expect("failed to set ip");
+
+    let mut config = fnet_interfaces_admin::Configuration::default();
+    match I::VERSION {
+        IpVersion::V4 => {
+            config.ipv4 = Some(fnet_interfaces_admin::Ipv4Configuration {
+                unicast_forwarding: Some(true),
+                ..Default::default()
+            });
+        }
+        IpVersion::V6 => {
+            config.ipv6 = Some(fnet_interfaces_admin::Ipv6Configuration {
+                unicast_forwarding: Some(true),
+                ..Default::default()
+            });
+        }
+    }
+    let _prev = iface
+        .control()
+        .set_configuration(&config)
+        .await
+        .expect("set_configuration fidl error")
+        .expect("failed to set interface configuration");
+
+    const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(1234).unwrap();
+    const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(5678).unwrap();
+
+    let socket = realm
+        .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
+        .await
+        .expect("failed to create socket");
+
+    let bind_addr = match I::VERSION {
+        IpVersion::V4 => {
+            std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, LOCAL_PORT.get()))
+        }
+        IpVersion::V6 => {
+            std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, LOCAL_PORT.get()))
+        }
+    };
+    socket.bind(&bind_addr.into()).expect("failed to bind socket");
+
+    let fake_ep = net.create_fake_endpoint().expect("failed to create endpoint");
+
+    let mut payload = [1, 2, 3, 4, 5];
+    let packet = match I::VERSION {
+        IpVersion::V4 => {
+            let src = net_ip_v4!("192.0.2.2");
+            let dst = net_ip_v4!("127.0.0.1");
+            packet::Buf::new(&mut payload, ..)
+                .wrap_in(UdpPacketBuilder::new(src, dst, Some(REMOTE_PORT), LOCAL_PORT))
+                .wrap_in(Ipv4PacketBuilder::new(src, dst, 64, IpProto::Udp.into()))
+                .wrap_in(EthernetFrameBuilder::new(
+                    net_types::ethernet::Mac::new(REMOTE_MAC.octets),
+                    net_types::ethernet::Mac::new(LOCAL_MAC.octets),
+                    EtherType::Ipv4,
+                    ETHERNET_MIN_BODY_LEN_NO_TAG,
+                ))
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .expect("failed to serialize UDP packet")
+                .unwrap_b()
+        }
+        IpVersion::V6 => {
+            let src = net_ip_v6!("2001:db8::2");
+            let dst = net_ip_v6!("::1");
+            packet::Buf::new(&mut payload, ..)
+                .wrap_in(UdpPacketBuilder::new(src, dst, Some(REMOTE_PORT), LOCAL_PORT))
+                .wrap_in(Ipv6PacketBuilder::new(src, dst, 64, IpProto::Udp.into()))
+                .wrap_in(EthernetFrameBuilder::new(
+                    net_types::ethernet::Mac::new(REMOTE_MAC.octets),
+                    net_types::ethernet::Mac::new(LOCAL_MAC.octets),
+                    EtherType::Ipv6,
+                    ETHERNET_MIN_BODY_LEN_NO_TAG,
+                ))
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .expect("failed to serialize UDP packet")
+                .unwrap_b()
+        }
+    };
+
+    fake_ep.write(packet.as_ref()).await.expect("failed to write UDP packet");
+
+    let mut buf = [0u8; 1024];
+    let socket = fasync::net::UdpSocket::from_socket(socket.into()).unwrap();
+
+    let recv_result = socket
+        .recv_from(&mut buf)
+        .map(Some)
+        .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || None)
+        .await;
+
+    assert_matches!(recv_result, None);
+}

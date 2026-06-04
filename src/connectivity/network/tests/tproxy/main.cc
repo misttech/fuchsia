@@ -139,7 +139,11 @@ TEST_P(TransparentProxyV4Test, TransparentSocket) {
 
   fbl::unique_fd sender;
   ASSERT_TRUE(sender = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
-  const sockaddr_in sender_addr = LoopbackSockaddrV4(0);
+  const sockaddr_in sender_addr = {
+      .sin_family = AF_INET,
+      .sin_port = 0,
+      .sin_addr = {INADDR_ANY},
+  };
   ASSERT_EQ(
       bind(sender.get(), reinterpret_cast<const sockaddr*>(&sender_addr), sizeof(sender_addr)), 0)
       << strerror(errno);
@@ -238,7 +242,11 @@ TEST_P(TransparentProxyV6Test, TransparentSocket) {
 
   fbl::unique_fd sender;
   ASSERT_TRUE(sender = fbl::unique_fd(socket(AF_INET6, SOCK_DGRAM, 0))) << strerror(errno);
-  const sockaddr_in6 sender_addr = LoopbackSockaddrV6(0);
+  const sockaddr_in6 sender_addr = {
+      .sin6_family = AF_INET6,
+      .sin6_port = 0,
+      .sin6_addr = IN6ADDR_ANY_INIT,
+  };
   ASSERT_EQ(
       bind(sender.get(), reinterpret_cast<const sockaddr*>(&sender_addr), sizeof(sender_addr)), 0)
       << strerror(errno);
@@ -320,7 +328,11 @@ TEST_P(TransparentProxyDualStackTest, TransparentSocket) {
 
   fbl::unique_fd sender;
   ASSERT_TRUE(sender = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
-  const sockaddr_in sender_addr = LoopbackSockaddrV4(0);
+  const sockaddr_in sender_addr = {
+      .sin_family = AF_INET,
+      .sin_port = 0,
+      .sin_addr = {INADDR_ANY},
+  };
   ASSERT_EQ(
       bind(sender.get(), reinterpret_cast<const sockaddr*>(&sender_addr), sizeof(sender_addr)), 0)
       << strerror(errno);

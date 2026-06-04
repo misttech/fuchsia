@@ -3539,6 +3539,22 @@ pub fn receive_ipv4_packet<
         return;
     };
 
+    // Per RFC 1122, Section 3.2.1.3:
+    //   Internal host loopback address.  Addresses of this form
+    //   MUST NOT appear outside a host.
+    if !device.is_loopback()
+        && (Ipv4::LOOPBACK_SUBNET.contains(&packet.src_ip())
+            || Ipv4::LOOPBACK_SUBNET.contains(&packet.dst_ip()))
+    {
+        debug!(
+            "receive_ipv4_packet: received loopback packet (src={}, dst={}) \
+            on non-loopback interface; dropping",
+            packet.src_ip(),
+            packet.dst_ip(),
+        );
+        return;
+    }
+
     // Reassemble all packets before local delivery or forwarding. Reassembly
     // before forwarding is not RFC-compliant, but it's the easiest way to
     // ensure that fragments are filtered properly. Linux does this and it
@@ -3940,6 +3956,26 @@ pub fn receive_ipv6_packet<
         debug!("receive_ipv6_packet: Received packet with unspecified destination IP; dropping");
         return;
     };
+
+    // Per RFC 4291, Section 2.5.3:
+    //   The loopback address must not be used as the source address in IPv6
+    //   packets that are sent outside of a single node.  An IPv6 packet with
+    //   a destination address of loopback must never be sent outside of a
+    //   single node and must never be forwarded by an IPv6 router.  A packet
+    //   received on an interface with a destination address of loopback must
+    //   be dropped.
+    if !device.is_loopback()
+        && (Ipv6::LOOPBACK_SUBNET.contains(&packet.src_ip())
+            || Ipv6::LOOPBACK_SUBNET.contains(&packet.dst_ip()))
+    {
+        debug!(
+            "receive_ipv6_packet: received loopback packet (src={}, dst={}) \
+            on non-loopback interface; dropping",
+            packet.src_ip(),
+            packet.dst_ip(),
+        );
+        return;
+    }
 
     // Reassemble all packets before local delivery or forwarding. Reassembly
     // before forwarding is not RFC-compliant, but it's the easiest way to
