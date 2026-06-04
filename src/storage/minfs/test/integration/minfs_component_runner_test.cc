@@ -7,13 +7,26 @@
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/zx/resource.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fidl/cpp/wire/client.h>
+#include <lib/zx/result.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <utility>
 
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/component_runner.h"
+#include "src/storage/minfs/format.h"
 #include "src/storage/minfs/minfs.h"
 #include "src/storage/minfs/mount.h"
 
@@ -28,9 +41,9 @@ class MinfsComponentRunnerTest : public testing::Test {
     constexpr uint64_t kBlockCount = 1 << 17;
     auto device = std::make_unique<block_client::FakeBlockDevice>(kBlockCount, kMinfsBlockSize);
     auto bcache = Bcache::Create(std::move(device), kBlockCount);
-    ASSERT_EQ(bcache.status_value(), ZX_OK);
+    ASSERT_OK(bcache);
     bcache_ = *std::move(bcache);
-    ASSERT_EQ(Mkfs(bcache_.get()).status_value(), ZX_OK);
+    ASSERT_OK(Mkfs(bcache_.get()));
 
     auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
     root_ = std::move(endpoints.client);
@@ -41,7 +54,7 @@ class MinfsComponentRunnerTest : public testing::Test {
     runner_ = std::make_unique<ComponentRunner>(loop_.dispatcher());
     runner_->SetUnmountCallback([this]() { loop_.Quit(); });
     zx::result status = runner_->ServeRoot(std::move(server_end_), {});
-    ASSERT_EQ(status.status_value(), ZX_OK);
+    ASSERT_OK(status);
   }
 
   fidl::ClientEnd<fuchsia_io::Directory> GetSvcDir() const {
@@ -49,7 +62,7 @@ class MinfsComponentRunnerTest : public testing::Test {
     auto status = fidl::WireCall(root_)->Open(
         "svc", fuchsia_io::wire::kPermReadable | fuchsia_io::wire::Flags::kProtocolDirectory, {},
         server.TakeChannel());
-    EXPECT_EQ(status.status(), ZX_OK);
+    EXPECT_OK(status.status());
     return std::move(client);
   }
 
@@ -60,7 +73,7 @@ class MinfsComponentRunnerTest : public testing::Test {
                                                   fuchsia_io::wire::kPermWritable |
                                                   fuchsia_io::wire::Flags::kProtocolDirectory,
                                               {}, server.TakeChannel());
-    EXPECT_EQ(status.status(), ZX_OK);
+    EXPECT_OK(status.status());
     return std::move(client);
   }
 
@@ -77,19 +90,19 @@ TEST_F(MinfsComponentRunnerTest, ServeAndConfigureStartsMinfs) {
 
   auto svc_dir = GetSvcDir();
   auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
+  ASSERT_OK(client_end);
 
   MountOptions options;
   zx::result status = runner_->Configure(std::move(bcache_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_OK(status);
 
   std::atomic<bool> callback_called = false;
   runner_->Shutdown([callback_called = &callback_called](zx_status_t status) {
-    EXPECT_EQ(status, ZX_OK);
+    EXPECT_OK(status);
     *callback_called = true;
   });
   // Shutdown quits the loop.
-  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.Run(), ZX_ERR_CANCELED);
   ASSERT_TRUE(callback_called);
 }
 
@@ -109,33 +122,33 @@ TEST_F(MinfsComponentRunnerTest, RequestsBeforeStartupAreQueuedAndServicedAfter)
   root_client->QueryFilesystem().ThenExactlyOnce(
       [query_complete =
            &query_complete](fidl::WireUnownedResult<fuchsia_io::Directory::QueryFilesystem>& info) {
-        EXPECT_EQ(info.status(), ZX_OK);
-        EXPECT_EQ(info->s, ZX_OK);
+        EXPECT_OK(info.status());
+        EXPECT_OK(info->s);
         *query_complete = true;
       });
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(query_complete);
 
   ASSERT_NO_FATAL_FAILURE(StartServe());
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(query_complete);
 
   auto svc_dir = GetSvcDir();
   auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
+  ASSERT_OK(client_end);
 
   MountOptions options;
   zx::result status = runner_->Configure(std::move(bcache_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(status);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_TRUE(query_complete);
 
   std::atomic<bool> callback_called = false;
   runner_->Shutdown([callback_called = &callback_called](zx_status_t status) {
-    EXPECT_EQ(status, ZX_OK);
+    EXPECT_OK(status);
     *callback_called = true;
   });
-  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.Run(), ZX_ERR_CANCELED);
   ASSERT_TRUE(callback_called);
 }
 
@@ -152,21 +165,57 @@ TEST_F(MinfsComponentRunnerTest, LifecycleChannelShutsDownRunner) {
   });
   zx::result status =
       runner_->ServeRoot(std::move(server_end_), std::move(lifecycle_endpoints.server));
-  ASSERT_EQ(status.status_value(), ZX_OK);
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(status);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(unmount_callback_called);
 
   MountOptions options;
   status = runner_->Configure(std::move(bcache_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(status.status_value());
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(unmount_callback_called);
 
   auto lifecycle_stop_res = fidl::WireCall(lifecycle)->Stop();
-  ASSERT_EQ(lifecycle_stop_res.status(), ZX_OK);
+  ASSERT_OK(lifecycle_stop_res.status());
 
-  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.Run(), ZX_ERR_CANCELED);
   ASSERT_TRUE(unmount_callback_called);
+}
+
+TEST_F(MinfsComponentRunnerTest, DoubleShutdown) {
+  ASSERT_NO_FATAL_FAILURE(StartServe());
+
+  auto svc_dir = GetSvcDir();
+  ASSERT_OK(component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow()));
+
+  MountOptions options;
+  ASSERT_OK(runner_->Configure(std::move(bcache_), options));
+  ASSERT_OK(loop_.RunUntilIdle());
+
+  // ManagedVfs::Shutdown doesn't support being called twice. Lifecycle.Stop and Admin.Shutdown
+  // could race and both call ComponentRunner::Shutdown. ComponentRunner::Shutdown needs to handle
+  // being called twice, only calling ManagedVfs::Shutdown once and calling both callbacks with the
+  // result.
+  std::atomic<bool> callback_called = false;
+  async::PostTask(loop_.dispatcher(), [this, callback_called = &callback_called]() {
+    runner_->Shutdown([callback_called](zx_status_t status) {
+      EXPECT_OK(status);
+      *callback_called = true;
+    });
+  });
+  std::atomic<bool> callback2_called = false;
+  async::PostTask(loop_.dispatcher(), [this, callback_called = &callback2_called]() {
+    runner_->Shutdown([callback_called](zx_status_t status) {
+      EXPECT_OK(status);
+      *callback_called = true;
+    });
+  });
+
+  // Shutdown quits the loop, but not before it is able to run the callbacks.
+  ASSERT_STATUS(loop_.Run(), ZX_ERR_CANCELED);
+  // Both callbacks were completed.
+  ASSERT_TRUE(callback_called);
+  ASSERT_TRUE(callback2_called);
 }
 
 }  // namespace

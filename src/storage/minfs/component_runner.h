@@ -5,11 +5,27 @@
 #ifndef SRC_STORAGE_MINFS_COMPONENT_RUNNER_H_
 #define SRC_STORAGE_MINFS_COMPONENT_RUNNER_H_
 
+#include <fidl/fuchsia.io/cpp/markers.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
+#include <lib/async/dispatcher.h>
+#include <lib/fidl/cpp/wire/internal/transport_channel.h>
+#include <lib/fit/function.h>
 #include <lib/zx/result.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include <fbl/ref_ptr.h>
+
+#include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
 #include "src/storage/lib/vfs/cpp/managed_vfs.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/minfs_private.h"
 #include "src/storage/minfs/mount.h"
 
@@ -49,6 +65,12 @@ class ComponentRunner final : public fs::ManagedVfs {
 
   // These are only initialized by configure after a call to the startup service.
   std::unique_ptr<Minfs> minfs_;
+
+  std::mutex shutdown_lock_;
+  // The result of the attempted shutdown, to be presented to any late shutdown request arrivals.
+  std::optional<zx_status_t> shutdown_result_ __TA_GUARDED(shutdown_lock_);
+  // A queue of callbacks for shutdown requests that arrive while shutdown is running.
+  std::vector<fs::FuchsiaVfs::ShutdownCallback> shutdown_callbacks_ __TA_GUARDED(shutdown_lock_);
 };
 
 }  // namespace minfs

@@ -143,6 +143,7 @@ test("minfs_component_runner_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/minfs",
