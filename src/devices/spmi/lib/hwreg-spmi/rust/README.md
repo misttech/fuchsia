@@ -2,6 +2,15 @@
 
 `spmi-hwreg` provides highly ergonomic, type-safe, and asynchronous access to SPMI registers on Fuchsia, matching the MMIO `hwreg` paradigm.
 
+## Targets
+
+This library provides two build targets to support different FIDL backends:
+
+- **`spmi-hwreg`**: Uses the legacy Fuchsia FIDL bindings (`fidl_fuchsia_hardware_spmi`).
+- **`spmi-hwreg-next`**: Uses the next-generation, zero-copy FIDL bindings (`fidl_next_fuchsia_hardware_spmi`).
+
+Both targets share the same core register definition macros and logic in `common.rs`, ensuring API compatibility and minimizing code duplication.
+
 ## Features
 
 ### Individual register definitions (`spmi_register!`)
