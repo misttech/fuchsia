@@ -23,7 +23,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    SYNC_IOC_MAGIC, c_char, errno, error, sync_fence_info, sync_file_info, sync_merge_data,
+    SYNC_IOC_MAGIC, c_char, error, sync_fence_info, sync_file_info, sync_merge_data,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -62,17 +62,22 @@ pub enum Status {
 pub struct SyncPoint {
     pub timeline: Timeline,
     pub counter: Arc<zx::Counter>,
-    pub koid: zx::Koid,
+    koid: std::sync::OnceLock<zx::Koid>,
 }
 
 impl SyncPoint {
     pub fn new(timeline: Timeline, counter: zx::Counter) -> SyncPoint {
-        let koid = counter.koid().unwrap();
-        Self::with_koid(timeline, counter, koid)
+        SyncPoint { timeline, counter: Arc::new(counter), koid: std::sync::OnceLock::new() }
     }
 
     pub fn with_koid(timeline: Timeline, counter: zx::Counter, koid: zx::Koid) -> SyncPoint {
-        SyncPoint { timeline, counter: Arc::new(counter), koid }
+        let once_lock = std::sync::OnceLock::new();
+        let _ = once_lock.set(koid);
+        SyncPoint { timeline, counter: Arc::new(counter), koid: once_lock }
+    }
+
+    pub fn koid(&self) -> zx::Koid {
+        *self.koid.get_or_init(|| self.counter.koid().unwrap())
     }
 }
 
@@ -119,18 +124,14 @@ impl SyncFile {
     }
 
     fn get_fence_state(&self) -> Vec<FenceState> {
-        let mut state: Vec<FenceState> = vec![];
+        let mut state = Vec::with_capacity(self.fence.sync_points.len());
 
         for sync_point in &self.fence.sync_points {
-            if sync_point.counter.wait_one(Self::SIGNALS, zx::MonotonicInstant::ZERO).to_result()
-                == Err(zx::Status::TIMED_OUT)
-            {
-                state.push(FenceState { status: Status::Active, timestamp_ns: 0 });
+            let timestamp_ns = sync_point.counter.read().unwrap() as u64;
+            if timestamp_ns > 0 {
+                state.push(FenceState { status: Status::Signaled, timestamp_ns });
             } else {
-                state.push(FenceState {
-                    status: Status::Signaled,
-                    timestamp_ns: sync_point.counter.read().unwrap() as u64,
-                });
+                state.push(FenceState { status: Status::Active, timestamp_ns: 0 });
             }
         }
         state
@@ -190,19 +191,28 @@ impl FileOps for SyncFile {
                 let mut merge_data: sync_merge_data = current_task.read_object(user_ref)?;
                 let file2 = current_task.get_file(FdNumber::from_raw(merge_data.fd2))?;
 
-                let mut fence = SyncFence { sync_points: vec![] };
-                let mut set = HashSet::<zx::Koid>::new();
+                let file2_sync = file2.downcast_file::<SyncFile>();
+                let max_capacity = self.fence.sync_points.len()
+                    + if let Some(file2) = file2_sync {
+                        file2.fence.sync_points.len()
+                    } else {
+                        // Remote counter is represented by a single sync point.
+                        1
+                    };
+
+                let mut fence = SyncFence { sync_points: Vec::with_capacity(max_capacity) };
+                let mut set = HashSet::<zx::Koid>::with_capacity(max_capacity);
 
                 for sync_point in &self.fence.sync_points {
-                    let koid = sync_point.koid;
+                    let koid = sync_point.koid();
                     if set.insert(koid) {
                         fence.sync_points.push(sync_point.clone());
                     }
                 }
 
-                if let Some(file2) = file2.downcast_file::<SyncFile>() {
+                if let Some(file2) = file2_sync {
                     for sync_point in &file2.fence.sync_points {
-                        let koid = sync_point.koid;
+                        let koid = sync_point.koid();
                         if set.insert(koid) {
                             fence.sync_points.push(sync_point.clone());
                         }
@@ -210,35 +220,31 @@ impl FileOps for SyncFile {
                 } else if let Some(file2) = file2.downcast_file::<RemoteCounter>() {
                     let counter = file2.duplicate_handle()?;
                     let sp = SyncPoint::with_koid(Timeline::Hwc, counter.into(), file2.koid());
-                    if set.insert(sp.koid) {
+                    if set.insert(sp.koid()) {
                         fence.sync_points.push(sp);
                     }
                 } else {
                     return error!(EINVAL);
                 }
 
-                // Remove sync points that are already signaled.
-                let mut i = 0 as usize;
+                // Filter out signaled sync points in-place with zero heap allocations.
                 let mut last_signaled_timestamp_ns = 0;
                 let mut last_signaled_sync_point: Option<SyncPoint> = None;
-                while i < fence.sync_points.len() {
-                    if fence.sync_points[i]
-                        .counter
-                        .wait_one(Self::SIGNALS, zx::MonotonicInstant::ZERO)
-                        .to_result()
-                        != Err(zx::Status::TIMED_OUT)
-                    {
-                        let timestamp_ns =
-                            fence.sync_points[i].counter.read().map_err(|_| errno!(EIO))?;
-                        let removed = fence.sync_points.remove(i);
-                        if i == 0 && timestamp_ns >= last_signaled_timestamp_ns {
-                            last_signaled_timestamp_ns = timestamp_ns;
-                            last_signaled_sync_point = Some(removed);
-                        }
-                        continue;
+
+                fence.sync_points.retain(|sync_point| {
+                    let timestamp_ns = match sync_point.counter.read() {
+                        Ok(t) if t > 0 => t as u64,
+                        _ => return true, // Retain active points
+                    };
+
+                    // Signaled!
+                    if timestamp_ns >= last_signaled_timestamp_ns {
+                        last_signaled_timestamp_ns = timestamp_ns;
+                        last_signaled_sync_point = Some(sync_point.clone());
                     }
-                    i += 1;
-                }
+                    false // Filter out signaled points
+                });
+
                 if fence.sync_points.is_empty() {
                     fence.sync_points.push(last_signaled_sync_point.expect("No sync points left."));
                 }
@@ -469,8 +475,8 @@ mod test {
             let merged_sync_file = new_file.downcast_file::<SyncFile>().unwrap();
 
             assert_eq!(merged_sync_file.fence.sync_points.len(), 2);
-            assert_eq!(merged_sync_file.fence.sync_points[0].koid, sp1.koid);
-            assert_eq!(merged_sync_file.fence.sync_points[1].koid, sp2.koid);
+            assert_eq!(merged_sync_file.fence.sync_points[0].koid(), sp1.koid());
+            assert_eq!(merged_sync_file.fence.sync_points[1].koid(), sp2.koid());
         })
         .await;
     }

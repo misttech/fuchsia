@@ -2140,13 +2140,12 @@ impl FsNodeOps for RemoteSymlink {
 
 pub struct RemoteCounter {
     counter: Counter,
-    koid: zx::Koid,
+    koid: std::sync::OnceLock<zx::Koid>,
 }
 
 impl RemoteCounter {
     fn new(counter: Counter) -> Self {
-        let koid = counter.koid().unwrap();
-        Self { counter, koid }
+        Self { counter, koid: std::sync::OnceLock::new() }
     }
 
     pub fn duplicate_handle(&self) -> Result<Counter, Errno> {
@@ -2154,7 +2153,7 @@ impl RemoteCounter {
     }
 
     pub fn koid(&self) -> zx::Koid {
-        self.koid
+        *self.koid.get_or_init(|| self.counter.koid().unwrap())
     }
 }
 
@@ -2197,9 +2196,16 @@ impl FileOps for RemoteCounter {
         if ioctl_type == SYNC_IOC_MAGIC
             && (ioctl_number == SYNC_IOC_FILE_INFO || ioctl_number == SYNC_IOC_MERGE)
         {
-            let mut sync_points: Vec<SyncPoint> = vec![];
+            let mut sync_points = Vec::with_capacity(1);
             let counter = self.duplicate_handle()?;
-            sync_points.push(SyncPoint::with_koid(Timeline::Hwc, counter.into(), self.koid));
+            // For other calls than SYNC_IOC_MERGE, the koid is never used, so we construct it
+            // without fetching it, saving a Zircon syscall.
+            let sp = if ioctl_number == SYNC_IOC_MERGE {
+                SyncPoint::with_koid(Timeline::Hwc, counter.into(), self.koid())
+            } else {
+                SyncPoint::new(Timeline::Hwc, counter.into())
+            };
+            sync_points.push(sp);
             let sync_file_name: &[u8; 32] = b"remote counter\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
             let sync_file = SyncFile::new(*sync_file_name, SyncFence { sync_points });
             return sync_file.ioctl(locked, file, current_task, request, arg);
