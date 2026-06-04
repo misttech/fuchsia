@@ -39,7 +39,6 @@ struct GlobalTopologyData {
       live_handles = std::move(other.live_handles);
     }
     view_refs = std::move(other.view_refs);
-    root_transforms = std::move(other.root_transforms);
     debug_names = std::move(other.debug_names);
 
     return *this;
@@ -76,9 +75,6 @@ struct GlobalTopologyData {
   // ViewRef for each root TransformHandle. nullptr for anonymous Views.
   using ViewRefMap = std::unordered_map<TransformHandle, std::shared_ptr<const ViewRef>>;
   ViewRefMap view_refs;
-
-  // Map of TransformHandle to its local root TransformHandle. Needed for hit testing.
-  std::unordered_map<TransformHandle, TransformHandle> root_transforms;
 
   // Debug name for each transform handle, if present.
   std::unordered_map<TransformHandle, std::string> debug_names;

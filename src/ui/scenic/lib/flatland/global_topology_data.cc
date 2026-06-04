@@ -137,7 +137,7 @@ bool HitRegionContainsPoint(const flatland::HitRegion& region, float x, float y)
 struct HitTestingData {
   const GlobalTopologyData::TopologyVector transforms;
   const GlobalTopologyData::ParentIndexVector parent_indices;
-  const std::unordered_map<flatland::TransformHandle, flatland::TransformHandle> root_transforms;
+  const std::vector<flatland::TransformHandle> root_transforms;
   const GlobalTopologyData::ViewRefMap view_refs;
   const flatland::HitRegions hit_regions;
   const std::vector<flatland::TransformClipRegion> global_clip_regions;
@@ -150,6 +150,7 @@ view_tree::SubtreeHitTestResult HitTest(const HitTestingData& data, zx_koid_t st
                global_clip_regions] = data;
   FX_DCHECK(transforms.size() == parent_indices.size());
   FX_DCHECK(transforms.size() == global_clip_regions.size());
+  FX_DCHECK(transforms.size() == root_transforms.size());
 
   size_t start = 0, end = 0;
   if (auto result = GetViewRefIndex(start_node, transforms, view_refs)) {
@@ -170,8 +171,7 @@ view_tree::SubtreeHitTestResult HitTest(const HitTestingData& data, zx_koid_t st
 
   for (size_t i = start; i < end; ++i) {
     const auto& transform = transforms[i];
-    FX_DCHECK(root_transforms.contains(transform));
-    const auto& root_transform = root_transforms.at(transform);
+    const auto& root_transform = root_transforms[i];
 
     const auto clip_region = types::RectangleF::From(global_clip_regions[i]);
 
@@ -402,15 +402,13 @@ void GlobalTopologyData::Clear() {
     TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[unordered]");
     live_handles.clear();
     view_refs.clear();
-    root_transforms.clear();
     debug_names.clear();
   }
 }
 
 bool GlobalTopologyData::IsCleared() const {
   return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
-         live_handles.empty() && view_refs.empty() && root_transforms.empty() &&
-         debug_names.empty();
+         live_handles.empty() && view_refs.empty() && debug_names.empty();
 }
 
 // static
@@ -456,8 +454,8 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   };
   std::vector<ParentChildIterator> parent_counts;
 
-  auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, root_transforms,
-         debug_names] = output;
+  auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, debug_names] =
+      output;
 
   // For the root of each local topology (i.e. the View), save the ViewRef, whether they're
   // currently attached to the scene or not.
@@ -575,8 +573,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     // Push the current transform and update the "iterator".
     const size_t new_parent_index = topology_vector.size();
     topology_vector.push_back(current_entry.handle);
-    // For each transform in the local topology, record its root.
-    root_transforms.emplace(current_entry.handle, vector[0].handle);
 
     child_counts.push_back(current_entry.child_count);
     parent_indices.push_back(parent_counts.empty() ? 0 : parent_counts.back().parent_index);
@@ -668,6 +664,15 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
     }
   }
 
+  // Compute the parallel vector of local root transforms for hit testing.
+  std::vector<TransformHandle> root_transforms;
+  root_transforms.reserve(data.topology_vector.size());
+  for (const auto& transform : data.topology_vector) {
+    const auto it = uber_structs.find(transform.GetInstanceId());
+    FX_DCHECK(it != uber_structs.end());
+    root_transforms.push_back(it->second->local_topology[0].handle);
+  }
+
   // Note: The ViewTree represents a snapshot of the scene at a specific time. Because of this it's
   // important that it contains no references to live data. This means the hit testing closure must
   // contain only plain values or data with value semantics like shared_ptr<const>, to ensure that
@@ -677,7 +682,7 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
     hit_tester = [hit_test_data = HitTestingData{
                       .transforms = data.topology_vector,
                       .parent_indices = data.parent_indices,
-                      .root_transforms = data.root_transforms,
+                      .root_transforms = std::move(root_transforms),
                       .view_refs = std::move(named_view_refs),
                       .hit_regions = std::move(hit_regions),
                       .global_clip_regions = std::move(global_clip_regions),
