@@ -932,7 +932,9 @@ if (in_default_toolchain) {
           # host_toolchain_tags
           if (target_type == [] && output_name == [] && label == [] &&
               name == [] && dir == [] && !defined(kernel) &&
-              !defined(testonly)) {
+              !defined(testonly) &&
+              variant_tags + [ "kernel-only" ] - [ "kernel-only" ] ==
+              variant_tags) {
             if (defined(host) && host) {
               host_toolchain_candidate = true
             } else {
