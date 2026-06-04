@@ -472,7 +472,6 @@ closed protocol WlanTx {
     }) -> () error zx.Status;
 };
 
-@bindings_denylist("rust_next")
 @discoverable
 @transport("Driver")
 @available(added=15)
@@ -969,7 +968,6 @@ closed(removed=HEAD) open(added=HEAD) protocol WlanSoftmacBridge {
 };
 
 /// `WlanSoftmac` is an SDK versioned protocol implemented by third-party drivers.
-@bindings_denylist("rust_next")
 @discoverable
 @transport("Driver")
 @available(added=15)
@@ -1225,7 +1223,6 @@ closed(removed=HEAD) open(added=HEAD) protocol WlanSoftmac {
     }) -> () error zx.Status;
 };
 
-@bindings_denylist("rust_next")
 @available(added=15)
 service Service {
     wlan_softmac client_end:WlanSoftmac;

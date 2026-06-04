@@ -88,7 +88,6 @@ const MAX_MODE_MATCHES_PER_CLIENT uint32 = 0;
 ///   this client will stop.
 ///   2. If no entry in `mode_matches` was matched, then `default_level` will be
 ///   selected as the client's current power level.
-@bindings_denylist("rust_next")
 type ClientConfig = struct {
     mode_matches vector<ModeMatch>:MAX_MODE_MATCHES_PER_CLIENT;
     default_level uint64;
@@ -107,7 +106,6 @@ type ModeMatch = struct {
 
 /// A protocol that can be used to update the power configuration for a given
 /// [`ClientType`].
-@bindings_denylist("rust_next")
 @discoverable
 closed protocol ClientConfigurator {
     /// Gets the power configuration for the given [`ClientType`].
