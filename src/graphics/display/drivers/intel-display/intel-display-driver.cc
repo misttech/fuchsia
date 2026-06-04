@@ -164,6 +164,7 @@ zx::result<> IntelDisplayDriver::InitController() {
 }
 
 void IntelDisplayDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  component_inspector_.emplace(context.CreateInspector(this, inspector_));
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result<> init_controller_result = InitController();
   if (init_controller_result.is_error()) {

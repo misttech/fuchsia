@@ -10,6 +10,7 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/result.h>
 
@@ -69,6 +70,7 @@ class IntelDisplayDriver : public fdf::DriverBase2 {
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> gpu_core_node_controller_;
   std::shared_ptr<fdf::Namespace> incoming_;
   inspect::Inspector inspector_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
 };
 
 }  // namespace intel_display
