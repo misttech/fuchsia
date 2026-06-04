@@ -11,15 +11,6 @@
 //! let data: Vec<u8> = vec![0xFF; 8192];
 //! let payload: Vec<u8> = Type1Blob::generate(&data, CompressionMode::Attempt);
 //! ```
-//!
-//! `payload` is now a delivery blob which can be written using the delivery path:
-//! ```
-//! use delivery_blob::delivery_blob_path;
-//! use std::fs::OpenOptions;
-//! let path = delivery_blob_path(merkle);
-//! let mut file = OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
-//! file.set_len(payload.len() as u64).unwrap();
-//! file.write_all(&payload).unwrap();
 
 use crate::compression::{ChunkedArchive, ChunkedArchiveOptions, ChunkedDecompressor};
 use crate::format::SerializedType1Blob;
@@ -33,9 +24,6 @@ mod format;
 
 // This library assumes usize is large enough to hold a u64.
 assert_eq_size!(usize, u64);
-
-/// Prefix used for writing delivery blobs. Should be prepended to the Merkle root of the blob.
-pub const DELIVERY_PATH_PREFIX: &'static str = "v1-";
 
 /// Generate a delivery blob of the specified `delivery_type` for `data` using default parameters.
 pub fn generate(delivery_type: DeliveryBlobType, data: &[u8]) -> Vec<u8> {
@@ -127,11 +115,6 @@ pub fn calculate_digest(delivery_blob: &[u8]) -> Result<fuchsia_merkle::Hash, De
         _ => return Err(DecompressError::DeliveryBlob(DeliveryBlobError::InvalidType)),
     }
     Ok(writer.complete())
-}
-
-/// Obtain the file path to use when writing `blob_name` as a delivery blob.
-pub fn delivery_blob_path(blob_name: impl std::fmt::Display) -> String {
-    format!("{}{}", DELIVERY_PATH_PREFIX, blob_name)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]

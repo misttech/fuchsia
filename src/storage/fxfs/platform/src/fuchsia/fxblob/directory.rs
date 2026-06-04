@@ -495,7 +495,7 @@ mod tests {
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
     use assert_matches::assert_matches;
     use blob_writer::BlobWriter;
-    use delivery_blob::{CompressionMode, Type1Blob, delivery_blob_path};
+    use delivery_blob::{CompressionMode, Type1Blob};
     use fidl_fuchsia_fxfs::BlobReaderMarker;
     use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
@@ -662,7 +662,7 @@ mod tests {
         Status::ok(status).unwrap();
         fixture
             .root()
-            .rename(&format!("{}", delivery_blob_path(hash)), token.unwrap().into(), "foo")
+            .rename(&format!("{}", hash), token.unwrap().into(), "foo")
             .await
             .expect("FIDL failed")
             .expect_err("rename should fail");
