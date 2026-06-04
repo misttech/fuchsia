@@ -99,9 +99,6 @@ cc_library(
     alwayslink = True,
 )
 
-# TODO(https://fxbug.dev/336617685): Once //sdk/lib/vfs is available for public use, this library
-# should be restricted with a visibility list. Most targets only use functionality that the SDK VFS
-# library provides. The SDK VFS will form the API we commit to for pseudo-filesystems.
 cc_library(
     name = "cpp",
 
@@ -140,6 +137,75 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
-    visibility = ["//visibility:public"],
+    #  ________  _________  ________  ________
+    # |\   ____\|\___   ___\\   __  \|\   __  \
+    # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+    #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+    #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+    #     ____\_\  \   \ \__\ \ \_______\ \__\
+    #    |\_________\   \|__|  \|_______|\|__|
+    #    \|_________|
+    #
+    # This is an allowlist for using this library. New users should prefer //sdk/lib/vfs,
+    # which provides better-supported API for pseudo-filesystems.
+    visibility = [
+        ":__pkg__",
+        "//sdk/lib/component/tests:__pkg__",
+        "//sdk/lib/device-watcher/cpp:__pkg__",
+        "//sdk/lib/driver/compat/cpp:__pkg__",
+        "//sdk/lib/driver/power/cpp:__pkg__",
+        "//sdk/lib/ld/testing:__pkg__",
+        "//sdk/lib/svc:__pkg__",
+        "//sdk/lib/vfs/internal:__pkg__",
+        "//src/bringup/bin/console-launcher:__pkg__",
+        "//src/camera/bin/device_watcher:__pkg__",
+        "//src/camera/lib/fake_logical_buffer_collection:__pkg__",
+        "//src/connectivity/bluetooth/hci/vendor/broadcom:__pkg__",
+        "//src/connectivity/bluetooth/hci/vendor/intel:__pkg__",
+        "//src/developer/debug/debug_agent:__pkg__",
+        "//src/developer/debug/debug_agent/testing:__pkg__",
+        "//src/developer/vsock-sshd-host:__pkg__",
+        "//src/devices/bin/driver_manager:__pkg__",
+        "//src/devices/bin/driver_manager/devfs:__pkg__",
+        "//src/devices/testing/devmgr-integration-test-shim:__pkg__",
+        "//src/devices/testing/driver-integration-test-shim:__pkg__",
+        "//src/devices/tests/v2/runtime-protocol:__pkg__",
+        "//src/devices/thermal/bin/fan-controller:__pkg__",
+        "//src/firmware/lib/fastboot/test:__pkg__",
+        "//src/firmware/paver/test:__pkg__",
+        "//src/graphics/bin/vulkan_loader:__pkg__",
+        "//src/graphics/bin/vulkan_loader/test:__pkg__",
+        "//src/graphics/drivers/msd-arm-mali/tests/unit_tests:__pkg__",
+        "//src/lib/fsl:__pkg__",
+        "//src/lib/zxdump:__pkg__",
+        "//src/media/audio/audio_core:__pkg__",
+        "//src/media/audio/services/device_registry:__pkg__",
+        "//src/media/codec/factory:__pkg__",
+        "//src/performance/memory/thrasher:__pkg__",
+        "//src/storage/blobfs:__pkg__",
+        "//src/storage/blobfs/bin:__pkg__",
+        "//src/storage/conformance/conformance_harness/cppvfs:__pkg__",
+        "//src/storage/conformance/conformance_harness/memfs:__pkg__",
+        "//src/storage/conformance/conformance_harness/minfs:__pkg__",
+        "//src/storage/f2fs:__pkg__",
+        "//src/storage/fs_test:__pkg__",
+        "//src/storage/lib:__pkg__",
+        "//src/storage/lib/fs_management/cpp:__pkg__",
+        "//src/storage/lib/watchdog:__pkg__",
+        "//src/storage/memfs:__pkg__",
+        "//src/storage/memfs/test:__pkg__",
+        "//src/storage/minfs:__pkg__",
+        "//src/storage/minfs/test:__pkg__",
+        "//src/storage/minfs/tools:__pkg__",
+        "//src/storage/testing:__pkg__",
+        "//src/sys/component_manager/tests/rights:__pkg__",
+        "//src/tests/microbenchmarks:__pkg__",
+        "//src/virtualization/packages:__pkg__",
+        "//zircon/system/ulib/debugdata:__pkg__",
+        "//zircon/system/ulib/debugdata/test:__pkg__",
+        "//zircon/system/ulib/runtests-utils:__pkg__",
+        "//zircon/system/ulib/runtests-utils/test:__pkg__",
+        "//zircon/system/ulib/svc:__pkg__",
+    ],
     deps = [":vfs_headers"],
 )
