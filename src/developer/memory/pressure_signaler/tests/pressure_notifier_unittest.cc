@@ -21,6 +21,7 @@ namespace pressure_signaler::test {
 
 namespace fmp = fuchsia_memorypressure;
 
+namespace {
 class CrashReporterForTest : public fidl::testing::TestBase<fuchsia_feedback::CrashReporter> {
  public:
   void FileReport(FileReportRequest& request, FileReportCompleter::Sync& completer) override {
@@ -36,88 +37,6 @@ class CrashReporterForTest : public fidl::testing::TestBase<fuchsia_feedback::Cr
 
  private:
   size_t num_crash_reports_ = 0;
-};
-
-class PressureNotifierUnitTest : public fidl::Server<fuchsia_memory_debug::MemoryPressure>,
-                                 public gtest::TestLoopFixture {
- public:
-  void SetUp() override {
-    SetUpNewPressureNotifier(true /*notify_crash_reporter*/);
-    last_level_ = Level::kNormal;
-  }
-
- protected:
-  void SetUpNewPressureNotifier(bool send_critical_pressure_crash_reports) {
-    auto endpoints = fidl::CreateEndpoints<fuchsia_feedback::CrashReporter>().value();
-    auto _ = fidl::BindServer<fuchsia_feedback::CrashReporter>(
-        dispatcher(), std::move(std::move(endpoints.server)), &crash_reporter_);
-    auto client =
-        fidl::Client<fuchsia_feedback::CrashReporter>(std::move(endpoints.client), dispatcher());
-    notifier_ =
-        std::make_unique<PressureNotifier>(false, send_critical_pressure_crash_reports,
-                                           std::move(client), async_get_default_dispatcher());
-    // Set up initial pressure level.
-    notifier_->observer_.WaitOnLevelChange();
-  }
-
-  fidl::Client<fmp::Provider> Provider() {
-    auto endpoints = fidl::CreateEndpoints<fmp::Provider>().value();
-    auto _ =
-        fidl::BindServer<fmp::Provider>(dispatcher(), std::move(endpoints.server), notifier_.get());
-    return fidl::Client<fmp::Provider>(std::move(endpoints.client), dispatcher());
-  }
-
-  size_t GetWatcherCount() { return notifier_->watchers_.size(); }
-
-  void ReleaseWatchers() {
-    for (auto& w : notifier_->watchers_) {
-      notifier_->ReleaseWatcher(w.get());
-    }
-  }
-
-  void TriggerLevelChange(Level level) {
-    if (level >= Level::kNumLevels) {
-      return;
-    }
-    FX_LOGS(INFO) << "PressureNotifierUnittest: Triggering level change to " << level;
-    notifier_->observer_.OnLevelChanged(notifier_->observer_.wait_items_[level].handle);
-    RunLoopUntilIdle();
-  }
-
-  void SetupMemDebugService() {
-    auto endpoints = fidl::CreateEndpoints<fuchsia_memory_debug::MemoryPressure>().value();
-    auto _ = fidl::BindServer<fuchsia_memory_debug::MemoryPressure>(
-        dispatcher(), std::move(endpoints.server), this);
-    memdebug_ = fidl::Client<fuchsia_memory_debug::MemoryPressure>(std::move(endpoints.client),
-                                                                   dispatcher());
-  }
-
-  void TestSimulatedPressure(fmp::Level level) {
-    auto result = memdebug_->Signal({{.level = level}});
-    ASSERT_TRUE(result.is_ok());
-  }
-
-  void SetCrashReportInterval(uint32_t mins) {
-    notifier_->critical_crash_report_interval_ = zx::min(mins);
-  }
-
-  bool CanGenerateNewCriticalCrashReports() const {
-    return notifier_->CanGenerateNewCriticalCrashReports();
-  }
-
-  size_t num_crash_reports() const { return crash_reporter_.num_crash_reports(); }
-
-  Level last_level() const { return last_level_; }
-
- private:
-  void Signal(SignalRequest& request, SignalCompleter::Sync& completer) override {
-    notifier_->DebugNotify(request.level());
-  }
-
-  std::unique_ptr<PressureNotifier> notifier_;
-  CrashReporterForTest crash_reporter_;
-  Level last_level_;
-  fidl::Client<fuchsia_memory_debug::MemoryPressure> memdebug_;
 };
 
 class PressureWatcherForTest : public fidl::Server<fmp::Watcher> {
@@ -164,7 +83,96 @@ class PressureWatcherForTest : public fidl::Server<fmp::Watcher> {
   fidl::ClientEnd<fmp::Watcher> client_;
   std::optional<fidl::ServerBindingRef<fmp::Watcher>> binding_;
 };
+}  // namespace
 
+class PressureNotifierUnitTest : public fidl::Server<fuchsia_memory_debug::MemoryPressure>,
+                                 public gtest::TestLoopFixture {
+ public:
+  void Signal(SignalRequest& request, SignalCompleter::Sync& completer) override {
+    notifier_->DebugNotify(request.level());
+  }
+
+ protected:
+  void SetUp() override {
+    SetUpNewPressureNotifier(true /*notify_crash_reporter*/);
+    last_level_ = Level::kNormal;
+  }
+
+  void SetUpNewPressureNotifier(bool send_critical_pressure_crash_reports) {
+    auto endpoints = fidl::CreateEndpoints<fuchsia_feedback::CrashReporter>().value();
+    auto _ = fidl::BindServer<fuchsia_feedback::CrashReporter>(
+        dispatcher(), std::move(endpoints.server), &crash_reporter_);
+    auto client =
+        fidl::Client<fuchsia_feedback::CrashReporter>(std::move(endpoints.client), dispatcher());
+    notifier_ =
+        std::make_unique<PressureNotifier>(false, send_critical_pressure_crash_reports,
+                                           std::move(client), async_get_default_dispatcher());
+    // Set up initial pressure level.
+    notifier_->observer_.WaitOnLevelChange();
+  }
+
+  fidl::Client<fmp::Provider> Provider() {
+    auto endpoints = fidl::CreateEndpoints<fmp::Provider>().value();
+    auto _ =
+        fidl::BindServer<fmp::Provider>(dispatcher(), std::move(endpoints.server), notifier_.get());
+    return fidl::Client<fmp::Provider>(std::move(endpoints.client), dispatcher());
+  }
+
+  size_t GetWatcherCount() { return notifier_->watchers_.size(); }
+
+  void ReleaseWatchers() {
+    std::vector<PressureNotifier::WatcherState*> targets;
+    targets.reserve(notifier_->watchers_.size());
+    for (auto& w : notifier_->watchers_) {
+      targets.push_back(w.get());
+    }
+    for (auto* t : targets) {
+      notifier_->ReleaseWatcher(t);
+    }
+  }
+
+  void TriggerLevelChange(Level level) {
+    if (level >= Level::kNumLevels) {
+      return;
+    }
+    FX_LOGS(INFO) << "PressureNotifierUnitTest: Triggering level change to " << kLevelNames[level];
+    notifier_->observer_.OnLevelChanged(notifier_->observer_.wait_items_[level].handle);
+    RunLoopUntilIdle();
+  }
+
+  void SetupMemDebugService() {
+    auto endpoints = fidl::CreateEndpoints<fuchsia_memory_debug::MemoryPressure>().value();
+    auto _ = fidl::BindServer<fuchsia_memory_debug::MemoryPressure>(
+        dispatcher(), std::move(endpoints.server), this);
+    memdebug_ = fidl::Client<fuchsia_memory_debug::MemoryPressure>(std::move(endpoints.client),
+                                                                   dispatcher());
+  }
+
+  void TestSimulatedPressure(fmp::Level level) {
+    auto result = memdebug_->Signal({{.level = level}});
+    ASSERT_TRUE(result.is_ok());
+  }
+
+  void SetCrashReportInterval(uint32_t mins) {
+    notifier_->critical_crash_report_interval_ = zx::min(mins);
+  }
+
+  bool CanGenerateNewCriticalCrashReports() const {
+    return notifier_->CanGenerateNewCriticalCrashReports();
+  }
+
+  size_t num_crash_reports() const { return crash_reporter_.num_crash_reports(); }
+
+  Level last_level() const { return last_level_; }
+
+ private:
+  std::unique_ptr<PressureNotifier> notifier_;
+  CrashReporterForTest crash_reporter_;
+  Level last_level_;
+  fidl::Client<fuchsia_memory_debug::MemoryPressure> memdebug_;
+};
+
+namespace {
 TEST_F(PressureNotifierUnitTest, Watcher) {
   // Scoped so that the Watcher gets deleted. We can then verify that the Provider has no watchers
   // remaining.
@@ -647,5 +655,5 @@ TEST_F(PressureNotifierUnitTest, SimulatePressure) {
   RunLoopUntilIdle();
   ASSERT_EQ(GetWatcherCount(), 0ul);
 }
-
+}  // namespace
 }  // namespace pressure_signaler::test

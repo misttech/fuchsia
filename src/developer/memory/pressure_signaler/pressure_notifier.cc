@@ -9,6 +9,8 @@
 #include <lib/zx/clock.h>
 #include <lib/zx/result.h>
 
+#include <algorithm>
+
 namespace pressure_signaler {
 
 namespace {
@@ -180,7 +182,7 @@ void PressureNotifier::RegisterWatcher(RegisterWatcherRequest& request,
 
 void PressureNotifier::ReleaseWatcher(WatcherState* watcher) {
   auto predicate = [watcher](const auto& target) { return target.get() == watcher; };
-  auto watcher_to_free = std::find_if(watchers_.begin(), watchers_.end(), predicate);
+  auto watcher_to_free = std::ranges::find_if(watchers_, predicate);
   if (watcher_to_free == watchers_.end()) {
     // Not found.
     return;
