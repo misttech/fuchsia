@@ -651,8 +651,8 @@ class MainFunctionTest(MainBuildTestBase):
 
 
 class BuildCommandSignalTest(MainBuildTestBase):
-    @mock.patch("main_build.subprocess.Popen")
-    def test_signal_forwarding_no_tui(self, mock_popen: mock.Mock) -> None:
+    @mock.patch("signal_utils.SignalManagedProcess")
+    def test_signal_forwarding_no_tui(self, mock_managed: mock.Mock) -> None:
         """Verify that without TUI, we use a separate process group."""
         context = self.create_context(tui=False)
         with self.mock_invocation_context():
@@ -660,27 +660,25 @@ class BuildCommandSignalTest(MainBuildTestBase):
 
         exec_info = main_build.BuildCommandExecution(
             full_command=["sleep", "10"],
-            env={},
+            env={"FOO": "BAR"},
             invocation=invocation,
         )
 
-        mock_process = mock.Mock()
-        mock_process.pid = 5678
-        mock_popen.return_value = mock_process
+        mock_instance = mock_managed.return_value
+        mock_instance.run.return_value = 0
 
-        with mock.patch.object(
-            signal_utils, "wait_and_forward_signals"
-        ) as mock_wait:
-            mock_wait.return_value = 0
-            _ = exec_info._run_without_locking()
+        _ = exec_info._run_without_locking()
 
-            mock_popen.assert_called_once()
-            kwargs = mock_popen.call_args.kwargs
-            self.assertEqual(kwargs.get("preexec_fn"), os.setpgrp)
-            mock_wait.assert_called_once_with(mock_process, verbose=False)
+        mock_managed.assert_called_once_with(
+            exec_info.full_command,
+            env=exec_info.env,
+            separate_pgrp=True,
+            verbose=False,
+        )
+        mock_instance.run.assert_called_once()
 
-    @mock.patch("main_build.subprocess.Popen")
-    def test_signal_forwarding_with_tui(self, mock_popen: mock.Mock) -> None:
+    @mock.patch("signal_utils.SignalManagedProcess")
+    def test_signal_forwarding_with_tui(self, mock_managed: mock.Mock) -> None:
         """Verify that with TUI, we do NOT use a separate process group."""
         context = self.create_context(tui=True)
         with self.mock_invocation_context():
@@ -688,28 +686,28 @@ class BuildCommandSignalTest(MainBuildTestBase):
 
         exec_info = main_build.BuildCommandExecution(
             full_command=["sleep", "10"],
-            env={},
+            env={"FOO": "BAR"},
             invocation=invocation,
         )
 
-        mock_process = mock.Mock()
-        mock_process.pid = 5678
-        mock_popen.return_value = mock_process
+        mock_instance = mock_managed.return_value
+        mock_instance.run.return_value = 0
 
-        with mock.patch.object(
-            signal_utils, "wait_and_forward_signals"
-        ) as mock_wait:
-            mock_wait.return_value = 0
-            _ = exec_info._run_without_locking()
+        _ = exec_info._run_without_locking()
 
-            mock_popen.assert_called_once()
-            kwargs = mock_popen.call_args.kwargs
-            self.assertNotIn("preexec_fn", kwargs)
-            mock_wait.assert_called_once_with(mock_process, verbose=False)
+        mock_managed.assert_called_once_with(
+            exec_info.full_command,
+            env=exec_info.env,
+            separate_pgrp=False,
+            verbose=False,
+        )
+        mock_instance.run.assert_called_once()
 
-    @mock.patch("main_build.subprocess.Popen")
-    def test_wait_resilience_to_interrupt(self, mock_popen: mock.Mock) -> None:
-        """Verify that wait() resilience is handled by wait_and_forward_signals."""
+    @mock.patch("signal_utils.SignalManagedProcess")
+    def test_wait_resilience_to_interrupt(
+        self, mock_managed: mock.Mock
+    ) -> None:
+        """Verify that wait() resilience is handled by SignalManagedProcess."""
         context = self.create_context()
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -720,18 +718,14 @@ class BuildCommandSignalTest(MainBuildTestBase):
             invocation=invocation,
         )
 
-        mock_process = mock.Mock()
-        mock_process.pid = 5678
-        mock_popen.return_value = mock_process
+        mock_instance = mock_managed.return_value
+        # Simulate that SignalManagedProcess.run() handles the interrupt
+        # and returns the exit status.
+        mock_instance.run.return_value = 130
 
-        # We actually test wait_and_forward_signals resilience in signal_utils_test.py,
-        # but here we ensure that main_build calls it.
-        with mock.patch.object(
-            signal_utils, "wait_and_forward_signals"
-        ) as mock_wait:
-            mock_wait.return_value = 0
-            _ = exec_info._run_without_locking()
-            mock_wait.assert_called_once_with(mock_process, verbose=False)
+        result = exec_info._run_without_locking()
+        self.assertEqual(result.return_code, 130)
+        mock_instance.run.assert_called_once()
 
 
 if __name__ == "__main__":

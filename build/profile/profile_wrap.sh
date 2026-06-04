@@ -100,25 +100,41 @@ trap shutdown EXIT
 # signal forwarding is required here. Successive signals will continue to reach
 # the child as long as it is alive.
 function wait-ignoring-signals {
+  local child_pid=""
   local sig_count=0
-  # Acknowledge signals but stay alive while waiting.
+
+  # Acknowledge signals and forward them to the child.
   function _signal_acknowledgement_handler {
     local sig="$1"
     _interrupted=1
     sig_count=$((sig_count + 1))
+
     if [[ $sig_count -eq 1 ]]; then
-      msg "Received ${sig}. Waiting for command to shut down gracefully..."
+      msg "Received ${sig}. Forwarding to child (PID: ${child_pid:-unknown}) and waiting for graceful shutdown..."
     else
       msg "Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+    fi
+
+    if [[ -n "${child_pid}" ]]; then
+       # Signal the child. Since we are likely in a separate process group
+       # (due to wrappers above us or set -m below), we signal the group.
+       kill -"${sig}" "-${child_pid}" 2>/dev/null || true
     fi
   }
   trap '_signal_acknowledgement_handler SIGINT' INT
   trap '_signal_acknowledgement_handler SIGTERM' TERM
   trap '_signal_acknowledgement_handler SIGHUP' HUP
 
-  # Run the command in a subshell that restores default signal dispositions.
-  ( trap - INT TERM HUP ; exec "$@" )
-  local status=$?
+  # Run the command in a subshell with default signal dispositions.
+  # We use set -m to ensure the child is in its own process group,
+  # making it easier to signal the entire sub-tree.
+  set -m
+  ( trap - INT TERM HUP ; exec "$@" ) &
+  child_pid=$!
+  set +m
+
+  local status=0
+  wait "${child_pid}" || status=$?
 
   trap - INT TERM HUP
   return "$status"

@@ -76,11 +76,10 @@ options:
   --async_reproxy_termination: shutdown reproxy in the background.
   --signal-policy {relay,relay-group,passive}: default [$SIGNAL_POLICY]
     relay: (RECOMMENDED) Isolate the child in a new process group and forward
-      signals to its PID. Safest for well-behaved tools like Ninja and
-      ensures sidecars (reproxy) outlive the main command for data integrity.
-    relay-group: Isolate and forward signals to the child's entire group.
-      Desirable for wrapping "process-leaking" scripts.
-      Note: Risk of signal bombardment if used in nested wrapper chains.
+      signals to its process group. Safest for well-behaved tools like Ninja
+      and ensures sidecars (reproxy) outlive the main command for data
+      integrity.
+    relay-group: (ALIAS) Same as relay.
     passive: (NOT RECOMMENDED) Do not isolate or forward signals. Relies on TTY
       broadcast. Risk of premature sidecar shutdown (data loss) and
       fails to propagate signals when nested inside other wrappers.
@@ -468,13 +467,9 @@ function handle_signal() {
 
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
     case "${SIGNAL_POLICY}" in
-      relay)
-        # Forward to the PID only. The child was isolated via set -m.
-        timetrace "Forwarding ${signal_name} to PID ${WRAPPED_PID}."
-        kill "-${signal_name}" "${WRAPPED_PID}"
-        ;;
-      relay-group)
+      relay | relay-group)
         # Forward to the entire process group.
+        # The child was isolated via set -m.
         timetrace "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
         kill "-${signal_name}" "-${WRAPPED_PID}"
         ;;

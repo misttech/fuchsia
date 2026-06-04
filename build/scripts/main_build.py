@@ -524,24 +524,20 @@ class BuildCommandExecution(object):
         # the terminal (SIGTTIN/SIGTTOU).
         use_separate_pgrp = not config.tui
 
-        # Note: We use subprocess.Popen and wait() instead of os.execv()
-        # (execve) because we need the Python process to stay alive to:
-        # 1. Maintain the build lock (BuildLock context manager).
-        # 2. Perform cleanup of temporary files (self.cleanup_files).
-        # 3. Handle signal forwarding to the child process group.
-        kwargs: dict[str, Any] = {"env": self.env}
-        if use_separate_pgrp:
-            kwargs["preexec_fn"] = os.setpgrp
-
-        process = subprocess.Popen(self.full_command, **kwargs)
-
-        # Forward signals like SIGINT, SIGHUP, SIGTERM to the subprocess group
-        # while it is running.
-        rc = signal_utils.wait_and_forward_signals(
-            process, verbose=config.verbose
+        # Use SignalManagedProcess to handle the entire lifecycle:
+        # 1. Setup the child (un-ignore signals, optionally isolate PGID).
+        # 2. Spawn the process.
+        # 3. Forward signals while waiting for termination.
+        #
+        # Note: We must stay alive to maintain the build lock and cleanup files.
+        managed = signal_utils.SignalManagedProcess(
+            self.full_command,
+            env=self.env,
+            separate_pgrp=use_separate_pgrp,
+            verbose=config.verbose,
         )
 
-        return BuildResult(return_code=rc)
+        return BuildResult(return_code=managed.run())
 
     def run(self) -> BuildResult:
         """Execute the build command, guarded by a build lock.
@@ -904,15 +900,15 @@ def main(argv: list[str]) -> int:
         print(f"Error: {e}")
         return 1
     except signal_utils.BuildInterruptedError as e:
-        # signal_utils.wait_and_forward_signals() ensures that we have
-        # already waited for any child processes before this is raised.
+        # SignalManagedProcess ensures that we have already waited for any
+        # child processes before this is raised.
         sig_name = signal.Signals(e.signum).name
         print(
             f"[main_build.py] Interrupted by {sig_name}, exiting ({e.return_code})"
         )
         return e.return_code
     except KeyboardInterrupt:
-        # Fallback for standard interrupts outside wait_and_forward_signals
+        # Fallback for standard interrupts outside SignalManagedProcess
         print("[main_build.py] Received KeyboardInterrupt, exiting (130)")
         return 130
 

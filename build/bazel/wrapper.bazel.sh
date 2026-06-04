@@ -343,30 +343,41 @@ echo "${_bazel_command[*]}" >> "${_BAZEL_INVOCATION_LOG_DIR}/bazel_invocation"
 # Wait for a command while ignoring signals to ensure the parent outlives the child.
 # This prevents the shell from exiting prematurely and orphaning backgrounded
 # subprocesses during a signal (like Ctrl-C).
-#
-# Because the command is run in the same process group, signals (like SIGINT)
-# are broadcast by the TTY to both the shell and the child, so no manual
-# signal forwarding is required here. Successive signals will continue to reach
-# the child as long as it is alive.
 function wait-ignoring-signals {
+  local child_pid=""
   local sig_count=0
-  # Acknowledge signals but stay alive while waiting.
+
+  # Acknowledge signals and forward them to the child.
   function _signal_acknowledgement_handler {
     local sig="$1"
     sig_count=$((sig_count + 1))
+
     if [[ $sig_count -eq 1 ]]; then
-      echo >&2 "[bazel-wrapper] Received ${sig}. Waiting for command to shut down gracefully..."
+      echo >&2 "[bazel-wrapper] Received ${sig}. Forwarding to child and waiting for graceful shutdown..."
     else
       echo >&2 "[bazel-wrapper] Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+    fi
+
+    if [[ -n "${child_pid}" ]]; then
+       # Signal the child process group. Since we are likely in a separate
+       # process group from the TTY (due to wrappers above us), we must
+       # explicitly forward signals to the sub-tree.
+       kill -"${sig}" "-${child_pid}" 2>/dev/null || true
     fi
   }
   trap '_signal_acknowledgement_handler SIGINT' INT
   trap '_signal_acknowledgement_handler SIGTERM' TERM
   trap '_signal_acknowledgement_handler SIGHUP' HUP
 
-  # Run the command in a subshell that restores default signal dispositions.
-  ( trap - INT TERM HUP ; exec "$@" )
-  local status=$?
+  # Run the command in its own process group.
+  # This makes it easier to signal the entire sub-tree (including Bazel).
+  set -m
+  "$@" &
+  child_pid=$!
+  set +m
+
+  local status=0
+  wait "${child_pid}" || status=$?
 
   trap - INT TERM HUP
   return "$status"

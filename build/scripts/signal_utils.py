@@ -6,11 +6,12 @@
 """Utilities for signal handling in build scripts."""
 
 import argparse
+import functools
 import os
 import signal
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Sequence
 
 
 class BuildInterruptedError(KeyboardInterrupt):
@@ -22,7 +23,96 @@ class BuildInterruptedError(KeyboardInterrupt):
         self.signum = signum
 
 
-def wait_and_forward_signals(
+class SignalManagedProcess:
+    """Encapsulates a process whose signals are managed and forwarded.
+
+    This class handles the entire signal management lifecycle:
+    1. Child setup (resetting signals and optionally isolating PGID).
+    2. Process spawning.
+    3. Signal relay loop (forwarding SIGINT, etc., to the child).
+    """
+
+    def __init__(
+        self,
+        command: Sequence[str],
+        *,
+        separate_pgrp: bool = True,
+        verbose: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Initializes the managed process.
+
+        Args:
+            command: The command to run as a sequence of strings.
+            separate_pgrp: Whether to isolate the child in a new process group.
+            verbose: Whether to log signal receipt and forwarding.
+            **kwargs: Additional arguments passed to subprocess.Popen.
+        """
+        if "preexec_fn" in kwargs:
+            raise ValueError(
+                "preexec_fn is managed by SignalManagedProcess and cannot be overridden."
+            )
+        self._command = command
+        self._separate_pgrp = separate_pgrp
+        self._verbose = verbose
+        self._popen_kwargs = kwargs
+
+    def run(self) -> int:
+        """Starts the process and waits for it while forwarding signals.
+
+        Returns:
+            The return code of the process.
+
+        Raises:
+            BuildInterruptedError: If a signal was received and forwarded.
+        """
+        process = subprocess.Popen(
+            self._command,
+            preexec_fn=functools.partial(_preexec_setup, self._separate_pgrp),
+            **self._popen_kwargs,
+        )
+        return _wait_and_forward_signals(process, verbose=self._verbose)
+
+
+def run_command(
+    command: Sequence[str],
+    *,
+    separate_pgrp: bool = True,
+    verbose: bool = False,
+    **kwargs: Any,
+) -> int:
+    """One-shot function to run a command with signal management."""
+    return SignalManagedProcess(
+        command, separate_pgrp=separate_pgrp, verbose=verbose, **kwargs
+    ).run()
+
+
+def _preexec_setup(separate_pgrp: bool = True) -> None:
+    """Prepares a child process for robust signal handling.
+
+    This function is intended to be used as a 'preexec_fn' in subprocess.Popen.
+    It performs two critical tasks:
+    1. Resets standard signals (SIGINT, SIGHUP, SIGTERM, SIGQUIT) to SIG_DFL.
+       This is necessary because if a child starts with these signals ignored
+       (common in background jobs), bash wrappers cannot set their own traps.
+    2. Optionally creates a new process group for the child tree.
+
+    Args:
+        separate_pgrp: If True, calls os.setpgrp() to isolate the child.
+    """
+    # 1. Reset signals to default handlers.
+    # This "un-ignores" signals so that bash wrappers can trap them.
+    for sig in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
+        signal.signal(sig, signal.SIG_DFL)
+    if hasattr(signal, "SIGQUIT"):
+        signal.signal(signal.SIGQUIT, signal.SIG_DFL)
+
+    # 2. Isolate the process group.
+    if separate_pgrp:
+        os.setpgrp()
+
+
+def _wait_and_forward_signals(
     process: subprocess.Popen[Any], verbose: bool = False
 ) -> int:
     """Relays signals to the given process and waits for it to terminate.
@@ -66,7 +156,11 @@ def wait_and_forward_signals(
                     f"PGID {pgid}" if is_group_leader else f"PID {process.pid}"
                 )
                 print(
-                    f"[signal_utils] Received {sig_name}, forwarding to {target_desc}...",
+                    f"[signal_utils] Received {sig_name}. Child PID: {process.pid}, PGID: {pgid}, IsLeader: {is_group_leader}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"[signal_utils] Forwarding {sig_name} to {target_desc}...",
                     file=sys.stderr,
                 )
 
@@ -75,114 +169,65 @@ def wait_and_forward_signals(
             else:
                 os.kill(process.pid, signum)
         except ProcessLookupError:
-            # Process already finished.
-            pass
+            if verbose:
+                print(
+                    f"[signal_utils] Received {sig_name}, but child process {process.pid} has already exited.",
+                    file=sys.stderr,
+                )
 
         nonlocal received_signum
         received_signum = signum
 
     # Signals to forward.
-    signals_to_forward = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
+    signals_to_handle = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
     if hasattr(signal, "SIGQUIT"):
-        signals_to_forward.append(signal.SIGQUIT)
+        signals_to_handle.append(signal.SIGQUIT)
 
-    old_handlers: dict[int, Any] = {}
-    for sig in signals_to_forward:
+    # Register handlers.
+    old_handlers = {}
+    for sig in signals_to_handle:
         old_handlers[sig] = signal.signal(sig, handle_signal)
 
-    rc = 1
     try:
-        # Wait for the process to finish.
-        # Since we have custom handlers, SIGINT will not raise
-        # KeyboardInterrupt during this call.
+        # Block until the process exits.
+        # We handle the return code conversion to shell status codes.
         rc = process.wait()
+        if rc < 0:
+            # Child died from a signal.
+            return 128 - rc
+        return rc
     finally:
-        # Restore original signal handlers.
-        for signum_restoring, handler in old_handlers.items():
-            signal.signal(signum_restoring, handler)
+        # Restore old handlers.
+        for sig, handler in old_handlers.items():
+            signal.signal(sig, handler)
 
-        # If we received a signal, raise BuildInterruptedError now that we've
-        # finished waiting and restored the handlers.
-        if received_signum > 0:
-            # If the child reported a failure status, preserve it.
-            # If it reported success (graceful), override with 128 + signum
-            # to ensure shell chains stop.
-            # Convert signal-based exit (negative) to shell-style (128+N).
-            exit_code = (
-                rc
-                if rc > 0
-                else (128 - rc if rc < 0 else 128 + received_signum)
-            )
-            raise BuildInterruptedError(exit_code, received_signum)
-
-    # Ensure we return a positive shell-style code even if no signal was
-    # received by the wrapper (e.g. if the child was killed before the wrapper
-    # could relay it).
-    return rc if rc >= 0 else 128 - rc
+        if received_signum != 0:
+            # We determine the final return code here for the exception.
+            # If the process exited via our signal, its rc will reflect that.
+            final_rc = process.returncode
+            if final_rc < 0:
+                final_rc = 128 - final_rc
+            raise BuildInterruptedError(final_rc, received_signum)
 
 
 def main(argv: list[str]) -> int:
-    """Main function to use this script as a standalone signal wrapper.
-
-    This script can even wrap around itself multiple times to demonstrate
-    signal forwarding.
-    """
     parser = argparse.ArgumentParser(
         description="Wraps a command and relays signals to it."
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose signal logging",
+        "--verbose", action="store_true", help="Log signal details."
     )
-    parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="The command to wrap (after --)",
-    )
-
-    # We manually handle the '--' separator because argparse's REMAINDER
-    # is a bit greedy and doesn't strictly require it.
-    if "--" not in argv:
-        parser.print_help()
-        return 1
-
-    idx = argv.index("--")
-    args = parser.parse_args(argv[:idx])
-    cmd = argv[idx + 1 :]
-
-    if not cmd:
-        print("Error: No command specified after --")
-        return 1
-
-    if args.verbose:
-        print(
-            f"[signal_utils] Starting wrapper (PID: {os.getpid()})",
-            file=sys.stderr,
-        )
-
-    # Start the child in a new process group to simulate isolation
-    try:
-        process = subprocess.Popen(cmd, preexec_fn=os.setpgrp)
-    except Exception as e:
-        print(f"Error: Failed to start command {' '.join(cmd)}: {e}")
-        return 1
+    parser.add_argument("command", nargs="+", help="The command to run.")
+    args = parser.parse_args(argv)
 
     try:
-        return wait_and_forward_signals(process, verbose=args.verbose)
+        return run_command(args.command, verbose=args.verbose)
     except BuildInterruptedError as e:
         # Return the carry-over exit code
         return e.return_code
     except KeyboardInterrupt:
         # Standard fallback for SIGINT if raised elsewhere
         return 130
-    finally:
-        if args.verbose:
-            print(
-                f"[signal_utils] Wrapper exiting (PID: {os.getpid()})",
-                file=sys.stderr,
-            )
 
 
 if __name__ == "__main__":

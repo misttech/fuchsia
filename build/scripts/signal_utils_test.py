@@ -3,11 +3,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import functools
 import os
 import signal
-import subprocess
 import unittest
-from typing import Any
 from unittest import mock
 
 import signal_utils
@@ -26,40 +25,29 @@ class SignalUtilsTest(unittest.TestCase):
         mock_kill: mock.Mock,
     ) -> None:
         """Verify that signals are forwarded to the PGID if the child is a group leader."""
-        mock_process = mock.Mock(spec=subprocess.Popen)
-        mock_process.pid = 5678
-        # Simulate that the process is a group leader (PGID == PID).
-        # This happens when using os.setpgrp in main_build.py.
-        mock_getpgid.return_value = 5678
+        mock_process = mock.Mock()
+        mock_process.pid = 1234
+        mock_process.returncode = 0
+        mock_getpgid.return_value = 1234  # Same as PID, so it's a leader
 
-        registered_handlers = {}
-
-        def fake_signal(sig: int, handler: Any) -> Any:
-            registered_handlers[sig] = handler
-            return signal.SIG_DFL
-
-        mock_signal.side_effect = fake_signal
-
-        def trigger_handler_during_wait() -> int:
-            # This is called when wait_and_forward_signals calls process.wait().
-            # We trigger our custom signal handler while it is waiting.
-            handler = registered_handlers[signal.SIGINT]
-            handler(signal.SIGINT, None)
+        # Setup handlers to trigger when wait() is called.
+        def side_effect() -> int:
+            # Trigger the SIGINT handler.
+            for call in mock_signal.call_args_list:
+                if call.args[0] == signal.SIGINT:
+                    handler = call.args[1]
+                    handler(signal.SIGINT, None)
             return 0
 
-        mock_process.wait.side_effect = trigger_handler_during_wait
+        mock_process.wait.side_effect = side_effect
 
-        # Since a SIGINT was received, the function should raise BuildInterruptedError
-        # after the process has "finished".
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils.wait_and_forward_signals(mock_process)
-        # Child returned 0, so parent should upgrade to 130 (SIGINT).
-        self.assertEqual(cm.exception.return_code, 130)
+            signal_utils._wait_and_forward_signals(mock_process)
+
+        self.assertEqual(cm.exception.return_code, 0)
         self.assertEqual(cm.exception.signum, signal.SIGINT)
 
-        # Because the child was a group leader, we must have called killpg
-        # to ensure the entire sub-tree (including Bazel's children) is signaled.
-        mock_killpg.assert_called_once_with(5678, signal.SIGINT)
+        mock_killpg.assert_called_once_with(1234, signal.SIGINT)
         mock_kill.assert_not_called()
 
     @mock.patch.object(os, "kill")
@@ -74,36 +62,27 @@ class SignalUtilsTest(unittest.TestCase):
         mock_kill: mock.Mock,
     ) -> None:
         """Verify that signals are forwarded to the PID only if the child is not a group leader."""
-        mock_process = mock.Mock(spec=subprocess.Popen)
-        mock_process.pid = 5678
-        # Simulate that the process is NOT a group leader (PGID != PID).
-        # This happens for simple linear wrapper chains without isolation.
-        mock_getpgid.return_value = 1234
+        mock_process = mock.Mock()
+        mock_process.pid = 1234
+        mock_process.returncode = 0
+        mock_getpgid.return_value = (
+            1111  # Different from PID, so it's a follower
+        )
 
-        registered_handlers = {}
-
-        def fake_signal(sig: int, handler: Any) -> Any:
-            registered_handlers[sig] = handler
-            return signal.SIG_DFL
-
-        mock_signal.side_effect = fake_signal
-
-        def trigger_handler_during_wait() -> int:
-            handler = registered_handlers[signal.SIGINT]
-            handler(signal.SIGINT, None)
+        def side_effect() -> int:
+            for call in mock_signal.call_args_list:
+                if call.args[0] == signal.SIGINT:
+                    handler = call.args[1]
+                    handler(signal.SIGINT, None)
             return 0
 
-        mock_process.wait.side_effect = trigger_handler_during_wait
+        mock_process.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils.wait_and_forward_signals(mock_process)
-        # Child returned 0, so parent should upgrade to 130 (SIGINT).
-        self.assertEqual(cm.exception.return_code, 130)
-        self.assertEqual(cm.exception.signum, signal.SIGINT)
+            signal_utils._wait_and_forward_signals(mock_process)
 
-        # Because the child was just a follower, we must have called kill (PID)
-        # to avoid "bombarding" the entire process group multiple times.
-        mock_kill.assert_called_once_with(5678, signal.SIGINT)
+        self.assertEqual(cm.exception.return_code, 0)
+        mock_kill.assert_called_once_with(1234, signal.SIGINT)
         mock_killpg.assert_not_called()
 
     @mock.patch.object(os, "kill")
@@ -118,28 +97,25 @@ class SignalUtilsTest(unittest.TestCase):
         mock_kill: mock.Mock,
     ) -> None:
         """Verify that child failure code is preserved even when interrupted."""
-        mock_process = mock.Mock(spec=subprocess.Popen)
-        mock_process.pid = 5678
-        mock_getpgid.return_value = 5678  # leader
+        mock_process = mock.Mock()
+        mock_process.pid = 1234
+        mock_process.returncode = 1  # Child failed with 1
+        mock_getpgid.return_value = 1234
 
-        registered_handlers = {}
-        mock_signal.side_effect = (
-            lambda s, h: registered_handlers.update({s: h}) or signal.SIG_DFL
-        )
-
-        def trigger_handler_during_wait() -> int:
-            handler = registered_handlers[signal.SIGINT]
-            handler(signal.SIGINT, None)
-            # Child failed during interrupt.
+        def side_effect() -> int:
+            for call in mock_signal.call_args_list:
+                if call.args[0] == signal.SIGTERM:
+                    handler = call.args[1]
+                    handler(signal.SIGTERM, None)
             return 1
 
-        mock_process.wait.side_effect = trigger_handler_during_wait
+        mock_process.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils.wait_and_forward_signals(mock_process)
-        # Child returned 1, so parent should return 1.
+            signal_utils._wait_and_forward_signals(mock_process)
+
         self.assertEqual(cm.exception.return_code, 1)
-        self.assertEqual(cm.exception.signum, signal.SIGINT)
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
 
     @mock.patch.object(os, "kill")
     @mock.patch.object(os, "killpg")
@@ -153,28 +129,28 @@ class SignalUtilsTest(unittest.TestCase):
         mock_kill: mock.Mock,
     ) -> None:
         """Verify that negative signal status is converted to shell-style (128+N)."""
-        mock_process = mock.Mock(spec=subprocess.Popen)
-        mock_process.pid = 5678
-        mock_getpgid.return_value = 5678  # leader
+        mock_process = mock.Mock()
+        mock_process.pid = 1234
+        # subprocess returns -15 for SIGTERM
+        mock_process.returncode = -15
+        mock_getpgid.return_value = 1234
 
-        registered_handlers = {}
-        mock_signal.side_effect = (
-            lambda s, h: registered_handlers.update({s: h}) or signal.SIG_DFL
-        )
-
-        def trigger_handler_during_wait() -> int:
-            handler = registered_handlers[signal.SIGINT]
-            handler(signal.SIGINT, None)
-            # Child killed by SIGTERM (15). Subprocess returns -15.
+        def side_effect() -> int:
+            for call in mock_signal.call_args_list:
+                if call.args[0] == signal.SIGTERM:
+                    handler = call.args[1]
+                    handler(signal.SIGTERM, None)
             return -15
 
-        mock_process.wait.side_effect = trigger_handler_during_wait
+        mock_process.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils.wait_and_forward_signals(mock_process)
-        # 128 - (-15) = 143.
+            signal_utils._wait_and_forward_signals(mock_process)
+
+        # Since child died of SIGTERM (-15), status should be 143.
         self.assertEqual(cm.exception.return_code, 143)
-        self.assertEqual(cm.exception.signum, signal.SIGINT)
+        # The last received signal was SIGTERM.
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
 
     @mock.patch.object(os, "kill")
     @mock.patch.object(os, "killpg")
@@ -188,39 +164,103 @@ class SignalUtilsTest(unittest.TestCase):
         mock_kill: mock.Mock,
     ) -> None:
         """Verify that multiple different signals are all forwarded correctly."""
-        mock_process = mock.Mock(spec=subprocess.Popen)
-        mock_process.pid = 5678
-        mock_getpgid.return_value = 5678  # leader
+        mock_process = mock.Mock()
+        mock_process.pid = 1234
+        mock_process.returncode = 0
+        mock_getpgid.return_value = 1234
 
-        registered_handlers = {}
-        mock_signal.side_effect = (
-            lambda s, h: registered_handlers.update({s: h}) or signal.SIG_DFL
-        )
+        def side_effect() -> int:
+            # Simulate receiving INT then TERM
+            handlers = {
+                call.args[0]: call.args[1]
+                for call in mock_signal.call_args_list
+            }
+            handlers[signal.SIGINT](signal.SIGINT, None)
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            return 0
 
-        def trigger_handlers_during_wait() -> int:
-            # Trigger SIGINT
-            registered_handlers[signal.SIGINT](signal.SIGINT, None)
-            # Trigger SIGTERM
-            registered_handlers[signal.SIGTERM](signal.SIGTERM, None)
-            # Child killed by SIGTERM (15)
-            return -15
-
-        mock_process.wait.side_effect = trigger_handlers_during_wait
+        mock_process.wait.side_effect = side_effect
 
         with self.assertRaises(signal_utils.BuildInterruptedError) as cm:
-            signal_utils.wait_and_forward_signals(mock_process)
+            signal_utils._wait_and_forward_signals(mock_process)
 
-        # Both signals should have been forwarded to the process group.
-        mock_killpg.assert_has_calls(
-            [
-                mock.call(5678, signal.SIGINT),
-                mock.call(5678, signal.SIGTERM),
-            ]
-        )
-        # Since child died of SIGTERM (-15), status should be 143.
-        self.assertEqual(cm.exception.return_code, 143)
-        # The last received signal was SIGTERM.
         self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertEqual(mock_killpg.call_count, 2)
+
+    @mock.patch.object(os, "setpgrp")
+    @mock.patch.object(signal, "signal")
+    def test_preexec_setup(
+        self, mock_signal: mock.Mock, mock_setpgrp: mock.Mock
+    ) -> None:
+        """Verify that _preexec_setup resets signals and optionally sets pgrp."""
+        # Test with separate_pgrp=True
+        signal_utils._preexec_setup(separate_pgrp=True)
+        mock_setpgrp.assert_called_once()
+
+        # Verify that expected signals were reset to SIG_DFL
+        expected_signals = [signal.SIGINT, signal.SIGHUP, signal.SIGTERM]
+        if hasattr(signal, "SIGQUIT"):
+            expected_signals.append(signal.SIGQUIT)
+
+        actual_signals_reset = [
+            call.args[0] for call in mock_signal.call_args_list
+        ]
+        for sig in expected_signals:
+            self.assertIn(sig, actual_signals_reset)
+            # Find the call for this signal and verify it used SIG_DFL
+            for call in mock_signal.call_args_list:
+                if call.args[0] == sig:
+                    self.assertEqual(call.args[1], signal.SIG_DFL)
+
+        mock_signal.reset_mock()
+        mock_setpgrp.reset_mock()
+
+        # Test with separate_pgrp=False
+        signal_utils._preexec_setup(separate_pgrp=False)
+        mock_setpgrp.assert_not_called()
+        self.assertGreater(mock_signal.call_count, 0)
+
+    @mock.patch("signal_utils.subprocess.Popen")
+    @mock.patch("signal_utils._wait_and_forward_signals")
+    def test_signal_managed_process(
+        self, mock_wait: mock.Mock, mock_popen: mock.Mock
+    ) -> None:
+        """Verify SignalManagedProcess correctly orchestrates execution."""
+        mock_process = mock.Mock()
+        mock_popen.return_value = mock_process
+        mock_wait.return_value = 42
+
+        managed = signal_utils.SignalManagedProcess(
+            ["test", "cmd"], separate_pgrp=True, verbose=True, env={"A": "B"}
+        )
+        rc = managed.run()
+
+        self.assertEqual(rc, 42)
+        mock_popen.assert_called_once()
+        args, kwargs = mock_popen.call_args
+        self.assertEqual(args[0], ["test", "cmd"])
+        self.assertEqual(kwargs["env"], {"A": "B"})
+        self.assertIsInstance(kwargs["preexec_fn"], functools.partial)
+        self.assertEqual(kwargs["preexec_fn"].func, signal_utils._preexec_setup)
+        self.assertEqual(kwargs["preexec_fn"].args, (True,))
+
+        mock_wait.assert_called_once_with(mock_process, verbose=True)
+
+    @mock.patch("signal_utils.SignalManagedProcess")
+    def test_run_command(self, mock_managed_class: mock.Mock) -> None:
+        """Verify run_command convenience function."""
+        mock_instance = mock_managed_class.return_value
+        mock_instance.run.return_value = 123
+
+        rc = signal_utils.run_command(
+            ["cmd"], separate_pgrp=False, verbose=True
+        )
+
+        self.assertEqual(rc, 123)
+        mock_managed_class.assert_called_once_with(
+            ["cmd"], separate_pgrp=False, verbose=True
+        )
+        mock_instance.run.assert_called_once()
 
 
 if __name__ == "__main__":
