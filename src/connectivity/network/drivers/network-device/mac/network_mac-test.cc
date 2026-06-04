@@ -252,5 +252,42 @@ TEST_F(MacDeviceTest, FallsBackToDefaultMode) {
   ASSERT_TRUE(impl_.addresses().empty());
 }
 
+// Regression test for https://fxbug.dev/517998440
+TEST_F(MacDeviceTest, MulticastFilterCountGreaterThanMaxMacFilter) {
+  // Configure the fake device to report a multicast filter count larger than the FIDL limit (64).
+  impl_.features().multicast_filter_count(netdriver::wire::kMaxMacFilter + 10);
+  impl_.features().supported_modes(netdriver::SupportedMacFilterMode::kMulticastFilter);
+
+  ASSERT_OK(CreateDevice());
+  ASSERT_EQ(impl_.mode(), netdev::wire::MacFilterMode::kMulticastFilter);
+
+  fidl::WireSyncClient<netdev::MacAddressing> cli1 = OpenInstance();
+  fidl::WireSyncClient<netdev::MacAddressing> cli2 = OpenInstance();
+
+  // Add 33 unique multicast addresses on client 1.
+  for (size_t i = 0; i < 33; i++) {
+    MacAddress addr{{0x01, 0x00, 0x00, 0x00, 0x00, static_cast<unsigned char>(i)}};
+    fidl::WireResult result = cli1->AddMulticastAddress(addr);
+    ASSERT_OK(result.status());
+    ASSERT_OK(result.value().status);
+    ASSERT_OK(impl_.WaitConfigurationChanged());
+  }
+
+  // Add 32 unique multicast addresses on client 2 (total 65 addresses).
+  for (size_t i = 0; i < 32; i++) {
+    MacAddress addr{{0x01, 0x00, 0x00, 0x00, 0x00, static_cast<unsigned char>(100 + i)}};
+    fidl::WireResult result = cli2->AddMulticastAddress(addr);
+    // This should succeed. If the bug is present, the 32nd addition (65th total)
+    // will fail because the internal FIDL call SetMode fails and closes the channel.
+    ASSERT_OK(result.status());
+    ASSERT_OK(result.value().status);
+    ASSERT_OK(impl_.WaitConfigurationChanged());
+  }
+
+  // Verify that the driver capped the filter list at kMaxMacFilter (64)
+  // instead of sending 65 addresses.
+  ASSERT_EQ(impl_.addresses().size(), netdriver::wire::kMaxMacFilter);
+}
+
 }  // namespace testing
 }  // namespace network

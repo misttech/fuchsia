@@ -170,7 +170,7 @@ void MacInterface::Consolidate(fit::function<void()> callback) {
     // If the mode didn't change out of multicast filter, build the multicast list.
     if (mode == fuchsia_hardware_network::wire::MacFilterMode::kMulticastFilter) {
       for (const auto& address : addresses) {
-        if (addr_buff.size() > fuchsia_hardware_network_driver::wire::kMaxMacFilter ||
+        if (addr_buff.size() >= fuchsia_hardware_network_driver::wire::kMaxMacFilter ||
             addr_buff.size() >= multicast_filter_count) {
           break;
         }
