@@ -47,4 +47,10 @@ if [[ -f "${recent_ifconfig_profile}" ]]; then
   fi
 fi
 
+# If there exists a consolidated system profile, merge it.
+readonly recent_system_profile="${BUILD_PROFILE_DIR}/system_profile.json"
+if [[ -f "${recent_system_profile}" ]]; then
+  command+=("--system-profile" "${recent_system_profile}")
+fi
+
 exec "${command[@]}" "$@"

@@ -10,12 +10,20 @@ group("tests") {
 
   deps = [
     ":ifconfig_trace_test($host_toolchain)",
+    ":system_profiler_test($host_toolchain)",
     ":trace_tools($host_toolchain)",
     ":vmstat_trace_test($host_toolchain)",
   ]
 }
 
 if (is_host) {
+  python_library("system_profiler") {
+    sources = [ "system_profiler.py" ]
+  }
+  python_host_test("system_profiler_test") {
+    main_source = "system_profiler_test.py"
+    sources = [ "system_profiler.py" ]
+  }
   python_library("ifconfig_trace") {
     sources = [
       "ifconfig_trace.py",

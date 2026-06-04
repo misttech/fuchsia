@@ -36,6 +36,7 @@ END
 self_test=0
 vmstat_logfile=
 ifconfig_logfile=
+system_logfile=
 
 vmstat="$(which vmstat)" || {
   echo "Unable to find vmstat tool.  Exiting."
@@ -78,6 +79,8 @@ do
     --ifconfig-log=*) ifconfig_logfile="$optarg" ;;
     --vmstat-log) prev_opt=vmstat_logfile ;;
     --vmstat-log=*) vmstat_logfile="$optarg" ;;
+    --system-log) prev_opt=system_logfile ;;
+    --system-log=*) system_logfile="$optarg" ;;
     -n) prev_opt=interval ;;
     -n=*) interval="$optarg" ;;
     --vmstat-arg=*) vmstat_args+=( "$optarg" ) ;;
@@ -89,8 +92,8 @@ do
   shift
 done
 
-[[ "$self_test" == 1 ]] || [[ -n "$vmstat_logfile" ]] || [[ -n "$ifconfig_logfile" ]] || {
-  echo "At least one of (--vmstat-log, --ifconfig-log) is required."
+[[ "$self_test" == 1 ]] || [[ -n "$vmstat_logfile" ]] || [[ -n "$ifconfig_logfile" ]] || [[ -n "$system_logfile" ]] || {
+  echo "At least one of (--vmstat-log, --ifconfig-log, --system-log) is required."
   exit 1
 }
 
@@ -190,6 +193,18 @@ then
   then shutdown_pids+=( "$ifconfig_pid" )
   else pids_not_found=1
   fi
+fi
+
+if [[ -n "$system_logfile" ]]
+then
+  rm -f "$system_logfile"
+  "${PREBUILT_PYTHON3:-python3}" -S -u "${script_dir}/system_profiler.py" \
+    --interval "$interval" \
+    --output "$system_logfile" \
+    --pid "$$" \
+    --metadata "FX_BUILD_UUID:${FX_BUILD_UUID:-}" &
+  readonly system_profiler_pid=$!
+  shutdown_pids+=( "$system_profiler_pid" )
 fi
 
 # Terminate vmstat and ifconfig when main command is complete (or interrupted).

@@ -17,8 +17,9 @@
 ##       Disable system profiling during fx build.
 ##
 ## Build profiles contain information about the state of your system
-## resources such as CPU, memory, disk I/O.
-## 'vmstat' is one such tool that collects this data.
+## resources such as CPU, memory, disk I/O, and network usage.
+## The 'system_profiler' utility (located at //build/profile/system_profiler.py)
+## collects this data natively on Linux.
 ## Build profile data contains no PII.
 
 set -e

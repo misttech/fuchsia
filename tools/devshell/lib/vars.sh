@@ -97,7 +97,13 @@ fi
 
 # If build profiling is enabled, collect system stats during build,
 # including CPU, memory, disk I/O...
-BUILD_PROFILE_ENABLED=1
+# Since our system_profiler implementation is Linux-specific (relying on direct
+# /proc reads), we only auto-enable it on Linux host platforms.
+if [[ "$OSTYPE" =~ "linux" ]]; then
+  BUILD_PROFILE_ENABLED=1
+else
+  BUILD_PROFILE_ENABLED=0
+fi
 readonly fx_build_profile_config="${FX_CONFIG_DIR}/build-profile"
 readonly fx_build_profile_config_old="${FUCHSIA_DIR}/.fx-build-profile-config"
 if [[ -f "$fx_build_profile_config_old" ]]; then
