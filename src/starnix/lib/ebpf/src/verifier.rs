@@ -370,6 +370,11 @@ impl PartialOrd for Type {
         }
 
         // If one value is not initialized, the types are ordered.
+        // UNINITIALIZED is treated as the Top element (Greater than all other types).
+        // If a path is proven safe when a register is UNINITIALIZED, it means the path
+        // does not read that register. Consequently, it is safe to prune any state
+        // that has a more specific type (like a pointer) in that register, because
+        // the program will still not read it.
         if self == &Type::UNINITIALIZED {
             return Some(Ordering::Greater);
         }
