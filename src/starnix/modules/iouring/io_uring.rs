@@ -1239,3 +1239,15 @@ impl FileOps for IoUringFileObject {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[::fuchsia::test]
+    fn test_uring_cmd_not_supported() {
+        // TODO(https://fxbug.dev/505326826): If the uring_cmd operation is supported,
+        // add the necessary security checks.
+        assert!(Op::from_code(starnix_uapi::io_uring_op_IORING_OP_URING_CMD).is_err());
+    }
+}
