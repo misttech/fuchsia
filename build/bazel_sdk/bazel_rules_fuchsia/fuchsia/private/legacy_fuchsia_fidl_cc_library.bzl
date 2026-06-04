@@ -4,7 +4,6 @@
 
 """A cc_library backed by a FIDL library."""
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
@@ -18,28 +17,30 @@ def _codegen_impl(ctx):
         fail("Unsupported binding level: %s" % ctx.attr.binding_level)
 
     sdk = get_fuchsia_sdk_toolchain(ctx)
-    fidlgen = sdk.fidlgen_hlcpp
 
     ir = ctx.attr.library[FuchsiaFidlLibraryInfo].ir
     name = ctx.attr.library[FuchsiaFidlLibraryInfo].name
 
     base_path = ctx.attr.name + "." + ctx.attr.binding_level
+    subdir = name.replace(".", "/") + "/cpp"
 
-    headers = []
-    sources = []
-    dir = paths.join(base_path, name.replace(".", "/"), "cpp")
-    headers.append(ctx.actions.declare_file(dir + "/fidl.h"))
-    headers.append(ctx.actions.declare_file(dir + "/fidl_test_base.h"))
-    sources.append(ctx.actions.declare_file(dir + "/fidl.cc"))
-    sources.append(ctx.actions.declare_file(dir + "/tables.c"))
+    headers = [
+        ctx.actions.declare_file(base_path + "/" + subdir + "/fidl.h"),
+        ctx.actions.declare_file(base_path + "/" + subdir + "/fidl_test_base.h"),
+    ]
+    sources = [
+        ctx.actions.declare_file(base_path + "/" + subdir + "/fidl.cc"),
+        ctx.actions.declare_file(base_path + "/" + subdir + "/tables.c"),
+    ]
 
     ctx.actions.run(
-        executable = fidlgen,
+        executable = sdk.fidlgen_hlcpp,
         arguments = [
             "--json",
             ir.path,
             "--root",
-            paths.join(ctx.bin_dir.path, ctx.label.workspace_root, ctx.label.package, base_path),
+            # get the full path before the subdir
+            headers[0].path.rpartition(subdir)[0],
         ],
         inputs = [ir],
         outputs = headers + sources,

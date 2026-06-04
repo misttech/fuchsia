@@ -4,7 +4,6 @@
 
 """A cc_library backed by a FIDL library."""
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
@@ -130,14 +129,16 @@ def _codegen_impl(ctx):
     if name == "zx":
         source_files = ["markers.h"]
 
-    dir = base_path + "/fidl/" + name + "/cpp"
+    subdir = "fidl/" + name + "/cpp"
 
-    headers = []
-    sources = []
-    for header in header_files:
-        headers.append(ctx.actions.declare_file(dir + "/" + header))
-    for source in source_files:
-        sources.append(ctx.actions.declare_file(dir + "/" + source))
+    headers = [
+        ctx.actions.declare_file(base_path + "/" + subdir + "/" + header)
+        for header in header_files
+    ]
+    sources = [
+        ctx.actions.declare_file(base_path + "/" + subdir + "/" + source)
+        for source in source_files
+    ]
 
     ctx.actions.run(
         executable = sdk.fidlgen_cpp,
@@ -145,7 +146,8 @@ def _codegen_impl(ctx):
             "--json",
             ir.path,
             "--root",
-            paths.join(ctx.bin_dir.path, ctx.label.workspace_root, ctx.label.package, base_path),
+            # get the full path before the subdir
+            headers[0].path.rpartition(subdir)[0],
         ],
         inputs = [ir],
         outputs = headers + sources,

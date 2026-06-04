@@ -117,7 +117,7 @@ def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None
     for cc_binding in cc_bindings:
         fuchsia_fidl_cc_library(
             name = get_cc_lib_name(name, cc_binding),
-            library = library,
+            library = name,
             binding_type = cc_binding,
             deps = deps,
             sdk_for_default_deps = sdk_for_default_deps,
