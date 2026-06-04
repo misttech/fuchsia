@@ -46,7 +46,6 @@ class NotInCogWorkspaceError(WorkspaceError):
 
 CARTFS_SYMLINK_NAME: str = "cartfs-dir"
 COG_METADATA_FILE_NAME: str = ".cog.json"
-GOLDEN_SNAPSHOT_DIR: Path = Path(".fuchsia_golden_snapshot")
 
 
 class CogMetadata:
@@ -161,22 +160,10 @@ class Workspace:
         self.repo_dir = repo_dir or Workspace.cogd_path()
         self.cartfs_instance = cartfs.Cartfs()
         self.cartfs_mount_point = self.cartfs_instance.mount_point
+        self._is_cartfs_workspace_clean = False
         self._lock_file_handle: TextIO | None = None
         self._lock_count = 0
         logger.setup_file_logging(self.workspace_root)
-
-        # We will check for the presence of the golden snapshot directory to
-        # determine if the workspace should be initialized from the golden
-        # snapshot. A full usable golden snapshot is indicated by the presence of
-        # the `.integration_commit_hash` file.
-        #
-        # We will not use the golden snapshot for the fuchsia repo
-        # as it is not supported for fuchsia/fuchsia.
-        self._use_golden_snapshot = (
-            self.cartfs_mount_point
-            / GOLDEN_SNAPSHOT_DIR
-            / ".integration_commit_hash"
-        ).exists() and self.repo_dir.name != "fuchsia"
 
     @property
     def workspace_root(self) -> Path:
@@ -195,6 +182,33 @@ class Workspace:
     @property
     def repo_name(self) -> str:
         return self.repo_dir.name
+
+    @cached_property
+    def _golden_snapshot_dir(self) -> Path | None:
+        """Returns the golden snapshot directory, if it exists and is valid.
+
+        Returns:
+            A path to the resolved golden snapshot directory relative to the cartfs mount point if
+            found and valid, otherwise None.
+        """
+        # Golden snapshots are not supported for fuchsia/fuchsia.
+        if self.repo_dir.name == "fuchsia":
+            return None
+
+        # `.fuchsia_golden_snapshot` is a symlink pointing to the currently active golden snapshot.
+        result = (
+            self.cartfs_mount_point / ".fuchsia_golden_snapshot"
+        ).resolve()
+
+        # Check that the golden snapshot is not corrupted.
+        if not (result / ".integration_commit_hash").is_file():
+            return None
+
+        # The golden snapshot must be found within the cartfs mount point.
+        try:
+            return result.relative_to(self.cartfs_mount_point)
+        except ValueError:
+            return None
 
     @cached_property
     def cartfs_dir(self) -> Path:
@@ -356,19 +370,19 @@ class Workspace:
         if not self.has_cartfs_dir:
             logger.emit_status("Creating an empty CartFS workspace...")
             self._init_cartfs_workspace_empty()
+            self._is_cartfs_workspace_clean = True
 
     def _init_cartfs_workspace_snapshot(
         self,
-        snapshot_function: Callable[
-            [Path, Path, Path], None
-        ] = snapshotter.snapshot_workspace,
+        snapshot_function: Callable[[Path, Path, Path], None] | None = None,
     ) -> None:
         """Snapshots and links to the workspace from the most recent cartfs directory."""
-        previous_cartfs_workspace_dir_name: Path | None = GOLDEN_SNAPSHOT_DIR
-        if not self._use_golden_snapshot:
-            previous_cartfs_workspace_dir_name = self._find_previous_instance()
-
-        if not previous_cartfs_workspace_dir_name:
+        if snapshot_function is None:
+            snapshot_function = snapshotter.snapshot_workspace
+        snapshot_src = (
+            self._golden_snapshot_dir or self._find_previous_instance()
+        )
+        if not snapshot_src:
             logger.log_info("No previous cartfs workspace directory found.")
             return
 
@@ -377,7 +391,7 @@ class Workspace:
         )
         try:
             snapshot_function(
-                previous_cartfs_workspace_dir_name,
+                snapshot_src,
                 suggested_directory_name,
                 self.cartfs_instance.mount_point,
             )
@@ -389,8 +403,9 @@ class Workspace:
             self.cartfs_instance.mount_point / suggested_directory_name
         )
 
-        # Trigger sync if we initialized from the golden snapshot
-        if previous_cartfs_workspace_dir_name == GOLDEN_SNAPSHOT_DIR:
+        # Trigger Cog workspace sync if we initialized from the golden snapshot.
+        if snapshot_src == self._golden_snapshot_dir:
+            self._is_cartfs_workspace_clean = True
             self._sync_cog_to_golden_revision()
 
     def _sync_cog_to_golden_revision(self) -> None:
@@ -718,20 +733,18 @@ class Workspace:
             cwd=self.cartfs_fuchsia_dir,
         )
 
-        # Restore local changes snapshotted from former workspace. If
-        # snapshotted from golden snapshot, they are in clean state thus we can
-        # skip this.
-        if self._use_golden_snapshot:
-            return
-
-        self._run(
-            [".jiri_root/bin/jiri", "runp", "git", "clean", "-df"],
-            cwd=self.cartfs_fuchsia_dir,
-        )
-        self._run(
-            [".jiri_root/bin/jiri", "runp", "git", "restore", "."],
-            cwd=self.cartfs_fuchsia_dir,
-        )
+        # Clean out any local changes from the CartFS checkout before running `jiri update`.
+        # This isn't necessary if we just initialized from a golden snapshot or just created an
+        # empty workspace.
+        if not self._is_cartfs_workspace_clean:
+            self._run(
+                [".jiri_root/bin/jiri", "runp", "git", "clean", "-df"],
+                cwd=self.cartfs_fuchsia_dir,
+            )
+            self._run(
+                [".jiri_root/bin/jiri", "runp", "git", "restore", "."],
+                cwd=self.cartfs_fuchsia_dir,
+            )
 
     def _is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""

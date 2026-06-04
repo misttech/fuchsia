@@ -429,6 +429,222 @@ class TestWorkspace(unittest.TestCase):
         result = ws._find_previous_instance()
         self.assertIsNone(result)
 
+    def test_golden_snapshot_dir_fuchsia_repo(self) -> None:
+        """Test that _golden_snapshot_dir returns None for fuchsia repo."""
+        ws = workspace.Workspace(self.fs.repo_dir)
+        self.assertIsNone(ws._golden_snapshot_dir)
+
+    def test_golden_snapshot_dir_internal_superproject_missing(self) -> None:
+        """Test that _golden_snapshot_dir returns None if .fuchsia_golden_snapshot missing."""
+        ws = workspace.Workspace(
+            self.fs.repo_dir.parent / "fuchsia-cog-superproject"
+        )
+        self.assertIsNone(ws._golden_snapshot_dir)
+
+    def test_golden_snapshot_dir_outside_mount_point(self) -> None:
+        """Test that _golden_snapshot_dir returns None if resolved path is outside cartfs mount point."""
+        ws = workspace.Workspace(
+            self.fs.repo_dir.parent / "fuchsia-cog-superproject"
+        )
+        outside_dir = self.fs.cog_dir / "outside_golden"
+        outside_dir.mkdir(parents=True, exist_ok=True)
+        (outside_dir / ".integration_commit_hash").touch()
+
+        golden_symlink = self.fs.cartfs_dir / ".fuchsia_golden_snapshot"
+        golden_symlink.symlink_to(outside_dir)
+
+        self.assertIsNone(ws._golden_snapshot_dir)
+
+    def test_golden_snapshot_dir_missing_commit_hash(self) -> None:
+        """Test that _golden_snapshot_dir returns None if .integration_commit_hash is missing."""
+        ws = workspace.Workspace(
+            self.fs.repo_dir.parent / "fuchsia-cog-superproject"
+        )
+        inside_dir = self.fs.cartfs_dir / "golden_snapshot_v1"
+        inside_dir.mkdir(parents=True, exist_ok=True)
+
+        golden_symlink = self.fs.cartfs_dir / ".fuchsia_golden_snapshot"
+        golden_symlink.symlink_to(inside_dir)
+
+        self.assertIsNone(ws._golden_snapshot_dir)
+
+    def test_golden_snapshot_dir_valid(self) -> None:
+        """Test that _golden_snapshot_dir returns relative path for valid golden snapshot."""
+        ws = workspace.Workspace(
+            self.fs.repo_dir.parent / "fuchsia-cog-superproject"
+        )
+        inside_dir = self.fs.cartfs_dir / "golden_snapshot_v1"
+        inside_dir.mkdir(parents=True, exist_ok=True)
+        (inside_dir / ".integration_commit_hash").touch()
+
+        golden_symlink = self.fs.cartfs_dir / ".fuchsia_golden_snapshot"
+        golden_symlink.symlink_to(inside_dir)
+
+        self.assertEqual(ws._golden_snapshot_dir, Path("golden_snapshot_v1"))
+
+    def test_is_cartfs_workspace_clean_initially_false(self) -> None:
+        """Test that _is_cartfs_workspace_clean is initially False."""
+        ws = workspace.Workspace(self.fs.repo_dir)
+        self.assertFalse(ws._is_cartfs_workspace_clean)
+
+    def test_is_cartfs_workspace_clean_after_empty_init(self) -> None:
+        """Test that _is_cartfs_workspace_clean is True after initializing an empty workspace."""
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
+
+        with patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file:
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=False)
+
+        self.assertTrue(ws._is_cartfs_workspace_clean)
+
+    def test_is_cartfs_workspace_clean_after_golden_snapshot_init(self) -> None:
+        """Test that _is_cartfs_workspace_clean is True after initializing from golden snapshot."""
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+
+        def mock_snapshot_workspace(
+            _workspace_to_snapshot_from: Path,
+            _workspace_to_snapshot_to: Path,
+            cartfs_mount_point: Path,
+        ) -> None:
+            (cartfs_mount_point / suggested_directory_name).mkdir()
+
+        ws_repo_dir = self.fs.repo_dir.parent / "fuchsia-cog-superproject"
+        ws_repo_dir.mkdir(parents=True, exist_ok=True)
+        ws = workspace.Workspace(ws_repo_dir)
+        ws.cartfs_instance = cartfs_instance
+
+        with (
+            patch.object(
+                workspace.Workspace,
+                "_golden_snapshot_dir",
+                new_callable=PropertyMock,
+                return_value=Path("golden_snapshot_v1"),
+            ),
+            patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file,
+            patch(
+                "workspace.snapshotter.snapshot_workspace",
+                side_effect=mock_snapshot_workspace,
+            ),
+            patch.object(ws, "_sync_cog_to_golden_revision") as mock_sync,
+        ):
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=True)
+
+            self.assertTrue(ws._is_cartfs_workspace_clean)
+            mock_sync.assert_called_once()
+
+    def test_is_cartfs_workspace_clean_after_previous_snapshot_init(
+        self,
+    ) -> None:
+        """Test that _is_cartfs_workspace_clean is False after initializing from a previous instance."""
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+
+        def mock_snapshot_workspace(
+            _workspace_to_snapshot_from: Path,
+            _workspace_to_snapshot_to: Path,
+            cartfs_mount_point: Path,
+        ) -> None:
+            (cartfs_mount_point / suggested_directory_name).mkdir()
+
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
+
+        with (
+            patch.object(
+                workspace.Workspace,
+                "_golden_snapshot_dir",
+                new_callable=PropertyMock,
+                return_value=None,
+            ),
+            patch.object(
+                ws,
+                "_find_previous_instance",
+                return_value=Path("previous_instance"),
+            ),
+            patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file,
+            patch(
+                "workspace.snapshotter.snapshot_workspace",
+                side_effect=mock_snapshot_workspace,
+            ),
+            patch.object(ws, "_sync_cog_to_golden_revision") as mock_sync,
+        ):
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=True)
+
+            self.assertFalse(ws._is_cartfs_workspace_clean)
+            mock_sync.assert_not_called()
+
+    def test_write_jiri_config_when_clean(self) -> None:
+        """Test that _write_jiri_config does not clean/restore git when _is_cartfs_workspace_clean is True."""
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws._is_cartfs_workspace_clean = True
+        ws.__dict__["cartfs_dir"] = self.fs.cartfs_dir
+
+        with (
+            patch.object(ws, "_create_symlink") as mock_symlink,
+            patch.object(ws, "_run") as mock_run,
+        ):
+            ws._write_jiri_config()
+
+            # Ensure we ran jiri init but not clean/restore
+            mock_run.assert_called_once_with(
+                [".jiri_root/bin/jiri", "init", "-analytics-opt=true"],
+                cwd=ws.cartfs_fuchsia_dir,
+            )
+
+    def test_write_jiri_config_when_dirty(self) -> None:
+        """Test that _write_jiri_config cleans and restores git when _is_cartfs_workspace_clean is False."""
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws._is_cartfs_workspace_clean = False
+        ws.__dict__["cartfs_dir"] = self.fs.cartfs_dir
+
+        with (
+            patch.object(ws, "_create_symlink") as mock_symlink,
+            patch.object(ws, "_run") as mock_run,
+        ):
+            ws._write_jiri_config()
+
+            self.assertEqual(mock_run.call_count, 3)
+            mock_run.assert_any_call(
+                [".jiri_root/bin/jiri", "init", "-analytics-opt=true"],
+                cwd=ws.cartfs_fuchsia_dir,
+            )
+            mock_run.assert_any_call(
+                [".jiri_root/bin/jiri", "runp", "git", "clean", "-df"],
+                cwd=ws.cartfs_fuchsia_dir,
+            )
+            mock_run.assert_any_call(
+                [".jiri_root/bin/jiri", "runp", "git", "restore", "."],
+                cwd=ws.cartfs_fuchsia_dir,
+            )
+
     def test_checkout_cartfs_to_cog_revisions_up_to_date_no_cog_integration(
         self,
     ) -> None:
