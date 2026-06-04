@@ -122,6 +122,9 @@ void BaseCapturer::CleanupFromMixThread() {
 }
 
 void BaseCapturer::BeginShutdown() {
+  if (auto pq = packet_queue(); pq) {
+    pq->Shutdown();
+  }
   context_.threading_model().FidlDomain().ScheduleTask(Cleanup().then(
       [this](fpromise::result<>&) { context_.route_graph().RemoveCapturer(*this); }));
 }
@@ -531,10 +534,8 @@ zx_status_t BaseCapturer::Process() {
         break;
 
       case State::Shutdown:
-        // This should be impossible. If the main message loop thread shut us down, then it should
-        // have shut down our mix timer before  setting the state_ variable to Shutdown.
-        FX_CHECK(false);
-        return ZX_ERR_INTERNAL;
+        FX_LOGS(INFO) << "BaseCapturer::Process woken up while in State::Shutdown";
+        return ZX_OK;
     }
 
     // Hold onto this reference for the duration of this mix operation in case
