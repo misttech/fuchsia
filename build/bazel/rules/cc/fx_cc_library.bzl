@@ -6,6 +6,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 def _fx_cc_library_impl(
         name,
+        configs,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Implementation for the fx_cc_library() macro."""
@@ -25,6 +26,10 @@ fx_cc_library = macro(
     # `cc_library()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_library,
     attrs = {
+        "configs": attr.string_list(
+            doc = "Unused in Bazel, for GN conversion only.",
+            default = [],
+        ),
         "public_configs": attr.string_list(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],

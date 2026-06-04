@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/400557011): Sync this file with the BUILD.gn in the same directory when
-# the target in BUILD.gn no longer contains bazel2gn-incompatible features.
+load("//build/bazel/rules/cc:defs.bzl", "fx_cc_library")
 
+# @bazel2gn:transformer=file_paths
 COMMON_SRCS = [
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/curve25519/curve25519.c",
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/fipsmodule/aes/aes_nohw.c",
@@ -19,51 +19,48 @@ COMMON_SRCS = [
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/poly1305/poly1305.c",
 ]
 
+# @bazel2gn:transformer=file_paths
 ARM64_AND_X64_SRCS = [
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/crypto.c",
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/fipsmodule/ec/p256-nistz.c",
 ]
 
+# @bazel2gn:transformer=file_paths
 X86_64_SRCS = [
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/cpu_intel.c",
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/curve25519/curve25519_64_adx.c",
     "//third_party/rust_crates/forks/ring-0.17.8:crypto/poly1305/poly1305_vec.c",
     "//third_party/rust_crates/forks/ring-0.17.8:third_party/fiat/asm/fiat_curve25519_adx_mul.S",
     "//third_party/rust_crates/forks/ring-0.17.8:third_party/fiat/asm/fiat_curve25519_adx_square.S",
-] + [
-    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/{}-elf.S".format(asm)
-    for asm in [
-        "chacha-x86_64",
-        "aesni-x86_64",
-        "vpaes-x86_64",
-        "x86_64-mont",
-        "x86_64-mont5",
-        "p256-x86_64-asm",
-        "aesni-gcm-x86_64",
-        "ghash-x86_64",
-        "sha256-x86_64",
-        "sha512-x86_64",
-        "chacha20_poly1305_x86_64",
-    ]
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/chacha-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/aesni-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/vpaes-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/x86_64-mont-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/x86_64-mont5-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/p256-x86_64-asm-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/aesni-gcm-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/ghash-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/sha256-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/sha512-x86_64-elf.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/chacha20_poly1305_x86_64-elf.S",
 ]
 
+# @bazel2gn:transformer=file_paths
 AARCH64_SRCS = [
-    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/{}-linux64.S".format(asm)
-    for asm in [
-        "aesv8-armx",
-        "ghashv8-armx",
-        "chacha-armv8",
-        "chacha20_poly1305_armv8",
-        "vpaes-armv8",
-        "armv8-mont",
-        "p256-armv8-asm",
-        "ghash-neon-armv8",
-        "aesv8-gcm-armv8",
-        "sha256-armv8",
-        "sha512-armv8",
-    ]
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/aesv8-armx-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/ghashv8-armx-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/chacha-armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/chacha20_poly1305_armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/vpaes-armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/armv8-mont-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/p256-armv8-asm-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/ghash-neon-armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/aesv8-gcm-armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/sha256-armv8-linux64.S",
+    "//third_party/rust_crates/forks/ring-0.17.8:pregenerated/sha512-armv8-linux64.S",
 ]
 
+# @bazel2gn:transformer=file_paths
 HEADERS = [
     "ring_core_generated/prefix_symbols.h",
     "ring_core_generated/prefix_symbols_asm.h",
@@ -94,16 +91,17 @@ HEADERS = [
     "//third_party/rust_crates/forks/ring-0.17.8:third_party/fiat/curve25519_64_adx.h",
 ]
 
-cc_library(
+fx_cc_library(
     name = "ring-core",
     srcs = COMMON_SRCS + select({
         "@platforms//cpu:x86_64": X86_64_SRCS + ARM64_AND_X64_SRCS,
         "@platforms//cpu:arm64": AARCH64_SRCS + ARM64_AND_X64_SRCS,
         "//conditions:default": [],
     }) + HEADERS,
+    configs = [":ring-config"],
     includes = [
         ".",
         "../../forks/ring-0.17.8/include",
     ],
-    visibility = ["//third_party/rust_crates:__subpackages__"]
+    visibility = ["//third_party/rust_crates:__subpackages__"],
 )

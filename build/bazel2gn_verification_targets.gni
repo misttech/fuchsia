@@ -104,6 +104,7 @@ bazel2gn_verification_targets = [
   "//src/storage/lib/vfs/cpp:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
   "//src/sys/pkg/testing/fake-omaha-client:verify_bazel2gn",
+  "//third_party/rust_crates/compat/ring-0.17.8:verify_bazel2gn",
   "//tools/botanist:verify_bazel2gn",
   "//tools/build/ninjago/buildstats:verify_bazel2gn",
   "//tools/build/ninjago/chrometrace:verify_bazel2gn",
