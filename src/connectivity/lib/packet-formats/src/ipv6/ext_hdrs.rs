@@ -55,7 +55,7 @@ impl<'a> Ipv6ExtensionHeader<'a> {
 pub enum Ipv6ExtensionHeaderData<'a> {
     HopByHopOptions { options: HopByHopOptionsData<'a> },
     Routing { routing_data: RoutingData<'a> },
-    Fragment { fragment_data: FragmentData<'a> },
+    Fragment { fragment_data: FragmentData },
     DestinationOptions { options: DestinationOptionsData<'a> },
 }
 
@@ -302,7 +302,14 @@ impl Ipv6ExtensionHeaderImpl {
         Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader {
             next_header,
             data: Ipv6ExtensionHeaderData::Fragment {
-                fragment_data: FragmentData { bytes: data.take_front(6).unwrap() },
+                // First unwrap is safe because we already know data is at least
+                // 8 bytes long and we've consumed 2 bytes.
+                //
+                // Second unwrap is safe because we're converting from a slice
+                // of length 6 to an array of length 6.
+                fragment_data: FragmentData {
+                    bytes: data.take_front(6).unwrap().try_into().unwrap(),
+                },
             },
         }))
     }
@@ -719,27 +726,24 @@ impl<'a> RoutingData<'a> {
 ///
 /// where Fragment Offset is 13 bits, Res is a reserved 2 bits and M
 /// is a 1 bit flag. Identification is a 32bit value.
-#[derive(Debug)]
-pub struct FragmentData<'a> {
-    bytes: &'a [u8],
+#[derive(Debug, Copy, Clone)]
+pub struct FragmentData {
+    bytes: [u8; 6],
 }
 
-impl<'a> FragmentData<'a> {
+impl FragmentData {
     /// Returns the fragment offset.
     pub fn fragment_offset(&self) -> FragmentOffset {
-        debug_assert!(self.bytes.len() == 6);
         FragmentOffset::new_with_msb(U16::from_bytes([self.bytes[0], self.bytes[1]]).get())
     }
 
     /// Returns the more fragments flags.
     pub fn m_flag(&self) -> bool {
-        debug_assert!(self.bytes.len() == 6);
         (self.bytes[1] & 0x1) == 0x01
     }
 
     /// Returns the identification value.
     pub fn identification(&self) -> u32 {
-        debug_assert!(self.bytes.len() == 6);
         NetworkEndian::read_u32(&self.bytes[2..6])
     }
 }

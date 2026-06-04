@@ -76,8 +76,13 @@ pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitB
                         handle_routing_ext_hdr(core_ctx, device, frame_dst, packet, routing_data);
                 }
                 Ipv6ExtensionHeaderData::Fragment { fragment_data } => {
-                    action =
-                        handle_fragment_ext_hdr(core_ctx, device, frame_dst, packet, fragment_data);
+                    action = handle_fragment_ext_hdr(
+                        core_ctx,
+                        device,
+                        frame_dst,
+                        packet,
+                        *fragment_data,
+                    );
                 }
                 Ipv6ExtensionHeaderData::DestinationOptions { options } => {
                     action = handle_destination_options_ext_hdr(
@@ -159,12 +164,12 @@ fn handle_routing_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>
 }
 
 /// Handles a fragment extension header for a `packet`.
-fn handle_fragment_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
+fn handle_fragment_ext_hdr<CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
     _bindings_ctx: &mut CC,
     _device: &CC::DeviceId,
     _frame_dst: Option<LocalFrameDestination>,
     _packet: &Ipv6Packet<B>,
-    _fragment_data: &FragmentData<'a>,
+    _fragment_data: FragmentData,
 ) -> Ipv6PacketAction {
     Ipv6PacketAction::ProcessFragment
 }
