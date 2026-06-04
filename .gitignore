@@ -302,3 +302,6 @@ lcov.info
 
 # Jetski CLI workspace directory
 /.jetskicli/
+
+# Users may specify their own list of skills to load in the workspace
+/.agents/skills.json
