@@ -355,12 +355,10 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
 
   paddr_t new_kernel_entry;
   {
-    const zbi_header_t* header =
-        reinterpret_cast<const zbi_header_t*>(paddr_to_physmap(new_kernel_addr));
-    if (zbitl::CheckContainerHeader(*header).is_error()) {
-      return ZX_ERR_IO_DATA_INTEGRITY;
-    }
-    zbitl::View zbi{zbitl::StorageFromRawHeader(header)};
+    ktl::span zbi_span{reinterpret_cast<const ktl::byte*>(paddr_to_physmap(new_kernel_addr)),
+                       new_kernel_len};
+    zbitl::View zbi{zbi_span};
+
     if (zbitl::CheckBootable(zbi).is_error()) {
       return ZX_ERR_IO_DATA_INTEGRITY;
     }

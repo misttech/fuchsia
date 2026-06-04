@@ -527,6 +527,57 @@ TEST(Resource, MexecEmptyZbi) {
             zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get()));
 }
 
+// Regression test for https://fxbug.dev/512234306
+// NOTE: If behavior ever regresses, then we expect this
+// test to only fail (crash) on KASAN builds of the kernel.
+TEST(Resource, MexecBadZbiHeaderLength) {
+  zx::unowned_resource system_resource = get_system();
+  if (!system_resource->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  zx::resource mexec_resource;
+  zx_status_t status =
+      zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
+                           nullptr, 0, &mexec_resource);
+  if (status != ZX_OK) {
+    ZXTEST_SKIP("MEXEC resource not available");
+  }
+
+  zbi_header_t container = {
+      .type = ZBI_TYPE_CONTAINER,
+      .length = 0x40000000,  // 1 GB
+      .extra = ZBI_CONTAINER_MAGIC,
+      .flags = ZBI_FLAGS_VERSION,
+      .reserved0 = 0,
+      .reserved1 = 0,
+      .magic = ZBI_ITEM_MAGIC,
+      .crc32 = ZBI_ITEM_NO_CRC32,
+  };
+
+  zbi_header_t item1 = {
+      .type = ZBI_TYPE_DISCARD,
+      .length = 0x3FFFFF00,  // Jump 1 GB
+      .extra = 0,
+      .flags = ZBI_FLAGS_VERSION,
+      .reserved0 = 0,
+      .reserved1 = 0,
+      .magic = ZBI_ITEM_MAGIC,
+      .crc32 = ZBI_ITEM_NO_CRC32,
+  };
+
+  zx::vmo kernel_vmo, bootimage_vmo;
+  const size_t vmo_size = sizeof(container) + sizeof(item1);
+  ASSERT_OK(zx::vmo::create(vmo_size, 0, &kernel_vmo));
+  ASSERT_OK(zx::vmo::create(vmo_size, 0, &bootimage_vmo));
+
+  ASSERT_OK(kernel_vmo.write(&container, 0, sizeof(container)));
+  ASSERT_OK(kernel_vmo.write(&item1, sizeof(container), sizeof(item1)));
+
+  status = zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get());
+  EXPECT_NE(ZX_OK, status);
+}
+
 #if defined(__x86_64__)
 
 // Regression test for https://fxbug.dev/517585028
