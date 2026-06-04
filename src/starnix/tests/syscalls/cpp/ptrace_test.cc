@@ -1162,7 +1162,7 @@ class SoftwareBreakpointTest : public ::testing::Test {
     helper_.ExpectSignal(SIGTRAP);
 #endif
     SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid_, 0, 0));
-    ASSERT_TRUE(helper_.WaitForChildren());
+    EXPECT_TRUE(helper_.WaitForChildren());
 
     ResetSignalReceived();
     RestoreSignalMask();
