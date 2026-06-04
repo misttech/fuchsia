@@ -1,5 +1,5 @@
 ---
-name: cpp-to-rust-porting
+name: cpp-to-rust-coder
 description: >
   Patterns and guidelines for porting Zircon C++ code to Rust, ensuring memory
   layout matching, fallible allocation, intrusive containers, Ghost Token
@@ -29,6 +29,14 @@ developed to support this migration.
 7.  **Locking and Synchronization**: The locking strategies and concurrency
     control protocols must match C++ code and integrate with standard validation
     frameworks (e.g., lockdep).
+8.  **Documentation Parity**: Port and adapt documentation and comments from the
+    C++ version. Retain explanations of algorithms, design constraints, and
+    usage notes, while updating code examples and API names to reflect Rust
+    idioms.
+9.  **Preservation of Named Constants**: Avoid hardcoding values that are
+    defined as named constants in the C++ version. Extract these to equivalent
+    `pub const` definitions in Rust and use them for defaults, limits, or
+    configurations.
 
 ---
 
@@ -196,16 +204,17 @@ generated helper projections like `fields()` or `fields_mut()` to resolve
 borrows.
 
 ```rust
-use pin_init::{pin_init, stack_pin_init};
+use ksync::lock;
+use pin_init::pin_init;
 
-stack_pin_init!(let dev = pin_init!(NetworkDevice {
+pin_init::stack_pin_init!(let dev = pin_init!(NetworkDevice {
     mu <- KMutex::init(),
     tx_packets: 0.into(),
     rx_packets: 0.into(),
 }));
 
 // Pin-initialize the mutex guard
-stack_pin_init!(let mut guard = dev.lock_mu());
+lock!(let mut guard = dev.lock_mu());
 
 // Access individual fields mutably
 *guard.as_mut().tx_packets_mut() += 1;
@@ -214,6 +223,32 @@ stack_pin_init!(let mut guard = dev.lock_mu());
 let fields = guard.as_mut().fields_mut();
 *fields.tx_packets += 1;
 *fields.rx_packets += 1;
+```
+
+#### Custom Raw Locking & RAII Guards:
+When implementing low-level components that require custom raw synchronization
+traits (e.g., `RawLock` with manual `lock()` and `unlock()` calls) rather than
+standard wrappers, **always** define and utilize a lightweight RAII `LockGuard`
+helper. This guarantees the lock is automatically released on any early returns,
+panics, or `?` operator propagations, preventing permanent deadlocks.
+
+```rust
+pub struct LockGuard<'a, L: RawLock> {
+    lock: &'a L,
+}
+
+impl<'a, L: RawLock> LockGuard<'a, L> {
+    pub fn acquire(lock: &'a L) -> Self {
+        lock.lock();
+        Self { lock }
+    }
+}
+
+impl<'a, L: RawLock> Drop for LockGuard<'a, L> {
+    fn drop(&mut self) {
+        self.lock.unlock();
+    }
+}
 ```
 
 ### 5. Intrusive Containers & Reference Counting (`fbl`)
@@ -260,6 +295,10 @@ pub extern "C" fn rust_recycle_process_node(ptr: *mut core::ffi::c_void) {
 #### Intrusive Containers (`DoublyLinkedList`, `SinglyLinkedList`, `WavlTree`):
 - Derive containable traits: `DoublyLinkedListContainable`,
   `SinglyLinkedListContainable`, or `WavlTreeContainable`.
+- **Always prefer using the derive macros** (e.g.,
+  `#[derive(SinglyLinkedListContainable)]`) over manual trait implementations.
+  Manual implementations should be reserved only for cases with custom logic
+  that the macros cannot support.
 - Annotate the intrusive node fields with `#[dll_node]`, `#[sll_node]`, or
   `#[wavl_node]`.
 - For objects participating in multiple containers, use the `tag` attribute to
@@ -310,3 +349,41 @@ immediately after, as they are already zero-initialized.
 Prefer adding `use` directives at the top of the file rather than writing out
 fully qualified namespaces (e.g., `core::ffi::CStr`) for everything explicitly.
 This makes the code more compact and readable.
+
+### 10. Pointer Safety with `NonNull` and `Option<NonNull>`
+
+When porting C++ code that uses raw pointers (`T*` or `const T*`):
+- **Avoid raw pointers** (`*const T` or `*mut T`) in Rust interfaces unless
+  strictly necessary for raw FFI boundaries.
+- **Use `NonNull<T>`** if the pointer must never be null. This provides compiler
+  guarantees and helps document safety.
+- **Use `Option<NonNull<T>>`** if the pointer is optional (can be null). Rust
+  optimizes `Option<NonNull<T>>` to have the exact same memory layout and size
+  as a raw pointer (Null Pointer Optimization), meaning there is no runtime
+  overhead.
+- **Avoid `Cell` for interior mutability of pointers** if the containing object
+  needs to be `Sync` (which is common for shared kernel objects). `Cell` makes
+  the object `!Sync`.
+- Ensure traits and macros reflect this type-safety. For example, setter methods
+  should accept `NonNull<T>` and take `&mut self` if they mutate the origin,
+  allowing safe mutation without `Cell` (e.g., using `Option<NonNull<T>>` directly).
+
+Example:
+```rust
+pub struct Node {
+    value: i32,
+    parent: Option<NonNull<Node>>,
+}
+
+impl Node {
+    // Returns Option<NonNull> because the parent might be null (None)
+    pub fn parent(&self) -> Option<NonNull<Node>> {
+        self.parent
+    }
+
+    // Takes NonNull because the parent must be a valid instance, and &mut self to allow safe mutation
+    pub fn set_parent(&mut self, parent: NonNull<Node>) {
+        self.parent = Some(parent);
+    }
+}
+```
