@@ -790,32 +790,35 @@ macro_rules! indexed_register {
 #[macro_export]
 macro_rules! register_block {
     (
+        $(#[$attr:meta])*
         $vis:vis struct $name:ident <$mmio:ident> {
             $(
-                $(#[$attr:meta])*
+                $(#[$field_attr:meta])*
                 $field_vis:vis $field:ident : $reg_type:ident
             ),* $(,)?
         }
     ) => {
+        $(#[$attr])*
         $vis struct $name<$mmio> {
             pub mmio: $mmio,
         }
 
         impl<$mmio: $crate::Mmio> $name<$mmio> {
             /// Creates a new register block wrapping the given MMIO region.
+            #[allow(dead_code)]
             pub fn new(mmio: $mmio) -> Self {
                 Self { mmio }
             }
 
             $(
-                $(#[$attr])*
                 $crate::paste::paste! {
+                    $(#[$field_attr])*
                     #[allow(dead_code)]
                     $field_vis fn $field(&self) -> <$reg_type as $crate::RegisterReadAccess<$mmio>>::ReadProxy<'_> {
                         <$reg_type as $crate::RegisterReadAccess<$mmio>>::get_read_proxy(&self.mmio)
                     }
 
-                    $(#[$attr])*
+                    $(#[$field_attr])*
                     #[allow(dead_code)]
                     $field_vis fn [<$field _mut>](&mut self) -> <$reg_type as $crate::RegisterWriteAccess<$mmio>>::WriteProxy<'_> {
                         <$reg_type as $crate::RegisterWriteAccess<$mmio>>::get_write_proxy(&mut self.mmio)
@@ -867,6 +870,20 @@ mod tests {
             pub ro_reg: ReadOnlyReg,
             pub wo_reg: WriteOnlyReg,
             pub indexed: TestIndexedReg,
+        }
+    }
+
+    register_block! {
+        /// Will not compile if the attribute below does not pass through.
+        #[expect(dead_code)]
+        pub struct TestBlockWithAttributtes<M> {
+            pub test_reg: TestReg,
+
+            /// Documented field.
+            pub ro_reg: ReadOnlyReg,
+
+            /// Another documented field.
+            pub wo_reg: WriteOnlyReg,
         }
     }
 
