@@ -1226,16 +1226,18 @@ fn send_task_shutdown<O: SendTaskOps>(
         match socket.read_uninit(&mut extra_uninit[..]).map_err(SocketErrorAction::from) {
             Ok(extra_init) => {
                 let read = extra_init.len();
+                let (ptr, len, capacity) = extra_uninit.into_raw_parts();
+
                 // Nothing else should be reading from the socket and we've
                 // allocated exactly how much we expect to see so we can assert
                 // here that the extra vector's length is exactly what we got.
-                assert_eq!(read, rx_buf_available);
+                assert_eq!(read, len);
 
                 // SAFETY:
                 // - MaybeUninit<u8> has the same layout as u8.
                 // - Assertion above guarantees we've initialized the vector to
                 //   its entire length.
-                unsafe { std::mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(extra_uninit) }
+                unsafe { Vec::from_raw_parts(ptr as *mut u8, len, capacity) }
             }
             Err(SocketErrorAction::Wait | SocketErrorAction::Shutdown) => Vec::new(),
         }
