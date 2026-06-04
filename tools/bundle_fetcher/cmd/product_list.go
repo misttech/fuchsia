@@ -149,14 +149,14 @@ func (cmd *productListCmd) executeWithSink(ctx context.Context, sink bundler.Dat
 			return fmt.Errorf("unable to read product bundle metdadata for build_id %s: %s %w", buildID, productBundlePath, err)
 		}
 
-		productNames := flagProductNames
-		if len(productNames) == 0 {
-			buildInfoPath := path.Join(buildsDirName, buildID, buildApiDirName, buildInfoJSONName)
-			productName, err := getProductNameFromJSON(ctx, sink, buildInfoPath)
-			if err != nil {
-				return fmt.Errorf("unable to read build info for build_id %s: %s %w", buildID, buildInfoPath, err)
-			}
-			productNames = []string{productName}
+		buildInfoPath := path.Join(buildsDirName, buildID, buildApiDirName, buildInfoJSONName)
+		productName, err := getProductNameFromJSON(ctx, sink, buildInfoPath)
+		if err != nil {
+			return fmt.Errorf("unable to read build info for build_id %s: %s %w", buildID, buildInfoPath, err)
+		}
+		productNames := slices.Clone(flagProductNames)
+		if !slices.Contains(productNames, productName) {
+			productNames = append(productNames, productName)
 		}
 
 		for _, productBundle := range *productBundles {

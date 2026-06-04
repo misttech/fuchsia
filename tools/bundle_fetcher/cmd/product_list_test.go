@@ -206,6 +206,15 @@ func TestExecuteWithSink(t *testing.T) {
 		"builds/999/product_bundles/another_product.x64/transfer.json": []byte(`{
 			"content": "fake"
 		  }`),
+		"builds/999/build_api/build_info.json": []byte(`{
+			"configurations": [
+			  {
+				"board": "x64",
+				"product": "another_product"
+			  }
+			],
+			"version": "fake_version"
+		  }`),
 	}
 	ctx := context.Background()
 	var tests = []struct {
@@ -240,7 +249,7 @@ func TestExecuteWithSink(t *testing.T) {
 		{
 			name:           "valid_product_bundles_with_arg",
 			buildIDs:       "999",
-			productBundles: "custom_product.x64,another_product.x64",
+			productBundles: "custom_product.x64",
 			expectedOutput: &build.ProductBundlesManifest{
 				build.ProductBundle{
 					Name:                "custom_product.x64",
