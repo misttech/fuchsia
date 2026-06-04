@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mm::MemoryManager;
 use crate::task::{
-    CurrentTask, EventHandler, ThreadGroup, ThreadGroupKey, ThreadGroupLifecycleWaitValue,
+    CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, ThreadGroup, ThreadGroupKey,
     WaitCanceler, Waiter,
 };
 use crate::vfs::{
@@ -19,21 +20,55 @@ use starnix_uapi::vfs::FdEvents;
 pub struct PidFdFileObject {
     /// The key of the task represented by this file.
     tg: ThreadGroupKey,
+
+    // Receives a notification when the tracked process terminates.
+    terminated_event: zx::EventPair,
+}
+
+impl PidFdFileObject {
+    fn get_signals_from_events(events: FdEvents) -> zx::Signals {
+        if events.contains(FdEvents::POLLIN) {
+            zx::Signals::EVENTPAIR_PEER_CLOSED
+        } else {
+            zx::Signals::NONE
+        }
+    }
+
+    fn get_events_from_signals(signals: zx::Signals) -> FdEvents {
+        let mut events = FdEvents::empty();
+
+        if signals.contains(zx::Signals::EVENTPAIR_PEER_CLOSED) {
+            events |= FdEvents::POLLIN;
+        }
+
+        events
+    }
 }
 
 pub fn new_pidfd<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
     proc: &ThreadGroup,
+    mm: &MemoryManager,
     flags: OpenFlags,
 ) -> FileHandle
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
+    // We should really be monitoring the ThreadGroup's drop_notifier instead, but we also need to
+    // ensure that we're not signalling the pidfd until after all memory resources associated with
+    // the process are released. In the current Starnix codebase, there is a 1:1 correspondence
+    // between ThreadGroups (i.e. processes) and MemoryManagers, and the MemoryManager of a process
+    // may outlive the ThreadGroup in some circumstances. Therefore, as a temporary workaround, here
+    // we monitor the MemoryManager's drop_notifier, which is guaranteed to only fire when all the
+    // memory mappings associated with the process have been released. To be revisited once Starnix
+    // implements explicit cleanup of resources on process exit.
+    let terminated_event = mm.drop_notifier.event();
+
     Anon::new_private_file(
         locked,
         current_task,
-        Box::new(PidFdFileObject { tg: proc.into() }),
+        Box::new(PidFdFileObject { tg: proc.into(), terminated_event }),
         flags,
         "[pidfd]",
     )
@@ -54,24 +89,22 @@ impl FileOps for PidFdFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
         waiter: &Waiter,
-        _events: FdEvents,
+        events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        let Some(tg) = self.tg.upgrade() else {
-            waiter.wake_immediately(FdEvents::POLLIN, handler);
-            return None;
+        let signal_handler = SignalHandler {
+            inner: SignalHandlerInner::ZxHandle(PidFdFileObject::get_events_from_signals),
+            event_handler: handler,
+            err_code: None,
         };
-        let state = tg.read();
-        if state.is_exited() {
-            waiter.wake_immediately(FdEvents::POLLIN, handler);
-            None
-        } else {
-            Some(state.lifecycle_waiters.wait_async_value_with_handler(
-                waiter,
-                ThreadGroupLifecycleWaitValue::Exited,
-                handler,
-            ))
-        }
+        let canceler = waiter
+            .wake_on_zircon_signals(
+                &self.terminated_event,
+                PidFdFileObject::get_signals_from_events(events),
+                signal_handler,
+            )
+            .unwrap(); // errors cannot happen unless the kernel is out of memory
+        Some(WaitCanceler::new_port(canceler))
     }
 
     fn query_events(
@@ -80,16 +113,15 @@ impl FileOps for PidFdFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        Ok(match self.tg.upgrade() {
-            Some(tg) => {
-                if tg.read().is_exited() {
-                    FdEvents::POLLIN
-                } else {
-                    FdEvents::empty()
-                }
-            }
-            None => FdEvents::POLLIN,
-        })
+        match self
+            .terminated_event
+            .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+            .to_result()
+        {
+            Err(zx::Status::TIMED_OUT) => Ok(FdEvents::empty()),
+            Ok(zx::Signals::EVENTPAIR_PEER_CLOSED) => Ok(FdEvents::POLLIN),
+            result => unreachable!("unexpected result: {result:?}"),
+        }
     }
 }
 

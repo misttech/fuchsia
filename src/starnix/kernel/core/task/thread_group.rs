@@ -117,8 +117,6 @@ pub enum ThreadGroupLifecycleWaitValue {
     ChildStatus,
     /// Wait for updates to `stopped`.
     Stopped,
-    /// Wait for the thread group to fully exit.
-    Exited,
 }
 
 impl Into<u64> for ThreadGroupLifecycleWaitValue {
@@ -1013,6 +1011,7 @@ impl ThreadGroup {
                 let parent = parent.upgrade();
                 parent.check_orphans(locked, pids);
             }
+
             self.write().set_exited();
         }
     }
@@ -1974,7 +1973,6 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         };
         self.run_state = ThreadGroupRunState::Exited(exit_status);
 
-        self.lifecycle_waiters.notify_value(ThreadGroupLifecycleWaitValue::Exited);
         if let Some(notifier) = self.exit_notifier.take() {
             let _ = notifier.send(());
         }
