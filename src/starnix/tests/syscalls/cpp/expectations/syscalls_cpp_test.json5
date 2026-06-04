@@ -32,6 +32,12 @@
                 "PtraceTest.PtraceAttachesToParentThread",
                 "PtraceTest.ExitKillFromThread",
 
+                // TODO(https://fxbug.dev/519695798): This test fails because signal handlers aren't
+                // executed when the signal is delivered while the thread is blocked in ppoll and
+                // the signal is allowed by the temporary signal mask. However, there is a race
+                // condition that allows it to pass sometimes.
+                "PtraceTest.PtraceAttachesDuringPpoll",
+
                 // TODO(https://fxbug.dev/439799293)
                 // Before marking this as passing, remove the timeout from the test and let the overall
                 // test timeout catch any future failures.
@@ -145,11 +151,6 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
-
-                // This test fails because signal handlers aren't executed when the signal is
-                // delivered while the thread is blocked in ppoll and the signal is allowed by
-                // the temporary signal mask.
-                "PtraceTest.PtraceAttachesDuringPpoll",
 
                 // TODO(https://fxbug.dev/491941184)
                 "SeccompTest.BpfJaWithSourceXRejected",
