@@ -56,6 +56,7 @@ Refer to language-specific guides and examples:
 
 - [Go Migration Guide](references/go_migration.md) (See **Common Pitfalls** for `importpath` and dependency gotchas).
 - [Go Examples](examples/go)
+- [Rust](references/rust_migration.md) (See **Common Pitfalls and Best Practices** section).
 
 **NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or `HOST_OS_CONSTRAINTS` for tools in the IDK) on your Bazel targets. See [target_compatible_with.md](references/target_compatible_with.md).
 
@@ -74,16 +75,16 @@ Update GN references to use the new Bazel host tool target following
 instructions from
 [bazel_root_targets_list.md](references/bazel_root_targets_list.md).
 
-### 4. Sync to GN For Library Targets
+### 4. Sync to GN for Library and Test Targets
 
-Follow the following steps for migrated library targets (e.g. `go_library`,
-`rustc_library`, `source_set`, `static_library`):
+Follow the following steps for migrated library and test targets (e.g. `go_library`,
+`rustc_library`, `rustc_test`, `source_set`, `static_library`):
 
 **CRITICAL `bazel2gn` GOTCHAS:**
 
 - **Prevent Redundant Binary Syncs:** Add `# @bazel2gn:skip` on the line
-  immediately preceding `go_binary_host_tool` in `BUILD.bazel` so it isn't
-  output into GN as a `go_binary`.
+  immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` so it isn't
+  output into GN as a binary.
 - **Missing `verify` Targets:** Every synchronized directory outputs a
   `verify_bazel2gn` target. You MUST manually add
   `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets`
