@@ -247,10 +247,10 @@ TEST_F(PowerLibTest, AddElementSingleDep) {
         parent_token.get_info(ZX_INFO_HANDLE_BASIC, &orig_info, sizeof(zx_info_handle_basic_t),
                               nullptr, nullptr);
         for (fuchsia_power_broker::LevelDependency& dep : result.value().dependencies().value()) {
-          dep.requires_token().get_info(ZX_INFO_HANDLE_BASIC, &copy_info,
-                                        sizeof(zx_info_handle_basic_t), nullptr, nullptr);
-          auto entry = child_to_parent_levels.extract(dep.dependent_level());
-          ASSERT_EQ(entry.mapped(), dep.requires_level_by_preference().front());
+          dep.requires_token()->get_info(ZX_INFO_HANDLE_BASIC, &copy_info,
+                                         sizeof(zx_info_handle_basic_t), nullptr, nullptr);
+          auto entry = child_to_parent_levels.extract(dep.dependent_level().value());
+          ASSERT_EQ(entry.mapped(), dep.requires_level_by_preference()->front());
           ASSERT_EQ(copy_info.koid, orig_info.koid);
         }
         ASSERT_EQ(child_to_parent_levels.size(), static_cast<size_t>(0));
@@ -428,18 +428,18 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
         parent_token_two.get_info(ZX_INFO_HANDLE_BASIC, &parent_two_info,
                                   sizeof(zx_info_handle_basic_t), nullptr, nullptr);
         for (fuchsia_power_broker::LevelDependency& dep : result.value().dependencies().value()) {
-          dep.requires_token().get_info(ZX_INFO_HANDLE_BASIC, &copy_info,
-                                        sizeof(zx_info_handle_basic_t), nullptr, nullptr);
+          dep.requires_token()->get_info(ZX_INFO_HANDLE_BASIC, &copy_info,
+                                         sizeof(zx_info_handle_basic_t), nullptr, nullptr);
           // Since each dependency has a different dependent level, use the dependent
           // level to differentiate which access token to check against. Delightfully
           // basic since we know we only have two dependencies.
-          if (dep.dependent_level() == dep_one_level) {
+          if (dep.dependent_level().value() == dep_one_level) {
             ASSERT_EQ(copy_info.koid, parent_one_info.koid);
           } else {
             ASSERT_EQ(copy_info.koid, parent_two_info.koid);
           }
-          auto entry = child_to_parent_levels.extract(dep.dependent_level());
-          ASSERT_EQ(entry.mapped(), dep.requires_level_by_preference().front());
+          auto entry = child_to_parent_levels.extract(dep.dependent_level().value());
+          ASSERT_EQ(entry.mapped(), dep.requires_level_by_preference()->front());
         }
 
         ASSERT_EQ(child_to_parent_levels.size(), static_cast<size_t>(0));
@@ -502,9 +502,9 @@ TEST_F(PowerLibTest, LevelDependencyWithSingleParent) {
 
   // Check that the translated dependencies match the ones we put in
   for (auto& dep : deps) {
-    uint8_t parent_level =
-        static_cast<uint8_t>(child_to_parent_levels.extract(dep.dependent_level()).mapped());
-    ASSERT_EQ(dep.requires_level_by_preference().front(), parent_level);
+    uint8_t parent_level = static_cast<uint8_t>(
+        child_to_parent_levels.extract(dep.dependent_level().value()).mapped());
+    ASSERT_EQ(dep.requires_level_by_preference()->front(), parent_level);
   }
 
   // Check that we took out all the mappings
@@ -917,10 +917,10 @@ TEST_F(PowerLibTest, ApplyPowerConfiguration) {
 
               // Get handle info for the dependency tokens sent to the topology server
               zx_info_handle_basic_t received_token_one_info, received_token_two_info;
-              received_deps->at(0).requires_token().get_info(
+              received_deps->at(0).requires_token()->get_info(
                   ZX_INFO_HANDLE_BASIC, &received_token_one_info, sizeof(zx_info_handle_basic_t),
                   nullptr, nullptr);
-              received_deps->at(1).requires_token().get_info(
+              received_deps->at(1).requires_token()->get_info(
                   ZX_INFO_HANDLE_BASIC, &received_token_two_info, sizeof(zx_info_handle_basic_t),
                   nullptr, nullptr);
 

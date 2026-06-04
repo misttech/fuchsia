@@ -4,14 +4,13 @@
 
 use anyhow::{Context, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use power_broker_client::PowerElementContext;
 use rand::Rng;
 use rand::distr::Alphanumeric;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync,
-};
 
 /// A power element representing the session.
 ///
@@ -78,11 +77,12 @@ impl PowerElement {
             )
             .initial_current_level(POWER_ON_LEVEL)
             .dependencies(vec![fbroker::LevelDependency {
-                dependent_level: POWER_ON_LEVEL,
-                requires_token: application_activity_token,
-                requires_level_by_preference: vec![
+                dependent_level: Some(POWER_ON_LEVEL),
+                requires_token: Some(application_activity_token),
+                requires_level_by_preference: Some(vec![
                     fsystem::ApplicationActivityLevel::Active.into_primitive(),
-                ],
+                ]),
+                ..Default::default()
             }])
             .build()
             .await

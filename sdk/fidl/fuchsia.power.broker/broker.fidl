@@ -43,14 +43,14 @@ alias DependencyToken = zx.Handle:EVENT;
 /// The dependent Element's identity is not specified in this struct and must
 /// be specified as a separate argument in a request or be inferred, perhaps
 /// because a channel is scoped to the dependent element.
-type LevelDependency = resource struct {
+type LevelDependency = resource table {
     /// The power element level that this `LevelDependency` struct declaration
     /// supports. This is level that has a dependency on
     /// `requires_level_by_preference`.
-    dependent_level PowerLevel;
+    1: dependent_level PowerLevel;
     /// Must supply a token registered via the RegisterDependencyToken call of
     /// the required element's ElementControl protocol.
-    requires_token DependencyToken;
+    2: requires_token DependencyToken;
     /// A list of levels in decreasing preferential order that power broker
     /// should attempt to make required for this dependency to be satisfied.
     /// The first level in list that is a valid level will become the required
@@ -59,7 +59,10 @@ type LevelDependency = resource struct {
     /// Platform clients can use this list to keep backwards compatibility with
     /// dependencies by providing multiple levels that the dependency may have
     /// implemented in older API levels.
-    requires_level_by_preference vector<PowerLevel>:MAX_VALID_POWER_LEVELS;
+    3: requires_level_by_preference vector<PowerLevel>:MAX_VALID_POWER_LEVELS;
+    /// If true, this dependency will be automatically removed if/when the
+    /// required element is removed.
+    4: remove_with_required_element bool;
 };
 
 /// This is the primary initial protocol used by Power Element Owners to

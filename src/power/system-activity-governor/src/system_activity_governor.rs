@@ -908,11 +908,12 @@ impl SystemActivityGovernor {
             aa_element_runner_client,
         )
         .dependencies(vec![fbroker::LevelDependency {
-            dependent_level: ApplicationActivityLevel::Active.into_primitive(),
-            requires_token: execution_state
-                .assertive_dependency_token()
-                .expect("token not registered"),
-            requires_level_by_preference: vec![ExecutionStateLevel::Active.into_primitive()],
+            dependent_level: Some(ApplicationActivityLevel::Active.into_primitive()),
+            requires_token: Some(
+                execution_state.assertive_dependency_token().expect("token not registered"),
+            ),
+            requires_level_by_preference: Some(vec![ExecutionStateLevel::Active.into_primitive()]),
+            ..Default::default()
         }])
         .build()
         .await
@@ -949,11 +950,14 @@ impl SystemActivityGovernor {
                 bc_element_runner_client,
             )
             .dependencies(vec![fbroker::LevelDependency {
-                dependent_level: BootControlLevel::Active.into(),
-                requires_token: execution_state
-                    .assertive_dependency_token()
-                    .expect("token not registered"),
-                requires_level_by_preference: vec![ExecutionStateLevel::Active.into_primitive()],
+                dependent_level: Some(BootControlLevel::Active.into()),
+                requires_token: Some(
+                    execution_state.assertive_dependency_token().expect("token not registered"),
+                ),
+                requires_level_by_preference: Some(vec![
+                    ExecutionStateLevel::Active.into_primitive(),
+                ]),
+                ..Default::default()
             }])
             .build()
             .await

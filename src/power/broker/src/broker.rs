@@ -870,6 +870,14 @@ impl Broker {
             }
         }
         self.in_transition.remove(&element_id);
+
+        // Remove all removable dependencies that require this element.
+        let removable_deps =
+            self.catalog.topology.get_removable_dependencies_for_required_element(*element_id);
+        for dep in removable_deps {
+            self.remove_dependency_and_update_leases(&dep);
+        }
+
         self.update_current_level(*element_id, minimum_level);
         // Remove all references of the element from the topology.
         let maybe_element = self.catalog.topology.remove_element(*element_id);
@@ -886,6 +894,34 @@ impl Broker {
         self.lease_counter.remove(&element_id);
     }
 
+    fn remove_dependency_and_update_leases(&mut self, dep: &Dependency) {
+        if let Ok(()) = self.catalog.topology.remove_dependency(dep) {
+            let mut claims_to_drop: Vec<Claim> = Vec::new();
+            for claim in self.catalog.claims.pending.claims.values() {
+                if &claim.dependency == dep {
+                    claims_to_drop.push(claim.clone());
+                }
+            }
+            for claim in self.catalog.claims.activated.claims.values() {
+                if &claim.dependency == dep {
+                    claims_to_drop.push(claim.clone());
+                }
+            }
+            for claim in &claims_to_drop {
+                self.catalog.claims.drop_claim(claim.id);
+            }
+            self.update_required_levels(
+                [dep.requires.element_id].into_iter(),
+                &mut EagerInspectWriter,
+            );
+            let affected_leases: HashSet<LeaseID> =
+                claims_to_drop.iter().map(|c| c.lease_id).collect();
+            for lease_id in affected_leases {
+                self.update_lease_status(lease_id);
+            }
+        }
+    }
+
     pub fn get_level_index(
         &self,
         element_id: ElementID,
@@ -899,8 +935,9 @@ impl Broker {
         &self,
         dependency: &fpb::LevelDependency,
     ) -> Result<(ElementID, IndexedPowerLevel), ModifyDependencyError> {
-        let Some(requires_cred) = self.lookup_credentials(&Token::from(&dependency.requires_token))
-        else {
+        let requires_token =
+            dependency.requires_token.as_ref().ok_or(ModifyDependencyError::Invalid)?;
+        let Some(requires_cred) = self.lookup_credentials(&Token::from(requires_token)) else {
             return Err(ModifyDependencyError::NotAuthorized);
         };
         if !requires_cred.contains(Permissions::MODIFY_DEPENDENT) {
@@ -910,6 +947,8 @@ impl Broker {
 
         let requires_level = dependency
             .requires_level_by_preference
+            .as_ref()
+            .ok_or(ModifyDependencyError::Invalid)?
             .iter()
             .find_map(|l| self.catalog.topology.get_level_index(requires_element_id.clone(), l))
             .ok_or(ModifyDependencyError::Invalid)?
@@ -928,7 +967,9 @@ impl Broker {
         let (requires_element_id, requires_level) = self.lookup_dependency_requires(dependency)?;
 
         let current_required = self.get_required_level(&element_id);
-        let dep_level_idx = self.get_level_index(element_id, &dependency.dependent_level);
+        let dependent_level =
+            dependency.dependent_level.as_ref().ok_or(ModifyDependencyError::Invalid)?;
+        let dep_level_idx = self.get_level_index(element_id, dependent_level);
 
         let need_provisional_lease =
             dep_level_idx.map(|dep| current_required.satisfies(dep.clone())).unwrap_or(false);
@@ -958,10 +999,12 @@ impl Broker {
         I: InspectAddDependency,
     {
         let (requires_element_id, requires_level) = self.lookup_dependency_requires(&dependency)?;
+        let dependent_level_val =
+            dependency.dependent_level.as_ref().ok_or(ModifyDependencyError::Invalid)?;
         let dependent_level = self
             .catalog
             .topology
-            .get_level_index(element_id, &dependency.dependent_level)
+            .get_level_index(element_id, dependent_level_val)
             .ok_or(ModifyDependencyError::Invalid)?;
         let dep = Dependency {
             dependent: ElementLevel { element_id: element_id, level: *dependent_level },
@@ -970,7 +1013,9 @@ impl Broker {
                 level: requires_level,
             },
         };
-        self.catalog.topology.add_dependency(&dep, inspect_writer)?;
+        let on_required_element_removal =
+            OnRequiredElementRemoval::from_level_dependency(dependency);
+        self.catalog.topology.add_dependency(&dep, on_required_element_removal, inspect_writer)?;
         self.update_leases_for_dependency(dep);
         Ok(())
     }
@@ -1278,6 +1323,7 @@ impl Catalog {
                         },
                         requires,
                     },
+                    OnRequiredElementRemoval::MakeUnsatisfiable,
                     &mut inspect_writer,
                 )
                 .expect("Failed to attach dependency to lease element");
@@ -2250,11 +2296,14 @@ mod tests {
             OFF.level,
             BINARY_POWER_LEVELS.to_vec(),
             vec![fpb::LevelDependency {
-                dependent_level: ON.level,
-                requires_token: never_registered_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed"),
-                requires_level_by_preference: vec![ON.level],
+                dependent_level: Some(ON.level),
+                requires_token: Some(
+                    never_registered_token
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                        .expect("dup failed"),
+                ),
+                requires_level_by_preference: Some(vec![ON.level]),
+                ..Default::default()
             }],
         );
         assert!(matches!(add_element_not_authorized_res, Err(AddElementError::NotAuthorized)));
@@ -2266,11 +2315,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_mithril
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_mithril
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -2367,11 +2419,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_mithril
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_mithril
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             );
         assert!(matches!(add_element_not_authorized_res, Err(AddElementError::NotAuthorized)));
@@ -2631,18 +2686,24 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: parent1_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            parent1_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: parent2_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            parent2_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                 ],
             )
@@ -2967,20 +3028,22 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: parent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
         let dep = fpb::LevelDependency {
-            dependent_level: ON.level,
-            requires_token: grandparent_token
-                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                .expect("dup failed"),
-            requires_level_by_preference: vec![ON.level],
+            dependent_level: Some(ON.level),
+            requires_token: Some(
+                grandparent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+            ),
+            requires_level_by_preference: Some(vec![ON.level]),
+            ..Default::default()
         };
         broker.add_dependency(parent, dep, &mut EagerInspectWriter).expect("add_dependency failed");
         let mut broker_status = BrokerStatusMatcher::new();
@@ -3081,18 +3144,24 @@ mod tests {
                 vec![0, 30, 50],
                 vec![
                     fpb::LevelDependency {
-                        dependent_level: 50,
-                        requires_token: grandparent_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![200],
+                        dependent_level: Some(50),
+                        requires_token: Some(
+                            grandparent_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![200]),
+                        ..Default::default()
                     },
                     fpb::LevelDependency {
-                        dependent_level: 30,
-                        requires_token: grandparent_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![90],
+                        dependent_level: Some(30),
+                        requires_token: Some(
+                            grandparent_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![90]),
+                        ..Default::default()
                     },
                 ],
             )
@@ -3109,11 +3178,12 @@ mod tests {
                 0,
                 vec![0, 5],
                 vec![fpb::LevelDependency {
-                    dependent_level: 5,
-                    requires_token: parent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![50],
+                    dependent_level: Some(5),
+                    requires_token: Some(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![50]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3123,11 +3193,12 @@ mod tests {
                 0,
                 vec![0, 3],
                 vec![fpb::LevelDependency {
-                    dependent_level: 3,
-                    requires_token: parent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![30],
+                    dependent_level: Some(3),
+                    requires_token: Some(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![30]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3277,11 +3348,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: grandparent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        grandparent_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3297,11 +3371,12 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: parent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3311,11 +3386,12 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: parent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3443,11 +3519,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: element_c_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        element_c_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3466,11 +3545,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: element_b_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        element_b_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3480,11 +3562,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: element_c_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        element_c_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3504,11 +3589,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: element_d_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        element_d_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3647,11 +3735,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: grandparent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        grandparent_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3668,11 +3759,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: grandparent_token
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        grandparent_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3689,18 +3783,24 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: parent1_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            parent1_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: parent2_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            parent2_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                 ],
             )
@@ -3818,20 +3918,26 @@ mod tests {
                 v012_u8.clone(),
                 vec![
                     fpb::LevelDependency {
-                        dependent_level: 1,
-                        requires_token: token_b
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                        requires_level_by_preference: vec![1],
+                        dependent_level: Some(1),
+                        requires_token: Some(
+                            token_b
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                                .into(),
+                        ),
+                        requires_level_by_preference: Some(vec![1]),
+                        ..Default::default()
                     },
                     fpb::LevelDependency {
-                        dependent_level: 2,
-                        requires_token: token_c
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                        requires_level_by_preference: vec![1],
+                        dependent_level: Some(2),
+                        requires_token: Some(
+                            token_c
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                                .into(),
+                        ),
+                        requires_level_by_preference: Some(vec![1]),
+                        ..Default::default()
                     },
                 ],
             )
@@ -3937,12 +4043,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_a
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_a
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -3952,12 +4061,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_a
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_a
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4090,11 +4202,14 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_mithril
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed"),
-                    requires_level_by_preference: vec![40, 30, ON.level, 20],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_mithril
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed"),
+                    ),
+                    requires_level_by_preference: Some(vec![40, 30, ON.level, 20]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4235,20 +4350,26 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: token_gp1
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            token_gp1
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                                .into(),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                     fpb::LevelDependency {
-                        dependent_level: ON.level,
-                        requires_token: token_gp2
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                        requires_level_by_preference: vec![ON.level],
+                        dependent_level: Some(ON.level),
+                        requires_token: Some(
+                            token_gp2
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                                .into(),
+                        ),
+                        requires_level_by_preference: Some(vec![ON.level]),
+                        ..Default::default()
                     },
                 ],
             )
@@ -4265,12 +4386,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_x
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_x
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4286,12 +4410,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_x
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_x
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4307,12 +4434,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_p1
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_p1
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4322,12 +4452,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_p1
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_p1
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4337,12 +4470,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_p2
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_p2
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4352,12 +4488,15 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_p2
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .expect("dup failed")
-                        .into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(
+                        token_p2
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .expect("dup failed")
+                            .into(),
+                    ),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .expect("add_element failed");
@@ -4525,9 +4664,10 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_a.into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_a.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .unwrap();
@@ -4555,9 +4695,10 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependent_level: ON.level,
-                    requires_token: token_d.into(),
-                    requires_level_by_preference: vec![ON.level],
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_d.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
                 }],
             )
             .unwrap();
@@ -4734,5 +4875,63 @@ mod tests {
         assert_eq!(all_claims.len(), 1);
         assert_eq!(all_claims[0].dependency.requires.element_id, element_a);
         assert_eq!(all_claims[0].dependency.requires.level, level_1);
+    }
+
+    #[fuchsia::test]
+    fn test_removable_dependency() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let token_a = DependencyToken::create();
+        let element_a = broker.add_element("A", 0, vec![0, 1], vec![]).expect("add_element failed");
+        broker
+            .register_dependency_token(
+                element_a,
+                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
+            )
+            .expect("register failed");
+
+        let dep = fpb::LevelDependency {
+            dependent_level: Some(1),
+            requires_token: Some(
+                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+            ),
+            requires_level_by_preference: Some(vec![1]),
+            remove_with_required_element: Some(true),
+            ..Default::default()
+        };
+
+        let element_b =
+            broker.add_element("B", 0, vec![0, 1], vec![dep]).expect("add_element failed");
+
+        let lease = broker
+            .acquire_lease(
+                element_b,
+                IndexedPowerLevel { level: 1, index: 1 },
+                zx::Koid::from_raw(1),
+            )
+            .expect("acquire failed");
+
+        // B's lease is pending A(1) being satisfied. B's required level is still 0.
+        assert_eq!(broker.get_required_level(&element_b).unwrap().level, 0);
+        // A's required level has been raised to 1 due to B's dependency.
+        assert_eq!(broker.get_required_level(&element_a).unwrap().level, 1);
+
+        // Transition A to 1.
+        broker.update_current_level(element_a, IndexedPowerLevel { level: 1, index: 1 });
+
+        // Now B's dependency is satisfied, so B's required level is 1.
+        assert_eq!(broker.get_required_level(&element_b).unwrap().level, 1);
+
+        // Transition B to 1 to satisfy the lease.
+        broker.update_current_level(element_b, IndexedPowerLevel { level: 1, index: 1 });
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+
+        broker.remove_element(&element_a);
+
+        // Since the dependency was removable, B's required level should not be dropped to minimum/unsatisfiable.
+        assert_eq!(broker.get_required_level(&element_b).unwrap().level, 1);
+        // The lease should still be satisfied.
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
     }
 }

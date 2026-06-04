@@ -165,13 +165,16 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependent_level: BinaryPowerLevel::On.into_primitive(),
-                            requires_token: parent_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                            requires_level_by_preference: vec![
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
                                 BinaryPowerLevel::On.into_primitive()
-                            ],
+                            ]),
+                            ..Default::default()
                         }]),
                         lessor_channel: Some(lessor_server),
                         element_control: Some(child_element_control_server),
@@ -441,11 +444,14 @@ mod tests {
         // Since Dependent is only at 1, this should not raise Required's level from 0.
         executor.run_singlethreaded(async {
             dependent_control
-                .add_dependency(
-                    2,
-                    required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                    &[2],
-                )
+                .add_dependency(fpb::LevelDependency {
+                    dependent_level: Some(2),
+                    requires_token: Some(
+                        required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    ),
+                    requires_level_by_preference: Some(vec![2]),
+                    ..Default::default()
+                })
                 .await
                 .unwrap()
                 .unwrap();
@@ -461,11 +467,12 @@ mod tests {
         // Case 2: Used Dependency.
         // Now, add dependency that WILL be used: Dependent at 1 requires Required at 1.
         // Since Dependent is already at level 1, this dependency becomes ACTIVE immediately!
-        let mut add_dep_fut = Box::pin(dependent_control.add_dependency(
-            1,
-            required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            &[1],
-        ));
+        let mut add_dep_fut = Box::pin(dependent_control.add_dependency(fpb::LevelDependency {
+            dependent_level: Some(1),
+            requires_token: Some(required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            requires_level_by_preference: Some(vec![1]),
+            ..Default::default()
+        }));
 
         // add_dependency call should be blocked because it is waiting for Required to go to 1.
         assert!(executor.run_until_stalled(&mut add_dep_fut).is_pending());
@@ -720,13 +727,16 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependent_level: BinaryPowerLevel::On.into_primitive(),
-                            requires_token: element_a_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                            requires_level_by_preference: vec![
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                element_a_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
                                 BinaryPowerLevel::On.into_primitive()
-                            ],
+                            ]),
+                            ..Default::default()
                         }]),
                         element_control: Some(element_control_server),
                         element_runner: Some(element_b_runner_client),
@@ -765,13 +775,16 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependent_level: BinaryPowerLevel::On.into_primitive(),
-                            requires_token: element_b_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                            requires_level_by_preference: vec![
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                element_b_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
                                 BinaryPowerLevel::On.into_primitive()
-                            ],
+                            ]),
+                            ..Default::default()
                         }]),
                         lessor_channel: Some(lessor_server),
                         element_control: Some(element_control_server),
@@ -1093,18 +1106,24 @@ mod tests {
                         valid_levels: Some(vec![0, 30, 50]),
                         dependencies: Some(vec![
                             LevelDependency {
-                                dependent_level: 50,
-                                requires_token: grandparent_token
-                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                    .expect("dup failed"),
-                                requires_level_by_preference: vec![200],
+                                dependent_level: Some(50),
+                                requires_token: Some(
+                                    grandparent_token
+                                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("dup failed")
+                                ),
+                                requires_level_by_preference: Some(vec![200]),
+                                ..Default::default()
                             },
                             LevelDependency {
-                                dependent_level: 30,
-                                requires_token: grandparent_token
-                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                    .expect("dup failed"),
-                                requires_level_by_preference: vec![90],
+                                dependent_level: Some(30),
+                                requires_token: Some(
+                                    grandparent_token
+                                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                        .expect("dup failed")
+                                ),
+                                requires_level_by_preference: Some(vec![90]),
+                                ..Default::default()
                             },
                         ]),
                         element_control: Some(element_control_server),
@@ -1142,11 +1161,14 @@ mod tests {
                         initial_current_level: Some(0),
                         valid_levels: Some(vec![0, 5]),
                         dependencies: Some(vec![LevelDependency {
-                            dependent_level: 5,
-                            requires_token: parent_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                            requires_level_by_preference: vec![50],
+                            dependent_level: Some(5),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![50]),
+                            ..Default::default()
                         }]),
                         lessor_channel: Some(lessor_server),
                         element_control: Some(element_control_server),
@@ -1176,11 +1198,14 @@ mod tests {
                         initial_current_level: Some(0),
                         valid_levels: Some(vec![0, 3]),
                         dependencies: Some(vec![LevelDependency {
-                            dependent_level: 3,
-                            requires_token: parent_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                            requires_level_by_preference: vec![30],
+                            dependent_level: Some(3),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![30]),
+                            ..Default::default()
                         }]),
                         lessor_channel: Some(lessor_server),
                         element_control: Some(element_control_server),
@@ -1543,9 +1568,12 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependent_level: BinaryPowerLevel::On.into_primitive(),
-                        requires_token: zx::Event::create(),
-                        requires_level_by_preference: vec![BinaryPowerLevel::On.into_primitive()],
+                        dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                        requires_token: Some(zx::Event::create()),
+                        requires_level_by_preference: Some(vec![
+                            BinaryPowerLevel::On.into_primitive()
+                        ]),
+                        ..Default::default()
                     }]),
                     element_runner: Some(element_runner_client),
                     ..Default::default()
@@ -1563,11 +1591,14 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependent_level: BinaryPowerLevel::On.into_primitive(),
-                        requires_token: earth_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![2],
+                        dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                        requires_token: Some(
+                            earth_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                        ),
+                        requires_level_by_preference: Some(vec![2]),
+                        ..Default::default()
                     }]),
                     element_runner: Some(element_runner_client),
                     ..Default::default()
@@ -1585,11 +1616,16 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependent_level: BinaryPowerLevel::On.into_primitive(),
-                        requires_token: earth_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                        requires_level_by_preference: vec![BinaryPowerLevel::On.into_primitive()],
+                        dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                        requires_token: Some(
+                            earth_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed")
+                        ),
+                        requires_level_by_preference: Some(vec![
+                            BinaryPowerLevel::On.into_primitive()
+                        ]),
+                        ..Default::default()
                     }]),
                     element_runner: Some(element_runner_client),
                     ..Default::default()
@@ -1786,10 +1822,12 @@ mod tests {
             initial_current_level: Some(BinaryPowerLevel::On.into_primitive()), // Initialized to ON
             valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
             dependencies: Some(vec![LevelDependency {
-                dependent_level: BinaryPowerLevel::On.into_primitive(),
-                requires_token:
+                dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                requires_token: Some(
                     element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                requires_level_by_preference: vec![BinaryPowerLevel::On.into_primitive()],
+                ),
+                requires_level_by_preference: Some(vec![BinaryPowerLevel::On.into_primitive()]),
+                ..Default::default()
             }]),
             element_control: Some(element_a_control_server),
             element_runner: Some(element_a_runner_client),
@@ -1857,6 +1895,369 @@ mod tests {
             )
             .await
             .unwrap();
+        });
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_dependency_removal() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // Parent P:
+        let parent_token = zx::Event::create();
+        let (parent_element_runner_client, parent_element_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut parent_element_runner = parent_element_runner_server.into_stream();
+        let (parent_element_control, parent_element_control_server) =
+            create_proxy::<ElementControlMarker>();
+        executor.run_singlethreaded(async {
+            assert!(
+                topology
+                    .add_element(ElementSchema {
+                        element_name: Some("P".into()),
+                        initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                        valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                        element_control: Some(parent_element_control_server),
+                        element_runner: Some(parent_element_runner_client),
+                        ..Default::default()
+                    })
+                    .await
+                    .is_ok()
+            );
+            assert!(
+                parent_element_control
+                    .register_dependency_token(
+                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                    )
+                    .await
+                    .is_ok()
+            );
+        });
+        let parent_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            parent_element_control.open_status_channel(server)?;
+            client
+        };
+
+        // Child Removable (removable: remove_with_required_element = true):
+        let (child_removable_element_runner_client, child_removable_element_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut child_removable_element_runner =
+            child_removable_element_runner_server.into_stream();
+        let (child_removable_lessor, lessor_removable_server) = create_proxy::<LessorMarker>();
+        let (child_removable_element_control, child_removable_element_control_server) =
+            create_proxy::<ElementControlMarker>();
+        executor.run_singlethreaded(async {
+            assert!(
+                topology
+                    .add_element(ElementSchema {
+                        element_name: Some("child_removable".into()),
+                        initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                        valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                        dependencies: Some(vec![LevelDependency {
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
+                                BinaryPowerLevel::On.into_primitive()
+                            ]),
+                            remove_with_required_element: Some(true),
+                            ..Default::default()
+                        }]),
+                        lessor_channel: Some(lessor_removable_server),
+                        element_control: Some(child_removable_element_control_server),
+                        element_runner: Some(child_removable_element_runner_client),
+                        ..Default::default()
+                    })
+                    .await
+                    .is_ok()
+            );
+        });
+        let child_removable_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            child_removable_element_control.open_status_channel(server)?;
+            client
+        };
+
+        // Child Unremovable (non-removable: remove_with_required_element = false):
+        let (child_unremovable_element_runner_client, child_unremovable_element_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut child_unremovable_element_runner =
+            child_unremovable_element_runner_server.into_stream();
+        let (child_unremovable_lessor, lessor_unremovable_server) = create_proxy::<LessorMarker>();
+        let (child_unremovable_element_control, child_unremovable_element_control_server) =
+            create_proxy::<ElementControlMarker>();
+        executor.run_singlethreaded(async {
+            assert!(
+                topology
+                    .add_element(ElementSchema {
+                        element_name: Some("child_unremovable".into()),
+                        initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                        valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                        dependencies: Some(vec![LevelDependency {
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
+                                BinaryPowerLevel::On.into_primitive()
+                            ]),
+                            remove_with_required_element: Some(false),
+                            ..Default::default()
+                        }]),
+                        lessor_channel: Some(lessor_unremovable_server),
+                        element_control: Some(child_unremovable_element_control_server),
+                        element_runner: Some(child_unremovable_element_runner_client),
+                        ..Default::default()
+                    })
+                    .await
+                    .is_ok()
+            );
+        });
+        let child_unremovable_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            child_unremovable_element_control.open_status_channel(server)?;
+            client
+        };
+
+        // Child Default Unremovable (non-removable by default: remove_with_required_element = None):
+        let (
+            child_default_unremovable_element_runner_client,
+            child_default_unremovable_element_runner_server,
+        ) = create_endpoints::<ElementRunnerMarker>();
+        let mut child_default_unremovable_element_runner =
+            child_default_unremovable_element_runner_server.into_stream();
+        let (child_default_unremovable_lessor, lessor_default_unremovable_server) =
+            create_proxy::<LessorMarker>();
+        let (
+            child_default_unremovable_element_control,
+            child_default_unremovable_element_control_server,
+        ) = create_proxy::<ElementControlMarker>();
+        executor.run_singlethreaded(async {
+            assert!(
+                topology
+                    .add_element(ElementSchema {
+                        element_name: Some("child_default_unremovable".into()),
+                        initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                        valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                        dependencies: Some(vec![LevelDependency {
+                            dependent_level: Some(BinaryPowerLevel::On.into_primitive()),
+                            requires_token: Some(
+                                parent_token
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .expect("dup failed")
+                            ),
+                            requires_level_by_preference: Some(vec![
+                                BinaryPowerLevel::On.into_primitive()
+                            ]),
+                            remove_with_required_element: None,
+                            ..Default::default()
+                        }]),
+                        lessor_channel: Some(lessor_default_unremovable_server),
+                        element_control: Some(child_default_unremovable_element_control_server),
+                        element_runner: Some(child_default_unremovable_element_runner_client),
+                        ..Default::default()
+                    })
+                    .await
+                    .is_ok()
+            );
+        });
+        let child_default_unremovable_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            child_default_unremovable_element_control.open_status_channel(server)?;
+            client
+        };
+
+        // Set initial levels to OFF
+        executor.run_singlethreaded(async {
+            let parent_current = assert_set_level_required_eq_and_return_responder(
+                parent_element_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            let child_removable_current = assert_set_level_required_eq_and_return_responder(
+                child_removable_element_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            let child_unremovable_current = assert_set_level_required_eq_and_return_responder(
+                child_unremovable_element_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            let child_default_unremovable_current =
+                assert_set_level_required_eq_and_return_responder(
+                    child_default_unremovable_element_runner.try_next(),
+                    BinaryPowerLevel::Off.into_primitive(),
+                )
+                .await;
+            parent_current.send().expect("set_level resp failed");
+            child_removable_current.send().expect("set_level resp failed");
+            child_unremovable_current.send().expect("set_level resp failed");
+            child_default_unremovable_current.send().expect("set_level resp failed");
+            assert_eq!(
+                parent_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::Off.into_primitive())
+            );
+            assert_eq!(
+                child_removable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::Off.into_primitive())
+            );
+            assert_eq!(
+                child_unremovable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::Off.into_primitive())
+            );
+            assert_eq!(
+                child_default_unremovable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::Off.into_primitive())
+            );
+        });
+
+        // Lease children. Leases should be pending because P is OFF.
+        let lease_removable = executor.run_singlethreaded(async {
+            child_removable_lessor
+                .lease(BinaryPowerLevel::On.into_primitive())
+                .await
+                .unwrap()
+                .expect("Lease response not ok")
+                .into_proxy()
+        });
+        let lease_unremovable = executor.run_singlethreaded(async {
+            child_unremovable_lessor
+                .lease(BinaryPowerLevel::On.into_primitive())
+                .await
+                .unwrap()
+                .expect("Lease response not ok")
+                .into_proxy()
+        });
+        let lease_default_unremovable = executor.run_singlethreaded(async {
+            child_default_unremovable_lessor
+                .lease(BinaryPowerLevel::On.into_primitive())
+                .await
+                .unwrap()
+                .expect("Lease response not ok")
+                .into_proxy()
+        });
+
+        // P should receive SetLevel(ON).
+        let parent_current = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                parent_element_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+
+        // Children should not receive SetLevel because P is still OFF.
+        let mut child_removable_element_runner_next = child_removable_element_runner.try_next();
+        let mut child_unremovable_element_runner_next = child_unremovable_element_runner.try_next();
+        let mut child_default_unremovable_element_runner_next =
+            child_default_unremovable_element_runner.try_next();
+        assert!(executor.run_until_stalled(&mut child_removable_element_runner_next).is_pending());
+        assert!(
+            executor.run_until_stalled(&mut child_unremovable_element_runner_next).is_pending()
+        );
+        assert!(
+            executor
+                .run_until_stalled(&mut child_default_unremovable_element_runner_next)
+                .is_pending()
+        );
+
+        // Transition P to ON.
+        executor.run_singlethreaded(async {
+            parent_current.send().expect("set_level resp failed");
+            assert_eq!(
+                parent_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::On.into_primitive())
+            );
+        });
+
+        // Children should now receive SetLevel(ON).
+        let child_removable_current = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                child_removable_element_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+        let child_unremovable_current = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                child_unremovable_element_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+        let child_default_unremovable_current = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                child_default_unremovable_element_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+
+        // Transition Children to ON. Leases should become Satisfied.
+        executor.run_singlethreaded(async {
+            child_removable_current.send().expect("set_level resp failed");
+            child_unremovable_current.send().expect("set_level resp failed");
+            child_default_unremovable_current.send().expect("set_level resp failed");
+            assert_eq!(
+                child_removable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::On.into_primitive())
+            );
+            assert_eq!(
+                child_unremovable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::On.into_primitive())
+            );
+            assert_eq!(
+                child_default_unremovable_status.watch_power_level().await.unwrap(),
+                Ok(BinaryPowerLevel::On.into_primitive())
+            );
+            assert_eq!(
+                lease_removable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+            assert_eq!(
+                lease_unremovable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+            assert_eq!(
+                lease_default_unremovable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Drop parent element control to remove P.
+        drop(parent_element_control);
+
+        // Verify parent status channel is closed.
+        executor.run_singlethreaded(async {
+            parent_status.as_channel().on_closed().await.unwrap();
+        });
+
+        // Since child_removable has removable: true, its lease stays Satisfied.
+        // child_unremovable (removable: false) and child_default_unremovable (removable: default/false) should transition to Pending.
+        executor.run_singlethreaded(async {
+            assert_eq!(
+                lease_removable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+            assert_eq!(
+                lease_unremovable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Pending
+            );
+            assert_eq!(
+                lease_default_unremovable.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Pending
+            );
         });
 
         Ok(())

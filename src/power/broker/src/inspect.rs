@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::broker::{Lease, LeaseID};
-use crate::topology::{Dependency, Element, Topology};
+use crate::topology::{Dependency, Element, OnRequiredElementRemoval, Topology};
 use crate::{ElementID, IndexedPowerLevel};
 use either::Either;
 use fidl_fuchsia_power_broker as fpb;
@@ -38,11 +38,11 @@ const TIME: &str = "@time";
 const EDGE_ID: &str = "edge_id";
 const DEP_ELEMENT: &str = "dependent_element";
 const REQ_ELEMENT: &str = "required_element";
-const OPPORTUNISTIC: &str = "opportunistic";
 const DEPENDENT_LEVEL: &str = "dependent_level";
 const CURRENT_LEVEL: &str = "current_level";
 const REQUIRED_LEVEL: &str = "required_level";
 const VALID_LEVELS: &str = "valid_levels";
+const REMOVE_WITH_REQUIRED_ELEMENT: &str = "remove_with_required_element";
 
 #[derive(Debug)]
 pub struct TopologyInspect {
@@ -201,10 +201,13 @@ impl DependencyData {
         meta_node: inspect::Node,
         dp_level: fpb::PowerLevel,
         rq_level: fpb::PowerLevel,
-        is_opportunistic: bool,
+        on_required_element_removal: OnRequiredElementRemoval,
     ) -> Self {
         let mut levels = HashMap::new();
-        levels.insert(dp_level, Self::dep_node(&meta_node, dp_level, rq_level, is_opportunistic));
+        levels.insert(
+            dp_level,
+            Self::dep_node(&meta_node, dp_level, rq_level, on_required_element_removal),
+        );
         Self { levels, node: meta_node }
     }
 
@@ -216,14 +219,14 @@ impl DependencyData {
         &mut self,
         dp_level: fpb::PowerLevel,
         rq_level: fpb::PowerLevel,
-        is_opportunistic: bool,
+        on_required_element_removal: OnRequiredElementRemoval,
     ) {
         match self.levels.get_mut(&dp_level) {
             Some(_data) => unreachable!("we never update a dep level"),
             None => {
                 self.levels.insert(
                     dp_level,
-                    Self::dep_node(&self.node, dp_level, rq_level, is_opportunistic),
+                    Self::dep_node(&self.node, dp_level, rq_level, on_required_element_removal),
                 );
             }
         }
@@ -233,12 +236,12 @@ impl DependencyData {
         parent: &inspect::Node,
         dp_level: fpb::PowerLevel,
         rq_level: fpb::PowerLevel,
-        is_opportunistic: bool,
+        on_required_element_removal: OnRequiredElementRemoval,
     ) -> inspect::Node {
         let node = parent.create_child(format!("{dp_level}"));
         node.record_uint(REQUIRED_LEVEL, rq_level as u64);
-        if is_opportunistic {
-            node.record_bool(OPPORTUNISTIC, true);
+        if on_required_element_removal == OnRequiredElementRemoval::RemoveWithRequiredElement {
+            node.record_bool(REMOVE_WITH_REQUIRED_ELEMENT, true);
         }
         node
     }
@@ -302,7 +305,7 @@ impl TopologyInspect {
         element_id: ElementID,
         current_level: Option<fpb::PowerLevel>,
         required_level: Option<fpb::PowerLevel>,
-        dependencies: &[(Dependency, bool)],
+        dependencies: &[(Dependency, OnRequiredElementRemoval)],
     ) {
         let Some(ref events) = self.events else {
             return;
@@ -324,7 +327,7 @@ impl TopologyInspect {
                 }
                 if !dependencies.is_empty() {
                     let deps_node = node.create_child("dependencies");
-                    for (i, (dep, is_assertive)) in dependencies.iter().enumerate() {
+                    for (i, (dep, on_required_element_removal)) in dependencies.iter().enumerate() {
                         let dep_node = deps_node.create_child(format!("{i}"));
                         // No need to record the dependent_element event since that must be the
                         // element we are adding.
@@ -332,8 +335,10 @@ impl TopologyInspect {
                         dep_node.record_uint(REQ_ELEMENT, *dep.requires.element_id as u64);
                         dep_node.record_uint(DEPENDENT_LEVEL, dep.dependent.level.level as u64);
                         dep_node.record_uint(REQUIRED_LEVEL, dep.requires.level.level as u64);
-                        if !is_assertive {
-                            dep_node.record_bool(OPPORTUNISTIC, true);
+                        if *on_required_element_removal
+                            == OnRequiredElementRemoval::RemoveWithRequiredElement
+                        {
+                            dep_node.record_bool(REMOVE_WITH_REQUIRED_ELEMENT, true);
                         }
                         deps_node.record(dep_node);
                     }
@@ -347,7 +352,7 @@ impl TopologyInspect {
         &self,
         elements: &HashMap<ElementID, Element>,
         dep: &Dependency,
-        is_assertive: bool,
+        on_required_element_removal: OnRequiredElementRemoval,
         write_inspect_event: bool,
     ) {
         let (dp_id, rq_id) = (dep.dependent.element_id, dep.requires.element_id);
@@ -358,19 +363,23 @@ impl TopologyInspect {
         };
         let (dp_level, rq_level) = (dep.dependent.level, dep.requires.level);
         let mut inspect_edges = dp.inspect_edges.borrow_mut();
-        let is_opportunistic = !is_assertive;
         match inspect_edges.get_mut(&rq_id) {
             None => {
                 let mut dp_vertex = dp.inspect_vertex.as_ref().unwrap().borrow_mut();
                 let mut rq_vertex = rq.inspect_vertex.as_ref().unwrap().borrow_mut();
                 let edge = dp_vertex.add_edge(&mut rq_vertex, |meta_node| {
-                    DependencyData::new(meta_node, dp_level.level, rq_level.level, is_opportunistic)
+                    DependencyData::new(
+                        meta_node,
+                        dp_level.level,
+                        rq_level.level,
+                        on_required_element_removal,
+                    )
                 });
                 inspect_edges.insert(rq_id, edge);
             }
             Some(edge) => {
                 edge.maybe_update_meta(|meta| {
-                    meta.add_new_dep(dp_level.level, rq_level.level, is_opportunistic);
+                    meta.add_new_dep(dp_level.level, rq_level.level, on_required_element_removal);
                 });
             }
         }
@@ -380,8 +389,10 @@ impl TopologyInspect {
                 node.record_uint(REQ_ELEMENT, *rq_id as u64);
                 node.record_uint(DEPENDENT_LEVEL, dp_level.level as u64);
                 node.record_uint(REQUIRED_LEVEL, rq_level.level as u64);
-                if is_opportunistic {
-                    node.record_bool(OPPORTUNISTIC, true);
+                if on_required_element_removal
+                    == OnRequiredElementRemoval::RemoveWithRequiredElement
+                {
+                    node.record_bool(REMOVE_WITH_REQUIRED_ELEMENT, true);
                 }
             });
         }
@@ -543,7 +554,12 @@ pub trait InspectUpdateLevel {
 }
 
 pub trait InspectAddDependency {
-    fn add_dependency(&mut self, _topology: &Topology, dependency: &Dependency, is_assertive: bool);
+    fn add_dependency(
+        &mut self,
+        _topology: &Topology,
+        dependency: &Dependency,
+        on_required_element_removal: OnRequiredElementRemoval,
+    );
 }
 
 #[derive(Default)]
@@ -630,8 +646,18 @@ impl InspectUpdateLevel for EagerInspectWriter {
 }
 
 impl InspectAddDependency for EagerInspectWriter {
-    fn add_dependency(&mut self, topology: &Topology, dependency: &Dependency, is_assertive: bool) {
-        topology.inspect().on_add_dependency(&topology.elements, dependency, is_assertive, true);
+    fn add_dependency(
+        &mut self,
+        topology: &Topology,
+        dependency: &Dependency,
+        on_required_element_removal: OnRequiredElementRemoval,
+    ) {
+        topology.inspect().on_add_dependency(
+            &topology.elements,
+            dependency,
+            on_required_element_removal,
+            true,
+        );
     }
 }
 
@@ -639,7 +665,7 @@ pub struct AddElementInspectWriter {
     element_id: ElementID,
     current_level: Option<fpb::PowerLevel>,
     required_level: Option<fpb::PowerLevel>,
-    dependencies: Vec<(Dependency, bool)>,
+    dependencies: Vec<(Dependency, OnRequiredElementRemoval)>,
     other_events: UpdateLevelInspectWriter,
 }
 
@@ -672,11 +698,11 @@ impl AddElementInspectWriter {
         topology.get_element_mut(&self.element_id).unwrap().inspect_vertex =
             Some(Rc::new(RefCell::new(inspect_vertex)));
 
-        for (dependency, is_assertive) in &self.dependencies {
+        for (dependency, on_required_element_removal) in &self.dependencies {
             topology.inspect().on_add_dependency(
                 &topology.elements,
                 dependency,
-                *is_assertive,
+                *on_required_element_removal,
                 false,
             );
         }
@@ -727,9 +753,9 @@ impl InspectAddDependency for AddElementInspectWriter {
         &mut self,
         _topology: &Topology,
         dependency: &Dependency,
-        is_assertive: bool,
+        on_required_element_removal: OnRequiredElementRemoval,
     ) {
-        self.dependencies.push((dependency.clone(), is_assertive))
+        self.dependencies.push((dependency.clone(), on_required_element_removal))
     }
 }
 
