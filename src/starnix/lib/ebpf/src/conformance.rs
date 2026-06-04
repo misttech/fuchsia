@@ -1156,6 +1156,7 @@ pub mod test {
     #[test_case(local_test_data!("context_parameter.data"))]
     #[test_case(local_test_data!("div_by_range_with_zero.data"))]
     #[test_case(local_test_data!("err_context_parameter.data"))]
+    #[test_case(local_test_data!("err_lddw_punning.data"))]
     #[test_case(local_test_data!("err_memory_id_collision.data"))]
     #[test_case(local_test_data!("err_offset_overflow.data"))]
     #[test_case(local_test_data!("err_packet_oob.data"))]

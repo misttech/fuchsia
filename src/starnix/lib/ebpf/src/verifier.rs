@@ -7,8 +7,8 @@
 use crate::scalar_value::{ScalarValueData, U32Range, U32ScalarValueData, U64Range};
 use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
-    BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, DataWidth,
-    EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT, MapSchema, REGISTER_COUNT,
+    BPF_LDDW, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE,
+    DataWidth, EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT, MapSchema, REGISTER_COUNT,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use fuchsia_sync::Mutex;
@@ -930,6 +930,32 @@ pub fn verify_program(
 ) -> Result<VerifiedEbpfProgram, EbpfError> {
     if code.len() > BPF_MAX_INSTS {
         return error_and_log(logger, "ebpf program too long");
+    }
+    // Pre-scan the program to ensure all LDDW instructions are structurally well-formed,
+    // even if they are in unreachable code. This is necessary because:
+    // 1. The linker may rewrite LDDW instructions (e.g., to resolve map pointers) and
+    //    expects them to be well-formed.
+    // 2. It ensures that the second part of every LDDW has a `code` of 0 (invalid opcode).
+    //    This guarantees that any attempt to jump directly into the second part of an
+    //    LDDW will be rejected during verification as an invalid instruction.
+    let mut scan_pc = 0;
+    while scan_pc < code.len() {
+        let inst = &code[scan_pc];
+        if inst.code() == BPF_LDDW {
+            let Some(next_instruction) = code.get(scan_pc + 1) else {
+                return error_and_log(logger, "incomplete lddw");
+            };
+            if next_instruction.code() != 0
+                || next_instruction.offset() != 0
+                || next_instruction.src_reg() != 0
+                || next_instruction.dst_reg() != 0
+            {
+                return error_and_log(logger, "invalid lddw");
+            }
+            scan_pc += 2;
+        } else {
+            scan_pc += 1;
+        }
     }
 
     let mut context = ComputationContext::default();
@@ -4147,12 +4173,8 @@ impl BpfVisitor for ComputationContext {
         src: u8,
         lower: u32,
     ) -> Result<(), String> {
-        let Some(next_instruction) = context.code.get(self.pc + 1) else {
-            return Err(format!("incomplete lddw"));
-        };
-        if next_instruction.src_reg() != 0 || next_instruction.dst_reg() != 0 {
-            return Err(format!("invalid lddw"));
-        }
+        // The pre-scan has already guaranteed that `pc + 1` is valid and structurally well-formed.
+        let next_instruction = &context.code[self.pc + 1];
 
         let value = match src {
             0 => {
