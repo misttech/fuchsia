@@ -12,6 +12,11 @@ See also:
 """
 
 load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    _fuchsia_find_all_package_resources = "fuchsia_find_all_package_resources",
+    _fuchsia_package_resource = "resource",
+)
+load(
     "@fuchsia_rules_common//packages:utils.bzl",
     _get_component_manifests = "get_component_manifests",
     _get_driver_component_manifests = "get_driver_component_manifests",
@@ -122,8 +127,6 @@ load(
 )
 load(
     "//fuchsia/private:fuchsia_package_resource.bzl",
-    _fuchsia_find_all_package_resources = "fuchsia_find_all_package_resources",
-    _fuchsia_package_resource = "fuchsia_package_resource",
     _fuchsia_package_resource_collection = "fuchsia_package_resource_collection",
     _fuchsia_package_resource_group = "fuchsia_package_resource_group",
 )

@@ -23,20 +23,8 @@ py_binary(
 )
 
 py_binary(
-    name = "meta_content_append",
-    srcs = ["meta_content_append.py"],
-    target_compatible_with = HOST_CONSTRAINTS,
-)
-
-py_binary(
     name = "create_package_manifest_list",
     srcs = ["create_package_manifest_list.py"],
-    target_compatible_with = HOST_CONSTRAINTS,
-)
-
-py_binary(
-    name = "validate_component_manifests",
-    srcs = ["validate_component_manifests.py"],
     target_compatible_with = HOST_CONSTRAINTS,
 )
 

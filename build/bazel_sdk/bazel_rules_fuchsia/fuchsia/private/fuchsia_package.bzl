@@ -20,10 +20,10 @@ load(
     "FuchsiaDebugSymbolInfo",
 )
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
+load("@fuchsia_rules_common//packages:resources.bzl", "fuchsia_find_all_package_resources")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
 load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
-load(":fuchsia_package_resource.bzl", "fuchsia_find_all_package_resources")
 load(":fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_transition.bzl", "fuchsia_transition")
 load(
@@ -668,12 +668,12 @@ _build_fuchsia_package = rule(
             default = "@fuchsia_sdk//:debug_symbols",
         ),
         "_meta_content_append_tool": attr.label(
-            default = "//fuchsia/tools:meta_content_append",
+            default = "@fuchsia_rules_common//packages/tools:meta_content_append",
             executable = True,
             cfg = "exec",
         ),
         "_validate_component_manifests": attr.label(
-            default = "//fuchsia/tools:validate_component_manifests",
+            default = "@fuchsia_rules_common//packages/tools:validate_component_manifests",
             executable = True,
             cfg = "exec",
         ),
