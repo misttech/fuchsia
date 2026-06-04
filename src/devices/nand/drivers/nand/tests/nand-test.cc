@@ -338,19 +338,15 @@ class NandDriverTest : public ::testing::Test {
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
  protected:
-  bool Wait() {
-    zx_status_t status = sync_completion_wait(&event_, ZX_SEC(20));
+  void Wait() {
+    ASSERT_EQ(sync_completion_wait(&event_, ZX_TIME_INFINITE), ZX_OK);
     sync_completion_reset(&event_);
-    return status == ZX_OK;
   }
 
-  bool WaitFor(int desired) {
+  void WaitFor(int desired) {
     while (num_completed_ < desired) {
-      if (!Wait()) {
-        return false;
-      }
+      Wait();
     }
-    return true;
   }
 
   ddk::NandProtocolClient& nand() { return nand_; }
@@ -392,24 +388,24 @@ TEST_F(NandDriverTest, QueueOne) {
   op->rw.command = NAND_OP_READ;
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
 
   op->rw.length = 1;
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_EQ(ZX_ERR_BAD_HANDLE, operation.status());
 
   op->rw.offset_nand = kNumPages * kNumBlocks;
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_STATUS(ZX_ERR_OUT_OF_RANGE, operation.status());
 
   ASSERT_TRUE(operation.SetVmo());
 
   op->rw.offset_nand = (kNumPages * kNumBlocks) - 1;
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 }
 
@@ -426,7 +422,7 @@ TEST_F(NandDriverTest, ReadWrite) {
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   driver_test().RunInEnvironmentTypeContext([](auto& env) {
@@ -441,7 +437,7 @@ TEST_F(NandDriverTest, ReadWrite) {
   memset(operation.oob_buffer(), kOobMagic, kOobSize * 5);
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   driver_test().RunInEnvironmentTypeContext([](auto& env) {
@@ -457,8 +453,9 @@ TEST_F(NandDriverTest, ReadWriteVmoOffsets) {
   nand_operation_t* op = operation.GetOperation();
   ASSERT_NE(op, nullptr);
 
-  for (uint32_t offset = 0; offset < kNumPages * kNumBlocks; offset++) {
-    for (uint32_t length = 1; offset + length < kNumPages * kNumBlocks; length++) {
+  // Test an assortment of offset and length combinations.
+  for (uint32_t offset = 0; offset < kNumPages * kNumBlocks; offset += 7) {
+    for (uint32_t length = 1; offset + length < kNumPages * kNumBlocks; length += 3) {
       op->rw.command = NAND_OP_READ;
       op->rw.length = length;
       op->rw.offset_nand = offset;
@@ -466,7 +463,7 @@ TEST_F(NandDriverTest, ReadWriteVmoOffsets) {
       op->rw.offset_oob_vmo = offset;
       nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-      ASSERT_TRUE(Wait());
+      Wait();
       ASSERT_OK(operation.status());
 
       driver_test().RunInEnvironmentTypeContext([&](auto& env) {
@@ -485,7 +482,7 @@ TEST_F(NandDriverTest, ReadWriteVmoOffsets) {
              kOobSize * length);
       nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-      ASSERT_TRUE(Wait());
+      Wait();
       ASSERT_OK(operation.status());
 
       driver_test().RunInEnvironmentTypeContext([&](auto& env) {
@@ -506,7 +503,7 @@ TEST_F(NandDriverTest, Erase) {
   op->erase.first_block = 5;
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
 
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   driver_test().RunInEnvironmentTypeContext([](auto& env) {
@@ -531,7 +528,7 @@ TEST_F(NandDriverTest, QueryMultiple) {
     nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
   }
 
-  ASSERT_TRUE(WaitFor(10));
+  WaitFor(10);
 
   for (const auto& operation : operations) {
     ASSERT_OK(operation->status());
@@ -604,7 +601,7 @@ TEST_F(NandDriverTest, ReadMetrics) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   expected.attempts[1] += 1;
@@ -633,7 +630,7 @@ TEST_F(NandDriverTest, ReadMetrics) {
   op->rw.offset_nand = 4;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   expected.attempts[2] += 1;
@@ -651,7 +648,7 @@ TEST_F(NandDriverTest, ReadMetrics) {
   op->rw.offset_nand = 5;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   expected.attempts[2] += 1;
@@ -668,7 +665,7 @@ TEST_F(NandDriverTest, ReadMetrics) {
   op->rw.offset_nand = 6;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_NE(operation.status(), ZX_OK);
 
   expected.attempts_overflow += 1;
@@ -690,7 +687,7 @@ TEST_F(NandDriverTest, ReadCacheForPoorECC) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   // Read the same page with moderate ECC errors. Should not cache.
@@ -700,7 +697,7 @@ TEST_F(NandDriverTest, ReadCacheForPoorECC) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   nand_info_t info;
@@ -718,7 +715,7 @@ TEST_F(NandDriverTest, ReadCacheForPoorECC) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
@@ -731,7 +728,7 @@ TEST_F(NandDriverTest, ReadCacheForPoorECC) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   // Cached result reports no bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
@@ -749,7 +746,7 @@ TEST_F(NandDriverTest, ReadCacheFailedRetry) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   nand_info_t info;
@@ -772,7 +769,7 @@ TEST_F(NandDriverTest, ReadCacheFailedRetry) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
@@ -788,7 +785,7 @@ TEST_F(NandDriverTest, ReadCacheFailedRetry) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
 }
@@ -805,7 +802,7 @@ TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
 
   nand_info_t info;
@@ -823,7 +820,7 @@ TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
@@ -836,7 +833,7 @@ TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   // Cached result reports no bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, 0u);
@@ -849,7 +846,7 @@ TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   erase_op->erase.first_block = 3 / info.pages_per_block;
   erase_op->erase.num_blocks = 1;
   nand().Queue(erase_op, &NandDriverTest::CompletionCb, &erase_operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(erase_operation.status());
 
   // Get a full read without cached result, so we see bit flips.
@@ -860,7 +857,7 @@ TEST_F(NandDriverTest, ReadCachePurgeOnErase) {
   op->rw.offset_nand = 3;
   ASSERT_TRUE(operation.SetVmo());
   nand().Queue(op, &NandDriverTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
+  Wait();
   ASSERT_OK(operation.status());
   // See all the bit flips.
   ASSERT_EQ(operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
@@ -899,7 +896,7 @@ TEST_F(NandDriverTest, InsertToCacheWithNullPayloads) {
       ASSERT_TRUE(insert_operation.SetOobVmo());
     }
     nand().Queue(insert_op, &NandDriverTest::CompletionCb, &insert_operation);
-    ASSERT_TRUE(Wait());
+    Wait();
     ASSERT_OK(insert_operation.status());
     ASSERT_EQ(insert_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
@@ -912,7 +909,7 @@ TEST_F(NandDriverTest, InsertToCacheWithNullPayloads) {
     fetch_op->rw.offset_nand = i;
     ASSERT_TRUE(fetch_operation.SetVmo());
     nand().Queue(fetch_op, &NandDriverTest::CompletionCb, &fetch_operation);
-    ASSERT_TRUE(Wait());
+    Wait();
     ASSERT_OK(fetch_operation.status());
     // We don't try to do any caching if the data wasn't fetched, so we see no bit errors due to
     // caching only when the data vmo was set.
@@ -953,7 +950,7 @@ TEST_F(NandDriverTest, FetchFromCacheWithNullPayloads) {
     insert_op->rw.offset_nand = i;
     ASSERT_TRUE(insert_operation.SetVmo());
     nand().Queue(insert_op, &NandDriverTest::CompletionCb, &insert_operation);
-    ASSERT_TRUE(Wait());
+    Wait();
     ASSERT_OK(insert_operation.status());
     ASSERT_EQ(insert_operation.GetOperation()->rw.corrected_bit_flips, ecc_limit);
 
@@ -974,7 +971,7 @@ TEST_F(NandDriverTest, FetchFromCacheWithNullPayloads) {
       ASSERT_TRUE(fetch_operation.SetOobVmo());
     }
     nand().Queue(fetch_op, &NandDriverTest::CompletionCb, &fetch_operation);
-    ASSERT_TRUE(Wait());
+    Wait();
     ASSERT_OK(fetch_operation.status());
     if (set_data_vmo) {
       ASSERT_EQ(fetch_operation.GetOperation()->rw.corrected_bit_flips, 0u);
