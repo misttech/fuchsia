@@ -431,4 +431,56 @@ TEST_F(FlatlandViewIntegrationTest, SpuriousReleaseViewYieldsError) {
   EXPECT_EQ(last_error_, fuc::FlatlandError::BAD_OPERATION);
 }
 
+TEST_F(FlatlandViewIntegrationTest, DevicePixelRatioUpdatesCorrectlyEvenWithNoSnapshotChanges) {
+  fuc::FlatlandPtr parent = MakeFlatland();
+  auto [parent_view_token, display_viewport_token] = scenic::ViewCreationTokenPair::New();
+
+  // Connect the parent view to the display.
+  SetFlatlandDisplayContent(std::move(display_viewport_token));
+
+  fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
+  auto identity = scenic::NewViewIdentityOnCreation();
+  parent->CreateView2(std::move(parent_view_token), std::move(identity), {},
+                      parent_viewport_watcher.NewRequest());
+  BlockingPresent(this, parent);
+
+  // Get the display's initial layout (DPR). Since there is no Present in FlatlandDisplay, receiving
+  // this callback ensures that all previous FlatlandDisplay setup is fully processed.
+  std::optional<fuchsia::ui::composition::LayoutInfo> initial_layout;
+  parent_viewport_watcher->GetLayout(
+      [&initial_layout](fuchsia::ui::composition::LayoutInfo layout_info) {
+        initial_layout = std::move(layout_info);
+      });
+  RunLoopUntil([&initial_layout] { return initial_layout.has_value(); });
+
+  // Flush any pending snapshot changes (such as link resolution) so that subsequent
+  // presents have no snapshot changes.
+  BlockingPresent(this, parent);
+
+  const float initial_dpr_x = initial_layout->device_pixel_ratio().x;
+  const float initial_dpr_y = initial_layout->device_pixel_ratio().y;
+
+  // Register a second GetLayout() call. This call MUST hang because no properties have changed.
+  std::optional<fuchsia::ui::composition::LayoutInfo> updated_layout;
+  parent_viewport_watcher->GetLayout(
+      [&updated_layout](fuchsia::ui::composition::LayoutInfo layout_info) {
+        updated_layout = std::move(layout_info);
+      });
+  RunLoopUntilIdle();
+  EXPECT_FALSE(updated_layout.has_value());
+
+  // Set a new DPR on the display.
+  const float kNewDprX = initial_dpr_x + 0.5f;
+  const float kNewDprY = initial_dpr_y + 0.5f;
+  fuchsia::math::VecF dpr{.x = kNewDprX, .y = kNewDprY};
+  SetFlatlandDisplayDevicePixelRatio(dpr);
+
+  // The hanging get should now complete.
+  RunLoopUntil([&updated_layout] { return updated_layout.has_value(); });
+
+  ASSERT_TRUE(updated_layout.has_value());
+  EXPECT_EQ(updated_layout->device_pixel_ratio().x, kNewDprX);
+  EXPECT_EQ(updated_layout->device_pixel_ratio().y, kNewDprY);
+}
+
 }  // namespace integration_tests

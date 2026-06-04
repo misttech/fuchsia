@@ -125,7 +125,7 @@ ViewTreeSnapshotter::ViewTreeSnapshotter(std::vector<SubtreeSnapshotGenerator> s
   cached_subtree_snapshots_.resize(subtree_generators_.size());
 }
 
-void ViewTreeSnapshotter::UpdateSnapshot() {
+bool ViewTreeSnapshotter::UpdateSnapshot() {
   TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot");
 
   bool any_subtree_changed = false;
@@ -150,7 +150,7 @@ void ViewTreeSnapshotter::UpdateSnapshot() {
   }
   if (!any_subtree_changed) {
     // Nothing has changed, so we don't need to rebuild the snapshot nor notify subscribers.
-    return;
+    return false;
   }
 
   auto new_snapshot = std::make_shared<Snapshot>();
@@ -222,6 +222,7 @@ void ViewTreeSnapshotter::UpdateSnapshot() {
     TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [subscriber]");
     subscriber_callback(new_snapshot);
   }
+  return true;
 }
 
 }  // namespace view_tree

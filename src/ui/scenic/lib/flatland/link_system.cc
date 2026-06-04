@@ -24,7 +24,9 @@ using fuchsia::ui::views::ViewportCreationToken;
 namespace flatland {
 
 LinkSystem::LinkSystem(TransformHandle::InstanceId instance_id)
-    : instance_id_(instance_id), link_graph_(instance_id_), linker_(ObjectLinker::New()) {}
+    : instance_id_(instance_id), link_graph_(instance_id_), linker_(ObjectLinker::New()) {
+  device_pixel_ratio_.store({.x = 1.f, .y = 1.f});
+}
 
 LinkSystem::LinkToChild LinkSystem::CreateLinkToChild(
     std::shared_ptr<utils::DispatcherHolder> dispatcher_holder, ViewportCreationToken token,

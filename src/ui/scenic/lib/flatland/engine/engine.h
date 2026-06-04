@@ -6,11 +6,9 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_ENGINE_H_
 
 #include <fidl/fuchsia.ui.display.color/cpp/fidl.h>
+#include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/zx/eventpair.h>
-
-// TODO(https://fxbug.dev/42156567): delete when we delete hack_seen_display_id_values_.
-#include <lib/fit/function.h>
 
 #include <map>
 #include <optional>
@@ -18,7 +16,7 @@
 
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
-#include "src/ui/scenic/lib/flatland/flatland_manager.h"
+#include "src/ui/scenic/lib/flatland/flatland_display.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
@@ -90,8 +88,7 @@ class Engine {
   // Holds the per-frame scene state that is generated from the latest UberStructs from each
   // Flatland session, linked together by the LinkSystem.
   struct SceneState {
-    void Initialize(Engine& engine, TransformHandle root_transform,
-                    glm::vec2 device_pixel_ratio = {1.f, 1.f});
+    void Initialize(Engine& engine, TransformHandle root_transform);
 
     // Clear all fields without deallocating memory.
     void Clear();
@@ -106,8 +103,6 @@ class Engine {
 
     // Only used internally to compute `image_rectangles`, but stashed to avoid reallocating memory.
     flatland::GlobalImageSampleRegionVector image_sample_regions;
-
-    glm::vec2 device_pixel_ratio = {1.f, 1.f};
   };
 
   // Initialize all inspect::Nodes, so that the Engine state can be observed.

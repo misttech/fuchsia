@@ -29,6 +29,7 @@ class ScenicCtfTestEnvironment : public zxtest::Environment {
   void TearDown() override;
 
   void SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token);
+  void SetFlatlandDisplayDevicePixelRatio(fuchsia_math::VecF dpr);
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 

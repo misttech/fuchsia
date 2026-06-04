@@ -733,8 +733,15 @@ void App::InitializeHeartbeat(display::Display& display) {
       /*on_cpu_work_done*/
       [this] {
         TRACE_DURATION("gfx", "App on_cpu_work_done");
-        view_tree_snapshotter_->UpdateSnapshot();
-        flatland_engine_->UpdateLinkWatchersAfterViewTreePublished();
+        if (view_tree_snapshotter_->UpdateSnapshot()) {
+          // The check above is loose: it is possible for the view tree to change without any change
+          // to the link system.  However, any changes to the link system that need to be published
+          // will also have triggered recomputation of the view tree.
+          //
+          // See `Engine::GenerateViewTreeSnapshot()` for details; a new subtree snapshot is
+          // generated whenever the link topology changes.
+          flatland_engine_->UpdateLinkWatchersAfterViewTreePublished();
+        }
         // Clears scene state, so must happen after ViewTree update, etc.
         flatland_engine_->CleanUpFrame();
 

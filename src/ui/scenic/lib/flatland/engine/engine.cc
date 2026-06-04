@@ -99,7 +99,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   FX_DCHECK(cleared_scene_state_);
   current_scene_state_ = std::move(cleared_scene_state_);
   SceneState& scene_state = *current_scene_state_;
-  scene_state.Initialize(*this, display.root_transform(), display.display()->device_pixel_ratio());
+  scene_state.Initialize(*this, display.root_transform());
 
   display::Display* const hw_display = display.display();
 
@@ -200,7 +200,6 @@ void Engine::UpdateLinkWatchersAfterViewTreePublished() {
   link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
                                    scene_state.topology_data.live_handles,
                                    scene_state.global_matrices, scene_state.snapshot.map);
-  link_system_->UpdateDevicePixelRatio(scene_state.device_pixel_ratio);
 }
 
 void Engine::CleanUpFrame() {
@@ -257,7 +256,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   TransformHandle root = display.root_transform();
 
   SceneState scene_state;
-  scene_state.Initialize(*this, root, display.display()->device_pixel_ratio());
+  scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
                         hw_display->width_in_px(), hw_display->height_in_px());
@@ -265,10 +264,8 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   return std::make_pair(std::move(scene_state.image_rectangles), std::move(scene_state.images));
 }
 
-void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform,
-                                    glm::vec2 device_pixel_ratio) {
+void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
-  this->device_pixel_ratio = device_pixel_ratio;
   snapshot = engine.uber_struct_system_->Snapshot();
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();

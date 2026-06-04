@@ -43,7 +43,8 @@ class ViewTreeSnapshotter final {
 
   // Calls each SubtreeSnapshotGenerator() in |subtree_generators_| in turn, combines the results
   // into a snapshot and hands out the snapshot to each subscriber in |subscriber_callbacks_|.
-  void UpdateSnapshot();
+  // Returns true if a new snapshot was generated (i.e. the snapshot changed), false otherwise.
+  bool UpdateSnapshot();
 
  private:
   const std::vector<SubtreeSnapshotGenerator> subtree_generators_;

@@ -4,6 +4,8 @@
 
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
 
+#include <fidl/fuchsia.math/cpp/hlcpp_conversion.h>
+
 namespace integration_tests {
 
 void ScenicCtfTest::SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token) {
@@ -41,6 +43,11 @@ void ScenicCtfHlcppTest::SetFlatlandDisplayContent(
   token_cpp.value() = std::move(token.value);
   return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayContent(
       std::move(token_cpp));
+}
+
+void ScenicCtfHlcppTest::SetFlatlandDisplayDevicePixelRatio(fuchsia::math::VecF dpr) {
+  ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayDevicePixelRatio(
+      fidl::HLCPPToNatural(dpr));
 }
 
 const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDirectory() const {

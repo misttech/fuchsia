@@ -138,6 +138,7 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
   void SetUp() override { zxtest::Test::SetUp(); }
 
   void SetFlatlandDisplayContent(fuchsia::ui::views::ViewportCreationToken token);
+  void SetFlatlandDisplayDevicePixelRatio(fuchsia::math::VecF dpr);
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 

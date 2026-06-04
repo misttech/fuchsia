@@ -94,6 +94,11 @@ void ScenicCtfTestEnvironment::SetFlatlandDisplayContent(
   ZX_ASSERT(res.is_ok());
 }
 
+void ScenicCtfTestEnvironment::SetFlatlandDisplayDevicePixelRatio(fuchsia_math::VecF dpr) {
+  auto res = flatland_display_->SetDevicePixelRatio({{.device_pixel_ratio = dpr}});
+  ZX_ASSERT(res.is_ok());
+}
+
 const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTestEnvironment::LocalServiceDirectory()
     const {
   return context_->svc();
