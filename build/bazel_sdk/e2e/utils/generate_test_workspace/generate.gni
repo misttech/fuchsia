@@ -74,12 +74,10 @@ template("generate_private_test_workspace") {
     inputs = [
       "../third_party/fuchsia-infra-bazel-rules/scripts/bootstrap.sh",
       "../third_party/fuchsia-infra-bazel-rules/scripts/run_sdk_tool.sh",
-      "../third_party/fuchsia-infra-bazel-rules/scripts/run_sdk_tool.sh",
     ]
     outputs = [
       rebase_path("$out_dir/scripts/bootstrap.sh", root_build_dir),
       rebase_path("$out_dir/tools/ffx", root_build_dir),
-      rebase_path("$out_dir/tools/fssh", root_build_dir),
     ]
   }
   symlink_list = [

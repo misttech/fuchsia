@@ -110,7 +110,6 @@ fuchsia_toolchain_info(
     fidlc = "//tools:{{HOST_CPU}}/fidlc",
     fidlgen_cpp = "//tools:{{HOST_CPU}}/fidlgen_cpp",
     fidlgen_hlcpp = "//tools:{{HOST_CPU}}/fidlgen_hlcpp",
-    fssh = "//tools:{{HOST_CPU}}/fssh",
     funnel = "//tools:{{HOST_CPU}}/funnel",
     fvm = "//tools:{{HOST_CPU}}/fvm",
     fvm_manifest = "//tools:{{HOST_CPU}}/fvm-meta.json",
@@ -134,8 +133,6 @@ fuchsia_toolchain_info(
 # Additionally, the run_sdk_tool.sh script knows how to invoke these tools
 # and can be used as a drop in replacement for the tool.
 sdk_host_tool(name = "ffx")
-
-sdk_host_tool(name = "fssh")
 
 sdk_host_tool(name = "cmc")
 

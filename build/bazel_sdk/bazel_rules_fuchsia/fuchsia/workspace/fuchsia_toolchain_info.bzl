@@ -38,7 +38,6 @@ def _fuchsia_toolchain_info_impl(ctx):
         ffx_test = ctx.executable.ffx_test or None,
         ffx_test_fho_meta = ctx.file.ffx_test_fho_meta or None,
         ffx_test_manifest = ctx.file.ffx_test_manifest or None,
-        fssh = ctx.executable.fssh,
         fidlc = ctx.executable.fidlc,
         fidl_format = ctx.executable.fidl_format,
         fidlgen_hlcpp = ctx.executable.fidlgen_hlcpp,
@@ -219,13 +218,6 @@ included in the Fuchsia IDK.
         ),
         "ffx_test_manifest": attr.label(
             doc = "ffx-test tool metadata.",
-            allow_single_file = True,
-        ),
-        "fssh": attr.label(
-            doc = "fssh tool executable.",
-            mandatory = True,
-            cfg = "exec",
-            executable = True,
             allow_single_file = True,
         ),
         "fidlc": attr.label(
