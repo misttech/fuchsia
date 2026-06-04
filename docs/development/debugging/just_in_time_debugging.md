@@ -24,7 +24,7 @@ There are two ways of enabling the Process Limbo:
 
 There's an ffx plugin that permits the user to query the current state of the limbo:
 
-```
+```none {.devsite-disable-click-to-copy}
 $ ffx debug limbo --help
 Usage: ffx debug limbo <command> [<args>]
 
@@ -59,7 +59,7 @@ debug.
 
 In order to do this, there is a configuration that has to be set into the build:
 
-```
+```posix-terminal
 fx set <YOUR CONFIG> --with-base //src/developer/forensics:exceptions_enable_jitd_on_startup
 ```
 
@@ -78,7 +78,7 @@ early drivers.
 The main user of JITD is zxdb, which is able to attach to a process waiting in the limbo. When
 starting zxdb, it will automatically attach to processes waiting in limbo:
 
-```
+```none {.devsite-disable-click-to-copy}
 $ ffx debug connect
 Connecting (use "disconnect" to cancel)...
 Connected successfully.
