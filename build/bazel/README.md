@@ -142,9 +142,9 @@ directly, just after `fx set` or `fx gen` is called.
 
 There are three ways to use this mode:
 
-- In GN `bazel_action()` target definitions by setting `no_sdk = true` to
-  indicate that the bazel targets do not require Fuchsia SDK
-  dependencies at all.
+- In GN `bazel_action()` target definitions by setting `bazel_config = "host"`
+  to indicate that the bazel targets are for the host and thus do not require
+  Fuchsia SDK dependencies at all.
 
 - When invoker `fx build` to build Bazel targets, specify `--host`, for example
   `fx build --host @//build/tools/formatjson5`.
@@ -166,8 +166,9 @@ fx clean
 fx bazel test --config=host //build/bazel/host_tests/...
 
 # Build a host hello_world program with Bazel, invoked from
-# a Ninja action. Because this target definition uses `no_sdk=true`
-# this is fast, as it doesn't require building the IDK.
+# a Ninja action. Because this target definition uses
+# `bazel_config = "fuchsia_platform"`, it is fast, as it doesn't require
+# building the IDK.
 fx build //build/bazel/examples/hello_no_sdk
 
 # Build a similar program for Fuchsia, this will take several

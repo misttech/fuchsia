@@ -55,6 +55,7 @@ group("tests_no_e2e") {
 }
 
 bazel_test_package_group("bazel_tests") {
+  bazel_config = "fuchsia_sdk"
   tests = [
     {
       test_package_target = "//examples/drivers/simple/dfv2:simple-driver-test"

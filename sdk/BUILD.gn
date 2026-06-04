@@ -199,7 +199,7 @@ bazel_build_action("final_fuchsia_idk.exported") {
     },
   ]
 
-  no_sdk = true
+  bazel_config = "fuchsia_platform"
 }
 
 idk_archive("final_fuchsia_idk.archive") {

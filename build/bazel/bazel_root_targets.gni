@@ -54,8 +54,7 @@ if (current_toolchain == default_toolchain) {
     }
 
     bazel_build_group(target_name) {
-      no_sdk = true
-      host = true
+      bazel_config = "host"
       subtargets = _subtargets
       update_rust_project = true
     }

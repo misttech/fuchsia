@@ -737,6 +737,8 @@ template("bazel_product_bundle") {
                              "testonly",
                              "visibility",
                            ])
+
+    bazel_config = "fuchsia_sdk"
   }
 
   if (_generate_product_bundle_metadata) {

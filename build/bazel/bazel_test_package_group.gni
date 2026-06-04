@@ -55,6 +55,12 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #       and also to each subtarget that does not have its own visibility definition.
 #
 template("bazel_test_package_group") {
+  # TODO(https://fxbug.dev/505802054): Update vendor repositories to specify
+  # the Bazel config when using this template then remove this workaround.
+  if (!defined(invoker.bazel_config)) {
+    invoker.bazel_config = "fuchsia_sdk"
+  }
+
   _bazel_targets = []
   _deps = []
   _package_outputs = []

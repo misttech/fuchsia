@@ -138,12 +138,13 @@ import("//build/bazel/bazel_action.gni")
 #     from them will create a corresponding entry in the @gn_targets external
 #     repository, allowing the Bazel graph to see
 #
-#   no_sdk: (optional)
-#     Set this to true to build Bazel artifacts that do not depend on the Fuchsia
-#     IDK or SDK. This makes these targets available to the GN graph early during
-#     the build.
-#     Type: boolean
-#     Default: false
+#   bazel_config:
+#     String matching one of the following:
+#     * "host": build host artifacts
+#     * "fuchsia_platform": build Fuchsia platform artifacts
+#     * "fuchsia_sdk": build Fuchsia platform artifacts using the
+#       in-tree Bazel SDK. Targets are not available to the GN graph until the
+#       entire SDK has been built.
 #
 #   metadata:
 #   check_for_output_dir_leaks:
@@ -202,9 +203,16 @@ import("//build/bazel/bazel_action.gni")
 #        Expands to {{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.
 #
 template("bazel_build_action") {
+  # TODO(https://fxbug.dev/505802054): Update vendor repositories to specify
+  # the Bazel config when using this template then remove this workaround.
+  if (!defined(invoker.bazel_config)) {
+    invoker.bazel_config = "fuchsia_sdk"
+  }
+
   bazel_action(target_name) {
     bazel_targets = [ invoker.bazel_target ]
     command = "build"
+
     forward_variables_from(invoker, "*", [ "bazel_target" ])
   }
 }

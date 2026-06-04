@@ -47,7 +47,7 @@ group("assembly") {
 # Construct the 'bringup' platform artifacts set
 bazel_build_action("bringup") {
   testonly = true
-  no_sdk = true
+  bazel_config = "fuchsia_platform"
   bazel_target = "//bundles/assembly:bringup"
   deps = [
     # The AIB Bazel inputs
@@ -65,7 +65,7 @@ bazel_build_action("bringup") {
 # Construct the main platform artifacts set
 bazel_build_action("platform") {
   testonly = true
-  no_sdk = true
+  bazel_config = "fuchsia_platform"
   bazel_target = "//bundles/assembly:platform"
   deps = [
     # The AIB Bazel inputs

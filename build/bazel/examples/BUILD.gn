@@ -10,6 +10,7 @@ import("//build/bazel/bazel_build_group.gni")
 # other example targets directly in the Bazel graph.
 bazel_build_action("target_examples") {
   testonly = true
+  bazel_config = "fuchsia_sdk"
   bazel_target = ":target_examples"
   copy_outputs = [
     {
@@ -20,8 +21,7 @@ bazel_build_action("target_examples") {
 }
 
 bazel_build_group("host_examples") {
-  host = true
-  no_sdk = true
+  bazel_config = "host"
   subtargets = [
     {
       bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
@@ -79,8 +79,7 @@ bazel_build_group("host_examples") {
 
 if (host_cpu == "x64") {
   bazel_build_group("host_examples_arm64") {
-    host = true
-    no_sdk = true
+    bazel_config = "host"
     bazel_platform = "linux_arm64"
     subtargets = [
       {

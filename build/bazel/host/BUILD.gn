@@ -23,8 +23,7 @@ if (current_toolchain == host_toolchain) {
 # Create a Bazel build group to cross-compile SDK host tools when requested.
 if (sdk_cross_compile_host_tools && _is_default_toolchain) {
   bazel_build_group("sdk_host_tools_arm64") {
-    host = true
-    no_sdk = true
+    bazel_config = "host"
     bazel_platform = "linux_arm64"
 
     subtargets = []

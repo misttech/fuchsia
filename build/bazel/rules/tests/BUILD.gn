@@ -25,12 +25,7 @@ bazel_build_action("tests") {
       ninja = "tests.bazel_stamp"
     },
   ]
-
-  # The tests rely on the "fuchsia_platform" sysroots.
-  deps = [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
-
-  bazel_platform = "fuchsia_platform_${current_cpu}"
-  no_sdk = true
+  bazel_config = "fuchsia_platform"
 }
 
 bazel_build_action("quick_tests") {
@@ -44,10 +39,5 @@ bazel_build_action("quick_tests") {
       ninja = "quick_tests.bazel_stamp"
     },
   ]
-
-  # The tests rely on the "fuchsia_platform" sysroots.
-  deps = [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
-
-  bazel_platform = "fuchsia_platform_${current_cpu}"
-  no_sdk = true
+  bazel_config = "fuchsia_platform"
 }

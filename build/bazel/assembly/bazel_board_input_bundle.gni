@@ -36,6 +36,7 @@ template("bazel_board_input_bundle") {
                            ])
 
     bazel_target = bazel_target
+    bazel_config = "fuchsia_sdk"
 
     # Directory outputs are OK because `board_input_bundle.json` correctly
     # represents the freshness of all outputs.

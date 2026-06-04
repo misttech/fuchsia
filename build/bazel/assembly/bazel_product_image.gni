@@ -139,6 +139,7 @@ template("bazel_product_image") {
                              "testonly",
                              "visibility",
                            ])
+    bazel_config = "fuchsia_sdk"
   }
 
   _image_has_fxfs_blob = true

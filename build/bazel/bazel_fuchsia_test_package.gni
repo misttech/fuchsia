@@ -23,6 +23,9 @@ import("//build/testing/test_spec.gni")
 #     }
 #
 # Args:
+#   bazel_config: (required)
+#     See `bazel_action()`.
+#
 #   bazel_target: (optional)
 #     See: bazel_fuchsia_package.gni
 #
@@ -52,6 +55,13 @@ import("//build/testing/test_spec.gni")
 #   visibility:
 #     Usual GN meaning.
 template("bazel_fuchsia_test_package") {
+  # TODO(https://fxbug.dev/505802054): Update vendor repositories to specify
+  # the Bazel config when using this template then remove this workaround.
+  if (!defined(invoker.bazel_config)) {
+    invoker.bazel_config = "fuchsia_sdk"
+  }
+  assert(defined(invoker.bazel_config), "bazel_config must be defined")
+
   if (defined(invoker.test_package_name)) {
     test_package_name = invoker.test_package_name
   } else {
@@ -84,6 +94,7 @@ template("bazel_fuchsia_test_package") {
   bazel_fuchsia_package(target_name) {
     forward_variables_from(invoker,
                            [
+                             "bazel_config",
                              "bazel_target",
                              "deps",
                              "visibility",

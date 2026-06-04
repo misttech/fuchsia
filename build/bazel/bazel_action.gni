@@ -180,18 +180,13 @@ declare_args() {
 #     Type: boolean
 #     Default: false
 #
-#   no_sdk: (optional)
-#     Set this to true to run a Bazel command to build artifacts that do not
-#     depend on the Fuchsia IDK or SDK. This makes these targets available to
-#     the GN graph early during the build. Must be true if `host` is true.
-#     Type: boolean
-#     Default: false
-#
-#   host: (optional)
-#     Set this to true to run a Bazel command to build host artifacts.
-#     Requires `no_sdk = true`.
-#     Type: boolean
-#     Default: false
+#   bazel_config:
+#     String matching one of the following:
+#     * "host": Build host artifacts.
+#     * "fuchsia_platform": Build Fuchsia platform artifacts.
+#     * "fuchsia_sdk": Build Fuchsia platform artifacts using the
+#       in-tree Bazel SDK. Targets are not available to the GN graph until the
+#       entire SDK has been built.
 #
 #   bazel_platform: (optional)
 #     Overwrite the `--platforms` flag when building with Bazel.
@@ -269,23 +264,32 @@ template("bazel_action") {
     assert(defined(invoker.command), "command must be defined!")
     assert(defined(invoker.bazel_targets), "bazel_targets must be defined!")
     assert(invoker.bazel_targets != [], "bazel_targets cannot be empty!")
-
-    _no_sdk = defined(invoker.no_sdk) && invoker.no_sdk
-    _build_for_host = defined(invoker.host) && invoker.host
-    assert(!_build_for_host || _no_sdk,
-           "`no_sdk` must true when `host` is true. ")
+    assert(defined(invoker.bazel_config), "bazel_config must be defined!")
 
     # Calculate the correct Bazel platform to use.
-    if (_build_for_host) {
+    if (invoker.bazel_config == "host") {
       _bazel_platform_config = "host_config_args"
       _bazel_platform_label = "//build/bazel/platforms:host"
-    } else {
-      # Since this template can only be used on the default toolchain, the
-      # platform is always Fuchsia.
+      _no_sdk = true
+      _build_for_host = true
+    } else if (invoker.bazel_config == "fuchsia_platform") {
+      _bazel_platform_config = "fuchsia_config_args"
+      _bazel_platform_label =
+          "//build/bazel/platforms:fuchsia_platform_${current_cpu}"
+      _no_sdk = true
+      _build_for_host = false
+    } else if (invoker.bazel_config == "fuchsia_sdk") {
       _bazel_platform_config = "fuchsia_config_args"
       _bazel_platform_label =
           "//build/bazel/platforms:fuchsia_sdk_${current_cpu}"
+      _no_sdk = false
+      _build_for_host = false
+    } else {
+      assert(
+          false,
+          "Unrecognized `bazel_config` value: '${invoker.bazel_config}'. Use: 'host' for host artifacts, 'fuchsia_platform' for platform artifacts, or 'fuchsia_sdk' when using the Bazel SDK.")
     }
+
     if (defined(invoker.bazel_platform)) {
       _bazel_platform_label =
           "//build/bazel/platforms:${invoker.bazel_platform}"
@@ -1000,6 +1004,8 @@ template("bazel_action") {
           # exist.
           "//sdk:ensure_bazel_in_tree_idk_is_populated_for_bazel_action",
         ]
+      } else if (invoker.bazel_config == "fuchsia_platform") {
+        deps += [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
       }
 
       # Using the console pool prevents concurrent bazel build actions to run

@@ -9,6 +9,9 @@ import("//build/compiled_action.gni")
 # documentation defined in the bazel build rules.
 #
 # Args:
+#   bazel_config: (required)
+#     See `bazel_action()`.
+#
 #   bazel_targets: (required)
 #     The set of Bazel targets that generate the text protos.
 #     These targets should be `starlark_doc_extract()` targets and should not
@@ -35,6 +38,7 @@ import("//build/compiled_action.gni")
 #   visibility:
 #     Usual GN meaning.
 template("bazel_docgen") {
+  assert(defined(invoker.bazel_config), "bazel_config must be defined")
   assert(defined(invoker.bazel_targets), "bazel_targets must be defined")
   assert(defined(invoker.docset_name), "docset_name must be defined")
   assert(defined(invoker.reference_repo_path),
@@ -68,6 +72,7 @@ template("bazel_docgen") {
   bazel_build_group("${target_name}.bazel_build_group") {
     forward_variables_from(invoker,
                            [
+                             "bazel_config",
                              "testonly",
                              "visibility",
                            ])

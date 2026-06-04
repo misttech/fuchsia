@@ -49,6 +49,7 @@ template("bazel_product_configuration") {
                            ])
 
     bazel_target = bazel_target
+    bazel_config = "fuchsia_sdk"
 
     # Directory outputs are OK because `product_configuration.json` correctly
     # represents the freshness of all outputs.

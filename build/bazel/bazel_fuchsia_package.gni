@@ -23,6 +23,9 @@ import("//build/packages/prebuilt_package.gni")
 #     }
 #
 # Args:
+#   bazel_config: (required)
+#     See `bazel_action()`.
+#
 #   bazel_target: (optional)
 #     Bazel target to wrap.
 #     This target should be a `fuchsia_package()` target.
@@ -44,6 +47,8 @@ import("//build/packages/prebuilt_package.gni")
 #   visibility:
 #     Usual GN meaning.
 template("bazel_fuchsia_package") {
+  assert(defined(invoker.bazel_config), "bazel_config must be defined")
+
   if (defined(invoker.bazel_target)) {
     bazel_target = invoker.bazel_target
   } else {
@@ -60,6 +65,7 @@ template("bazel_fuchsia_package") {
   bazel_build_action(bazel_build_target) {
     forward_variables_from(invoker,
                            [
+                             "bazel_config",
                              "deps",
                              "metadata",
                              "testonly",

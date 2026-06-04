@@ -52,6 +52,8 @@ template("bazel_driver_package") {
                            ])
 
     bazel_target = bazel_target
+    bazel_config = "fuchsia_sdk"
+
     if (defined(invoker.bazel_inputs)) {
       if (!defined(deps)) {
         deps = []

@@ -19,4 +19,5 @@ bazel_docgen("docs") {
   ]
   reference_repo_path = "sdk/bazel_sdk"
   docsite_base_path = "reference/bazel_sdk"
+  bazel_config = "fuchsia_sdk"
 }

@@ -45,6 +45,7 @@ group("bazel_driver_packages") {
 }
 
 bazel_build_group("bazel_drivers") {
+  bazel_config = "fuchsia_sdk"
   driver_packages = [
     {
       bazel_target =
