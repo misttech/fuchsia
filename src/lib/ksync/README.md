@@ -39,7 +39,7 @@ generate a marker lock class behind the scenes, named
 named `mu` in `ImageCache`).
 
 ```rust
-use ksync::{guarded, KMutex};
+use ksync::{guarded, KMutex, lock};
 
 #[derive(Default)]
 #[guarded]
@@ -58,17 +58,17 @@ struct ImageCache {
 
 fn update_cache(cache: &ImageCache, is_hit: bool) {
     // Acquire lock.
-    let mut guard = cache.lock_mu();
+    lock!(let mut guard = cache.lock_mu());
 
     // Use individual accessors:
     if is_hit {
-        *guard.hits_mut() += 1;
+        *guard.as_mut().hits_mut() += 1;
     } else {
-        *guard.misses_mut() += 1;
+        *guard.as_mut().misses_mut() += 1;
     }
 
     // Or use split accessors for simultaneous disjoint mutable borrows:
-    let fields = guard.fields_mut();
+    let fields = guard.as_mut().fields_mut();
     if is_hit {
         *fields.hits += 1;
     } else {
@@ -95,7 +95,7 @@ distinct, unique lock class for each mutex field by default (utilizing the
 special syntax:
 
 ```rust
-use ksync::{guarded, KMutex};
+use ksync::{guarded, KMutex, lock};
 
 #[derive(Default)]
 #[guarded]
@@ -114,15 +114,15 @@ struct DualCache {
 
 fn process_dual_cache(cache: &DualCache) {
     // Lock both mutexes.
-    let mut guard1 = cache.lock_mu1();
-    let mut guard2 = cache.lock_mu2();
+    lock!(let mut guard1 = cache.lock_mu1());
+    lock!(let mut guard2 = cache.lock_mu2());
 
     // Use individual accessors for each lock independently:
-    *guard1.data1_mut() = 100;
-    *guard2.data2_mut() = -50;
+    *guard1.as_mut().data1_mut() = 100;
+    *guard2.as_mut().data2_mut() = -50;
 
     // Split accessors work for each guard independently as well:
-    let fields1 = guard1.fields_mut();
+    let fields1 = guard1.as_mut().fields_mut();
     *fields1.data1 += 10;
 }
 
@@ -186,9 +186,9 @@ impl Connection {
 
 // Locked methods declared on the generated Guard!
 impl<'a> ConnectionMuGuard<'a> {
-    pub fn send_packet(&mut self, size: u64) {
+    pub fn send_packet(mut self: core::pin::Pin<&mut Self>, size: u64) {
         // 1. Access and mutate guarded fields:
-        let fields = self.fields_mut();
+        let fields = self.as_mut().fields_mut();
         *fields.bytes_sent += size;
 
         // 2. Explicitly read un-guarded fields via self.parent:
@@ -204,12 +204,15 @@ impl<'a> ConnectionMuGuard<'a> {
 }
 
 fn main() {
+    use ksync::lock;
+
     let mut conn = Connection {
         remote_address: "127.0.0.1:8080".to_string(),
         ..Default::default()
     };
 
     // Scoped lock and execution:
-    conn.lock_mu().send_packet(1024);
+    lock!(let mut guard = conn.lock_mu());
+    guard.as_mut().send_packet(1024);
 }
 ```

@@ -40,35 +40,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     is_mutex = true;
                     attrs_to_remove.push(idx);
 
-                    match &attr.meta {
-                        syn::Meta::Path(_) => {
-                            // Standard default mutex type
-                        }
-                        syn::Meta::List(meta_list) => {
-                            if let Ok(ident) = meta_list.parse_args::<Ident>() {
-                                if ident == "critical" {
-                                    mutex_type = quote! { ::ksync::RawCriticalMutex };
-                                } else if ident == "standard" {
-                                    mutex_type = quote! { ::ksync::RawMutex };
-                                } else {
-                                    errors.push(syn::Error::new(
-                                        ident.span(),
-                                        "Invalid mutex type. Expected 'standard' or 'critical'",
-                                    ));
-                                }
-                            } else {
-                                errors.push(syn::Error::new(
-                                    meta_list.span(),
-                                    "Expected 'standard' or 'critical' as the type argument",
-                                ));
-                            }
-                        }
-                        _ => {
-                            errors.push(syn::Error::new(
-                                attr.meta.span(),
-                                "Invalid #[mutex] attribute syntax",
-                            ));
-                        }
+                    if !matches!(attr.meta, syn::Meta::Path(_)) {
+                        errors.push(syn::Error::new(
+                            attr.meta.span(),
+                            "#[mutex] attribute does not accept arguments. Use KMutex<LockType> to specify the lock type.",
+                        ));
                     }
                 } else if attr.path().is_ident("guarded_by") {
                     if let syn::Meta::List(meta_list) = &attr.meta {
@@ -92,6 +68,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         "Mutex field must be of type KMutex",
                     ));
                 }
+                match extract_lock_type(&field.ty) {
+                    Ok(Some(ty)) => {
+                        mutex_type = ty;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        errors.push(e);
+                    }
+                }
                 // Automatically prepend the #[pin] attribute for pin-init layout
                 field.attrs.push(syn::parse_quote!(#[pin]));
                 mutex_fields.push((field.clone(), mutex_type));
@@ -112,7 +97,14 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     // Automatically apply the #[::pin_init::pin_data] attribute to the parent struct
-    input_struct.attrs.push(syn::parse_quote!(#[::pin_init::pin_data]));
+    // only if it doesn't already have one (e.g. #[pin_data(PinnedDrop)])
+    let has_pin_data = input_struct
+        .attrs
+        .iter()
+        .any(|attr| attr.path().segments.iter().any(|seg| seg.ident == "pin_data"));
+    if !has_pin_data {
+        input_struct.attrs.push(syn::parse_quote!(#[::pin_init::pin_data]));
+    }
 
     let struct_ident = &input_struct.ident;
     let struct_vis = &input_struct.vis;
@@ -181,6 +173,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         ::ksync::KCell<#original_ty, #class_ident>
                     })
                     .unwrap();
+                    field.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
                 } else {
                     errors.push(syn::Error::new(
                         guarded_field.mutex_ident.span(),
@@ -296,10 +289,27 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             });
         }
 
-        let return_ty_generics = if ty_params.is_empty() {
+        let non_lifetime_params: Vec<proc_macro2::TokenStream> = input_struct
+            .generics
+            .params
+            .iter()
+            .filter_map(|p| match p {
+                syn::GenericParam::Type(type_param) => {
+                    let ident = &type_param.ident;
+                    Some(quote! { #ident })
+                }
+                syn::GenericParam::Const(const_param) => {
+                    let ident = &const_param.ident;
+                    Some(quote! { #ident })
+                }
+                syn::GenericParam::Lifetime(_) => None,
+            })
+            .collect();
+
+        let return_ty_generics = if non_lifetime_params.is_empty() {
             quote! { <'_> }
         } else {
-            quote! { <'_, #(#ty_params),*> }
+            quote! { <'_, #(#non_lifetime_params),*> }
         };
 
         // Static registration names for the kernel lock classes (using uppercase names)
@@ -310,11 +320,13 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let path_name = format!("{}::{}", struct_ident, mu_ident);
 
         generated_code.extend(quote! {
+            #[allow(dead_code)]
             #struct_vis struct #fields_ident #fields_impl_generics #where_clause {
                 #fields_decl
                 _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
             }
 
+            #[allow(dead_code)]
             #struct_vis struct #fields_mut_ident #fields_impl_generics #where_clause {
                 #fields_mut_decl
                 _marker: ::core::marker::PhantomData<(&'b (), #(#ty_params),*)>,
@@ -410,4 +422,36 @@ fn is_kmutex_type(ty: &Type) -> bool {
     } else {
         false
     }
+}
+
+fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn::Error> {
+    if let Type::Path(type_path) = ty {
+        if let Some(last_segment) = type_path.path.segments.last() {
+            if last_segment.ident == "KMutex" {
+                match &last_segment.arguments {
+                    syn::PathArguments::None => return Ok(None),
+                    syn::PathArguments::AngleBracketed(args) => {
+                        if args.args.len() == 1 {
+                            let first_arg = &args.args[0];
+                            return Ok(Some(quote! { #first_arg }));
+                        } else if args.args.is_empty() {
+                            return Ok(None);
+                        } else {
+                            return Err(syn::Error::new(
+                                args.span(),
+                                "KMutex expects at most 1 generic argument for the lock type in struct definition",
+                            ));
+                        }
+                    }
+                    syn::PathArguments::Parenthesized(args) => {
+                        return Err(syn::Error::new(
+                            args.span(),
+                            "KMutex does not support parenthesized generic arguments",
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
 }

@@ -13,6 +13,7 @@ use lockdep::LockClass;
 ///
 /// `KMutex` wraps a platform-specific `RawLock` abstraction. It is pinned in memory to support FFI
 /// loop-detector active list registrations safely under the lock class `Class`.
+#[repr(transparent)] // Ensure KMutex has the same layout as the underlying RawLock M.
 #[pin_data]
 pub struct KMutex<Class: LockClass, M: RawLock = RawMutex> {
     #[pin]
@@ -21,6 +22,11 @@ pub struct KMutex<Class: LockClass, M: RawLock = RawMutex> {
 }
 
 impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
+    /// Create a new KMutex with a pre-initialized raw lock.
+    pub const fn new(mutex: M) -> Self {
+        Self { mutex, _marker: PhantomData }
+    }
+
     /// Safe dynamic initialization of the validation lock inside pin context.
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
@@ -122,7 +128,7 @@ impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::KCell;
+    use crate::{KCell, RawMutex};
     use lockdep::LockClass;
     use pin_init::{pin_init, stack_pin_init};
 
@@ -147,8 +153,7 @@ mod tests {
             data2: KCell::new(-5),
         }));
 
-        stack_pin_init!(let guard_pinned = s.mu.lock());
-        let mut guard = guard_pinned;
+        lock!(let mut guard = s.mu.lock());
 
         unsafe {
             assert_eq!(*s.data1.get(guard.token()), 10);
@@ -175,7 +180,7 @@ mod tests {
     #[test]
     fn test_kmutex_init() {
         stack_pin_init!(let mu = KMutex::<MyClass>::init());
-        stack_pin_init!(let _guard = mu.lock());
+        lock!(mu.lock());
     }
 
     #[test]
@@ -206,7 +211,7 @@ mod tests {
             data2: (-50).into(),
         }));
 
-        stack_pin_init!(let guard = s.lock_mu());
+        lock!(let mut guard = s.lock_mu());
 
         assert_eq!(*guard.data1(), 100);
         assert_eq!(*guard.data2(), -50);
@@ -248,8 +253,8 @@ mod tests {
             data2: 20.into(),
         }));
 
-        stack_pin_init!(let guard1 = s.lock_mu1());
-        stack_pin_init!(let guard2 = s.lock_mu2());
+        lock!(let mut guard1 = s.lock_mu1());
+        lock!(let mut guard2 = s.lock_mu2());
 
         assert_eq!(*guard1.data1(), 10);
         assert_eq!(*guard2.data2(), 20);
@@ -273,8 +278,27 @@ mod tests {
             mu <- KMutex::init(),
             data: 0.into(),
         }));
-        stack_pin_init!(let guard = s.lock_mu());
+        lock!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 0);
+    }
+
+    #[guarded]
+    struct MyGenericLockGuardedStruct<L: RawLock> {
+        #[mutex]
+        mu: KMutex<L>,
+        #[guarded_by(mu)]
+        data: u32,
+    }
+
+    #[test]
+    fn test_macro_generic_lock_guarded() {
+        stack_pin_init!(let s = pin_init!(MyGenericLockGuardedStruct::<RawMutex> {
+            mu <- KMutex::init(),
+            data: 100.into(),
+        }));
+
+        lock!(let guard = s.lock_mu());
+        assert_eq!(*guard.data(), 100);
     }
 
     #[guarded]
@@ -291,7 +315,7 @@ mod tests {
             mu <- KMutex::init(),
             data: 0.into(),
         }));
-        stack_pin_init!(let guard = s.lock_mu());
+        lock!(let mut guard = s.lock_mu());
         assert_eq!(*guard.data(), 0);
 
         *guard.as_mut().data_mut() = 42;
@@ -343,11 +367,11 @@ mod tests {
         }));
 
         {
-            stack_pin_init!(let guard = s.lock_mu());
+            lock!(let mut guard = s.lock_mu());
             guard.as_mut().process_with_context();
         }
 
-        stack_pin_init!(let guard = s.lock_mu());
+        lock!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 100);
     }
 }

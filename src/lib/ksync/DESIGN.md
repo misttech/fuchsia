@@ -103,9 +103,18 @@ pub struct MyStruct {
 }
 
 // 3. Custom Guard generated with safe target accessors and lifetime bindings
+#[pin_init::pin_data(PinnedDrop)]
 pub struct MyStructMuGuard<'a> {
     parent: &'a MyStruct,
+    #[pin]
     inner: ::ksync::KMutexGuard<'a, MyStructMuClass>,
+}
+
+#[pin_init::pinned_drop]
+impl<'a> pin_init::PinnedDrop for MyStructMuGuard<'a> {
+    fn drop(self: ::core::pin::Pin<&mut Self>) {
+        // Releases the raw lock automatically when dropped
+    }
 }
 
 impl<'a> MyStructMuGuard<'a> {
@@ -118,10 +127,11 @@ impl<'a> MyStructMuGuard<'a> {
     }
 
     #[inline]
-    pub fn data1_mut(&mut self) -> &mut u32 {
-        // SAFETY: The token is obtained from the same parent instance (self.parent)
-        // that contains the cell, satisfying the KCell safety invariant.
-        unsafe { self.parent.data1.get_mut(self.inner.token_mut()) }
+    pub fn data1_mut(self: ::core::pin::Pin<&mut Self>) -> &mut u32 {
+        // SAFETY: Safe projection to pinned inner guard to get mutable token.
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+        unsafe { me.parent.data1.get_mut(inner_pin.token_mut()) }
     }
 
     #[inline]
@@ -132,10 +142,11 @@ impl<'a> MyStructMuGuard<'a> {
     }
 
     #[inline]
-    fn data2_mut(&mut self) -> &mut i32 {
-        // SAFETY: The token is obtained from the same parent instance (self.parent)
-        // that contains the cell, satisfying the KCell safety invariant.
-        unsafe { self.parent.data2.get_mut(self.inner.token_mut()) }
+    fn data2_mut(self: ::core::pin::Pin<&mut Self>) -> &mut i32 {
+        // SAFETY: Safe projection to pinned inner guard to get mutable token.
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+        unsafe { me.parent.data2.get_mut(inner_pin.token_mut()) }
     }
 
     #[inline]
@@ -149,17 +160,18 @@ impl<'a> MyStructMuGuard<'a> {
     }
 
     #[inline]
-    pub fn fields_mut<'b>(&'b mut self) -> MyStructMuFieldsMut<'b> {
-        let token = self.inner.token_mut();
+    pub fn fields_mut<'b>(self: ::core::pin::Pin<&'b mut Self>) -> MyStructMuFieldsMut<'b> {
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+        let token = inner_pin.token_mut();
         // SAFETY:
-        // 1. We have exclusive access to the Guard (&mut self).
+        // 1. We have exclusive access to the Guard.
         // 2. The fields in the struct are disjoint.
-        // 3. The returned references are bound to the lifetime 'b of the guard borrow,
-        //    preventing them from outliving the guard.
+        // 3. The returned references are bound to the lifetime 'b of the guard borrow.
         unsafe {
             MyStructMuFieldsMut {
-                data1: &mut *self.parent.data1.as_mut_ptr(token),
-                data2: &mut *self.parent.data2.as_mut_ptr(token),
+                data1: &mut *me.parent.data1.as_mut_ptr(token),
+                data2: &mut *me.parent.data2.as_mut_ptr(token),
                 _marker: ::core::marker::PhantomData,
             }
         }
@@ -179,14 +191,14 @@ pub struct MyStructMuFieldsMut<'b> {
     _marker: ::core::marker::PhantomData<(&'b (), )>,
 }
 
-// 5. Lock method impl on the parent struct
+// 5. Lock method impl on the parent struct returning a PinInit
 impl MyStruct {
     #[inline]
-    pub fn lock_mu(&self) -> MyStructMuGuard<'_> {
-        MyStructMuGuard {
+    pub fn lock_mu(&self) -> impl pin_init::PinInit<MyStructMuGuard<'_>, ::core::convert::Infallible> {
+        pin_init::pin_init!(MyStructMuGuard {
             parent: self,
-            inner: self.mu.lock(),
-        }
+            inner <- ::ksync::KMutexGuard::new(&self.mu),
+        })
     }
 }
 ```
