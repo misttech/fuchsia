@@ -63,18 +63,6 @@ impl ConsumerControlsEvent {
         Self { pressed_buttons, wake_lease }
     }
 
-    pub fn clone_with_wake_lease(&self) -> Self {
-        log::debug!("ConsumerControlsEvent cloned with wake lease: {:?}", self.wake_lease);
-        Self {
-            pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: self.wake_lease.as_ref().map(|lease| {
-                lease
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("failed to duplicate event pair")
-            }),
-        }
-    }
-
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
         let pressed_buttons_node =
             node.create_string_array("pressed_buttons", self.pressed_buttons.len());

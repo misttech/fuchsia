@@ -623,28 +623,6 @@ impl std::convert::TryFrom<InputEvent> for UnhandledInputEvent {
 }
 
 impl InputEvent {
-    pub fn clone_with_wake_lease(&self) -> Self {
-        let device_event = match &self.device_event {
-            InputDeviceEvent::ConsumerControls(event) => {
-                InputDeviceEvent::ConsumerControls(event.clone_with_wake_lease())
-            }
-            InputDeviceEvent::Mouse(event) => {
-                InputDeviceEvent::Mouse(event.clone_with_wake_lease())
-            }
-            InputDeviceEvent::TouchScreen(event) => {
-                InputDeviceEvent::TouchScreen(event.clone_with_wake_lease())
-            }
-            _ => self.device_event.clone(),
-        };
-        Self {
-            device_event,
-            device_descriptor: self.device_descriptor.clone(),
-            event_time: self.event_time,
-            handled: self.handled,
-            trace_id: self.trace_id,
-        }
-    }
-
     /// Marks the event as handled, if `predicate` is `true`.
     /// Otherwise, leaves the event unchanged.
     pub(crate) fn into_handled_if(self, predicate: bool) -> Self {

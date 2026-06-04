@@ -172,24 +172,6 @@ impl MouseEvent {
         }
     }
 
-    pub fn clone_with_wake_lease(&self) -> Self {
-        log::debug!("MouseEvent cloned with wake lease: {:?}", self.wake_lease);
-        Self {
-            location: self.location,
-            wheel_delta_v: self.wheel_delta_v.clone(),
-            wheel_delta_h: self.wheel_delta_h.clone(),
-            is_precision_scroll: self.is_precision_scroll,
-            phase: self.phase,
-            affected_buttons: self.affected_buttons.clone(),
-            pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: Mutex::new(self.wake_lease.lock().as_ref().map(|lease| {
-                lease
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("failed to duplicate event pair")
-            })),
-        }
-    }
-
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
         match self.location {
             MouseLocation::Relative(pos) => {
