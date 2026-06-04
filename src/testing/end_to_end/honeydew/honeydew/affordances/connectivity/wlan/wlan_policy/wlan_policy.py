@@ -6,8 +6,6 @@
 import abc
 from dataclasses import dataclass
 
-import fidl_fuchsia_wlan_policy as f_wlan_policy
-
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
@@ -35,19 +33,19 @@ class AsyncWlanPolicy(abc.ABC):
         security_type: SecurityType,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> f_wlan_policy.RequestStatus:
-        """Triggers connection to a network.
+    ) -> None:
+        """Triggers connection to a network and blocks until connected.
 
         Args:
             target_ssid: The network to connect to. Must have been previously
                 saved in order for a successful connection to happen.
             security_type: The security protocol of the network.
-
-        Returns:
-            A RequestStatus response to the connect request
+            timeout: timeout value.
 
         Raises:
-            HoneydewWlanError: Error from WLAN stack.
+            HoneydewWlanError: Error from WLAN stack, or if connect() FIDL call
+                returns anything except RequestStatus.Acknowledged, or if connection
+                failure.
             TypeError: Return value not a string.
         """
 
@@ -303,19 +301,19 @@ class WlanPolicy(affordance.Affordance):
         security_type: SecurityType,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> f_wlan_policy.RequestStatus:
-        """Triggers connection to a network.
+    ) -> None:
+        """Triggers connection to a network and blocks until connected.
 
         Args:
             target_ssid: The network to connect to. Must have been previously
                 saved in order for a successful connection to happen.
             security_type: The security protocol of the network.
-
-        Returns:
-            A RequestStatus response to the connect request
+            timeout: timeout value.
 
         Raises:
-            HoneydewWlanError: Error from WLAN stack.
+            HoneydewWlanError: Error from WLAN stack, or if connect() FIDL call
+                returns anything except RequestStatus.Acknowledged, or if connection
+                failure.
             TypeError: Return value not a string.
         """
 

@@ -291,74 +291,87 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
     async def test_connect(self) -> None:
         """Test if connect works."""
         client_controller = self.client_controller_proxy
-        for msg, resp, expected in [
-            (
-                "acknowledged",
-                _async_response(
-                    f_wlan_policy.ClientControllerConnectResponse(
-                        status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
-                    )
+        with mock.patch.object(
+            self.wlan_policy_obj,
+            "wait_for_network_state",
+            autospec=True,
+        ) as mock_wait_for_network_state:
+            for msg, resp, should_raise in [
+                (
+                    "acknowledged",
+                    _async_response(
+                        f_wlan_policy.ClientControllerConnectResponse(
+                            status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
+                        )
+                    ),
+                    False,
                 ),
-                f_wlan_policy.RequestStatus.ACKNOWLEDGED,
-            ),
-            (
-                "not supported",
-                _async_response(
-                    f_wlan_policy.ClientControllerConnectResponse(
-                        status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
-                    )
+                (
+                    "not supported",
+                    _async_response(
+                        f_wlan_policy.ClientControllerConnectResponse(
+                            status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
+                        )
+                    ),
+                    True,
                 ),
-                f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED,
-            ),
-            (
-                "incompatible mode",
-                _async_response(
-                    f_wlan_policy.ClientControllerConnectResponse(
-                        status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
-                    )
+                (
+                    "incompatible mode",
+                    _async_response(
+                        f_wlan_policy.ClientControllerConnectResponse(
+                            status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
+                        )
+                    ),
+                    True,
                 ),
-                f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE,
-            ),
-            (
-                "already in use",
-                _async_response(
-                    f_wlan_policy.ClientControllerConnectResponse(
-                        status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
-                    )
+                (
+                    "already in use",
+                    _async_response(
+                        f_wlan_policy.ClientControllerConnectResponse(
+                            status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
+                        )
+                    ),
+                    True,
                 ),
-                f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE,
-            ),
-            (
-                "duplicate request",
-                _async_response(
-                    f_wlan_policy.ClientControllerConnectResponse(
-                        status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
-                    )
+                (
+                    "duplicate request",
+                    _async_response(
+                        f_wlan_policy.ClientControllerConnectResponse(
+                            status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
+                        )
+                    ),
+                    True,
                 ),
-                f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST,
-            ),
-            (
-                "internal error",
-                _async_error(
-                    FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                (
+                    "internal error",
+                    _async_error(
+                        FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
+                    ),
+                    True,
                 ),
-                None,
-            ),
-        ]:
-            with self.subTest(msg=msg, resp=resp, expected=expected):
-                client_controller.connect.reset_mock()
-                client_controller.connect.return_value = resp
-                if expected is not None:
-                    connect_resp = await self.wlan_policy_obj.connect(
-                        _TEST_SSID, SecurityType.NONE
-                    )
-                    self.assertEqual(connect_resp, expected)
-                else:
-                    with self.assertRaises(HoneydewWlanError):
+            ]:
+                with self.subTest(msg=msg, resp=resp):
+                    client_controller.connect.reset_mock()
+                    client_controller.connect.return_value = resp
+                    mock_wait_for_network_state.reset_mock()
+
+                    if should_raise:
+                        with self.assertRaises(HoneydewWlanError):
+                            await self.wlan_policy_obj.connect(
+                                _TEST_SSID, SecurityType.NONE
+                            )
+                        mock_wait_for_network_state.assert_not_called()
+                    else:
                         await self.wlan_policy_obj.connect(
                             _TEST_SSID, SecurityType.NONE
                         )
-                client_controller.connect.assert_called_once()
+                        mock_wait_for_network_state.assert_called_once_with(
+                            _TEST_SSID,
+                            ConnectionState.CONNECTED,
+                            timeout=mock.ANY,
+                        )
+
+                    client_controller.connect.assert_called_once()
 
     async def test_get_saved_networks(self) -> None:
         """Test if get_saved_networks works."""

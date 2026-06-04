@@ -9,6 +9,9 @@ import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants, hostapd_security
 from antlion.utils import rand_ascii_str
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanRequestRejectedError,
+)
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     ConnectionState,
@@ -201,12 +204,12 @@ class StartStopClientConnectionsTest(
         )
 
         # Subsequent attempt to connect fails.
-        status = await self.dut.wlan_policy.connect(
-            self.ssid, self.security_type
+        with asserts.assert_raises(HoneydewWlanRequestRejectedError) as context:
+            await self.dut.wlan_policy.connect(self.ssid, self.security_type)
+        asserts.assert_equal(
+            context.exception.reason,
+            f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE,
         )
-        assert (
-            status is f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
-        ), "Expected connection request rejected as incompatible."
 
     async def test_start_stop_client_connections(self) -> None:
         """Test automated behavior when starting/stopping client connections.

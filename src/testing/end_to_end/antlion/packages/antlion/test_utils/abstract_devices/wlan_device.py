@@ -10,7 +10,6 @@ import enum
 from typing import Protocol, Sequence, runtime_checkable
 
 import fidl_fuchsia_wlan_internal as f_wlan_internal
-import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion.controllers import iperf_client
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
@@ -29,7 +28,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     ClientStatusConnecting,
     ClientStatusIdle,
-    ConnectionState,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType as HdSecurityType,
@@ -448,23 +446,11 @@ class FuchsiaWlanDevice(SupportsWLAN):
                         HdSecurityType(target_security.fuchsia_security_type()),
                         target_pwd=target_pwd,
                     )
-                    status = self.device.honeydew_fd.wlan_policy_deprecated_sync.connect(
+                    self.device.honeydew_fd.wlan_policy_deprecated_sync.connect(
                         target_ssid,
                         HdSecurityType(target_security.fuchsia_security_type()),
+                        timeout=timeout_sec,
                     )
-                    if status is f_wlan_policy.RequestStatus.ACKNOWLEDGED:
-                        self.device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                            target_ssid,
-                            ConnectionState.CONNECTED,
-                            timeout=timeout_sec,
-                        )
-                    else:
-                        self.device.log.warning(
-                            f"Received request status: {status.name} while trying to "
-                            f"connect to ssid: {target_ssid}."
-                        )
-                        return False
-
                     return True
                 except HoneydewWlanError as e:
                     self.device.log.error(

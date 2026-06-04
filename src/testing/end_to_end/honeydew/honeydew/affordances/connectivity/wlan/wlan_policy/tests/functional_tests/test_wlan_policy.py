@@ -6,7 +6,6 @@
 import time
 from typing import AsyncIterator
 
-import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -21,6 +20,9 @@ from openwrt_access_point.lib.access_point_config import (
 )
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
+)
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     ConnectionState,
@@ -221,12 +223,8 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         test_ssid = AccessPointConfig.random_string()
-        asserts.assert_equal(
-            await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE),
-            f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED,
-            "Connect requests should be rejected when client connections are "
-            "disabled.",
-        )
+        with asserts.assert_raises(HoneydewWlanError):
+            await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE)
 
         # Verify connect doesn't change client state.
         async for update in self.get_updates_until(timeout_sec=3):

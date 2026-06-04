@@ -17,7 +17,6 @@ from antlion.controllers.ap_lib import (
 )
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectionState,
     CountryCode,
     SecurityType,
 )
@@ -218,9 +217,6 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.open_network_2g.ssid,
             self.open_network_2g.security,
         )
-        await self.dut.wlan_policy.wait_for_network_state(
-            self.open_network_2g.ssid, ConnectionState.CONNECTED
-        )
 
         scan_results = await self.dut.wlan_policy.scan_for_networks()
         for ssid in self.all_ssids:
@@ -237,9 +233,6 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.wpa2_network_2g.ssid,
             self.wpa2_network_2g.security,
         )
-        await self.dut.wlan_policy.wait_for_network_state(
-            self.wpa2_network_2g.ssid, ConnectionState.CONNECTED
-        )
 
         scan_results = await self.dut.wlan_policy.scan_for_networks()
         for ssid in self.all_ssids:
@@ -254,9 +247,6 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.connect(
             self.open_network_5g.ssid,
             self.open_network_5g.security,
-        )
-        await self.dut.wlan_policy.wait_for_network_state(
-            self.open_network_5g.ssid, ConnectionState.CONNECTED
         )
 
         scan_results = await self.dut.wlan_policy.scan_for_networks()
@@ -273,9 +263,6 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.connect(
             self.wpa2_network_5g.ssid,
             self.wpa2_network_5g.security,
-        )
-        await self.dut.wlan_policy.wait_for_network_state(
-            self.wpa2_network_5g.ssid, ConnectionState.CONNECTED
         )
 
         scan_results = await self.dut.wlan_policy.scan_for_networks()

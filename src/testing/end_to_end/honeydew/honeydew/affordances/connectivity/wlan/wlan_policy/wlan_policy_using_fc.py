@@ -388,8 +388,8 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> f_wlan_policy.RequestStatus:
-        """Triggers connection to a network.
+    ) -> None:
+        """Triggers connection to a network and blocks until connected.
 
         Args:
             target_ssid: The network to connect to. Must have been previously
@@ -397,11 +397,10 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             security_type: The security protocol of the network.
             timeout: timeout value.
 
-        Returns:
-            A RequestStatus response to the connect request.
-
         Raises:
-            HoneydewWlanError: Error from WLAN stack.
+            HoneydewWlanError: Error from WLAN stack, or if connect() FIDL call
+                returns anything except RequestStatus.Acknowledged, or if connection
+                failure.
             TypeError: Return value not a string.
             RuntimeError: Client controller has not been initialized.
         """
@@ -421,7 +420,17 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 ),
                 timeout,
             )
-            return f_wlan_policy.RequestStatus(resp.status)
+            status = f_wlan_policy.RequestStatus(resp.status)
+            if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
+                raise wlan_errors.HoneydewWlanRequestRejectedError(
+                    "ClientController.Connect()", status
+                )
+
+            await self.wait_for_network_state(
+                target_ssid,
+                ConnectionState.CONNECTED,
+                timeout=timeout,
+            )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.Connect() error {status}"
@@ -1129,8 +1138,8 @@ class WlanPolicy(wlan_policy.WlanPolicy):
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> f_wlan_policy.RequestStatus:
-        """Triggers connection to a network.
+    ) -> None:
+        """Triggers connection to a network and blocks until connected.
 
         Args:
             target_ssid: The network to connect to. Must have been previously
@@ -1138,15 +1147,18 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             security_type: The security protocol of the network.
             timeout: timeout value.
 
-        Returns:
-            A RequestStatus response to the connect request
-
         Raises:
-            HoneydewWlanError: Error from WLAN stack.
+            HoneydewWlanError: Error from WLAN stack, or if connect() FIDL call
+                returns anything except RequestStatus.Acknowledged, or if connection
+                failure.
             TypeError: Return value not a string.
         """
         return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.connect(target_ssid, security_type, timeout=timeout)
+            self._inner.connect(
+                target_ssid,
+                security_type,
+                timeout=timeout,
+            )
         )
 
     def get_saved_networks(
