@@ -281,20 +281,14 @@ then
   debug "Profiling enabled."
   readonly profile_log_dir="$log_dir/build_profile"
   mkdir -p "$profile_log_dir"
-  readonly vmstat_log="${profile_log_dir}/vmstat.log"
-  readonly ifconfig_log="${profile_log_dir}/ifconfig.log"
   readonly system_profile_log="${profile_log_dir}/system_profile.json"
   maybe_profile_wrap=(
     "$profile_wrapper"
-    --vmstat-log "$vmstat_log"
-    --ifconfig-log "$ifconfig_log"
     --system-log "$system_profile_log"
     --
   )
   post_build_uploads+=(
     # trace files
-    "$vmstat_log.json"
-    "$ifconfig_log.json"
     "$system_profile_log"
   )
 fi

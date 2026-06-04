@@ -29,24 +29,6 @@ command=("${PREBUILT_PYTHON3}"
   "--ninjatrace-path" "$PREBUILT_NINJATRACE"
   "--subbuilds-in-place" )
 
-# If there exists at least one vmstat log, copy it.
-readonly recent_vmstat_profile="${BUILD_PROFILE_DIR}/vmstat.log"
-if [[ -f "${recent_vmstat_profile}" ]]; then
-  readonly recent_vmstat_profile_json="${recent_vmstat_profile}.json"
-  if [[ -f "$recent_vmstat_profile_json" ]]; then
-    command+=("--vmstat-profile" "$recent_vmstat_profile_json")
-  fi
-fi
-
-# If there exists at least one ifconfig log, copy it.
-readonly recent_ifconfig_profile="${BUILD_PROFILE_DIR}/ifconfig.log"
-if [[ -f "${recent_ifconfig_profile}" ]]; then
-  readonly recent_ifconfig_profile_json="${recent_ifconfig_profile}.json"
-  if [[ -f "$recent_ifconfig_profile_json" ]]; then
-    command+=("--ifconfig-profile" "$recent_ifconfig_profile_json")
-  fi
-fi
-
 # If there exists a consolidated system profile, merge it.
 readonly recent_system_profile="${BUILD_PROFILE_DIR}/system_profile.json"
 if [[ -f "${recent_system_profile}" ]]; then

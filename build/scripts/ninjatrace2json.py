@@ -237,16 +237,6 @@ include these traces in the main build's ninjatrace.json file. Must not be
 specified if --subbuilds-output-path is set.""",
     )
     parser.add_argument(
-        "--vmstat-profile",
-        type=Path,
-        help="Path to a vmstat profiling log to incorporate into the merged build.",
-    )
-    parser.add_argument(
-        "--ifconfig-profile",
-        type=Path,
-        help="Path to an ifconfig profiling log to incorporate into the merged build.",
-    )
-    parser.add_argument(
         "--system-profile",
         type=Path,
         help="Path to a consolidated system profiling log to incorporate into the merged build.",
@@ -266,12 +256,7 @@ specified if --subbuilds-output-path is set.""",
     # Convert the trace for the main build
     outpath: Path = tracer.trace_build_dir(fuchsia_build_dir)
 
-    if (
-        args.subbuilds_in_place
-        or args.vmstat_profile
-        or args.ifconfig_profile
-        or args.system_profile
-    ):
+    if args.subbuilds_in_place or args.system_profile:
         # We are merging other trace files, so read in the converted trace
         # for the main build.
         main_build_traces = load_compressed_trace(
@@ -284,18 +269,6 @@ specified if --subbuilds-output-path is set.""",
                 tracer.find_and_merge_subbuilds(
                     fuchsia_build_dir, main_build_traces
                 )
-                or traces_merged
-            )
-
-        if args.vmstat_profile:
-            traces_merged = (
-                merge_profile(args.vmstat_profile, main_build_traces)
-                or traces_merged
-            )
-
-        if args.ifconfig_profile:
-            traces_merged = (
-                merge_profile(args.ifconfig_profile, main_build_traces)
                 or traces_merged
             )
 
