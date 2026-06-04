@@ -1414,15 +1414,19 @@ impl FileAsyncOwner {
         match self {
             FileAsyncOwner::Unowned => (),
             FileAsyncOwner::Thread(id) | FileAsyncOwner::Process(id) => {
-                current_task.get_task(id)?;
+                if id != 0 {
+                    current_task.get_task(id)?;
+                }
             }
             FileAsyncOwner::ProcessGroup(pgid) => {
-                current_task
-                    .kernel()
-                    .pids
-                    .read()
-                    .get_process_group(pgid)
-                    .ok_or_else(|| errno!(ESRCH))?;
+                if pgid != 0 {
+                    current_task
+                        .kernel()
+                        .pids
+                        .read()
+                        .get_process_group(pgid)
+                        .ok_or_else(|| errno!(ESRCH))?;
+                }
             }
         }
         Ok(())

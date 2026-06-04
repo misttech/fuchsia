@@ -351,15 +351,12 @@ pub fn sys_fcntl(
         F_SETOWN_EX => {
             let user_owner = UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
             let requested_owner = current_task.read_object(user_owner)?;
-            let mut owner = match requested_owner.type_ as u32 {
+            let owner = match requested_owner.type_ as u32 {
                 F_OWNER_TID => FileAsyncOwner::Thread(requested_owner.pid),
                 F_OWNER_PID => FileAsyncOwner::Process(requested_owner.pid),
                 F_OWNER_PGRP => FileAsyncOwner::ProcessGroup(requested_owner.pid),
                 _ => return error!(EINVAL),
             };
-            if requested_owner.pid == 0 {
-                owner = FileAsyncOwner::Unowned;
-            }
             owner.validate(current_task)?;
             file.set_async_owner(owner);
             Ok(SUCCESS)
