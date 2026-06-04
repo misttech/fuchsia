@@ -170,6 +170,9 @@
                 "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountReadWriteToReadOnlyWithOpenWriterFails",
+
+                // TODO(https://fxbug.dev/512516335): F_SETOWN_EX loses type when pid=0
+                "FcntlTest.SetOwnExPidZeroPreservesType",
             ],
         },
     ],

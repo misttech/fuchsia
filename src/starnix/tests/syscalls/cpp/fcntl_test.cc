@@ -328,4 +328,23 @@ TEST_F(FcntlTest, RenameExchangeLockOrdering) {
   ASSERT_THAT(rmdir(second_parent_dir.c_str()), SyscallSucceeds());
 }
 
+TEST_F(FcntlTest, SetOwnExPidZeroPreservesType) {
+  int fd = OpenTestFile();
+
+  struct f_owner_ex owner;
+  owner.type = F_OWNER_PID;
+  owner.pid = 0;
+
+  ASSERT_THAT(fcntl(fd, F_SETOWN_EX, &owner), SyscallSucceeds());
+
+  struct f_owner_ex got_owner;
+  memset(&got_owner, 0, sizeof(got_owner));
+  ASSERT_THAT(fcntl(fd, F_GETOWN_EX, &got_owner), SyscallSucceeds());
+
+  EXPECT_EQ(got_owner.type, F_OWNER_PID);
+  EXPECT_EQ(got_owner.pid, 0);
+
+  close(fd);
+}
+
 }  // namespace
