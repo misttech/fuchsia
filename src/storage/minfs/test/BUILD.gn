@@ -12,6 +12,7 @@ test("minfs_unit") {
   sources = [
     "unit/bcache_test.cc",
     "unit/buffer_view_test.cc",
+    "unit/directory_test.cc",
     "unit/format_test.cc",
     "unit/fsck_test.cc",
     "unit/journal_integration_fixture.cc",

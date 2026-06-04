@@ -39,7 +39,7 @@
 namespace minfs {
 namespace {
 
-zx::result<> ValidateDirent(Dirent* de, size_t bytes_read, size_t off) {
+zx::result<> ValidateDirent(Dirent* de, size_t bytes_read, size_t off, size_t directory_size) {
   if (bytes_read < kMinfsDirentSize) {
     FX_LOGS(ERROR) << "vn_dir: Short read (" << bytes_read << " bytes) at offset " << off;
     return zx::error(ZX_ERR_IO);
@@ -58,8 +58,22 @@ zx::result<> ValidateDirent(Dirent* de, size_t bytes_read, size_t off) {
       FX_LOGS(ERROR) << "vn_dir: bad namelen " << de->namelen << " / " << reclen;
       return zx::error(ZX_ERR_IO);
     }
+    if (off + DirentSize(de->namelen) > directory_size) {
+      FX_LOGS(ERROR) << "vn_dir: Dirent name at offset " << off << " extends past directory size ("
+                     << off + DirentSize(de->namelen) << " > " << directory_size << ")";
+      return zx::error(ZX_ERR_IO);
+    }
   }
   return zx::ok();
+}
+
+zx::result<> WriteDirent(Transaction* transaction, VnodeMinfs* vnode, Dirent* de, size_t off) {
+  size_t used_size = kMinfsDirentSize + de->namelen;
+  size_t total_size = DirentSize(de->namelen);
+  if (total_size > used_size) {
+    memset(de->name + de->namelen, 0, total_size - used_size);
+  }
+  return vnode->WriteExactInternal(transaction, de, total_size, off);
 }
 
 uint32_t VfsTypeToMinfsType(fs::CreationType type) {
@@ -166,7 +180,7 @@ zx::result<Directory::IteratorCommand> Directory::UnlinkChild(Transaction* trans
       FX_LOGS(ERROR) << "unlink: Failed to read next dirent";
       return status.take_error();
     }
-    if (auto status = ValidateDirent(&de_next, len, off_next); status.is_error()) {
+    if (auto status = ValidateDirent(&de_next, len, off_next, GetSize()); status.is_error()) {
       FX_LOGS(ERROR) << "unlink: Read invalid dirent";
       return status.take_error();
     }
@@ -183,7 +197,7 @@ zx::result<Directory::IteratorCommand> Directory::UnlinkChild(Transaction* trans
       FX_LOGS(ERROR) << "unlink: Failed to read previous dirent";
       return status.take_error();
     }
-    if (auto status = ValidateDirent(&de_prev, len, off_prev); status.is_error()) {
+    if (auto status = ValidateDirent(&de_prev, len, off_prev, GetSize()); status.is_error()) {
       FX_LOGS(ERROR) << "unlink: Read invalid dirent";
       return status.take_error();
     }
@@ -310,8 +324,7 @@ zx::result<Directory::IteratorCommand> Directory::DirentCallbackAttemptRename(
 
   de->ino = args->ino;
 
-  if (auto status =
-          vndir->WriteExactInternal(args->transaction, de, DirentSize(de->namelen), args->offs.off);
+  if (auto status = WriteDirent(args->transaction, vndir.get(), de, args->offs.off);
       status.is_error()) {
     return status.take_error();
   }
@@ -330,8 +343,7 @@ zx::result<Directory::IteratorCommand> Directory::DirentCallbackUpdateInode(
 
   de->ino = args->ino;
 
-  if (auto status =
-          vndir->WriteExactInternal(args->transaction, de, DirentSize(de->namelen), args->offs.off);
+  if (auto status = WriteDirent(args->transaction, vndir.get(), de, args->offs.off);
       status.is_error()) {
     return status.take_error();
   }
@@ -387,7 +399,7 @@ zx::result<> Directory::AppendDirent(DirArgs* args) {
     return status;
   }
 
-  if (auto status = ValidateDirent(de, r, args->offs.off); status.is_error()) {
+  if (auto status = ValidateDirent(de, r, args->offs.off, GetSize()); status.is_error()) {
     return status;
   }
 
@@ -413,9 +425,7 @@ zx::result<> Directory::AppendDirent(DirArgs* args) {
     // shrink existing entry
     bool was_last_record = de->reclen & kMinfsReclenLast;
     de->reclen = size;
-    if (auto status =
-            WriteExactInternal(args->transaction, de, DirentSize(de->namelen), args->offs.off);
-        status.is_error()) {
+    if (auto status = WriteDirent(args->transaction, this, de, args->offs.off); status.is_error()) {
       return status;
     }
 
@@ -428,9 +438,7 @@ zx::result<> Directory::AppendDirent(DirArgs* args) {
   de->type = static_cast<uint8_t>(args->type);
   de->namelen = static_cast<uint8_t>(args->name.length());
   memcpy(de->name, args->name.data(), de->namelen);
-  if (auto status =
-          WriteExactInternal(args->transaction, de, DirentSize(de->namelen), args->offs.off);
-      status.is_error()) {
+  if (auto status = WriteDirent(args->transaction, this, de, args->offs.off); status.is_error()) {
     return status;
   }
 
@@ -472,7 +480,7 @@ zx::result<bool> Directory::ForEachDirent(DirArgs* args, const DirentCallback fu
         status.is_error()) {
       return status.take_error();
     }
-    if (auto status = ValidateDirent(de, r, args->offs.off); status.is_error()) {
+    if (auto status = ValidateDirent(de, r, args->offs.off, GetSize()); status.is_error()) {
       return status.take_error();
     }
 
@@ -590,7 +598,7 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
           goto fail;
         }
         auto read_status = ReadInternal(nullptr, de, kMinfsMaxDirentSize, off_recovered, &r);
-        if (read_status.is_error() || ValidateDirent(de, r, off_recovered).is_error()) {
+        if (read_status.is_error() || ValidateDirent(de, r, off_recovered, GetSize()).is_error()) {
           FX_LOGS(ERROR) << "Readdir: Corrupt dirent unreadable/failed validation";
           goto fail;
         }
@@ -605,7 +613,7 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
         FX_LOGS(ERROR) << "Readdir: Unreadable dirent " << status.status_value();
         goto fail;
       }
-      if (auto status = ValidateDirent(de, r, off); status.is_error()) {
+      if (auto status = ValidateDirent(de, r, off, GetSize()); status.is_error()) {
         FX_LOGS(ERROR) << "Readdir: Corrupt dirent failed validation " << status.status_value();
         goto fail;
       }

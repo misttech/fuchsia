@@ -1084,7 +1084,7 @@ void Minfs::BlockSwap(Transaction* transaction, blk_t in_bno, blk_t* out_bno) {
 void InitializeDirectory(void* bdata, ino_t ino_self, ino_t ino_parent) {
   // The self directory is named "." (name length = 1).
   constexpr auto kSelfSize = DirentSize(1);
-  DirentBuffer self;
+  DirentBuffer self = {};
   self.dirent.ino = ino_self;
   self.dirent.reclen = kSelfSize;
   self.dirent.namelen = 1;
@@ -1093,7 +1093,7 @@ void InitializeDirectory(void* bdata, ino_t ino_self, ino_t ino_parent) {
 
   // The parent directory is named ".." (name length = 2).
   constexpr auto kParentSize = DirentSize(2);
-  DirentBuffer parent;
+  DirentBuffer parent = {};
   parent.dirent.ino = ino_parent;
   parent.dirent.reclen = kParentSize | kMinfsReclenLast;
   parent.dirent.namelen = 2;
