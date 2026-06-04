@@ -170,9 +170,6 @@
                 "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountReadWriteToReadOnlyWithOpenWriterFails",
-
-                // TODO(https://fxbug.dev/512339721): F_GETOWN_EX does not write default when unowned
-                "FcntlTest.GetOwnExDefault",
             ],
         },
     ],

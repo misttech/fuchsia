@@ -315,23 +315,19 @@ pub fn sys_fcntl(
             FileAsyncOwner::ProcessGroup(pgid) => Ok((-pgid).into()),
         },
         F_GETOWN_EX => {
-            let maybe_owner = match file.get_async_owner() {
-                FileAsyncOwner::Unowned => None,
+            let owner = match file.get_async_owner() {
+                FileAsyncOwner::Unowned => uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: 0 },
                 FileAsyncOwner::Thread(tid) => {
-                    Some(uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: tid })
+                    uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: tid }
                 }
-                FileAsyncOwner::Process(pid) => {
-                    Some(uapi::f_owner_ex { type_: F_OWNER_PID as i32, pid })
-                }
+                FileAsyncOwner::Process(pid) => uapi::f_owner_ex { type_: F_OWNER_PID as i32, pid },
                 FileAsyncOwner::ProcessGroup(pgid) => {
-                    Some(uapi::f_owner_ex { type_: F_OWNER_PGRP as i32, pid: pgid })
+                    uapi::f_owner_ex { type_: F_OWNER_PGRP as i32, pid: pgid }
                 }
             };
-            if let Some(owner) = maybe_owner {
-                let user_owner: UserRef<f_owner_ex> =
-                    UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
-                current_task.write_object(user_owner, &owner)?;
-            }
+            let user_owner: UserRef<f_owner_ex> =
+                UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
+            current_task.write_object(user_owner, &owner)?;
             Ok(SUCCESS)
         }
         F_SETOWN => {
