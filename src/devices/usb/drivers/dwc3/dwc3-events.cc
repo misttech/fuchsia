@@ -48,8 +48,6 @@ void Dwc3::HandleEpEvent(uint32_t event) {
       fdf::debug("ep[{}] DEPEVT_CMD_COMPLETE: type {} rsrc_id {}", ep_num, cmd_type, rsrc_id);
       if (cmd_type == DEPCMD::DEPSTRTXFER) {
         HandleEpTransferStartedEvent(ep_num, rsrc_id);
-      } else if (cmd_type == DEPCMD::DEPENDXFER) {
-        HandleEpEndTransferCompleteEvent(ep_num);
       }
       break;
     }
