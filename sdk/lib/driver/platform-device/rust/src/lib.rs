@@ -40,18 +40,18 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
     type Mmio = MmioRegion<VmoMemory>;
 
     async fn map_mmio_by_id(&self, id: u32) -> Result<Self::Mmio, DriverError> {
-        let mmio = self.get_mmio_by_id(id).await?.map_err(DriverError::from_raw_status)?;
+        let mmio = self.get_mmio_by_id(id).await??;
         Ok(map_mmio(mmio)?)
     }
 
     async fn map_mmio_by_name(&self, name: &str) -> Result<Self::Mmio, DriverError> {
-        let mmio = self.get_mmio_by_name(name).await?.map_err(DriverError::from_raw_status)?;
+        let mmio = self.get_mmio_by_name(name).await??;
         Ok(map_mmio(mmio)?)
     }
 
     async fn get_typed_metadata<T: Persistable + Serializable>(&self) -> Result<T, DriverError> {
         let name = T::SERIALIZABLE_NAME;
-        let metadata_res = self.get_metadata(name).await?.map_err(DriverError::from_raw_status)?;
+        let metadata_res = self.get_metadata(name).await??;
         fidl::unpersist(&metadata_res.metadata).map_err(|err| {
             error!("Failed to parse pdev metadata: {err}");
             DriverError::Status(Status::INVALID_ARGS)
@@ -62,7 +62,7 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
         &self,
     ) -> Result<T, DriverError> {
         let name = "fuchsia.driver.metadata.Dictionary";
-        let metadata_res = self.get_metadata(name).await?.map_err(DriverError::from_raw_status)?;
+        let metadata_res = self.get_metadata(name).await??;
         let dict: fidl_fuchsia_driver_metadata::Dictionary =
             fidl::unpersist(&metadata_res.metadata).map_err(|err| {
                 error!("Failed to unpersist dictionary: {err}");
@@ -197,7 +197,7 @@ mod tests {
                     let _ = responder.respond(mmio).await;
                 }
                 Err(status) => {
-                    let _ = responder.respond_err(status.into_raw()).await;
+                    let _ = responder.respond_err(status).await;
                 }
             }
         }
@@ -213,7 +213,7 @@ mod tests {
                     let _ = responder.respond(mmio).await;
                 }
                 Err(status) => {
-                    let _ = responder.respond_err(status.into_raw()).await;
+                    let _ = responder.respond_err(status).await;
                 }
             }
         }
@@ -295,7 +295,7 @@ mod tests {
                     let _ = responder.respond(metadata).await;
                 }
                 Err(status) => {
-                    let _ = responder.respond_err(status.into_raw()).await;
+                    let _ = responder.respond_err(status).await;
                 }
             }
         }

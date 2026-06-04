@@ -67,7 +67,7 @@ impl{{ de }} {{ name }}{{ de }} {
             match self.raw.ordinal() {
                 {% for member in union_.members %}
                     {{ member.ordinal }} => Self {
-                        raw: unsafe { self.raw.clone_inline_unchecked::<{{ self.wire_type(member.ty) }}>() },
+                        raw: unsafe { self.raw.clone_inline_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() },
                         _phantom: ::core::marker::PhantomData,
                     },
                 {% endfor %}
@@ -107,7 +107,7 @@ where
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
+                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             0 => ::fidl_next::wire::Union::decode_absent(raw)?,
             _ => ::fidl_next::wire::Union::{{ decode_unknown}}(

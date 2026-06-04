@@ -9,7 +9,7 @@ impl<'de> Drop for {{ name }}<'de> {
         {% for member in table.members %}
             let _ = self.table.get({{ member.ordinal }})
                 .map(|envelope| unsafe {
-                    envelope.read_unchecked::<{{ self.wire_type(member.ty) }}>()
+                    envelope.read_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>()
                 });
         {% endfor %}
     }
@@ -59,18 +59,18 @@ where
                     {{ member.ordinal }} => {
                         ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            {{ self.wire_type(member.ty) }},
+                            {{ self.wire_type(member.ty, member.from_alias.as_ref()) }},
                         >(slot.as_mut(), decoder, {{ self.constraint(member.ty) }})?;
                         {# type check #}
                         {% match member.ty.kind -%}
-                            {% when TypeKind::Array { element_count, element_type } %}
-                            {% when TypeKind::Vector { element_count, element_type, nullable } -%}
+                            {% when TypeKind::Array { element_count, element_type, .. } %}
+                            {% when TypeKind::Vector { element_count, element_type, nullable, .. } -%}
                                 {% if let Some(limit) = element_count -%}
                                     let value = unsafe {
                                         slot
                                             .deref_unchecked()
                                             .deref_unchecked::<
-                                                {{ self.anonymous_wire_type(member.ty) }}
+                                                {{ self.anonymous_wire_type(member.ty, member.from_alias.as_ref()) }}
                                             >()
                                     };
                                     {% if nullable -%}
@@ -92,7 +92,7 @@ where
                                         slot
                                             .deref_unchecked()
                                             .deref_unchecked::<
-                                                {{ self.anonymous_wire_type(member.ty) }}
+                                                {{ self.anonymous_wire_type(member.ty, member.from_alias.as_ref()) }}
                                             >()
                                     };
                                     {% if nullable -%}
@@ -122,7 +122,7 @@ where
 
 impl<'de> {{ name }}<'de> {
     {% for member in table.members %}
-        pub fn {{ member.name.snake() }}(&self) -> ::core::option::Option<&{{ self.wire_type(member.ty) }}> {
+        pub fn {{ member.name.snake() }}(&self) -> ::core::option::Option<&{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}> {
             unsafe {
                 Some(self.table.get({{ member.ordinal }})?.deref_unchecked())
             }

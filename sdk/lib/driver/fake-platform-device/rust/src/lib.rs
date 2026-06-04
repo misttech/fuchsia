@@ -147,7 +147,7 @@ impl DeviceServerHandler for FakePDevServer {
         if let Some(mmio) = mmio_clone {
             let _ = responder.respond(mmio).await;
         } else {
-            let _ = responder.respond_err(Status::NOT_FOUND.into_raw()).await;
+            let _ = responder.respond_err(Status::NOT_FOUND).await;
         }
     }
 
@@ -166,11 +166,8 @@ impl DeviceServerHandler for FakePDevServer {
                 .and_then(|idx| state.config.mmios.get(idx))
                 .map(FakePDevServer::duplicate_mmio)
         };
-        if let Some(mmio) = mmio_clone {
-            let _ = responder.respond(mmio).await;
-        } else {
-            let _ = responder.respond_err(Status::NOT_FOUND.into_raw()).await;
-        }
+
+        let _ = responder.respond_with(mmio_clone.ok_or(Status::NOT_FOUND)).await;
     }
 
     async fn get_interrupt_by_id(
@@ -199,7 +196,7 @@ impl DeviceServerHandler for FakePDevServer {
                 let _ = responder.respond(irq).await;
             }
             Err(e) => {
-                let _ = responder.respond_err(e.into_raw()).await;
+                let _ = responder.respond_err(e).await;
             }
         }
     }
@@ -234,7 +231,7 @@ impl DeviceServerHandler for FakePDevServer {
                 let _ = responder.respond(irq).await;
             }
             Err(e) => {
-                let _ = responder.respond_err(e.into_raw()).await;
+                let _ = responder.respond_err(e).await;
             }
         }
     }
@@ -265,7 +262,7 @@ impl DeviceServerHandler for FakePDevServer {
                 let _ = responder.respond(bti).await;
             }
             Err(status) => {
-                let _ = responder.respond_err(status.into_raw()).await;
+                let _ = responder.respond_err(status).await;
             }
         }
     }
@@ -300,7 +297,7 @@ impl DeviceServerHandler for FakePDevServer {
                 let _ = responder.respond(bti).await;
             }
             Err(status) => {
-                let _ = responder.respond_err(status.into_raw()).await;
+                let _ = responder.respond_err(status).await;
             }
         }
     }
@@ -326,7 +323,7 @@ impl DeviceServerHandler for FakePDevServer {
                 let _ = responder.respond(dup).await;
             }
             Err(status) => {
-                let _ = responder.respond_err(status.into_raw()).await;
+                let _ = responder.respond_err(status).await;
             }
         }
     }
@@ -336,7 +333,7 @@ impl DeviceServerHandler for FakePDevServer {
         _request: Request<fdevice::device::GetSmcByName>,
         responder: Responder<fdevice::device::GetSmcByName>,
     ) {
-        let _ = responder.respond_err(Status::NOT_FOUND.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_FOUND).await;
     }
 
     async fn get_power_configuration(
@@ -352,20 +349,12 @@ impl DeviceServerHandler for FakePDevServer {
         responder: Responder<fdevice::device::GetNodeDeviceInfo>,
     ) {
         let device_info = self.state.lock().config.device_info.clone();
-        if let Some(info) = device_info {
-            let _ = responder.respond(info).await;
-        } else {
-            let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
-        }
+        let _ = responder.respond_with(device_info.ok_or(Status::NOT_SUPPORTED)).await;
     }
 
     async fn get_board_info(&mut self, responder: Responder<fdevice::device::GetBoardInfo>) {
         let board_info = self.state.lock().config.board_info.clone();
-        if let Some(info) = board_info {
-            let _ = responder.respond(info).await;
-        } else {
-            let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
-        }
+        let _ = responder.respond_with(board_info.ok_or(Status::NOT_SUPPORTED)).await;
     }
 
     async fn get_metadata(
@@ -377,7 +366,7 @@ impl DeviceServerHandler for FakePDevServer {
         if let Some(data) = metadata {
             let _ = responder.respond(data).await;
         } else {
-            let _ = responder.respond_err(Status::NOT_FOUND.into_raw()).await;
+            let _ = responder.respond_err(Status::NOT_FOUND).await;
         }
     }
 }

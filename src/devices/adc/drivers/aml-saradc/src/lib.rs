@@ -216,7 +216,7 @@ impl adcimpl::DeviceLocalServerHandler for DeviceServer {
                 AdcRequest::GetSample { responder, .. } => responder,
                 _ => unreachable!(),
             };
-            let _ = responder.respond_err(Status::INTERNAL.into_raw()).await;
+            let _ = responder.respond_err(Status::INTERNAL).await;
         }
     }
 }
@@ -247,7 +247,7 @@ impl Driver for AmlSaradc {
         let adc_mmio = pdev.map_mmio_by_id(0).await?;
         let ao_mmio = pdev.map_mmio_by_id(1).await?;
 
-        let irq = pdev.get_interrupt_by_id(0, 0).await?.map_err(DriverError::from_raw_status)?.irq;
+        let irq = pdev.get_interrupt_by_id(0, 0).await??.irq;
 
         let mut device = AmlSaradcDevice {
             adc_regs: AdcRegsBlock::new(adc_mmio),
@@ -297,7 +297,7 @@ impl Driver for AmlSaradc {
                                 let _ = responder.respond(value).await;
                             }
                             Err(status) => {
-                                let _ = responder.respond_err(status.into_raw()).await;
+                                let _ = responder.respond_err(status).await;
                             }
                         }
                     }

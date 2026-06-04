@@ -39,11 +39,6 @@ impl DriverError {
             }
         }
     }
-
-    /// Returns `DriverError::Status` of the given raw status.
-    pub fn from_raw_status(raw: i32) -> Self {
-        DriverError::Status(Status::from_raw(raw))
-    }
 }
 
 impl From<Status> for DriverError {

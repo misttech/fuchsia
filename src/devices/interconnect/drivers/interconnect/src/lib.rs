@@ -86,7 +86,6 @@ impl Child {
         let response = match result {
             Ok(response) => Ok(response),
             Err(err) => {
-                let err = Status::from_raw(err);
                 error!("Failed to set bandwidth with {err}");
                 Err(err)
             }
@@ -133,7 +132,7 @@ impl icc::PathLocalServerHandler for ChildHandler<'_> {
             .await;
         match res {
             Ok(()) => responder.respond(()).await.unwrap(),
-            Err(err) => responder.respond_err(err.into_raw()).await.unwrap(),
+            Err(err) => responder.respond_err(err).await.unwrap(),
         }
     }
 }
@@ -211,7 +210,7 @@ impl InterconnectDriver {
                     sync_graph.borrow_mut().update_stats(result.aggregated_bandwidth);
                 }
                 Ok(Err(err)) => {
-                    error!("Failed to set bandwidth with {}", Status::from_raw(err));
+                    error!("Failed to set bandwidth with {err}");
                 }
             };
         });

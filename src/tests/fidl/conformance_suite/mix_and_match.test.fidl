@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 library test.conformance;
 
-using zx;
-
 type XUnionInTable = table {
     1: before string;
     2: xu SampleXUnion;
@@ -56,7 +54,7 @@ type NodeAttributes = struct {
 };
 
 type FileGetAttrResponse = struct {
-    s zx.Status;
+    s int32;
     attributes NodeAttributes;
 };
 

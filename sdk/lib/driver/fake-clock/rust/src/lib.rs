@@ -97,7 +97,7 @@ impl ClockServerHandler for FakeClockServer {
         _request: Request<fclock::clock::QuerySupportedRate>,
         responder: Responder<fclock::clock::QuerySupportedRate>,
     ) {
-        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED).await;
     }
 
     async fn get_rate(&mut self, responder: Responder<fclock::clock::GetRate>) {
@@ -110,15 +110,15 @@ impl ClockServerHandler for FakeClockServer {
         _request: Request<fclock::clock::SetInput>,
         responder: Responder<fclock::clock::SetInput>,
     ) {
-        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED).await;
     }
 
     async fn get_num_inputs(&mut self, responder: Responder<fclock::clock::GetNumInputs>) {
-        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED).await;
     }
 
     async fn get_input(&mut self, responder: Responder<fclock::clock::GetInput>) {
-        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(zx::Status::NOT_SUPPORTED).await;
     }
 
     async fn get_properties(&mut self, responder: Responder<fclock::clock::GetProperties>) {

@@ -48,6 +48,7 @@ rustc_library(
             "src/wire/fuchsia/mod.rs",
             "src/wire/fuchsia/object_type.rs",
             "src/wire/fuchsia/rights.rs",
+            "src/wire/fuchsia/status.rs",
         ],
         "//conditions:default": [],
     }),

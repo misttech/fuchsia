@@ -37,8 +37,8 @@ impl<'a> AliasTemplate<'a> {
 
             name: alias.name.decl_name().camel(),
             is_static: alias.ty.shape.is_static(),
-            natural_ty: context.natural_type(&alias.ty),
-            wire_ty: context.wire_type(&alias.ty),
+            natural_ty: context.natural_type(&alias.ty, alias.from_alias.as_ref()),
+            wire_ty: context.wire_type(&alias.ty, alias.from_alias.as_ref()),
         }
     }
 

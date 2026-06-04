@@ -118,7 +118,7 @@ impl GpioServerHandler for FakeGpioServer {
                 let _ = responder.respond(interrupt).await;
             }
             Err(e) => {
-                let _ = responder.respond_err(e.into_raw()).await;
+                let _ = responder.respond_err(e).await;
             }
         }
     }

@@ -5,30 +5,50 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use fidl_ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
+use fidl_ir::{
+    DeclType, EndpointRole, InternalSubtype, PartialTypeConstructor, PrimSubtype, Type, TypeKind,
+};
 use fidlgen::{LibraryExt as _, TypeShapeExt as _};
 
 pub struct WireTypeTemplate<'a> {
     context: &'a Context,
     ty: &'a Type,
+    from_alias: Option<&'a PartialTypeConstructor>,
     lifetime: &'a str,
 }
 
 impl<'a> WireTypeTemplate<'a> {
-    pub fn new(ty: &'a Type, lifetime: &'a str, context: &'a Context) -> Self {
-        Self { context, ty, lifetime }
+    pub fn new(
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+        lifetime: &'a str,
+        context: &'a Context,
+    ) -> Self {
+        Self { context, ty, from_alias, lifetime }
     }
 
-    pub fn with_de(ty: &'a Type, context: &'a Context) -> Self {
-        Self::new(ty, "'de", context)
+    pub fn with_de(
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+        context: &'a Context,
+    ) -> Self {
+        Self::new(ty, from_alias, "'de", context)
     }
 
-    pub fn with_static(ty: &'a Type, context: &'a Context) -> Self {
-        Self::new(ty, "'static", context)
+    pub fn with_static(
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+        context: &'a Context,
+    ) -> Self {
+        Self::new(ty, from_alias, "'static", context)
     }
 
-    pub fn with_anonymous(ty: &'a Type, context: &'a Context) -> Self {
-        Self::new(ty, "'_", context)
+    pub fn with_anonymous(
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+        context: &'a Context,
+    ) -> Self {
+        Self::new(ty, from_alias, "'_", context)
     }
 }
 
@@ -41,12 +61,14 @@ impl Contextual for WireTypeTemplate<'_> {
 impl fmt::Display for WireTypeTemplate<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.ty.kind {
-            TypeKind::Array { element_type, element_count } => {
-                let wire_ty = Self::new(element_type, self.lifetime, self.context);
+            TypeKind::Array { element_type, element_count, from_alias } => {
+                let wire_ty =
+                    Self::new(element_type, from_alias.as_ref(), self.lifetime, self.context);
                 write!(f, "[{wire_ty}; {element_count}]")?;
             }
-            TypeKind::Vector { element_type, nullable, .. } => {
-                let wire_ty = Self::new(element_type, self.lifetime, self.context);
+            TypeKind::Vector { element_type, nullable, from_alias, .. } => {
+                let wire_ty =
+                    Self::new(element_type, from_alias.as_ref(), self.lifetime, self.context);
                 if *nullable {
                     write!(f, "::fidl_next::wire::OptionalVector<{}, {wire_ty}>", self.lifetime)?;
                 } else {
@@ -98,7 +120,16 @@ impl fmt::Display for WireTypeTemplate<'_> {
                 }
             }
             TypeKind::Primitive { subtype } => {
-                write!(f, "{}", self.wire_prim(*subtype))?;
+                if matches!(subtype, PrimSubtype::Int32)
+                    && self.from_alias.is_some_and(|from_alias| {
+                        from_alias.name.library() == "zx"
+                            && from_alias.name.decl_name().non_canonical() == "Status"
+                    })
+                {
+                    write!(f, "::fidl_next::wire::fuchsia::Status")?;
+                } else {
+                    write!(f, "{}", self.wire_prim(*subtype))?;
+                }
             }
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let wire_id = self.wire_id(identifier);

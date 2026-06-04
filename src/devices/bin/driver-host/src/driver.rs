@@ -671,7 +671,7 @@ impl Driver {
             Ok(Err(status)) => {
                 warn!("Driver failed to start: {}", status);
                 self.shutdown(driver_request);
-                return Err(Status::from_raw(status));
+                return Err(status);
             }
             Err(e) => {
                 warn!("Driver start FIDL error: {:?}", e);
@@ -1095,11 +1095,7 @@ impl Driver {
             Ok(()) => match client.suspend().await {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => {
-                    log::error!(
-                        "Driver suspend application error for {}: {:?}",
-                        self.url,
-                        Status::from_raw(e)
-                    );
+                    log::error!("Driver suspend application error for {}: {:?}", self.url, e,);
                     Err(())
                 }
                 Err(e) => {
@@ -1128,11 +1124,7 @@ impl Driver {
         match client.resume(lease).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                log::error!(
-                    "Driver resume application error for {}: {:?}",
-                    self.url,
-                    Status::from_raw(e)
-                );
+                log::error!("Driver resume application error for {}: {:?}", self.url, e);
                 return Err(());
             }
             Err(e) => {

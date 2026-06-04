@@ -235,27 +235,22 @@ impl DwSpiDevice {
     pub async fn handle_request(&mut self, req: SpiImplRequest) {
         match req {
             SpiImplRequest::TransmitVector { chip_select, data, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &data, false, data.len())
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.into_raw());
+                let result =
+                    self.exchange_pio(chip_select, &data, false, data.len()).await.map(|_| ());
                 let _ = responder.respond_with(result).await;
             }
             SpiImplRequest::ReceiveVector { chip_select, size, responder } => {
                 let result = self
                     .exchange_pio(chip_select, &[], true, size)
                     .await
-                    .map(|data| SpiImplReceiveVectorResponse { data })
-                    .map_err(|e| e.into_raw());
+                    .map(|data| SpiImplReceiveVectorResponse { data });
                 let _ = responder.respond_with(result).await;
             }
             SpiImplRequest::ExchangeVector { chip_select, txdata, responder } => {
                 let result = self
                     .exchange_pio(chip_select, &txdata, true, txdata.len())
                     .await
-                    .map(|rxdata| SpiImplExchangeVectorResponse { rxdata })
-                    .map_err(|e| e.into_raw());
+                    .map(|rxdata| SpiImplExchangeVectorResponse { rxdata });
                 let _ = responder.respond_with(result).await;
             }
         }

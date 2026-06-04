@@ -91,7 +91,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::LockBus>,
         responder: Responder<fspi_impl::LockBus>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn unlock_bus(
@@ -99,7 +99,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::UnlockBus>,
         responder: Responder<fspi_impl::UnlockBus>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn register_vmo(
@@ -107,7 +107,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::RegisterVmo>,
         responder: Responder<fspi_impl::RegisterVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn unregister_vmo(
@@ -115,7 +115,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::UnregisterVmo>,
         responder: Responder<fspi_impl::UnregisterVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn release_registered_vmos(
@@ -129,7 +129,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::TransmitVmo>,
         responder: Responder<fspi_impl::TransmitVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn receive_vmo(
@@ -137,7 +137,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::ReceiveVmo>,
         responder: Responder<fspi_impl::ReceiveVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 
     async fn exchange_vmo(
@@ -145,7 +145,7 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
         _request: Request<fspi_impl::ExchangeVmo>,
         responder: Responder<fspi_impl::ExchangeVmo>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 }
 
@@ -184,25 +184,16 @@ impl Driver for DwSpiDriver {
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let powerdomain = context.connect_to_powerdomain("power-domain")?;
-        powerdomain
-            .enable()
-            .await?
-            .map_err(Status::from_raw)
-            .context("Failed to enable power domain")?;
+        powerdomain.enable().await?.context("Failed to enable power domain")?;
 
         let clock_bus = context.connect_to_clock("clock-bus")?;
-        clock_bus
-            .enable()
-            .await?
-            .map_err(Status::from_raw)
-            .context("Failed to enable bus clock")?;
+        clock_bus.enable().await?.context("Failed to enable bus clock")?;
 
-        let parent_clock_hz = match clock_bus.get_rate().await {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(e)) => Err(Status::from_raw(e)),
-            _ => Err(Status::INTERNAL),
-        };
-        let parent_clock_hz = parent_clock_hz
+        let parent_clock_hz = clock_bus
+            .get_rate()
+            .await
+            .map_err(|_| Status::INTERNAL)
+            .flatten()
             .inspect_err(|e| {
                 error!("Failed to get bus clock rate: {e}");
             })
@@ -210,14 +201,10 @@ impl Driver for DwSpiDriver {
             .hz;
 
         let clock_regs = context.connect_to_clock("clock-registers")?;
-        clock_regs
-            .enable()
-            .await?
-            .map_err(Status::from_raw)
-            .context("Failed to enable registers clock")?;
+        clock_regs.enable().await?.context("Failed to enable registers clock")?;
 
         let reset = context.connect_to_reset("reset")?;
-        reset.toggle().await?.map_err(Status::from_raw).context("Failed to toggle reset")?;
+        reset.toggle().await?.context("Failed to toggle reset")?;
 
         let cs_gpio = {
             let cs_gpio = context.connect_to_gpio("gpio-cs-0")?;

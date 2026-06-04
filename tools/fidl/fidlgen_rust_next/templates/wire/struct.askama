@@ -17,7 +17,7 @@ pub type {{ name }} = ::fidl_next::wire::Unit;
 #[repr(C)]
 pub struct {{ name }}{{ de }} {
     {% for member in strct.members %}
-        pub {{ member.name.snake() }}: {{ self.wire_type(member.ty) }},
+        pub {{ member.name.snake() }}: {{ self.wire_type(member.ty, member.from_alias.as_ref()) }},
     {% endfor %}
 }
 
@@ -104,8 +104,8 @@ where
             ::fidl_next::Decode::decode({{ member_name }}.as_mut(), decoder_, {{ self.constraint(member.ty) }})?;
             {# type check #}
             {% match member.ty.kind %}
-                {% when TypeKind::Array { element_count, element_type } %}
-                {% when TypeKind::Vector { element_count, element_type, nullable } %}
+                {% when TypeKind::Array { element_count, element_type, .. } %}
+                {% when TypeKind::Vector { element_count, element_type, nullable, .. } %}
                     {% if let Some(limit) = element_count %}
                         let {{ member_name }} = unsafe { {{ member_name }}.deref_unchecked() };
                         {% if nullable %}

@@ -12,7 +12,7 @@ pub type {{ name }} = ();
 {% endif -%}
 pub struct {{ name }} {
     {% for member in strct.members %}
-        pub {{ member.name.snake() }}: {{ self.natural_type(member.ty) }},
+        pub {{ member.name.snake() }}: {{ self.natural_type(member.ty, member.from_alias.as_ref()) }},
     {% endfor %}
 }
 
@@ -32,7 +32,7 @@ where
             true
             {% for member in strct.members %}
                 && <
-                    {{ self.natural_type(member.ty) }} as ::fidl_next::Encode<{{ self.wire_type(member.ty) }}, ___E>
+                    {{ self.natural_type(member.ty, member.from_alias.as_ref()) }} as ::fidl_next::Encode<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
             {% endfor %}
         )
@@ -155,7 +155,7 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
             true
             {% for member in strct.members %}
                 && <
-                    {{ self.natural_type(member.ty) }} as ::fidl_next::FromWire<{{ self.wire_type(member.ty) }}>
+                    {{ self.natural_type(member.ty, member.from_alias.as_ref()) }} as ::fidl_next::FromWire<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>
                 >::COPY_OPTIMIZATION.is_enabled()
             {% endfor %}
         )

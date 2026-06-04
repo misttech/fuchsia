@@ -35,7 +35,7 @@ where
         ___E: {{ self.encode_trait_path() }},
     {% endif %}
     {% for (i, member) in strct.members.iter().enumerate() %}
-        T{{ i }}: ::fidl_next::Encode<{{ self.static_wire_type(member.ty) }}, ___E>,
+        T{{ i }}: ::fidl_next::Encode<{{ self.static_wire_type(member.ty, member.from_alias.as_ref()) }}, ___E>,
     {% endfor %}
 {
     #[inline]

@@ -310,21 +310,9 @@ impl DeviceInterrupts {
         const MMU_IRQ_ID: u32 = 1;
         const GPU_IRQ_ID: u32 = 2;
         Ok(DeviceInterrupts {
-            job: pdev
-                .get_interrupt_by_id(JOB_IRQ_ID, 0)
-                .await?
-                .map_err(DriverError::from_raw_status)?
-                .irq,
-            mmu: pdev
-                .get_interrupt_by_id(MMU_IRQ_ID, 0)
-                .await?
-                .map_err(DriverError::from_raw_status)?
-                .irq,
-            gpu: pdev
-                .get_interrupt_by_id(GPU_IRQ_ID, 0)
-                .await?
-                .map_err(DriverError::from_raw_status)?
-                .irq,
+            job: pdev.get_interrupt_by_id(JOB_IRQ_ID, 0).await??.irq,
+            mmu: pdev.get_interrupt_by_id(MMU_IRQ_ID, 0).await??.irq,
+            gpu: pdev.get_interrupt_by_id(GPU_IRQ_ID, 0).await??.irq,
         })
     }
 }

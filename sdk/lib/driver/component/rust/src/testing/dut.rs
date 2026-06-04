@@ -137,14 +137,9 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
     }
 
     pub(crate) async fn start_driver(&mut self, start_args: DriverStartArgs) -> Result<(), Status> {
-        let start_result = self.client.start(start_args).await.expect("start call success");
-        match start_result {
-            Ok(_) => {
-                self.started = true;
-                Ok(())
-            }
-            Err(e) => Err(Status::from_raw(e)),
-        }
+        self.client.start(start_args).await.expect("start call success")?;
+        self.started = true;
+        Ok(())
     }
 
     /// Allows the test to connect to capabilities that are provided by the driver through its

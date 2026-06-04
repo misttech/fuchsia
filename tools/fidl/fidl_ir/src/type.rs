@@ -27,12 +27,16 @@ pub enum TypeKind {
     Array {
         element_type: Box<Type>,
         element_count: u32,
+        #[serde(rename = "experimental_maybe_from_alias")]
+        from_alias: Option<PartialTypeConstructor>,
     },
     Vector {
         element_type: Box<Type>,
         #[serde(default, rename = "maybe_element_count")]
         element_count: Option<u32>,
         nullable: bool,
+        #[serde(rename = "experimental_maybe_from_alias")]
+        from_alias: Option<PartialTypeConstructor>,
     },
     String {
         #[serde(default, rename = "maybe_element_count")]

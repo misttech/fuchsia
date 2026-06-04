@@ -4,8 +4,8 @@
 
 use core::any::Any;
 use fidl_ir::{
-    Attributes, CompoundIdent, CompoundIdentifier, Constant, IntType, Library, PrimSubtype,
-    Protocol, Service, Struct, Table, Type, TypeAlias, Union,
+    Attributes, CompoundIdent, CompoundIdentifier, Constant, IntType, Library,
+    PartialTypeConstructor, PrimSubtype, Protocol, Service, Struct, Table, Type, TypeAlias, Union,
 };
 use fidlgen::{Denylist, LibraryExt as _};
 use std::collections::{HashMap, hash_map};
@@ -337,8 +337,12 @@ pub trait Contextual {
         NaturalPrimTemplate(prim)
     }
 
-    fn natural_type<'a>(&'a self, ty: &'a Type) -> NaturalTypeTemplate<'a> {
-        NaturalTypeTemplate::new(ty, self.context())
+    fn natural_type<'a>(
+        &'a self,
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+    ) -> NaturalTypeTemplate<'a> {
+        NaturalTypeTemplate::new(ty, from_alias, self.context())
     }
 
     fn wire_int(&self, int: IntType) -> WireIntTemplate {
@@ -349,16 +353,28 @@ pub trait Contextual {
         WirePrimTemplate(prim)
     }
 
-    fn wire_type<'a>(&'a self, ty: &'a Type) -> WireTypeTemplate<'a> {
-        WireTypeTemplate::with_de(ty, self.context())
+    fn wire_type<'a>(
+        &'a self,
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+    ) -> WireTypeTemplate<'a> {
+        WireTypeTemplate::with_de(ty, from_alias, self.context())
     }
 
-    fn static_wire_type<'a>(&'a self, ty: &'a Type) -> WireTypeTemplate<'a> {
-        WireTypeTemplate::with_static(ty, self.context())
+    fn static_wire_type<'a>(
+        &'a self,
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+    ) -> WireTypeTemplate<'a> {
+        WireTypeTemplate::with_static(ty, from_alias, self.context())
     }
 
-    fn anonymous_wire_type<'a>(&'a self, ty: &'a Type) -> WireTypeTemplate<'a> {
-        WireTypeTemplate::with_anonymous(ty, self.context())
+    fn anonymous_wire_type<'a>(
+        &'a self,
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+    ) -> WireTypeTemplate<'a> {
+        WireTypeTemplate::with_anonymous(ty, from_alias, self.context())
     }
 
     fn constant<'a>(&'a self, constant: &'a Constant, ty: &'a Type) -> ConstantTemplate<'a> {

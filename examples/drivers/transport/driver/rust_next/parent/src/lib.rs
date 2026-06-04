@@ -52,7 +52,7 @@ impl i2cimpl::DeviceServerHandler for DeviceServer {
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         } else {
             responder
-                .respond_err(Status::INVALID_ARGS.into_raw())
+                .respond_err(Status::INVALID_ARGS)
                 .await
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         }

@@ -31,7 +31,7 @@ impl Driver for ZirconTransportChild {
         let node = context.take_node()?;
 
         let device = get_i2c_device(&context)?.spawn();
-        let device_name = device.get_name().await?.map_err(zx::Status::from_raw)?.name.to_string();
+        let device_name = device.get_name().await??.name.to_string();
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");

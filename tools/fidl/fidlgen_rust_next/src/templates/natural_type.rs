@@ -5,16 +5,21 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use fidl_ir::{EndpointRole, InternalSubtype, Type, TypeKind};
+use fidl_ir::{EndpointRole, InternalSubtype, PartialTypeConstructor, PrimSubtype, Type, TypeKind};
 
 pub struct NaturalTypeTemplate<'a> {
     context: &'a Context,
     ty: &'a Type,
+    from_alias: Option<&'a PartialTypeConstructor>,
 }
 
 impl<'a> NaturalTypeTemplate<'a> {
-    pub fn new(ty: &'a Type, context: &'a Context) -> Self {
-        Self { context, ty }
+    pub fn new(
+        ty: &'a Type,
+        from_alias: Option<&'a PartialTypeConstructor>,
+        context: &'a Context,
+    ) -> Self {
+        Self { context, ty, from_alias }
     }
 }
 
@@ -27,12 +32,12 @@ impl Contextual for NaturalTypeTemplate<'_> {
 impl fmt::Display for NaturalTypeTemplate<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.ty.kind {
-            TypeKind::Array { element_type, element_count } => {
-                let natural_ty = Self::new(element_type, self.context);
+            TypeKind::Array { element_type, element_count, from_alias } => {
+                let natural_ty = Self::new(element_type, from_alias.as_ref(), self.context);
                 write!(f, "[{natural_ty}; {element_count}]")?;
             }
-            TypeKind::Vector { element_type, nullable, .. } => {
-                let natural_ty = Self::new(element_type, self.context);
+            TypeKind::Vector { element_type, nullable, from_alias, .. } => {
+                let natural_ty = Self::new(element_type, from_alias.as_ref(), self.context);
                 if *nullable {
                     write!(f, "::core::option::Option<::std::vec::Vec<{natural_ty}>>")?;
                 } else {
@@ -76,7 +81,16 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                 }
             }
             TypeKind::Primitive { subtype } => {
-                write!(f, "{}", self.natural_prim(*subtype))?;
+                if matches!(subtype, PrimSubtype::Int32)
+                    && self.from_alias.is_some_and(|from_alias| {
+                        from_alias.name.library() == "zx"
+                            && from_alias.name.decl_name().non_canonical() == "Status"
+                    })
+                {
+                    write!(f, "::fidl_next::fuchsia::zx::Status")?;
+                } else {
+                    write!(f, "{}", self.natural_prim(*subtype))?;
+                }
             }
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let natural_id = self.natural_id(identifier);

@@ -104,12 +104,12 @@ async fn handle_inline_encryption_requests(
                 responder,
             } => match client.program_key(wrapped_key, data_unit_size).await? {
                 Ok(response) => responder.send(Ok(response.slot))?,
-                Err(status) => responder.send(Err(status))?,
+                Err(status) => responder.send(Err(status.into_raw()))?,
             },
             finlineencryption::DeviceRequest::DeriveRawSecret { wrapped_key, responder } => {
                 match client.derive_raw_secret(wrapped_key).await? {
                     Ok(response) => responder.send(Ok(&response.secret))?,
-                    Err(status) => responder.send(Err(status))?,
+                    Err(status) => responder.send(Err(status.into_raw()))?,
                 }
             }
         }
@@ -211,7 +211,7 @@ impl rpmb::RpmbServerHandler for RpmbConnection {
             async |result: Result<(), zx::Status>| {
                 if let Err(error) = match result {
                     Ok(()) => responder.respond(()).await,
-                    Err(status) => responder.respond_err(status.into_raw()).await,
+                    Err(status) => responder.respond_err(status).await,
                 } {
                     log::warn!(error:?; "Failed to send rpmb response");
                 };

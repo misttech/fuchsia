@@ -11,7 +11,7 @@ impl{{ de }} Drop for {{ name }}{{ de }} {
             {% for member in union_.members %}
                 {{ member.ordinal }} => {
                     let _ = unsafe {
-                        self.raw.get().read_unchecked::<{{ self.wire_type(member.ty) }}>()
+                        self.raw.get().read_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>()
                     };
                 },
             {% endfor %}
@@ -48,7 +48,7 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
 pub mod {{ mod_name }} {
     pub enum Ref{% if union_.members.is_empty() %}{% else %}<'de>{% endif %} {
         {% for member in union_.members %}
-            {{ member.name.camel() }}(&'de {{ self.wire_type(member.ty) }}),
+            {{ member.name.camel() }}(&'de {{ self.wire_type(member.ty, member.from_alias.as_ref()) }}),
         {% endfor %}
         {% if !union_.is_strict %}
             UnknownOrdinal_(u64),
@@ -61,7 +61,7 @@ impl{{ de }} {{ name }}{{ de }} {
         match self.raw.ordinal() {
             {% for member in union_.members %}
                 {{ member.ordinal }} => crate::wire::{{ mod_name }}::Ref::{{ member.name.camel() }}(
-                    unsafe { self.raw.get().deref_unchecked::<{{ self.anonymous_wire_type(member.ty) }}>() }
+                    unsafe { self.raw.get().deref_unchecked::<{{ self.anonymous_wire_type(member.ty, member.from_alias.as_ref()) }}>() }
                 ),
             {% endfor %}
             {% if union_.is_strict %}
@@ -79,7 +79,7 @@ impl{{ de }} {{ name }}{{ de }} {
             match self.raw.ordinal() {
                 {% for member in union_.members %}
                     {{ member.ordinal }} => Self {
-                        raw: unsafe { self.raw.clone_inline_unchecked::<{{ self.wire_type(member.ty) }}>() },
+                        raw: unsafe { self.raw.clone_inline_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() },
                         _phantom: ::core::marker::PhantomData,
                     },
                 {% endfor %}
@@ -119,7 +119,7 @@ where
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
+                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             {% if union_.is_strict %}
                 ord => return Err(::fidl_next::DecodeError::InvalidUnionOrdinal(ord as usize)),
@@ -142,7 +142,7 @@ where
                 {% for member in union_.members -%}
                     {{ member.ordinal }} => unsafe {
                         self.raw.get().deref_unchecked::<
-                            {{ self.anonymous_wire_type(member.ty) }}
+                            {{ self.anonymous_wire_type(member.ty, member.from_alias.as_ref()) }}
                         >().fmt(f)
                     },
                 {%- endfor %}

@@ -145,12 +145,7 @@ impl ActiveSetting {
             .get_feature_report()
             .await
             .context("calling get_feature_report")?
-            .map_err(|e| {
-                format_err!(
-                    "getting feature report on light sensor device: {:?}",
-                    zx::Status::from_raw(e),
-                )
-            })?
+            .map_err(|e| format_err!("getting feature report on light sensor device: {e:?}"))?
             .report;
         let feature_report = FeatureReport {
             sensor: Some(SensorFeatureReport {
@@ -167,12 +162,7 @@ impl ActiveSetting {
             .set_feature_report(&feature_report)
             .await
             .context("calling set_feature_report")?
-            .map_err(|e| {
-                format_err!(
-                    "updating feature report on light sensor device: {:?}",
-                    zx::Status::from_raw(e),
-                )
-            })?;
+            .map_err(|e| format_err!("updating feature report on light sensor device: {e:?}"))?;
         if let Some(feature_event) = FeatureEvent::maybe_new(feature_report) {
             (track_feature_update)(feature_event).await;
         }

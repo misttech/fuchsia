@@ -81,7 +81,6 @@ impl CommandQueueHost for fidl_next::Client<cqhci::Cqhci> {
                 zx::Status::INTERNAL
             })?
             .map(|response| response.info)
-            .map_err(zx::Status::from_raw)
     }
 
     async fn initialize(
@@ -928,13 +927,7 @@ impl CommandQueueExcl {
         // The RPMB partition can only be accessed while command queueing is disabled.
         debug!("rpmb request {request:?}");
         self.disable().await;
-        let res = self
-            .rpmb
-            .request(request)
-            .await
-            .map_err(|_| zx::Status::INTERNAL)
-            .map(|r| r.map(|_| ()).map_err(zx::Status::from_raw))
-            .flatten();
+        let res = self.rpmb.request(request).await.map_err(|_| zx::Status::INTERNAL).flatten();
         if let Err(err) = self.enable().await {
             error!(err:?; "Failed to re-enable CQE!");
             Err(zx::Status::IO)

@@ -2,7 +2,7 @@
 {{ self.derive_annotation(&union_.name) -}}
 pub enum {{ name }} {
     {% for member in union_.members %}
-        {{ member.name.camel() }}({{ self.natural_type(member.ty) }}),
+        {{ member.name.camel() }}({{ self.natural_type(member.ty, member.from_alias.as_ref()) }}),
     {% endfor %}
     {% if !union_.is_strict %}
         UnknownOrdinal_(u64),
@@ -44,7 +44,7 @@ where
             {% for member in union_.members %}
                 Self::{{ member.name.camel() }}(value) => ::fidl_next::wire::Union::{{ encode_as }}::<
                     ___E,
-                    {{ self.static_wire_type(member.ty) }},
+                    {{ self.static_wire_type(member.ty, member.from_alias.as_ref()) }},
                 >(value, {{ member.ordinal }}, encoder, raw, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             {% if !union_.is_strict %}
@@ -79,7 +79,7 @@ where
             {% for member in union_.members %}
                 {{ name }}::{{ member.name.camel() }}(value) => ::fidl_next::wire::Union::{{ encode_as }}::<
                     ___E,
-                    {{ self.static_wire_type(member.ty) }},
+                    {{ self.static_wire_type(member.ty, member.from_alias.as_ref()) }},
                 >(value, {{ member.ordinal }}, encoder, raw, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             {% if !union_.is_strict %}
@@ -166,7 +166,7 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
             {% for member in union_.members %}
                 {{ member.ordinal }} => Self::{{ member.name.camel() }}(
                     ::fidl_next::FromWire::from_wire(
-                        unsafe { wire.raw.get().read_unchecked::<{{ self.wire_type(member.ty) }}>() }
+                        unsafe { wire.raw.get().read_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() }
                     )
                 ),
             {% endfor %}
@@ -187,7 +187,7 @@ impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ na
             {% for member in union_.members %}
                 {{ member.ordinal }} => Self::{{ member.name.camel() }}(
                     ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { wire.raw.get().deref_unchecked::<{{ self.wire_type(member.ty) }}>() }
+                        unsafe { wire.raw.get().deref_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() }
                     )
                 ),
             {% endfor %}

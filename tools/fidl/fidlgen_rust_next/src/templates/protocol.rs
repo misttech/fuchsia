@@ -8,8 +8,8 @@ use askama::Template;
 
 use super::{Context, Contextual};
 use fidl_ir::{
-    CompoundIdent, CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind,
-    ProtocolOpenness, Struct, Type, TypeKind,
+    CompoundIdent, CompoundIdentifier, PartialTypeConstructor, Protocol, ProtocolMethod,
+    ProtocolMethodKind, ProtocolOpenness, Struct, Type, TypeKind, Union,
 };
 use fidlgen::TypeShapeExt as _;
 use fidlgen::rust::RustIdent as _;
@@ -80,6 +80,10 @@ impl<'a> ProtocolTemplate<'a> {
             .or_else(|| self.library().external_struct_declarations.get(identifier))
     }
 
+    fn get_union(&self, identifier: &CompoundIdent) -> Option<&Union> {
+        self.library().union_declarations.get(identifier)
+    }
+
     fn get_request_args_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
         match method.kind {
             ProtocolMethodKind::OneWay | ProtocolMethodKind::TwoWay => {
@@ -128,6 +132,41 @@ impl<'a> ProtocolTemplate<'a> {
             }
         }
         None
+    }
+
+    fn get_response_union(&self, method: &ProtocolMethod) -> Option<&Union> {
+        if let ProtocolMethodKind::TwoWay = method.kind {
+            if let TypeKind::Identifier { identifier, .. } =
+                &method.maybe_response_payload.as_ref()?.kind
+            {
+                return self.get_union(identifier);
+            }
+        }
+        None
+    }
+
+    fn get_response_success_from_alias(
+        &self,
+        method: &ProtocolMethod,
+    ) -> Option<&PartialTypeConstructor> {
+        self.get_response_union(method)?
+            .members
+            .iter()
+            .find(|member| member.ordinal.get() == 1)?
+            .from_alias
+            .as_ref()
+    }
+
+    fn get_response_error_from_alias(
+        &self,
+        method: &ProtocolMethod,
+    ) -> Option<&PartialTypeConstructor> {
+        self.get_response_union(method)?
+            .members
+            .iter()
+            .find(|member| member.ordinal.get() == 2)?
+            .from_alias
+            .as_ref()
     }
 
     fn get_response_error_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
