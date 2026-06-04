@@ -27,6 +27,32 @@ visibility(["//build/bazel/bazel_idk/..."])
 
 # LINT.IfChange(idk_cc_source_library)
 
+def _get_include_path_for_cc_library(include_base):
+    """Return the include path to use for the underlying library for the given `include_base`.
+
+    Some libraries in //sdk/lib/<library_name>[/...] rely on that in-tree
+    path to allow in-tree code to include `<lib/library_name/header.h>`
+    and for the IDK destination path rather than providing that structure
+    within the `library_name` directory.
+
+    In this case, return the relative path from the build file's directory to
+    `//sdk`. This is necessary because `cc_library()` does not support absolute
+    include paths.
+
+    Otherwise, return `include_base`.
+    """
+    if include_base != "//sdk":
+        return include_base
+
+    # Get the relative path from the build file's directory to `//sdk`,
+    # which is the real include base for in-tree builds.
+    path_to_this_directory = "//" + native.package_name()
+    this_directory_relative_to_sdk = paths.relativize(path_to_this_directory, "//sdk")
+    include_path = ""
+    for _ in this_directory_relative_to_sdk.split("/"):
+        include_path += "../"
+    return include_path
+
 def _build_configurable_info_impl(ctx):
     if ctx.attr.include_base == "//sdk":
         path_to_this_directory = "//" + ctx.label.package
@@ -135,22 +161,6 @@ def _idk_cc_source_library_impl(
     hdrs_for_bazel_library = hdrs
     srcs_for_bazel_library = srcs + hdrs_for_internal_use
 
-    if include_base == "//sdk":
-        # Some libraries in //sdk/lib/<library_name>[/...] rely on that in-tree
-        # path to allow in-tree code to include `<lib/library_name/header.h>`
-        # and for the IDK destination path rather than providing that structure
-        # within the `library_name` directory. Handle this case here.
-
-        # Get the relative path from the build file's directory to `//sdk`,
-        # which is the real include base for in-tree builds.
-        path_to_this_directory = "//" + native.package_name()
-        this_directory_relative_to_sdk = paths.relativize(path_to_this_directory, "//sdk")
-        include_path = ""
-        for _ in this_directory_relative_to_sdk.split("/"):
-            include_path += "../"
-    else:
-        include_path = include_base
-
     # TODO(https://fxbug.dev/421888626): Apply the equivalent of GN's
     # `default_common_binary_configs` using the `copts` attribute.
     # TODO(https://fxbug.dev/421888626): Add "//build/config:sdk_extra_warnings"
@@ -163,7 +173,7 @@ def _idk_cc_source_library_impl(
         # TODO(https://fxbug.dev/428229472): If we must support
         # `non_idk_implementation_deps`, include it below.
         implementation_deps = implementation_deps + select_for_fuchsia(fuchsia_implementation_deps),
-        includes = [include_path],
+        includes = [_get_include_path_for_cc_library(include_base)],
         testonly = testonly,
         # Allow access from //sdk:all_underlying_source_libraries.
         visibility = visibility + ["//sdk:__pkg__"],
