@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 #
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import logging
 from typing import Literal, NamedTuple, cast
 
+import fuchsia_wlan_base_test
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.ap_lib.regulatory_channels import (
     COUNTRY_CHANNELS,
     TEST_CHANNELS,
 )
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+    SecurityType,
+)
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point.lib.access_point_config import (
@@ -50,7 +50,7 @@ class RegulatoryTest(NamedTuple):
     expect_association: bool
 
 
-class RegulatoryComplianceTest(base_test.WifiBaseTest):
+class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests regulatory compliance.
 
     Testbed Requirement:
@@ -61,23 +61,19 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
         self.log = logging.getLogger()
-        self.fuchsia_device, self.dut = self.get_dut_type(
-            FuchsiaDevice, AssociationMode.POLICY
-        )
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
-            raise signals.TestAbortClass("Requires at least one access point")
-
-        self.regulatory_results = [
+        self.regulatory_results: list[str] = [
             "====CountryCode,Channel,Frequency,ChannelBandwith,Connected/Not-Connected===="
         ]
 
-    def pre_run(self) -> None:
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        if not self.openwrt_ap and not self.access_point:
+            raise signals.TestAbortClass("Requires at least one access point")
+
+        if self.access_point:
+            self.access_point.stop_all_aps()
+
+    async def pre_run(self) -> None:
         tests: list[RegulatoryTest] = []
         for country in COUNTRY_CHANNELS.values():
             for channel, bandwidths in TEST_CHANNELS.items():
@@ -109,23 +105,26 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
             self.verify_channel_compliance, generate_test_name, tests
         )
 
-    def teardown_class(self) -> None:
-        super().teardown_class()
-
+    async def teardown_class(self) -> None:
         regulatory_save_path = f"{self.log_path}/regulatory_results.txt"
         with open(regulatory_save_path, "w", encoding="utf-8") as file:
             file.write("\n".join(self.regulatory_results))
 
-    def setup_test(self) -> None:
-        super().setup_test()
         if self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_class()
 
-    def teardown_test(self) -> None:
-        self.download_logs()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         if self.access_point:
             self.access_point.stop_all_aps()
-        super().teardown_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
 
     def setup_ap(
         self,
@@ -196,7 +195,7 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
         else:
             raise ConnectionError("No access point available.")
 
-    def verify_channel_compliance(
+    async def verify_channel_compliance(
         self,
         country_code: str,
         channel: int,
@@ -207,9 +206,7 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
         specific channel and channel bandwidth. Run with generated test cases
         in the verify_regulatory_compliance parent test.
         """
-        self.fuchsia_device.wlan_controller.set_country_code(
-            CountryCode(country_code)
-        )
+        await self.dut.wlan_policy.set_country_code(CountryCode(country_code))
 
         ssid = self.setup_ap(channel, channel_bandwidth)
 
@@ -218,7 +215,19 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
             f"{channel} @ {channel_bandwidth}mhz"
         )
 
-        associated = self.dut.associate(ssid, SecurityMode.OPEN)
+        try:
+            await self.dut.wlan_policy.save_network(ssid, SecurityType.NONE)
+            await self.dut.wlan_policy.connect(
+                ssid,
+                SecurityType.NONE,
+                timeout=30,
+            )
+            associated = True
+        except Exception as e:
+            self.log.error(
+                f"Failed to save and connect to {ssid} with error: {e}"
+            )
+            associated = False
 
         channel_ghz = "2.4" if channel < 36 else "5"
         association_code = "c" if associated else "nc"
