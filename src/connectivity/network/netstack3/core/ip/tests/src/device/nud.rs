@@ -1051,7 +1051,7 @@ fn icmp_error_fragment_offset(fragment_offset: u16) {
         .unwrap_b();
     ctx.test_api().receive_ip_packet::<Ipv4, _>(
         &device_id.into(),
-        Some(FrameDestination::Individual { local: false }),
+        Some(FrameDestination::Individual { local: () }),
         non_initial_fragment_packet_buf,
     );
 

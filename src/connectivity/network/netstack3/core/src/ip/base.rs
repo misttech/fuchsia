@@ -11,8 +11,8 @@ use net_types::ip::{Ip, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr
 use net_types::{MulticastAddr, SpecifiedAddr};
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{
-    CounterContext, FrameDestination, Icmpv4ErrorCode, Icmpv6ErrorCode, Marks,
-    ResourceCounterContext, TokenBucket, WeakDeviceIdentifier,
+    CounterContext, FrameDestination, Icmpv4ErrorCode, Icmpv6ErrorCode, LocalFrameDestination,
+    Marks, ResourceCounterContext, TokenBucket, WeakDeviceIdentifier,
 };
 use netstack3_datagram::{self as datagram};
 use netstack3_device::{BaseDeviceId, DeviceId, DeviceStateSpec, WeakDeviceId, for_any_device_id};
@@ -463,7 +463,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
     fn early_demux<B: ParseBuffer>(
         &mut self,
         device: &Self::DeviceId,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: Ipv4Addr,
         dst_ip: Ipv4Addr,
         proto: Ipv4Proto,
@@ -473,7 +473,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         // TODO(https://fxbug.com/476450053): Consider early demuxing multicast
         // packets as well.
         match frame_dst {
-            Some(FrameDestination::Individual { local: _ }) => (),
+            Some(FrameDestination::Individual { local: () }) => (),
             Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) | None => {
                 return None;
             }
@@ -569,7 +569,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
     fn early_demux<B: ParseBuffer>(
         &mut self,
         device: &Self::DeviceId,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: Ipv6Addr,
         dst_ip: Ipv6Addr,
         proto: Ipv6Proto,
@@ -579,7 +579,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         // TODO(https://fxbug.com/476450053): Consider early demuxing multicast
         // packets as well.
         match frame_dst {
-            Some(FrameDestination::Individual { local: _ }) => (),
+            Some(FrameDestination::Individual { local: () }) => (),
             Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) | None => {
                 return None;
             }

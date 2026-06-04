@@ -29,9 +29,9 @@ use netstack3_base::socket::{EitherStack, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
-    DeviceIdContext, DeviceIdentifier as _, ErrorAndSerializer, EventContext, FrameDestination,
-    HandleableTimer, InstantContext, InterfaceProperties, IpAddressId, IpDeviceAddr,
-    IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
+    DeviceIdContext, DeviceIdentifier as _, ErrorAndSerializer, EventContext, HandleableTimer,
+    InstantContext, InterfaceProperties, IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext,
+    IpExt, LocalFrameDestination, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
     NestedIntoCoreTimerCtx, NetworkParsingContext, NetworkSerializationContext, NotFoundError,
     ResourceCounterContext, RngContext, SendFrameErrorReason, StrongDeviceIdentifier,
     TimerBindingsTypes, TimerContext, TimerHandler, TxMetadata as _, TxMetadataBindingsTypes,
@@ -1756,7 +1756,7 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
     fn early_demux<B: ParseBuffer>(
         &mut self,
         device: &Self::DeviceId,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: I::Addr,
         dst_ip: I::Addr,
         proto: I::Proto,
@@ -2388,7 +2388,7 @@ pub(crate) struct IcmpErrorSender<'a, I: IcmpHandlerIpExt, D> {
     /// local-ingress hook evaluation).
     dst_ip: SocketIpAddr<I::Addr>,
     /// The frame destination of the packet.
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     /// The device out which to send the error.
     device: &'a D,
     /// The metadata from the packet, allowing the packet's backing buffer to be
@@ -2405,7 +2405,7 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
         core_ctx: &mut CC,
         err: I::IcmpError,
         packet: &I::Packet<B>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         device: &'a D,
         marks: Marks,
     ) -> Option<Self>
@@ -2574,22 +2574,12 @@ fn dispatch_receive_ipv4_packet<
     core_ctx: &'a mut CC,
     bindings_ctx: &'a mut BC,
     device: &'b CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     mut packet: Ipv4Packet<&'a mut [u8]>,
     mut packet_metadata: IpLayerPacketMetadata<Ipv4, CC::WeakAddressId, BC>,
     receive_meta: ReceiveIpPacketMeta<Ipv4>,
 ) -> Result<(), IcmpErrorSender<'b, Ipv4, CC::DeviceId>> {
     core_ctx.increment_both(device, |c| &c.dispatch_receive_ip_packet);
-
-    match frame_dst {
-        Some(FrameDestination::Individual { local: false }) => {
-            core_ctx.increment_both(device, |c| &c.dispatch_receive_ip_packet_other_host);
-        }
-        Some(FrameDestination::Individual { local: true })
-        | Some(FrameDestination::Multicast)
-        | Some(FrameDestination::Broadcast)
-        | None => (),
-    };
 
     // Skip early demux if the packet was redirected to a TPROXY.
     // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
@@ -2710,7 +2700,7 @@ fn dispatch_receive_ipv6_packet<
     core_ctx: &'a mut CC,
     bindings_ctx: &'a mut BC,
     device: &'b CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     mut packet: Ipv6Packet<&'a mut [u8]>,
     mut packet_metadata: IpLayerPacketMetadata<Ipv6, CC::WeakAddressId, BC>,
     meta: ReceiveIpPacketMeta<Ipv6>,
@@ -2722,16 +2712,6 @@ fn dispatch_receive_ipv6_packet<
     // header rather than all of the IPv6 headers.
 
     core_ctx.increment_both(device, |c| &c.dispatch_receive_ip_packet);
-
-    match frame_dst {
-        Some(FrameDestination::Individual { local: false }) => {
-            core_ctx.increment_both(device, |c| &c.dispatch_receive_ip_packet_other_host);
-        }
-        Some(FrameDestination::Individual { local: true })
-        | Some(FrameDestination::Multicast)
-        | Some(FrameDestination::Broadcast)
-        | None => (),
-    }
 
     // Skip early demux if the packet was redirected to a TPROXY.
     // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
@@ -2862,7 +2842,7 @@ pub(crate) struct IpPacketForwarder<
     destination: IpPacketDestination<I, &'a D>,
     proto: I::Proto,
     parse_meta: ParseMetadata,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
 }
 
 impl<'a, I, D, A, BC> IpPacketForwarder<'a, I, D, A, BC>
@@ -3010,7 +2990,7 @@ pub(crate) fn determine_ip_packet_forwarding_action<'a, 'b, I, BC, CC>(
     inbound_device: &'b CC::DeviceId,
     outbound_device: &'b CC::DeviceId,
     destination: IpPacketDestination<I, &'b CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     src_ip: I::RecvSrcAddr,
     dst_ip: SpecifiedAddr<I::Addr>,
 ) -> ForwardingAction<'b, I, CC::DeviceId, CC::WeakAddressId, BC>
@@ -3495,7 +3475,7 @@ pub fn receive_ipv4_packet<
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
     parsing_context: NetworkParsingContext,
     buffer: B,
@@ -3801,7 +3781,7 @@ fn handle_ipv6_parse_error<BC, B, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
     mut buffer: B,
     error: Ipv6ParseError,
@@ -3904,7 +3884,7 @@ pub fn receive_ipv6_packet<
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
     parsing_context: NetworkParsingContext,
     buffer: B,
@@ -4411,7 +4391,7 @@ pub fn receive_ipv4_packet_action<BC, CC, B>(
     bindings_ctx: &mut BC,
     device: &CC::DeviceId,
     packet: &Ipv4Packet<B>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
 ) -> ReceivePacketAction<Ipv4, CC::DeviceId>
 where
@@ -4504,7 +4484,7 @@ pub fn receive_ipv6_packet_action<BC, CC, B>(
     bindings_ctx: &mut BC,
     device: &CC::DeviceId,
     packet: &Ipv6Packet<B>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
 ) -> ReceivePacketAction<Ipv6, CC::DeviceId>
 where
@@ -4616,7 +4596,7 @@ fn receive_ip_multicast_packet_action<
     packet: &I::Packet<B>,
     address_status: Option<I::AddressStatus>,
     dst_ip: SpecifiedAddr<I::Addr>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
 ) -> ReceivePacketAction<I, CC::DeviceId> {
     let targets = multicast_forwarding::lookup_multicast_route_or_stash_packet(
         core_ctx,
@@ -4669,7 +4649,7 @@ fn receive_ip_packet_action_common<
     dst_ip: SpecifiedAddr<I::Addr>,
     device_id: &CC::DeviceId,
     packet: &I::Packet<B>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
 ) -> ReceivePacketAction<I, CC::DeviceId> {
     if dst_ip.is_multicast() {

@@ -180,14 +180,14 @@ fn test_receive_ip_packet<
         ]);
         ctx.test_api().receive_ip_packet_with_marks::<I, _>(
             &device,
-            Some(FrameDestination::Individual { local: true }),
+            Some(FrameDestination::Individual { local: () }),
             buffer,
             Marks::new(marks),
         );
     } else {
         ctx.test_api().receive_ip_packet::<I, _>(
             &device,
-            Some(FrameDestination::Individual { local: true }),
+            Some(FrameDestination::Individual { local: () }),
             buffer,
         );
     }

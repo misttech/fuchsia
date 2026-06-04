@@ -121,6 +121,53 @@ fn test_receive_ip_frame<I: TestIpExt + IpExt>(enable: bool) {
     .assert_counters(&ctx.core_ctx(), &device);
 }
 
+#[ip_test(I)]
+fn test_receive_other_host_ip_frame<I: TestIpExt + IpExt>() {
+    let config = I::TEST_ADDRS;
+    let mut ctx = FakeCtx::default();
+    let eth_device = ctx.core_api().device::<EthernetLinkDevice>().add_device_with_default_state(
+        EthernetCreationProperties {
+            tx_offload_spec: Default::default(),
+            mac: config.local_mac,
+            max_frame_size: IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
+        },
+        DEFAULT_INTERFACE_METRIC,
+    );
+    let device = eth_device.clone().into();
+    ctx.test_api().enable_device(&device);
+
+    let mut bytes = match I::VERSION {
+        IpVersion::V4 => dns_request_v4::ETHERNET_FRAME,
+        IpVersion::V6 => dns_request_v6::ETHERNET_FRAME,
+    }
+    .bytes
+    .to_vec();
+
+    // Use a unicast MAC address that is different from the device's MAC.
+    let other_mac = Mac::new([2, 3, 4, 5, 6, 7]);
+    assert_ne!(config.local_mac.get(), other_mac);
+    bytes[0..6].copy_from_slice(&other_mac.bytes());
+
+    let recv_len = bytes.len();
+
+    ctx.test_api().receive_ethernet_frame(&eth_device, Buf::new(bytes, ..));
+
+    // The packet should be dropped early, so no IP counters should be incremented
+    // EXCEPT `drop_ip_packet_other_host`.
+    IpCounterExpectations::<I> { drop_ip_packet_other_host: 1, ..Default::default() }
+        .assert_counters(&ctx.core_ctx(), &device);
+
+    // Device counters: it was received, but NOT delivered to IP.
+    DeviceCounterExpectations {
+        recv_bytes: recv_len.try_into().unwrap(),
+        recv_frame: 1,
+        recv_ipv4_delivered: 0,
+        recv_ipv6_delivered: 0,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+}
+
 #[test]
 fn test_send_frame() {
     let mut ctx = FakeCtx::default();
@@ -203,7 +250,7 @@ where
     let src_ip = I::get_other_ip_address(3);
     let src_mac = UnicastAddr::new(Mac::new([10, 11, 12, 13, 14, 15])).unwrap();
     let config = I::TEST_ADDRS;
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = FrameDestination::Individual { local: () };
     let mut rng = new_rng(70812476915813);
     let mut body: Vec<u8> = core::iter::repeat_with(|| rng.random()).take(100).collect();
     let buf = Buf::new(&mut body[..], ..)
@@ -387,7 +434,7 @@ fn receive_simple_ip_packet_test<A: IpAddress>(
 
     ctx.test_api().receive_ip_packet::<A::Version, _>(
         device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         buf,
     );
     assert_eq!(

@@ -980,7 +980,7 @@ fn test_receiving_router_advertisement_validity_check() {
         router_advertisement_message(invalid_src_ip, config.local_ip.get(), hop_limit);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         icmpv6_packet_buf,
     );
     assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.router_advertisement.get(), 0);
@@ -990,7 +990,7 @@ fn test_receiving_router_advertisement_validity_check() {
         router_advertisement_message(src_ip, config.local_ip.get(), invalid_hop_limit);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         icmpv6_packet_buf,
     );
     assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.router_advertisement.get(), 0);
@@ -1000,7 +1000,7 @@ fn test_receiving_router_advertisement_validity_check() {
     let icmpv6_packet_buf = router_advertisement_message(src_ip, config.local_ip.get(), hop_limit);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         icmpv6_packet_buf,
     );
     assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.router_advertisement.get(), 1);
@@ -1056,7 +1056,7 @@ fn test_receiving_neighbor_solicitation_validity_check(
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         icmpv6_packet_buf,
     );
 
@@ -1128,7 +1128,7 @@ fn test_receiving_neighbor_advertisement_validity_check(
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         icmpv6_packet_buf,
     );
     let expected_na_count = if expect_delivered { 1 } else { 0 };

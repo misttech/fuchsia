@@ -11,7 +11,7 @@ use core::time::Duration;
 use derivative::Derivative;
 use net_types::ip::{Ip, IpVersionMarker};
 use netstack3_base::{
-    CoreTimerContext, FrameDestination, Inspectable, Inspector, Instant as _,
+    CoreTimerContext, Inspectable, Inspector, Instant as _, LocalFrameDestination,
     StrongDeviceIdentifier as _, WeakDeviceIdentifier,
 };
 use packet::{Buf, ParseBufferMut};
@@ -94,7 +94,7 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
         key: MulticastRouteKey<I>,
         packet: &I::Packet<B>,
         dev: &D::Strong,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
     ) -> QueuePacketOutcome
     where
         B: SplitByteSlice,
@@ -267,14 +267,14 @@ pub struct QueuedPacket<I: Ip, D: WeakDeviceIdentifier> {
     pub(crate) packet: ValidIpPacketBuf<I>,
     /// The link layer (L2) destination that the packet was sent to, or `None`
     /// if the packet arrived above the link layer (e.g. a Pure IP device).
-    pub(crate) frame_dst: Option<FrameDestination>,
+    pub(crate) frame_dst: Option<LocalFrameDestination>,
 }
 
 impl<I: IpLayerIpExt, D: WeakDeviceIdentifier> QueuedPacket<I, D> {
     fn new<B: SplitByteSlice>(
         device: &D::Strong,
         packet: &I::Packet<B>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
     ) -> Self {
         QueuedPacket {
             device: device.downgrade(),
@@ -339,8 +339,8 @@ mod tests {
 
     #[ip_test(I)]
     #[test_case(None; "no_frame_dst")]
-    #[test_case(Some(FrameDestination::Multicast); "some_frame_dst")]
-    fn queue_packet<I: TestIpExt>(frame_dst: Option<FrameDestination>) {
+    #[test_case(Some(LocalFrameDestination::Multicast); "some_frame_dst")]
+    fn queue_packet<I: TestIpExt>(frame_dst: Option<LocalFrameDestination>) {
         const DEV: MultipleDevicesId = MultipleDevicesId::A;
         let key1 = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();
         let key2 = MulticastRouteKey::new(I::SRC2, I::DST2).unwrap();
@@ -444,7 +444,7 @@ mod tests {
         bindings_ctx: &mut FakeBindingsCtx<I, MultipleDevicesId>,
         key: MulticastRouteKey<I>,
         dev: &MultipleDevicesId,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
     ) -> QueuePacketOutcome {
         let buf =
             multicast_forwarding::testutil::new_ip_packet_buf::<I>(key.src_addr(), key.dst_addr());
@@ -482,7 +482,7 @@ mod tests {
     #[ip_test(I)]
     fn garbage_collection<I: TestIpExt>() {
         const DEV: MultipleDevicesId = MultipleDevicesId::A;
-        const FRAME_DST: Option<FrameDestination> = None;
+        const FRAME_DST: Option<LocalFrameDestination> = None;
         let key1 = MulticastRouteKey::<I>::new(I::SRC1, I::DST1).unwrap();
         let key2 = MulticastRouteKey::<I>::new(I::SRC2, I::DST2).unwrap();
 

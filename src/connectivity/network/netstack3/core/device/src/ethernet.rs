@@ -22,7 +22,7 @@ use netstack3_base::{
     TimerContext, TimerHandler, TxMetadataBindingsTypes, WeakDeviceIdentifier, WrapBroadcastMarker,
 };
 use netstack3_ip::nud::{LinkResolutionContext, NudHandler, NudState, NudTimerId, NudUserConfig};
-use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
+use netstack3_ip::{DeviceIpLayerMetadata, IpCounters, IpPacketDestination};
 use netstack3_trace::trace_duration;
 use packet::{BufferMut, NestablePacketBuilder as _, NestableSerializer as _};
 use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
@@ -512,7 +512,9 @@ where
         + ArpPacketHandler<EthernetLinkDevice, BC>
         + DeviceSocketHandler<EthernetLinkDevice, BC>
         + ResourceCounterContext<CC::DeviceId, DeviceCounters>
-        + ResourceCounterContext<CC::DeviceId, EthernetDeviceCounters>,
+        + ResourceCounterContext<CC::DeviceId, EthernetDeviceCounters>
+        + ResourceCounterContext<CC::DeviceId, IpCounters<Ipv4>>
+        + ResourceCounterContext<CC::DeviceId, IpCounters<Ipv6>>,
 {
     fn receive_meta<B: BufferMut + Debug>(
         self,
@@ -583,6 +585,15 @@ where
                 }
             }
             Some(EtherType::Ipv4) => {
+                let local_frame_dst = match frame_dst.check_local() {
+                    Some(dst) => dst,
+                    None => {
+                        core_ctx.increment_both(&device_id, |counters: &IpCounters<Ipv4>| {
+                            &counters.drop_ip_packet_other_host
+                        });
+                        return;
+                    }
+                };
                 core_ctx.increment_both(&device_id, |counters: &DeviceCounters| {
                     &counters.recv_ipv4_delivered
                 });
@@ -590,7 +601,7 @@ where
                     bindings_ctx,
                     RecvIpFrameMeta::<_, _, Ipv4>::new(
                         device_id,
-                        Some(frame_dst),
+                        Some(local_frame_dst),
                         DeviceIpLayerMetadata::default(),
                         parsing_context,
                     ),
@@ -598,6 +609,15 @@ where
                 )
             }
             Some(EtherType::Ipv6) => {
+                let local_frame_dst = match frame_dst.check_local() {
+                    Some(dst) => dst,
+                    None => {
+                        core_ctx.increment_both(&device_id, |counters: &IpCounters<Ipv6>| {
+                            &counters.drop_ip_packet_other_host
+                        });
+                        return;
+                    }
+                };
                 core_ctx.increment_both(&device_id, |counters: &DeviceCounters| {
                     &counters.recv_ipv6_delivered
                 });
@@ -605,7 +625,7 @@ where
                     bindings_ctx,
                     RecvIpFrameMeta::<_, _, Ipv6>::new(
                         device_id,
-                        Some(frame_dst),
+                        Some(local_frame_dst),
                         DeviceIpLayerMetadata::default(),
                         parsing_context,
                     ),

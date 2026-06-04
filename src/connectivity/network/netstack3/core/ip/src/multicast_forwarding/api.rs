@@ -421,7 +421,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::MulticastAddr;
     use netstack3_base::testutil::MultipleDevicesId;
-    use netstack3_base::{FrameDestination, StrongDeviceIdentifier};
+    use netstack3_base::{LocalFrameDestination, StrongDeviceIdentifier};
     use packet::ParseBuffer;
     use test_case::test_case;
 
@@ -510,7 +510,7 @@ mod tests {
         forwarding_enabled_for_dev: bool,
         right_dev: bool,
     ) {
-        const FRAME_DST: Option<FrameDestination> = None;
+        const FRAME_DST: Option<LocalFrameDestination> = None;
         const OUTPUT_DEV: MultipleDevicesId = MultipleDevicesId::C;
         let right_key = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();
         let wrong_key = MulticastRouteKey::new(I::SRC2, I::DST2).unwrap();

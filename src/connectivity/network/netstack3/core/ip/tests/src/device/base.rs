@@ -1150,7 +1150,7 @@ fn receive_ipv4_packet(ctx: &mut FakeCtx, device_id: &DeviceId<FakeBindingsCtx>)
 
     ctx.test_api().receive_ip_packet::<Ipv4, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         buf,
     );
 }

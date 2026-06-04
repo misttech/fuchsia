@@ -45,7 +45,7 @@ pub struct IpCounters<I: IpCountersIpExt, C: CounterRepr = Counter> {
     /// Count of incoming IP packets that are dispatched to the appropriate protocol.
     pub dispatch_receive_ip_packet: C,
     /// Count of incoming IP packets destined to another host.
-    pub dispatch_receive_ip_packet_other_host: C,
+    pub drop_ip_packet_other_host: C,
     /// Count of incoming IP packets received by the stack.
     pub receive_ip_packet: C,
     /// Count of sent outgoing IP packets.
@@ -120,7 +120,7 @@ impl<I: IpCountersIpExt> Inspectable for IpCounters<I> {
             deliver_unicast,
             deliver_multicast,
             dispatch_receive_ip_packet,
-            dispatch_receive_ip_packet_other_host,
+            drop_ip_packet_other_host,
             receive_ip_packet,
             send_ip_packet,
             forwarding_disabled,
@@ -155,7 +155,7 @@ impl<I: IpCountersIpExt> Inspectable for IpCounters<I> {
         inspector.record_child("PacketRx", |inspector| {
             inspector.record_counter("Received", receive_ip_packet);
             inspector.record_counter("Dispatched", dispatch_receive_ip_packet);
-            inspector.record_counter("OtherHost", dispatch_receive_ip_packet_other_host);
+            inspector.record_counter("OtherHost", drop_ip_packet_other_host);
             inspector.record_counter("ParameterProblem", parameter_problem);
             inspector.record_counter("UnspecifiedDst", unspecified_destination);
             inspector.record_counter("UnspecifiedSrc", unspecified_source);

@@ -37,10 +37,10 @@ use netstack3_base::testutil::{
 };
 use netstack3_base::{
     AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
-    FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, MarkDomain,
-    Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError, ReferenceNotifiers,
-    RemoveResourceResult, RngContext, TimerBindingsTypes, TimerContext, TimerHandler,
-    TxMetadataBindingsTypes, WorkQueueReport,
+    InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, LocalFrameDestination,
+    MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError,
+    ReferenceNotifiers, RemoveResourceResult, RngContext, TimerBindingsTypes, TimerContext,
+    TimerHandler, TxMetadataBindingsTypes, WorkQueueReport,
 };
 use netstack3_datagram::PendingDatagramSocketError;
 use netstack3_device::ethernet::{
@@ -289,7 +289,7 @@ where
     pub fn receive_ip_packet<I: Ip, B: BufferMut>(
         &mut self,
         device: &DeviceId<BC>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         buffer: B,
     ) {
         self.receive_ip_packet_with_marks::<I, B>(device, frame_dst, buffer, Default::default())
@@ -302,7 +302,7 @@ where
     pub fn receive_ip_packet_with_marks<I: Ip, B: BufferMut>(
         &mut self,
         device: &DeviceId<BC>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         buffer: B,
         marks: Marks,
     ) {
@@ -331,6 +331,21 @@ where
                 buffer,
             ),
         }
+    }
+
+    /// Receive an Ethernet frame from a device.
+    pub fn receive_ethernet_frame<B: BufferMut + Debug>(
+        &mut self,
+        device: &EthernetDeviceId<BC>,
+        buffer: B,
+    ) {
+        self.core_api().device::<EthernetLinkDevice>().receive_frame(
+            RecvEthernetFrameMeta {
+                device_id: device.clone(),
+                parsing_context: NetworkParsingContext::default(),
+            },
+            buffer,
+        );
     }
 
     /// Add a route directly to the forwarding table.

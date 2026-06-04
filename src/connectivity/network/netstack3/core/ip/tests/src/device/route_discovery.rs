@@ -224,7 +224,7 @@ fn discovery_integration() {
     // yet and prefix does not make on-link determination.
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     let ra_event1 = RouterAdvertisementEvent {
@@ -239,7 +239,7 @@ fn discovery_integration() {
     let (ra_buf, options_buf) = buf(as_secs(ONE_SECOND), true, 0, 0);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     let ra_event2 = RouterAdvertisementEvent {
@@ -277,7 +277,7 @@ fn discovery_integration() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     let on_link_route = Ipv6DiscoveredRoute { subnet, gateway: None };
@@ -312,7 +312,7 @@ fn discovery_integration() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     let more_specific_route = Ipv6DiscoveredRoute { subnet, gateway: Some(src_ip) };
@@ -349,7 +349,7 @@ fn discovery_integration() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(
@@ -379,7 +379,7 @@ fn discovery_integration() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(
@@ -398,7 +398,7 @@ fn discovery_integration() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(&mut ctx.core_ctx(), &device_id, []);
@@ -463,7 +463,7 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(
@@ -496,7 +496,7 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(
@@ -521,7 +521,7 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(
@@ -542,7 +542,7 @@ fn discovery_integration_infinite_to_finite_to_infinite_lifetime() {
     };
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(&mut ctx.core_ctx(), &device_id, []);
@@ -601,7 +601,7 @@ fn flush_routes_on_interface_disabled_integration() {
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
-        Some(FrameDestination::Individual { local: true }),
+        Some(FrameDestination::Individual { local: () }),
         ra_buf,
     );
     assert_timers_integration(

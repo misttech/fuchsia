@@ -26,8 +26,8 @@ use netstack3_base::sync::Mutex;
 use netstack3_base::{
     AnyDevice, Counter, CounterContext, DeviceIdContext, EitherDeviceId, FrameDestination,
     IcmpIpExt, Icmpv4ErrorCode, Icmpv6ErrorCode, InstantBindingsTypes, InstantContext,
-    IpDeviceAddr, IpExt, Marks, NetworkPartialSerializer, NetworkSerializer, RngContext,
-    TokenBucket, TxMetadataBindingsTypes,
+    IpDeviceAddr, IpExt, LocalFrameDestination, Marks, NetworkPartialSerializer, NetworkSerializer,
+    RngContext, TokenBucket, TxMetadataBindingsTypes,
 };
 use netstack3_filter::{DynTransportSerializer, DynamicTransportSerializer, FilterIpExt};
 use packet::{
@@ -653,7 +653,7 @@ pub trait IcmpErrorHandler<I: IcmpHandlerIpExt, BC>: DeviceIdContext<AnyDevice> 
         &mut self,
         bindings_ctx: &mut BC,
         device: Option<&Self::DeviceId>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: SocketIpAddr<I::Addr>,
         dst_ip: SocketIpAddr<I::Addr>,
         original_packet: B,
@@ -671,7 +671,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv4, BC> + CounterContext<Icm
         &mut self,
         bindings_ctx: &mut BC,
         device: Option<&CC::DeviceId>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: SocketIpAddr<Ipv4Addr>,
         dst_ip: SocketIpAddr<Ipv4Addr>,
         original_packet: B,
@@ -710,7 +710,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv6, BC> + CounterContext<Icm
         &mut self,
         bindings_ctx: &mut BC,
         device: Option<&CC::DeviceId>,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         src_ip: SocketIpAddr<Ipv6Addr>,
         dst_ip: SocketIpAddr<Ipv6Addr>,
         original_packet: B,
@@ -2328,7 +2328,7 @@ fn send_icmpv4_error_message<B, BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     original_src_ip: SocketIpAddr<Ipv4Addr>,
     original_dst_ip: SocketIpAddr<Ipv4Addr>,
     message: Icmpv4ErrorMessage,
@@ -2395,7 +2395,7 @@ fn send_icmpv6_error_message<B, BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     original_src_ip: SocketIpAddr<Ipv6Addr>,
     original_dst_ip: SocketIpAddr<Ipv6Addr>,
     message: Icmpv6ErrorMessage,
@@ -2503,7 +2503,7 @@ fn send_icmpv6_error_message<B, BC, CC>(
 /// unnecessary for some ICMP error conditions. The ICMP error message check can
 /// be performed separately with `is_icmp_error_message`.
 fn should_send_icmpv4_error(
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     src_ip: SpecifiedAddr<Ipv4Addr>,
     dst_ip: SpecifiedAddr<Ipv4Addr>,
 ) -> bool {
@@ -2564,7 +2564,7 @@ fn should_send_icmpv4_error(
 /// unnecessary for some ICMP error conditions. The ICMP error message check can
 /// be performed separately with `is_icmp_error_message`.
 fn should_send_icmpv6_error(
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     src_ip: SpecifiedAddr<Ipv6Addr>,
     dst_ip: SpecifiedAddr<Ipv6Addr>,
     allow_dst_multicast: bool,
@@ -2572,7 +2572,7 @@ fn should_send_icmpv6_error(
     // NOTE: We do not explicitly implement the "unspecified address" check, as
     // it is enforced by the types of the arguments.
     let multicast_frame_dst = match frame_dst {
-        Some(FrameDestination::Individual { local: _ }) | None => false,
+        Some(FrameDestination::Individual { local: () }) | None => false,
         Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) => true,
     };
     if (dst_ip.is_multicast() || multicast_frame_dst) && !allow_dst_multicast {
@@ -2894,7 +2894,7 @@ mod tests {
     fn test_should_send_icmpv4_error() {
         let src_ip = TEST_ADDRS_V4.local_ip;
         let dst_ip = TEST_ADDRS_V4.remote_ip;
-        let frame_dst = FrameDestination::Individual { local: true };
+        let frame_dst = FrameDestination::Individual { local: () };
         let multicast_ip_1 = SpecifiedAddr::new(Ipv4Addr::new([224, 0, 0, 1])).unwrap();
         let multicast_ip_2 = SpecifiedAddr::new(Ipv4Addr::new([224, 0, 0, 2])).unwrap();
 
@@ -2944,7 +2944,7 @@ mod tests {
     fn test_should_send_icmpv6_error() {
         let src_ip = TEST_ADDRS_V6.local_ip;
         let dst_ip = TEST_ADDRS_V6.remote_ip;
-        let frame_dst = FrameDestination::Individual { local: true };
+        let frame_dst = FrameDestination::Individual { local: () };
         let multicast_ip_1 =
             SpecifiedAddr::new(Ipv6Addr::new([0xff00, 0, 0, 0, 0, 0, 0, 1])).unwrap();
         let multicast_ip_2 =
@@ -3800,7 +3800,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3823,7 +3823,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3845,7 +3845,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3867,7 +3867,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3886,7 +3886,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3910,7 +3910,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
                 EmptyBuf,
@@ -3932,7 +3932,7 @@ mod tests {
             core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
-                Some(FrameDestination::Individual { local: true }),
+                Some(FrameDestination::Individual { local: () }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
                 EmptyBuf,

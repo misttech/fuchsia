@@ -162,11 +162,11 @@ where
 /// section 2.4.e, which govern when to avoid sending an ICMP error message for
 /// ICMP and ICMPv6 respectively.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum FrameDestination {
+pub enum FrameDestination<L = bool> {
     /// A unicast address - one which is neither multicast nor broadcast.
     Individual {
         /// Whether the frame's destination address belongs to the receiver.
-        local: bool,
+        local: L,
     },
     /// A multicast address; if the addressing scheme supports overlap between
     /// multicast and broadcast, then broadcast addresses should use the
@@ -178,12 +178,18 @@ pub enum FrameDestination {
     Broadcast,
 }
 
-impl FrameDestination {
+/// A `FrameDestination` that is guaranteed to be destined to this host if it is
+/// an individual address.
+pub type LocalFrameDestination = FrameDestination<()>;
+
+impl<L> FrameDestination<L> {
     /// Is this `FrameDestination::Broadcast`?
     pub fn is_broadcast(self) -> bool {
-        self == FrameDestination::Broadcast
+        matches!(self, FrameDestination::Broadcast)
     }
+}
 
+impl FrameDestination<bool> {
     /// Creates a `FrameDestination` from a `mac` and `local_mac` destination.
     pub fn from_dest(destination: Mac, local_mac: Mac) -> Self {
         BroadcastAddr::new(destination)
@@ -191,15 +197,30 @@ impl FrameDestination {
             .or_else(|| MulticastAddr::new(destination).map(Into::into))
             .unwrap_or_else(|| FrameDestination::Individual { local: destination == local_mac })
     }
+
+    /// Converts this `FrameDestination` to a `LocalFrameDestination`.
+    ///
+    /// Returns `None` if the destination is `Individual { local: false }`,
+    /// indicating the packet is not for this host and should be dropped.
+    pub fn check_local(self) -> Option<LocalFrameDestination> {
+        match self {
+            FrameDestination::Individual { local: true } => {
+                Some(FrameDestination::Individual { local: () })
+            }
+            FrameDestination::Individual { local: false } => None,
+            FrameDestination::Multicast => Some(FrameDestination::Multicast),
+            FrameDestination::Broadcast => Some(FrameDestination::Broadcast),
+        }
+    }
 }
 
-impl From<BroadcastAddr<Mac>> for FrameDestination {
+impl<L> From<BroadcastAddr<Mac>> for FrameDestination<L> {
     fn from(_value: BroadcastAddr<Mac>) -> Self {
         Self::Broadcast
     }
 }
 
-impl From<MulticastAddr<Mac>> for FrameDestination {
+impl<L> From<MulticastAddr<Mac>> for FrameDestination<L> {
     fn from(_value: MulticastAddr<Mac>) -> Self {
         Self::Multicast
     }
@@ -215,7 +236,7 @@ pub struct RecvIpFrameMeta<D, M, I: Ip> {
     // NB: In the future, this field may also be `None` to represent link-layer
     // protocols without destination addresses (i.e. PPP), but at the moment no
     // such protocols are supported.
-    pub frame_dst: Option<FrameDestination>,
+    pub frame_dst: Option<LocalFrameDestination>,
     /// Metadata that is produced and consumed by the IP layer but which traverses
     /// the device layer through the loopback device.
     pub ip_layer_metadata: M,
@@ -230,7 +251,7 @@ impl<D, M, I: Ip> RecvIpFrameMeta<D, M, I> {
     /// option.
     pub fn new(
         device: D,
-        frame_dst: Option<FrameDestination>,
+        frame_dst: Option<LocalFrameDestination>,
         ip_layer_metadata: M,
         parsing_context: NetworkParsingContext,
     ) -> RecvIpFrameMeta<D, M, I> {

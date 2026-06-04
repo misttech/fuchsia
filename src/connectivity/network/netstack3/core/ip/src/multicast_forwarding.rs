@@ -23,8 +23,8 @@ use core::sync::atomic::Ordering;
 
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
-    AnyDevice, AtomicInstant, CounterContext, DeviceIdContext, EventContext, FrameDestination,
-    HandleableTimer, InstantBindingsTypes, InstantContext, TimerBindingsTypes, TimerContext,
+    AnyDevice, AtomicInstant, CounterContext, DeviceIdContext, EventContext, HandleableTimer,
+    InstantBindingsTypes, InstantContext, LocalFrameDestination, TimerBindingsTypes, TimerContext,
     WeakDeviceIdentifier,
 };
 use packet_formats::ip::IpPacket;
@@ -194,7 +194,7 @@ pub(crate) fn lookup_multicast_route_or_stash_packet<I, B, CC, BC>(
     bindings_ctx: &mut BC,
     packet: &I::Packet<B>,
     dev: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
 ) -> Option<MulticastRouteTargets<CC::DeviceId>>
 where
     I: IpLayerIpExt,
@@ -303,8 +303,8 @@ mod testutil {
     use netstack3_base::socket::SocketIpAddr;
     use netstack3_base::testutil::{FakeStrongDeviceId, MultipleDevicesId};
     use netstack3_base::{
-        CoreTimerContext, CounterContext, CtxPair, FrameDestination, Marks,
-        NetworkSerializationContext, NetworkSerializer, ResourceCounterContext,
+        CoreTimerContext, CounterContext, CtxPair, Marks, NetworkSerializationContext,
+        NetworkSerializer, ResourceCounterContext,
     };
     use netstack3_filter::ProofOfEgressCheck;
     use netstack3_hashmap::HashSet;
@@ -570,7 +570,7 @@ mod testutil {
             &mut self,
             _bindings_ctx: &mut FakeBindingsCtx<I, D>,
             _device: Option<&D>,
-            _frame_dst: Option<FrameDestination>,
+            _frame_dst: Option<LocalFrameDestination>,
             _src_ip: SocketIpAddr<I::Addr>,
             _dst_ip: SocketIpAddr<I::Addr>,
             _original_packet: B,
@@ -650,7 +650,7 @@ mod tests {
     #[test_case(LookupTestCase{right_dev: false, ..LOOKUP_SUCCESS_CASE} => false; "wrong_dev")]
     fn lookup_route<I: TestIpExt>(test_case: LookupTestCase) -> bool {
         let LookupTestCase { enabled, dev_enabled, right_key, right_dev } = test_case;
-        const FRAME_DST: Option<FrameDestination> = None;
+        const FRAME_DST: Option<LocalFrameDestination> = None;
         let mut api = testutil::new_api::<I>();
 
         let expected_key = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();

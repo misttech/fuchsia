@@ -54,7 +54,7 @@ use netstack3_base::testutil::{
     set_logger_for_test,
 };
 use netstack3_base::{
-    FrameDestination, InstantContext as _, IpDeviceAddr, Marks, NetworkParsingContext,
+    InstantContext as _, IpDeviceAddr, LocalFrameDestination, Marks, NetworkParsingContext,
     NetworkSerializationContext,
 };
 use netstack3_core::device::{
@@ -252,7 +252,7 @@ fn process_ipv4_fragment(
 
     ctx.test_api().receive_ip_packet::<Ipv4, _>(
         device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buffer,
     );
 }
@@ -314,7 +314,7 @@ fn process_ipv6_fragment(
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buffer,
     );
 }
@@ -348,7 +348,7 @@ fn test_ipv6_icmp_parameter_problem_non_must() {
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buf,
     );
 
@@ -408,7 +408,7 @@ fn test_ipv6_icmp_parameter_problem_must() {
     let buf = Buf::new(bytes, ..);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buf,
     );
     let frames = ctx.bindings_ctx.take_ethernet_frames();
@@ -455,7 +455,7 @@ fn test_ipv6_no_icmp_error_response() {
     let buf = Buf::new(bytes, ..);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buf,
     );
     let frames = ctx.bindings_ctx.take_ethernet_frames();
@@ -468,7 +468,7 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     let device: DeviceId<_> = device_ids[0].clone().into();
     let mut expected_icmps = 0;
     let mut bytes = [0; 64];
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     // Test parsing an IPv6 packet where we MUST send an ICMP parameter
     // problem due to an unrecognized extension header option.
@@ -954,7 +954,7 @@ fn drop_ipv6_link_local_packets(which_link_local_addr: WhichLinkLocalAddr) {
 
     let device: DeviceId<_> = device_ids[0].clone().into();
     ctx.test_api().set_unicast_forwarding_enabled::<Ipv6>(&device, true);
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     let (src_addr, dst_addr): (Ipv6Addr, Ipv6Addr) = match which_link_local_addr {
         WhichLinkLocalAddr::Source => {
@@ -1007,7 +1007,7 @@ fn test_ipv6_packet_too_big() {
 
     let device: DeviceId<_> = device_ids[0].clone().into();
     ctx.test_api().set_unicast_forwarding_enabled::<Ipv6>(&device, true);
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     // Construct an IPv6 packet that is too big for our MTU (MTU = 1280;
     // body itself is 5000). Note, the final packet will be larger because
@@ -1144,7 +1144,7 @@ fn test_ip_update_pmtu<I: GetPmtuIpExt>() {
     let fake_config = I::TEST_ADDRS;
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(fake_config.clone()).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     // Update PMTU from None.
 
@@ -1232,7 +1232,7 @@ fn test_ip_update_pmtu_too_low<I: GetPmtuIpExt>() {
     let fake_config = I::TEST_ADDRS;
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(fake_config.clone()).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     // Update PMTU from None but with an MTU too low.
 
@@ -1276,7 +1276,7 @@ fn test_ipv4_remote_no_rfc1191() {
     let fake_config = Ipv4::TEST_ADDRS;
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(fake_config.clone()).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     // Update from None.
 
@@ -1400,7 +1400,7 @@ fn test_invalid_icmpv4_in_ipv6() {
     let ip_config = Ipv6::TEST_ADDRS;
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(ip_config.clone()).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     let ic_config = Ipv4::TEST_ADDRS;
     let icmp_builder = IcmpPacketBuilder::<Ipv4, _>::new(
@@ -1448,7 +1448,7 @@ fn test_invalid_icmpv6_in_ipv4() {
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(ip_config.clone()).build();
     // First possible device id.
     let device: DeviceId<_> = device_ids[0].clone().into();
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     let ic_config = Ipv6::TEST_ADDRS;
     let icmp_builder = IcmpPacketBuilder::<Ipv6, _>::new(
@@ -1664,7 +1664,7 @@ fn test_no_dispatch_non_ndp_packets_during_ndp_dad() {
         )
         .unwrap();
 
-    let frame_dst = FrameDestination::Individual { local: true };
+    let frame_dst = LocalFrameDestination::Individual { local: () };
 
     let ip: Ipv6Addr = config.local_mac.to_ipv6_link_local().addr().get();
 
@@ -1789,7 +1789,7 @@ fn test_drop_multicast_source<I: IpExt + TestIpExt>() {
 
     ctx.test_api().receive_ip_packet::<I, _>(
         &device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buf,
     );
     IpCounterExpectations::<I> { receive_ip_packet: 1, invalid_source: 1, ..Default::default() }
@@ -1816,7 +1816,7 @@ fn receive_ip_packet_action_with_src_addr<I: IpExt + TestIpExt>(
     dst_addr: I::Addr,
 ) -> ReceivePacketAction<I, DeviceId<FakeBindingsCtx>> {
     let Ctx { core_ctx, bindings_ctx } = ctx;
-    const FRAME_DST: Option<FrameDestination> = None;
+    const FRAME_DST: Option<LocalFrameDestination> = None;
     let buf = new_ip_packet_buf::<I>(src_addr, dst_addr);
     let mut buf_ref = buf.as_ref();
     let packet = buf_ref.parse::<I::Packet<_>>().expect("parse should succeed");
@@ -2900,7 +2900,7 @@ fn test_receive_ipv6_mapped_dst() {
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,
-        Some(FrameDestination::Individual { local: true }),
+        Some(LocalFrameDestination::Individual { local: () }),
         buffer,
     );
 

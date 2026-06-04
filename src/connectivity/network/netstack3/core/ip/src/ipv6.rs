@@ -4,7 +4,7 @@
 
 //! IPv6 specific functionality.
 
-use netstack3_base::{AnyDevice, DeviceIdContext, FrameDestination};
+use netstack3_base::{AnyDevice, DeviceIdContext, LocalFrameDestination};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::ipv6::ext_hdrs::{
     DestinationOptionData, ExtensionHeaderOption, FragmentData, HopByHopOptionData,
@@ -41,7 +41,7 @@ pub(crate) enum Ipv6PacketAction {
 pub(crate) fn handle_extension_headers<CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
     core_ctx: &mut CC,
     device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
+    frame_dst: Option<LocalFrameDestination>,
     packet: &Ipv6Packet<B>,
     at_destination: bool,
 ) -> Ipv6PacketAction {
@@ -123,7 +123,7 @@ fn handle_hop_by_hop_options_ext_hdr<
 >(
     _bindings_ctx: &mut CC,
     _device: &CC::DeviceId,
-    _frame_dst: Option<FrameDestination>,
+    _frame_dst: Option<LocalFrameDestination>,
     _packet: &Ipv6Packet<B>,
     options: I,
 ) -> Ipv6PacketAction {
@@ -146,7 +146,7 @@ fn handle_hop_by_hop_options_ext_hdr<
 fn handle_routing_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
     _bindings_ctx: &mut CC,
     _device: &CC::DeviceId,
-    _frame_dst: Option<FrameDestination>,
+    _frame_dst: Option<LocalFrameDestination>,
     _packet: &Ipv6Packet<B>,
     routing_data: &RoutingData<'a>,
 ) -> Ipv6PacketAction {
@@ -162,7 +162,7 @@ fn handle_routing_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>
 fn handle_fragment_ext_hdr<'a, CC: DeviceIdContext<AnyDevice>, B: SplitByteSlice>(
     _bindings_ctx: &mut CC,
     _device: &CC::DeviceId,
-    _frame_dst: Option<FrameDestination>,
+    _frame_dst: Option<LocalFrameDestination>,
     _packet: &Ipv6Packet<B>,
     _fragment_data: &FragmentData<'a>,
 ) -> Ipv6PacketAction {
@@ -182,7 +182,7 @@ fn handle_destination_options_ext_hdr<
 >(
     _bindings_ctx: &mut CC,
     _device: &CC::DeviceId,
-    _frame_dst: Option<FrameDestination>,
+    _frame_dst: Option<LocalFrameDestination>,
     _packet: &Ipv6Packet<B>,
     options: I,
 ) -> Ipv6PacketAction {
@@ -223,7 +223,7 @@ mod tests {
             10,
             IpProto::Tcp.into(),
         );
-        let frame_dst = FrameDestination::Individual { local: true };
+        let frame_dst = LocalFrameDestination::Individual { local: () };
         let mut buffer = builder
             .wrap_body(Buf::new(vec![1, 2, 3, 4, 5], ..))
             .serialize_vec_outer(&mut NetworkSerializationContext::default())
