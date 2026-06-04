@@ -14,21 +14,15 @@ import unittest
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
-from async_utils.command import AsyncCommand
 from portpicker import portpicker
+from pydap.client import DapClient
 from pydap.dap_types import DapBaseModel
 from pydap.models import (
-    DisconnectArguments,
     EvaluateArguments,
     InitializeArguments,
     LaunchArguments,
     StackTraceArguments,
 )
-from zxdb_dap import ZxdbDapClient
-
-SentCallback = Callable[
-    [asyncio.StreamWriter, dict[str, Any]], Coroutine[Any, Any, None]
-]
 
 
 class RequestFuture:
@@ -151,17 +145,14 @@ class DapTestFramework:
     """Base class for DAP integration tests."""
 
     def __init__(self) -> None:
-        self.client = ZxdbDapClient()
-        self._sent_callbacks: Dict[int, SentCallback] = {}
-        self._original_write = self.client._write_message
-        setattr(self.client, "_write_message", self._patched_write_message)
+        self.client = DapClient()
         self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self.traffic_history: List[Dict[str, Any]] = []
         self.unmatched_events: List[Dict[str, Any]] = []
         self._client_task: Optional[asyncio.Task[None]] = None
         self._process_task: Optional[asyncio.Task[None]] = None
         self._request_tasks: List[asyncio.Task[None]] = []
-        self.proc: Optional[AsyncCommand] = None
+        self.proc: Optional[Any] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self.pending_futures: List[RequestFuture] = []
         self.event_expectations: List[EventFuture] = []
@@ -285,24 +276,6 @@ class DapTestFramework:
         event_fut = EventFuture(self, event_name)
         self.event_expectations.append(event_fut)
         return event_fut
-
-    async def _patched_write_message(
-        self, writer: asyncio.StreamWriter, value: dict[str, Any]
-    ) -> None:
-        """Intercepts all outbound DAP messages to execute dynamic callbacks on matched sequence numbers."""
-        await self._original_write(writer, value)
-        seq = value.get("seq")
-        if seq is not None and seq in self._sent_callbacks:
-            callback = self._sent_callbacks.pop(seq)
-            await callback(writer, value)
-
-    def set_sent_callback(
-        self,
-        seq: int,
-        callback: SentCallback,
-    ) -> None:
-        """Registers a callback to be executed when the request with the given seq is sent and drained."""
-        self._sent_callbacks[seq] = callback
 
     async def _event_processor_loop(self) -> None:
         """Continuously reads events from queue and processes them against expectations."""
@@ -508,17 +481,6 @@ class DapTestFramework:
             "stackTrace", lambda: self.client.stack_trace(writer, args)
         )
 
-    def disconnect(
-        self, args: Optional[DisconnectArguments] = None
-    ) -> RequestFuture:
-        assert self._writer is not None
-        writer = self._writer
-        if args is None:
-            args = DisconnectArguments()
-        return self._send_wrapper(
-            "disconnect", lambda: self.client.disconnect(writer, args)
-        )
-
     async def verify_all_expectations(self) -> None:
         """Awaits all pending futures and verifies event expectations."""
         # 1. Check if pending expectations are already satisfied by unmatched history
@@ -550,29 +512,6 @@ class DapTestFramework:
             raise AssertionError(
                 f"Pending event expectations were not met: {[e.event_name for e in self.event_expectations]}"
             )
-
-    def dispose_response(self, fut: RequestFuture) -> None:
-        """Disposes of a pending request future that we do not expect a response for.
-
-        This differs from simply ignoring a future. If we close a socket or abort a connection,
-        the background task for the request will eventually fail (e.g., timeout or socket error)
-        and set an exception on the future. If the future is GC'ed without being awaited,
-        Python will log a 'Future exception was never retrieved' warning.
-
-        This method removes the future from pending expectations and registers a callback
-        to silently retrieve and discard any exception when it completes, preventing warnings.
-        """
-        if fut in self.pending_futures:
-            self.pending_futures.remove(fut)
-
-        def silence_future(f: asyncio.Future[Any]) -> None:
-            try:
-                if not f.cancelled():
-                    f.exception()
-            except BaseException:
-                pass
-
-        fut.fut.add_done_callback(silence_future)
 
     def _check_event_expectations_against_history(self) -> None:
         """Helper to check pending event expectations against unmatched history."""
@@ -624,9 +563,16 @@ class DapTestFramework:
             await self._writer.wait_closed()
         if self.proc:
             try:
-                self.proc.terminate()
-                await self.proc._runner_task
-            except ProcessLookupError:
+                if hasattr(self.proc, "terminate"):
+                    self.proc.terminate()
+                if (
+                    hasattr(self.proc, "_runner_task")
+                    and self.proc._runner_task
+                ):
+                    await self.proc._runner_task
+                elif hasattr(self.proc, "wait"):
+                    await self.proc.wait()
+            except (ProcessLookupError, AttributeError):
                 pass
             except Exception as e:
                 print(f"Teardown: error draining server process: {e}")
@@ -642,7 +588,6 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.framework = DapTestFramework()
         self.port = portpicker.pick_unused_port()
-
         # Start server and connect
         await self.framework.start_server(self.port)
 
@@ -672,21 +617,6 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
         return self.framework.stack_trace(args)
-
-    def disconnect(
-        self, args: Optional[DisconnectArguments] = None
-    ) -> RequestFuture:
-        return self.framework.disconnect(args)
-
-    def dispose_response(self, fut: RequestFuture) -> None:
-        self.framework.dispose_response(fut)
-
-    def set_sent_callback(
-        self,
-        seq: int,
-        callback: SentCallback,
-    ) -> None:
-        self.framework.set_sent_callback(seq, callback)
 
     def on_event(self, event_name: str) -> EventFuture:
         return self.framework.on_event(event_name)

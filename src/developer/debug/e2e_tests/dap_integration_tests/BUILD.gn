@@ -25,9 +25,7 @@ if (is_host) {
       "dap_test_framework.py",
     ]
     deps = [
-      "//scripts/lib/async_utils",
       "//src/lib/debug/dap/python:lib",
-      "//src/lib/debug/dap/python/zxdb:zxdb_dap",
       "//third_party/python_portpicker:portpicker",
     ]
   }
