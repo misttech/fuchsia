@@ -1617,7 +1617,7 @@ impl NamespaceNode {
     /// A task may have a custom root set by `chroot`.
     pub fn path_from_root(&self, root: Option<&NamespaceNode>) -> PathWithReachability {
         if self.mount.is_none() {
-            return PathWithReachability::Reachable(self.entry.node.internal_name());
+            return self.unrooted_path();
         }
 
         let mut path = PathBuilder::new();
@@ -1655,6 +1655,22 @@ impl NamespaceNode {
         }
 
         PathWithReachability::Reachable(absolute_path)
+    }
+
+    fn unrooted_path(&self) -> PathWithReachability {
+        let scope = RcuReadScope::new();
+        let mode = self.entry.node.info().mode;
+        let local_name = self.entry.local_name(&scope);
+        let path = if !local_name.is_empty() {
+            format!("anon_inode:{}", local_name)
+        } else if mode.is_sock() {
+            format!("socket:[{}]", self.entry.node.ino)
+        } else if mode.is_fifo() {
+            format!("pipe:[{}]", self.entry.node.ino)
+        } else {
+            format!("file:[{}]", self.entry.node.ino)
+        };
+        PathWithReachability::Reachable(path.into())
     }
 
     pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {

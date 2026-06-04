@@ -15,16 +15,14 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
-    Anon, FileHandle, FileObject, FileOps, FsNodeInfo, NamespaceNode, SeekTarget,
-    fileops_impl_noop_sync, fileops_impl_seekless,
+    Anon, FileHandle, FileObject, FileOps, NamespaceNode, SeekTarget, fileops_impl_noop_sync,
+    fileops_impl_seekless,
 };
 use starnix_logging::{Level, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
@@ -41,14 +39,7 @@ pub fn new_null_file<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    Anon::new_private_file_extended(
-        locked,
-        current_task,
-        Box::new(DevNull),
-        flags,
-        "[fuchsia:null]",
-        FsNodeInfo::new(FileMode::from_bits(0o666), FsCred::root()),
-    )
+    Anon::new_private_file(locked, current_task, Box::new(DevNull), flags, "[fuchsia:null]")
 }
 
 impl FileOps for DevNull {

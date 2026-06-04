@@ -52,6 +52,7 @@ syscall_tests = [
   # go/keep-sorted start
 
   "abort_test",
+  "anon_test",
   "ashmem_test",
   "aspace_test",
   "binder_test",

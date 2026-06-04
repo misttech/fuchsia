@@ -888,13 +888,6 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         error!(ENOTSUP)
     }
 
-    /// Returns a descriptive name for this node, suitable to report to userspace in situations
-    /// where the node's path is unavailable (e.g. because it is anonymous, and has no path).
-    /// If no name is returned then a default name of the form "<class:[<node_id>]" will be used.
-    fn internal_name(&self, _node: &FsNode) -> Option<FsString> {
-        None
-    }
-
     /// The key used to identify this node in the file system's node cache.
     ///
     /// For many file systems, this will be the same as the inode number. However, some file
@@ -2696,24 +2689,6 @@ impl FsNode {
             })?;
         }
         Ok(())
-    }
-
-    /// Returns a string describing this `FsNode` in the format used by "/proc/../fd" for anonymous
-    /// file descriptors. By default this is in the form:
-    ///   <class>:[<node_id>]
-    /// though `FsNodeOps` may customize this as required.
-    pub fn internal_name(&self) -> FsString {
-        if let Some(name) = self.ops().internal_name(self) {
-            return name;
-        };
-        let class = if self.is_sock() {
-            "socket"
-        } else if self.is_fifo() {
-            "pipe"
-        } else {
-            "file"
-        };
-        format!("{}:[{}]", class, self.ino).into()
     }
 
     /// The key used to identify this node in the file system's node cache.
