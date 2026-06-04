@@ -184,7 +184,7 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(message["code"], 1)
         asserts.assert_equal(
             message["message"],
-            "Command line flags unsatisfactory for strict mode:\n\tffx strict requires that the target be explicitly specified",
+            "Command line flags unsatisfactory for strict mode:\n\tffx strict requires that the target be explicitly specified. Specify `--target <target>`.",
         )
 
     def test_strict_can_accept_no_target(self) -> None:

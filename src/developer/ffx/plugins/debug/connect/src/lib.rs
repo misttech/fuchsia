@@ -119,7 +119,7 @@ async fn connect_tool_impl(
             let debugger_arg = if debugger_debugger == "lldb" {
                 "--"
             } else {
-                ffx_bail!("--debugger must be lldb");
+                ffx_bail!("--debugger must be lldb. Specify `--debugger lldb`.");
             };
             // Ignore SIGINT because Ctrl-C is used to interrupt zxdb and return to the debugger.
             signal_hook::flag::register(SIGINT, Arc::new(AtomicBool::new(false)))?;

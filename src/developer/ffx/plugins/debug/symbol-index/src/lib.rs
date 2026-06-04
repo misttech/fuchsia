@@ -119,7 +119,9 @@ fn add(cmd: AddCommand, global_symbol_index_path: &str) -> Result<()> {
                 return Ok(());
             }
             if build_dir.is_some() {
-                ffx_bail!("--build-dir cannot be specified for json files");
+                ffx_bail!(
+                    "--build-dir cannot be specified for json files. Remove `--build-dir` when specifying a JSON symbol index."
+                );
             }
             index.includes.push(path);
         } else if path.ends_with("ids.txt") {

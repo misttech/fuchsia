@@ -148,7 +148,10 @@ async fn inner_connect_loop(
             return Err(e);
         }
         Err(e) => {
-            fho::return_user_error!("Timeout connecting to rcs: {}", e);
+            fho::return_user_error!(
+                "Timeout connecting to rcs: {}. Ensure the device is online and reachable, or try verifying RCS status with `ffx target list`.",
+                e
+            );
         }
     };
 

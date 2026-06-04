@@ -45,7 +45,7 @@ impl FfxMain for DeregisterTool {
 
         let repo_name = if let Some(name) = &self.cmd.repository {
             if name.to_lowercase().starts_with(REPOSITORY_URL_PREFIX) {
-                return_user_error!("the repository name should not be prefixed with the scheme {REPOSITORY_URL_PREFIX}");
+                return_user_error!("the repository name should not be prefixed with the scheme {REPOSITORY_URL_PREFIX}. Provide just the repository name, e.g. 'devhost' instead of '{REPOSITORY_URL_PREFIX}devhost'.");
             } else {
                 Some(name.to_string())
             }

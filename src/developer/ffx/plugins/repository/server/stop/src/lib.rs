@@ -81,7 +81,9 @@ impl RepoStopTool {
             }) {
                 return Self::stop_instance(instance).await;
             } else {
-                return_user_error!("no running server named {repo_name} is found.");
+                return_user_error!(
+                    "no running server named {repo_name} is found. Try checking running servers with `ffx repository server list`."
+                );
             }
         } else if let Some(product_bundle) = &self.cmd.product_bundle {
             if let Some(instance) = instances.iter().find(|s| {

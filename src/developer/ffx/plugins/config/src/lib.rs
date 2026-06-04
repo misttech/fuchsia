@@ -163,7 +163,10 @@ async fn exec_remove(ctx: &EnvironmentContext, remove_cmd: &RemoveCommand) -> Re
         config.save()?;
         Ok(())
     } else {
-        ffx_bail_with_code!(2, "Configuration key not found")
+        ffx_bail_with_code!(
+            2,
+            "Configuration key not found. Check your spelling, or try listing available keys with `ffx config get`."
+        )
     }
 }
 
@@ -365,7 +368,10 @@ mod test {
             Ok(_) => panic!("Expected error getting removed key"),
             Err(e) => {
                 if let Some(ffx_err) = e.downcast_ref::<FfxError>() {
-                    assert_eq!(ffx_err.to_string(), "Configuration key not found");
+                    assert_eq!(
+                        ffx_err.to_string(),
+                        "Configuration key not found. Check your spelling, or try listing available keys with `ffx config get`."
+                    );
                     assert!(ffx_err.exit_code() != 0, "Expected non-zero exit code");
                 } else {
                 }

@@ -80,7 +80,11 @@ async fn explore_cmd(cmd: ExploreCommand, dash_launcher: fdash::LauncherProxy) -
         .bug_context("fidl error launching dash")?
         .map_err(|e| match e {
             fdash::LauncherError::ResolveTargetPackage => {
-                user_error!("No package found matching '{}' {}.", url, subpackages.join(" "))
+                user_error!(
+                    "No package found matching '{}' {}. Try checking available packages with `ffx repository package list`.",
+                    url,
+                    subpackages.join(" ")
+                )
             }
             e => bug!("Unexpected error launching dash: {:?}", e),
         })?;

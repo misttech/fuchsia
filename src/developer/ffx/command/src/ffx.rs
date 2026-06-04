@@ -347,9 +347,13 @@ enum StrictCheckError {
 
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
 enum StrictCheckErrorEnum {
-    #[error("ffx strict requires that the machine writer be specified")]
+    #[error(
+        "ffx strict requires that the machine writer be specified. Specify `--machine <format>` (e.g., `--machine json`)."
+    )]
     MustHaveMachineSpecified,
-    #[error("ffx strict requires that the target be explicitly specified")]
+    #[error(
+        "ffx strict requires that the target be explicitly specified. Specify `--target <target>`."
+    )]
     MustHaveTarget,
     #[error("ffx strict requires that the Target be specified by address or have the prefix \"serial:\", \"usb:cid:\" or \"vsock:cid\". Actually passed: \"{}\"", .0)]
     TargetSpecificationInvalid(String),
@@ -357,9 +361,11 @@ enum StrictCheckErrorEnum {
     TargetAddressMustHaveValidScopeId(String),
     #[error("When running in strict mode, config flags must be list of Key Value Pairs or valid JSON. Passed: \"{}\"", .0)]
     ConfigArgMustBeJsonOrKeyValuePair(String),
-    #[error("Specifying strict mode and isolate dir are mutually exclusive. specify one or the other. Isolate Dir Passed: {}", .0.display())]
+    #[error("Specifying strict mode and isolate dir are mutually exclusive. Specify one or the other, not both. Isolate Dir Passed: {}", .0.display())]
     StrictAndIsolateMutuallyExclusive(PathBuf),
-    #[error("ffx strict requires that the Log Destination be explicitly specified")]
+    #[error(
+        "ffx strict requires that the Log Destination be explicitly specified. Specify `--log-output <destination>`."
+    )]
     MustHaveLogDestination,
 }
 

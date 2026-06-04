@@ -112,7 +112,10 @@ async fn show_impl(
         .await
         .with_context(|| format!("showing package {}", cmd.package))?
     else {
-        ffx_bail!("repository does not contain package {}", cmd.package)
+        ffx_bail!(
+            "repository does not contain package {}. Try checking available packages with `ffx repository package list`.",
+            cmd.package
+        )
     };
 
     blobs.sort();
@@ -418,7 +421,10 @@ async fn extract_archive_impl(
         .await
         .with_context(|| format!("showing package {}", cmd.package))?
     else {
-        ffx_bail!("repository does not contain package {}", cmd.package)
+        ffx_bail!(
+            "repository does not contain package {}. Try checking available packages with `ffx repository package list`.",
+            cmd.package
+        )
     };
 
     let entry_is_meta_far =

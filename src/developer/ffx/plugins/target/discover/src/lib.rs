@@ -144,7 +144,9 @@ impl<P: ProcessManager> Discoverer<P, RealDiscoveryRunner> {
         process_manager: P,
     ) -> Result<Self> {
         let Some(cache_dir) = ffx_target::get_discovery_cache_dir(&context) else {
-            return_user_error!("Error: No cache dir set");
+            return_user_error!(
+                "Error: No cache dir set. Configure it with `ffx config set target.discovery_cache_dir <path>`."
+            );
         };
         fs::create_dir_all(&cache_dir)
             .context(format!("Creating cache_dir {}", cache_dir.display()))?;
@@ -174,7 +176,9 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
         discovery_runner: D,
     ) -> Result<Self> {
         let Some(cache_dir) = ffx_target::get_discovery_cache_dir(&context) else {
-            return_user_error!("Error: No cache dir set");
+            return_user_error!(
+                "Error: No cache dir set. Configure it with `ffx config set target.discovery_cache_dir <path>`."
+            );
         };
         // Only produce output when running in the foreground
         fs::create_dir_all(&cache_dir)

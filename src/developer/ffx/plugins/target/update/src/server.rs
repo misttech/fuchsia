@@ -99,14 +99,13 @@ pub(crate) async fn package_server_task(
         tunnel_addr: None,
     };
 
-    // Check that there is not an update source that has the same prefix. This is extremely
-    // unlikely, and would mean that process ids are being reused on the host computer.
+    // Check that there is not an update source that has the same exact name (which includes the process ID).
     if is_server_registered(&repo_name, rcs_proxy_connector.clone(), Duration::from_secs(60))
         .await?
     {
         return_user_error!(
-            "Product bundle repository server name collision detected.\
-         Please deregister repostory servers starting with {repo_name_prefix}"
+            "Product bundle repository server name collision detected (unlikely host PID reuse suspected). \
+         Please deregister the repository with `ffx target repository deregister -r {repo_name}` and stop the server with `ffx repository server stop {repo_name}` if it is still running."
         )
     }
 
