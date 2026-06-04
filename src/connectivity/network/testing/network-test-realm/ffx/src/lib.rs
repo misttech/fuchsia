@@ -6,24 +6,25 @@
 #![warn(unused_results)]
 
 use anyhow::Context as _;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
+use fdomain_fuchsia_net as fnet;
+use fdomain_fuchsia_net_dhcpv6 as fnet_dhcpv6;
+use fdomain_fuchsia_net_test_realm as fntr;
+use fdomain_fuchsia_sys2 as fsys;
 use ffx_net_test_realm_args as ntr_args;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_developer_remotecontrol as fremotecontrol;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
 use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
 use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_test_realm as fntr;
-use fidl_fuchsia_sys2 as fsys;
 use log::error;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
-async fn connect_to_protocol<S: fidl::endpoints::DiscoverableProtocolMarker>(
+async fn connect_to_protocol<S: fdomain_client::fidl::DiscoverableProtocolMarker>(
     remote_control: &fremotecontrol::RemoteControlProxy,
     moniker: &str,
 ) -> anyhow::Result<S::Proxy> {
-    let (proxy, server_end) = fidl::endpoints::create_proxy::<S>();
+    let (proxy, server_end) = remote_control.domain().create_proxy::<S>();
     remote_control
         .connect_capability(
             moniker,
@@ -297,9 +298,10 @@ async fn handle_command(
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net as fnet;
+    use fdomain_fuchsia_net as fnet;
     use futures::TryStreamExt as _;
     use net_declare::{fidl_ip, fidl_ip_v6_with_prefix, fidl_mac, std_ip_v6};
+    use std::sync::Arc;
 
     const COMPONENT_URL: &'static str =
         "fuchsia-pkg://fuchsia.com/fake-component#meta/fake-component.cm";
@@ -314,11 +316,11 @@ mod test {
     /// The `response_handler` should validate the request and output the
     /// desired response.
     async fn net_test_realm_command_test<F: FnOnce(fntr::ControllerRequest)>(
+        client: &Arc<fdomain_client::Client>,
         command: ntr_args::Subcommand,
         response_handler: F,
     ) {
-        let (controller, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fntr::ControllerMarker>();
+        let (controller, mut requests) = client.create_proxy_and_stream::<fntr::ControllerMarker>();
         let writer = MachineWriter::<String>::new(None);
         let op = handle_command(controller, command, writer);
         let op_response = async {
@@ -335,7 +337,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn add_interface() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::AddInterface(ntr_args::AddInterface {
                 mac_address: MAC_ADDRESS.into(),
                 name: INTERFACE_NAME.to_string(),
@@ -355,7 +359,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn join_multicast_group() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::JoinMulticastGroup(ntr_args::JoinMulticastGroup {
                 address: IP_ADDRESS.into(),
                 interface_id: INTERFACE_ID,
@@ -374,7 +380,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn leave_multicast_group() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::LeaveMulticastGroup(ntr_args::LeaveMulticastGroup {
                 address: IP_ADDRESS.into(),
                 interface_id: INTERFACE_ID,
@@ -393,9 +401,11 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn ping() {
+        let client = fdomain_local::local_client_empty();
         let expected_payload_length = 100;
         let expected_timeout: i64 = 1000;
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::Ping(ntr_args::Ping {
                 target: IP_ADDRESS.into(),
                 payload_length: expected_payload_length,
@@ -417,12 +427,14 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn poll_udp() {
+        let client = fdomain_local::local_client_empty();
         let expected_port = 1234;
         let expected_target = (std::net::Ipv4Addr::LOCALHOST, expected_port).into();
         let expected_timeout = 1000;
         let expected_payload = "hello";
         let expected_num_retries = 10;
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::PollUdp(ntr_args::PollUdp {
                 target: expected_target,
                 payload: expected_payload.to_string(),
@@ -447,8 +459,10 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn start_hermetic_network_realm() {
+        let client = fdomain_local::local_client_empty();
         let expected_netstack = fntr::Netstack::V2;
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::StartHermeticNetworkRealm(ntr_args::StartHermeticNetworkRealm {
                 netstack: expected_netstack,
             }),
@@ -465,7 +479,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn start_stub() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::StartStub(ntr_args::StartStub {
                 component_url: COMPONENT_URL.to_string(),
             }),
@@ -481,7 +497,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn stop_hermetic_network_realm() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::StopHermeticNetworkRealm(ntr_args::StopHermeticNetworkRealm {}),
             |request| {
                 request
@@ -496,7 +514,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn stop_stub() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::StopStub(ntr_args::StopStub {}),
             |request| {
                 request
@@ -514,7 +534,9 @@ mod test {
         const DHCPV6_CLIENT_BIND_ADDR: fnet_ext::Ipv6Address =
             fnet_ext::Ipv6Address(std_ip_v6!("fe80::1"));
         const PD_HINT: fnet::Ipv6AddressWithPrefix = fidl_ip_v6_with_prefix!("2001:db8::/32");
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::Dhcpv6Client(ntr_args::Dhcpv6Client {
                 subcommand: ntr_args::Dhcpv6ClientSubcommand::Start(ntr_args::Dhcpv6ClientStart {
                     interface_id: INTERFACE_ID,
@@ -563,7 +585,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn dhcpv6_client_stop() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::Dhcpv6Client(ntr_args::Dhcpv6Client {
                 subcommand: ntr_args::Dhcpv6ClientSubcommand::Stop(ntr_args::Dhcpv6ClientStop {}),
             }),
@@ -580,7 +604,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn dhcp_client_start() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::DhcpClient(ntr_args::DhcpClient {
                 subcommand: ntr_args::DhcpClientSubcommand::Start(ntr_args::DhcpClientStart {
                     interface_id: INTERFACE_ID,
@@ -607,7 +633,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn dhcp_client_stop() {
+        let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
+            &client,
             ntr_args::Subcommand::DhcpClient(ntr_args::DhcpClient {
                 subcommand: ntr_args::DhcpClientSubcommand::Stop(ntr_args::DhcpClientStop {
                     interface_id: INTERFACE_ID,
