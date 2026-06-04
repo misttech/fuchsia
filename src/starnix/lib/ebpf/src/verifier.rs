@@ -2186,6 +2186,12 @@ impl PartialOrd for ComputationContext {
                     Ordering::Equal => {
                         array_bound_iter1.next();
                         array_bound_iter2.next();
+                        // The comparison is intentionally reversed (v2.cmp(v1) instead of
+                        // v1.cmp(v2)). `v1` is the bound of the explored state (`self`) and `v2` is
+                        // the bound of the current state (`other`). A smaller bound value
+                        // represents a stronger safety guarantee (fewer assumed valid bytes,
+                        // meaning a more restricted program). Therefore, a state with a smaller
+                        // bound dominates (is "Greater" than) a state with a larger bound.
                         result = associate_orderings(result, v2.cmp(v1))?;
                     }
                     v @ Ordering::Less => {
