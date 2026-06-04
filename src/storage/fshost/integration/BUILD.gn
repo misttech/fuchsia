@@ -208,6 +208,9 @@ template("fshost_integration_test_package") {
   if (!defined(invoker.enable_system_volume_manipulation_tests)) {
     invoker.enable_system_volume_manipulation_tests = false
   }
+  if (!defined(invoker.enable_volume_death_tests)) {
+    invoker.enable_volume_death_tests = false
+  }
   if (!defined(fshost_options.data_filesystem_format)) {
     # data_filesystem_format is implied from fxblob.
     assert(!(defined(fshost_options.fxfs_blob) && !fshost_options.fxfs_blob))
@@ -478,6 +481,42 @@ template("fshost_integration_test_package") {
     }
   }
 
+  if (invoker.enable_volume_death_tests) {
+    _volume_death_component_target = "${target_name}_volume_death"
+    fshost_integration_test_component(_volume_death_component_target) {
+      fshost_target = _fshost_target
+      data_filesystem_format = fshost_options.data_filesystem_format
+      data_filesystem_variant = invoker.data_filesystem_variant
+      source_root = "tests/volume_death.rs"
+      deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates:assert_matches",
+        "//third_party/rust_crates:futures",
+      ]
+    }
+
+    # The crash tests trigger fshost process termination and diagnostic error messages.
+    # They must reside in a separate test package configuring max_severity = "ERROR"
+    _volume_death_test_package = "${target_name}_volume_death_package"
+    _test_packages += [ ":$_volume_death_test_package" ]
+    fuchsia_test_package(_volume_death_test_package) {
+      package_name = "$_volume_death_component_target"
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+        parallel = 1
+      }
+      test_components = [ ":$_volume_death_component_target" ]
+
+      deps = [ ":$_fshost_target" ]
+    }
+  }
+
   _main_test_package = "${target_name}_test_package"
   _main_test_package_name = "$target_name"
   _test_packages += [ ":$_main_test_package" ]
@@ -519,6 +558,7 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
 }
 
 fshost_integration_test_package("fshost_integration_tests_fvm_minfs") {
+  enable_volume_death_tests = true
   options = {
     data_filesystem_format = "minfs"
     fxfs_blob = false

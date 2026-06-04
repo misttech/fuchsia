@@ -27,12 +27,14 @@ pub enum FshostShutdownResponder {
         // TODO(https://fxbug.dev/333319162): Implement me.
         #[allow(dead_code)] LifecycleRequestStream,
     ),
+    Crash(&'static str),
 }
 
 impl FshostShutdownResponder {
     pub fn close(self) -> Result<(), fidl::Error> {
         match self {
             FshostShutdownResponder::Lifecycle(_) => {}
+            FshostShutdownResponder::Crash(_) => {}
         }
         Ok(())
     }

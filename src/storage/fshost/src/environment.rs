@@ -15,6 +15,7 @@ pub use publisher::{DevicePublisher, SinglePublisher};
 use crate::crypt::fxfs::CryptService;
 use crate::device::constants::DATA_VOLUME_LABEL;
 use crate::device::{Device, RegisteredDevices};
+use crate::service;
 use crate::watcher::{DirSource, Watcher};
 use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
@@ -33,7 +34,9 @@ use fs_management::{ComponentType, FSConfig, Fvm, Fxfs};
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect as finspect;
+use futures::channel::mpsc;
 use std::sync::Arc;
+use vfs::execution_scope::ExecutionScope;
 
 use crate::device::constants::{BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL};
 use crate::recovery::IMAGE_FILE_NAME;
@@ -274,6 +277,8 @@ pub struct FshostEnvironment {
     registered_devices: Arc<RegisteredDevices>,
     other_filesystems: Vec<Filesystem>,
     device_publisher: DevicePublisher,
+    scope: ExecutionScope,
+    shutdown_tx: mpsc::Sender<service::FshostShutdownResponder>,
 }
 
 impl FshostEnvironment {
@@ -283,6 +288,8 @@ impl FshostEnvironment {
         watcher: Watcher,
         registered_devices: Arc<RegisteredDevices>,
         device_publisher: DevicePublisher,
+        scope: ExecutionScope,
+        shutdown_tx: mpsc::Sender<service::FshostShutdownResponder>,
     ) -> Self {
         let corruption_events = inspector.root().create_child("corruption_events");
         Self {
@@ -297,6 +304,8 @@ impl FshostEnvironment {
             registered_devices,
             other_filesystems: Vec::new(),
             device_publisher,
+            scope,
+            shutdown_tx,
         }
     }
 
@@ -339,6 +348,23 @@ impl FshostEnvironment {
 
     pub fn launcher(&self) -> Arc<FilesystemLauncher> {
         self.launcher.clone()
+    }
+
+    fn spawn_volume_watcher(
+        &self,
+        root_dir: fidl_fuchsia_io::DirectoryProxy,
+        volume_name: &'static str,
+    ) {
+        let mut shutdown_tx = self.shutdown_tx.clone();
+
+        self.scope.spawn(async move {
+            // Block until the cloned DirectoryProxy connection channel is closed
+            // The task will clean itself up when the filesystem eventully shuts down.
+            let _ = root_dir.on_closed().await;
+
+            // Only the first shutdown message will get through. It is normal and fine to fail here.
+            let _ = shutdown_tx.try_send(service::FshostShutdownResponder::Crash(volume_name));
+        });
     }
 }
 
@@ -506,10 +532,28 @@ impl Environment for FshostEnvironment {
         for server in queue.drain(..) {
             exposed_dir.clone(server.into_channel().into())?;
         }
+
+        // For the death watcher.
+        let root_dir_clone = match fuchsia_fs::directory::clone(blobfs.root()) {
+            Ok(root_dir_clone) => Some(root_dir_clone),
+            Err(e) => {
+                log::warn!(
+                    "Failed to clone blobfs root directory for crash watching: {:?}. \
+                    Crash watching disabled for this volume.",
+                    e
+                );
+                None
+            }
+        };
+
         self.blobfs = Filesystem::ServingVolumeInMultiVolume(None, blobfs);
         if let Err(e) = container.fs().set_byte_limit(label, self.config.blob_max_bytes).await {
             log::warn!("Failed to set byte limit for the blob volume: {:?}", e);
         }
+        if let Some(root_dir_clone) = root_dir_clone {
+            self.spawn_volume_watcher(root_dir_clone, "blob");
+        }
+
         Ok(())
     }
 
@@ -547,6 +591,28 @@ impl Environment for FshostEnvironment {
         for server in queue.drain(..) {
             exposed_dir.clone(server.into_channel().into())?;
         }
+
+        // Watcher Spawn on Data Volume
+        if let Filesystem::ServingVolumeInMultiVolume(_, volume) = &filesystem {
+            let root_dir = volume.root();
+            match fuchsia_fs::directory::clone(root_dir) {
+                Ok(root_clone) => {
+                    self.spawn_volume_watcher(root_clone, "data");
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to clone data root directory for crash watching: {:?}. \
+                        Crash watching disabled for this volume.",
+                        e
+                    );
+                }
+            }
+        } else {
+            log::warn!(
+                "Data filesystem is not a multi-volume serving volume. Crash watching disabled."
+            );
+        }
+
         self.data = filesystem;
         Ok(())
     }

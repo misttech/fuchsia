@@ -10,6 +10,7 @@ use device::Parent;
 use fidl::prelude::*;
 use fidl_fuchsia_fshost as fshost;
 use fidl_fuchsia_io as fio;
+use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
@@ -44,6 +45,33 @@ fn debug_log(message: &str) {
     let message = message.as_bytes();
     unsafe {
         zx_debug_write(message.as_ptr(), message.len());
+    }
+}
+
+async fn file_crash_report(signature: String) {
+    let report = fidl_fuchsia_feedback::CrashReport {
+        program_name: Some("fshost".to_string()),
+        crash_signature: Some(signature),
+        is_fatal: Some(true), // Automatically aggregate logs
+        ..Default::default()
+    };
+
+    if let Ok(proxy) = connect_to_protocol::<fidl_fuchsia_feedback::CrashReporterMarker>() {
+        // Wait entirely for the diagnostics service to cache & serialize report/logs before
+        // reboot.
+        match proxy.file_report(report).await {
+            Ok(Ok(results)) => {
+                log::info!("Fatal crash report successfully registered: {:?}", results);
+            }
+            Ok(Err(filing_error)) => {
+                log::error!("Crash reporter returned application error: {:?}", filing_error);
+            }
+            Err(fidl_error) => {
+                log::error!("FIDL error filing crash report: {:?}", fidl_error);
+            }
+        }
+    } else {
+        log::error!("Failed to connect to crash report service");
     }
 }
 
@@ -114,6 +142,8 @@ async fn main() -> Result<(), Error> {
         watcher,
         registered_devices.clone(),
         device_publisher,
+        scope.clone(),
+        shutdown_tx.clone(),
     );
 
     // Records inspect metrics. Too expensive to build the tree data in newer fxfs environments.
@@ -210,10 +240,18 @@ async fn main() -> Result<(), Error> {
     };
 
     log::info!("shutdown signal received");
-    // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "received shutdown command
-    // over lifecycle interface" to indicate fshost shutdown is starting. Shutdown logs have to
-    // go straight to serial because of timing issues (https://fxbug.dev/42179880).
-    debug_log("received shutdown command over lifecycle interface");
+    match &shutdown_responder {
+        service::FshostShutdownResponder::Lifecycle(_) => {
+            // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "received shutdown
+            // command over lifecycle interface" to indicate fshost shutdown is starting. Shutdown
+            // logs have to go straight to serial because of timing issues
+            // (https://fxbug.dev/42179880).
+            debug_log("received shutdown command over lifecycle interface");
+        }
+        service::FshostShutdownResponder::Crash(volume_name) => {
+            file_crash_report(format!("{}-volume-crash", volume_name)).await;
+        }
+    }
 
     // Shutting down fshost involves sending asynchronous shutdown signals to several different
     // systems in order. If at any point we hit an error, we log loudly, but continue with the
