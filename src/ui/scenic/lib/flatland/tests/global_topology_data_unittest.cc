@@ -77,7 +77,7 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GenerateSnapshot(
       gtd.topology_vector, gtd.parent_indices, matrix_vector, uber_structs);
   auto hit_regions =
       ComputeGlobalHitRegions(gtd.topology_vector, gtd.parent_indices, matrix_vector, uber_structs);
-  return GlobalTopologyData::GenerateViewTreeSnapshot(gtd, std::move(hit_regions),
+  return GlobalTopologyData::GenerateViewTreeSnapshot(gtd, uber_structs, std::move(hit_regions),
                                                       std::move(global_clip_regions), matrix_vector,
                                                       link_child_to_parent_transform_map);
 }

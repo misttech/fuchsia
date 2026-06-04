@@ -245,8 +245,8 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
                               global_matrices, uber_struct_snapshot.map);
 
   return flatland::GlobalTopologyData::GenerateViewTreeSnapshot(
-      topology_data, std::move(hit_regions), global_clip_regions, global_matrices,
-      link_child_to_parent_transform_map);
+      topology_data, uber_struct_snapshot.map, std::move(hit_regions), global_clip_regions,
+      global_matrices, link_child_to_parent_transform_map);
 }
 
 // TODO(https://fxbug.dev/42162342) If we put Screenshot on its own thread, we should make this

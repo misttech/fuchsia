@@ -41,7 +41,6 @@ struct GlobalTopologyData {
     view_refs = std::move(other.view_refs);
     root_transforms = std::move(other.root_transforms);
     debug_names = std::move(other.debug_names);
-    local_clip_regions = std::move(other.local_clip_regions);
 
     return *this;
   }
@@ -84,9 +83,6 @@ struct GlobalTopologyData {
   // Debug name for each transform handle, if present.
   std::unordered_map<TransformHandle, std::string> debug_names;
 
-  // TransformClipRegion for each transform handle.
-  std::unordered_map<TransformHandle, TransformClipRegion> local_clip_regions;
-
   // Clear all fields without freeing memory, so that it avoid reallocation when reused.
   void Clear();
 
@@ -119,14 +115,13 @@ struct GlobalTopologyData {
                                         TransformHandle root);
 
   static std::unique_ptr<view_tree::SubtreeSnapshot> GenerateViewTreeSnapshot(
-      const GlobalTopologyData& data, HitRegions hit_regions,
-      std::vector<TransformClipRegion> global_clip_regions,
+      const GlobalTopologyData& data, const UberStruct::InstanceMap& uber_structs,
+      HitRegions hit_regions, std::vector<TransformClipRegion> global_clip_regions,
       const std::vector<glm::mat3>& global_matrix_vector,
       // Acquired from |LinkSystem::GetLinkChildToParentTransformMap|. Used to get the
       // TransformHandle of the parent end of a Link using the child's TransformHandle, in order to
-      // fetch its clip region from |global_clip_regions|.
-      const std::unordered_map<TransformHandle, TransformHandle>&
-          link_child_to_parent_transform_map);
+      // fetch its clip region.
+      const std::unordered_map<TransformHandle, TransformHandle>& child_to_parent_transform_map);
 };
 
 }  // namespace flatland

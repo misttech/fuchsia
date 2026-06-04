@@ -19,6 +19,7 @@
 using flatland::GlobalTopologyData;
 using flatland::TransformClipRegion;
 using flatland::TransformHandle;
+using flatland::UberStruct;
 
 namespace {
 
@@ -266,41 +267,55 @@ zx_koid_t FindParentView(const size_t index, const zx_koid_t view_ref_koid, cons
 
 // Returns the bounding box of |transform_handle| by findings the clip regions specified by its
 // View's parent.
+//
+// See //docs/development/graphics/scenic/concepts/view_bounds.md for conceptual documentation on
+// how view bounds, null/infinitely small bounds, and hit-testing interact.
 view_tree::BoundingBox ComputeBoundingBox(
-    const TransformHandle transform_handle,
-    const std::unordered_map<TransformHandle, TransformClipRegion>& clip_regions,
-    const std::unordered_map<TransformHandle, TransformHandle>&
-        link_child_to_parent_transform_map) {
+    const TransformHandle transform_handle, const UberStruct::InstanceMap& uber_structs,
+    const std::unordered_map<TransformHandle, TransformHandle>& child_to_parent_transform_map) {
+  constexpr view_tree::BoundingBox kEmptyBox{.min = {0, 0}, .max = {0, 0}};
+
+  // LLM Style Note: the previous version of this code used nested if-statements, more difficult for
+  // the human eye to parse than current "flattened" style.  Unless tradeoffs dictate otherwise,
+  // this style is preferred.
+
   // We only need the global clip region from the immediate parent, because it is already the
   // intersection with all parent clip regions.
-  if (const auto it = link_child_to_parent_transform_map.find(transform_handle);
-      it != link_child_to_parent_transform_map.end()) {
-    const TransformHandle parent_transform_handle = it->second;
-    if (const auto clip_region_it = clip_regions.find(parent_transform_handle);
-        clip_region_it != clip_regions.end()) {
-      const auto& rect = clip_region_it->second;
+  const auto it = child_to_parent_transform_map.find(transform_handle);
+  if (it == child_to_parent_transform_map.end()) {
+    return kEmptyBox;
+  }
+  const TransformHandle parent_transform_handle = it->second;
 
-      // TODO(https://fxbug.dev/465563593): There might be a bug here.  fxr/643755 is the first CL
-      // to compute the bounding box; previously it was hardcoded to:
-      //      const auto full_screen_bounding_box = view_tree::BoundingBox{
-      //          .min = {0, 0},
-      //          .max = {display_width, display_height},
-      //
-      // Ever since fxr/643755, the clip extent has been computed dynamically, but the origin has
-      // always been assumed to be (0,0).  Through many refactorings, the general approach has not
-      // changed.
-      //
-      // We've never noticed this to cause problems, but we might just be getting lucky.  Certainly,
-      // it seems e.g. a tiling WM should have child views whose global clip regions have a non-zero
-      // origin.  Until we can investigate this properly, this DCHECK will serve as a canary.
-      FX_DCHECK(rect.origin() == types::Point2({.x = 0, .y = 0}));
+  const auto uber_struct_it = uber_structs.find(parent_transform_handle.GetInstanceId());
+  if (uber_struct_it == uber_structs.end()) {
+    return kEmptyBox;
+  }
+  const auto& local_clip_regions = uber_struct_it->second->local_clip_regions;
 
-      return {.min = {0, 0},
-              .max = {static_cast<float>(rect.width()), static_cast<float>(rect.height())}};
-    }
+  const auto parent_clip_region_it = local_clip_regions.find(parent_transform_handle);
+  if (parent_clip_region_it == local_clip_regions.end()) {
+    return kEmptyBox;
   }
 
-  return {.min = {0, 0}, .max = {0, 0}};
+  // TODO(https://fxbug.dev/465563593): There might be a bug here.  fxr/643755 is the first CL
+  // to compute the bounding box; previously it was hardcoded to:
+  //      const auto full_screen_bounding_box = view_tree::BoundingBox{
+  //          .min = {0, 0},
+  //          .max = {display_width, display_height},
+  //
+  // Ever since fxr/643755, the clip extent has been computed dynamically, but the origin has
+  // always been assumed to be (0,0).  Through many refactorings, the general approach has not
+  // changed.
+  //
+  // We've never noticed this to cause problems, but we might just be getting lucky.  Certainly,
+  // it seems e.g. a tiling WM should have child views whose global clip regions have a non-zero
+  // origin.  Until we can investigate this properly, this DCHECK will serve as a canary.
+  const types::Rectangle& rect = parent_clip_region_it->second;
+  FX_DCHECK(rect.origin() == types::Point2({.x = 0, .y = 0}));
+
+  return {.min = {0, 0},
+          .max = {static_cast<float>(rect.width()), static_cast<float>(rect.height())}};
 }
 
 // Return value struct for ComputeViewTree().
@@ -311,16 +326,15 @@ struct ViewTreeData {
 
 // Computes and returns the ViewTree plus a list of implicit anonymous views (named views that are
 // part of an anonymous subtree) based on GlobalTopologyData.
-ViewTreeData ComputeViewTree(
-    const zx_koid_t root, const size_t root_index,
-    const GlobalTopologyData::TopologyVector& topology_vector,
-    const GlobalTopologyData::ParentIndexVector& parent_indices,
-    const GlobalTopologyData::ViewRefMap& view_refs,
-    const std::unordered_map<TransformHandle, std::string>& debug_names,
-    const std::unordered_map<TransformHandle, TransformClipRegion>& local_clip_regions,
-    const std::vector<glm::mat3>& global_matrix_vector,
-    const std::unordered_map<TransformHandle, TransformHandle>&
-        link_child_to_parent_transform_map) {
+ViewTreeData ComputeViewTree(const zx_koid_t root, const size_t root_index,
+                             const GlobalTopologyData::TopologyVector& topology_vector,
+                             const GlobalTopologyData::ParentIndexVector& parent_indices,
+                             const GlobalTopologyData::ViewRefMap& view_refs,
+                             const std::unordered_map<TransformHandle, std::string>& debug_names,
+                             const UberStruct::InstanceMap& uber_structs,
+                             const std::vector<glm::mat3>& global_matrix_vector,
+                             const std::unordered_map<TransformHandle, TransformHandle>&
+                                 link_child_to_parent_transform_map) {
   TRACE_DURATION("gfx", "flatland::ComputeViewTree");
   ViewTreeData output;
   for (size_t i = root_index; i < topology_vector.size(); ++i) {
@@ -350,8 +364,8 @@ ViewTreeData ComputeViewTree(
 
     const zx_koid_t parent_koid =
         FindParentView(i, view_ref->koid(), root, topology_vector, parent_indices, view_refs);
-    const view_tree::BoundingBox bounding_box = ComputeBoundingBox(
-        transform_handle, local_clip_regions, link_child_to_parent_transform_map);
+    const view_tree::BoundingBox bounding_box =
+        ComputeBoundingBox(transform_handle, uber_structs, link_child_to_parent_transform_map);
 
     output.view_tree.emplace(
         view_ref->koid(), view_tree::ViewNode{.parent = parent_koid,
@@ -390,14 +404,13 @@ void GlobalTopologyData::Clear() {
     view_refs.clear();
     root_transforms.clear();
     debug_names.clear();
-    local_clip_regions.clear();
   }
 }
 
 bool GlobalTopologyData::IsCleared() const {
   return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
          live_handles.empty() && view_refs.empty() && root_transforms.empty() &&
-         debug_names.empty() && local_clip_regions.empty();
+         debug_names.empty();
 }
 
 // static
@@ -444,7 +457,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   std::vector<ParentChildIterator> parent_counts;
 
   auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, root_transforms,
-         debug_names, local_clip_regions] = output;
+         debug_names] = output;
 
   // For the root of each local topology (i.e. the View), save the ViewRef, whether they're
   // currently attached to the scene or not.
@@ -576,12 +589,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
                           uber_structs.at(current_entry.handle.GetInstanceId())->debug_name);
     }
 
-    // For each node in the local topology, save the TransformClipRegion of its child instances.
-    for (auto& [child_handle, child_clip_region] :
-         uber_structs.at(current_entry.handle.GetInstanceId())->local_clip_regions) {
-      local_clip_regions.try_emplace(child_handle, child_clip_region);
-    }
-
     // If this entry was the last child for the previous parent, pop that off the stack.
     if (!parent_counts.empty() && parent_counts.back().children_left == 0) {
       parent_counts.pop_back();
@@ -615,8 +622,8 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 }
 
 std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTreeSnapshot(
-    const GlobalTopologyData& data, HitRegions hit_regions,
-    std::vector<TransformClipRegion> global_clip_regions,
+    const GlobalTopologyData& data, const UberStruct::InstanceMap& uber_structs,
+    HitRegions hit_regions, std::vector<TransformClipRegion> global_clip_regions,
     const std::vector<glm::mat3>& global_matrix_vector,
     const std::unordered_map<TransformHandle, TransformHandle>&
         link_child_to_parent_transform_map) {
@@ -632,10 +639,9 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
 
   const auto [root_index, root_koid] = root_values.value();
   root = root_koid;
-  auto [view_tree_temp, implicitly_anonymous_views] =
-      ComputeViewTree(root_koid, root_index, data.topology_vector, data.parent_indices,
-                      data.view_refs, data.debug_names, data.local_clip_regions,
-                      global_matrix_vector, link_child_to_parent_transform_map);
+  auto [view_tree_temp, implicitly_anonymous_views] = ComputeViewTree(
+      root_koid, root_index, data.topology_vector, data.parent_indices, data.view_refs,
+      data.debug_names, uber_structs, global_matrix_vector, link_child_to_parent_transform_map);
   view_tree = std::move(view_tree_temp);
 
   // Unconnected_views = all non-anonymous views (those with ViewRefs) not in the ViewTree.
