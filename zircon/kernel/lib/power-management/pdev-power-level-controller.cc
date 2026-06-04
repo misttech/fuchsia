@@ -13,6 +13,16 @@
 
 namespace power_management {
 
+zx::result<fbl::RefPtr<PDevPowerLevelController>> PDevPowerLevelController::Create() {
+  fbl::AllocChecker ac;
+  fbl::RefPtr<PDevPowerLevelController> controller =
+      fbl::MakeRefCountedChecked<PDevPowerLevelController>(&ac, PrivateConstructorValue);
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+  return zx::ok(std::move(controller));
+}
+
 zx::result<uint32_t> PDevPowerLevelController::Post(const PowerLevelUpdateRequest& pending) {
   const zx_status_t status = power_opp_set(pending.domain_id, pending.control_argument);
   if (status != ZX_OK) {

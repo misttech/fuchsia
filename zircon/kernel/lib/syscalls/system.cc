@@ -970,20 +970,20 @@ zx_status_t sys_system_set_processor_power_domain(
   const bool force_user_control =
       options & ZX_SYSTEM_SET_PROCESSOR_POWER_DOMAIN_OPTION_FORCE_USER_DRIVER;
 
-  fbl::RefPtr<power_management::PowerLevelController> controller;
+  zx::result<fbl::RefPtr<power_management::PowerLevelController>> controller_result;
   if (power_management::PDevPowerLevelController::IsSupported() && !force_user_control) {
-    controller = fbl::MakeRefCountedChecked<power_management::PDevPowerLevelController>(&ac);
+    controller_result = power_management::PDevPowerLevelController::Create();
   } else {
-    controller = fbl::MakeRefCountedChecked<power_management::PortPowerLevelController>(
-        &ac, ktl::move(port_dispatcher));
+    controller_result =
+        power_management::PortPowerLevelController::Create(ktl::move(port_dispatcher));
   }
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+  if (controller_result.is_error()) {
+    return controller_result.error_value();
   }
 
   auto power_domain = fbl::MakeRefCountedChecked<power_management::PowerDomain>(
       &ac, domain_info.domain_id, domain_info.cpus, ktl::move(model).value(),
-      ktl::move(controller));
+      ktl::move(controller_result).value());
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }

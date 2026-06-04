@@ -17,27 +17,37 @@
 #include <zircon/syscalls/port.h>
 #include <zircon/types.h>
 
+#include <fbl/alloc_checker.h>
 #include <object/port_dispatcher.h>
 
 #include "kernel/spinlock.h"
 
 namespace power_management {
 
-PortPowerLevelController::PacketQueue::~PacketQueue() {
-  // No need to hold any locks here, the last reference to the controller went away, there can't
-  // be any legal access.
-  for (auto& packet : packets_) {
-    port_->CancelQueued(&packet);
-    ZX_ASSERT(!packet.InContainer());
+zx::result<fbl::RefPtr<PortPowerLevelController>> PortPowerLevelController::Create(
+    fbl::RefPtr<PortDispatcher> dispatcher) {
+  fbl::AllocChecker ac;
+  fbl::RefPtr<PacketQueue> queue = fbl::MakeRefCountedChecked<PacketQueue>(&ac, dispatcher);
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
+  fbl::RefPtr<PortPowerLevelController> controller =
+      fbl::MakeRefCountedChecked<PortPowerLevelController>(&ac, PrivateConstructorValue,
+                                                           std::move(dispatcher), std::move(queue));
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+  return zx::ok(std::move(controller));
 }
 
+PortPowerLevelController::~PortPowerLevelController() { packet_queue_->CancelAll(); }
+
 void PortPowerLevelController::PacketQueue::Queue(const zx_port_packet_t& packet) {
-  PortPacket* curr = nullptr;
+  PortPacket* current_packet = nullptr;
   {
     Guard<SpinLock, IrqSave> guard(&packet_lock_);
-    curr = &packets_[current_ % 2];
-    curr->packet = packet;
+    current_packet = &packets_[current_ % 2];
+    current_packet->packet = packet;
     if (packet_queued_) {
       packet_pending_ = true;
       return;
@@ -46,33 +56,85 @@ void PortPowerLevelController::PacketQueue::Queue(const zx_port_packet_t& packet
     current_++;
     packet_queued_ = true;
     packet_pending_ = false;
+
+    // We successfully queued a packet, keep PacketQueue alive.
+    in_flight_ref_ = fbl::RefPtr<PacketQueue>(this);
   }
-  // It is ok to release the lock before we queue here. Given that there is a `queued` packet
-  // if its not yet in the port, updates will be stashed in the other entry.
-  // It is not possible to hit `ZX_ERR_SHOULD_WAIT` since none of these packets is allocated with
-  // the port's default allocator.
-  ZX_ASSERT(port_->Queue(curr) != ZX_ERR_SHOULD_WAIT);
+  // We must release packet_lock_ before calling Queue() to avoid lock inversion
+  // with the PortDispatcher mutex. This is safe because packet_queued_ is true,
+  // ensuring any concurrent updates are stashed in the other packet.
+  //
+  // It is not possible to hit ZX_ERR_SHOULD_WAIT since none of these packets
+  // are allocated with the port's default allocator.
+  const zx_status_t status = port_->Queue(current_packet);
+  ZX_ASSERT(status != ZX_ERR_SHOULD_WAIT);
+  if (status != ZX_OK) {
+    fbl::RefPtr<PacketQueue> release_ref;
+    {
+      Guard<SpinLock, IrqSave> guard(&packet_lock_);
+      packet_queued_ = false;
+      packet_pending_ = false;
+      release_ref = std::move(in_flight_ref_);
+    }
+  }
 }
 
 void PortPowerLevelController::PacketQueue::Free(PortPacket* packet) {
-  PortPacket* curr = nullptr;
+  PortPacket* current_packet = nullptr;
+  bool queue_new = false;
+  fbl::RefPtr<PacketQueue> release_ref;
+
   {
     Guard<SpinLock, IrqSave> guard(&packet_lock_);
     ZX_DEBUG_ASSERT(packet_queued_);
     ZX_DEBUG_ASSERT(packet == &packets_[(current_ + 1) % 2]);
+
     if (!packet_pending_) {
       packet_queued_ = false;
-      return;
+      release_ref = std::move(in_flight_ref_);
+    } else {
+      packet_pending_ = false;
+      current_packet = &packets_[current_ % 2];
+      current_++;
+      queue_new = true;
     }
-    packet_pending_ = false;
-    curr = &packets_[current_ % 2];
-    current_++;
   }
-  // At this point, any updates are going to the just released `packet`, and we can freely queue
-  // `curr` without holding the lock.
-  // It is not possible to hit `ZX_ERR_SHOULD_WAIT` since none of these packets is allocated with
-  // the port's default allocator.
-  ZX_ASSERT(port_->Queue(curr) != ZX_ERR_SHOULD_WAIT);
+
+  if (queue_new) {
+    // Releasing packet_lock_ before calling Queue() is required to avoid lock
+    // inversion with the PortDispatcher mutex.
+    //
+    // It is not possible to hit ZX_ERR_SHOULD_WAIT since none of these packets
+    // are allocated with the port's default allocator.
+    const zx_status_t status = port_->Queue(current_packet);
+    ZX_ASSERT(status != ZX_ERR_SHOULD_WAIT);
+    if (status != ZX_OK) {
+      Guard<SpinLock, IrqSave> guard(&packet_lock_);
+      packet_queued_ = false;
+      packet_pending_ = false;
+      release_ref = std::move(in_flight_ref_);
+    }
+  }
+}
+
+void PortPowerLevelController::PacketQueue::CancelAll() {
+  fbl::RefPtr<PacketQueue> release_ref;
+  {
+    Guard<SpinLock, IrqSave> guard(&packet_lock_);
+    packet_pending_ = false;
+
+    for (PortPacket& packet : packets_) {
+      // Releasing packet_lock_ while calling CancelQueued() is required to
+      // avoid lock inversion with the PortDispatcher mutex.
+      bool release_packet = false;
+      guard.CallUnlocked([&] { release_packet = port_->CancelQueued(&packet); });
+
+      if (release_packet && packet_queued_) {
+        packet_queued_ = false;
+        release_ref = std::move(in_flight_ref_);
+      }
+    }
+  }
 }
 
 zx::result<uint32_t> PortPowerLevelController::Post(const PowerLevelUpdateRequest& pending) {
@@ -101,7 +163,7 @@ zx::result<uint32_t> PortPowerLevelController::Post(const PowerLevelUpdateReques
           },
   };
 
-  packet_queue_.Queue(packet);
+  packet_queue_->Queue(packet);
 
   // No CPUs need to be rescheduled to update their bookkeeping until userspace
   // sends an update about the completion of the update request.

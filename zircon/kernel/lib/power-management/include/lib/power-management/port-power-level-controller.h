@@ -25,13 +25,24 @@ namespace power_management {
 // In essence there will be only one type of transition handler, but we introduce the interface to
 // decouple most of the code from the kernel environment.
 class PortPowerLevelController final : public PowerLevelController {
+  // Enables the named constructor to use MakeRefCountedChecked while protecting
+  // the normal constructor from public use.
+  enum PrivateConstructorTag : bool { PrivateConstructorValue };
+
+  // Forward-declare the nested class.
+  class PacketQueue;
+
  public:
-  explicit PortPowerLevelController(fbl::RefPtr<PortDispatcher> dispatcher)
+  static zx::result<fbl::RefPtr<PortPowerLevelController>> Create(
+      fbl::RefPtr<PortDispatcher> dispatcher);
+
+  explicit PortPowerLevelController(PrivateConstructorTag, fbl::RefPtr<PortDispatcher> dispatcher,
+                                    fbl::RefPtr<PacketQueue> queue)
       : PowerLevelController(ControlInterface::kCpuDriver),
         port_(std::move(dispatcher)),
-        packet_queue_(port_.get()) {}
+        packet_queue_(std::move(queue)) {}
 
-  ~PortPowerLevelController() final = default;
+  ~PortPowerLevelController() final;
 
   // Process a pending request, which is a pending transition which could not be performed in the
   // context it originated. This method provide no guarantees on what exactly is performed. It may
@@ -41,6 +52,8 @@ class PortPowerLevelController final : public PowerLevelController {
   // Unique id of the `ControlInterface` handler.
   uint64_t id() const final { return port_->get_koid(); }
 
+  void ResetForTest() { packet_queue_->ResetForTest(); }
+
  private:
   // Stashes the latest update on the available (unqueued) packet. By becoming the packet allocator,
   // the `Free` hook will tell us when the unavailable packet becomes available. At this point, we
@@ -48,15 +61,27 @@ class PortPowerLevelController final : public PowerLevelController {
   //
   // Also this construct immediately bounds the amount of possible queued packets to one at any
   // given time and the memory used per power domain to two packets.
-  class PacketQueue final : public PortAllocator {
+  class PacketQueue final : public fbl::RefCounted<PacketQueue>, public PortAllocator {
    public:
-    explicit PacketQueue(PortDispatcher* port) : port_(port) {}
-    ~PacketQueue() final;
+    explicit PacketQueue(fbl::RefPtr<PortDispatcher> port) : port_(std::move(port)) {}
+    ~PacketQueue() final = default;
 
     PortPacket* Alloc() final { return nullptr; }
     void Free(PortPacket* packet) final;
 
     void Queue(const zx_port_packet_t& packet);
+
+    void CancelAll();
+
+    void ResetForTest() {
+      fbl::RefPtr<PacketQueue> release_ref;
+      {
+        Guard<SpinLock, IrqSave> guard(&packet_lock_);
+        packet_queued_ = false;
+        packet_pending_ = false;
+        release_ref = std::move(in_flight_ref_);
+      }
+    }
 
    private:
     DECLARE_SPINLOCK(PacketQueue) packet_lock_;
@@ -65,20 +90,21 @@ class PortPowerLevelController final : public PowerLevelController {
     TA_GUARDED(&packet_lock_) size_t current_ = 0;
     TA_GUARDED(&packet_lock_) bool packet_pending_ = false;
     TA_GUARDED(&packet_lock_) bool packet_queued_ = false;
+
+    // A reference to this queue, held while a packet is in-flight in the port.
+    TA_GUARDED(&packet_lock_) fbl::RefPtr<PacketQueue> in_flight_ref_;
+
     TA_GUARDED(&packet_lock_)
     ktl::array<PortPacket, 2> packets_ = {
         PortPacket{nullptr, this},
         PortPacket{nullptr, this},
     };
 
-    // This is safe, the `port` reference is kept by the controller, and due to member destruction
-    // ordering we will never be destructed after the reference is released.
-    PortDispatcher* const port_ = nullptr;
+    const fbl::RefPtr<PortDispatcher> port_;
   };
 
-  // Required to protect access to the preallocated packets, when one is freed.
-  fbl::RefPtr<PortDispatcher> port_ = nullptr;
-  PacketQueue packet_queue_;
+  const fbl::RefPtr<PortDispatcher> port_;
+  const fbl::RefPtr<PacketQueue> packet_queue_;
 };
 
 }  // namespace power_management

@@ -366,9 +366,6 @@ TEST(SetPowerDomainTest, BadTransitionPointer) {
 // This test reproduces a race condition between setting performance limits
 // (triggering power transitions) and re-registering power domains.
 TEST(SetPowerDomainTest, PerformanceLimitRegisterRacePanicStressTest) {
-  // We skip it by default to avoid crashing the system during normal test runs.
-  ZXTEST_SKIP("Skipping test that causes kernel panic due to bug.");
-
   NEEDS_NEXT_SKIP(zx_system_set_processor_power_domain);
 
   auto rsrc = standalone::GetSystemResource();

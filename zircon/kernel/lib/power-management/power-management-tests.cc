@@ -105,8 +105,9 @@ bool PortPowerLevelControllerPost() {
   zx_rights_t rights = PortDispatcher::default_rights();
   ASSERT_EQ(PortDispatcher::Create(0, &handle, &rights), ZX_OK);
 
-  PortPowerLevelController controller(handle.dispatcher());
-  ASSERT_TRUE(controller.is_serving());
+  zx::result controller_result = PortPowerLevelController::Create(handle.dispatcher());
+  ASSERT_TRUE(controller_result.is_ok());
+  ASSERT_TRUE(controller_result->is_serving());
   ASSERT_EQ(handle.dispatcher()->current_handle_count(), 0u);
 
   // Fake being owned by a process. We only care about the handle count.
@@ -121,10 +122,14 @@ bool PortPowerLevelControllerPost() {
       .options = 4321,
   };
 
-  ASSERT_TRUE(controller.Post(request).is_ok());
+  ASSERT_TRUE(controller_result->Post(request).is_ok());
 
   // Check a port with the domain id as key was queued.
   ASSERT_TRUE(handle.dispatcher()->CancelQueued(nullptr, request.domain_id));
+
+  // Reset the controller's internal state since we manually canceled the packet
+  // bypassing the standard Dequeue/Free pathway.
+  controller_result->ResetForTest();
 
   END_TEST;
 }
@@ -136,8 +141,9 @@ bool PortPowerLevelControllerStopServingOnZeroHandles() {
   zx_rights_t rights = PortDispatcher::default_rights();
   ASSERT_EQ(PortDispatcher::Create(0, &handle, &rights), ZX_OK);
 
-  PortPowerLevelController controller(handle.dispatcher());
-  ASSERT_TRUE(controller.is_serving());
+  zx::result controller_result = PortPowerLevelController::Create(handle.dispatcher());
+  ASSERT_TRUE(controller_result.is_ok());
+  ASSERT_TRUE(controller_result->is_serving());
   ASSERT_EQ(handle.dispatcher()->current_handle_count(), 0u);
 
   // Fake being owned by a process. We only care about the handle count.
@@ -149,8 +155,8 @@ bool PortPowerLevelControllerStopServingOnZeroHandles() {
       .options = 4321,
   };
 
-  ASSERT_TRUE(controller.Post(request).is_error());
-  ASSERT_FALSE(controller.is_serving());
+  ASSERT_TRUE(controller_result->Post(request).is_error());
+  ASSERT_FALSE(controller_result->is_serving());
 
   END_TEST;
 }

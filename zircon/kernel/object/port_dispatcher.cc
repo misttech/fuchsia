@@ -210,10 +210,12 @@ void PortDispatcher::on_zero_handles() {
   while (!packets_.is_empty()) {
     auto packet = packets_.pop_front();
 
-    // If the packet is ephemeral, free it outside of the lock. Otherwise,
-    // reset the observer if it is present.
-    if (IsDefaultAllocatedEphemeral(*packet)) {
-      --num_ephemeral_packets_;
+    // If the packet is ephemeral, regardless of allocator, free it outside of
+    // the lock. Otherwise, reset the observer if it is present.
+    if (packet->is_ephemeral()) {
+      if (IsDefaultAllocatedEphemeral(*packet)) {
+        --num_ephemeral_packets_;
+      }
       guard.CallUnlocked([packet]() { packet->Free(); });
     } else {
       // The reference to the port that the observer holds cannot be the last one

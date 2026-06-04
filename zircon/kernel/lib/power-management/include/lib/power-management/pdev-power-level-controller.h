@@ -15,8 +15,14 @@
 namespace power_management {
 
 class PDevPowerLevelController final : public PowerLevelController {
+  enum PrivateConstructorTag : bool { PrivateConstructorValue };
+
  public:
-  PDevPowerLevelController() : PowerLevelController(ControlInterface::kCpuDriver) {}
+  static zx::result<fbl::RefPtr<PDevPowerLevelController>> Create();
+
+  explicit PDevPowerLevelController(PrivateConstructorTag tag)
+      : PowerLevelController(ControlInterface::kCpuDriver) {}
+
   ~PDevPowerLevelController() final = default;
 
   zx::result<uint32_t> Post(const PowerLevelUpdateRequest& pending) final;
