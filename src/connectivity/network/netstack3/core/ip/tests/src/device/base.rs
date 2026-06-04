@@ -12,7 +12,7 @@ use assert_matches::assert_matches;
 use either::Either;
 use ip_test_macro::ip_test;
 use net_declare::{net_ip_v4, net_ip_v6, net_mac};
-use net_types::ip::{AddrSubnet, Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mtu, Subnet};
+use net_types::ip::{AddrSubnet, Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mtu};
 use net_types::{LinkLocalAddr, SpecifiedAddr, UnicastAddr, Witness, ZonedAddr};
 use test_case::test_case;
 
@@ -1224,7 +1224,7 @@ fn ipv4_ignores_tentative_addresses(case: Ipv4TentativeAddrTestCase) {
             // Add a default route via the device.
             ctx.test_api()
                 .add_route(AddableEntryEither::from(AddableEntry::without_gateway(
-                    Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+                    Ipv4::ALL_ADDRS_SUBNET,
                     device_id.clone(),
                     AddableMetric::MetricTracksInterface,
                 )))

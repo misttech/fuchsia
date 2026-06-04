@@ -7,7 +7,7 @@ use core::num::NonZeroU16;
 use either::Either;
 use ip_test_macro::ip_test;
 use net_types::ZonedAddr;
-use net_types::ip::Subnet;
+
 use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
 use netstack3_core::IpExt;
 use netstack3_core::device::DeviceId;
@@ -31,7 +31,7 @@ fn bindtodevice_send_to_loopback_addrs<I: IpExt + TestIpExt>() {
     ctx.test_api()
         .add_route(
             AddableEntry {
-                subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                subnet: I::ALL_ADDRS_SUBNET,
                 device: device_id.clone(),
                 gateway: None,
                 metric: AddableMetric::MetricTracksInterface,

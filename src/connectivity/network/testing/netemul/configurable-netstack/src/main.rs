@@ -330,8 +330,7 @@ async fn configure_interface(
             let _: bool = fnet_routes_ext::admin::add_route::<I>(
                 &global_route_set,
                 &fnet_routes_ext::Route::new_forward_with_inherited_metric(
-                    net_types::ip::Subnet::new(I::UNSPECIFIED_ADDRESS, 0)
-                        .expect("unspecified subnet is valid"),
+                    I::ALL_ADDRS_SUBNET,
                     interface_id,
                     Some(gateway),
                 )

@@ -2935,8 +2935,7 @@ mod tests {
         // Last element in policy table MUST be ::/0.
         assert_eq!(
             POLICY_TABLE.iter().last().expect("empty policy table").prefix,
-            net_types::ip::Subnet::new(net_types::ip::Ipv6::UNSPECIFIED_ADDRESS, 0)
-                .expect("invalid subnet")
+            net_types::ip::Ipv6::ALL_ADDRS_SUBNET
         );
         // Policy table must be sorted by prefix length.
         POLICY_TABLE.array_windows().for_each(|[w0, w1]| {

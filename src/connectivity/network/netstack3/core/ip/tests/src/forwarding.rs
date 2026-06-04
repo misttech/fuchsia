@@ -4,7 +4,7 @@
 
 use ip_test_macro::ip_test;
 use net_declare::{net_subnet_v4, net_subnet_v6};
-use net_types::ip::{AddrSubnet, IpAddress as _, Ipv4Addr, Ipv6Addr, Subnet};
+use net_types::ip::{AddrSubnet, IpAddress as _, Ipv4Addr, Ipv6Addr};
 use net_types::{SpecifiedAddr, Witness as _};
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{IpDeviceAddr, MarkDomain, Marks};
@@ -259,7 +259,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
         &main_table,
         alloc::vec![
             netstack3_core::routes::Entry {
-                subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                subnet: I::ALL_ADDRS_SUBNET,
                 device: device_id_1.clone(),
                 gateway: None,
                 metric: Metric::MetricTracksInterface(device_metric_1),
@@ -290,7 +290,7 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
             .with_generation(netstack3_ip::Generation::initial()),
             // Otherwise device 2.
             netstack3_core::routes::Entry {
-                subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                subnet: I::ALL_ADDRS_SUBNET,
                 device: device_id_2,
                 gateway: None,
                 metric: Metric::MetricTracksInterface(device_metric_2),
@@ -406,7 +406,7 @@ fn route_resolution_with_marks<I: TestIpExt + netstack3_core::IpExt>() {
             table,
             alloc::vec![
                 netstack3_core::routes::Entry {
-                    subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                    subnet: I::ALL_ADDRS_SUBNET,
                     device: device_id.clone(),
                     gateway: None,
                     metric: Metric::MetricTracksInterface(device_metric),

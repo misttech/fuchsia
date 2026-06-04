@@ -361,6 +361,10 @@ pub trait Ip:
     /// [link-local multicast subnet]: Ipv4::LINK_LOCAL_MULTICAST_SUBNET
     const LINK_LOCAL_UNICAST_SUBNET: Subnet<Self::Addr>;
 
+    /// The `/0` subnet, containing all addresses.
+    const ALL_ADDRS_SUBNET: Subnet<Self::Addr> =
+        Subnet { network: Self::UNSPECIFIED_ADDRESS, prefix: 0 };
+
     /// "IPv4" or "IPv6".
     const NAME: &'static str;
 

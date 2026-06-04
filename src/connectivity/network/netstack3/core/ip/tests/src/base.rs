@@ -2700,14 +2700,14 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
     // Add default routes through loopback for IPv4 and IPv6.
     ctx.test_api()
         .add_route(AddableEntryEither::without_gateway(
-            Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 0).unwrap().into(),
+            Ipv4::ALL_ADDRS_SUBNET.into(),
             loopback.clone().into(),
             AddableMetric::MetricTracksInterface,
         ))
         .unwrap();
     ctx.test_api()
         .add_route(AddableEntryEither::without_gateway(
-            Subnet::new(Ipv6::UNSPECIFIED_ADDRESS, 0).unwrap().into(),
+            Ipv6::ALL_ADDRS_SUBNET.into(),
             loopback.clone().into(),
             AddableMetric::MetricTracksInterface,
         ))

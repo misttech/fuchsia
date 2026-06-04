@@ -894,8 +894,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager, N: Netstack>(
     let _: bool = fnet_routes_ext::admin::remove_route::<Ipv4>(
         &global_route_set,
         &fnet_routes_ext::Route {
-            destination: net_types_ip::Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 0)
-                .expect("invalid subnet"),
+            destination: Ipv4::ALL_ADDRS_SUBNET,
             action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<Ipv4> {
                 outbound_interface: if_id,
                 next_hop: None,

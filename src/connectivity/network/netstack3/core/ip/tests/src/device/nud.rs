@@ -11,9 +11,7 @@ use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use net_declare::net_ip_v6;
 use net_types::ethernet::Mac;
-use net_types::ip::{
-    AddrSubnet, Ip, IpAddress as _, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
-};
+use net_types::ip::{AddrSubnet, Ip, IpAddress as _, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use packet::{Buf, InnerPacketBuilder as _, NestableSerializer as _, Serializer as _};
 use packet_formats::arp::{ArpOp, ArpPacketBuilder};
@@ -974,7 +972,7 @@ fn icmp_error_on_address_resolution_failure_tcp_forwarding<I: TestIpExt + IpExt>
             ip::testutil::add_route::<I, _, _>(
                 &mut core_ctx,
                 AddableEntry {
-                    subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                    subnet: I::ALL_ADDRS_SUBNET,
                     device: device.into(),
                     gateway: gateway,
                     metric: AddableMetric::MetricTracksInterface,

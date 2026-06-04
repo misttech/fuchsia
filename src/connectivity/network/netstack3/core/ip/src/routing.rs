@@ -703,7 +703,7 @@ mod tests {
         // Without a default route being present, the all-ones broadcast address won't match any
         // route's destination subnet, so the route lookup will fail.
         let default_route_entry = Entry {
-            subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+            subnet: I::ALL_ADDRS_SUBNET,
             device: device.clone(),
             gateway: None,
             metric,
@@ -821,7 +821,7 @@ mod tests {
 
         // Add a default route to facilitate testing the limited broadcast address.
         let default_route_entry = Entry {
-            subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+            subnet: I::ALL_ADDRS_SUBNET,
             device: device.clone(),
             gateway: Some(next_hop),
             metric,
@@ -904,7 +904,7 @@ mod tests {
         let mut table = RoutingTable::<Ipv4, MultipleDevicesId>::default();
         if let Some(next_hop) = default_route {
             let entry = Entry {
-                subnet: Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+                subnet: Ipv4::ALL_ADDRS_SUBNET,
                 device: MultipleDevicesId::A,
                 gateway: match next_hop {
                     BroadcastCaseNextHop::Neighbor => None,
@@ -982,7 +982,7 @@ mod tests {
         let mut table = RoutingTable::<Ipv4, MultipleDevicesId>::default();
         if let Some(next_hop) = default_route {
             let entry = Entry {
-                subnet: Subnet::new(Ipv4::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+                subnet: Ipv4::ALL_ADDRS_SUBNET,
                 device: MultipleDevicesId::A,
                 gateway: match next_hop {
                     BroadcastCaseNextHop::Neighbor => None,
@@ -1059,9 +1059,8 @@ mod tests {
         //  sub1 -> device0
         //  default -> addr1 w/ device0
 
-        let default_sub = Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap();
         let default_entry = Entry {
-            subnet: default_sub,
+            subnet: I::ALL_ADDRS_SUBNET,
             device: device0.clone(),
             gateway: Some(addr1),
             metric,

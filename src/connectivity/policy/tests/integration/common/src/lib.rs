@@ -5,10 +5,14 @@
 use std::pin::pin;
 
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
+use fidl_fuchsia_netemul_network as fnetemul_network;
 use futures::future::{FutureExt as _, LocalBoxFuture};
-use net_types::ip::{self as net_types_ip, Ip};
+use net_types::ip::Ip;
 use netemul::{TestEndpoint, TestNetwork, TestRealm};
 use netstack_testing_common::realms::{
     KnownServiceProvider, Manager, ManagerConfig, Netstack, SocketProxyType, TestRealmExt,
@@ -16,10 +20,6 @@ use netstack_testing_common::realms::{
 };
 use netstack_testing_common::{
     ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces, wait_for_component_stopped,
-};
-use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_netemul_network as fnetemul_network,
 };
 
 #[derive(Default)]
@@ -187,7 +187,7 @@ where
     .expect("authenticate for interface should succeed");
 
     let default_route = fnet_routes_ext::Route {
-        destination: net_types_ip::Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("invalid subnet"),
+        destination: I::ALL_ADDRS_SUBNET,
         action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<I> {
             outbound_interface: interface_id,
             next_hop: None,

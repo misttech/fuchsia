@@ -28,7 +28,7 @@ use itertools::Itertools;
 use net_declare::{
     fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_ip_v6, fidl_ip_v6_with_prefix, fidl_subnet,
 };
-use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6, Subnet};
+use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
 use netstack_testing_common::realms::{Netstack, Netstack2, Netstack3, TestSandboxExt};
 use netstack_testing_macros::netstack_test;
@@ -1018,19 +1018,15 @@ async fn removing_one_default_route_does_not_flip_presence<
     let events = realm.get_interface_event_stream().expect("get interface event stream").fuse();
     let mut events = pin!(events);
 
-    let default_route = |metric| {
-        let destination =
-            Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("unspecified subnet should be valid");
-        fnet_routes_ext::Route {
-            destination,
-            action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<I> {
-                outbound_interface: interface.id(),
-                next_hop: None,
-            }),
-            properties: fnet_routes_ext::RouteProperties {
-                specified_properties: fnet_routes_ext::SpecifiedRouteProperties { metric },
-            },
-        }
+    let default_route = |metric| fnet_routes_ext::Route {
+        destination: I::ALL_ADDRS_SUBNET,
+        action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<I> {
+            outbound_interface: interface.id(),
+            next_hop: None,
+        }),
+        properties: fnet_routes_ext::RouteProperties {
+            specified_properties: fnet_routes_ext::SpecifiedRouteProperties { metric },
+        },
     };
     let default_route_1 =
         default_route(fnet_routes::SpecifiedMetric::InheritedFromInterface(fnet_routes::Empty));

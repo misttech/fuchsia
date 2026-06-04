@@ -10,7 +10,7 @@ use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, RuleIndex};
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
 use net_types::SpecifiedAddr;
-use net_types::ip::{Ip, Subnet};
+use net_types::ip::Ip;
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 
 /// Common test setup that can be shared by all routes tests.
@@ -116,7 +116,7 @@ pub async fn add_default_route_for_mark<
     let route_set =
         fnet_routes_ext::admin::new_route_set::<I>(&route_table).expect("new route set");
     let route_to_add = fnet_routes_ext::Route {
-        destination: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("subnet"),
+        destination: I::ALL_ADDRS_SUBNET,
         action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<I> {
             outbound_interface: interface.id(),
             next_hop,
