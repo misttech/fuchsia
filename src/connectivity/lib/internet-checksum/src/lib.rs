@@ -220,6 +220,15 @@ impl Checksum {
             };
         }
 
+        // Deal with previous trailing byte, if we have one.
+        // NB: Don't use `if let Some(t) = self.trailing_byte.take()`. It slows
+        // down the fast path (i.e. the `None` case).
+        if self.trailing_byte.is_some() {
+            let trailing = self.trailing_byte.take().unwrap();
+            update_sum_carry!(u16, [trailing, bytes[0]]);
+            bytes = &bytes[1..];
+        }
+
         const ACCUMULATOR_BYTES: usize = (Accumulator::BITS / 8) as usize;
         while let Some(chunk) = bytes.first_chunk::<ACCUMULATOR_BYTES>() {
             update_sum_carry!(Accumulator, *chunk);
@@ -240,13 +249,8 @@ impl Checksum {
             bytes = &bytes[2..];
         }
         if bytes.len() == 1 {
-            if let Some(existing) = self.trailing_byte.take() {
-                // We already had a trailing byte. Deal with them both.
-                update_sum_carry!(u16, [existing, bytes[0]]);
-            } else {
-                // Otherwise, stash the trailing byte.
-                self.trailing_byte = Some(bytes[0])
-            }
+            // Stash the trailing byte.
+            self.trailing_byte = Some(bytes[0]);
         }
 
         self.sum = sum + (carry as Accumulator);
@@ -512,5 +516,50 @@ mod tests {
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
         ];
         sum.add_bytes(&bytes[..]);
+    }
+
+    // Regression test for https://fxbug.dev/515774797.
+    //
+    // Verify that checksum calculations produce the same result, no matter if
+    // the bytes are added at once, or in odd-length chunks.
+    #[test]
+    fn test_odd_length_checksum() {
+        // Determine the expected value. Per RFC 1071, an odd length of bytes
+        // should be padded at the end with a 0.
+        let mut c = Checksum::new();
+        c.add_bytes(&[1, 2, 3, 0]);
+        let expected_checksum = c.checksum();
+
+        // Add the bytes all at once.
+        let mut c = Checksum::new();
+        c.add_bytes(&[1, 2, 3]);
+        assert_eq!(c.checksum(), expected_checksum);
+
+        // Add the bytes in two passes (first pass uses an odd number of bytes).
+        let mut c = Checksum::new();
+        c.add_bytes(&[1]);
+        c.add_bytes(&[2, 3]);
+        assert_eq!(c.checksum(), expected_checksum);
+    }
+
+    // Verify that we properly perform bounds checks against the byte buffer.
+    // Failure to do so would result in index-out-of-bounds panics.
+    #[test]
+    fn test_add_zero_bytes() {
+        let mut c = Checksum::new();
+        c.add_bytes(&[]);
+        assert_eq!(c.checksum(), [255, 255]);
+
+        // Try again, but this time set a trailing_byte.
+        let mut c = Checksum::new();
+        c.add_bytes(&[0]);
+        c.add_bytes(&[]);
+        assert_eq!(c.checksum(), [255, 255]);
+
+        // Try once more, but now complete the trailing byte exactly (no remainder).
+        let mut c = Checksum::new();
+        c.add_bytes(&[0]);
+        c.add_bytes(&[0]);
+        assert_eq!(c.checksum(), [255, 255]);
     }
 }
