@@ -27,6 +27,7 @@ impl Constrained for Rights {
     }
 }
 
+// SAFETY: `Rights` is a `#[repr(transparent)]` wrapper around `wire::Uint32`, which is `Wire`.
 unsafe impl Wire for Rights {
     type Narrowed<'de> = Self;
 
@@ -50,6 +51,8 @@ impl fmt::Debug for Rights {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded `Rights`
+// because it delegates to `wire::Uint32::decode` which guarantees the slot is valid.
 unsafe impl<D: ?Sized> Decode<D> for Rights {
     fn decode(
         slot: Slot<'_, Self>,
@@ -61,6 +64,9 @@ unsafe impl<D: ?Sized> Decode<D> for Rights {
     }
 }
 
+// SAFETY: `Rights` is `#[repr(transparent)]` over `wire::Uint32`. `encode` delegates to
+// the `Encode` implementation for `u32` (via `bits()`), which fully initializes the
+// underlying `Uint32`, thus initializing `Rights`.
 unsafe impl<E: ?Sized> Encode<Rights, E> for zx::Rights {
     fn encode(
         self,
@@ -73,6 +79,7 @@ unsafe impl<E: ?Sized> Encode<Rights, E> for zx::Rights {
     }
 }
 
+// SAFETY: Delegates to the `Encode` implementation for `zx::Rights`, which is safe.
 unsafe impl<E: ?Sized> Encode<Rights, E> for &zx::Rights {
     fn encode(
         self,

@@ -853,7 +853,7 @@ impl<'a, D: ResourceDialect> Encoder<'a, D> {
     #[inline(always)]
     pub unsafe fn write_num<T: numeric::Numeric>(&mut self, num: T, offset: usize) {
         debug_assert!(offset + mem::size_of::<T>() <= self.buf.len());
-        // Safety: The caller ensures `offset` is valid for writing
+        // SAFETY: The caller ensures `offset` is valid for writing
         // sizeof(T) bytes. Transmuting to a same-or-wider
         // integer or float pointer is safe because we use `write_unaligned`.
         let ptr = unsafe { self.buf.get_unchecked_mut(offset) } as *mut u8;
@@ -1787,7 +1787,7 @@ where
         }
     } else {
         for i in 0..len {
-            // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
+            // SAFETY: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked(i) };
             unsafe { T::borrow(item).encode(encoder, offset + i * stride, depth)? };
         }
@@ -1824,7 +1824,7 @@ where
         }
     } else {
         for i in 0..len {
-            // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
+            // SAFETY: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked_mut(i) };
             unsafe { T::take_or_borrow(item).encode(encoder, offset + i * stride, depth)? };
         }
@@ -1861,7 +1861,7 @@ where
         }
     } else {
         for i in 0..len {
-            // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
+            // SAFETY: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked_mut(i) };
             unsafe { item.decode(decoder, offset + i * stride, depth)? };
         }

@@ -31,6 +31,7 @@ impl Constrained for Unit {
     }
 }
 
+// SAFETY: `Unit` is a repr(u8) enum with size 1 and no padding.
 unsafe impl Wire for Unit {
     type Narrowed<'de> = Self;
 
@@ -50,12 +51,14 @@ impl fmt::Display for Unit {
     }
 }
 
+// SAFETY: `Unit` is decoded by reading a byte and validating it is 0.
 unsafe impl<D: ?Sized> Decode<D> for Unit {
     fn decode(
         slot: Slot<'_, Self>,
         _: &mut D,
         _: Self::Constraint,
     ) -> Result<(), crate::DecodeError> {
+        // SAFETY: `slot` is guaranteed to contain a valid `Unit` (1 byte).
         let value = unsafe { slot.as_ptr().cast::<u8>().read() };
         match value {
             0 => Ok(()),
@@ -64,6 +67,7 @@ unsafe impl<D: ?Sized> Decode<D> for Unit {
     }
 }
 
+// SAFETY: Encoding `()` to `Unit` writes `Unit::Unit` (0) to the output slot.
 unsafe impl<E: ?Sized> Encode<Unit, E> for () {
     fn encode(self, _: &mut E, out: &mut MaybeUninit<Unit>, _: ()) -> Result<(), EncodeError> {
         let _ = out.write(Unit::Unit);
@@ -71,6 +75,7 @@ unsafe impl<E: ?Sized> Encode<Unit, E> for () {
     }
 }
 
+// SAFETY: Delegates to `()` implementation.
 unsafe impl<E: ?Sized> Encode<Unit, E> for &() {
     fn encode(
         self,
@@ -82,6 +87,7 @@ unsafe impl<E: ?Sized> Encode<Unit, E> for &() {
     }
 }
 
+// SAFETY: Encoding optional `()` delegates to `Box::encode_present` or `Box::encode_absent`.
 unsafe impl<E> EncodeOption<wire::Box<'static, Unit>, E> for ()
 where
     E: Encoder + ?Sized,
@@ -104,6 +110,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `()` implementation.
 unsafe impl<E> EncodeOption<wire::Box<'static, Unit>, E> for &()
 where
     E: Encoder + ?Sized,

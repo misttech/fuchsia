@@ -394,6 +394,8 @@ macro_rules! impl_fidl_copy_optimize {
 
 macro_rules! impl_fidl_decode {
     (for $name:ty) => {
+        // SAFETY: Primitives have no validation constraints and their wire representation
+        // is identical to their Rust representation, so decoding is a no-op.
         unsafe impl<D: ?Sized> $crate::Decode<D> for $name {
             #[inline]
             fn decode(
@@ -409,6 +411,7 @@ macro_rules! impl_fidl_decode {
 
 macro_rules! impl_fidl_encode {
     (for $name:ty : $prim:ty) => {
+        // SAFETY: Encoding a primitive writes its value directly to the output slot.
         unsafe impl<E: ?Sized> $crate::Encode<$name, E> for $prim {
             const COPY_OPTIMIZATION: $crate::CopyOptimization<$prim, $name> =
                 $crate::CopyOptimization::<$prim, $name>::PRIMITIVE;
@@ -424,6 +427,7 @@ macro_rules! impl_fidl_encode {
             }
         }
 
+        // SAFETY: Encoding a primitive reference writes its value directly to the output slot.
         unsafe impl<E: ?Sized> $crate::Encode<$name, E> for &$prim {
             #[inline]
             fn encode(
@@ -437,6 +441,8 @@ macro_rules! impl_fidl_encode {
             }
         }
 
+        // SAFETY: Encoding an optional primitive delegates to `Box::encode_present` or
+        // `Box::encode_absent` which are safe.
         unsafe impl<E> $crate::EncodeOption<$crate::wire::Box<'static, $name>, E> for $prim
         where
             E: $crate::Encoder + ?Sized,
@@ -459,6 +465,7 @@ macro_rules! impl_fidl_encode {
             }
         }
 
+        // SAFETY: Encoding an optional primitive reference delegates to the value implementation.
         unsafe impl<E> $crate::EncodeOption<$crate::wire::Box<'static, $name>, E> for &$prim
         where
             E: $crate::Encoder + ?Sized,
@@ -478,6 +485,7 @@ macro_rules! impl_fidl_encode {
 
 macro_rules! impl_fidl_wire {
     (for $name:ty) => {
+        // SAFETY: Primitives have stable layout and no padding.
         unsafe impl $crate::Wire for $name {
             type Narrowed<'de> = Self;
 
@@ -509,9 +517,11 @@ impl_fidl_convert!(for bool: bool);
 impl_fidl_constrained!(for bool);
 impl_fidl_copy_optimize!(for bool);
 
+// SAFETY: `bool` is decoded by reading a byte and validating it is 0 or 1.
 unsafe impl<D: ?Sized> crate::Decode<D> for bool {
     #[inline]
     fn decode(slot: crate::Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), crate::DecodeError> {
+        // SAFETY: `slot` is guaranteed to contain a valid `bool` (1 byte).
         let value = unsafe { slot.as_ptr().cast::<u8>().read() };
         match value {
             0 | 1 => Ok(()),

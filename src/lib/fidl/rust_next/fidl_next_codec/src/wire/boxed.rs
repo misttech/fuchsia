@@ -29,6 +29,8 @@ unsafe impl<T: Sync> Sync for Box<'_, T> {}
 impl<T> Drop for Box<'_, T> {
     fn drop(&mut self) {
         if self.is_some() {
+            // SAFETY: The pointer is not null (checked by `is_some`), and points to a valid
+            // allocated `T` owned by the `Box`.
             unsafe {
                 self.ptr.as_ptr().drop_in_place();
             }
@@ -36,6 +38,7 @@ impl<T> Drop for Box<'_, T> {
     }
 }
 
+// SAFETY: `Box` has the same layout as `Pointer`, which is a valid `Wire` type.
 unsafe impl<T: Wire> Wire for Box<'static, T> {
     type Narrowed<'de> = Box<'de, T::Narrowed<'de>>;
 
@@ -70,6 +73,7 @@ impl<T> Box<'_, T> {
 
     /// Returns a reference to the boxed value, if any.
     pub fn as_ref(&self) -> Option<&T> {
+        // SAFETY: `ptr` is guaranteed to be valid and aligned if it is not null.
         NonNull::new(self.ptr.as_ptr()).map(|ptr| unsafe { ptr.as_ref() })
     }
 
@@ -77,7 +81,13 @@ impl<T> Box<'_, T> {
     pub fn into_option(self) -> Option<T> {
         let ptr = self.ptr.as_ptr();
         forget(self);
-        if ptr.is_null() { None } else { unsafe { Some(ptr.read()) } }
+        if ptr.is_null() {
+            None
+        } else {
+            // SAFETY: `ptr` is not null, and we have consumed `self` (ownership of the
+            // pointed-to value is transferred to us).
+            unsafe { Some(ptr.read()) }
+        }
     }
 }
 
@@ -87,6 +97,7 @@ impl<T: fmt::Debug> fmt::Debug for Box<'_, T> {
     }
 }
 
+// SAFETY: `Box` has the same layout as `Pointer`, and decoding it as a `Pointer` is safe.
 unsafe impl<'de, D: Decoder<'de> + ?Sized, T: Decode<D>> Decode<D> for Box<'de, T> {
     fn decode(
         slot: Slot<'_, Self>,
@@ -127,8 +138,13 @@ impl<T: Constrained> Constrained for Box<'_, T> {
     fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
         munge!(let Self { ptr } = slot);
 
+        // SAFETY: `ptr` is a slot for a `Pointer`, which is a union. The validator
+        // guarantees that the slot contains initialized bytes, so dereferencing it is safe.
         let ptr = unsafe { ptr.deref_unchecked() };
         let ptr = ptr.as_ptr();
+        // SAFETY: `ptr` is the decoded pointer. If the box is present, it points to a
+        // valid initialized `T`. If absent, it is null. `Slot::new_unchecked` is safe
+        // to call with null as long as the resulting slot is not dereferenced.
         let member_slot = unsafe { Slot::new_unchecked(ptr) };
         T::validate(member_slot, constraint)
     }

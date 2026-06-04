@@ -33,6 +33,8 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        // SAFETY: `$wire` is a `#[repr(transparent)]` wrapper around `wire::fuchsia::Handle`,
+        // which is `Wire`.
         unsafe impl Wire for $wire {
             type Narrowed<'de> = Self;
 
@@ -62,6 +64,8 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        // SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded
+        // `$wire` because it delegates to `Handle::decode` which guarantees the slot is valid.
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire {
             fn decode(
                 mut slot: Slot<'_, Self>,
@@ -89,6 +93,8 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        // SAFETY: `$wire_optional` is a `#[repr(transparent)]` wrapper around
+        // `wire::fuchsia::OptionalHandle`, which is `Wire`.
         unsafe impl Wire for $wire_optional {
             type Narrowed<'de> = Self;
 
@@ -129,6 +135,9 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        // SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded
+        // `$wire_optional` because it delegates to `OptionalHandle::decode` which guarantees the
+        // slot is valid.
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire_optional {
             fn decode(
                 mut slot: Slot<'_, Self>,
@@ -139,6 +148,9 @@ macro_rules! define_wire_handle_types {
             }
         }
 
+        // SAFETY: `$wire` is `#[repr(transparent)]` over `Handle`. `encode` delegates to
+        // `zx::NullableHandle`'s `Encode` implementation, which fully initializes the underlying
+        // `Handle`, thus initializing `$wire`.
         unsafe impl<
             E: HandleEncoder + ?Sized,
             $($($generics $(: $bound)?,)+)?
@@ -166,6 +178,10 @@ macro_rules! define_wire_handle_types {
             type Natural = zx::$natural;
         }
 
+        // SAFETY: `$wire_optional` is `#[repr(transparent)]` over `OptionalHandle`.
+        // `encode_option` delegates to `zx::NullableHandle`'s `EncodeOption` implementation (via
+        // `Option`'s `Encode`), which fully initializes the underlying `OptionalHandle`, thus
+        // initializing `$wire_optional`.
         unsafe impl<
             E: HandleEncoder + ?Sized,
             $($($generics $(: $bound)?,)+)?

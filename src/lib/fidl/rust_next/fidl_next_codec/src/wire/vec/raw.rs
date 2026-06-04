@@ -23,6 +23,9 @@ impl<T> Constrained for RawVector<'_, T> {
     }
 }
 
+// SAFETY: `RawVector` is `repr(C)` and contains only `Wire` types (`wire::Uint64` and
+// `wire::Pointer`). It has no padding bytes, and lifetime erasure is safe since `RawVector` is
+// covariant over its lifetime.
 unsafe impl<T: Wire> Wire for RawVector<'static, T> {
     type Narrowed<'de> = RawVector<'de, T::Narrowed<'de>>;
 

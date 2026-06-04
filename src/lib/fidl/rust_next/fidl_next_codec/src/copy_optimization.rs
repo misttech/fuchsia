@@ -45,6 +45,8 @@ impl<T: ?Sized, U: ?Sized> CopyOptimization<T, U> {
         T: Sized,
         U: Sized,
     {
+        // SAFETY: If `T` and `U` are copy-optimizable, then `[T; N]` and `[U; N]` are also
+        // copy-optimizable.
         unsafe { CopyOptimization::enable_if(self.is_enabled()) }
     }
 
@@ -55,6 +57,8 @@ impl<T: ?Sized, U: ?Sized> CopyOptimization<T, U> {
         T: Sized,
         U: Sized,
     {
+        // SAFETY: If `T` and `U` are copy-optimizable, then `[T]` and `[U]` are also
+        // copy-optimizable.
         unsafe { CopyOptimization::enable_if(self.is_enabled()) }
     }
 }
@@ -63,6 +67,7 @@ impl<T: ?Sized> CopyOptimization<T, T> {
     /// Returns an enabled `CopyOptimization`, as copy optimization is always enabled from a type to
     /// itself.
     pub const fn identity() -> Self {
+        // SAFETY: A type is always copy-optimizable to itself.
         unsafe { Self::enable() }
     }
 }

@@ -25,6 +25,8 @@ pub unsafe trait AsDecoder<'de> {
     fn as_decoder(&'de mut self) -> Self::Decoder;
 }
 
+// SAFETY: `Vec` stores its elements on the heap, so moving the `Vec` does not invalidate
+// references to its elements.
 unsafe impl<'de> AsDecoder<'de> for Vec<Chunk> {
     type Decoder = &'de mut [Chunk];
 
@@ -86,6 +88,8 @@ impl<D: for<'de> AsDecoder<'de>> AsDecoderExt for D {
         decoder.commit();
         decoder.finish()?;
 
+        // SAFETY: The slot pointer is obtained from a valid slot in the decoder, which is
+        // non-null.
         let ptr = unsafe { NonNull::new_unchecked(slot.as_mut_ptr().cast()) };
         drop(decoder);
         Ok(Decoded { ptr, decoder: ManuallyDrop::new(self) })
@@ -102,13 +106,14 @@ pub struct Decoded<T: ?Sized, D> {
 // `Send` if `T` and `D` are `Send`.
 unsafe impl<T: Send + ?Sized, D: Send> Send for Decoded<T, D> {}
 
-// SAFETY: `Decoded` doesn't add any interior mutability, so it is `Sync` if `T` and `D` are `Sync`.
+// SAFETY: `Decoded` doesn't add any interior mutability, so it is `Sync` if `T` and `D` are
+// `Sync`.
 unsafe impl<T: Sync + ?Sized, D: Sync> Sync for Decoded<T, D> {}
 
 impl<T: ?Sized, D> Drop for Decoded<T, D> {
     fn drop(&mut self) {
-        // SAFETY: `ptr` points to a `T` which is safe to drop as an invariant of `Decoded`. We will
-        // only ever drop it once, since `drop` may only be called once.
+        // SAFETY: `ptr` points to a `T` which is safe to drop as an invariant of `Decoded`. We
+        // will only ever drop it once, since `drop` may only be called once.
         unsafe {
             self.ptr.as_ptr().drop_in_place();
         }
@@ -127,14 +132,15 @@ impl<T: ?Sized, D> Decoded<T, D> {
     /// `ptr` must point to a valid value and remain valid as long as `decoder`
     /// is not dropped.
     pub unsafe fn new_unchecked(ptr: *mut T, decoder: D) -> Self {
+        // SAFETY: `ptr` is non-null as a precondition of `new_unchecked`.
         Self { ptr: unsafe { NonNull::new_unchecked(ptr) }, decoder: ManuallyDrop::new(decoder) }
     }
 
     /// Returns the raw pointer and decoder used to create this `Decoded`.
     pub fn into_raw_parts(mut self) -> (*mut T, D) {
         let ptr = self.ptr.as_ptr();
-        // SAFETY: We forget `self` immediately after taking `self.decoder`, so we won't double-drop
-        // the decoder.
+        // SAFETY: We forget `self` immediately after taking `self.decoder`, so we won't
+        // double-drop the decoder.
         let decoder = unsafe { ManuallyDrop::take(&mut self.decoder) };
         forget(self);
         (ptr, decoder)
@@ -171,6 +177,8 @@ impl<T: ?Sized, D> Decoded<T, D> {
         T: Wire,
     {
         let (ptr, decoder) = self.into_raw_parts();
+        // SAFETY: `ptr` points to a valid value of type `T::Narrowed`, and ownership of the
+        // value is transferred here.
         let value = unsafe { ptr.cast::<T::Narrowed<'_>>().read() };
         let result = f(value);
         drop(decoder);

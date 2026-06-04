@@ -25,6 +25,7 @@ impl Constrained for Table<'_> {
     }
 }
 
+// SAFETY: `Table` has stable layout and no padding.
 unsafe impl Wire for Table<'static> {
     type Narrowed<'de> = Table<'de>;
 
@@ -81,6 +82,8 @@ impl Table<'_> {
             return None;
         }
 
+        // SAFETY: `self.ptr` points to an array of `Envelope` of length `self.len`.
+        // We checked that `ordinal` is within `1..=self.len`, so `ordinal - 1` is within bounds.
         let envelope = unsafe { &*self.ptr.as_ptr().add(ordinal - 1) };
         (!envelope.is_zero()).then_some(envelope)
     }

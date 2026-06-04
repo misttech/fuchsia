@@ -33,7 +33,10 @@ pub union Envelope {
     decoded_out_of_line: *mut (),
 }
 
+// SAFETY: `Envelope` is a union of primitive types and pointers, and contains no thread-local
+// data.
 unsafe impl Send for Envelope {}
+// SAFETY: `Envelope` contains no interior mutability.
 unsafe impl Sync for Envelope {}
 
 impl Constrained for Envelope {
@@ -44,6 +47,7 @@ impl Constrained for Envelope {
     }
 }
 
+// SAFETY: `Envelope` has a stable layout and no padding.
 unsafe impl Wire for Envelope {
     type Narrowed<'de> = Self;
 
@@ -69,6 +73,8 @@ impl Envelope {
     ) -> Result<(), EncodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `out` is a valid mutable reference to a `MaybeUninit<Envelope>`.
+        // Destructuring it via `munge!` is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = out);
             encoded
@@ -87,6 +93,8 @@ impl Envelope {
         if encoded_size <= INLINE_SIZE {
             // If the encoded inline value is less than 4 bytes long, we need to zero out the part
             // that won't get written over
+            // SAFETY: `encoded_size` is <= INLINE_SIZE (4), so we are writing within the
+            // bounds of `maybe_num_bytes` (which is 4 bytes).
             unsafe {
                 maybe_num_bytes
                     .as_mut_ptr()
@@ -98,6 +106,10 @@ impl Envelope {
             return Err(EncodeError::ExpectedInline(encoded_size));
         }
 
+        // SAFETY: `maybe_num_bytes` points to a 4-byte slot. `W` has size <= 4 and alignment
+        // requirements that are compatible (since `Envelope` is aligned to 8).
+        // Casting it to `*mut W` and dereferencing it is safe because the memory is allocated
+        // and we have exclusive access.
         let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
         W::zero_padding(value_out);
         value.encode(encoder, value_out, constraint)?;
@@ -120,6 +132,8 @@ impl Envelope {
     ) -> Result<(), EncodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `out` is a valid mutable reference to a `MaybeUninit<Envelope>`.
+        // Destructuring it via `munge!` is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = out);
             encoded
@@ -138,6 +152,8 @@ impl Envelope {
         if encoded_size <= INLINE_SIZE {
             // If the encoded inline value is less than 4 bytes long, we need to zero out the part
             // that won't get written over
+            // SAFETY: `encoded_size` is <= INLINE_SIZE (4), so we are writing within the
+            // bounds of `maybe_num_bytes` (which is 4 bytes).
             unsafe {
                 maybe_num_bytes
                     .as_mut_ptr()
@@ -145,6 +161,10 @@ impl Envelope {
                     .add(encoded_size)
                     .write_bytes(0, INLINE_SIZE - encoded_size);
             }
+            // SAFETY: `maybe_num_bytes` points to a 4-byte slot. `W` has size <= 4 and alignment
+            // requirements that are compatible (since `Envelope` is aligned to 8).
+            // Casting it to `*mut W` and dereferencing it is safe because the memory is allocated
+            // and we have exclusive access.
             let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
             W::zero_padding(value_out);
             value.encode(encoder, value_out, constraint)?;
@@ -176,6 +196,7 @@ impl Envelope {
     pub fn is_encoded_zero(slot: Slot<'_, Self>) -> bool {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let zero = unsafe {
             munge!(let Self { zero } = slot);
             zero
@@ -186,6 +207,8 @@ impl Envelope {
     /// Returns whether an envelope is zero.
     #[inline]
     pub fn is_zero(&self) -> bool {
+        // SAFETY: Reading the `zero` field of the union is safe because it is a primitive array
+        // (`[u8; 8]`) which has no validity invariants.
         unsafe { self.zero == [0; 8] }
     }
 
@@ -218,6 +241,7 @@ impl Envelope {
     ) -> Result<(), DecodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = slot);
             encoded
@@ -247,6 +271,7 @@ impl Envelope {
     ) -> Result<(), DecodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = slot);
             encoded
@@ -277,6 +302,7 @@ impl Envelope {
     ) -> Result<(), DecodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = slot.as_mut());
             encoded
@@ -302,10 +328,14 @@ impl Envelope {
         }
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let mut decoded_inline = unsafe {
             munge!(let Self { decoded_inline } = slot);
             decoded_inline
         };
+        // SAFETY: `decoded_inline` is a slot for `[MaybeUninit<u8>; 4]` inside `Envelope`.
+        // We cast its pointer to `*mut T`. Since `size_of::<T>() <= 4` and `Envelope` is aligned
+        // to 8, the pointer is valid and aligned for `T`.
         let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
         T::decode(slot.as_mut(), decoder, constraint)?;
 
@@ -329,6 +359,7 @@ impl Envelope {
     ) -> Result<(), DecodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = slot.as_mut());
             encoded
@@ -355,6 +386,7 @@ impl Envelope {
 
             // `unsafe` block required in the next version of munge
             #[allow(unused_unsafe)]
+            // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
             let mut decoded_out_of_line = unsafe {
                 munge!(let Self { decoded_out_of_line } = slot);
                 decoded_out_of_line
@@ -369,10 +401,14 @@ impl Envelope {
             }
             // `unsafe` block required in the next version of munge
             #[allow(unused_unsafe)]
+            // SAFETY: `slot` is a valid `Slot` of `Envelope`. Destructuring it is safe.
             let mut decoded_inline = unsafe {
                 munge!(let Self { decoded_inline } = slot);
                 decoded_inline
             };
+            // SAFETY: `decoded_inline` is a slot for `[MaybeUninit<u8>; 4]` inside `Envelope`. We
+            // cast its pointer to `*mut T`. Since `size_of::<T>() <= 4` and `Envelope` is aligned
+            // to 8, the pointer is valid and aligned for `T`.
             let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
             T::decode(slot.as_mut(), decoder, constraint)?;
         }
@@ -396,9 +432,12 @@ impl Envelope {
     #[inline]
     pub unsafe fn as_ptr<T>(this: *mut Self) -> *mut T {
         if size_of::<T>() <= INLINE_SIZE {
+            // SAFETY: `this` is valid and aligned as guaranteed by the caller.
             let inline = unsafe { addr_of_mut!((*this).decoded_inline) };
             inline.cast()
         } else {
+            // SAFETY: `this` is valid and aligned as guaranteed by the caller, and contains
+            // a decoded out-of-line pointer.
             unsafe { (*this).decoded_out_of_line.cast() }
         }
     }
@@ -410,7 +449,11 @@ impl Envelope {
     /// The envelope must have been successfully decoded as a `T`.
     #[inline]
     pub unsafe fn deref_unchecked<T>(&self) -> &T {
+        // SAFETY: `self` is a valid reference, so we can cast it to a raw pointer.
+        // `Self::as_ptr` is safe to call because `self` is valid and successfully decoded as `T`
+        // (guaranteed by caller).
         let ptr = unsafe { Self::as_ptr::<T>((self as *const Self).cast_mut()).cast_const() };
+        // SAFETY: `ptr` is valid and points to a decoded `T` (guaranteed by caller).
         unsafe { &*ptr }
     }
 
@@ -440,7 +483,10 @@ impl Envelope {
             decoded_inline: [MaybeUninit<u8>; INLINE_SIZE],
         }
 
+        // SAFETY: The caller guarantees that the envelope contains a decoded inline `T`.
         let cloned = unsafe { self.deref_unchecked::<T>().clone() };
+        // SAFETY: Creating `Envelope` with `decoded_inline` field is safe.
+        // `ClonedToDecodedInline` union is used to safely transmute `T` to `[MaybeUninit<u8>; 4]`.
         unsafe {
             Self {
                 decoded_inline: ClonedToDecodedInline { cloned: ManuallyDrop::new(cloned) }

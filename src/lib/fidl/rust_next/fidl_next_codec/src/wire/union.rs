@@ -29,6 +29,7 @@ impl Constrained for Union {
     }
 }
 
+// SAFETY: `Union` has stable layout (ordinal followed by envelope) and no padding.
 unsafe impl Wire for Union {
     type Narrowed<'de> = Self;
 
@@ -172,6 +173,7 @@ impl Union {
     /// `this` must be non-null, properly aligned, and valid for reads.
     #[inline]
     pub unsafe fn get_raw(this: *mut Self) -> *mut wire::Envelope {
+        // SAFETY: `this` is valid and aligned as guaranteed by the caller.
         unsafe { addr_of_mut!((*this).envelope) }
     }
 
@@ -190,6 +192,8 @@ impl Union {
     pub unsafe fn clone_inline_unchecked<T: Clone>(&self) -> Self {
         Self {
             ordinal: self.ordinal,
+            // SAFETY: The caller guarantees that the union contains a decoded inline `T`,
+            // which satisfies the precondition of `clone_inline_unchecked`.
             envelope: unsafe { self.envelope.clone_inline_unchecked::<T>() },
         }
     }

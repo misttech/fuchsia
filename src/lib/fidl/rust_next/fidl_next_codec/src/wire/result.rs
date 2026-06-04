@@ -24,11 +24,16 @@ impl<T, E> Drop for Result<'_, T, E> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             ORD_OK => {
+                // SAFETY: The ordinal is `ORD_OK`, so the union contains a valid initialized `T`.
+                // We read it to drop it.
                 let _ = unsafe { self.raw.get().read_unchecked::<T>() };
             }
             ORD_ERR => {
+                // SAFETY: The ordinal is `ORD_ERR`, so the union contains a valid initialized `E`.
+                // We read it to drop it.
                 let _ = unsafe { self.raw.get().read_unchecked::<E>() };
             }
+            // SAFETY: The ordinal of a validated `Result` must be either `ORD_OK` or `ORD_ERR`.
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
@@ -46,6 +51,8 @@ where
     }
 }
 
+// SAFETY: `Result` is a `#[repr(transparent)]` wrapper around `wire::Union`, which is `Wire`.
+// The generic parameters `T` and `E` are also `Wire`.
 unsafe impl<T, E> Wire for Result<'static, T, E>
 where
     T: Wire<Constraint = ()>,
@@ -76,11 +83,13 @@ impl<T, E> Result<'_, T, E> {
 
     /// Returns the `Ok` value of the result, if any.
     pub fn ok(&self) -> Option<&T> {
+        // SAFETY: The ordinal is `ORD_OK`, so the union contains a valid initialized `T`.
         self.is_ok().then(|| unsafe { self.raw.get().deref_unchecked() })
     }
 
     /// Returns the `Err` value of the result, if any.
     pub fn err(&self) -> Option<&E> {
+        // SAFETY: The ordinal is `ORD_ERR`, so the union contains a valid initialized `E`.
         self.is_err().then(|| unsafe { self.raw.get().deref_unchecked() })
     }
 
@@ -101,8 +110,11 @@ impl<T, E> Result<'_, T, E> {
     /// Returns a `Result` of a reference to the value or error.
     pub fn as_ref(&self) -> CoreResult<&T, &E> {
         match self.raw.ordinal() {
+            // SAFETY: The ordinal is `ORD_OK`, so the union contains a valid initialized `T`.
             ORD_OK => unsafe { Ok(self.raw.get().deref_unchecked()) },
+            // SAFETY: The ordinal is `ORD_ERR`, so the union contains a valid initialized `E`.
             ORD_ERR => unsafe { Err(self.raw.get().deref_unchecked()) },
+            // SAFETY: The ordinal of a validated `Result` must be either `ORD_OK` or `ORD_ERR`.
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
@@ -111,8 +123,13 @@ impl<T, E> Result<'_, T, E> {
     pub fn into_result(self) -> CoreResult<T, E> {
         let this = ManuallyDrop::new(self);
         match this.raw.ordinal() {
+            // SAFETY: The ordinal is `ORD_OK`, so the union contains a valid initialized `T`.
+            // We use `ManuallyDrop` to prevent double-dropping.
             ORD_OK => unsafe { Ok(this.raw.get().read_unchecked()) },
+            // SAFETY: The ordinal is `ORD_ERR`, so the union contains a valid initialized `E`.
+            // We use `ManuallyDrop` to prevent double-dropping.
             ORD_ERR => unsafe { Err(this.raw.get().read_unchecked()) },
+            // SAFETY: The ordinal of a validated `Result` must be either `ORD_OK` or `ORD_ERR`.
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
@@ -122,8 +139,12 @@ impl<T: Clone, E: Clone> Clone for Result<'_, T, E> {
     fn clone(&self) -> Self {
         Self {
             raw: match self.raw.ordinal() {
+                // SAFETY: The ordinal is `ORD_OK`, so the union contains a valid initialized `T`.
                 ORD_OK => unsafe { self.raw.clone_inline_unchecked::<T>() },
+                // SAFETY: The ordinal is `ORD_ERR`, so the union contains a valid initialized `E`.
                 ORD_ERR => unsafe { self.raw.clone_inline_unchecked::<E>() },
+                // SAFETY: The ordinal of a validated `Result` must be either `ORD_OK` or
+                // `ORD_ERR`.
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             },
             _phantom: PhantomData,
@@ -141,6 +162,8 @@ where
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded `Result`
+// because it delegates to `wire::Union::decode_as` which validates and decodes the active variant.
 unsafe impl<'de, D, T, E> Decode<D> for Result<'de, T, E>
 where
     D: Decoder<'de> + ?Sized,
@@ -160,6 +183,9 @@ where
     }
 }
 
+// SAFETY: `Result` is `#[repr(transparent)]` over `wire::Union`. `encode` delegates to
+// `wire::Union::encode_as`, which fully initializes the underlying `Union`, thus initializing
+// `Result`.
 unsafe impl<Enc, WT, T, WE, E> Encode<Result<'static, WT, WE>, Enc> for CoreResult<T, E>
 where
     Enc: Encoder + ?Sized,
@@ -185,6 +211,7 @@ where
     }
 }
 
+// SAFETY: Delegates to the `Encode` implementation for `CoreResult`, which is safe.
 unsafe impl<'a, Enc, WT, T, WE, E> Encode<Result<'static, WT, WE>, Enc> for &'a CoreResult<T, E>
 where
     Enc: Encoder + ?Sized,

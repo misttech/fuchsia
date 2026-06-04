@@ -47,11 +47,14 @@ impl<T: FromWire<W>, W, const N: usize> FromWire<[W; N]> for [T; N] {
             forget(wire);
         } else {
             for (i, item) in wire.into_iter().enumerate() {
+                // SAFETY: `i` is in bounds for the array of size `N`, and the pointer is valid to
+                // write.
                 unsafe {
                     result.as_mut_ptr().cast::<T>().add(i).write(T::from_wire(item));
                 }
             }
         }
+        // SAFETY: All `N` elements of `result` have been initialized.
         unsafe { result.assume_init() }
     }
 }
@@ -66,11 +69,14 @@ impl<T: FromWireRef<W>, W, const N: usize> FromWireRef<[W; N]> for [T; N] {
             }
         } else {
             for (i, item) in wire.iter().enumerate() {
+                // SAFETY: `i` is in bounds for the array of size `N`, and the pointer is valid to
+                // write.
                 unsafe {
                     result.as_mut_ptr().cast::<T>().add(i).write(T::from_wire_ref(item));
                 }
             }
         }
+        // SAFETY: All `N` elements of `result` have been initialized.
         unsafe { result.assume_init() }
     }
 }

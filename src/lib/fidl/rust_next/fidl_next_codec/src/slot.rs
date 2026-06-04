@@ -22,7 +22,9 @@ pub struct Slot<'de, T: ?Sized> {
     _phantom: PhantomData<&'de mut [u8]>,
 }
 
+// SAFETY: `Slot` represents exclusive ownership of a `T`, so it is `Send` if `T` is `Send`.
 unsafe impl<T: Send> Send for Slot<'_, T> {}
+// SAFETY: `Slot` represents exclusive ownership of a `T`, so it is `Sync` if `T` is `Sync`.
 unsafe impl<T: Sync> Sync for Slot<'_, T> {}
 
 impl<'de, T: ?Sized> Slot<'de, T> {
@@ -31,9 +33,11 @@ impl<'de, T: ?Sized> Slot<'de, T> {
     where
         T: Sized,
     {
+        // SAFETY: `backing` is a valid mutable reference, so its pointer is valid for writes.
         unsafe {
             backing.as_mut_ptr().write_bytes(0, 1);
         }
+        // SAFETY: The memory has been initialized to zero by the previous `write_bytes` call.
         unsafe { Self::new_unchecked(backing.as_mut_ptr()) }
     }
 
@@ -68,6 +72,7 @@ impl<'de, T: ?Sized> Slot<'de, T> {
     ///
     /// The slot must contain a valid `T`.
     pub unsafe fn deref_unchecked(&self) -> &T {
+        // SAFETY: The caller guarantees that the slot contains a valid `T`.
         unsafe { &*self.as_ptr() }
     }
 
@@ -77,6 +82,7 @@ impl<'de, T: ?Sized> Slot<'de, T> {
     ///
     /// The slot must contain a valid `T`.
     pub unsafe fn deref_mut_unchecked(&mut self) -> &mut T {
+        // SAFETY: The caller guarantees that the slot contains a valid `T`.
         unsafe { &mut *self.as_mut_ptr() }
     }
 
@@ -85,6 +91,7 @@ impl<'de, T: ?Sized> Slot<'de, T> {
     where
         T: IntoBytes + Sized,
     {
+        // SAFETY: `self.ptr` is valid for writes.
         unsafe {
             self.as_mut_ptr().write(value);
         }
@@ -105,6 +112,8 @@ impl<'de, T: Sized> Slot<'de, T> {
 impl<T> Slot<'_, T> {
     /// Returns a slice of the underlying bytes.
     pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: `self.ptr` is valid for reads of `size_of::<T>()` bytes because it
+        // points to initialized memory.
         unsafe { from_raw_parts(self.ptr.cast::<u8>(), size_of::<T>()) }
     }
 }
@@ -114,6 +123,7 @@ impl<T, const N: usize> Slot<'_, [T; N]> {
     pub fn index(&mut self, index: usize) -> Slot<'_, T> {
         assert!(index < N, "attempted to index out-of-bounds");
 
+        // SAFETY: `index` is checked to be within bounds, so the calculated pointer is valid.
         Slot { ptr: unsafe { self.as_mut_ptr().cast::<T>().add(index) }, _phantom: PhantomData }
     }
 }
@@ -133,6 +143,8 @@ impl<T> Slot<'_, [T]> {
     pub fn index(&mut self, index: usize) -> Slot<'_, T> {
         assert!(index < self.ptr.len(), "attempted to index out-of-bounds");
 
+        // SAFETY: `index` is checked to be within bounds of the slice, so the calculated pointer
+        // is valid.
         Slot { ptr: unsafe { self.as_mut_ptr().cast::<T>().add(index) }, _phantom: PhantomData }
     }
 }
@@ -141,12 +153,16 @@ impl<T: FromBytes> Deref for Slot<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: `T` implements `FromBytes`, so any initialized byte sequence represents a valid
+        // `T`.
         unsafe { &*self.as_ptr() }
     }
 }
 
 impl<T: FromBytes> DerefMut for Slot<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: `T` implements `FromBytes`, so any initialized byte sequence represents a valid
+        // `T`.
         unsafe { &mut *self.as_mut_ptr() }
     }
 }
@@ -162,12 +178,15 @@ impl<'de, T> Iterator for Slot<'de, [T]> {
         let result = Slot { ptr: self.ptr.cast::<T>(), _phantom: PhantomData };
 
         self.ptr =
+            // SAFETY: The slice has at least one element, so advancing the pointer by 1 is safe.
             slice_from_raw_parts_mut(unsafe { self.ptr.cast::<T>().add(1) }, self.ptr.len() - 1);
 
         Some(result)
     }
 }
 
+// SAFETY: `underlying` returns a pointer to the wrapped data, which is valid and uniquely owned by
+// the `Slot`.
 unsafe impl<T> Destructure for Slot<'_, T> {
     type Underlying = T;
     type Destructuring = Move;
@@ -177,6 +196,8 @@ unsafe impl<T> Destructure for Slot<'_, T> {
     }
 }
 
+// SAFETY: `restructure` is called with a pointer to a subfield of `T` which is guaranteed to be
+// initialized and have the correct lifetime.
 unsafe impl<'de, T, U: 'de> Restructure<U> for Slot<'de, T> {
     type Restructured = Slot<'de, U>;
 

@@ -27,6 +27,9 @@ impl Constrained for Status {
     }
 }
 
+// SAFETY:
+// - Lifetime erasure: `Status` has no lifetimes, so `Narrowed` is `Self`.
+// - Padding: `Status` is transparent over `Int32`, which has no padding.
 unsafe impl Wire for Status {
     type Narrowed<'de> = Self;
 
@@ -50,6 +53,8 @@ impl fmt::Debug for Status {
     }
 }
 
+// SAFETY: `decode` delegates to `Int32::decode`, which initializes the underlying `Int32`
+// and ensures `slot` contains a valid decoded `Status`.
 unsafe impl<D: ?Sized> Decode<D> for Status {
     fn decode(
         slot: Slot<'_, Self>,
@@ -61,6 +66,8 @@ unsafe impl<D: ?Sized> Decode<D> for Status {
     }
 }
 
+// SAFETY: `encode` delegates to the `Encode` implementation of the raw `i32` status value,
+// which initializes all non-padding bytes of `out`.
 unsafe impl<E: ?Sized> Encode<Status, E> for zx::Status {
     fn encode(
         self,
@@ -73,6 +80,8 @@ unsafe impl<E: ?Sized> Encode<Status, E> for zx::Status {
     }
 }
 
+// SAFETY: `encode` delegates to `zx::Status`'s `Encode` implementation, which initializes
+// all non-padding bytes of `out`.
 unsafe impl<E: ?Sized> Encode<Status, E> for &zx::Status {
     fn encode(
         self,

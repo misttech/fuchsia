@@ -22,6 +22,8 @@ pub struct String<'de> {
     vec: wire::Vector<'de, u8>,
 }
 
+// SAFETY: `String` is a `#[repr(transparent)]` wrapper around `wire::Vector<'static, u8>`, which
+// is `Wire`.
 unsafe impl Wire for String<'static> {
     type Narrowed<'de> = String<'de>;
 
@@ -55,6 +57,7 @@ impl String<'_> {
     /// Returns a reference to the underlying `str`.
     #[inline]
     pub fn as_str(&self) -> &str {
+        // SAFETY: The bytes of a decoded `String` are validated to be valid UTF-8.
         unsafe { from_utf8_unchecked(self.vec.as_slice()) }
     }
 
@@ -116,11 +119,15 @@ impl PartialEq<str> for String<'_> {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded `String`
+// because it delegates to `wire::Vector::decode_raw` and validates that the decoded bytes
+// are valid UTF-8.
 unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for String<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
+        // SAFETY: `vec` is a valid slot for `Vector`.
         match unsafe { wire::Vector::decode_raw(vec.as_mut(), decoder, constraint) } {
             Ok(()) => (),
             Err(DecodeError::Validation(ValidationError::VectorTooLong { count, limit })) => {
@@ -133,6 +140,7 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for String<'de> {
                 return Err(e);
             }
         };
+        // SAFETY: `decode_raw` succeeded, so the slot contents are valid.
         let vec = unsafe { vec.deref_unchecked() };
 
         // Check if the string is valid ASCII (fast path)
@@ -146,6 +154,7 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for String<'de> {
     }
 }
 
+// SAFETY: Delegates to `<&str>::encode` which is safe and fully initializes the output.
 unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for StdString {
     #[inline]
     fn encode(
@@ -158,6 +167,7 @@ unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for StdString {
     }
 }
 
+// SAFETY: Delegates to `<&str>::encode` which is safe and fully initializes the output.
 unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &StdString {
     #[inline]
     fn encode(
@@ -170,6 +180,8 @@ unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &StdString {
     }
 }
 
+// SAFETY: `String` has no padding. `encode` initializes the output fully by writing
+// the string bytes to the encoder and calling `String::encode_present`.
 unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &str {
     #[inline]
     fn encode(
@@ -198,6 +210,7 @@ impl IntoNatural for String<'_> {
 impl FromWireRef<String<'_>> for StdString {
     #[inline]
     fn from_wire_ref(wire: &String<'_>) -> Self {
+        // SAFETY: The bytes of a decoded `String` are validated to be valid UTF-8.
         unsafe { StdString::from_utf8_unchecked(Vec::from_wire_ref(&wire.vec)) }
     }
 }

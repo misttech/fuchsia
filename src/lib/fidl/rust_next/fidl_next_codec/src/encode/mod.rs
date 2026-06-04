@@ -49,6 +49,7 @@ pub unsafe trait EncodeOption<W: Wire, E: ?Sized>: Sized {
     ) -> Result<(), EncodeError>;
 }
 
+// SAFETY: Delegates to `T::encode` which guarantees that `out` is initialized.
 unsafe impl<W, E, T> Encode<W, E> for Box<T>
 where
     W: Wire,
@@ -65,6 +66,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `<&'a T>::encode` which guarantees that `out` is initialized.
 unsafe impl<'a, W, E, T> Encode<W, E> for &'a Box<T>
 where
     W: Wire,
@@ -81,6 +83,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `T::encode_option` which guarantees that `out` is initialized.
 unsafe impl<W, E, T> EncodeOption<W, E> for Box<T>
 where
     W: Wire,
@@ -97,6 +100,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `<&'a T>::encode_option` which guarantees that `out` is initialized.
 unsafe impl<'a, W, E, T> EncodeOption<W, E> for &'a Box<T>
 where
     W: Wire,
@@ -149,6 +153,7 @@ where
     Ok(())
 }
 
+// SAFETY: `encode_to_array` initializes all elements of the array.
 unsafe impl<W, E, T, const N: usize> Encode<[W; N], E> for [T; N]
 where
     W: Wire,
@@ -167,6 +172,7 @@ where
     }
 }
 
+// SAFETY: `encode_to_array` initializes all elements of the array.
 unsafe impl<'a, W, E, T, const N: usize> Encode<[W; N], E> for &'a [T; N]
 where
     W: Wire,
@@ -184,6 +190,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `T::encode_option` which guarantees that `out` is initialized.
 unsafe impl<W, E, T> Encode<W, E> for Option<T>
 where
     W: Wire,
@@ -200,6 +207,7 @@ where
     }
 }
 
+// SAFETY: Delegates to `<Option<&'a T>>::encode` which guarantees that `out` is initialized.
 unsafe impl<'a, W, E, T> Encode<W, E> for &'a Option<T>
 where
     W: Wire,

@@ -19,6 +19,8 @@ pub struct OptionalString<'de> {
     vec: wire::OptionalVector<'de, u8>,
 }
 
+// SAFETY: `OptionalString` is a `#[repr(transparent)]` wrapper around
+// `wire::OptionalVector<'static, u8>`, which is `Wire`.
 unsafe impl Wire for OptionalString<'static> {
     type Narrowed<'de> = OptionalString<'de>;
 
@@ -59,6 +61,8 @@ impl OptionalString<'_> {
     /// Returns a reference to the underlying string, if any.
     #[inline]
     pub fn as_ref(&self) -> Option<&wire::String<'_>> {
+        // SAFETY: `wire::String` is a `#[repr(transparent)]` wrapper around `wire::Vector<u8>`.
+        // Casting the pointer is safe because they have the same layout.
         self.vec.as_ref().map(|vec| unsafe { &*(vec as *const wire::Vector<'_, u8>).cast() })
     }
 
@@ -103,11 +107,15 @@ where
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded
+// `OptionalString` because it delegates to `wire::OptionalVector::decode_raw` and validates that
+// the decoded bytes (if present) are valid UTF-8.
 unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for OptionalString<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
+        // SAFETY: `vec` is a valid slot for `OptionalVector`.
         let result = unsafe { wire::OptionalVector::decode_raw(vec.as_mut(), decoder, constraint) };
         match result {
             Ok(()) => (),
@@ -119,6 +127,7 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for OptionalString<'de> {
             }
             Err(e) => return Err(e),
         }
+        // SAFETY: `decode_raw` succeeded, so the slot contents are valid.
         let vec = unsafe { vec.deref_unchecked() };
         if let Some(bytes) = vec.as_ref() {
             // Check if the string is valid ASCII (fast path)
@@ -133,6 +142,7 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for OptionalString<'de> {
     }
 }
 
+// SAFETY: Delegates to `<&str>::encode_option` which is safe and fully initializes the output.
 unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for String {
     #[inline]
     fn encode_option(
@@ -145,6 +155,7 @@ unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for St
     }
 }
 
+// SAFETY: Delegates to `<&str>::encode_option` which is safe and fully initializes the output.
 unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &String {
     #[inline]
     fn encode_option(
@@ -157,6 +168,8 @@ unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &S
     }
 }
 
+// SAFETY: `OptionalString` has no padding. `encode_option` initializes the output fully
+// by calling either `OptionalString::encode_present` or `OptionalString::encode_absent`.
 unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &str {
     #[inline]
     fn encode_option(
@@ -178,6 +191,7 @@ unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &s
 impl FromWireOption<OptionalString<'_>> for String {
     #[inline]
     fn from_wire_option(wire: OptionalString<'_>) -> Option<Self> {
+        // SAFETY: The bytes in a decoded `OptionalString` are validated to be valid UTF-8.
         Vec::from_wire_option(wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
     }
 }
@@ -189,6 +203,7 @@ impl IntoNatural for OptionalString<'_> {
 impl FromWireOptionRef<OptionalString<'_>> for String {
     #[inline]
     fn from_wire_option_ref(wire: &OptionalString<'_>) -> Option<Self> {
+        // SAFETY: The bytes in a decoded `OptionalString` are validated to be valid UTF-8.
         Vec::from_wire_option_ref(&wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
     }
 }

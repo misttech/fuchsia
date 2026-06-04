@@ -18,7 +18,9 @@ pub union Pointer<'de, T> {
     _phantom: PhantomData<&'de mut [Chunk]>,
 }
 
+// SAFETY: `Pointer` is a raw pointer wrapper and doesn't add any thread safety restrictions.
 unsafe impl<T: Send> Send for Pointer<'_, T> {}
+// SAFETY: `Pointer` contains no interior mutability.
 unsafe impl<T: Sync> Sync for Pointer<'_, T> {}
 
 impl<'de, T> Pointer<'de, T> {
@@ -26,6 +28,7 @@ impl<'de, T> Pointer<'de, T> {
     pub fn is_encoded_present(slot: Slot<'_, Self>) -> Result<bool, DecodeError> {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Pointer`. Destructuring it is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = slot);
             encoded
@@ -41,6 +44,8 @@ impl<'de, T> Pointer<'de, T> {
     pub fn encode_present(out: &mut MaybeUninit<Self>) {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `out` is a valid mutable reference to a `MaybeUninit<Pointer>`.
+        // Destructuring it via `munge!` is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = out);
             encoded
@@ -52,6 +57,8 @@ impl<'de, T> Pointer<'de, T> {
     pub fn encode_absent(out: &mut MaybeUninit<Self>) {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `out` is a valid mutable reference to a `MaybeUninit<Pointer>`.
+        // Destructuring it via `munge!` is safe.
         let encoded = unsafe {
             munge!(let Self { encoded } = out);
             encoded
@@ -63,6 +70,7 @@ impl<'de, T> Pointer<'de, T> {
     pub fn set_decoded(slot: Slot<'_, Self>, mut value: Slot<'de, T>) {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Pointer`. Destructuring it is safe.
         let mut decoded = unsafe {
             munge!(let Self { decoded } = slot);
             decoded
@@ -78,6 +86,7 @@ impl<'de, T> Pointer<'de, T> {
     pub fn set_decoded_slice(slot: Slot<'_, Self>, mut slice: Slot<'de, [T]>) {
         // `unsafe` block required in the next version of munge
         #[allow(unused_unsafe)]
+        // SAFETY: `slot` is a valid `Slot` of `Pointer`. Destructuring it is safe.
         let mut decoded = unsafe {
             munge!(let Self { decoded } = slot);
             decoded
@@ -91,6 +100,8 @@ impl<'de, T> Pointer<'de, T> {
 
     /// Returns the underlying pointer.
     pub fn as_ptr(&self) -> *mut T {
+        // SAFETY: Reading a raw pointer from a union is safe because raw pointers have no validity
+        // invariants. The caller must ensure the pointer is valid before dereferencing it.
         unsafe { self.decoded }
     }
 }

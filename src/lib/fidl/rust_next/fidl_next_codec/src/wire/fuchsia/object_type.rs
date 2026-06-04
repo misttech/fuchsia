@@ -27,6 +27,7 @@ impl Constrained for ObjectType {
     }
 }
 
+// SAFETY: `ObjectType` is a `#[repr(transparent)]` wrapper around `wire::Uint32`, which is `Wire`.
 unsafe impl Wire for ObjectType {
     type Narrowed<'de> = Self;
 
@@ -50,6 +51,8 @@ impl fmt::Debug for ObjectType {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded `ObjectType`
+// because it delegates to `wire::Uint32::decode` which guarantees the slot is valid.
 unsafe impl<D: ?Sized> Decode<D> for ObjectType {
     fn decode(
         slot: Slot<'_, Self>,
@@ -61,6 +64,9 @@ unsafe impl<D: ?Sized> Decode<D> for ObjectType {
     }
 }
 
+// SAFETY: `ObjectType` is `#[repr(transparent)]` over `wire::Uint32`. `encode` delegates to
+// the `Encode` implementation for `u32` (via `into_raw()`), which fully initializes the
+// underlying `Uint32`, thus initializing `ObjectType`.
 unsafe impl<E: ?Sized> Encode<ObjectType, E> for zx::ObjectType {
     fn encode(
         self,
@@ -73,6 +79,7 @@ unsafe impl<E: ?Sized> Encode<ObjectType, E> for zx::ObjectType {
     }
 }
 
+// SAFETY: Delegates to the `Encode` implementation for `zx::ObjectType`, which is safe.
 unsafe impl<E: ?Sized> Encode<ObjectType, E> for &zx::ObjectType {
     fn encode(
         self,

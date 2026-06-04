@@ -28,6 +28,7 @@ pub unsafe trait Decode<D: ?Sized>: Constrained {
     ) -> Result<(), DecodeError>;
 }
 
+// SAFETY: If all `N` elements are successfully decoded, the entire array is decoded.
 unsafe impl<D: ?Sized, T: Decode<D>, const N: usize> Decode<D> for [T; N] {
     fn decode(
         mut slot: Slot<'_, Self>,

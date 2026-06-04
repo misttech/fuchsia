@@ -161,6 +161,8 @@ impl<'de, D: Decoder<'de> + ?Sized> DecoderExt<'de> for D {
             chunk_count.checked_mul(CHUNK_SIZE).ok_or(DecodeError::InsufficientData)?;
         let padding_length = chunk_length - slice_byte_length;
         let chunks_ptr = self.take_chunks(chunk_count)?.as_mut_ptr();
+        // SAFETY: The padding pointer falls within the chunks returned by `take_chunks`,
+        // which we have exclusive access to.
         let padding: &[u8] = unsafe {
             core::slice::from_raw_parts(
                 chunks_ptr.cast::<u8>().add(slice_byte_length),
@@ -193,8 +195,8 @@ impl<'de, D: Decoder<'de> + ?Sized> DecoderExt<'de> for D {
         let mut slot = self.take_slot::<T>()?;
         T::decode(slot.as_mut(), self, constraint)?;
         self.commit();
-        // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to a
-        // valid `T` within the decoder.
+        // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to
+        // a valid `T` within the decoder.
         unsafe { Ok(slot.as_mut_ptr().read()) }
     }
 

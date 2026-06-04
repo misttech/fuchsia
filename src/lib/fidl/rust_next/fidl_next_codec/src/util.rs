@@ -20,6 +20,7 @@ impl Constrained for Never {
     }
 }
 
+// SAFETY: `Never` cannot exist, so this code can never be reached.
 unsafe impl<W: Wire, E: ?Sized> Encode<W, E> for Never {
     fn encode(
         self,
@@ -27,7 +28,7 @@ unsafe impl<W: Wire, E: ?Sized> Encode<W, E> for Never {
         _: &mut MaybeUninit<W>,
         _: W::Constraint,
     ) -> Result<(), EncodeError> {
-        // SAFETY: `Never` cannot exist, so this code can never be reached.
+        // SAFETY: `Never` cannot be constructed, so this code is unreachable.
         unsafe { unreachable_unchecked() }
     }
 }

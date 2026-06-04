@@ -23,6 +23,8 @@ pub struct Vector<'de, T> {
     raw: RawVector<'de, T>,
 }
 
+// SAFETY: `Vector` is `repr(transparent)` over `RawVector`, which implements `Wire`.
+// Lifetime erasure is safe since `Vector` is covariant over its lifetime.
 unsafe impl<T: Wire> Wire for Vector<'static, T> {
     type Narrowed<'de> = Vector<'de, T::Narrowed<'de>>;
 
@@ -36,6 +38,8 @@ unsafe impl<T: Wire> Wire for Vector<'static, T> {
 impl<T> Drop for Vector<'_, T> {
     fn drop(&mut self) {
         if needs_drop::<T>() {
+            // SAFETY: If `T` needs to be dropped, the pointer has been decoded and points to a
+            // valid slice of initialized `T` elements.
             unsafe {
                 self.raw.as_slice_ptr().drop_in_place();
             }
@@ -62,11 +66,14 @@ impl<'de, T> Vector<'de, T> {
 
     /// Returns a pointer to the elements of the vector.
     fn as_slice_ptr(&self) -> NonNull<[T]> {
+        // SAFETY: The underlying pointer is guaranteed to be non-null for a valid `Vector`.
         unsafe { NonNull::new_unchecked(self.raw.as_slice_ptr()) }
     }
 
     /// Returns a slice of the elements of the vector.
     pub fn as_slice(&self) -> &[T] {
+        // SAFETY: The pointer is aligned, initialized, and the lifetime of the reference
+        // is bound to the lifetime of `self`.
         unsafe { self.as_slice_ptr().as_ref() }
     }
 
@@ -143,6 +150,8 @@ pub struct IntoIter<'de, T> {
 impl<T> Drop for IntoIter<'_, T> {
     fn drop(&mut self) {
         for i in 0..self.remaining {
+            // SAFETY: `self.current.add(i)` points to an initialized element of `T` within the
+            // original vector's allocation that has not yet been yielded by the iterator.
             unsafe {
                 self.current.add(i).drop_in_place();
             }
@@ -157,7 +166,12 @@ impl<T> Iterator for IntoIter<'_, T> {
         if self.remaining == 0 {
             None
         } else {
+            // SAFETY: `self.current` points to a valid, initialized element of `T` that has not
+            // yet been read. We ownership-transfer it, and decrement `self.remaining` to ensure
+            // it is not dropped again.
             let result = unsafe { self.current.read() };
+            // SAFETY: `self.current` is within the bounds of the allocated slice, so advancing
+            // it by 1 is safe (it may point to one-past-the-end if it was the last element).
             self.current = unsafe { self.current.add(1) };
             self.remaining -= 1;
             Some(result)
@@ -219,6 +233,9 @@ impl<T: PartialEq<U>, U> PartialEq<Vector<'_, U>> for Vector<'_, T> {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, the `Vector` has been successfully decoded,
+// and the underlying pointer is updated to point to a successfully decoded slice
+// of `T` allocated by the decoder.
 unsafe impl<'de, D, T> Decode<D> for Vector<'de, T>
 where
     D: Decoder<'de> + ?Sized,
@@ -294,6 +311,7 @@ where
     Ok(())
 }
 
+// SAFETY: `encode` delegates to `encode_to_vector`, which initializes the output.
 unsafe impl<W, E, T> Encode<Vector<'static, W>, E> for Vec<T>
 where
     W: Wire,
@@ -310,6 +328,7 @@ where
     }
 }
 
+// SAFETY: `encode` delegates to `encode_to_vector`, which initializes the output.
 unsafe impl<'a, W, E, T> Encode<Vector<'static, W>, E> for &'a Vec<T>
 where
     W: Wire,
@@ -327,6 +346,7 @@ where
     }
 }
 
+// SAFETY: `encode` delegates to `encode_to_vector`, which initializes the output.
 unsafe impl<W, E, T, const N: usize> Encode<Vector<'static, W>, E> for [T; N]
 where
     W: Wire,
@@ -343,6 +363,7 @@ where
     }
 }
 
+// SAFETY: `encode` delegates to `encode_to_vector`, which initializes the output.
 unsafe impl<'a, W, E, T, const N: usize> Encode<Vector<'static, W>, E> for &'a [T; N]
 where
     W: Wire,
@@ -360,6 +381,7 @@ where
     }
 }
 
+// SAFETY: `encode` delegates to `encode_to_vector`, which initializes the output.
 unsafe impl<'a, W, E, T> Encode<Vector<'static, W>, E> for &'a [T]
 where
     W: Wire,
@@ -381,9 +403,14 @@ impl<T: FromWire<W>, W> FromWire<Vector<'_, W>> for Vec<T> {
     fn from_wire(wire: Vector<'_, W>) -> Self {
         let mut result = Vec::<T>::with_capacity(wire.len());
         if T::COPY_OPTIMIZATION.is_enabled() {
+            // SAFETY: `T` has copy optimization enabled, meaning it is layout-compatible with `W`
+            // and can be safely copied. The destination buffer has been allocated with sufficient
+            // capacity, and the source and destination do not overlap.
             unsafe {
                 copy_nonoverlapping(wire.as_ptr().cast(), result.as_mut_ptr(), wire.len());
             }
+            // SAFETY: We have just initialized the first `wire.len()` elements of `result`
+            // via `copy_nonoverlapping`.
             unsafe {
                 result.set_len(wire.len());
             }
@@ -405,9 +432,14 @@ impl<T: FromWireRef<W>, W> FromWireRef<Vector<'_, W>> for Vec<T> {
     fn from_wire_ref(wire: &Vector<'_, W>) -> Self {
         let mut result = Vec::<T>::with_capacity(wire.len());
         if T::COPY_OPTIMIZATION.is_enabled() {
+            // SAFETY: `T` has copy optimization enabled, meaning it is layout-compatible with `W`
+            // and can be safely copied. The destination buffer has been allocated with sufficient
+            // capacity, and the source and destination do not overlap.
             unsafe {
                 copy_nonoverlapping(wire.as_ptr().cast(), result.as_mut_ptr(), wire.len());
             }
+            // SAFETY: We have just initialized the first `wire.len()` elements of `result`
+            // via `copy_nonoverlapping`.
             unsafe {
                 result.set_len(wire.len());
             }

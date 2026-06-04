@@ -41,6 +41,8 @@ impl Constrained for Handle {
     }
 }
 
+// SAFETY: `Handle` is a union of `Uint32` and `zx_handle_t`, both of which are 4 bytes.
+// It has a stable layout and no padding.
 unsafe impl Wire for Handle {
     type Narrowed<'de> = Self;
 
@@ -65,6 +67,9 @@ impl Handle {
     /// Returns the underlying [`zx_handle_t`].
     #[inline]
     pub fn as_raw_handle(&self) -> zx_handle_t {
+        // SAFETY: `Handle` is a union of `Uint32` and `zx_handle_t`. Reading `decoded` is safe
+        // because both union fields are 4-byte integers (or wrappers thereof) and do not have
+        // invalid bit patterns.
         unsafe { self.decoded }
     }
 }
@@ -75,6 +80,8 @@ impl fmt::Debug for Handle {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded `Handle`
+// because it has been written with a handle taken from the decoder.
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for Handle {
     fn decode(
         mut slot: Slot<'_, Self>,
@@ -115,6 +122,7 @@ impl Constrained for OptionalHandle {
     }
 }
 
+// SAFETY: `OptionalHandle` is a transparent wrapper around `Handle`, which is `Wire`.
 unsafe impl Wire for OptionalHandle {
     type Narrowed<'de> = Self;
 
@@ -155,6 +163,9 @@ impl OptionalHandle {
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, `slot` is guaranteed to contain a valid decoded
+// `OptionalHandle` because it is either left as `ALLOC_ABSENT_U32` (representing `None`) or
+// written with a handle taken from the decoder.
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for OptionalHandle {
     fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { handle: mut wire_handle } = slot.as_mut());
@@ -173,6 +184,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for OptionalHandle {
     }
 }
 
+// SAFETY: `Handle` has no padding, and `encode` initializes the entire 4 bytes of `out`
+// by calling `Handle::set_encoded_present`.
 unsafe impl<E: HandleEncoder + ?Sized> Encode<Handle, E> for zx::NullableHandle {
     fn encode(
         self,
@@ -203,6 +216,8 @@ impl IntoNatural for Handle {
     type Natural = zx::NullableHandle;
 }
 
+// SAFETY: `OptionalHandle` has no padding, and `encode_option` initializes the entire 4 bytes
+// of `out` by calling either `set_encoded_present` or `set_encoded_absent`.
 unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<OptionalHandle, E> for zx::NullableHandle {
     fn encode_option(
         this: Option<Self>,
@@ -224,6 +239,8 @@ impl FromWireOption<OptionalHandle> for zx::NullableHandle {
     fn from_wire_option(wire: OptionalHandle) -> Option<Self> {
         let raw_handle = wire.as_raw_handle();
         forget(wire);
+        // SAFETY: `raw` is a valid handle value from a decoded `OptionalHandle`.
+        // We `forget(wire)` above to prevent double-closing the handle.
         raw_handle.map(|raw| unsafe { zx::NullableHandle::from_raw(raw) })
     }
 }

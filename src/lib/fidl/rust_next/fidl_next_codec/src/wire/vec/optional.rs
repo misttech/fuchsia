@@ -20,6 +20,8 @@ pub struct OptionalVector<'de, T> {
     raw: RawVector<'de, T>,
 }
 
+// SAFETY: `OptionalVector` is `repr(transparent)` over `RawVector`, which implements `Wire`.
+// Lifetime erasure is safe since `OptionalVector` is covariant over its lifetime.
 unsafe impl<T: Wire> Wire for OptionalVector<'static, T> {
     type Narrowed<'de> = OptionalVector<'de, T::Narrowed<'de>>;
 
@@ -33,6 +35,8 @@ unsafe impl<T: Wire> Wire for OptionalVector<'static, T> {
 impl<T> Drop for OptionalVector<'_, T> {
     fn drop(&mut self) {
         if needs_drop::<T>() && self.is_some() {
+            // SAFETY: If the vector is present and `T` needs to be dropped, the pointer has
+            // been decoded and points to a valid slice of initialized `T` elements.
             unsafe {
                 self.raw.as_slice_ptr().drop_in_place();
             }
@@ -65,12 +69,22 @@ impl<'de, T> OptionalVector<'de, T> {
 
     /// Gets a reference to the vector, if any.
     pub fn as_ref(&self) -> Option<&wire::Vector<'_, T>> {
-        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
+        if self.is_some() {
+            // SAFETY: `OptionalVector` and `Vector` have the same layout (`repr(transparent)`
+            // over `RawVector`). Since `self.is_some()` is true, the underlying pointer is
+            // non-null, which satisfies the invariant of `Vector`.
+            Some(unsafe { &*(self as *const Self).cast() })
+        } else {
+            None
+        }
     }
 
     /// Converts the optional wire vector to an `Option<WireVector>`.
     pub fn to_option(self) -> Option<wire::Vector<'de, T>> {
         if self.is_some() {
+            // SAFETY: `OptionalVector` and `Vector` have the same layout. Since `self.is_some()`
+            // is true, the underlying pointer is non-null, which satisfies the invariant of
+            // `Vector`.
             Some(unsafe { core::mem::transmute::<Self, wire::Vector<'de, T>>(self) })
         } else {
             None
@@ -158,6 +172,9 @@ where
     }
 }
 
+// SAFETY: If `decode` returns `Ok`, the `OptionalVector` has been successfully decoded.
+// If present, the pointer is updated to point to a successfully decoded slice of `T`
+// allocated by the decoder. If absent, the pointer remains null and the length is 0.
 unsafe impl<'de, D, T> Decode<D> for OptionalVector<'de, T>
 where
     D: Decoder<'de> + ?Sized,
@@ -237,6 +254,7 @@ where
     Ok(())
 }
 
+// SAFETY: `encode_option` delegates to `encode_to_optional_vector`, which initializes the output.
 unsafe impl<W, E, T> EncodeOption<OptionalVector<'static, W>, E> for Vec<T>
 where
     W: Wire,
@@ -253,6 +271,7 @@ where
     }
 }
 
+// SAFETY: `encode_option` delegates to `encode_to_optional_vector`, which initializes the output.
 unsafe impl<'a, W, E, T> EncodeOption<OptionalVector<'static, W>, E> for &'a Vec<T>
 where
     W: Wire,
@@ -270,6 +289,7 @@ where
     }
 }
 
+// SAFETY: `encode_option` delegates to `encode_to_optional_vector`, which initializes the output.
 unsafe impl<W, E, T, const N: usize> EncodeOption<OptionalVector<'static, W>, E> for [T; N]
 where
     W: Wire,
@@ -286,6 +306,7 @@ where
     }
 }
 
+// SAFETY: `encode_option` delegates to `encode_to_optional_vector`, which initializes the output.
 unsafe impl<'a, W, E, T, const N: usize> EncodeOption<OptionalVector<'static, W>, E> for &'a [T; N]
 where
     W: Wire,
@@ -303,6 +324,7 @@ where
     }
 }
 
+// SAFETY: `encode_option` delegates to `encode_to_optional_vector`, which initializes the output.
 unsafe impl<'a, W, E, T> EncodeOption<OptionalVector<'static, W>, E> for &'a [T]
 where
     W: Wire,

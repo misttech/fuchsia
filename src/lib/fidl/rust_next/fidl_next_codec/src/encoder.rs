@@ -57,10 +57,15 @@ impl Encoder for Vec<Chunk> {
     fn write_zeroes(&mut self, len: usize) {
         let count = len.div_ceil(CHUNK_SIZE);
         self.reserve(count);
+        // SAFETY: `reserve` ensures the vector has enough capacity for `count` additional
+        // elements.
         let ptr = unsafe { self.as_mut_ptr().add(self.len()) };
+        // SAFETY: `ptr` is valid for writing `count` elements because of the previous `reserve`
+        // call.
         unsafe {
             ptr.write_bytes(0, count);
         }
+        // SAFETY: The memory up to the new length has been initialized to zero.
         unsafe {
             self.set_len(self.len() + count);
         }
@@ -76,17 +81,22 @@ impl Encoder for Vec<Chunk> {
         self.reserve(count);
 
         // Zero out the last chunk
+        // SAFETY: `reserve` ensures the pointer is within the allocated capacity.
         unsafe {
             self.as_mut_ptr().add(self.len() + count - 1).write(Uint64(0));
         }
+        // SAFETY: `reserve` ensures the pointer is within the allocated capacity.
         let ptr = unsafe { self.as_mut_ptr().add(self.len()).cast::<u8>() };
 
         // Copy all the bytes
+        // SAFETY: `ptr` has sufficient capacity for `bytes.len()`,
+        // which is less than or equal to `count * CHUNK_SIZE`.
         unsafe {
             ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
         }
 
         // Set the new length
+        // SAFETY: All `count` chunks have been initialized.
         unsafe {
             self.set_len(self.len() + count);
         }
@@ -96,7 +106,10 @@ impl Encoder for Vec<Chunk> {
     fn rewrite(&mut self, pos: usize, bytes: &[u8]) {
         assert!(pos + bytes.len() <= self.bytes_written());
 
+        // SAFETY: `pos` is within the initialized bounds of the vector.
         let ptr = unsafe { self.as_mut_ptr().cast::<u8>().add(pos) };
+        // SAFETY: The destination pointer is valid for writes of `bytes.len()` and
+        // does not overlap with `bytes`.
         unsafe {
             ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
         }
@@ -212,8 +225,10 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         <W as Wire>::zero_padding(&mut out);
         for value in values {
             value.encode(outputs.encoder, &mut out, constraint)?;
+            // SAFETY: `out` has been fully initialized by `W::zero_padding` and `value.encode`.
             W::validate(unsafe { Slot::new_unchecked_from_maybe_uninit(&mut out) }, constraint)
                 .map_err(EncodeError::Validation)?;
+            // SAFETY: `out` has been fully initialized.
             unsafe {
                 outputs.write_next(out.assume_init_ref());
             }
@@ -290,6 +305,8 @@ impl<E: Encoder + ?Sized, T> Preallocated<'_, E, T> {
         }
 
         let bytes_ptr = (value as *const T).cast::<u8>();
+        // SAFETY: `value` is valid for reads of `size_of::<T>()` bytes, and the
+        // caller guarantees it is fully initialized.
         let bytes = unsafe { from_raw_parts(bytes_ptr, size_of::<T>()) };
         self.encoder.rewrite(self.pos, bytes);
         self.pos += size_of::<T>();
