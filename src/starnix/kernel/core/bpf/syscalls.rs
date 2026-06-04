@@ -13,10 +13,7 @@ use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::socket::{Socket, ZxioBackedSocket};
-use crate::vfs::{
-    Anon, FdFlags, FdNumber, FileObject, LookupContext, NamespaceNode, OutputBuffer,
-    UserBuffersOutputBuffer,
-};
+use crate::vfs::{Anon, FdFlags, FdNumber, LookupContext, OutputBuffer, UserBuffersOutputBuffer};
 use ebpf::{EbpfInstruction, MapFlags, MapSchema};
 use ebpf_api::{MapKey, ProgramType};
 use smallvec::smallvec;
@@ -81,18 +78,19 @@ fn read_attr<Attr: FromBytes>(
 fn reopen_bpf_fd(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
-    node: NamespaceNode,
     handle: BpfHandle,
     open_flags: OpenFlags,
 ) -> Result<SyscallResult, Errno> {
-    // All BPF FDs have the CLOEXEC flag turned on by default.
-    let file = FileObject::new(
+    // All BPF FDs have the CLOEXEC flag turned on by default, and use a private anonymous `FsNode`,
+    // so that `FsNode` access checks will not be performed.
+    let name = handle.type_name();
+    let file = Anon::new_private_file(
         locked,
         current_task,
         Box::new(handle),
-        node,
         open_flags | OpenFlags::CLOEXEC,
-    )?;
+        name,
+    );
     Ok(current_task.add_file(locked, file, FdFlags::CLOEXEC)?.into())
 }
 
@@ -102,8 +100,8 @@ fn install_bpf_fd(
     obj: impl Into<BpfHandle>,
 ) -> Result<SyscallResult, Errno> {
     let handle: BpfHandle = obj.into();
-    let name = handle.type_name();
     handle.security_check_open_fd(current_task, None)?;
+    let name = handle.type_name();
 
     // All BPF FDs have the CLOEXEC flag turned on by default.
     let file = Anon::new_private_file(
@@ -430,9 +428,9 @@ pub fn sys_bpf(
                 _ => return error!(EINVAL),
             };
             let pathname = current_task.read_path(path_addr)?;
-            let (handle, node) =
+            let handle =
                 resolve_pinned_bpf_object(locked, current_task, pathname.as_ref(), open_flags)?;
-            reopen_bpf_fd(locked, current_task, node, handle, open_flags)
+            reopen_bpf_fd(locked, current_task, handle, open_flags)
         }
 
         // Obtain information about the eBPF object corresponding to bpf_fd.

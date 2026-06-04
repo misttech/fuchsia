@@ -12,10 +12,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO: https://fxbug.dev/514584319 - Fails on Starnix because it succeeds instead
-                // of returning EINVAL.
-                "BpfFcntlLockTestSuite/BpfFcntlLockTest.DoesNotRequireFileLock/SETLEASE",
-
                 // TODO: https://fxbug.dev/422968534 - Make (SE)Starnix match the (SE)Linux behavior
                 // regarding opening binder.
                 "BinderTest/CallPermission.DoCall/0",

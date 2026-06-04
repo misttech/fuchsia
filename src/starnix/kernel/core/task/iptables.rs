@@ -11,6 +11,8 @@ use crate::vfs::socket::iptables_utils::{
 };
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
 use bstr::BString;
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::sync::Controller;
 use fidl_fuchsia_net_filter_ext::{
     Change, CommitError, ControllerId, PushChangesError, RegisterEbpfProgramError,
@@ -37,7 +39,6 @@ use std::collections::HashMap;
 use std::mem::size_of;
 use std::ops::{Deref as _, Index, IndexMut};
 use zerocopy::{FromBytes, IntoBytes};
-use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter};
 
 const NAMESPACE_ID_PREFIX: &str = "starnix";
 
@@ -856,7 +857,7 @@ impl<'a> IptReplaceContext for IpTablesEbpfState<'a> {
             path.as_ref(),
             OpenFlags::RDONLY,
         )
-        .and_then(|(handle, _node)| handle.into_program())
+        .and_then(|handle| handle.into_program())
         .map_err(|e| {
             log_warn!("Failed to resolve eBPF program path {} for iptable matcher: {:?}", path, e);
             IpTableParseError::InvalidEbpfProgramPath { path: path.clone() }

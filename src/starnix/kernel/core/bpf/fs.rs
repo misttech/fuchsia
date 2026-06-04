@@ -484,7 +484,7 @@ impl FsNodeOps for BpfFsObject {
     }
 }
 
-/// Resolves a pinned BPF object from a path, returning the handle and the node.
+/// Resolves a pinned BPF object from a path, returning the underlying handle.
 /// Performs DAC and MAC checks using the specified `open_flags `. Also updates
 /// atime unless `NOATIME` flag is set.
 pub fn resolve_pinned_bpf_object(
@@ -492,7 +492,7 @@ pub fn resolve_pinned_bpf_object(
     current_task: &CurrentTask,
     path: &BStr,
     open_flags: OpenFlags,
-) -> Result<(BpfHandle, NamespaceNode), Errno> {
+) -> Result<BpfHandle, Errno> {
     let node = current_task.lookup_path_from_root(locked, path.as_ref())?;
 
     let permission_flags = PermissionFlags::from(open_flags);
@@ -505,5 +505,5 @@ pub fn resolve_pinned_bpf_object(
         node.update_atime();
     }
 
-    Ok((object.handle.clone(), node))
+    Ok(object.handle.clone())
 }
