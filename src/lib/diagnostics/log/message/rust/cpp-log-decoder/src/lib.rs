@@ -88,19 +88,13 @@ pub unsafe extern "C" fn fuchsia_free_message_parser(parser: *mut MessageParser)
 ///
 /// - `msg` must be valid for reads for `size`, and it must be properly aligned.
 /// - `msg` must point to `size` consecutive u8 values.
-/// - 'msg' must outlive the returned LogMessages struct, and must not be free'd
-///   until fuchsia_free_log_messages has been called.
 /// - The `size` of the slice must be no larger than `isize::MAX`, and adding
 ///   that size to data must not "wrap around" the address space. See the safety
 ///   documentation of pointer::offset.
 /// If identity is provided, it must contain a valid moniker and URL.
 ///
-/// The returned LogMessages may be free'd with fuchsia_free_log_messages(log_messages).
-/// Free'ing the LogMessages struct does the following, in this order:
-/// * Frees memory associated with each individual log message
-/// * Frees the bump allocator itself (and everything allocated from it), as well as
-/// the message array itself.
-/// If a malformed message is passed, returns nullptr.
+/// The returned LogMessages must be free'd with fuchsia_free_log_messages(log_messages).  Free'ing
+/// the LogMessages struct frees the bump allocator itself (and everything allocated from it).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
     msg: *const u8,
@@ -120,9 +114,17 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
     // to it.
     let maybe_parser = unsafe { parser.as_mut() };
 
-    // SAFETY: Safe because the caller guarantees that `msg` is valid, initialized and properly
-    // aligned.
-    let buf = unsafe { std::slice::from_raw_parts(msg, size) };
+    // By using a struct and `Deref` we limit the lifetime to this function.
+    struct Buf(*const u8, usize);
+    impl Deref for Buf {
+        type Target = [u8];
+        fn deref(&self) -> &Self::Target {
+            // SAFETY: Safe because the caller guarantees that `msg` is valid, initialized and
+            // properly aligned.
+            unsafe { std::slice::from_raw_parts(self.0, self.1) }
+        }
+    }
+    let buf = &Buf(msg, size);
 
     let messages = if let Some(parser) = maybe_parser {
         fuchsia_decode_log_messages_to_struct_internal(buf, parser, allocator_ref)
@@ -150,26 +152,9 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct<'a>(
     }
 }
 
-/// # Safety
-///
-/// Same as for `std::slice::from_raw_parts`. Summarizing in terms of this API:
-///
-/// - `msg` must be valid for reads for `size`, and it must be properly aligned.
-/// - `msg` must point to `size` consecutive u8 values.
-/// - 'msg' must outlive the returned LogMessages struct, and must not be free'd
-///   until fuchsia_free_log_messages has been called.
-/// - The `size` of the slice must be no larger than `isize::MAX`, and adding
-///   that size to data must not "wrap around" the address space. See the safety
-///   documentation of pointer::offset.
-/// If identity is provided, it must contain a valid moniker and URL.
-///
-/// The returned LogMessages may be free'd with fuchsia_free_log_messages(log_messages).
-/// Free'ing the LogMessages struct does the following, in this order:
-/// * Frees memory associated with each individual log message
-/// * Frees the bump allocator itself (and everything allocated from it), as well as
-/// the message array itself.
+/// Decodes log messages from a FXT stream.
 fn fuchsia_decode_log_messages_to_struct_internal<'a>(
-    buf: &'a [u8],
+    buf: &[u8],
     parser: &mut MessageParser,
     allocator: &'a Bump,
 ) -> Result<Vec<&'a mut LogMessage<'a>>, DecodeError> {
@@ -193,7 +178,7 @@ fn fuchsia_decode_log_messages_to_struct_internal<'a>(
 
 /// Decodes log messages from a legacy FXT stream.
 fn fuchsia_decode_log_messages_to_struct_internal_legacy<'a>(
-    buf: &'a [u8],
+    buf: &[u8],
     expect_extended_attribution: bool,
     allocator: &'a Bump,
 ) -> Result<Vec<&'a mut LogMessage<'a>>, DecodeError> {

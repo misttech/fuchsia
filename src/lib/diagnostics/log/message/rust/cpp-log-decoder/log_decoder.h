@@ -94,7 +94,7 @@ struct AliasableBox {
 /// by the LogMessages must not be modified or free'd until
 /// the LogMessages are free'd.
 struct LogMessages {
-  CPPArray<LogMessage *> messages;
+  CPPArray<const LogMessage *> messages;
   const char *error_str;
   AliasableBox<Bump> allocator;
 };
@@ -129,19 +129,13 @@ extern "C" void fuchsia_free_message_parser(MessageParser *parser);
 ///
 /// - `msg` must be valid for reads for `size`, and it must be properly aligned.
 /// - `msg` must point to `size` consecutive u8 values.
-/// - 'msg' must outlive the returned LogMessages struct, and must not be free'd
-///   until fuchsia_free_log_messages has been called.
 /// - The `size` of the slice must be no larger than `isize::MAX`, and adding
 ///   that size to data must not "wrap around" the address space. See the safety
 ///   documentation of pointer::offset.
 /// If identity is provided, it must contain a valid moniker and URL.
 ///
-/// The returned LogMessages may be free'd with fuchsia_free_log_messages(log_messages).
-/// Free'ing the LogMessages struct does the following, in this order:
-/// * Frees memory associated with each individual log message
-/// * Frees the bump allocator itself (and everything allocated from it), as well as
-/// the message array itself.
-/// If a malformed message is passed, returns nullptr.
+/// The returned LogMessages must be free'd with fuchsia_free_log_messages(log_messages).  Free'ing
+/// the LogMessages struct frees the bump allocator itself (and everything allocated from it).
 extern "C" LogMessages fuchsia_decode_log_messages_to_struct(const uint8_t *msg, uintptr_t size,
                                                              bool expect_extended_attribution,
                                                              MessageParser *parser);
