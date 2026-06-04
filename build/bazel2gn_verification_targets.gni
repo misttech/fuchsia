@@ -73,6 +73,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/tools/efi:verify_bazel2gn",
   "//src/developer/lib/writer:verify_bazel2gn",
   "//src/lib/analytics/rust:verify_bazel2gn",
+  "//src/lib/fdio/rust:verify_bazel2gn",
   "//src/lib/fdomain/client:verify_bazel2gn",
   "//src/lib/fidl/rust/fidl:verify_bazel2gn",
   "//src/lib/fidl/rust/fidl_message:verify_bazel2gn",
