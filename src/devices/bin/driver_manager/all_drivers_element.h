@@ -50,6 +50,8 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   // Set to false after the first time the level is set to 1.
   bool first_time_level_1_ = true;
 
+  // Contains all leaf driver instances in the node topology. Maps the node's weak pointer to
+  // its topological path.
   std::unordered_map<std::string, std::weak_ptr<const Node>> leaf_driver_instances_;
 
   // Leases are acquired when the level is set to 1 for all current leaf nodes,

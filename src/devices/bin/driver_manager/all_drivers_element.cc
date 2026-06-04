@@ -43,7 +43,7 @@ AllDriversElement::AllDriversElement(DriverRunner* runner, std::shared_ptr<Node>
     : driver_runner_(runner) {
   auto leaves = GetDriverBoundLeafNodes(root);
   for (const auto& node : leaves) {
-    leaf_driver_instances_.emplace(node->MakeComponentMoniker(), node);
+    leaf_driver_instances_.emplace(node->MakeTopologicalPath(), node);
   }
 }
 
@@ -57,7 +57,7 @@ void AllDriversElement::AttachElement(async_dispatcher_t* dispatcher, PowerEleme
 void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
   // Add the node to |leaf_driver_instances_| if it has no descendants that are bound to a driver.
   if (!HasBoundDescendants(node)) {
-    leaf_driver_instances_.emplace(node->MakeComponentMoniker(), node);
+    leaf_driver_instances_.emplace(node->MakeTopologicalPath(), node);
 
     std::shared_ptr<fit::deferred_callback> on_lease_acquire =
         std::make_shared<fit::deferred_callback>(
@@ -68,20 +68,32 @@ void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
 
 void AllDriversElement::RemoveAncestors(std::shared_ptr<const Node> node) {
   for (const auto& parent_weak : node->parents()) {
-    if (auto parent = parent_weak.lock()) {
-      leaf_driver_instances_.erase(parent->MakeComponentMoniker());
-      leases_.erase(parent->MakeComponentMoniker());
+    auto parent = parent_weak.lock();
+    if (!parent) {
+      continue;
+    }
+
+    // Keep recursing up ancestor chain until we find a driver-bounded ancerstor.
+    // We stop recursing after this because anything remaining up should not be stored as
+    // a leaf driver instance.
+    if (!parent->is_bound()) {
       RemoveAncestors(parent);
+      continue;
+    }
+
+    if (leaf_driver_instances_.contains(parent->MakeTopologicalPath())) {
+      leaf_driver_instances_.erase(parent->MakeTopologicalPath());
+      leases_.erase(parent->MakeTopologicalPath());
     }
   }
 }
 
 void AllDriversElement::AcquireLease(std::shared_ptr<const Node> node,
                                      std::shared_ptr<fit::deferred_callback> deferred) {
-  std::string moniker = node->MakeComponentMoniker();
+  std::string topo_path = node->MakeTopologicalPath();
   zx::eventpair lease_token, lease_token_peer;
   if (zx::eventpair::create(0, &lease_token, &lease_token_peer) != ZX_OK) {
-    fdf_log::error("Failed to create lease token for node '{}'", moniker);
+    fdf_log::error("Failed to create lease token for node '{}'", topo_path);
     return;
   }
 
@@ -101,13 +113,13 @@ void AllDriversElement::AcquireLease(std::shared_ptr<const Node> node,
 
   driver_runner_->power_topology()
       ->Lease(std::move(schema))
-      .Then([this, moniker, lease_token = std::move(lease_token), deferred = std::move(deferred)](
+      .Then([this, topo_path, lease_token = std::move(lease_token), deferred = std::move(deferred)](
                 fidl::Result<fuchsia_power_broker::Topology::Lease>& result) mutable {
         if (!result.is_ok()) {
-          fdf_log::error("Failed to acquire lease for node '{}': {}", moniker,
+          fdf_log::error("Failed to acquire lease for node '{}': {}", topo_path,
                          result.error_value());
         } else if (current_level_ == 1) {
-          leases_.emplace(moniker, std::move(lease_token));
+          leases_.emplace(topo_path, std::move(lease_token));
         }
       });
 }
