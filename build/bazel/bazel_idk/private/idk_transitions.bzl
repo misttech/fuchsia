@@ -162,11 +162,9 @@ def _configured_host_cpus_transition_impl(settings, _attr):
     # TODO(https://fxbug.dev/442025401): Make this conditional on `sdk_cross_compile_host_tools`.
     # Consider merging this function with `_current_host_cpu_transition_impl()`.
     return [
-        # TODO(https://fxbug.dev/516865467): Uncomment this when issues with building Rust host
-        # tools for Linux arm64 are resolved.
-        # {
-        #     "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_arm64" % host_platform_os,
-        # } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES,
+        {
+            "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_arm64" % host_platform_os,
+        } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES,
         {
             "//command_line_option:platforms": "@//build/bazel/platforms:host_%s_x64" % host_platform_os,
         } | BUILD_SETTINGS_RESET_FOR_HOST_TOOLS_VALUES,
