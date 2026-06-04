@@ -10,38 +10,47 @@ use cm_types::IterablePath;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{
+    Capability, CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken,
+};
 use std::fmt::Debug;
+use std::sync::Arc;
 
 /// Implements the `lazy_get` function for [`Routable<Dictionary>`].
-pub trait LazyGet<T: CapabilityBound>: Routable<Dictionary> {
+pub trait LazyGet<T: CapabilityBound> {
     /// Returns a router that requests a dictionary from the specified `path` relative to
     /// the base routable or fails the request with `not_found_error` if the member is not
     /// found.
-    fn lazy_get<P>(self, path: P, not_found_error: RoutingError) -> Router<T>
+    fn lazy_get<P>(self, path: P, not_found_error: RoutingError) -> Arc<Router<T>>
     where
         P: IterablePath + Debug + 'static;
 }
 
-impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
-    fn lazy_get<P>(self, path: P, not_found_error: RoutingError) -> Router<T>
+impl<T: CapabilityBound> LazyGet<T> for Arc<Router<Dictionary>>
+where
+    Arc<T>: TryFrom<Capability>,
+{
+    fn lazy_get<P>(self, path: P, not_found_error: RoutingError) -> Arc<Router<T>>
     where
         P: IterablePath + Debug + 'static,
     {
         #[derive(Debug)]
         struct ScopedDictRouter<P: IterablePath + Debug + 'static> {
-            router: Router<Dictionary>,
+            router: Arc<Router<Dictionary>>,
             path: P,
             not_found_error: RoutingError,
         }
 
         #[async_trait]
-        impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P> {
+        impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P>
+        where
+            Arc<T>: TryFrom<Capability>,
+        {
             async fn route(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
-            ) -> Result<Option<T>, RouterError> {
+                target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<T>>, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
                 let init_request = (get_init_request)()?;
@@ -60,7 +69,7 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                             Ok(None) => Ok(None),
                             Ok(Some(cap)) => {
                                 let actual_type_name = cap.debug_typename();
-                                let cap = T::try_from(cap).map_err(|_| {
+                                let cap: Arc<T> = cap.try_into().map_err(|_| {
                                     RoutingError::BedrockWrongCapabilityType {
                                         expected: T::debug_typename().into(),
                                         actual: actual_type_name.into(),
@@ -78,7 +87,7 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
+                target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
@@ -116,7 +125,7 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
         }
 
         Router::<T>::new(ScopedDictRouter {
-            router: Router::<Dictionary>::new(self),
+            router: self,
             path,
             not_found_error: not_found_error.into(),
         })

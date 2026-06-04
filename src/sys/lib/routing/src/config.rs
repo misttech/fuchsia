@@ -66,7 +66,7 @@ where
         }
         Err(e) => return Err(e),
     };
-    let Data::Bytes(bytes) = data else {
+    let Data::Bytes(bytes) = &*data else {
         return Err(RoutingError::BedrockWrongCapabilityType {
             actual: format!("{:?}", data),
             expected: "Data::bytes".to_string(),
@@ -74,7 +74,7 @@ where
         }
         .into());
     };
-    let config_value: fidl_fuchsia_component_decl::ConfigValue = match fidl::unpersist(&bytes) {
+    let config_value: fidl_fuchsia_component_decl::ConfigValue = match fidl::unpersist(bytes) {
         Ok(v) => v,
         Err(_) => {
             return Err(RoutingError::BedrockWrongCapabilityType {

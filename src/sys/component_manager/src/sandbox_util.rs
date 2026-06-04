@@ -91,7 +91,7 @@ impl LaunchTaskOnReceive {
         Self { capability_source, task_to_launch, scope, policy, task_name: task_name.into() }
     }
 
-    pub fn into_sender(self: Arc<Self>, target: WeakComponentInstance) -> Connector {
+    pub fn into_sender(self: Arc<Self>, target: WeakComponentInstance) -> Arc<Connector> {
         #[derive(Debug)]
         struct TaskAndTarget {
             task: Arc<LaunchTaskOnReceive>,
@@ -118,7 +118,7 @@ impl LaunchTaskOnReceive {
         target: WeakComponentInstance,
         relative_path: RelativePath,
         allowed_flags: fio::Flags,
-    ) -> DirConnector {
+    ) -> Arc<DirConnector> {
         #[derive(Debug)]
         struct TaskAndTarget {
             task: Arc<LaunchTaskOnReceive>,
@@ -167,7 +167,7 @@ impl LaunchTaskOnReceive {
         })
     }
 
-    pub fn into_router(self) -> Router<Connector> {
+    pub fn into_router(self) -> Arc<Router<Connector>> {
         #[derive(Debug)]
         struct LaunchTaskRouter {
             inner: Arc<LaunchTaskOnReceive>,
@@ -177,8 +177,8 @@ impl LaunchTaskOnReceive {
             async fn route(
                 &self,
                 _request: RouteRequest,
-                target: WeakInstanceToken,
-            ) -> Result<Option<Connector>, RouterError> {
+                target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Connector>>, RouterError> {
                 let WeakExtendedInstance::Component(target) = target.to_instance() else {
                     return Err(cm_unexpected());
                 };
@@ -189,7 +189,7 @@ impl LaunchTaskOnReceive {
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Ok(self.inner.capability_source.clone())
             }
@@ -197,7 +197,7 @@ impl LaunchTaskOnReceive {
         Router::<Connector>::new(LaunchTaskRouter { inner: Arc::new(self) })
     }
 
-    pub fn into_dir_router(self) -> Router<DirConnector> {
+    pub fn into_dir_router(self) -> Arc<Router<DirConnector>> {
         #[derive(Debug)]
         struct LaunchTaskRouter {
             inner: Arc<LaunchTaskOnReceive>,
@@ -207,8 +207,8 @@ impl LaunchTaskOnReceive {
             async fn route(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
-            ) -> Result<Option<DirConnector>, RouterError> {
+                target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                 let WeakExtendedInstance::Component(target) = target.to_instance() else {
                     return Err(cm_unexpected());
                 };
@@ -222,7 +222,7 @@ impl LaunchTaskOnReceive {
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Ok(self.inner.capability_source.clone())
             }
@@ -259,18 +259,18 @@ impl LaunchTaskOnReceive {
 }
 
 /// Porcelain methods on [`Routable`] objects.
-pub trait RoutableExt: Routable<Connector> {
+pub trait RoutableExt {
     /// Returns a router that resolves with a [`runtime_capabilities::Connector`] that watches for
     /// the channel to be readable, then delegates to the current router. The wait
     /// is performed in the provided `scope`.
-    fn on_readable(self, scope: ExecutionScope) -> Router<Connector>;
+    fn on_readable(self, scope: ExecutionScope) -> Arc<Router<Connector>>;
 }
 
-impl<T: Routable<Connector> + 'static> RoutableExt for T {
-    fn on_readable(self, scope: ExecutionScope) -> Router<Connector> {
+impl RoutableExt for Arc<Router<Connector>> {
+    fn on_readable(self, scope: ExecutionScope) -> Arc<Router<Connector>> {
         #[derive(Debug)]
         struct OnReadableRouter {
-            router: Router<Connector>,
+            router: Arc<Router<Connector>>,
             scope: ExecutionScope,
         }
 
@@ -279,8 +279,8 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
             async fn route(
                 &self,
                 request: RouteRequest,
-                target_token: WeakInstanceToken,
-            ) -> Result<Option<Connector>, RouterError> {
+                target_token: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Connector>>, RouterError> {
                 let ExtendedInstance::Component(target) =
                     target_token.clone().to_instance().upgrade().map_err(RoutingError::from)?
                 else {
@@ -288,7 +288,7 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                 };
                 #[derive(Debug)]
                 struct DefaultRoutable<F: Send + Sync + 'static> {
-                    router: Router<Connector>,
+                    router: Arc<Router<Connector>>,
                     default_fn: F,
                 }
                 #[async_trait]
@@ -296,8 +296,8 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                     async fn route(
                         &self,
                         request: RouteRequest,
-                        target: WeakInstanceToken,
-                    ) -> Result<Option<Connector>, RouterError> {
+                        target: Arc<WeakInstanceToken>,
+                    ) -> Result<Option<Arc<Connector>>, RouterError> {
                         let request = if request != RouteRequest::default() {
                             request
                         } else {
@@ -309,7 +309,7 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                     async fn route_debug(
                         &self,
                         request: RouteRequest,
-                        target: WeakInstanceToken,
+                        target: Arc<WeakInstanceToken>,
                     ) -> Result<CapabilitySource, RouterError> {
                         let request = if request != RouteRequest::default() {
                             request
@@ -330,8 +330,8 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                 struct OnReadable {
                     scope: ExecutionScope,
                     target: Arc<ComponentInstance>,
-                    router: Router<Connector>,
-                    target_token: WeakInstanceToken,
+                    router: Arc<Router<Connector>>,
+                    target_token: Arc<WeakInstanceToken>,
                 }
                 impl Connectable for OnReadable {
                     fn send(&self, channel: zx::Channel) -> Result<(), ()> {
@@ -355,11 +355,11 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                 }
                 impl OnReadable {
                     async fn send_inner(
-                        router: &Router<Connector>,
+                        router: &Arc<Router<Connector>>,
                         target: &Arc<ComponentInstance>,
                         channel: &fidl::Channel,
-                        target_token: WeakInstanceToken,
-                    ) -> Result<Connector, zx::Status> {
+                        target_token: Arc<WeakInstanceToken>,
+                    ) -> Result<Arc<Connector>, zx::Status> {
                         let signals = fasync::OnSignalsRef::new(
                             channel.as_handle_ref(),
                             fidl::Signals::OBJECT_READABLE | fidl::Signals::CHANNEL_PEER_CLOSED,
@@ -411,13 +411,13 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                target_token: WeakInstanceToken,
+                target_token: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 return self.router.route_debug(request, target_token).await;
             }
         }
 
-        Router::<Connector>::new(OnReadableRouter { router: Router::<Connector>::new(self), scope })
+        Router::<Connector>::new(OnReadableRouter { router: self, scope })
     }
 }
 
@@ -435,7 +435,7 @@ pub mod tests {
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, LazyGet, test_invalid_instance_token};
-    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability, Routable};
+    use runtime_capabilities::{Capability, CapabilityBound, Data, Dictionary, Routable};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
@@ -504,7 +504,7 @@ pub mod tests {
     #[fuchsia::test]
     async fn get_with_request_ok() {
         let bar = Dictionary::new();
-        let data = Data::String("hello".into());
+        let data = Arc::new(Data::String("hello".into()));
         assert!(bar.insert_capability(&RelativePath::new("data").unwrap(), data.into()).is_none());
         let bar_router = Router::<Dictionary>::new_ok(bar);
 
@@ -533,8 +533,8 @@ pub mod tests {
             .await;
         assert_matches!(
             cap,
-            Ok(Some(Capability::Data(Data::String(str))))
-                if &*str == "hello"
+            Ok(Some(Capability::Data(data_arc)))
+                if matches!(&*data_arc, Data::String(str) if &**str == "hello")
         );
     }
 
@@ -641,12 +641,12 @@ pub mod tests {
 
     #[derive(Debug, Clone)]
     struct RouteCounter {
-        connector: Connector,
+        connector: Arc<Connector>,
         counter: Arc<test_util::Counter>,
     }
 
     impl RouteCounter {
-        fn new(connector: Connector) -> Self {
+        fn new(connector: Arc<Connector>) -> Self {
             Self { connector, counter: Arc::new(test_util::Counter::new(0)) }
         }
 
@@ -660,8 +660,8 @@ pub mod tests {
         async fn route(
             &self,
             _: RouteRequest,
-            _: WeakInstanceToken,
-        ) -> Result<Option<Connector>, RouterError> {
+            _: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<Connector>>, RouterError> {
             self.counter.inc();
             Ok(Some(self.connector.clone()))
         }
@@ -669,7 +669,7 @@ pub mod tests {
         async fn route_debug(
             &self,
             _: RouteRequest,
-            _: WeakInstanceToken,
+            _: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             unimplemented!("should not be called during tests");
         }
@@ -682,7 +682,7 @@ pub mod tests {
         let (client_end, server_end) = zx::Channel::create();
 
         let route_counter = RouteCounter::new(sender);
-        let router = route_counter.clone().on_readable(scope.clone());
+        let router = Router::new(route_counter.clone()).on_readable(scope.clone());
 
         let mut receive = pin!(receiver.receive());
         assert_matches!(TestExecutor::poll_until_stalled(&mut receive).await, Poll::Pending);
@@ -732,7 +732,7 @@ pub mod tests {
         let (client_end, server_end) = zx::Channel::create();
 
         let route_counter = RouteCounter::new(sender.into());
-        let router = route_counter.clone().on_readable(scope.clone());
+        let router = Router::new(route_counter.clone()).on_readable(scope.clone());
 
         let mut receive = pin!(receiver.receive());
         assert_matches!(TestExecutor::poll_until_stalled(&mut receive).await, Poll::Pending);
@@ -789,15 +789,15 @@ pub mod tests {
             async fn route(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<Connector>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Connector>>, RouterError> {
                 panic!("non-debug routing unexpected");
             }
 
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Ok(CapabilitySource::Void(VoidSource {
                     capability: InternalCapability::Protocol(Name::new("a").unwrap()),
@@ -825,13 +825,13 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn lazy_get() {
-        let source = Capability::Data(Data::String("hello".into()));
+        let source = Capability::Data(Arc::new(Data::String("hello".into())));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source);
         assert!(prev.is_none(), "dict entry already exists");
 
         let base_router = Router::<Dictionary>::new_ok(dict1);
-        let downscoped_router: Router<Data> = base_router.lazy_get(
+        let downscoped_router: Arc<Router<Data>> = base_router.lazy_get(
             RelativePath::new("source").unwrap(),
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
@@ -848,12 +848,12 @@ pub mod tests {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 
     #[fuchsia::test]
     async fn lazy_get_deep() {
-        let source = Capability::Data(Data::String("hello".into()));
+        let source = Capability::Data(Arc::new(Data::String("hello".into())));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source);
         assert!(prev.is_none(), "dict entry already exists");
@@ -868,7 +868,7 @@ pub mod tests {
         assert!(prev.is_none(), "dict entry already exists");
 
         let base_router = Router::<Dictionary>::new_ok(dict4);
-        let downscoped_router: Router<Data> = base_router.lazy_get(
+        let downscoped_router: Arc<Router<Data>> = base_router.lazy_get(
             RelativePath::new("dict3/dict2/dict1/source").unwrap(),
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
@@ -885,12 +885,12 @@ pub mod tests {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 
     #[fuchsia::test]
     async fn get_router_or_not_found() {
-        let source = Router::<Data>::new_ok(Data::String("hello".into()));
+        let source = Router::<Data>::new_ok(Arc::new(Data::String("hello".into())));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source.into());
         assert!(prev.is_none(), "dict entry already exists");
@@ -906,12 +906,12 @@ pub mod tests {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 
     #[fuchsia::test]
     async fn get_router_or_not_found_deep() {
-        let source = Data::String("hello".into());
+        let source = Arc::new(Data::String("hello".into()));
         let dict1 = Dictionary::new();
         let prev = dict1.insert("source".parse().unwrap(), source.into());
         assert!(prev.is_none(), "dict entry already exists");
@@ -937,6 +937,6 @@ pub mod tests {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 }

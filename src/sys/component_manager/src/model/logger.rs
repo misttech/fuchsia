@@ -32,7 +32,7 @@ impl LoggerCache {
         moniker: &Moniker,
         resolved_instance_state: &ResolvedInstanceState,
         record: &log::Record,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) {
         if !Self::try_attributed_log(moniker, resolved_instance_state, record, target) {
             log::logger().log(record);
@@ -49,7 +49,7 @@ impl LoggerCache {
         moniker: &Moniker,
         resolved_instance_state: &ResolvedInstanceState,
         record: &log::Record,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> bool {
         let publisher_opt = {
             let mut cache = LOGGER_CACHE.lock();

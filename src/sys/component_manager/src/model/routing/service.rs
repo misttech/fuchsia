@@ -149,7 +149,7 @@ pub trait AnonymizedAggregateCapabilityProvider: Send + Sync {
     async fn route_instance(
         &self,
         instance: &AggregateInstance,
-    ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError>;
+    ) -> Result<(Arc<Router<DirConnector>>, CapabilitySource), RoutingError>;
 }
 
 pub struct AnonymizedAggregateServiceDir {
@@ -313,7 +313,7 @@ impl AnonymizedAggregateServiceDir {
     fn spawn_instance_watcher_task(
         self: &Arc<Self>,
         instance: AggregateInstance,
-        router: Router<DirConnector>,
+        router: Arc<Router<DirConnector>>,
         source: CapabilitySource,
     ) -> Result<(), ModelError> {
         let scope = &self.parent.upgrade()?.execution_scope;
@@ -921,7 +921,7 @@ mod tests {
         async fn route_instance(
             &self,
             instance: &AggregateInstance,
-        ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError> {
+        ) -> Result<(Arc<Router<DirConnector>>, CapabilitySource), RoutingError> {
             let instances_guard = self.instances.lock();
             let Some(component_instance) = instances_guard.get(instance) else {
                 let err = match instance {
@@ -953,7 +953,9 @@ mod tests {
                 weak_component: WeakComponentInstance,
             }
             impl TestRouter {
-                async fn get_service_router(&self) -> Result<Router<DirConnector>, RoutingError> {
+                async fn get_service_router(
+                    &self,
+                ) -> Result<Arc<Router<DirConnector>>, RoutingError> {
                     let component = self.weak_component.upgrade().map_err(RoutingError::from)?;
                     let program_output_dict = component
                         .lock_resolved_state()
@@ -980,8 +982,8 @@ mod tests {
                 async fn route(
                     &self,
                     _request: RouteRequest,
-                    target: WeakInstanceToken,
-                ) -> Result<Option<DirConnector>, RouterError> {
+                    target: Arc<WeakInstanceToken>,
+                ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                     let service_router = self.get_service_router().await?;
                     let request = service_metadata(cm_types::Availability::Required);
                     service_router.route(request, target).await
@@ -990,7 +992,7 @@ mod tests {
                 async fn route_debug(
                     &self,
                     _request: RouteRequest,
-                    _target: WeakInstanceToken,
+                    _target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     panic!("debug routing not expected");
                 }

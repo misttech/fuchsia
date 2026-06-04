@@ -20,27 +20,38 @@ impl Connectable for mpsc::UnboundedSender<fidl::Channel> {
 }
 
 /// A capability that transfers another capability to a [Receiver].
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Connector {
-    inner: Arc<dyn Connectable>,
+    inner: Box<dyn Connectable>,
 }
 
 impl CapabilityBound for Connector {
     fn debug_typename() -> &'static str {
         "Connector"
     }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        _scope: vfs::execution_scope::ExecutionScope,
+        _token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(vfs::service::endpoint(move |_scope, server_end| {
+            let _ = self.send(server_end.into_zx_channel().into());
+        }))
+    }
 }
 
 impl Connector {
-    pub fn new() -> (Receiver, Self) {
+    pub fn new() -> (Receiver, Arc<Self>) {
         let (sender, receiver) = mpsc::unbounded();
         let receiver = Receiver::new(receiver);
         let this = Self::new_sendable(sender);
         (receiver, this)
     }
 
-    pub fn new_sendable(connector: impl Connectable + 'static) -> Self {
-        Self { inner: Arc::new(connector) }
+    pub fn new_sendable(connector: impl Connectable + 'static) -> Arc<Self> {
+        Arc::new(Self { inner: Box::new(connector) })
     }
 
     pub fn send(&self, channel: fidl::Channel) -> Result<(), ()> {
@@ -57,6 +68,7 @@ impl Connectable for Connector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Capability;
     use fidl::handle::{Channel, Rights};
     use fidl_fuchsia_component_sandbox as fsandbox;
 
@@ -73,20 +85,17 @@ mod tests {
         sender.send(ch1).unwrap();
 
         // Convert the Sender to a FIDL token.
-        let connector: fsandbox::Connector = sender.into();
+        let connector: fsandbox::Connector = sender.to_fsandbox();
 
         // Clone the Sender by cloning the token.
         let token_clone = fsandbox::Connector {
             token: connector.token.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
         };
-        let connector_clone = match crate::Capability::try_from(fsandbox::Capability::Connector(
-            token_clone,
-        ))
-        .unwrap()
-        {
-            crate::Capability::Connector(connector) => connector,
-            capability @ _ => panic!("wrong type {capability:?}"),
-        };
+        let connector_clone =
+            match Capability::try_from(fsandbox::Capability::Connector(token_clone)).unwrap() {
+                Capability::Connector(connector) => connector,
+                capability @ _ => panic!("wrong type {capability:?}"),
+            };
 
         // Send a channel through the cloned Sender.
         let (ch1, _ch2) = Channel::create();

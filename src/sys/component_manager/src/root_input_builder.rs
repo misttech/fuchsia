@@ -199,8 +199,8 @@ impl RootInputBuilder {
             async fn route(
                 &self,
                 request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<DirConnector>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                 let rights: ::routing::rights::Rights =
                     request.directory_rights.ok_or(RouterError::InvalidArgs)?.into();
                 let subdir: ::routing::subdir::SubDir = request
@@ -251,7 +251,7 @@ impl RootInputBuilder {
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Ok(self.capability_source.clone())
             }
@@ -452,12 +452,12 @@ impl RootInputBuilder {
             async fn route(
                 &self,
                 request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<Dictionary>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Dictionary>>, RouterError> {
                 let request_metadata = Dictionary::new();
                 let _ = request_metadata.insert(
                     Name::new("event_stream_name").unwrap(),
-                    Capability::Data(Data::String(self.event_type.to_string().into())),
+                    Capability::Data(Arc::new(Data::String(self.event_type.to_string().into()))),
                 );
                 let esrm = finternal::EventStreamRouteMetadata {
                     scope_moniker: request.event_stream_scope_moniker,
@@ -466,9 +466,9 @@ impl RootInputBuilder {
                 };
                 let _ = request_metadata.insert(
                     Name::new("event_stream_route_metadata").unwrap(),
-                    Capability::Data(Data::Bytes(
+                    Capability::Data(Arc::new(Data::Bytes(
                         fidl::persist(&esrm).expect("failed to persist metadata").into(),
-                    )),
+                    ))),
                 );
                 Ok(Some(request_metadata))
             }
@@ -476,7 +476,7 @@ impl RootInputBuilder {
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 let name = Name::new(self.event_type.as_str()).unwrap();
                 Ok(CapabilitySource::Builtin(BuiltinSource {
@@ -509,7 +509,7 @@ impl ErrorReporter for NullErrorReporter {
         &self,
         _: &RouteRequestErrorInfo,
         _: &RouterError,
-        _: runtime_capabilities::WeakInstanceToken,
+        _: Arc<runtime_capabilities::WeakInstanceToken>,
     ) {
     }
 }

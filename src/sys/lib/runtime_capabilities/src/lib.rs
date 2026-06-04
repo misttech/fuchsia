@@ -30,4 +30,4 @@ pub use self::receiver::{DirReceiver, Receiver};
 pub use self::router::{Routable, Router};
 
 #[cfg(target_os = "fuchsia")]
-pub use {self::fidl::store::serve_capability_store, fidl::RemotableCapability};
+pub use self::fidl::store::serve_capability_store;

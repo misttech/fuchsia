@@ -121,8 +121,8 @@ impl From<&StorageStatusError> for fsys::StatusError {
 pub struct StorageAdmin {
     storage_decl: StorageDecl,
     weak_component: WeakComponentInstance,
-    storage_router: Router<DirConnector>,
-    backing_dir_router: Router<DirConnector>,
+    storage_router: Arc<Router<DirConnector>>,
+    backing_dir_router: Arc<Router<DirConnector>>,
 }
 
 impl StorageAdmin {
@@ -165,7 +165,7 @@ impl StorageAdmin {
         Ok(Arc::new(Self { storage_decl, weak_component, storage_router, backing_dir_router }))
     }
 
-    fn get_storage_router(&self, target: &Arc<ComponentInstance>) -> Router<DirConnector> {
+    fn get_storage_router(&self, target: &Arc<ComponentInstance>) -> Arc<Router<DirConnector>> {
         let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
         self.storage_router
             .clone()
@@ -196,7 +196,7 @@ impl StorageAdmin {
     async fn open_storage_as(
         &self,
         target: &Arc<ComponentInstance>,
-    ) -> Result<DirConnector, fcomponent::Error> {
+    ) -> Result<Arc<DirConnector>, fcomponent::Error> {
         let router_res = self
             .get_storage_router(target)
             .route(RouteRequest::default(), target.as_weak().into())
@@ -216,7 +216,7 @@ impl StorageAdmin {
         target: &Arc<ComponentInstance>,
     ) -> Result<fio::DirectoryProxy, fcomponent::Error> {
         let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
-        let backing_dir_router: Router<DirConnector> = self
+        let backing_dir_router: Arc<Router<DirConnector>> = self
             .backing_dir_router
             .clone()
             .with_porcelain_with_default(CapabilityTypeName::Directory)

@@ -11,6 +11,7 @@ use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{CapabilityBound, Routable, Router, WeakInstanceToken};
+use std::sync::Arc;
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -41,20 +42,20 @@ pub trait WithPolicyCheck {
     ) -> Self;
 }
 
-impl<T: CapabilityBound> WithPolicyCheck for Router<T> {
+impl<T: CapabilityBound> WithPolicyCheck for Arc<Router<T>> {
     fn with_policy_check<C: ComponentInstanceInterface + 'static>(
         self,
         capability_source: CapabilitySource,
         policy_checker: GlobalPolicyChecker,
     ) -> Self {
-        Self::new(PolicyCheckRouter::<C, T>::new(capability_source, policy_checker, self))
+        Router::new(PolicyCheckRouter::<C, T>::new(capability_source, policy_checker, self))
     }
 }
 
 pub struct PolicyCheckRouter<C: ComponentInstanceInterface + 'static, T: CapabilityBound> {
     capability_source: CapabilitySource,
     policy_checker: GlobalPolicyChecker,
-    router: Router<T>,
+    router: Arc<Router<T>>,
     _phantom_data: std::marker::PhantomData<C>,
 }
 
@@ -62,7 +63,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> PolicyCheckRou
     pub fn new(
         capability_source: CapabilitySource,
         policy_checker: GlobalPolicyChecker,
-        router: Router<T>,
+        router: Arc<Router<T>>,
     ) -> Self {
         Self {
             capability_source,
@@ -75,7 +76,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> PolicyCheckRou
     fn check_policy(
         &self,
         _request: &RouteRequest,
-        target_token: WeakInstanceToken,
+        target_token: Arc<WeakInstanceToken>,
     ) -> Result<(), RouterError> {
         #[cfg(not(target_os = "fuchsia"))]
         if _request.skip_policy_checks.unwrap_or(false) {
@@ -106,8 +107,8 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
     async fn route(
         &self,
         request: RouteRequest,
-        target_token: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target_token: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         self.check_policy(&request, target_token.clone())?;
         self.router.route(request, target_token).await
     }
@@ -115,7 +116,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target_token: WeakInstanceToken,
+        target_token: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         self.check_policy(&request, target_token.clone())?;
         self.router.route_debug(request, target_token).await

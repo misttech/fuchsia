@@ -195,7 +195,7 @@ pub async fn route_backing_directory(
             child_sandbox.component_output.capabilities().clone()
         }
     };
-    let backing_dir_router: Router<DirConnector> = source_dictionary.get_router_or_not_found(
+    let backing_dir_router: Arc<Router<DirConnector>> = source_dictionary.get_router_or_not_found(
         &storage_decl.backing_dir,
         RoutingError::BedrockNotPresentInDictionary {
             moniker: storage_component.moniker().clone().into(),
@@ -477,7 +477,7 @@ pub(crate) fn generate_instance_id_based_storage_path(instance_id: &InstanceId) 
 pub fn build_storage_admin_dictionary(
     component: &Arc<ComponentInstance>,
     decl: &cm_rust::ComponentDecl,
-) -> Dictionary {
+) -> Arc<Dictionary> {
     let storage_admin_dictionary = Dictionary::new();
     for storage_decl in decl.capabilities.iter().filter_map(|capability| match capability {
         cm_rust::CapabilityDecl::Storage(storage_decl) => Some(storage_decl.clone()),

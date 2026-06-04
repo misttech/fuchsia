@@ -15,6 +15,7 @@ use runtime_capabilities::{
     Capability, CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken,
 };
 use std::fmt::Debug;
+use std::sync::Arc;
 
 #[async_trait]
 pub trait DictExt {
@@ -33,10 +34,14 @@ pub trait DictExt {
         &self,
         path: &impl IterablePath,
         not_found_error: RoutingError,
-    ) -> Router<T>
+    ) -> Arc<Router<T>>
     where
         T: CapabilityBound,
-        Router<T>: TryFrom<Capability>;
+        Arc<T>: TryFrom<Capability>,
+        Arc<Router<T>>: TryFrom<Capability>,
+        Capability: From<Arc<T>>,
+        Capability: From<Arc<Router<T>>>,
+        Router<T>: CapabilityBound;
 
     /// Inserts the capability at the path. Intermediary dictionaries are created as needed. If
     /// there's already a capability at the path, then the preexisting value is returned.
@@ -61,7 +66,7 @@ pub trait DictExt {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Capability>, RouterError>;
 
     /// Identical to `get_with_request`, except it returns the source of the capability at `path`
@@ -71,15 +76,17 @@ pub trait DictExt {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError>;
 }
 
 #[async_trait]
-impl DictExt for Dictionary {
+impl DictExt for Arc<Dictionary> {
     fn get_capability(&self, path: &impl IterablePath) -> Option<Capability> {
         let mut segments = path.iter_segments();
-        let Some(mut current_name) = segments.next() else { return Some(self.clone().into()) };
+        let Some(mut current_name) = segments.next() else {
+            return Some(Capability::Dictionary(self.clone()));
+        };
         let mut current_dict = self.clone();
         loop {
             match segments.next() {
@@ -99,10 +106,14 @@ impl DictExt for Dictionary {
         &self,
         path: &impl IterablePath,
         not_found_error: RoutingError,
-    ) -> Router<T>
+    ) -> Arc<Router<T>>
     where
         T: CapabilityBound,
-        Router<T>: TryFrom<Capability>,
+        Arc<T>: TryFrom<Capability>,
+        Arc<Router<T>>: TryFrom<Capability>,
+        Router<T>: CapabilityBound,
+        Capability: From<Arc<T>>,
+        Capability: From<Arc<Router<T>>>,
     {
         let mut segments = path.iter_segments();
         let root = segments.next().expect("path must be nonempty");
@@ -117,15 +128,15 @@ impl DictExt for Dictionary {
             async fn route(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<T>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<T>>, RouterError> {
                 Err(self.not_found_error.clone())
             }
 
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Err(self.not_found_error.clone())
             }
@@ -136,18 +147,23 @@ impl DictExt for Dictionary {
         /// away once [Router] is replaced with [Router].
         #[derive(Debug)]
         struct ScopedDictRouter<P: IterablePath + Debug + 'static> {
-            router: Router<Dictionary>,
+            router: Arc<Router<Dictionary>>,
             path: P,
             not_found_error: RoutingError,
         }
 
         #[async_trait]
-        impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P> {
+        impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P>
+        where
+            Arc<T>: TryFrom<Capability>,
+            Arc<Router<T>>: TryFrom<Capability>,
+            Capability: From<Arc<Router<T>>>,
+        {
             async fn route(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
-            ) -> Result<Option<T>, RouterError> {
+                target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<T>>, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
                 let init_request = (get_init_request)()?;
@@ -166,7 +182,7 @@ impl DictExt for Dictionary {
                             Ok(None) => Ok(None),
                             Ok(Some(cap)) => {
                                 let actual_type_name = cap.debug_typename();
-                                let cap = T::try_from(cap).map_err(|_| {
+                                let cap: Arc<T> = cap.try_into().map_err(|_| {
                                     RoutingError::BedrockWrongCapabilityType {
                                         expected: T::debug_typename().into(),
                                         actual: actual_type_name.into(),
@@ -184,7 +200,7 @@ impl DictExt for Dictionary {
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
+                target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
@@ -223,8 +239,7 @@ impl DictExt for Dictionary {
 
         if segments.next().is_none() {
             // No nested lookup necessary.
-            let Some(router) = self.get(root).and_then(|cap| Router::<T>::try_from(cap).ok())
-            else {
+            let Some(router) = self.get(root).and_then(|cap| cap.try_into().ok()) else {
                 return Router::<T>::new(ErrorRouter { not_found_error: not_found_error.into() });
             };
             return router;
@@ -327,7 +342,7 @@ impl DictExt for Dictionary {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Capability>, RouterError> {
         let mut current_dict = self.clone();
         let num_segments = path.iter_segments().count();
@@ -399,7 +414,7 @@ impl DictExt for Dictionary {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let mut current_dict = self.clone();
         let mut closest_moniker = moniker.clone();
@@ -524,7 +539,7 @@ pub(super) fn request_with_dictionary_replacement(
 }
 
 struct AdditiveDictionaryRouter {
-    preexisting_router: Router<Dictionary>,
+    preexisting_router: Arc<Router<Dictionary>>,
     path: RelativePath,
     capability: Capability,
 }
@@ -534,8 +549,8 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         let dictionary = match self.preexisting_router.route(request, target).await {
             Ok(Some(dictionary)) => dictionary.shallow_copy(),
             other_response => return other_response,
@@ -547,7 +562,7 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         self.preexisting_router.route_debug(request, target).await
     }

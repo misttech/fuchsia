@@ -26,9 +26,7 @@ use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::RW_STAR_DIR;
 use itertools::Itertools;
 use moniker::ChildName;
-use runtime_capabilities::{
-    Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router,
-};
+use runtime_capabilities::{Capability, CapabilityBound, Dictionary, DirConnector, Router};
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -134,7 +132,7 @@ pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface
     let sandbox_path = sandbox_path.into();
     let path: RelativePath = sandbox_path.clone().into();
     let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
-    let sandbox_dictionary: Dictionary = sandbox.into();
+    let sandbox_dictionary: Arc<Dictionary> = sandbox.into();
     let component_moniker = component.moniker().clone();
     sandbox_dictionary
         .get_with_request_debug(
@@ -178,7 +176,7 @@ pub async fn debug_route_storage_backing_directory<C: ComponentInstanceInterface
 }
 
 async fn route_capability_inner<T, C>(
-    dictionary: &Dictionary,
+    dictionary: &Arc<Dictionary>,
     path: &impl IterablePath,
     request: RouteRequest,
     target: &Arc<C>,
@@ -186,7 +184,11 @@ async fn route_capability_inner<T, C>(
 where
     C: ComponentInstanceInterface + 'static,
     T: CapabilityBound + Debug,
-    Router<T>: TryFrom<Capability>,
+    Arc<T>: TryFrom<Capability>,
+    Router<T>: CapabilityBound,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
+    Arc<Router<T>>: TryFrom<Capability>,
 {
     let router = dictionary.get_router_or_not_found(
         path,
@@ -199,14 +201,14 @@ where
 }
 
 async fn perform_route<T, C>(
-    router: impl Routable<T>,
+    router: Arc<Router<T>>,
     request: RouteRequest,
     target: &Arc<C>,
 ) -> Result<CapabilitySource, RoutingError>
 where
     C: ComponentInstanceInterface + 'static,
     T: CapabilityBound + Debug,
-    Router<T>: TryFrom<Capability>,
+    Arc<Router<T>>: TryFrom<Capability>,
 {
     router
         .route_debug(request, target.as_weak().into())

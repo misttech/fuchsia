@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::registry::try_from_handle_in_registry;
-use crate::{Capability, ConversionError, RemotableCapability, RemoteError, WeakInstanceToken};
+use crate::{Capability, CapabilityBound, ConversionError, RemoteError, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
 
 impl crate::fidl::IntoFsandboxCapability for Capability {
-    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
+    fn into_fsandbox_capability(self, token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
         match self {
             Capability::Connector(s) => s.into_fsandbox_capability(token),
             Capability::DirConnector(s) => s.into_fsandbox_capability(token),
@@ -37,11 +37,22 @@ impl TryFrom<fsandbox::Capability> for Capability {
     fn try_from(capability: fsandbox::Capability) -> Result<Self, Self::Error> {
         match capability {
             fsandbox::Capability::Unit(_) => Err(RemoteError::UnknownVariant),
-            fsandbox::Capability::Handle(handle) => Ok(crate::Handle::new(handle).into()),
-            fsandbox::Capability::Data(data_capability) => {
-                Ok(crate::Data::try_from(data_capability)?.into())
+            fsandbox::Capability::Handle(handle) => {
+                Ok(Capability::Handle(crate::Handle::new(handle)))
             }
-            fsandbox::Capability::Dictionary(dict) => Ok(crate::Dictionary::try_from(dict)?.into()),
+            fsandbox::Capability::Data(data_capability) => {
+                Ok(Capability::Data(Arc::new(<crate::Data as std::convert::TryFrom<
+                    fsandbox::Data,
+                >>::try_from(data_capability)?)))
+            }
+            fsandbox::Capability::Dictionary(dict) => {
+                let any = try_from_handle_in_registry(dict.token.as_handle_ref())?;
+                match &any {
+                    Capability::Dictionary(_) => (),
+                    _ => return Err(RemoteError::BadCapability),
+                };
+                Ok(any)
+            }
             fsandbox::Capability::Connector(connector) => {
                 let any = try_from_handle_in_registry(connector.token.as_handle_ref())?;
                 match &any {
@@ -89,11 +100,11 @@ impl TryFrom<fsandbox::Capability> for Capability {
     }
 }
 
-impl RemotableCapability for Capability {
-    fn try_into_directory_entry(
+impl Capability {
+    pub fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         match self {
             Self::Connector(s) => s.try_into_directory_entry(scope, token),

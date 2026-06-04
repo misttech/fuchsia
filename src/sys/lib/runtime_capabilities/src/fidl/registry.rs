@@ -117,6 +117,7 @@ mod tests {
     use crate::Data;
     use assert_matches::assert_matches;
     use futures::channel::oneshot;
+    use std::sync::Arc;
 
     /// Tests that a capability can be inserted and retrieved from a Registry.
     #[test]
@@ -125,7 +126,7 @@ mod tests {
 
         // Insert a Data capability into the registry.
         let koid = Koid::from_raw(123);
-        let data = Data::Int64(0);
+        let data = Arc::new(Data::Int64(0));
         assert!(registry.insert(koid, Entry { capability: data.into(), task: None }).is_none());
 
         // Get a capability with the same koid. It should be a Data.
@@ -152,7 +153,7 @@ mod tests {
         });
 
         let koid = Koid::from_raw(123);
-        let data = Data::Int64(0);
+        let data = Arc::new(Data::Int64(0));
 
         insert(data.into(), koid, task);
 

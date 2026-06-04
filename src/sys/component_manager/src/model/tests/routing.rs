@@ -17,14 +17,14 @@ use {
         actions::{
             ActionsManager, DestroyAction, ShutdownAction, ShutdownType, StartAction, StopAction,
         },
-        component::{ComponentInstance, IncomingCapabilities, StartReason},
+        component::{IncomingCapabilities, StartReason, WeakExtendedInstance},
         testing::{
             echo_service::EchoProtocol, mocks::ControllerActionResponse, out_dir::OutDir,
             routing_test_helpers::*, test_helpers::*,
         },
     },
     ::routing::{
-        DictExt, WeakInstanceTokenExt,
+        DictExt,
         bedrock::request_metadata::protocol_metadata,
         error::{ComponentInstanceError, RoutingError},
         resolving::ResolverError,
@@ -64,7 +64,7 @@ use {
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
-    runtime_capabilities::{Connector, Router, WeakInstanceToken},
+    runtime_capabilities::{Connector, Router},
     std::time::Duration,
     std::{
         collections::HashSet,
@@ -964,7 +964,7 @@ async fn create_child_with_dict() {
         &Moniker::root(),
         "coll",
         ChildBuilder::new().name("b"),
-        fcomponent::CreateChildArgs { dictionary: Some(dict.into()), ..Default::default() },
+        fcomponent::CreateChildArgs { dictionary: Some(dict.to_fsandbox()), ..Default::default() },
     )
     .await;
 
@@ -3324,7 +3324,7 @@ async fn source_component_stopping_when_routing() {
     let route_and_open_fut = async {
         // Route the capability.
         let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
-        let cap = Router::<Connector>::try_from(cap).unwrap();
+        let cap: Arc<Router<Connector>> = cap.try_into().unwrap();
         let conn = cap
             .route(protocol_metadata(Availability::Required), root.as_weak().into())
             .await
@@ -3383,7 +3383,7 @@ async fn source_component_stopped_after_routing_before_open() {
         root.lock_resolved_state().await.unwrap().sandbox.component_output.capabilities().clone();
 
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
-    let cap = Router::<Connector>::try_from(cap).unwrap();
+    let cap: Arc<Router<Connector>> = cap.try_into().unwrap();
     let conn = cap
         .route(protocol_metadata(Availability::Required), root.as_weak().into())
         .await
@@ -3447,7 +3447,7 @@ async fn source_component_shutdown_after_routing_before_open() {
     let output =
         root.lock_resolved_state().await.unwrap().sandbox.component_output.capabilities().clone();
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
-    let cap = Router::<Connector>::try_from(cap).unwrap();
+    let cap: Arc<Router<Connector>> = cap.try_into().unwrap();
     let conn = cap
         .route(protocol_metadata(Availability::Required), root.as_weak().into())
         .await
@@ -3500,10 +3500,10 @@ impl Hook for BlockingResolvedHook {
         match &event.payload {
             EventPayload::Resolved { component, .. } => {
                 let expected_moniker = self.receiver.lock().await.next().await.unwrap();
+                let weak_extended_component: WeakExtendedInstance =
+                    component.clone().try_into().expect("invalid token");
                 let ExtendedMoniker::ComponentInstance(moniker) =
-                    <WeakInstanceToken as WeakInstanceTokenExt<ComponentInstance>>::moniker(
-                        component,
-                    )
+                    weak_extended_component.extended_moniker()
                 else {
                     panic!("did not expect component_manager");
                 };

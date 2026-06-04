@@ -21,8 +21,8 @@ where
         &self,
         request: RouteRequest,
         // A reference to the requesting component.
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError>;
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError>;
 
     /// Performs the same operation as `route`, but returns a
     /// `fidl_fuchsia_internal::CapabilitySource` persisted into bytes.
@@ -30,7 +30,7 @@ where
         &self,
         request: RouteRequest,
         // A reference to the requesting component.
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError>;
 }
 
@@ -41,30 +41,65 @@ where
 /// During routing, a request usually traverses through the component topology,
 /// passing through several routers, ending up at some router that will fulfill
 /// the request instead of forwarding it upstream.
-#[derive(Clone)]
 pub struct Router<T: CapabilityBound> {
-    routable: Arc<dyn Routable<T>>,
+    routable: Box<dyn Routable<T>>,
 }
 
 impl CapabilityBound for Router<crate::Connector> {
     fn debug_typename() -> &'static str {
         "ConnectorRouter"
     }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+        token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(self.into_directory_entry(fidl_fuchsia_io::DirentType::Service, scope, token))
+    }
 }
 impl CapabilityBound for Router<crate::Data> {
     fn debug_typename() -> &'static str {
         "DataRouter"
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+        token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(self.into_directory_entry(fidl_fuchsia_io::DirentType::Service, scope, token))
     }
 }
 impl CapabilityBound for Router<crate::Dictionary> {
     fn debug_typename() -> &'static str {
         "DictionaryRouter"
     }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+        token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(self.into_directory_entry(fidl_fuchsia_io::DirentType::Service, scope, token))
+    }
 }
 
 impl CapabilityBound for Router<crate::DirConnector> {
     fn debug_typename() -> &'static str {
         "DirConnectorRouter"
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+        token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(self.into_directory_entry(fidl_fuchsia_io::DirentType::Service, scope, token))
     }
 }
 
@@ -80,15 +115,15 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         Router::route(self, request, target).await
     }
 
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Router::route_debug(self, request, target).await
     }
@@ -96,18 +131,18 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
 
 impl<T: CapabilityBound> Router<T> {
     /// Package a [`Routable`] object into a [`Router`].
-    pub fn new(routable: impl Routable<T> + 'static) -> Self {
-        Self { routable: Arc::new(routable) }
+    pub fn new(routable: impl Routable<T> + 'static) -> Arc<Self> {
+        Arc::new(Self { routable: Box::new(routable) })
     }
 
     /// Creates a router that will always fail a request with the provided error.
-    pub fn new_error(error: impl Into<RouterError>) -> Self {
+    pub fn new_error(error: impl Into<RouterError>) -> Arc<Self> {
         let v: RouterError = error.into();
         Self::new(ErrRouter { v })
     }
 
     /// Creates a router that will always return the given debug info.
-    pub fn new_debug(source: CapabilitySource) -> Self {
+    pub fn new_debug(source: CapabilitySource) -> Arc<Self> {
         Self::new(DebugRouter { source })
     }
 
@@ -115,8 +150,8 @@ impl<T: CapabilityBound> Router<T> {
     pub async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         self.routable.route(request, target).await
     }
 
@@ -124,40 +159,40 @@ impl<T: CapabilityBound> Router<T> {
     pub async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         self.routable.route_debug(request, target).await
     }
 }
 
-impl<T: Clone + CapabilityBound> Router<T> {
+impl<T: CapabilityBound> Router<T> {
     /// Creates a router that will always resolve with the provided capability.
     // TODO: Should this require debug info?
-    pub fn new_ok(c: impl Into<T>) -> Self {
-        let v: T = c.into();
+    pub fn new_ok(c: impl Into<Arc<T>>) -> Arc<Self> {
+        let v: Arc<T> = c.into();
         Self::new(OkRouter { v })
     }
 }
 
 #[derive(Clone)]
-struct OkRouter<T: Clone + CapabilityBound> {
-    v: T,
+struct OkRouter<T: CapabilityBound> {
+    v: Arc<T>,
 }
 
 #[async_trait]
-impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
+impl<T: CapabilityBound> Routable<T> for OkRouter<T> {
     async fn route(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         Ok(Some(self.v.clone()))
     }
 
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         panic!("OkRouter does not handle debug routes");
     }
@@ -173,15 +208,15 @@ impl<T: CapabilityBound> Routable<T> for DebugRouter {
     async fn route(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         panic!("DebugRouter does not handle non-debug routes");
     }
 
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(self.source.clone())
     }
@@ -197,15 +232,15 @@ impl<T: CapabilityBound> Routable<T> for ErrRouter {
     async fn route(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         Err(self.v.clone())
     }
 
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Err(self.v.clone())
     }

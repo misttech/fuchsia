@@ -11,9 +11,10 @@ use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{CapabilityBound, Routable, Router, WeakInstanceToken};
+use std::sync::Arc;
 
 struct RightsRouter<T: CapabilityBound> {
-    router: Router<T>,
+    router: Arc<Router<T>>,
     rights: Rights,
     moniker: ExtendedMoniker,
 }
@@ -61,8 +62,8 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         let request = self.check_and_compute_rights(request)?;
         self.router.route(request, target).await
     }
@@ -70,7 +71,7 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let request = self.check_and_compute_rights(request)?;
         self.router.route_debug(request, target).await
@@ -83,7 +84,7 @@ pub trait WithRights {
     fn with_rights(self, moniker: impl Into<ExtendedMoniker>, rights: Rights) -> Self;
 }
 
-impl<T: CapabilityBound> WithRights for Router<T> {
+impl<T: CapabilityBound> WithRights for Arc<Router<T>> {
     fn with_rights(self, moniker: impl Into<ExtendedMoniker>, rights: Rights) -> Self {
         Router::<T>::new(RightsRouter { rights, router: self, moniker: moniker.into() })
     }
@@ -102,8 +103,8 @@ mod tests {
     struct FakeComponentToken {}
 
     impl FakeComponentToken {
-        fn new() -> WeakInstanceToken {
-            WeakInstanceToken { inner: Arc::new(FakeComponentToken {}) }
+        fn new() -> Arc<WeakInstanceToken> {
+            Arc::new(WeakInstanceToken { inner: Box::new(FakeComponentToken {}) })
         }
     }
 
@@ -115,7 +116,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn rights_good() {
-        let source = Data::String("hello".into());
+        let source = Arc::new(Data::String("hello".into()));
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::RW_STAR_DIR.into());
         let request = RouteRequest {
@@ -128,12 +129,12 @@ mod tests {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 
     #[fuchsia::test]
     async fn rights_bad() {
-        let source = Data::String("hello".into());
+        let source = Arc::new(Data::String("hello".into()));
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::R_STAR_DIR.into());
         let request = RouteRequest {

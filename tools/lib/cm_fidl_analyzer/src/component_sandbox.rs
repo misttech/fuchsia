@@ -47,7 +47,7 @@ use runtime_capabilities::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Router<T>
+fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Arc<Router<T>>
 where
     T: CapabilityBound,
 {
@@ -59,8 +59,8 @@ where
         async fn route(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
-        ) -> Result<Option<T>, RouterError> {
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<T>>, RouterError> {
             Err(RouterError::NotFound(Arc::new(RoutingError::NonDebugRoutesUnsupported {
                 moniker: self.source.source_moniker(),
             })))
@@ -69,7 +69,7 @@ where
         async fn route_debug(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
+            _target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             Ok(self.source.clone())
         }
@@ -127,16 +127,17 @@ pub fn build_root_component_input(
                     capability_source,
                     policy.clone(),
                 );
-                WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
-                    router,
-                    capability_type,
+                Capability::ConnectorRouter(
+                    WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                        router,
+                        capability_type,
+                    )
+                    .availability(Availability::Required)
+                    .target_above_root(top_instance)
+                    .error_info(route_request_info)
+                    .error_reporter(NullErrorReporter {})
+                    .build(),
                 )
-                .availability(Availability::Required)
-                .target_above_root(top_instance)
-                .error_info(route_request_info)
-                .error_reporter(NullErrorReporter {})
-                .build()
-                .into()
             }
             CapabilityTypeName::Directory => {
                 let rights = match &capability_source {
@@ -151,17 +152,18 @@ pub fn build_root_component_input(
                     capability_source,
                     policy.clone(),
                 );
-                WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
-                    router,
-                    capability_type,
+                Capability::DirConnectorRouter(
+                    WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                        router,
+                        capability_type,
+                    )
+                    .availability(Availability::Required)
+                    .rights(Some(rights.into()))
+                    .target_above_root(top_instance)
+                    .error_info(route_request_info)
+                    .error_reporter(NullErrorReporter {})
+                    .build(),
                 )
-                .availability(Availability::Required)
-                .rights(Some(rights.into()))
-                .target_above_root(top_instance)
-                .error_info(route_request_info)
-                .error_reporter(NullErrorReporter {})
-                .build()
-                .into()
             }
             _ => unreachable!("other types were filtered out above"),
         };
@@ -195,15 +197,15 @@ pub fn build_root_component_input(
             async fn route(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<Dictionary>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Dictionary>>, RouterError> {
                 panic!("non-debug routing not supported");
             }
 
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 Ok(CapabilitySource::Builtin(BuiltinSource {
                     capability: InternalCapability::EventStream(InternalEventStreamCapability {
@@ -227,9 +229,10 @@ pub fn build_root_component_input(
             )))
             .error_reporter(NullErrorReporter {})
             .build();
-        root_component_input
-            .capabilities()
-            .insert_capability(&event_stream_decl.name, porcelain_router.into());
+        root_component_input.capabilities().insert_capability(
+            &event_stream_decl.name,
+            Capability::DictionaryRouter(porcelain_router),
+        );
     }
     root_component_input
 }
@@ -242,14 +245,14 @@ impl ErrorReporter for NullErrorReporter {
         &self,
         _: &RouteRequestErrorInfo,
         _: &RouterError,
-        _: runtime_capabilities::WeakInstanceToken,
+        _: Arc<runtime_capabilities::WeakInstanceToken>,
     ) {
     }
 }
 
 pub(crate) fn build_framework_router(
     scope: &Arc<ComponentInstanceForAnalyzer>,
-) -> Router<Dictionary> {
+) -> Arc<Router<Dictionary>> {
     Router::new(FrameworkRouter { scope: scope.moniker().clone() })
 }
 
@@ -262,8 +265,8 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -301,18 +304,17 @@ impl Routable<Dictionary> for FrameworkRouter {
                     moniker: component.moniker().clone(),
                 },
             ));
-            framework_dict.insert_capability(&name, router.into());
+            framework_dict.insert_capability(&name, Capability::ConnectorRouter(router));
         }
         let pkg_name = cm_types::Name::new("pkg").unwrap();
         framework_dict.insert_capability(
             &pkg_name,
-            new_debug_only_specific_router::<DirConnector>(CapabilitySource::Framework(
-                FrameworkSource {
+            Capability::DirConnectorRouter(new_debug_only_specific_router::<DirConnector>(
+                CapabilitySource::Framework(FrameworkSource {
                     capability: InternalCapability::Directory(pkg_name.clone()),
                     moniker: component.moniker().clone(),
-                },
-            ))
-            .into(),
+                }),
+            )),
         );
         Ok(Some(framework_dict))
     }
@@ -320,7 +322,7 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         panic!("should never be debug routed");
     }
@@ -329,7 +331,7 @@ impl Routable<Dictionary> for FrameworkRouter {
 pub fn build_capability_sourced_capabilities_dictionary(
     component: &Arc<ComponentInstanceForAnalyzer>,
     decl: &cm_rust::ComponentDecl,
-) -> Dictionary {
+) -> Arc<Dictionary> {
     let output = Dictionary::new();
     for capability in &decl.capabilities {
         if let cm_rust::CapabilityDecl::Storage(storage_decl) = capability {
@@ -339,7 +341,7 @@ pub fn build_capability_sourced_capabilities_dictionary(
                     moniker: component.moniker().clone(),
                 },
             ));
-            output.insert_capability(&storage_decl.name, router.into());
+            output.insert_capability(&storage_decl.name, Capability::ConnectorRouter(router));
         }
     }
     output
@@ -361,8 +363,8 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         let ComponentCapability::Dictionary(DictionaryDecl { name: requested_name, .. }) =
             &self.capability
         else {
@@ -403,7 +405,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                             moniker: self.component.moniker.clone(),
                         }),
                     );
-                    dict.insert_capability(&capability_name, router.into());
+                    dict.insert_capability(&capability_name, Capability::ConnectorRouter(router));
                 }
                 CapabilityTypeName::Config => {
                     let router = new_debug_only_specific_router::<Data>(
@@ -415,10 +417,10 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                             moniker: self.component.moniker.clone(),
                         }),
                     );
-                    dict.insert_capability(&capability_name, router.into());
+                    dict.insert_capability(&capability_name, Capability::DataRouter(router));
                 }
                 _ => unreachable!(
-                    "Only protocol capabilities are supported through scrutinity in dynamic dicts at the moment"
+                    "Only protocol and config capabilities are supported through scrutinity in dynamic dicts at the moment"
                 ),
             }
         }
@@ -428,7 +430,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(CapabilitySource::Component(ComponentSource {
             capability: self.capability.clone(),
@@ -445,7 +447,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: WeakComponentInstanceInterface<ComponentInstanceForAnalyzer>,
         _relative_path: Path,
         capability: ComponentCapability,
-    ) -> Router<Dictionary> {
+    ) -> Arc<Router<Dictionary>> {
         if !self.executable {
             return Router::<Dictionary>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable { moniker: component.moniker },
@@ -463,7 +465,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: &Arc<ComponentInstanceForAnalyzer>,
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Router<Connector> {
+    ) -> Arc<Router<Connector>> {
         if !self.executable {
             return Router::<Connector>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable {
@@ -482,7 +484,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: &Arc<ComponentInstanceForAnalyzer>,
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Router<runtime_capabilities::DirConnector> {
+    ) -> Arc<Router<runtime_capabilities::DirConnector>> {
         if !self.executable {
             return Router::<DirConnector>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable {
@@ -519,7 +521,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
 pub(crate) fn static_children_component_output_dictionary_routers(
     component: &Arc<ComponentInstanceForAnalyzer>,
     decl: &ComponentDecl,
-) -> HashMap<ChildName, Router<Dictionary>> {
+) -> HashMap<ChildName, Arc<Router<Dictionary>>> {
     struct ChildrenComponentOutputRouters {
         weak_component: WeakComponentInstanceInterface<ComponentInstanceForAnalyzer>,
         child_name: ChildName,
@@ -529,8 +531,8 @@ pub(crate) fn static_children_component_output_dictionary_routers(
         async fn route(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
-        ) -> Result<Option<Dictionary>, RouterError> {
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<Dictionary>>, RouterError> {
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
             let child = component.children.read().get(&self.child_name).cloned().ok_or(
@@ -547,7 +549,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
         async fn route_debug(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
+            _target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             panic!("this should never be debug routed");
         }
@@ -572,14 +574,14 @@ pub fn new_aggregate_router(
     _: Arc<ComponentInstanceForAnalyzer>,
     _: Vec<AggregateSource>,
     capability_source: CapabilitySource,
-) -> Router<DirConnector> {
+) -> Arc<Router<DirConnector>> {
     new_debug_only_specific_router(capability_source)
 }
 
 pub fn new_event_stream_multiplexing_router(
     _: &Arc<ComponentInstanceForAnalyzer>,
     sources: Vec<EventStreamSourceRouter>,
-) -> Router<Connector> {
+) -> Arc<Router<Connector>> {
     struct EventStreamMultiplexingRouter {
         sources: Vec<EventStreamSourceRouter>,
     }
@@ -588,15 +590,15 @@ pub fn new_event_stream_multiplexing_router(
         async fn route(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
-        ) -> Result<Option<Connector>, RouterError> {
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<Connector>>, RouterError> {
             panic!("non-debug routing is unsupported");
         }
 
         async fn route_debug(
             &self,
             _request: RouteRequest,
-            target: WeakInstanceToken,
+            target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             let mut routing_tasks = FuturesUnordered::new();
             for EventStreamSourceRouter { router, .. } in self.sources.iter() {

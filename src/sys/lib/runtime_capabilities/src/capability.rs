@@ -6,6 +6,7 @@ use crate::Router;
 use from_enum::FromEnum;
 use router_error::Explain;
 use std::fmt::Debug;
+use std::sync::Arc;
 use thiserror::Error;
 use zx_status;
 
@@ -82,20 +83,20 @@ impl Explain for RemoteError {
 
 #[derive(FromEnum, Debug, Clone)]
 pub enum Capability {
-    Connector(crate::Connector),
-    DirConnector(crate::DirConnector),
-    Dictionary(crate::Dictionary),
-    Data(crate::Data),
-    Handle(crate::Handle),
-    ConnectorRouter(crate::Router<crate::Connector>),
-    DictionaryRouter(crate::Router<crate::Dictionary>),
-    DirConnectorRouter(crate::Router<crate::DirConnector>),
-    DataRouter(crate::Router<crate::Data>),
-    Instance(crate::WeakInstanceToken),
+    Connector(Arc<crate::Connector>),
+    DirConnector(Arc<crate::DirConnector>),
+    Dictionary(Arc<crate::Dictionary>),
+    Data(Arc<crate::Data>),
+    Handle(Arc<crate::Handle>),
+    ConnectorRouter(Arc<crate::Router<crate::Connector>>),
+    DictionaryRouter(Arc<crate::Router<crate::Dictionary>>),
+    DirConnectorRouter(Arc<crate::Router<crate::DirConnector>>),
+    DataRouter(Arc<crate::Router<crate::Data>>),
+    Instance(Arc<crate::WeakInstanceToken>),
 }
 
 impl Capability {
-    pub fn to_dictionary(self) -> Option<crate::Dictionary> {
+    pub fn to_dictionary(self) -> Option<Arc<crate::Dictionary>> {
         match self {
             Self::Dictionary(d) => Some(d),
             _ => None,
@@ -118,7 +119,7 @@ impl Capability {
     }
 }
 
-impl TryFrom<Capability> for crate::Connector {
+impl TryFrom<Capability> for Arc<crate::Connector> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -129,7 +130,7 @@ impl TryFrom<Capability> for crate::Connector {
     }
 }
 
-impl TryFrom<Capability> for crate::DirConnector {
+impl TryFrom<Capability> for Arc<crate::DirConnector> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -140,7 +141,7 @@ impl TryFrom<Capability> for crate::DirConnector {
     }
 }
 
-impl TryFrom<Capability> for crate::Dictionary {
+impl TryFrom<Capability> for Arc<crate::Dictionary> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -151,7 +152,7 @@ impl TryFrom<Capability> for crate::Dictionary {
     }
 }
 
-impl TryFrom<Capability> for crate::Data {
+impl TryFrom<Capability> for Arc<crate::Data> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -162,18 +163,7 @@ impl TryFrom<Capability> for crate::Data {
     }
 }
 
-impl TryFrom<Capability> for crate::Handle {
-    type Error = ();
-
-    fn try_from(c: Capability) -> Result<Self, Self::Error> {
-        match c {
-            Capability::Handle(r) => Ok(r),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<Capability> for Router<crate::Dictionary> {
+impl TryFrom<Capability> for Arc<Router<crate::Dictionary>> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -184,7 +174,7 @@ impl TryFrom<Capability> for Router<crate::Dictionary> {
     }
 }
 
-impl TryFrom<Capability> for Router<crate::DirConnector> {
+impl TryFrom<Capability> for Arc<Router<crate::DirConnector>> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -195,7 +185,7 @@ impl TryFrom<Capability> for Router<crate::DirConnector> {
     }
 }
 
-impl TryFrom<Capability> for Router<crate::Connector> {
+impl TryFrom<Capability> for Arc<Router<crate::Connector>> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -206,7 +196,7 @@ impl TryFrom<Capability> for Router<crate::Connector> {
     }
 }
 
-impl TryFrom<Capability> for Router<crate::Data> {
+impl TryFrom<Capability> for Arc<Router<crate::Data>> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -217,7 +207,7 @@ impl TryFrom<Capability> for Router<crate::Data> {
     }
 }
 
-impl TryFrom<Capability> for crate::WeakInstanceToken {
+impl TryFrom<Capability> for Arc<crate::WeakInstanceToken> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -230,6 +220,20 @@ impl TryFrom<Capability> for crate::WeakInstanceToken {
 
 /// Parent trait implemented by all capability types. Useful for defining interfaces that
 /// generic over a capability type.
-pub trait CapabilityBound: Into<Capability> + TryFrom<Capability> + Send + Sync + 'static {
+pub trait CapabilityBound: Send + Sync + 'static {
     fn debug_typename() -> &'static str;
+
+    /// Converts this capability into a directory entry.
+    ///
+    /// This is on the "main" capability trait because this is something supported by (almost)
+    /// every capability type, and all capability types are expected to either support this or be
+    /// able to report that they cannot (i.e. return an error when this is called).
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        _scope: vfs::execution_scope::ExecutionScope,
+        _token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Err(ConversionError::NotSupported)
+    }
 }

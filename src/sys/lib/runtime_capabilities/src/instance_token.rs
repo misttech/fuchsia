@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_component_sandbox as fsandbox;
 use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -15,21 +14,15 @@ pub trait WeakInstanceTokenAny: Debug + Send + Sync {
 /// A type representing a weak pointer to a component.
 /// This is type erased because the bedrock library shouldn't depend on
 /// Component Manager types.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WeakInstanceToken {
-    pub inner: Arc<dyn WeakInstanceTokenAny>,
-}
-
-impl From<WeakInstanceToken> for fsandbox::Capability {
-    fn from(_component: WeakInstanceToken) -> Self {
-        todo!("b/337284929: Decide on if InstanceToken should be in Capability");
-    }
+    pub inner: Box<dyn WeakInstanceTokenAny>,
 }
 
 impl WeakInstanceToken {
     /// Creates a new WeakInstanceToken that cannot be typecast into anything useful. Primarily
     /// useful in tests.
-    pub fn new_invalid() -> Self {
+    pub fn new_invalid() -> Arc<Self> {
         #[derive(Debug)]
         struct Nothing;
         impl WeakInstanceTokenAny for Nothing {
@@ -37,6 +30,15 @@ impl WeakInstanceToken {
                 self
             }
         }
-        Self { inner: Arc::new(Nothing {}) }
+        Arc::new(Self { inner: Box::new(Nothing {}) })
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn try_into_directory_entry(
+        self: Arc<Self>,
+        _scope: vfs::execution_scope::ExecutionScope,
+        _token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Err(crate::ConversionError::NotSupported)
     }
 }

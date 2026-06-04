@@ -23,7 +23,7 @@ use router_error::{Explain, RouterError};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
-    DirConnector, RemotableCapability, Routable, Router, WeakInstanceToken,
+    DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -124,9 +124,9 @@ impl RemotedRuntimeCapabilities {
         Ok(())
     }
 
-    pub fn get<C>(&self, handle: zx::EventPair) -> Result<C, fruntime::CapabilitiesError>
+    pub fn get<C>(&self, handle: zx::EventPair) -> Result<Arc<C>, fruntime::CapabilitiesError>
     where
-        C: TryFrom<Capability>,
+        Arc<C>: TryFrom<Capability>,
     {
         let koid = handle
             .basic_info()
@@ -141,12 +141,28 @@ impl RemotedRuntimeCapabilities {
             .try_into()
             .map_err(|_| fruntime::CapabilitiesError::InvalidCapabilityType)
     }
+
+    /// Identical to `get` but returns a generic Capability
+    pub fn get_capability(
+        &self,
+        handle: zx::EventPair,
+    ) -> Result<Capability, fruntime::CapabilitiesError> {
+        let koid = handle
+            .basic_info()
+            .map_err(|_| fruntime::CapabilitiesError::InvalidHandle)?
+            .related_koid;
+        let guard = self.remote_capabilities.lock();
+        let capability = guard
+            .get(&koid)
+            .ok_or(fruntime::CapabilitiesError::HandleDoesNotReferenceCapability)?;
+        Ok(capability.clone())
+    }
 }
 
 struct Capabilities {
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     weak_scope: WeakExecutionScope,
-    default_target: WeakInstanceToken,
+    default_target: Arc<WeakInstanceToken>,
     moniker: Moniker,
 }
 
@@ -265,7 +281,7 @@ impl Capabilities {
             fruntime::CapabilitiesRequest::ConnectorOpen {
                 connector, channel, responder, ..
             } => {
-                let res = self.remote_capabilities.get(connector).map(|c: Connector| {
+                let res = self.remote_capabilities.get::<Connector>(connector).map(|c| {
                     let _ = c.send(channel);
                 });
                 let _ = responder.send(res);
@@ -277,7 +293,7 @@ impl Capabilities {
                     let channel = payload.channel.ok_or(invalid_args)?;
                     let path_str = payload.path.unwrap_or_else(|| ".".to_string());
                     let path = RelativePath::new(path_str).map_err(|_| invalid_args)?;
-                    let dir_connector: DirConnector = self.remote_capabilities.get(handle)?;
+                    let dir_connector = self.remote_capabilities.get::<DirConnector>(handle)?;
                     let _ = dir_connector.send(channel, path, payload.flags);
                     Ok(())
                 })();
@@ -291,10 +307,10 @@ impl Capabilities {
                 ..
             } => {
                 let res = (|| {
-                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    let dictionary = self.remote_capabilities.get::<Dictionary>(dictionary)?;
                     let key =
                         Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
-                    let value: Capability = self.remote_capabilities.get(value)?;
+                    let value = self.remote_capabilities.get_capability(value)?;
                     let _ = dictionary.insert(key, value);
                     Ok(())
                 })();
@@ -308,7 +324,7 @@ impl Capabilities {
                 ..
             } => {
                 let res = (|| {
-                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    let dictionary = self.remote_capabilities.get::<Dictionary>(dictionary)?;
                     let key =
                         Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
                     let cap = dictionary
@@ -325,7 +341,7 @@ impl Capabilities {
                 let res = (|| {
                     let handle =
                         payload.dictionary.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
-                    let dictionary: Dictionary = self.remote_capabilities.get(handle)?;
+                    let dictionary = self.remote_capabilities.get::<Dictionary>(handle)?;
                     let key = payload.key.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
                     let key =
                         Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
@@ -348,7 +364,7 @@ impl Capabilities {
                 ..
             } => {
                 let res = (|| {
-                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    let dictionary = self.remote_capabilities.get::<Dictionary>(dictionary)?;
                     self.weak_scope
                         .spawn(handle_key_iterator_stream(dictionary, key_iterator.into_stream()));
                     Ok(())
@@ -372,7 +388,8 @@ impl Capabilities {
                 ..
             } => {
                 let res = (|| {
-                    let capability: Capability = self.remote_capabilities.get(capability_handle)?;
+                    let capability: Capability =
+                        self.remote_capabilities.get_capability(capability_handle)?;
                     self.remote_capabilities.store(other_handle, capability)
                 })();
                 let _ = responder.send(res);
@@ -499,21 +516,21 @@ impl DirConnectable for RemoteDirReceiver {
     }
 }
 
-fn data_to_remote(data: Data) -> fruntime::Data {
-    match data {
+fn data_to_remote(data: Arc<Data>) -> fruntime::Data {
+    match &*data {
         Data::Bytes(bytes) => fruntime::Data::Bytes(bytes.to_vec()),
         Data::String(string) => fruntime::Data::String(string.to_string()),
-        Data::Int64(num) => fruntime::Data::Int64(num),
-        Data::Uint64(num) => fruntime::Data::Uint64(num),
+        Data::Int64(num) => fruntime::Data::Int64(*num),
+        Data::Uint64(num) => fruntime::Data::Uint64(*num),
     }
 }
 
-fn data_from_remote(data: fruntime::Data) -> Result<Data, fruntime::CapabilitiesError> {
+fn data_from_remote(data: fruntime::Data) -> Result<Arc<Data>, fruntime::CapabilitiesError> {
     match data {
-        fruntime::Data::Bytes(bytes) => Ok(Data::Bytes(bytes.into())),
-        fruntime::Data::String(string) => Ok(Data::String(string.into())),
-        fruntime::Data::Int64(num) => Ok(Data::Int64(num)),
-        fruntime::Data::Uint64(num) => Ok(Data::Uint64(num)),
+        fruntime::Data::Bytes(bytes) => Ok(Arc::new(Data::Bytes(bytes.into()))),
+        fruntime::Data::String(string) => Ok(Arc::new(Data::String(string.into()))),
+        fruntime::Data::Int64(num) => Ok(Arc::new(Data::Int64(num))),
+        fruntime::Data::Uint64(num) => Ok(Arc::new(Data::Uint64(num))),
         _ => Err(fruntime::CapabilitiesError::InvalidData),
     }
 }
@@ -526,13 +543,15 @@ async fn route_from_remote<C>(
     capability_result: zx::EventPair,
 ) -> Result<fruntime::RouterResponse, zx::Status>
 where
-    C: Into<Capability> + RemotableCapability + CapabilityBound + Send + Sync,
-    Router<C>: TryFrom<Capability>,
+    C: CapabilityBound + Send + Sync,
+    Arc<C>: Into<Capability>,
+    Arc<Router<C>>: TryFrom<Capability>,
 {
-    let router: Router<C> =
-        remote_capabilities.get(router).map_err(|_| zx::Status::INVALID_ARGS)?;
-    let target: WeakInstanceToken =
-        remote_capabilities.get(target).map_err(|_| zx::Status::INVALID_ARGS)?;
+    let router =
+        remote_capabilities.get::<Router<C>>(router).map_err(|_| zx::Status::INVALID_ARGS)?;
+    let target = remote_capabilities
+        .get::<WeakInstanceToken>(target)
+        .map_err(|_| zx::Status::INVALID_ARGS)?;
     match router.route(request, target).await {
         Ok(Some(cap)) => {
             remote_capabilities
@@ -564,14 +583,15 @@ impl<R: RemoteRoutable + Send + Sync> RemoteRouter<R> {
 #[async_trait]
 impl<C, R> Routable<C> for RemoteRouter<R>
 where
-    C: TryFrom<Capability> + RemotableCapability + CapabilityBound + Send + Sync,
+    C: CapabilityBound + Send + Sync,
+    Arc<C>: TryFrom<Capability>,
     R: RemoteRoutable + Send + Sync,
 {
     async fn route(
         &self,
         request: fruntime::RouteRequest,
-        target_token: WeakInstanceToken,
-    ) -> Result<Option<C>, RouterError> {
+        target_token: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<C>>, RouterError> {
         let (token, token_other_end) = zx::EventPair::create();
         self.remote_capabilities
             .store(token_other_end, target_token)
@@ -605,7 +625,7 @@ where
     async fn route_debug(
         &self,
         request: fruntime::RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let type_name: Option<CapabilityTypeName> =
             request.build_type_name.and_then(|s| CapabilityTypeName::from_str(s.as_str()).ok());
@@ -692,7 +712,7 @@ fn capability_as_type(cap: &Capability) -> Result<fruntime::CapabilityType, Erro
 }
 
 async fn handle_key_iterator_stream(
-    dictionary: Dictionary,
+    dictionary: Arc<Dictionary>,
     mut stream: fruntime::DictionaryKeyIteratorRequestStream,
 ) {
     fn round_up_to_nearest_8(num: usize) -> usize {
@@ -839,7 +859,7 @@ mod tests {
         let (connector, mut receiver_stream) = create_connector(&proxy).await;
 
         test_connector_is_connected(&proxy, &connector, &mut receiver_stream).await;
-        assert_matches!(remote_capabilities.get(connector), Ok(Capability::Connector(_)));
+        assert_matches!(remote_capabilities.get::<Connector>(connector), Ok(_));
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
 
@@ -849,7 +869,7 @@ mod tests {
         let (dir_connector, mut dir_receiver_stream) = create_dir_connector(&proxy).await;
 
         test_dir_connector_is_connected(&proxy, &dir_connector, &mut dir_receiver_stream).await;
-        assert_matches!(remote_capabilities.get(dir_connector), Ok(Capability::DirConnector(_)));
+        assert_matches!(remote_capabilities.get::<DirConnector>(dir_connector), Ok(_));
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
 
@@ -859,7 +879,7 @@ mod tests {
         let (dictionary, dictionary_other_end) = zx::EventPair::create();
         proxy.dictionary_create(dictionary_other_end).await.unwrap().unwrap();
 
-        assert_matches!(remote_capabilities.get(dictionary), Ok(Capability::Dictionary(_)));
+        assert_matches!(remote_capabilities.get::<Dictionary>(dictionary), Ok(_));
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
 
@@ -995,7 +1015,7 @@ mod tests {
         };
         assert_eq!(Ok(fruntime::RouterResponse::Success), success_route_fut.await.unwrap());
         test_connector_is_connected(&proxy, &connector, &mut receiver_stream).await;
-        assert_matches!(remote_capabilities.get(connector), Ok(Capability::Connector(_)));
+        assert_matches!(remote_capabilities.get::<Connector>(connector), Ok(_));
         drop(router);
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
@@ -1038,7 +1058,7 @@ mod tests {
         };
         assert_eq!(Ok(fruntime::RouterResponse::Success), success_route_fut.await.unwrap());
         test_dir_connector_is_connected(&proxy, &dir_connector, &mut receiver_stream).await;
-        assert_matches!(remote_capabilities.get(dir_connector), Ok(Capability::DirConnector(_)));
+        assert_matches!(remote_capabilities.get::<DirConnector>(dir_connector), Ok(_));
         drop(router);
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
@@ -1074,7 +1094,7 @@ mod tests {
         }
         assert_eq!(Ok(fruntime::RouterResponse::Success), success_route_fut.await.unwrap());
 
-        assert_matches!(remote_capabilities.get(dictionary), Ok(Capability::Dictionary(_)));
+        assert_matches!(remote_capabilities.get::<Dictionary>(dictionary), Ok(_));
         drop(router);
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
@@ -1110,7 +1130,7 @@ mod tests {
         };
         assert_eq!(Ok(fruntime::RouterResponse::Success), success_route_fut.await.unwrap());
 
-        assert_matches!(remote_capabilities.get(data), Ok(Capability::Data(Data::Int64(1))));
+        assert_matches!(remote_capabilities.get::<Data>(data), Ok(_));
         drop(router);
         assert_no_remote_capabilities(&remote_capabilities).await;
     }
@@ -1123,7 +1143,7 @@ mod tests {
         let (router, router_other_end) = zx::EventPair::create();
         proxy.connector_router_create(router_other_end, router_client_end).await.unwrap().unwrap();
 
-        let router: Router<Connector> = remote_capabilities.get(router).unwrap();
+        let router: Arc<Router<Connector>> = remote_capabilities.get(router).unwrap();
 
         let capability_source = router
             .route_debug(fruntime::RouteRequest::default(), WeakInstanceToken::new_invalid())
@@ -1149,7 +1169,7 @@ mod tests {
         let (router, router_other_end) = zx::EventPair::create();
         proxy.connector_router_create(router_other_end, router_client_end).await.unwrap().unwrap();
 
-        let router: Router<Connector> = remote_capabilities.get(router).unwrap();
+        let router: Arc<Router<Connector>> = remote_capabilities.get(router).unwrap();
         drop(router_stream);
 
         let router_err = match router

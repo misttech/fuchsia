@@ -42,7 +42,7 @@ async fn serve_inner(
     namespace_scope: ExecutionScope,
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     mut stream: fcomponent::NamespaceRequestStream,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Result<(), fidl::Error> {
     let (store, store_stream) =
         endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -78,7 +78,7 @@ async fn handle_request(
     store: &fsandbox::CapabilityStoreProxy,
     #[allow(unused)] remote_capabilities: &Arc<RemotedRuntimeCapabilities>,
     request: fcomponent::NamespaceRequest,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Result<(), fidl::Error> {
     match request {
         fcomponent::NamespaceRequest::Create { entries, responder } => {
@@ -101,7 +101,7 @@ async fn create(
     namespace_scope: &ExecutionScope,
     store: &fsandbox::CapabilityStoreProxy,
     entries: Vec<fcomponent::NamespaceInputEntry>,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Result<Vec<fcomponent::NamespaceEntry>, fcomponent::NamespaceError> {
     let mut namespace_builder =
         NamespaceBuilder::new(namespace_scope.clone(), ignore_not_found(), target);
@@ -138,7 +138,7 @@ async fn create2(
     namespace_scope: &ExecutionScope,
     remote_capabilities: &Arc<RemotedRuntimeCapabilities>,
     entries: Vec<fcomponent::NamespaceInputEntry2>,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Result<Vec<fcomponent::NamespaceEntry>, fcomponent::NamespaceError> {
     let mut namespace_builder =
         NamespaceBuilder::new(namespace_scope.clone(), ignore_not_found(), target);

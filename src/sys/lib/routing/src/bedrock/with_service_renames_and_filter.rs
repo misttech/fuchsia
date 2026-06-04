@@ -9,14 +9,15 @@ use cm_rust::offer::{OfferDecl, OfferServiceDecl};
 use fidl_fuchsia_component_runtime::RouteRequest;
 use router_error::RouterError;
 #[cfg(target_os = "fuchsia")]
-use runtime_capabilities::RemotableCapability;
+use runtime_capabilities::CapabilityBound;
 use runtime_capabilities::{
     Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
+use std::sync::Arc;
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
 struct ServiceRenameRouter {
-    router: Router<DirConnector>,
+    router: Arc<Router<DirConnector>>,
     // This field is not read on host
     #[allow(dead_code)]
     renames: Box<[NameMapping]>,
@@ -28,8 +29,8 @@ impl Routable<DirConnector> for ServiceRenameRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<DirConnector>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<DirConnector>>, RouterError> {
         let result = self.router.route(request, target.clone()).await;
         match result {
             #[cfg(target_os = "fuchsia")]
@@ -38,8 +39,10 @@ impl Routable<DirConnector> for ServiceRenameRouter {
                 for rename in &self.renames {
                     let path = cm_types::RelativePath::new(&rename.source_name).unwrap();
                     let dir_connector = source_services_directory.clone().with_subdir(path);
-                    let prev = target_services_dict
-                        .insert(rename.target_name.clone(), dir_connector.into());
+                    let prev = target_services_dict.insert(
+                        rename.target_name.clone(),
+                        Capability::DirConnector(dir_connector),
+                    );
                     assert!(prev.is_none(), "failed to insert into target services dict");
                 }
                 let dir_entry = target_services_dict
@@ -65,7 +68,7 @@ impl Routable<DirConnector> for ServiceRenameRouter {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let source = self.router.route_debug(request, target).await?;
         Ok(self.wrap_debug_response(source))
@@ -110,25 +113,25 @@ pub trait WithServiceRenamesAndFilter {
     fn with_service_renames_and_filter(self, offer: OfferDecl) -> Capability;
 }
 
-impl WithServiceRenamesAndFilter for Router<Dictionary> {
+impl WithServiceRenamesAndFilter for Arc<Router<Dictionary>> {
     fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
         self.into()
     }
 }
 
-impl WithServiceRenamesAndFilter for Router<Data> {
+impl WithServiceRenamesAndFilter for Arc<Router<Data>> {
     fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
         self.into()
     }
 }
 
-impl WithServiceRenamesAndFilter for Router<Connector> {
+impl WithServiceRenamesAndFilter for Arc<Router<Connector>> {
     fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
         self.into()
     }
 }
 
-impl WithServiceRenamesAndFilter for Router<DirConnector> {
+impl WithServiceRenamesAndFilter for Arc<Router<DirConnector>> {
     fn with_service_renames_and_filter(self, offer: OfferDecl) -> Capability {
         let offer_service_decl = match offer {
             OfferDecl::Service(decl) => decl,
@@ -142,12 +145,11 @@ impl WithServiceRenamesAndFilter for Router<DirConnector> {
             // router, because we won't do anything.
             return self.into();
         }
-        Router::new(ServiceRenameRouter {
+        Capability::DirConnectorRouter(Router::new(ServiceRenameRouter {
             router: self,
             renames,
             offer_service_decl: *offer_service_decl,
-        })
-        .into()
+        }))
     }
 }
 

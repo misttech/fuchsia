@@ -9,7 +9,8 @@ use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
-use runtime_capabilities::{Capability, Dictionary, RemotableCapability, WeakInstanceToken};
+use runtime_capabilities::{Capability, CapabilityBound, Dictionary, WeakInstanceToken};
+use std::sync::Arc;
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
@@ -28,7 +29,7 @@ pub struct NamespaceBuilder {
     namespace_scope: ExecutionScope,
 
     /// The token for the component whose namespace this is. This is used for route attribution.
-    token: WeakInstanceToken,
+    token: Arc<WeakInstanceToken>,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -58,7 +59,7 @@ impl NamespaceBuilder {
     pub fn new(
         namespace_scope: ExecutionScope,
         not_found: UnboundedSender<String>,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Self {
         return NamespaceBuilder { entries: Default::default(), not_found, namespace_scope, token };
     }
@@ -250,7 +251,7 @@ impl NamespaceBuilder {
         Ok(ns)
     }
 
-    fn make_dict_with_not_found_logging(&self, root_path: String) -> Dictionary {
+    fn make_dict_with_not_found_logging(&self, root_path: String) -> Arc<Dictionary> {
         let not_found = self.not_found.clone();
         let new_dict = Dictionary::new_with_not_found(move |key| {
             let requested_path = format!("{}/{}", root_path, key);
@@ -288,7 +289,7 @@ mod tests {
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
 
-    fn multishot() -> (Connector, Receiver) {
+    fn multishot() -> (Arc<Connector>, Receiver) {
         let (receiver, sender) = Connector::new();
         (sender, receiver)
     }
@@ -300,7 +301,7 @@ mod tests {
 
     fn dir_connector_cap() -> Capability {
         let fs = pseudo_directory! {};
-        DirConnector::from_directory_entry(fs, fio::PERM_READABLE).into()
+        Into::into(DirConnector::from_directory_entry(fs, fio::PERM_READABLE))
     }
 
     fn ns_path(str: &str) -> NamespacePath {
@@ -431,7 +432,7 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
-        namespace.add_object(sender.into(), &path("/svc/a")).unwrap();
+        namespace.add_object(Into::into(sender), &path("/svc/a")).unwrap();
         let ns = namespace.serve().unwrap();
 
         let mut ns = ns.flatten();
@@ -558,7 +559,7 @@ mod tests {
             NamespaceBuilder::new(scope, not_found_sender, WeakInstanceToken::new_invalid());
         let (_, sender) = runtime_capabilities::Connector::new();
         assert_matches!(
-            namespace.add_entry(sender.into(), &ns_path("/a")),
+            namespace.add_entry(Into::into(sender), &ns_path("/a")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::EntryError(
                 EntryError::UnsupportedType
             )))
@@ -612,7 +613,7 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
-        namespace.add_entry(dir.into(), &ns_path("/dir")).unwrap();
+        namespace.add_entry(Into::into(dir), &ns_path("/dir")).unwrap();
         let mut ns = namespace.serve().unwrap();
         let dir_proxy = ns.remove(&"/dir".parse().unwrap()).unwrap();
         let dir_proxy = dir_proxy.into_proxy();
@@ -670,7 +671,7 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
-        namespace.add_entry(dir.into(), &ns_path("/dir")).unwrap();
+        namespace.add_entry(Into::into(dir), &ns_path("/dir")).unwrap();
         let mut ns = namespace.serve().unwrap();
         let dir_proxy = ns.remove(&"/dir".parse().unwrap()).unwrap();
         let dir_proxy = dir_proxy.into_proxy();

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fidl::RemotableCapability;
-use crate::{Capability, CapabilityBound, Router, WeakInstanceToken};
+use crate::{CapabilityBound, Router, WeakInstanceToken};
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -18,8 +17,8 @@ use zx;
 pub(crate) async fn route_from_fidl<T>(
     router: &Router<T>,
     payload: fsandbox::RouteRequest,
-    token: WeakInstanceToken,
-) -> Result<Option<T>, fsandbox::RouterError>
+    token: Arc<WeakInstanceToken>,
+) -> Result<Option<Arc<T>>, fsandbox::RouterError>
 where
     T: CapabilityBound,
 {
@@ -39,27 +38,21 @@ where
     Ok(resp)
 }
 
-impl<T: CapabilityBound + Clone> Router<T>
-where
-    Capability: From<T>,
-{
+impl<T: CapabilityBound> Router<T> {
     pub(crate) fn into_directory_entry(
-        self,
+        self: Arc<Self>,
         entry_type: fio::DirentType,
         scope: ExecutionScope,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Arc<dyn DirectoryEntry> {
         struct RouterEntry<T: CapabilityBound> {
-            router: Router<T>,
+            router: Arc<Router<T>>,
             entry_type: fio::DirentType,
             scope: ExecutionScope,
-            token: WeakInstanceToken,
+            token: Arc<WeakInstanceToken>,
         }
 
-        impl<T: CapabilityBound + Clone> DirectoryEntry for RouterEntry<T>
-        where
-            Capability: From<T>,
-        {
+        impl<T: CapabilityBound> DirectoryEntry for RouterEntry<T> {
             fn open_entry(
                 self: Arc<Self>,
                 mut request: entry::OpenRequest<'_>,
@@ -76,10 +69,7 @@ where
             }
         }
 
-        impl<T: CapabilityBound + Clone> DirectoryEntryAsync for RouterEntry<T>
-        where
-            Capability: From<T>,
-        {
+        impl<T: CapabilityBound> DirectoryEntryAsync for RouterEntry<T> {
             async fn open_entry_async(
                 self: Arc<Self>,
                 open_request: entry::OpenRequest<'_>,
@@ -93,7 +83,7 @@ where
                 // Request a capability from the `router`.
                 let result =
                     match self.router.route(RouteRequest::default(), self.token.clone()).await {
-                        Ok(Some(c)) => Ok(Capability::from(c)),
+                        Ok(Some(c)) => Ok(c),
                         Ok(None) => {
                             return Err(zx::Status::NOT_FOUND);
                         }

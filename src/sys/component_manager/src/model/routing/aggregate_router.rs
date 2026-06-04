@@ -25,7 +25,7 @@ use routing::bedrock::aggregate_router::AggregateSource;
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{
-    Capability, Dictionary, DirConnector, RemotableCapability, Routable, Router, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -56,7 +56,7 @@ pub struct AggregateRouter {
     capability_source: AnonymizedOrFiltered,
     sources: Vec<AggregateSource>,
     // This is set to `Some` when the aggregate router has been started.
-    aggregate_directory: AsyncMutex<Option<DirConnector>>,
+    aggregate_directory: AsyncMutex<Option<Arc<DirConnector>>>,
     // This is set to `Some` when the aggregate router has been started, if this is an anonymizing
     // aggregate.
     anonymized_aggregate_service_dir: Mutex<Option<Arc<AnonymizedAggregateServiceDir>>>,
@@ -68,8 +68,8 @@ impl Routable<DirConnector> for AggregateRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<DirConnector>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<DirConnector>>, RouterError> {
         let aggregate_dir = self.get_aggregate_dir(request).await?;
         Ok(Some(aggregate_dir))
     }
@@ -77,7 +77,7 @@ impl Routable<DirConnector> for AggregateRouter {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let _aggregate_dir = self.get_aggregate_dir(request).await?;
         Ok(self.get_capability_source_with_instances())
@@ -91,7 +91,7 @@ impl AggregateRouter {
         component: Arc<ComponentInstance>,
         sources: Vec<AggregateSource>,
         capability_source: CapabilitySource,
-    ) -> Router<DirConnector> {
+    ) -> Arc<Router<DirConnector>> {
         let capability_source = match capability_source {
             CapabilitySource::AnonymizedAggregate(source) => {
                 AnonymizedOrFiltered::AnonymizedAggregate(source)
@@ -143,7 +143,10 @@ impl AggregateRouter {
     }
 
     /// Returns the directory containing aggregated entries, and initializes it if necessary.
-    async fn get_aggregate_dir(&self, request: RouteRequest) -> Result<DirConnector, RouterError> {
+    async fn get_aggregate_dir(
+        &self,
+        request: RouteRequest,
+    ) -> Result<Arc<DirConnector>, RouterError> {
         let mut maybe_directory = self.aggregate_directory.lock().await;
         if let Some(aggregate_directory) = &*maybe_directory {
             return Ok(aggregate_directory.clone());
@@ -168,7 +171,7 @@ impl AggregateRouter {
     async fn create_anonymized_aggregate(
         &self,
         anonymized_source: &AnonymizedAggregateSource,
-    ) -> Result<DirConnector, RouterError> {
+    ) -> Result<Arc<DirConnector>, RouterError> {
         let route = AnonymizedServiceRoute {
             source_moniker: self.component.moniker.clone(),
             members: anonymized_source.members.clone(),
@@ -196,7 +199,7 @@ impl AggregateRouter {
     async fn create_filtered_aggregate(
         &self,
         request: RouteRequest,
-    ) -> Result<DirConnector, RouterError> {
+    ) -> Result<Arc<DirConnector>, RouterError> {
         let source_dir_routers = self.sources.iter().filter_map(|source| match source {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
             AggregateSource::Collection { collection_name: _ } => panic!("collections can't contribute to filtered aggregates, manifest validation should stop this"),
@@ -206,7 +209,7 @@ impl AggregateRouter {
 
         for router in source_dir_routers {
             let request = request.clone();
-            let target: WeakInstanceToken = self.component.clone().into();
+            let target: Arc<WeakInstanceToken> = self.component.clone().into();
 
             routing_futures.push(async move {
                 let route_result = router.route(request, target).await;
@@ -345,7 +348,7 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
     async fn route_instance(
         &self,
         instance: &AggregateInstance,
-    ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError> {
+    ) -> Result<(Arc<Router<DirConnector>>, CapabilitySource), RoutingError> {
         let maybe_router = self
             .sources
             .iter()

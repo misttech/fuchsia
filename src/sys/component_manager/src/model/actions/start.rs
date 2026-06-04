@@ -98,7 +98,7 @@ struct StartContext {
 
 fn open_protocols_with_numbered_handle(
     resolved_instance_state: &ResolvedInstanceState,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Vec<fprocess::HandleInfo> {
     let decl = &resolved_instance_state.resolved_component.decl;
     let numbered_handle_dict = resolved_instance_state.sandbox.program_input.numbered_handles();
@@ -204,7 +204,7 @@ async fn do_start(
     let runner = match runner_router {
         Some(runner_router) => open_runner(
             component,
-            runner_router.into(),
+            runner_router,
             runner_name.expect(
                 "runner is set in sandbox but is missing use decl, this should be impossible",
             ),
@@ -316,7 +316,7 @@ async fn do_start(
     start_component(&component, resolved_component.decl, start_context).await
 }
 
-fn dict_deep_copy(dict: &Dictionary) -> Dictionary {
+fn dict_deep_copy(dict: &Arc<Dictionary>) -> Arc<Dictionary> {
     let out = Dictionary::new();
     for (key, cap) in dict.enumerate() {
         match cap {
@@ -332,7 +332,7 @@ fn dict_deep_copy(dict: &Dictionary) -> Dictionary {
     out
 }
 
-fn dict_merge(dict1: &Dictionary, dict2: Dictionary) {
+fn dict_merge(dict1: &Arc<Dictionary>, dict2: Arc<Dictionary>) {
     for (key, value) in dict2.drain() {
         match value {
             Capability::Dictionary(inner_dict2) => {
@@ -503,7 +503,7 @@ pub fn should_return_early(
 /// Returns None if the component's decl does not specify a runner.
 async fn open_runner(
     component: &Arc<ComponentInstance>,
-    runner_router: Router<Connector>,
+    runner_router: Arc<Router<Connector>>,
     runner_name: Name,
 ) -> Result<Option<RemoteRunner>, StartActionError> {
     // Open up a channel to the runner.

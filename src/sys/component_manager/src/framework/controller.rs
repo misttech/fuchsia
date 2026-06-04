@@ -141,7 +141,7 @@ pub async fn serve_controller(
                         .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
                     let exposed_dict =
                         resolved.get_exposed_dict(component.as_weak().into()).await.clone();
-                    Ok(exposed_dict.into())
+                    Ok(exposed_dict.to_fsandbox())
                 }
                 .await;
                 responder.send(res)?;

@@ -27,7 +27,7 @@ use log::{error, warn};
 use namespace::{Namespace, NamespaceError};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
-use runtime_capabilities::{Capability, Dictionary, RemotableCapability, WeakInstanceToken};
+use runtime_capabilities::{Capability, CapabilityBound, Dictionary, WeakInstanceToken};
 use std::sync::Arc;
 use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
@@ -466,7 +466,7 @@ impl Controllable for BuiltinProgram {
 /// The program of the ELF runner component.
 struct ElfRunnerProgram {
     scope: ExecutionScope,
-    output: Dictionary,
+    output: Arc<Dictionary>,
     job: zx::Job,
 }
 

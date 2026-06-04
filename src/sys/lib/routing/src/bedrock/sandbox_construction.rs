@@ -51,13 +51,13 @@ pub type EventStreamFilter = Option<BTreeMap<String, DictionaryValue>>;
 pub struct EventStreamSourceRouter {
     /// The source router that should return a dictionary detailing specifics on the event stream
     /// such as its type and scope.
-    pub router: Router<Dictionary>,
+    pub router: Arc<Router<Dictionary>>,
     /// The filter that should be applied on the event stream initialized from the information
     /// returned by the router.
     pub filter: EventStreamFilter,
 }
 pub type EventStreamUseRouterFn<C> =
-    dyn Fn(&Arc<C>, Vec<EventStreamSourceRouter>) -> Router<Connector>;
+    dyn Fn(&Arc<C>, Vec<EventStreamSourceRouter>) -> Arc<Router<Connector>>;
 
 static NAMESPACE: LazyLock<Name> = LazyLock::new(|| "namespace".parse().unwrap());
 static NUMBERED_HANDLES: LazyLock<Name> = LazyLock::new(|| "numbered_handles".parse().unwrap());
@@ -68,11 +68,11 @@ static CONFIG: LazyLock<Name> = LazyLock::new(|| "config".parse().unwrap());
 #[derive(Debug, Clone)]
 pub struct ProgramInput {
     // This will always have the following fields:
-    // - namespace: Dictionary
-    // - runner: Option<Router<Connector>>
-    // - config: Dictionary
-    // - numbered_handles: Dictionary
-    inner: Dictionary,
+    // - namespace: Arc<Dictionary>
+    // - runner: Option<Arc<Router<Connector>>>
+    // - config: Arc<Dictionary>
+    // - numbered_handles: Arc<Dictionary>
+    inner: Arc<Dictionary>,
 }
 
 impl Default for ProgramInput {
@@ -81,7 +81,7 @@ impl Default for ProgramInput {
     }
 }
 
-impl From<ProgramInput> for Dictionary {
+impl From<ProgramInput> for Arc<Dictionary> {
     fn from(program_input: ProgramInput) -> Self {
         program_input.inner
     }
@@ -89,22 +89,22 @@ impl From<ProgramInput> for Dictionary {
 
 impl ProgramInput {
     pub fn new(
-        namespace: Dictionary,
-        runner: Option<Router<Connector>>,
-        config: Dictionary,
+        namespace: Arc<Dictionary>,
+        runner: Option<Arc<Router<Connector>>>,
+        config: Arc<Dictionary>,
     ) -> Self {
         let inner = Dictionary::new();
-        inner.insert(NAMESPACE.clone(), namespace.into());
+        inner.insert(NAMESPACE.clone(), Capability::Dictionary(namespace));
         if let Some(runner) = runner {
-            inner.insert(RUNNER.clone(), runner.into());
+            inner.insert(RUNNER.clone(), Capability::ConnectorRouter(runner));
         }
-        inner.insert(NUMBERED_HANDLES.clone(), Dictionary::new().into());
-        inner.insert(CONFIG.clone(), config.into());
+        inner.insert(NUMBERED_HANDLES.clone(), Capability::Dictionary(Dictionary::new()));
+        inner.insert(CONFIG.clone(), Capability::Dictionary(config));
         ProgramInput { inner }
     }
 
     /// All of the capabilities that appear in a program's namespace.
-    pub fn namespace(&self) -> Dictionary {
+    pub fn namespace(&self) -> Arc<Dictionary> {
         let cap = self.inner.get(&*NAMESPACE).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("namespace entry must be a dictionary: {cap:?}");
@@ -113,7 +113,7 @@ impl ProgramInput {
     }
 
     /// All of the capabilities that appear in a program's set of numbered handles.
-    pub fn numbered_handles(&self) -> Dictionary {
+    pub fn numbered_handles(&self) -> Arc<Dictionary> {
         let cap = self.inner.get(&*NUMBERED_HANDLES).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("numbered_handles entry must be a dictionary: {cap:?}");
@@ -122,7 +122,7 @@ impl ProgramInput {
     }
 
     /// A router for the runner that a component has used (if any).
-    pub fn runner(&self) -> Option<Router<Connector>> {
+    pub fn runner(&self) -> Option<Arc<Router<Connector>>> {
         let cap = self.inner.get(&*RUNNER);
         match cap {
             None => None,
@@ -136,7 +136,7 @@ impl ProgramInput {
     }
 
     /// All of the config capabilities that a program will use.
-    pub fn config(&self) -> Dictionary {
+    pub fn config(&self) -> Arc<Dictionary> {
         let cap = self.inner.get(&*CONFIG).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("config entry must be a dictionary: {cap:?}");
@@ -159,7 +159,7 @@ pub struct ComponentSandbox {
     pub program_input: ProgramInput,
 
     /// The dictionary containing all capabilities that a component's program can provide.
-    pub program_output_dict: Dictionary,
+    pub program_output_dict: Arc<Dictionary>,
 
     /// Router that returns the dictionary of framework capabilities scoped to a component. This a
     /// Router rather than the Dictionary itself to save memory.
@@ -170,14 +170,14 @@ pub struct ComponentSandbox {
     // other parts of the sandbox. If this were a Dictionary this wouldn't be necessary because
     // Dictionary already supports interior mutability, but since this is a singleton we don't need
     // a Dictionary here. The Arc around the Mutex is needed for Sync.
-    framework_router: Mutex<Router<Dictionary>>,
+    framework_router: Mutex<Arc<Router<Dictionary>>>,
 
     /// The dictionary containing all capabilities that a component declares based on another
     /// capability. Currently this is only the storage admin protocol.
-    pub capability_sourced_capabilities_dict: Dictionary,
+    pub capability_sourced_capabilities_dict: Arc<Dictionary>,
 
     /// The dictionary containing all dictionaries declared by this component.
-    pub declared_dictionaries: Dictionary,
+    pub declared_dictionaries: Arc<Dictionary>,
 
     /// This set holds a component input dictionary for each child of a component. Each dictionary
     /// contains all capabilities the component has made available to a specific collection.
@@ -191,7 +191,7 @@ pub struct ComponentSandbox {
 
 impl Default for ComponentSandbox {
     fn default() -> Self {
-        static NULL_ROUTER: LazyLock<Router<Dictionary>> =
+        static NULL_ROUTER: LazyLock<Arc<Router<Dictionary>>> =
             LazyLock::new(|| Router::new(NullRouter {}));
         struct NullRouter;
         #[async_trait]
@@ -199,14 +199,14 @@ impl Default for ComponentSandbox {
             async fn route(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<Dictionary>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Dictionary>>, RouterError> {
                 panic!("null router invoked");
             }
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 panic!("null router invoked");
             }
@@ -226,12 +226,12 @@ impl Default for ComponentSandbox {
     }
 }
 
-impl From<ComponentSandbox> for Dictionary {
-    fn from(sandbox: ComponentSandbox) -> Dictionary {
+impl From<ComponentSandbox> for Arc<Dictionary> {
+    fn from(sandbox: ComponentSandbox) -> Arc<Dictionary> {
         let sandbox_dictionary = Dictionary::new();
         sandbox_dictionary.insert(
             Name::new("framework").unwrap(),
-            sandbox.framework_router.lock().clone().into(),
+            Capability::DictionaryRouter(sandbox.framework_router.lock().clone()),
         );
         sandbox_dictionary.insert(
             Name::new("component_input").unwrap(),
@@ -245,15 +245,17 @@ impl From<ComponentSandbox> for Dictionary {
             Name::new("program_input").unwrap(),
             Capability::Dictionary(sandbox.program_input.into()),
         );
-        sandbox_dictionary
-            .insert(Name::new("program_output").unwrap(), sandbox.program_output_dict.into());
+        sandbox_dictionary.insert(
+            Name::new("program_output").unwrap(),
+            Capability::Dictionary(sandbox.program_output_dict),
+        );
         sandbox_dictionary.insert(
             Name::new("capability_sourced").unwrap(),
-            sandbox.capability_sourced_capabilities_dict.into(),
+            Capability::Dictionary(sandbox.capability_sourced_capabilities_dict),
         );
         sandbox_dictionary.insert(
             Name::new("declared_dictionaries").unwrap(),
-            sandbox.declared_dictionaries.into(),
+            Capability::Dictionary(sandbox.declared_dictionaries),
         );
         sandbox_dictionary.insert(
             Name::new("child_inputs").unwrap(),
@@ -344,7 +346,7 @@ impl ComponentSandbox {
         self.collection_inputs.append(collection_inputs).unwrap();
     }
 
-    pub fn framework_router(&self) -> Router<Dictionary> {
+    pub fn framework_router(&self) -> Arc<Router<Dictionary>> {
         self.framework_router.lock().clone()
     }
 }
@@ -353,13 +355,13 @@ impl ComponentSandbox {
 /// various dicts the component needs based on the contents of its manifest.
 pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: HashMap<ChildName, Arc<Router<Dictionary>>>,
     decl: &cm_rust::ComponentDecl,
     component_input: ComponentInput,
-    program_output_dict: Dictionary,
-    framework_router: Router<Dictionary>,
-    capability_sourced_capabilities_dict: Dictionary,
-    declared_dictionaries: Dictionary,
+    program_output_dict: Arc<Dictionary>,
+    framework_router: Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: Arc<Dictionary>,
+    declared_dictionaries: Arc<Dictionary>,
     error_reporter: impl ErrorReporter,
     aggregate_router_fn: &AggregateRouterFn<C>,
     event_stream_use_router_fn: &EventStreamUseRouterFn<C>,
@@ -833,14 +835,14 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
 fn new_aggregate_router_from_service_offers<C: ComponentInstanceInterface + 'static>(
     offer_bundle: &Vec<&cm_rust::offer::OfferDecl>,
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     error_reporter: impl ErrorReporter,
     aggregate_router_fn: &AggregateRouterFn<C>,
-) -> Router<DirConnector> {
+) -> Arc<Router<DirConnector>> {
     let mut aggregate_sources = vec![];
     let dict_for_source_router = Dictionary::new();
     let source = new_aggregate_capability_source(component.moniker().clone(), offer_bundle.clone());
@@ -999,10 +1001,10 @@ fn group_expose_aggregates<'a>(
 
 fn build_environment<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
     environment_decl: &cm_rust::EnvironmentDecl,
-    program_output_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
     error_reporter: &impl ErrorReporter,
 ) -> ComponentEnvironment {
     let mut environment = ComponentEnvironment::new();
@@ -1047,7 +1049,7 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
     {
         let source_path =
             SeparatedPath { dirname: Default::default(), basename: source_name.clone() };
-        let router: Router<Connector> = match &source {
+        let router: Arc<Router<Connector>> = match &source {
             cm_rust::RegistrationSource::Parent => {
                 use_from_parent_router::<Connector>(component_input, source_path, moniker)
             }
@@ -1081,14 +1083,16 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
             .availability(Availability::Required)
             .target(component)
             .error_info(route_request)
-            .error_reporter(error_reporter.clone());
+            .error_reporter(error_reporter.clone())
+            .build();
         let dict_to_insert_to = match porcelain_type {
             CapabilityTypeName::Protocol => environment.debug(),
             CapabilityTypeName::Runner => environment.runners(),
             CapabilityTypeName::Resolver => environment.resolvers(),
             c => panic!("unexpected capability type {}", c),
         };
-        let prev = dict_to_insert_to.insert_capability(&target_name, router.into());
+        let prev =
+            dict_to_insert_to.insert_capability(&target_name, Capability::ConnectorRouter(router));
         if prev.is_some() {
             log::warn!("failed to insert {porcelain_type} {target_name}: preexisting value");
         }
@@ -1100,12 +1104,12 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
 pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     static_offers: &[cm_rust::offer::OfferDecl],
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
     dynamic_offers: &[cm_rust::offer::OfferDecl],
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     target_input: &ComponentInput,
     error_reporter: impl ErrorReporter,
     aggregate_router_fn: &AggregateRouterFn<C>,
@@ -1230,17 +1234,17 @@ pub fn is_supported_use(use_: &cm_rust::UseDecl) -> bool {
 // access this configuration.
 fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
     program_input: &ProgramInput,
-    program_output_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
     config_use: &cm_rust::UseConfigurationDecl,
     error_reporter: impl ErrorReporter,
 ) {
     let moniker = component.moniker();
     let source_path = config_use.source_path();
     let porcelain_type = CapabilityTypeName::Config;
-    let router: Router<Data> = match config_use.source() {
+    let router: Arc<Router<Data>> = match config_use.source() {
         cm_rust::UseSource::Parent => {
             use_from_parent_router::<Data>(component_input, source_path.to_owned(), moniker)
         }
@@ -1278,14 +1282,16 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
     let availability = *config_use.availability();
     let prev = program_input.config().insert_capability(
         &config_use.target_name,
-        router
-            .with_porcelain_with_default(porcelain_type)
-            .availability(availability)
-            .target(component)
-            .error_info(config_use)
-            .error_reporter(error_reporter)
-            .log_errors()
-            .into(),
+        Capability::DataRouter(
+            router
+                .with_porcelain_with_default(porcelain_type)
+                .availability(availability)
+                .target(component)
+                .error_info(config_use)
+                .error_reporter(error_reporter)
+                .log_errors()
+                .build(),
+        ),
     );
     assert!(prev.is_none(), "failed to insert {}: preexisting value", config_use.target_name);
 }
@@ -1336,23 +1342,29 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
         .collect::<Vec<_>>();
 
     let router = event_stream_use_router_fn(component, routers);
-    let prev = program_input.namespace().insert_capability(&target_path, router.into());
+    let prev = program_input
+        .namespace()
+        .insert_capability(&target_path, Capability::ConnectorRouter(router));
     assert!(prev.is_none(), "failed to insert {target_path}: preexisting value");
 }
 
 fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
     program_input: &ProgramInput,
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     use_: &cm_rust::UseDecl,
     error_reporter: impl ErrorReporter,
 ) where
-    T: CapabilityBound + Clone,
-    Router<T>: TryFrom<Capability> + Into<Capability>,
+    T: CapabilityBound,
+    Arc<T>: TryFrom<Capability>,
+    Router<T>: CapabilityBound,
+    Arc<Router<T>>: TryFrom<Capability>,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
 {
     if !is_supported_use(use_) {
         return;
@@ -1372,7 +1384,7 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
 
     let source_path = use_.source_path();
     let porcelain_type = CapabilityTypeName::from(use_);
-    let router: Router<T> = match use_.source() {
+    let router: Arc<Router<T>> = match use_.source() {
         cm_rust::UseSource::Parent => {
             use_from_parent_router::<T>(component_input, source_path.to_owned(), moniker)
         }
@@ -1507,12 +1519,12 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
 
 fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
     program_input: &ProgramInput,
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     use_bundle: Vec<&cm_rust::UseDecl>,
     error_reporter: impl ErrorReporter,
 ) {
@@ -1553,7 +1565,7 @@ fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
     );
     // This value will be `Some` if we're shadowing something else. This is fine in this case
     // because we've already merged any preexisting value with what we're inserting.
-    let _ = program_input.namespace().insert_capability(path, router.into());
+    let _ = program_input.namespace().insert_capability(path, Capability::DictionaryRouter(router));
 }
 
 /// Builds a router that obtains a capability that the program uses from `parent`.
@@ -1561,10 +1573,14 @@ fn use_from_parent_router<T>(
     component_input: &ComponentInput,
     source_path: impl IterablePath + 'static + Debug,
     moniker: &Moniker,
-) -> Router<T>
+) -> Arc<Router<T>>
 where
-    T: CapabilityBound + Clone,
-    Router<T>: TryFrom<Capability>,
+    T: CapabilityBound,
+    Arc<T>: TryFrom<Capability>,
+    Arc<Router<T>>: TryFrom<Capability>,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
+    Router<T>: CapabilityBound,
 {
     let err = if moniker == &Moniker::root() {
         RoutingError::register_from_component_manager_not_found(
@@ -1593,24 +1609,29 @@ fn is_supported_offer(offer: &cm_rust::offer::OfferDecl) -> bool {
 
 fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     component_input: &ComponentInput,
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     offer: &cm_rust::offer::OfferDecl,
-    target_dict: &Dictionary,
+    target_dict: &Arc<Dictionary>,
     error_reporter: impl ErrorReporter,
 ) where
-    T: CapabilityBound + Clone,
-    Router<T>: TryFrom<Capability> + Into<Capability> + WithServiceRenamesAndFilter,
+    T: CapabilityBound,
+    Router<T>: CapabilityBound,
+    Arc<T>: TryFrom<Capability>,
+    Arc<Router<T>>: WithServiceRenamesAndFilter,
+    Arc<Router<T>>: TryFrom<Capability>,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
 {
     assert!(is_supported_offer(offer), "{offer:?}");
 
     let source_path = offer.source_path();
     let target_name = offer.target_name();
     let porcelain_type = CapabilityTypeName::from(offer);
-    let router: Router<T> = match offer.source() {
+    let router: Arc<Router<T>> = match offer.source() {
         cm_rust::offer::OfferSource::Parent => {
             let err = if component.moniker() == &Moniker::root() {
                 RoutingError::register_from_component_manager_not_found(
@@ -1731,16 +1752,20 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
 }
 
 fn query_framework_router_or_not_found<T, C>(
-    router: &Router<Dictionary>,
+    router: &Arc<Router<Dictionary>>,
     path: &BorrowedSeparatedPath<'_>,
     component: &Arc<C>,
-) -> Router<T>
+) -> Arc<Router<T>>
 where
     T: CapabilityBound,
-    Router<T>: TryFrom<Capability>,
+    Router<T>: CapabilityBound,
+    Arc<Router<T>>: TryFrom<Capability>,
+    Arc<T>: TryFrom<Capability>,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
     C: ComponentInstanceInterface + 'static,
 {
-    let dict: Result<Option<Dictionary>, RouterError> = router
+    let dict: Result<Option<Arc<Dictionary>>, RouterError> = router
         .route(RouteRequest::default(), component.as_weak().into())
         .now_or_never()
         .expect("failed to now_or_never");
@@ -1775,16 +1800,20 @@ pub fn is_supported_expose(expose: &cm_rust::ExposeDecl) -> bool {
 
 fn extend_dict_with_expose<T, C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
-    program_output_dict: &Dictionary,
-    framework_router: &Router<Dictionary>,
-    capability_sourced_capabilities_dict: &Dictionary,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
+    program_output_dict: &Arc<Dictionary>,
+    framework_router: &Arc<Router<Dictionary>>,
+    capability_sourced_capabilities_dict: &Arc<Dictionary>,
     expose: &cm_rust::ExposeDecl,
     target_component_output: &ComponentOutput,
     error_reporter: impl ErrorReporter,
 ) where
-    T: CapabilityBound + Clone,
-    Router<T>: TryFrom<Capability> + Into<Capability>,
+    T: CapabilityBound,
+    Router<T>: CapabilityBound,
+    Arc<T>: TryFrom<Capability>,
+    Arc<Router<T>>: TryFrom<Capability>,
+    Capability: From<Arc<T>>,
+    Capability: From<Arc<Router<T>>>,
 {
     assert!(is_supported_expose(expose), "{expose:?}");
 
@@ -1796,7 +1825,7 @@ fn extend_dict_with_expose<T, C: ComponentInstanceInterface + 'static>(
     let target_name = expose.target_name();
 
     let porcelain_type = CapabilityTypeName::from(expose);
-    let router: Router<T> = match expose.source() {
+    let router: Arc<Router<T>> = match expose.source() {
         cm_rust::ExposeSource::Self_ => program_output_dict.get_router_or_not_found::<T>(
             &source_path,
             RoutingError::expose_from_self_not_found(
@@ -1883,11 +1912,14 @@ struct UnavailableRouter<C: ComponentInstanceInterface> {
 }
 
 impl<C: ComponentInstanceInterface + 'static> UnavailableRouter<C> {
-    fn new<T: CapabilityBound>(capability: InternalCapability, component: &Arc<C>) -> Router<T> {
+    fn new<T: CapabilityBound>(
+        capability: InternalCapability,
+        component: &Arc<C>,
+    ) -> Arc<Router<T>> {
         Router::<T>::new(Self { capability, component: component.as_weak() })
     }
 
-    fn new_from_offer<T: CapabilityBound>(offer: &OfferDecl, component: &Arc<C>) -> Router<T> {
+    fn new_from_offer<T: CapabilityBound>(offer: &OfferDecl, component: &Arc<C>) -> Arc<Router<T>> {
         let name = offer.source_name().clone();
         let capability = match offer {
             OfferDecl::Service(_) => InternalCapability::Service(name),
@@ -1909,7 +1941,10 @@ impl<C: ComponentInstanceInterface + 'static> UnavailableRouter<C> {
         Self::new(capability, component)
     }
 
-    fn new_from_expose<T: CapabilityBound>(expose: &ExposeDecl, component: &Arc<C>) -> Router<T> {
+    fn new_from_expose<T: CapabilityBound>(
+        expose: &ExposeDecl,
+        component: &Arc<C>,
+    ) -> Arc<Router<T>> {
         let name = expose.source_name().clone();
         let capability = match expose {
             ExposeDecl::Service(_) => InternalCapability::Service(name),
@@ -1931,8 +1966,8 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
     async fn route(
         &self,
         request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         let availability = request.availability.ok_or(RouterError::InvalidArgs)?.fidl_into_native();
         match availability {
             cm_rust::Availability::Required | cm_rust::Availability::SameAsTarget => {
@@ -1948,7 +1983,7 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(CapabilitySource::Void(VoidSource {
             capability: self.capability.clone(),

@@ -304,7 +304,7 @@ async fn get_child_output_dictionary_deprecated(
             .sandbox
             .component_output
             .capabilities()
-            .into()),
+            .to_fsandbox()),
         None => {
             debug!(child:?; "get_child_output_dictionary_deprecated() failed: instance not found");
             Err(fcomponent::Error::InstanceNotFound)
@@ -1436,8 +1436,9 @@ mod tests {
             .expect("fidl call failed")
             .expect("get_child_output_deprecated() failed");
 
-        let child_output_dictionary: runtime_capabilities::Dictionary =
-            child_output_dictionary_ref.try_into().unwrap();
+        let child_output_dictionary =
+            runtime_capabilities::Dictionary::try_from_fsandbox(child_output_dictionary_ref)
+                .unwrap();
         assert_eq!(
             vec!["fidl.examples.Echo".to_string()],
             child_output_dictionary.snapshot_keys_as_strings(),
@@ -1475,7 +1476,7 @@ mod tests {
             .expect("fidl call failed")
             .expect("get_child_output() failed");
 
-        let child_output_dictionary: runtime_capabilities::Dictionary = test
+        let child_output_dictionary: Arc<runtime_capabilities::Dictionary> = test
             .component()
             .context
             .remote_capabilities()

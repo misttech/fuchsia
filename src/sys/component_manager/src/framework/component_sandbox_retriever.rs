@@ -14,7 +14,8 @@ use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use runtime_capabilities::{Capability, Dictionary, WeakInstanceToken};
+use runtime_capabilities::{Dictionary, WeakInstanceToken};
+use std::sync::Arc;
 
 pub fn serve(
     chan: zx::Channel,
@@ -54,11 +55,9 @@ pub fn serve(
                         // protocol if the client is a built-in component.
                         return Err(format_err!("only accessible from built-in components"));
                     }
-                    let to_event_pair = |dictionary: Dictionary| {
+                    let to_event_pair = |dictionary: Arc<Dictionary>| {
                         let (e1, e2) = zx::EventPair::create();
-                        remote_capabilities
-                            .store(e1, Capability::Dictionary(dictionary.into()))
-                            .expect("we used a valid handle");
+                        remote_capabilities.store(e1, dictionary).expect("we used a valid handle");
                         e2
                     };
                     let child_input_to_fidl =
@@ -94,7 +93,7 @@ pub fn serve(
     .boxed()
 }
 
-async fn is_builtin_runner(program_input: &ProgramInput, target: WeakInstanceToken) -> bool {
+async fn is_builtin_runner(program_input: &ProgramInput, target: Arc<WeakInstanceToken>) -> bool {
     let Some(runner_router) = program_input.runner() else {
         return false;
     };

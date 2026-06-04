@@ -39,7 +39,7 @@ pub mod route_validator;
 /// capabilities scoped to the component `scope`. Making this a Router instead of a Dictionary
 /// saves memory compared to generating a Dictionary of framework capabilities for each component
 /// up front.
-pub(crate) fn get_framework_router(scope: &Arc<ComponentInstance>) -> Router<Dictionary> {
+pub(crate) fn get_framework_router(scope: &Arc<ComponentInstance>) -> Arc<Router<Dictionary>> {
     Router::new(FrameworkRouter { scope: scope.moniker.clone() })
 }
 
@@ -52,8 +52,8 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: fruntime::RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -137,7 +137,7 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route_debug(
         &self,
         _request: fruntime::RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         panic!("framework router does not support debug routes");
     }

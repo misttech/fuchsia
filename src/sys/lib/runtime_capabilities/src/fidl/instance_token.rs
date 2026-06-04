@@ -6,11 +6,11 @@ use crate::WeakInstanceToken;
 use fidl::handle::{EventPair, Signals};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_async as fasync;
+use std::sync::Arc;
 use zx::Koid;
 
-impl crate::RemotableCapability for WeakInstanceToken {}
-impl crate::fidl::IntoFsandboxCapability for crate::WeakInstanceToken {
-    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
+impl crate::fidl::IntoFsandboxCapability for Arc<crate::WeakInstanceToken> {
+    fn into_fsandbox_capability(self, _token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
         panic!("unsupported");
     }
 }
@@ -20,7 +20,7 @@ impl WeakInstanceToken {
         fasync::OnSignals::new(&server, Signals::OBJECT_PEER_CLOSED).await.ok();
     }
 
-    pub fn register(self, koid: Koid, server: EventPair) {
+    pub fn register(self: Arc<Self>, koid: Koid, server: EventPair) {
         crate::fidl::registry::insert(self.into(), koid, WeakInstanceToken::serve(server));
     }
 }

@@ -50,8 +50,8 @@ impl Routable<Connector> for EventStreamUseRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Connector>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Connector>>, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
             let filter = source_route.filter.clone();
@@ -78,7 +78,7 @@ impl Routable<Connector> for EventStreamUseRouter {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
@@ -107,7 +107,7 @@ impl EventStreamUseRouter {
     pub fn new(
         component: &Arc<ComponentInstance>,
         sources: Vec<EventStreamSourceRouter>,
-    ) -> Router<Connector> {
+    ) -> Arc<Router<Connector>> {
         Router::new(Self { component: component.as_weak(), sources })
     }
 }
@@ -116,16 +116,16 @@ impl EventStreamUseRouter {
 /// dictionaries of data found by an `EventStreamUseRouter`, it will implement the server end of
 /// `fuchsia.component.EventStream` on any channels that are delivered to its `receiver`.
 struct EventStreamUseReceiver {
-    routed_dictionaries: Vec<(Dictionary, EventStreamFilter)>,
+    routed_dictionaries: Vec<(Arc<Dictionary>, EventStreamFilter)>,
     weak_target_component: WeakComponentInstance,
     receiver: Receiver,
 }
 
 impl EventStreamUseReceiver {
     fn new(
-        routed_dictionaries: Vec<(Dictionary, EventStreamFilter)>,
+        routed_dictionaries: Vec<(Arc<Dictionary>, EventStreamFilter)>,
         target_component: Arc<ComponentInstance>,
-    ) -> (Connector, Self) {
+    ) -> (Arc<Connector>, Self) {
         let (receiver, connector) = Connector::new();
         let weak_target_component = target_component.as_weak();
         (connector, Self { routed_dictionaries, weak_target_component, receiver })
@@ -156,13 +156,24 @@ impl EventStreamUseReceiver {
         for (dictionary, filter) in &self.routed_dictionaries {
             let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
             let bytes = match cap {
-                Capability::Data(Data::Bytes(bytes)) => bytes,
+                Capability::Data(data_arc) => match &*data_arc {
+                    Data::Bytes(bytes) => bytes.clone(),
+                    _ => panic!("invalid event route metadata"),
+                },
                 _ => panic!("invalid event route metadata"),
             };
             let route_metadata: finternal::EventStreamRouteMetadata =
                 fidl::unpersist(&bytes).expect("invalid event stream route metadata");
             let capability_name = match dictionary.get("event_stream_name") {
-                Some(Capability::Data(Data::String(name))) => name,
+                Some(Capability::Data(data_arc)) => match &*data_arc {
+                    Data::String(name) => name.clone(),
+                    other_value => {
+                        panic!(
+                            "missing or unexpected value for event_stream_name: {:?}",
+                            other_value
+                        )
+                    }
+                },
                 other_value => {
                     panic!("missing or unexpected value for event_stream_name: {:?}", other_value)
                 }

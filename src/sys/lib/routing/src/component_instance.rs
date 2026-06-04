@@ -290,13 +290,13 @@ impl<C: ComponentInstanceInterface> From<&Arc<C>> for WeakComponentInstanceInter
     }
 }
 
-impl<C: ComponentInstanceInterface + 'static> TryFrom<WeakInstanceToken>
+impl<C: ComponentInstanceInterface + 'static> TryFrom<Arc<WeakInstanceToken>>
     for WeakComponentInstanceInterface<C>
 {
     type Error = ();
 
     fn try_from(
-        weak_component_token: WeakInstanceToken,
+        weak_component_token: Arc<WeakInstanceToken>,
     ) -> Result<WeakComponentInstanceInterface<C>, Self::Error> {
         let weak_extended: WeakExtendedInstanceInterface<C> = weak_component_token.try_into()?;
         match weak_extended {
@@ -376,13 +376,13 @@ impl<C: ComponentInstanceInterface> From<&ExtendedInstanceInterface<C>>
     }
 }
 
-impl<C: ComponentInstanceInterface + 'static> TryFrom<WeakInstanceToken>
+impl<C: ComponentInstanceInterface + 'static> TryFrom<Arc<WeakInstanceToken>>
     for WeakExtendedInstanceInterface<C>
 {
     type Error = ();
 
     fn try_from(
-        weak_component_token: WeakInstanceToken,
+        weak_component_token: Arc<WeakInstanceToken>,
     ) -> Result<WeakExtendedInstanceInterface<C>, Self::Error> {
         weak_component_token
             .inner

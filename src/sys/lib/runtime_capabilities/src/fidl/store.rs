@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::dictionary::Key;
-use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
-use crate::{Capability, Connector, Dictionary, DirConnector, WeakInstanceToken};
+use crate::fidl::{IntoFsandboxCapability, registry};
+use crate::{Capability, CapabilityBound, Connector, Dictionary, DirConnector, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::handle::Signals;
 use fidl_fuchsia_component_decl as fdecl;
@@ -34,7 +34,7 @@ pub async fn serve_capability_store(
     // We could simply detach() the Task instead, but fuchsia_async considers that holding the
     // handle is considered better practice.
     receiver_scope: &fasync::Scope,
-    token: WeakInstanceToken,
+    token: Arc<WeakInstanceToken>,
 ) -> Result<(), fidl::Error> {
     let outer_store: Arc<Store> = Arc::new(Store::new(Default::default()));
     while let Some(request) = stream.try_next().await? {
@@ -49,7 +49,7 @@ async fn handle_capability_store_request(
     request: CapabilityStoreRequest,
     outer_store: &Arc<Store>,
     receiver_scope: &fasync::Scope,
-    token: &WeakInstanceToken,
+    token: &Arc<WeakInstanceToken>,
 ) -> Result<(), fidl::Error> {
     let mut store = outer_store.lock().unwrap();
     match request {
@@ -130,9 +130,9 @@ async fn handle_capability_store_request(
         }
         fsandbox::CapabilityStoreRequest::DictionaryLegacyImport { id, client_end, responder } => {
             let result = (|| {
-                let capability = Dictionary::try_from(client_end)
-                    .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?
-                    .into();
+                let dictionary = Dictionary::from_channel(client_end)
+                    .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?;
+                let capability = Capability::Dictionary(dictionary);
                 insert_capability(&mut store, id, capability)
             })();
             responder.send(result)?;
@@ -156,7 +156,6 @@ async fn handle_capability_store_request(
         fsandbox::CapabilityStoreRequest::DictionaryInsert { id, item, responder } => {
             let result = (|| {
                 let this = get_dictionary(&store, id)?;
-                let this = this.clone();
                 let key =
                     item.key.parse().map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
                 let value =
@@ -472,10 +471,10 @@ fn get_dir_connector(
 fn get_dictionary(
     store: &HashMap<u64, Capability>,
     id: u64,
-) -> Result<&Dictionary, fsandbox::CapabilityStoreError> {
+) -> Result<Arc<Dictionary>, fsandbox::CapabilityStoreError> {
     let dict = store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
     if let Capability::Dictionary(dict) = dict {
-        Ok(dict)
+        Ok(dict.clone())
     } else {
         Err(fsandbox::CapabilityStoreError::WrongType)
     }
@@ -496,7 +495,7 @@ fn insert_capability(
 }
 
 async fn create_service_aggregate(
-    route_source: WeakInstanceToken,
+    route_source: Arc<WeakInstanceToken>,
     sources: Vec<fsandbox::AggregateSource>,
 ) -> Result<fsandbox::DirConnector, fsandbox::CapabilityStoreError> {
     fn is_set<T>(val: &Option<Vec<T>>) -> bool {
@@ -510,7 +509,7 @@ async fn create_service_aggregate(
                 let renames = process_renames(&s);
                 let sandbox_dir_connector =
                     s.dir_connector.ok_or(fsandbox::CapabilityStoreError::InvalidArgs)?;
-                let dir_connector = DirConnector::try_from(sandbox_dir_connector)
+                let dir_connector = DirConnector::try_from_fsandbox(sandbox_dir_connector)
                     .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
                 Ok((dir_connector, renames))
             })
@@ -541,7 +540,14 @@ async fn create_service_aggregate(
                     .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
             }
         }
-        return Ok(DirConnector::from_directory_entry(target_directory, fio::PERM_READABLE).into());
+        let dir_connector =
+            DirConnector::from_directory_entry(target_directory, fio::PERM_READABLE);
+        let fsandbox::Capability::DirConnector(dir_connector) =
+            dir_connector.into_fsandbox_capability(WeakInstanceToken::new_invalid())
+        else {
+            unreachable!("the above function always returns a fsandbox::DirConnector value");
+        };
+        return Ok(dir_connector);
     }
     // Anonymous aggregates are currently unsupported.
     Err(fsandbox::CapabilityStoreError::InvalidArgs)
@@ -585,7 +591,7 @@ mod tests {
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(Handle::new(handle));
-        let cap2 = Capability::Data(Data::Int64(42));
+        let cap2 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -618,7 +624,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Data::Int64(42));
+        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -649,7 +655,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Data::Int64(42));
+        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -675,7 +681,7 @@ mod tests {
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(Handle::new(handle));
-        let cap2 = Capability::Data(Data::Int64(42));
+        let cap2 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -699,7 +705,7 @@ mod tests {
         );
 
         // Id 2 can be reused.
-        let cap2 = Capability::Data(Data::Int64(84));
+        let cap2 = Capability::Data(Arc::new(Data::Int64(84)));
         store
             .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -720,7 +726,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap1 = Capability::Data(Data::Int64(42));
+        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -785,7 +791,7 @@ mod tests {
 
     impl TestDirConnector {
         fn new() -> (
-            DirConnector,
+            Arc<DirConnector>,
             UnboundedReceiver<(ServerEnd<fio::DirectoryMarker>, RelativePath, Option<fio::Flags>)>,
         ) {
             let (sender, receiver) = unbounded();
@@ -797,7 +803,7 @@ mod tests {
     async fn rename_aggregate_with_one_source() {
         let (source_dir_connector, mut source_dir_receiver) = TestDirConnector::new();
         let sources = vec![fsandbox::AggregateSource {
-            dir_connector: Some(source_dir_connector.into()),
+            dir_connector: Some(source_dir_connector.to_fsandbox()),
             renamed_instances: Some(vec![fdecl::NameMapping {
                 source_name: "foo".to_string(),
                 target_name: "bar".to_string(),
@@ -807,7 +813,8 @@ mod tests {
         let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
             .await
             .expect("failed to create service aggregate");
-        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+        let aggregate =
+            DirConnector::try_from_fsandbox(fidl_aggregate).expect("invalid dir connector");
 
         let (client_end, server_end) = create_endpoints::<fio::DirectoryMarker>();
         aggregate.send(server_end, RelativePath::new("bar").unwrap(), None).unwrap();
@@ -826,7 +833,7 @@ mod tests {
         let (source_dir_connector_2, source_dir_receiver_2) = TestDirConnector::new();
         let sources = vec![
             fsandbox::AggregateSource {
-                dir_connector: Some(source_dir_connector_1.into()),
+                dir_connector: Some(source_dir_connector_1.to_fsandbox()),
                 renamed_instances: Some(vec![fdecl::NameMapping {
                     source_name: "foo".to_string(),
                     target_name: "bar".to_string(),
@@ -834,7 +841,7 @@ mod tests {
                 ..Default::default()
             },
             fsandbox::AggregateSource {
-                dir_connector: Some(source_dir_connector_2.into()),
+                dir_connector: Some(source_dir_connector_2.to_fsandbox()),
                 renamed_instances: Some(vec![fdecl::NameMapping {
                     source_name: "foo".to_string(),
                     target_name: "baz".to_string(),
@@ -845,7 +852,8 @@ mod tests {
         let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
             .await
             .expect("failed to create service aggregate");
-        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+        let aggregate =
+            DirConnector::try_from_fsandbox(fidl_aggregate).expect("invalid dir connector");
 
         for (mut receiver, name) in [(source_dir_receiver_1, "bar"), (source_dir_receiver_2, "baz")]
         {
@@ -867,7 +875,7 @@ mod tests {
         let (source_dir_connector_2, source_dir_receiver_2) = TestDirConnector::new();
         let sources = vec![
             fsandbox::AggregateSource {
-                dir_connector: Some(source_dir_connector_1.into()),
+                dir_connector: Some(source_dir_connector_1.to_fsandbox()),
                 renamed_instances: Some(vec![fdecl::NameMapping {
                     source_name: "foo".to_string(),
                     target_name: "bar".to_string(),
@@ -875,7 +883,7 @@ mod tests {
                 ..Default::default()
             },
             fsandbox::AggregateSource {
-                dir_connector: Some(source_dir_connector_2.into()),
+                dir_connector: Some(source_dir_connector_2.to_fsandbox()),
                 source_instance_filter: Some(vec!["foo".to_string()]),
                 ..Default::default()
             },
@@ -883,7 +891,8 @@ mod tests {
         let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
             .await
             .expect("failed to create service aggregate");
-        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+        let aggregate =
+            DirConnector::try_from_fsandbox(fidl_aggregate).expect("invalid dir connector");
 
         for (mut receiver, name) in [(source_dir_receiver_1, "bar"), (source_dir_receiver_2, "foo")]
         {

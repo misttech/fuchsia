@@ -19,7 +19,7 @@ use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::Moniker;
 use routing::error::{ComponentInstanceError, RoutingError};
-use runtime_capabilities::{Connector, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{Capability, Connector, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -94,7 +94,7 @@ impl ComponentManagerInstance {
         }
 
         impl RootCapabilityRouter {
-            async fn get_router(&self) -> Result<Router<Connector>, RouterError> {
+            async fn get_router(&self) -> Result<Arc<Router<Connector>>, RouterError> {
                 let component_output = self
                     .root
                     .lock_resolved_state()
@@ -109,7 +109,7 @@ impl ComponentManagerInstance {
                     .component_output
                     .clone();
                 match component_output.capabilities().get(&self.source_name) {
-                    Some(runtime_capabilities::Capability::ConnectorRouter(router)) => Ok(router),
+                    Some(Capability::ConnectorRouter(router)) => Ok(router),
                     _ => Err(RouterError::NotFound(Arc::new(
                         RoutingError::UseFromRootExposeNotFound {
                             capability_id: self.source_name.to_string(),
@@ -124,15 +124,15 @@ impl ComponentManagerInstance {
             async fn route(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
-            ) -> Result<Option<Connector>, RouterError> {
+                target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Connector>>, RouterError> {
                 let router = self.get_router().await?;
                 router.route(request, target).await
             }
             async fn route_debug(
                 &self,
                 request: RouteRequest,
-                target: WeakInstanceToken,
+                target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 let router = self.get_router().await?;
                 router.route_debug(request, target).await

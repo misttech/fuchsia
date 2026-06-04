@@ -8,13 +8,13 @@ use fuchsia_sync::Mutex;
 use std::sync::Arc;
 
 /// A capability that wraps a single Zircon handle.
-#[derive(Debug, Clone)]
-pub struct Handle(Arc<Mutex<Option<handle::NullableHandle>>>);
+#[derive(Debug)]
+pub struct Handle(Mutex<Option<handle::NullableHandle>>);
 
 impl Handle {
     /// Creates a new [Handle] containing a Zircon `handle`.
-    pub fn new(handle: handle::NullableHandle) -> Self {
-        Self(Arc::new(Mutex::new(Some(handle))))
+    pub fn new(handle: handle::NullableHandle) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(Some(handle))))
     }
 
     /// Gets a duplicate of the inner handle. Returns None if the handle has been taken or the
@@ -36,7 +36,7 @@ impl CapabilityBound for Handle {
 }
 
 impl Handle {
-    pub fn try_clone(&self) -> Result<Self, ()> {
+    pub fn try_clone(&self) -> Result<Arc<Self>, ()> {
         self.duplicate().map(Self::new).ok_or(())
     }
 }

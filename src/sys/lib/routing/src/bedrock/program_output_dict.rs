@@ -21,7 +21,7 @@ use fidl_fuchsia_io as fio;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -36,7 +36,7 @@ pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
         component: WeakComponentInstanceInterface<C>,
         path: Path,
         capability: ComponentCapability,
-    ) -> Router<Dictionary>;
+    ) -> Arc<Router<Dictionary>>;
 
     /// Get an outgoing directory router for `capability` that returns [Connector]. `capability`
     /// should be a type that maps to [Connector].
@@ -45,7 +45,7 @@ pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
         component: &Arc<C>,
         decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Router<Connector>;
+    ) -> Arc<Router<Connector>>;
 
     /// Get an outgoing directory router for `capability` that returns [DirConnector]. `capability`
     /// should be a type that maps to [DirConnector].
@@ -54,16 +54,16 @@ pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
         component: &Arc<C>,
         decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Router<DirConnector>;
+    ) -> Arc<Router<DirConnector>>;
 }
 
 pub fn build_program_output_dictionary<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::ComponentDecl,
     component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_outgoing_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     router_gen: &impl ProgramOutputGenerator<C>,
-) -> (Dictionary, Dictionary) {
+) -> (Arc<Dictionary>, Arc<Dictionary>) {
     let program_output_dict = Dictionary::new();
     let declared_dictionaries = Dictionary::new();
     for capability in &decl.capabilities {
@@ -87,10 +87,10 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::ComponentDecl,
     capability: &cm_rust::CapabilityDecl,
-    program_output_dict: &Dictionary,
-    declared_dictionaries: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    declared_dictionaries: &Arc<Dictionary>,
     component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
+    child_outgoing_dictionary_routers: &HashMap<ChildName, Arc<Router<Dictionary>>>,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) {
     match capability {
@@ -104,7 +104,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            let prev = program_output_dict
+                .insert_capability(capability.name(), Capability::DirConnectorRouter(router));
             assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Directory(_) => {
@@ -117,7 +118,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            let prev = program_output_dict
+                .insert_capability(capability.name(), Capability::DirConnectorRouter(router));
             assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Storage(cm_rust::StorageDecl {
@@ -127,7 +129,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             subdir,
             storage_id,
         }) => {
-            let router: Router<DirConnector> = match source {
+            let router: Arc<Router<DirConnector>> = match source {
                 cm_rust::StorageDirectorySource::Parent => {
                     component_input.capabilities().get_router_or_not_found(
                         backing_dir,
@@ -173,9 +175,9 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             struct StorageBackingDirRouter<C: ComponentInstanceInterface + 'static> {
                 subdir: RelativePath,
                 storage_id: fdecl::StorageId,
-                backing_dir_router: Router<DirConnector>,
+                backing_dir_router: Arc<Router<DirConnector>>,
                 storage_source_moniker: Moniker,
-                backing_dir_target: WeakInstanceToken,
+                backing_dir_target: Arc<WeakInstanceToken>,
                 _component_type: PhantomData<C>,
             }
 
@@ -183,7 +185,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 fn prepare_route(
                     &self,
                     mut request: RouteRequest,
-                    target: WeakInstanceToken,
+                    target: Arc<WeakInstanceToken>,
                 ) -> Result<RouteRequest, RouterError> {
                     fn generate_moniker_based_storage_path(
                         subdir: Option<String>,
@@ -276,8 +278,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 async fn route(
                     &self,
                     request: RouteRequest,
-                    target: WeakInstanceToken,
-                ) -> Result<Option<DirConnector>, RouterError> {
+                    target: Arc<WeakInstanceToken>,
+                ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                     let request = self.prepare_route(request, target)?;
                     self.backing_dir_router.route(request, self.backing_dir_target.clone()).await
                 }
@@ -285,7 +287,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 async fn route_debug(
                     &self,
                     request: RouteRequest,
-                    target: WeakInstanceToken,
+                    target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     let request = self.prepare_route(request, target)?;
                     self.backing_dir_router
@@ -306,12 +308,13 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 storage_id: storage_id.clone(),
                 backing_dir_router: router,
                 storage_source_moniker: component.moniker().clone(),
-                backing_dir_target: WeakInstanceToken {
-                    inner: Arc::new(WeakExtendedInstanceInterface::Component(component.as_weak())),
-                },
+                backing_dir_target: Arc::new(WeakInstanceToken {
+                    inner: Box::new(WeakExtendedInstanceInterface::Component(component.as_weak())),
+                }),
                 _component_type: Default::default(),
             });
-            let prev = program_output_dict.insert_capability(name, router.into());
+            let prev =
+                program_output_dict.insert_capability(name, Capability::DirConnectorRouter(router));
             assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Protocol(_)
@@ -325,7 +328,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            let prev = program_output_dict
+                .insert_capability(capability.name(), Capability::ConnectorRouter(router));
             assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Dictionary(d) => {
@@ -338,10 +342,11 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             );
         }
         cm_rust::CapabilityDecl::Config(c) => {
-            let data =
-                Data::Bytes(fidl::persist(&c.value.clone().native_into_fidl()).unwrap().into());
+            let data = Arc::new(Data::Bytes(
+                fidl::persist(&c.value.clone().native_into_fidl()).unwrap().into(),
+            ));
             struct ConfigRouter {
-                data: Data,
+                data: Arc<Data>,
                 source: CapabilitySource,
             }
             #[async_trait]
@@ -349,14 +354,14 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 async fn route(
                     &self,
                     _request: RouteRequest,
-                    _target: WeakInstanceToken,
-                ) -> Result<Option<Data>, RouterError> {
+                    _target: Arc<WeakInstanceToken>,
+                ) -> Result<Option<Arc<Data>>, RouterError> {
                     Ok(Some(self.data.clone()))
                 }
                 async fn route_debug(
                     &self,
                     _request: RouteRequest,
-                    _target: WeakInstanceToken,
+                    _target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     Ok(self.source.clone())
                 }
@@ -367,7 +372,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             });
             let router = Router::new(ConfigRouter { data, source: source.clone() });
             let router = router.with_policy_check::<C>(source, component.policy_checker().clone());
-            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            let prev = program_output_dict
+                .insert_capability(capability.name(), Capability::DataRouter(router));
             assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::EventStream(_) => {
@@ -380,8 +386,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
 fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::DictionaryDecl,
-    program_output_dict: &Dictionary,
-    declared_dictionaries: &Dictionary,
+    program_output_dict: &Arc<Dictionary>,
+    declared_dictionaries: &Arc<Dictionary>,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) {
     let router;
@@ -409,12 +415,12 @@ fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
 
 /// Makes a router that always returns the given dictionary.
 fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
-    dict: Dictionary,
+    dict: Arc<Dictionary>,
     component: &Arc<C>,
     decl: &cm_rust::DictionaryDecl,
-) -> Router<Dictionary> {
+) -> Arc<Router<Dictionary>> {
     struct DictRouter {
-        dict: Dictionary,
+        dict: Arc<Dictionary>,
         source: CapabilitySource,
     }
     #[async_trait]
@@ -422,15 +428,15 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
         async fn route(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
-        ) -> Result<Option<Dictionary>, RouterError> {
-            Ok(Some(self.dict.clone().into()))
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<Dictionary>>, RouterError> {
+            Ok(Some(self.dict.clone()))
         }
 
         async fn route_debug(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
+            _target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             Ok(self.source.clone())
         }

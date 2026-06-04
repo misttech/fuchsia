@@ -5,9 +5,7 @@
 use crate::dir_connector::DirConnectable;
 use crate::fidl::registry;
 use crate::fidl::registry::try_from_handle_in_registry;
-use crate::{
-    Capability, ConversionError, DirConnector, DirReceiver, RemoteError, WeakInstanceToken,
-};
+use crate::{Capability, DirConnector, DirReceiver, RemoteError, WeakInstanceToken};
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_component_sandbox as fsandbox;
@@ -25,7 +23,7 @@ impl DirConnector {
     pub(crate) fn new_with_fidl_receiver(
         receiver_client: ClientEnd<fsandbox::DirReceiverMarker>,
         scope: &fasync::Scope,
-    ) -> Self {
+    ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded();
         let receiver = DirReceiver::new(receiver);
         // Exits when ServerEnd<DirReceiver> is closed
@@ -36,13 +34,27 @@ impl DirConnector {
     pub fn from_directory_entry(
         directory_entry: Arc<dyn DirectoryEntry>,
         flags: fio::Flags,
-    ) -> Self {
+    ) -> Arc<Self> {
         assert_eq!(directory_entry.entry_info().type_(), fio::DirentType::Directory);
         DirConnector::new_sendable(DirectoryEntryDirConnector {
             directory_entry,
             scope: ExecutionScope::new(),
             flags,
         })
+    }
+
+    pub(crate) fn try_from_fsandbox(
+        dir_connector: fsandbox::DirConnector,
+    ) -> Result<Arc<Self>, RemoteError> {
+        let any = try_from_handle_in_registry(dir_connector.token.as_handle_ref())?;
+        let Capability::DirConnector(dir_connector) = any else {
+            panic!("BUG: registry has a non-dir-connector capability under a dir-connector koid");
+        };
+        Ok(dir_connector)
+    }
+
+    pub(crate) fn to_fsandbox(self: Arc<Self>) -> fsandbox::DirConnector {
+        fsandbox::DirConnector { token: registry::insert_token(self.into()) }
     }
 }
 
@@ -86,7 +98,11 @@ impl DirConnectable for DirectoryEntryDirConnector {
     }
 }
 
-impl RemoteLike for DirConnector {
+pub struct DirConnectorDirectoryEntry {
+    pub dir_connector: Arc<DirConnector>,
+}
+
+impl RemoteLike for DirConnectorDirectoryEntry {
     fn open(
         self: Arc<Self>,
         _scope: ExecutionScope,
@@ -105,53 +121,28 @@ impl RemoteLike for DirConnector {
                 return Err(zx::Status::INVALID_ARGS);
             }
         }
-        self.send(object_request.take().into_server_end(), relative_path, Some(flags))
+        self.dir_connector
+            .send(object_request.take().into_server_end(), relative_path, Some(flags))
             .map_err(|_| zx::Status::INTERNAL)
     }
 }
 
-impl DirectoryEntry for DirConnector {
+impl DirectoryEntry for DirConnectorDirectoryEntry {
     fn open_entry(self: Arc<Self>, request: OpenRequest<'_>) -> Result<(), zx::Status> {
         request.open_remote(self)
     }
 }
 
-impl GetEntryInfo for DirConnector {
+impl GetEntryInfo for DirConnectorDirectoryEntry {
     fn entry_info(&self) -> EntryInfo {
         EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::Directory)
     }
 }
 
-impl crate::RemotableCapability for DirConnector {
-    fn try_into_directory_entry(
-        self,
-        _scope: ExecutionScope,
-        _token: WeakInstanceToken,
-    ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(Arc::new(self))
-    }
-}
-
-impl TryFrom<fsandbox::DirConnector> for DirConnector {
-    type Error = RemoteError;
-
-    fn try_from(dir_connector: fsandbox::DirConnector) -> Result<Self, Self::Error> {
-        let any = try_from_handle_in_registry(dir_connector.token.as_handle_ref())?;
-        let Capability::DirConnector(dir_connector) = any else {
-            panic!("BUG: registry has a non-dir-connector capability under a dir-connector koid");
-        };
-        Ok(dir_connector)
-    }
-}
-
-impl From<DirConnector> for fsandbox::DirConnector {
-    fn from(value: DirConnector) -> Self {
-        fsandbox::DirConnector { token: registry::insert_token(value.into()) }
-    }
-}
-
-impl crate::fidl::IntoFsandboxCapability for DirConnector {
-    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
-        fsandbox::Capability::DirConnector(self.into())
+impl crate::fidl::IntoFsandboxCapability for Arc<DirConnector> {
+    fn into_fsandbox_capability(self, _token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
+        fsandbox::Capability::DirConnector(fsandbox::DirConnector {
+            token: registry::insert_token(self.into()),
+        })
     }
 }

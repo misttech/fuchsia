@@ -14,6 +14,7 @@ use runtime_capabilities::{
     Capability, Dictionary, EntryUpdate, Routable, Router, UpdateNotifierRetention,
     WeakInstanceToken,
 };
+use std::sync::Arc;
 
 /// Given an original dictionary and a handful of additional dictionary routers, produces a router
 /// that when invoked will route all the additional routers, merge everything together into a
@@ -21,8 +22,8 @@ use runtime_capabilities::{
 pub struct UseDictionaryRouter {
     path: cm_types::Path,
     moniker: moniker::Moniker,
-    original_dictionary: Dictionary,
-    dictionary_routers: Vec<Router<Dictionary>>,
+    original_dictionary: Arc<Dictionary>,
+    dictionary_routers: Vec<Arc<Router<Dictionary>>>,
     capability_source: CapabilitySource,
 }
 
@@ -30,10 +31,10 @@ impl UseDictionaryRouter {
     pub fn new(
         path: cm_types::Path,
         moniker: moniker::Moniker,
-        original_dictionary: Dictionary,
-        dictionary_routers: Vec<Router<Dictionary>>,
+        original_dictionary: Arc<Dictionary>,
+        dictionary_routers: Vec<Arc<Router<Dictionary>>>,
         capability_source: CapabilitySource,
-    ) -> Router<Dictionary> {
+    ) -> Arc<Router<Dictionary>> {
         Router::new(Self {
             path,
             moniker,
@@ -51,8 +52,8 @@ impl UseDictionaryRouter {
     /// will be ignored, and the preexisting entry in `self` will take precedence.
     async fn dictionary_follow_updates_from(
         &self,
-        self_dictionary: Dictionary,
-        other_dict: Dictionary,
+        self_dictionary: Arc<Dictionary>,
+        other_dict: Arc<Dictionary>,
     ) -> Vec<(cm_types::Name, Capability, Capability)> {
         let self_clone = self_dictionary;
         let (sender, receiver) = oneshot::channel();
@@ -90,8 +91,8 @@ impl Routable<Dictionary> for UseDictionaryRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         let mut futures_unordered = FuturesUnordered::new();
         for dictionary_router in self.dictionary_routers.iter() {
             futures_unordered.push(dictionary_router.route(request.clone(), target.clone()));
@@ -146,7 +147,7 @@ impl Routable<Dictionary> for UseDictionaryRouter {
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(self.capability_source.clone())
     }
@@ -154,7 +155,7 @@ impl Routable<Dictionary> for UseDictionaryRouter {
 
 async fn try_get_router_source(
     capability: &Capability,
-    target: WeakInstanceToken,
+    target: Arc<WeakInstanceToken>,
 ) -> Option<String> {
     let source: CapabilitySource = match capability {
         Capability::DictionaryRouter(router) => {

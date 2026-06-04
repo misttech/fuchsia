@@ -18,6 +18,7 @@ use router_error::RouterError;
 use routing::WithPorcelain;
 use routing::error::RouteRequestErrorInfo;
 use runtime_capabilities::{DirConnector, Routable, Router, WeakInstanceToken};
+use std::sync::Arc;
 
 #[fuchsia::test]
 async fn offer_increasing_rights() {
@@ -135,15 +136,15 @@ async fn framework_directory_incompatible_rights() {
         async fn route(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
-        ) -> Result<Option<DirConnector>, RouterError> {
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<DirConnector>>, RouterError> {
             panic!("routing should have failed before we get here")
         }
 
         async fn route_debug(
             &self,
             _request: RouteRequest,
-            _target: WeakInstanceToken,
+            _target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             panic!("routing should have failed before we get here")
         }

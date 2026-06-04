@@ -187,7 +187,7 @@ pub struct CapabilityReceiver {
 impl CapabilityReceiver {
     /// Creates a [`CapabilityReceiver`] that receives connection requests sent via the
     /// [`Sender`] capability.
-    pub fn new() -> (Self, Connector) {
+    pub fn new() -> (Self, Arc<Connector>) {
         let (receiver, sender) = Connector::new();
         let inner = Arc::new(Mutex::new(Some(receiver)));
         (Self { inner }, sender)
@@ -224,7 +224,7 @@ pub enum EventPayload {
     },
     Destroyed,
     Resolved {
-        component: WeakInstanceToken,
+        component: Arc<WeakInstanceToken>,
     },
     Unresolved,
     Started {

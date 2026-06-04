@@ -262,7 +262,7 @@ pub const DEFAULT_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct IncomingCapabilities {
     pub numbered_handles: Vec<fprocess::HandleInfo>,
     pub additional_namespace_entries: Vec<NamespaceEntry>,
-    pub dict: Option<runtime_capabilities::Dictionary>,
+    pub dict: Option<Arc<Dictionary>>,
 }
 
 impl Default for IncomingCapabilities {
@@ -587,7 +587,7 @@ impl ComponentInstance {
         }
 
         if let Some(dictionary_handle) = child_args.additional_inputs {
-            let dictionary: Dictionary = self
+            let dictionary: Arc<Dictionary> = self
                 .context
                 .remote_capabilities()
                 .get(dictionary_handle)
@@ -1095,7 +1095,9 @@ impl ComponentInstance {
     }
 
     /// Obtains the component output dict.
-    pub async fn get_component_output_dict(self: &Arc<Self>) -> Result<Dictionary, RouterError> {
+    pub async fn get_component_output_dict(
+        self: &Arc<Self>,
+    ) -> Result<Arc<Dictionary>, RouterError> {
         Ok(self
             .lock_resolved_state()
             .await
@@ -1111,7 +1113,7 @@ impl ComponentInstance {
     }
 
     /// Returns a router that delegates to the component output dict.
-    pub(super) fn component_output(self: &Arc<Self>) -> Router<Dictionary> {
+    pub(super) fn component_output(self: &Arc<Self>) -> Arc<Router<Dictionary>> {
         #[derive(Debug)]
         struct ComponentOutput {
             component: WeakComponentInstance,
@@ -1122,15 +1124,15 @@ impl ComponentInstance {
             async fn route(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
-            ) -> Result<Option<Dictionary>, RouterError> {
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Dictionary>>, RouterError> {
                 let component = self.component.upgrade().map_err(RoutingError::from)?;
                 Ok(Some(component.get_component_output_dict().await?))
             }
             async fn route_debug(
                 &self,
                 _request: RouteRequest,
-                _target: WeakInstanceToken,
+                _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 panic!("ComponentOutput router does not support debug routes");
             }

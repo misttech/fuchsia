@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// Functions of this signature are used during sandbox to construct new aggregate routers. These
 /// aggregate routers synthesize together one capability from multiple sources.
 pub type AggregateRouterFn<C> =
-    dyn Fn(Arc<C>, Vec<AggregateSource>, CapabilitySource) -> Router<DirConnector>;
+    dyn Fn(Arc<C>, Vec<AggregateSource>, CapabilitySource) -> Arc<Router<DirConnector>>;
 
 /// An `AggregateSource` describes the source of one (or more) service capabilities whose instances
 /// will be added to an aggregated service.
@@ -22,7 +22,7 @@ pub enum AggregateSource {
         /// Where the router comes from, be it a parent, child, etc.
         source_instance: AggregateInstance,
         /// The router that will back this source to the aggregate.
-        router: Router<DirConnector>,
+        router: Arc<Router<DirConnector>>,
     },
     /// A collection whose dynamically created components may contribute to an aggregate.
     Collection { collection_name: Name },

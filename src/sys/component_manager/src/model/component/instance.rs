@@ -79,7 +79,7 @@ use log::warn;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, RemotableCapability, Routable, Router,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
     WeakInstanceToken,
 };
 use std::collections::HashMap;
@@ -294,7 +294,7 @@ pub struct ResolvedInstanceState {
     namespace_dir: Once<Arc<pfs::Simple>>,
 
     /// Holds a [Dictionary] mapping the component's exposed capabilities. Created on demand.
-    exposed_dict: Once<Dictionary>,
+    exposed_dict: Once<Arc<Dictionary>>,
 
     /// Hosts a directory mapping the component's exposed capabilities, generated from `exposed_dict`.
     /// Created on demand.
@@ -441,7 +441,7 @@ impl ResolvedInstanceState {
                 component: WeakComponentInstanceInterface<ComponentInstance>,
                 source_path: Path,
                 capability: ComponentCapability,
-            ) -> Router<Dictionary> {
+            ) -> Arc<Router<Dictionary>> {
                 Router::<Dictionary>::new(ProgramDictionaryRouter {
                     component,
                     source_path,
@@ -454,7 +454,7 @@ impl ResolvedInstanceState {
                 component: &Arc<ComponentInstance>,
                 decl: &cm_rust::ComponentDecl,
                 capability: &cm_rust::CapabilityDecl,
-            ) -> Router<Connector> {
+            ) -> Arc<Router<Connector>> {
                 ResolvedInstanceState::make_program_outgoing_connector_router(
                     component, decl, capability,
                 )
@@ -465,7 +465,7 @@ impl ResolvedInstanceState {
                 component: &Arc<ComponentInstance>,
                 decl: &cm_rust::ComponentDecl,
                 capability: &cm_rust::CapabilityDecl,
-            ) -> Router<DirConnector> {
+            ) -> Arc<Router<DirConnector>> {
                 ResolvedInstanceState::make_program_outgoing_dir_connector_router(
                     component, decl, capability,
                 )
@@ -536,7 +536,15 @@ impl ResolvedInstanceState {
                 continue;
             };
             let capability_name = match dictionary.get("event_stream_name") {
-                Some(Capability::Data(Data::String(name))) => name,
+                Some(Capability::Data(data_arc)) => match &*data_arc {
+                    Data::String(name) => name.clone(),
+                    other_value => {
+                        panic!(
+                            "missing or unexpected value for event_stream_name: {:?}",
+                            other_value
+                        )
+                    }
+                },
                 other_value => {
                     panic!("missing or unexpected value for event_stream_name: {:?}", other_value)
                 }
@@ -548,7 +556,10 @@ impl ResolvedInstanceState {
             }
             let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
             let bytes = match cap {
-                Capability::Data(Data::Bytes(bytes)) => bytes,
+                Capability::Data(data_arc) => match &*data_arc {
+                    Data::Bytes(bytes) => bytes.clone(),
+                    _ => panic!("invalid event route metadata"),
+                },
                 _ => panic!("invalid event route metadata"),
             };
             let route_metadata: finternal::EventStreamRouteMetadata =
@@ -591,7 +602,7 @@ impl ResolvedInstanceState {
         component: &Arc<ComponentInstance>,
         component_decl: &ComponentDecl,
         capability_decl: &cm_rust::CapabilityDecl,
-    ) -> Router<Connector> {
+    ) -> Arc<Router<Connector>> {
         if component_decl.get_runner().is_none() {
             return Router::<Connector>::new_error(OpenOutgoingDirError::InstanceNonExecutable);
         }
@@ -625,18 +636,18 @@ impl ResolvedInstanceState {
         }
         let node = Arc::new(SubNode::new(outgoing_dir_entry, relative_path, entry_type));
         let connector = runtime_capabilities::Connector::new_sendable(OutgoingConnector { node });
-        let hook = CapabilityRequestedHook {
+        let router = Router::new(CapabilityRequestedHook {
             source: component.as_weak(),
             name: name.clone(),
             connector,
             capability_decl: capability_decl.clone(),
-        };
+        });
         match capability_decl {
             CapabilityDecl::Protocol(p) => match p.delivery {
-                DeliveryType::Immediate => Router::<Connector>::new(hook),
-                DeliveryType::OnReadable => hook.on_readable(component.execution_scope.clone()),
+                DeliveryType::Immediate => router,
+                DeliveryType::OnReadable => router.on_readable(component.execution_scope.clone()),
             },
-            _ => Router::<Connector>::new(hook),
+            _ => router,
         }
     }
 
@@ -646,7 +657,7 @@ impl ResolvedInstanceState {
         component: &Arc<ComponentInstance>,
         component_decl: &ComponentDecl,
         capability_decl: &cm_rust::CapabilityDecl,
-    ) -> Router<DirConnector> {
+    ) -> Arc<Router<DirConnector>> {
         if component_decl.get_runner().is_none() {
             return Router::<DirConnector>::new_error(OpenOutgoingDirError::InstanceNonExecutable);
         }
@@ -792,7 +803,7 @@ impl ResolvedInstanceState {
 
     async fn extend_program_input_namespace_with_injected_capabilities(
         component: &Arc<ComponentInstance>,
-        out_dict: &Dictionary,
+        out_dict: &Arc<Dictionary>,
     ) {
         let top_instance = component.top_instance().await;
 
@@ -827,7 +838,7 @@ impl ResolvedInstanceState {
     /// Returns a [`Dictionary`] with contents similar to `component_output_dict`, but adds
     /// capabilities backed by legacy routing. This [`Dictionary`] is used to generate the
     /// `exposed_dir`.
-    pub async fn get_exposed_dict(&self, self_target: WeakInstanceToken) -> &Dictionary {
+    pub async fn get_exposed_dict(&self, self_target: Arc<WeakInstanceToken>) -> &Arc<Dictionary> {
         let create_exposed_dict = async || {
             let decl = self.decl();
             let dict = Dictionary::new();
@@ -850,7 +861,10 @@ impl ResolvedInstanceState {
         self.exposed_dict.get_or_init(create_exposed_dict).await
     }
 
-    pub async fn get_exposed_dir(&self, self_target: WeakInstanceToken) -> Arc<dyn DirectoryEntry> {
+    pub async fn get_exposed_dir(
+        &self,
+        self_target: Arc<WeakInstanceToken>,
+    ) -> Arc<dyn DirectoryEntry> {
         let create_exposed_dir = async || {
             let exposed_dict = self.get_exposed_dict(self_target.clone()).await.clone();
             exposed_dict
@@ -1159,7 +1173,7 @@ impl ResolvedInstanceState {
 
     fn get_child_component_output_dictionary_routers(
         &self,
-    ) -> HashMap<ChildName, Router<Dictionary>> {
+    ) -> HashMap<ChildName, Arc<Router<Dictionary>>> {
         self.children.iter().map(|(name, child)| (name.clone(), child.component_output())).collect()
     }
 }
@@ -1361,7 +1375,7 @@ impl StartedInstanceState {
 struct CapabilityRequestedHook {
     source: WeakComponentInstance,
     name: Name,
-    connector: Connector,
+    connector: Arc<Connector>,
     capability_decl: cm_rust::CapabilityDecl,
 }
 
@@ -1371,14 +1385,16 @@ impl Routable<Connector> for CapabilityRequestedHook {
     async fn route(
         &self,
         _request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Connector>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Connector>>, RouterError> {
         fn cm_unexpected() -> RouterError {
             RoutingError::from(ComponentInstanceError::ComponentManagerInstanceUnexpected {}).into()
         }
 
+        let weak_extended_component: WeakExtendedInstance =
+            target.clone().try_into().expect("invalid token");
         let ExtendedMoniker::ComponentInstance(target_moniker) =
-            <WeakInstanceToken as WeakInstanceTokenExt<ComponentInstance>>::moniker(&target)
+            weak_extended_component.extended_moniker()
         else {
             return Err(cm_unexpected());
         };
@@ -1396,7 +1412,8 @@ impl Routable<Connector> for CapabilityRequestedHook {
                 })
             })?;
         let source = self.source.upgrade().map_err(RoutingError::from)?;
-        let ExtendedInstance::Component(target) = target.upgrade().map_err(RoutingError::from)?
+        let ExtendedInstance::Component(target) =
+            target.clone().upgrade().map_err(RoutingError::from)?
         else {
             return Err(cm_unexpected());
         };
@@ -1414,7 +1431,7 @@ impl Routable<Connector> for CapabilityRequestedHook {
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(CapabilitySource::Component(ComponentSource {
             capability: self.capability_decl.clone().into(),
@@ -1435,8 +1452,8 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        _target: WeakInstanceToken,
-    ) -> Result<Option<DirConnector>, RouterError> {
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<DirConnector>>, RouterError> {
         let subdir = request
             .sub_directory_path
             .map(|s| RelativePath::new(s).expect("invalid path"))
@@ -1549,7 +1566,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
     async fn route_debug(
         &self,
         request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let subdir = request
             .sub_directory_path
@@ -1599,8 +1616,8 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<Dictionary>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<Dictionary>>, RouterError> {
         fn open_error(e: OpenOutgoingDirError) -> OpenError {
             CapabilityProviderError::from(ComponentProviderError::from(e)).into()
         }
@@ -1634,8 +1651,8 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                 .map_err(RouterError::from)?;
             match resp {
                 fsandbox::DictionaryRouterRouteResponse::Dictionary(d) => {
-                    let dictionary =
-                        Dictionary::try_from(d).map_err(|e| RouterError::NotFound(Arc::new(e)))?;
+                    let dictionary = Dictionary::try_from_fsandbox(d)
+                        .map_err(|e| RouterError::NotFound(Arc::new(e)))?;
                     return Ok(Some(dictionary));
                 }
                 fsandbox::DictionaryRouterRouteResponse::Unavailable(_) => return Ok(None),
@@ -1658,7 +1675,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route_debug(
         &self,
         _request: RouteRequest,
-        _target: WeakInstanceToken,
+        _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         Ok(CapabilitySource::Component(ComponentSource {
             capability: self.capability.clone(),

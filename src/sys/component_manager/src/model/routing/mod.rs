@@ -76,7 +76,7 @@ impl ErrorReporter for RoutingFailureErrorReporter {
         &self,
         request: &RouteRequestErrorInfo,
         err: &RouterError,
-        target: runtime_capabilities::WeakInstanceToken,
+        target: Arc<runtime_capabilities::WeakInstanceToken>,
     ) {
         let component_to_log_at = match WeakComponentInstance::try_from(target) {
             Ok(target) => target,

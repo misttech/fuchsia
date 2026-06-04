@@ -7,7 +7,7 @@ use cm_types::{BorrowedName, IterablePath, Name};
 use runtime_capabilities::{Capability, Data, Dictionary};
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 /// This trait is implemented by types that wrap a [Dictionary] and wish to present an abstracted
 /// interface over the [Dictionary].
@@ -15,14 +15,14 @@ use std::sync::LazyLock;
 /// All such types are defined in this module, so this trait is private.
 ///
 /// See also: [StructuredDictMap]
-trait StructuredDict: Into<Dictionary> + Default + Clone + fmt::Debug {
+trait StructuredDict: Into<Arc<Dictionary>> + Default + Clone + fmt::Debug {
     /// Converts from [Dictionary] to `Self`.
     ///
     /// REQUIRES: [Dictionary] is a valid representation of `Self`.
     ///
     /// IMPORTANT: The caller should know that [Dictionary] is a valid representation of [Self].
     /// This function is not guaranteed to perform any validation.
-    fn from_dict(dict: Dictionary) -> Self;
+    fn from_dict(dict: Arc<Dictionary>) -> Self;
 }
 
 /// A collection type for mapping [Name] to [StructuredDict], using [Dictionary] as the underlying
@@ -36,12 +36,12 @@ trait StructuredDict: Into<Dictionary> + Default + Clone + fmt::Debug {
 #[derive(Clone, Debug, Default)]
 #[allow(private_bounds)]
 pub struct StructuredDictMap<T: StructuredDict> {
-    inner: Dictionary,
+    inner: Arc<Dictionary>,
     phantom: PhantomData<T>,
 }
 
 impl<T: StructuredDict> StructuredDict for StructuredDictMap<T> {
-    fn from_dict(dict: Dictionary) -> Self {
+    fn from_dict(dict: Arc<Dictionary>) -> Self {
         Self { inner: dict, phantom: Default::default() }
     }
 }
@@ -49,8 +49,7 @@ impl<T: StructuredDict> StructuredDict for StructuredDictMap<T> {
 #[allow(private_bounds)]
 impl<T: StructuredDict> StructuredDictMap<T> {
     pub fn insert(&self, key: Name, value: T) -> Option<Capability> {
-        let dict: Dictionary = value.into();
-        self.inner.insert(key, dict.into())
+        self.inner.insert(key, Capability::Dictionary(value.into()))
     }
 
     pub fn get(&self, key: &BorrowedName) -> Option<T> {
@@ -83,7 +82,7 @@ impl<T: StructuredDict> StructuredDictMap<T> {
     }
 }
 
-impl<T: StructuredDict> From<StructuredDictMap<T>> for Dictionary {
+impl<T: StructuredDict> From<StructuredDictMap<T>> for Arc<Dictionary> {
     fn from(m: StructuredDictMap<T>) -> Self {
         m.inner
     }
@@ -117,7 +116,7 @@ static NAME: LazyLock<Name> = LazyLock::new(|| "name".parse().unwrap());
 /// Contains the capabilities component receives from its parent and environment. Stored as a
 /// [Dictionary] containing two nested [Dictionary]s for the parent and environment.
 #[derive(Clone, Debug)]
-pub struct ComponentInput(Dictionary);
+pub struct ComponentInput(Arc<Dictionary>);
 
 impl Default for ComponentInput {
     fn default() -> Self {
@@ -126,7 +125,7 @@ impl Default for ComponentInput {
 }
 
 impl StructuredDict for ComponentInput {
-    fn from_dict(dict: Dictionary) -> Self {
+    fn from_dict(dict: Arc<Dictionary>) -> Self {
         Self(dict)
     }
 }
@@ -136,7 +135,7 @@ impl ComponentInput {
         let dict = Dictionary::new();
 
         if !environment.0.is_empty() {
-            dict.insert(ENVIRONMENT.clone(), Dictionary::from(environment).into());
+            dict.insert(ENVIRONMENT.clone(), Capability::Dictionary(environment.into()));
         }
         Self(dict)
     }
@@ -156,7 +155,7 @@ impl ComponentInput {
     }
 
     /// Returns the sub-dictionary containing capabilities routed by the component's parent.
-    pub fn capabilities(&self) -> Dictionary {
+    pub fn capabilities(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*PARENT)
     }
 
@@ -174,7 +173,7 @@ impl ComponentInput {
     }
 }
 
-impl From<ComponentInput> for Dictionary {
+impl From<ComponentInput> for Arc<Dictionary> {
     fn from(e: ComponentInput) -> Self {
         e.0
     }
@@ -183,7 +182,7 @@ impl From<ComponentInput> for Dictionary {
 /// The capabilities a component has in its environment. Stored as a [Dictionary] containing a
 /// nested [Dictionary] holding the environment's debug capabilities.
 #[derive(Clone, Debug)]
-pub struct ComponentEnvironment(Dictionary);
+pub struct ComponentEnvironment(Arc<Dictionary>);
 
 impl Default for ComponentEnvironment {
     fn default() -> Self {
@@ -192,7 +191,7 @@ impl Default for ComponentEnvironment {
 }
 
 impl StructuredDict for ComponentEnvironment {
-    fn from_dict(dict: Dictionary) -> Self {
+    fn from_dict(dict: Arc<Dictionary>) -> Self {
         Self(dict)
     }
 }
@@ -203,41 +202,50 @@ impl ComponentEnvironment {
     }
 
     /// Capabilities listed in the `debug_capabilities` portion of its environment.
-    pub fn debug(&self) -> Dictionary {
+    pub fn debug(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*DEBUG)
     }
 
     /// Capabilities listed in the `runners` portion of its environment.
-    pub fn runners(&self) -> Dictionary {
+    pub fn runners(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*RUNNERS)
     }
 
     /// Capabilities listed in the `resolvers` portion of its environment.
-    pub fn resolvers(&self) -> Dictionary {
+    pub fn resolvers(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*RESOLVERS)
     }
 
     /// Sets the stop timeout (in milliseconds) for this environment.
     pub fn set_stop_timeout(&self, timeout: i64) {
-        let _ = self.0.insert(STOP_TIMEOUT.clone(), Data::Int64(timeout).into());
+        let _ =
+            self.0.insert(STOP_TIMEOUT.clone(), Capability::Data(Arc::new(Data::Int64(timeout))));
     }
 
     /// Returns the stop timeout (in milliseconds) for this environment.
     pub fn stop_timeout(&self) -> Option<i64> {
-        let Some(Capability::Data(Data::Int64(timeout))) = self.0.get(&*STOP_TIMEOUT) else {
+        let Some(Capability::Data(data_cap)) = self.0.get(&*STOP_TIMEOUT) else {
             return None;
         };
-        Some(timeout)
+        let Data::Int64(timeout) = &*data_cap else {
+            return None;
+        };
+        Some(*timeout)
     }
 
     /// Sets the name for this environment.
     pub fn set_name(&self, name: &Name) {
-        let _ = self.0.insert(NAME.clone(), Data::String(name.as_str().into()).into());
+        let _ = self
+            .0
+            .insert(NAME.clone(), Capability::Data(Arc::new(Data::String(name.as_str().into()))));
     }
 
     /// Returns the name for this environment.
     pub fn name(&self) -> Option<Name> {
-        let Some(Capability::Data(Data::String(name))) = self.0.get(&*NAME) else {
+        let Some(Capability::Data(data_cap)) = self.0.get(&*NAME) else {
+            return None;
+        };
+        let Data::String(name) = &*data_cap else {
             return None;
         };
         Some(Name::new(name).unwrap())
@@ -255,7 +263,7 @@ impl ComponentEnvironment {
     }
 }
 
-impl From<ComponentEnvironment> for Dictionary {
+impl From<ComponentEnvironment> for Arc<Dictionary> {
     fn from(e: ComponentEnvironment) -> Self {
         e.0
     }
@@ -265,7 +273,7 @@ impl From<ComponentEnvironment> for Dictionary {
 /// a [Dictionary] containing two nested [Dictionary]s for the capabilities made available to the
 /// parent and to the framework.
 #[derive(Clone, Debug)]
-pub struct ComponentOutput(Dictionary);
+pub struct ComponentOutput(Arc<Dictionary>);
 
 impl Default for ComponentOutput {
     fn default() -> Self {
@@ -274,7 +282,7 @@ impl Default for ComponentOutput {
 }
 
 impl StructuredDict for ComponentOutput {
-    fn from_dict(dict: Dictionary) -> Self {
+    fn from_dict(dict: Arc<Dictionary>) -> Self {
         Self(dict)
     }
 }
@@ -300,33 +308,33 @@ impl ComponentOutput {
 
     /// Returns the sub-dictionary containing capabilities routed to the component's parent.
     /// framework. Lazily adds the dictionary if it does not exist yet.
-    pub fn capabilities(&self) -> Dictionary {
+    pub fn capabilities(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*PARENT)
     }
 
     /// Returns the sub-dictionary containing capabilities exposed by the component to the
     /// framework. Lazily adds the dictionary if it does not exist yet.
-    pub fn framework(&self) -> Dictionary {
+    pub fn framework(&self) -> Arc<Dictionary> {
         get_or_insert(&self.0, &*FRAMEWORK)
     }
 }
 
-impl From<ComponentOutput> for Dictionary {
+impl From<ComponentOutput> for Arc<Dictionary> {
     fn from(e: ComponentOutput) -> Self {
         e.0
     }
 }
 
-fn shallow_copy(src: &Dictionary, dest: &Dictionary, key: &Name) {
+fn shallow_copy(src: &Arc<Dictionary>, dest: &Arc<Dictionary>, key: &Name) {
     if let Some(d) = src.get(key) {
         let Capability::Dictionary(d) = d else {
             unreachable!("{key} entry must be a dictionary: {d:?}");
         };
-        dest.insert(key.clone(), d.shallow_copy().into());
+        dest.insert(key.clone(), Capability::Dictionary(d.shallow_copy()));
     }
 }
 
-fn get_or_insert(this: &Dictionary, key: &Name) -> Dictionary {
+fn get_or_insert(this: &Dictionary, key: &Name) -> Arc<Dictionary> {
     let cap = this.get_or_insert(&key, || Capability::Dictionary(Dictionary::new()));
     let Capability::Dictionary(dict) = cap else {
         unreachable!("{key} entry must be a dict: {cap:?}");
@@ -340,8 +348,8 @@ mod tests {
     use assert_matches::assert_matches;
     use runtime_capabilities::DictKey;
 
-    impl StructuredDict for Dictionary {
-        fn from_dict(dict: Dictionary) -> Self {
+    impl StructuredDict for Arc<Dictionary> {
+        fn from_dict(dict: Arc<Dictionary>) -> Self {
             dict
         }
     }
@@ -366,7 +374,7 @@ mod tests {
         let name1 = Name::new("1").unwrap();
         let name2 = Name::new("2").unwrap();
 
-        let map: StructuredDictMap<Dictionary> = Default::default();
+        let map: StructuredDictMap<Arc<Dictionary>> = Default::default();
         assert_matches!(map.get(&name1), None);
         assert!(map.insert(name1.clone(), dict1).is_none());
         let d = map.get(&name1).unwrap();

@@ -4,9 +4,7 @@
 
 use crate::dictionary::{EntryUpdate, UpdateNotifierRetention};
 use crate::fidl::registry::{self, try_from_handle_in_registry};
-use crate::{
-    Capability, ConversionError, Dictionary, RemotableCapability, RemoteError, WeakInstanceToken,
-};
+use crate::{Capability, ConversionError, Dictionary, RemoteError, WeakInstanceToken};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -19,57 +17,51 @@ use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
 use vfs::name::Name;
 
-impl From<Dictionary> for fsandbox::DictionaryRef {
-    fn from(dict: Dictionary) -> Self {
-        fsandbox::DictionaryRef { token: registry::insert_token(dict.into()) }
+impl crate::fidl::IntoFsandboxCapability for Arc<Dictionary> {
+    fn into_fsandbox_capability(self, _token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
+        fsandbox::Capability::Dictionary(fsandbox::DictionaryRef {
+            token: registry::insert_token(self.into()),
+        })
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Dictionary {
-    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
-        fsandbox::Capability::Dictionary(self.into())
-    }
-}
-
-impl TryFrom<fsandbox::DictionaryRef> for Dictionary {
-    type Error = RemoteError;
-
-    fn try_from(dict: fsandbox::DictionaryRef) -> Result<Self, Self::Error> {
-        let any = try_from_handle_in_registry(dict.token.as_handle_ref())?;
-        let Capability::Dictionary(dict) = any else {
-            panic!("BUG: registry has a non-Dictionary capability under a Dictionary koid");
-        };
-        Ok(dict)
-    }
-}
-
-// Conversion from legacy channel type.
-impl TryFrom<fidl::Channel> for Dictionary {
-    type Error = RemoteError;
-
-    fn try_from(dict: fidl::Channel) -> Result<Self, Self::Error> {
+impl Dictionary {
+    // Conversion from legacy channel type.
+    pub fn from_channel(dict: fidl::Channel) -> Result<Arc<Self>, RemoteError> {
         let any = try_from_handle_in_registry(dict.as_handle_ref())?;
         let Capability::Dictionary(dict) = any else {
             panic!("BUG: registry has a non-Dictionary capability under a Dictionary koid");
         };
         Ok(dict)
     }
-}
 
-impl Dictionary {
-    /// Like [RemotableCapability::try_into_directory_entry], but this version actually consumes
+    pub fn try_from_fsandbox(
+        dictionary: fsandbox::DictionaryRef,
+    ) -> Result<Arc<Self>, RemoteError> {
+        let any = try_from_handle_in_registry(dictionary.token.as_handle_ref())?;
+        let Capability::Dictionary(dictionary) = any else {
+            panic!("BUG: registry has a non-dictionary capability under a dictionary koid");
+        };
+        Ok(dictionary)
+    }
+
+    pub fn to_fsandbox(self: Arc<Self>) -> fsandbox::DictionaryRef {
+        fsandbox::DictionaryRef { token: registry::insert_token(self.into()) }
+    }
+
+    /// Like [CapabilityBound::try_into_directory_entry], but this version actually consumes
     /// the contents of the [Dictionary]. In other words, if this function returns `Ok`, `self`
     /// will be empty. If any items are added to `self` later, they will not appear in the
     /// directory. This method is useful when the caller has no need to keep the original
     /// [Dictionary]. Note that even if there is only one reference to the [Dictionary], calling
-    /// [RemotableCapability::try_into_directory_entry] does not have the same effect because the
+    /// [CapabilityBound::try_into_directory_entry] does not have the same effect because the
     /// `vfs` keeps alive reference to the [Dictionary] -- see the comment in the implementation.
     ///
     /// This is transitive: any [Dictionary]s nested in this one will be consumed as well.
     pub fn try_into_directory_entry_oneshot(
-        self,
+        self: Arc<Self>,
         scope: ExecutionScope,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         let directory = if let Some(handler) = self.lock().not_found.take() {
             pfs::Simple::new_with_not_found_handler(handler)
@@ -92,13 +84,11 @@ impl Dictionary {
 
         Ok(directory)
     }
-}
 
-impl RemotableCapability for Dictionary {
-    fn try_into_directory_entry(
-        self,
+    pub(crate) fn try_into_directory_entry_inner(
+        self: Arc<Self>,
         scope: ExecutionScope,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         let self_clone = self.clone();
         let directory = pfs::Simple::new_with_not_found_handler(move |path| {
@@ -175,6 +165,7 @@ impl RemotableCapability for Dictionary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability::CapabilityBound;
     use crate::dictionary::{
         BorrowedKey, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN, HybridMap, Key,
     };
@@ -249,7 +240,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let cap = Capability::Data(Data::Int64(42));
+        let cap = Capability::Data(Arc::new(Data::Int64(42)));
         assert_matches!(
             store
                 .import(1, cap.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -312,7 +303,7 @@ mod tests {
         let (dict_ch, server) = fidl::Channel::create();
         store.dictionary_legacy_export(10, server).await.unwrap().unwrap();
 
-        let cap1 = Capability::Data(Data::Int64(42));
+        let cap1 = Capability::Data(Arc::new(Data::Int64(42)));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -379,7 +370,7 @@ mod tests {
         // The entry that was inserted should now be in `entries`.
         let cap = dict.remove(&*CAP_KEY).expect("not in entries after insert");
         let Capability::Data(data) = cap else { panic!("Bad capability type: {:#?}", cap) };
-        assert_eq!(data, Data::Int64(1));
+        assert_eq!(&*data, &Data::Int64(1));
     }
 
     #[fuchsia::test]
@@ -451,7 +442,7 @@ mod tests {
         let dict = new_dict(test_type);
 
         // Insert a Data into the Dictionary.
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
         let dict_ref = Capability::Dictionary(dict.clone())
@@ -533,7 +524,7 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::new(ch.into_handle());
@@ -604,7 +595,10 @@ mod tests {
 
         // Create a Dictionary with a Data inside, and copy the Dictionary.
         let dict = new_dict(test_type);
-        assert!(dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).is_none());
+        assert!(
+            dict.insert("data1".parse().unwrap(), Capability::Data(Arc::new(Data::Int64(1))))
+                .is_none()
+        );
         store
             .import(
                 1,
@@ -925,8 +919,11 @@ mod tests {
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             assert!(
-                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
-                    .is_none()
+                dict.insert(
+                    format!("{}", i).parse().unwrap(),
+                    Capability::Data(Arc::new(Data::Int64(1)))
+                )
+                .is_none()
             );
         }
 
@@ -985,8 +982,11 @@ mod tests {
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             assert!(
-                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
-                    .is_none()
+                dict.insert(
+                    format!("{}", i).parse().unwrap(),
+                    Capability::Data(Arc::new(Data::Int64(1)))
+                )
+                .is_none()
             );
         }
 
@@ -1138,7 +1138,7 @@ mod tests {
     #[fuchsia::test]
     async fn try_into_open_error_not_supported() {
         let dict = Dictionary::new();
-        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Arc::new(Data::Int64(1)))).is_none());
         let scope = ExecutionScope::new();
         assert_matches!(
             dict.try_into_directory_entry(scope, WeakInstanceToken::new_invalid()).err(),
@@ -1719,7 +1719,7 @@ mod tests {
         iter::repeat("A").take(i).collect::<String>().parse().unwrap()
     }
 
-    fn new_dict(test_type: TestType) -> Dictionary {
+    fn new_dict(test_type: TestType) -> Arc<Dictionary> {
         let dict = Dictionary::new();
         match test_type {
             TestType::Small => {}
@@ -1730,7 +1730,7 @@ mod tests {
                     assert!(
                         dict.insert(
                             format!("_{i}").parse().unwrap(),
-                            Capability::Data(Data::Int64(1))
+                            Capability::Data(Arc::new(Data::Int64(1)))
                         )
                         .is_none()
                     );

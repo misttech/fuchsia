@@ -17,6 +17,7 @@ use log::{error, warn};
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{Capability, Dictionary, WeakInstanceToken};
+use std::sync::Arc;
 
 pub fn serve(
     server_end: zx::Channel,
@@ -126,7 +127,7 @@ async fn route(
 
 async fn validate_sandbox(
     sandbox: &ComponentSandbox,
-    component_instance_token: WeakInstanceToken,
+    component_instance_token: Arc<WeakInstanceToken>,
     scope: &Moniker,
 ) -> Vec<fsys::RouteReport> {
     let mut reports = Vec::new();
@@ -242,8 +243,8 @@ fn fill_in_report_with_route_result(
 
 fn validate_dictionary(
     path: RelativePath,
-    dictionary: Dictionary,
-    component_instance_token: WeakInstanceToken,
+    dictionary: Arc<Dictionary>,
+    component_instance_token: Arc<WeakInstanceToken>,
     decl_type: fsys::DeclType,
     mut reports: Vec<fsys::RouteReport>,
 ) -> BoxFuture<'static, Vec<fsys::RouteReport>> {

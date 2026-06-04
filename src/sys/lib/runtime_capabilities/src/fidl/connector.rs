@@ -3,48 +3,34 @@
 // found in the LICENSE file.
 
 use crate::fidl::registry;
-use crate::{Connector, ConversionError, Receiver, WeakInstanceToken};
+use crate::{Connector, Receiver, WeakInstanceToken};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use std::sync::Arc;
-use vfs::directory::entry::DirectoryEntry;
-use vfs::execution_scope::ExecutionScope;
 
 impl Connector {
     pub(crate) fn new_with_fidl_receiver(
         receiver_client: ClientEnd<fsandbox::ReceiverMarker>,
         scope: &fasync::Scope,
-    ) -> Self {
+    ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded();
         let receiver = Receiver::new(receiver);
         // Exits when ServerEnd<Receiver> is closed
         scope.spawn(receiver.handle_receiver(receiver_client.into_proxy()));
         Self::new_sendable(sender)
     }
-}
 
-impl crate::RemotableCapability for Connector {
-    fn try_into_directory_entry(
-        self,
-        _scope: ExecutionScope,
-        _token: WeakInstanceToken,
-    ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(vfs::service::endpoint(move |_scope, server_end| {
-            let _ = self.send(server_end.into_zx_channel().into());
-        }))
+    pub(crate) fn to_fsandbox(self: Arc<Self>) -> fsandbox::Connector {
+        fsandbox::Connector { token: registry::insert_token(self.into()) }
     }
 }
 
-impl From<Connector> for fsandbox::Connector {
-    fn from(value: Connector) -> Self {
-        fsandbox::Connector { token: registry::insert_token(value.into()) }
-    }
-}
-
-impl crate::fidl::IntoFsandboxCapability for Connector {
-    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
-        fsandbox::Capability::Connector(self.into())
+impl crate::fidl::IntoFsandboxCapability for Arc<Connector> {
+    fn into_fsandbox_capability(self, _token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
+        fsandbox::Capability::Connector(fsandbox::Connector {
+            token: registry::insert_token(self.into()),
+        })
     }
 }

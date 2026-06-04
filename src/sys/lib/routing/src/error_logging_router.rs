@@ -11,12 +11,13 @@ use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
     WeakInstanceToken,
 };
+use std::sync::Arc;
 
 pub struct ErrorLoggingRouter<R: ErrorReporter> {
     inner_router: Capability,
     route_request: RouteRequestErrorInfo,
     error_reporter: R,
-    error_location: WeakInstanceToken,
+    error_location: Arc<WeakInstanceToken>,
 }
 
 impl<R: ErrorReporter> ErrorLoggingRouter<R> {
@@ -24,7 +25,7 @@ impl<R: ErrorReporter> ErrorLoggingRouter<R> {
         inner_router: Capability,
         route_request: impl Into<RouteRequestErrorInfo>,
         error_reporter: R,
-        error_location: WeakInstanceToken,
+        error_location: Arc<WeakInstanceToken>,
     ) -> Capability {
         match &inner_router {
             Capability::ConnectorRouter(_) => Router::<Connector>::new(Self {
@@ -63,14 +64,14 @@ impl<R: ErrorReporter> ErrorLoggingRouter<R> {
 #[async_trait]
 impl<T: CapabilityBound, R: ErrorReporter> Routable<T> for ErrorLoggingRouter<R>
 where
-    Router<T>: TryFrom<Capability>,
+    Arc<Router<T>>: TryFrom<Capability>,
 {
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
-        let inner_router: Router<T> =
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
+        let inner_router: Arc<Router<T>> =
             self.inner_router.clone().try_into().ok().expect("type mismatch");
         match inner_router.route(request, target).await {
             Ok(res) => Ok(res),
@@ -86,9 +87,9 @@ where
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
-        let inner_router: Router<T> =
+        let inner_router: Arc<Router<T>> =
             self.inner_router.clone().try_into().ok().expect("type mismatch");
         match inner_router.route_debug(request, target).await {
             Ok(res) => Ok(res),

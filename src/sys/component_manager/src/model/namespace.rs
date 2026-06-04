@@ -32,7 +32,7 @@ pub async fn create_namespace(
     package: Option<&Package>,
     component: &Arc<ComponentInstance>,
     decl: &ComponentDecl,
-    program_input_dict: &Dictionary,
+    program_input_dict: &Arc<Dictionary>,
     scope: ExecutionScope,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {
     let not_found_sender = not_found_logging(component);

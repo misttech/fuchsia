@@ -89,31 +89,44 @@ impl DirConnectable for mpsc::UnboundedSender<DirConnectorMessage> {
 /// A capability to obtain a channel to a [fuchsia.io/Directory]. As the name suggests, this is
 /// similar to [Connector], except the channel type is always [fuchsia.io/Directory], and vfs
 /// nodes that wrap this capability should have the `DIRECTORY` entry_type.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DirConnector {
-    inner: Arc<dyn DirConnectable>,
+    inner: Box<dyn DirConnectable>,
 }
 
 impl CapabilityBound for DirConnector {
     fn debug_typename() -> &'static str {
         "DirConnector"
     }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        _scope: vfs::execution_scope::ExecutionScope,
+        _token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        Ok(Arc::new(crate::fidl::dir_connector::DirConnectorDirectoryEntry { dir_connector: self }))
+    }
 }
 
 impl DirConnector {
-    pub fn new() -> (DirReceiver, Self) {
+    pub fn new() -> (DirReceiver, Arc<Self>) {
         let (sender, receiver) = mpsc::unbounded();
         let receiver = DirReceiver::new(receiver);
         let this = Self::new_sendable(sender);
         (receiver, this)
     }
 
-    pub fn from_proxy(proxy: fio::DirectoryProxy, subdir: RelativePath, flags: fio::Flags) -> Self {
+    pub fn from_proxy(
+        proxy: fio::DirectoryProxy,
+        subdir: RelativePath,
+        flags: fio::Flags,
+    ) -> Arc<Self> {
         Self::new_sendable(DirectoryProxyForwarder { proxy, subdir, flags })
     }
 
-    pub fn new_sendable(connector: impl DirConnectable + 'static) -> Self {
-        Self { inner: Arc::new(connector) }
+    pub fn new_sendable(connector: impl DirConnectable + 'static) -> Arc<Self> {
+        Arc::new(Self { inner: Box::new(connector) })
     }
 
     pub fn send(
@@ -149,7 +162,7 @@ impl DirConnector {
         self.inner.send(dir, subdir, flags)
     }
 
-    pub fn with_subdir(self, subdir: RelativePath) -> Self {
+    pub fn with_subdir(self: Arc<Self>, subdir: RelativePath) -> Arc<Self> {
         Self::new_sendable(DirConnectorSubdir { parent_dir_connector: self, subdir })
     }
 }
@@ -171,7 +184,7 @@ impl DirConnectable for DirConnector {
 
 #[derive(Debug)]
 struct DirConnectorSubdir {
-    parent_dir_connector: DirConnector,
+    parent_dir_connector: Arc<DirConnector>,
     subdir: RelativePath,
 }
 
@@ -253,7 +266,7 @@ mod tests {
         sender.send(ch2, RelativePath::dot(), None).unwrap();
 
         // Convert the Sender to a FIDL token.
-        let connector: fsandbox::DirConnector = sender.into();
+        let connector: fsandbox::DirConnector = sender.to_fsandbox();
 
         // Clone the Sender by cloning the token.
         let token_clone = fsandbox::DirConnector {

@@ -23,7 +23,7 @@ use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
 
 struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, const D: bool> {
-    router: Router<T>,
+    router: Arc<Router<T>>,
     porcelain_type: CapabilityTypeName,
     availability: Availability,
     rights: Option<Rights>,
@@ -43,8 +43,8 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
     async fn route(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         match self.route_inner(request, D, target).await {
             Err(err) if self.should_log => {
                 self.error_reporter
@@ -59,7 +59,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
     async fn route_debug(
         &self,
         request: RouteRequest,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         match self.route_debug_inner(request, D, target).await {
             Err(err) if self.should_log => {
@@ -80,8 +80,8 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         &self,
         request: RouteRequest,
         supply_default: bool,
-        target: WeakInstanceToken,
-    ) -> Result<Option<T>, RouterError> {
+        target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
         let request = self.check_and_compute_request(request, supply_default)?;
         self.router.route(request, target).await
     }
@@ -90,7 +90,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         &self,
         request: RouteRequest,
         supply_default: bool,
-        target: WeakInstanceToken,
+        target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         let request = self.check_and_compute_request(request, supply_default)?;
         self.router.route_debug(request, target).await
@@ -273,7 +273,7 @@ pub struct PorcelainBuilder<
     C: ComponentInstanceInterface + 'static,
     const D: bool,
 > {
-    router: Router<T>,
+    router: Arc<Router<T>>,
     porcelain_type: CapabilityTypeName,
     availability: Option<Availability>,
     rights: Option<Rights>,
@@ -289,7 +289,7 @@ pub struct PorcelainBuilder<
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
     PorcelainBuilder<T, R, C, D>
 {
-    fn new(router: Router<T>, porcelain_type: CapabilityTypeName) -> Self {
+    fn new(router: Arc<Router<T>>, porcelain_type: CapabilityTypeName) -> Self {
         Self {
             router,
             porcelain_type,
@@ -371,7 +371,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
     }
 
     /// Build the [PorcelainRouter] with attributes configured by this builder.
-    pub fn build(self) -> Router<T> {
+    pub fn build(self) -> Arc<Router<T>> {
         Router::new(PorcelainRouter::<T, R, C, D> {
             router: self.router,
             porcelain_type: self.porcelain_type,
@@ -391,7 +391,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 impl<R: ErrorReporter, T: CapabilityBound, C: ComponentInstanceInterface + 'static, const D: bool>
     From<PorcelainBuilder<T, R, C, D>> for Capability
 where
-    Router<T>: Into<Capability>,
+    Arc<Router<T>>: Into<Capability>,
 {
     fn from(b: PorcelainBuilder<T, R, C, D>) -> Self {
         b.build().into()
@@ -429,7 +429,7 @@ pub trait WithPorcelain<
 }
 
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static>
-    WithPorcelain<T, R, C> for Router<T>
+    WithPorcelain<T, R, C> for Arc<Router<T>>
 {
     fn with_porcelain_with_default(
         self,
@@ -569,7 +569,7 @@ mod tests {
             &self,
             _request: &RouteRequestErrorInfo,
             _err: &RouterError,
-            _route_target: WeakInstanceToken,
+            _route_target: Arc<WeakInstanceToken>,
         ) {
             let mut reported = self.reported.lock();
             if *reported {
@@ -589,7 +589,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn success() {
-        let source = Data::String("hello".into());
+        let source = Arc::new(Data::String("hello".into()));
         let base = Router::<Data>::new_ok(source);
         let component = fake_component();
         let proxy = base
@@ -610,7 +610,7 @@ mod tests {
             Some(d) => d,
             _ => panic!(),
         };
-        assert_eq!(capability, Data::String("hello".into()));
+        assert_eq!(&*capability, &Data::String("hello".into()));
     }
 
     #[fuchsia::test]

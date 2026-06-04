@@ -3,46 +3,42 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{Connector, ConversionError, Router, WeakInstanceToken};
+use crate::{Connector, Router, WeakInstanceToken};
 use fidl::AsHandleRef;
+use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_io as fio;
 use futures::TryStreamExt;
 use std::sync::Arc;
-use vfs::directory::entry::DirectoryEntry;
-use vfs::execution_scope::ExecutionScope;
 
-impl crate::RemotableCapability for Router<Connector> {
-    fn try_into_directory_entry(
-        self,
-        scope: ExecutionScope,
-        token: WeakInstanceToken,
-    ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
-    }
-}
-
-impl crate::fidl::IntoFsandboxCapability for Router<Connector> {
-    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
-        let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::ConnectorRouterMarker>();
-        self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
-        fsandbox::Capability::ConnectorRouter(client_end)
+impl crate::fidl::IntoFsandboxCapability for Arc<Router<Connector>> {
+    fn into_fsandbox_capability(self, token: Arc<WeakInstanceToken>) -> fsandbox::Capability {
+        fsandbox::Capability::ConnectorRouter(self.into_fsandbox_router(token))
     }
 }
 
 impl Router<Connector> {
+    fn into_fsandbox_router(
+        self: Arc<Self>,
+        token: Arc<WeakInstanceToken>,
+    ) -> ClientEnd<fsandbox::ConnectorRouterMarker> {
+        let (client_end, sender_stream) =
+            fidl::endpoints::create_request_stream::<fsandbox::ConnectorRouterMarker>();
+        self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
+        client_end
+    }
+
     async fn serve_router(
-        self,
+        self: Arc<Self>,
         mut stream: fsandbox::ConnectorRouterRequestStream,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::ConnectorRouterRequest::Route { payload, responder } => {
                     let resp = match router::route_from_fidl(&self, payload, token.clone()).await {
                         Ok(Some(c)) => {
-                            Ok(fsandbox::ConnectorRouterRouteResponse::Connector(c.into()))
+                            let connector = c.to_fsandbox();
+                            Ok(fsandbox::ConnectorRouterRouteResponse::Connector(connector))
                         }
                         Ok(None) => Ok(fsandbox::ConnectorRouterRouteResponse::Unavailable(
                             fsandbox::Unit {},
@@ -64,10 +60,10 @@ impl Router<Connector> {
 
     /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
     pub fn serve_and_register(
-        self,
+        self: Arc<Self>,
         stream: fsandbox::ConnectorRouterRequestStream,
         koid: zx::Koid,
-        token: WeakInstanceToken,
+        token: Arc<WeakInstanceToken>,
     ) {
         let router = self.clone();
 

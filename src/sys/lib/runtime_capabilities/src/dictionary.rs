@@ -17,9 +17,9 @@ pub type Key = cm_types::Name;
 pub type BorrowedKey = cm_types::BorrowedName;
 
 /// A capability that represents a dictionary of capabilities.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Dictionary {
-    inner: Arc<Mutex<DictInner>>,
+    inner: Mutex<DictInner>,
 }
 
 #[derive(Derivative)]
@@ -50,6 +50,15 @@ pub(crate) struct DictInner {
 impl CapabilityBound for Dictionary {
     fn debug_typename() -> &'static str {
         "Dictionary"
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn try_into_directory_entry(
+        self: Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+        token: Arc<crate::WeakInstanceToken>,
+    ) -> Result<Arc<dyn vfs::directory::entry::DirectoryEntry>, crate::ConversionError> {
+        self.try_into_directory_entry_inner(scope, token)
     }
 }
 
@@ -90,35 +99,35 @@ pub type UpdateNotifierFn =
 impl Default for Dictionary {
     fn default() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(DictInner {
+            inner: Mutex::new(DictInner {
                 entries: HybridMap::default(),
                 not_found: None,
                 #[cfg(target_os = "fuchsia")]
                 task_group: None,
                 update_notifiers: UpdateNotifiers::default(),
-            })),
+            }),
         }
     }
 }
 
 impl Dictionary {
     /// Creates an empty dictionary.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
     }
 
     /// Creates an empty dictionary. When an external request tries to access a non-existent entry,
     /// the name of the entry will be sent using `not_found`.
-    pub fn new_with_not_found(not_found: impl Fn(&str) -> () + 'static + Send + Sync) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(DictInner {
+    pub fn new_with_not_found(not_found: impl Fn(&str) -> () + 'static + Send + Sync) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(DictInner {
                 entries: HybridMap::default(),
                 not_found: Some(Box::new(not_found)),
                 #[cfg(target_os = "fuchsia")]
                 task_group: None,
                 update_notifiers: UpdateNotifiers::default(),
-            })),
-        }
+            }),
+        })
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, DictInner> {
@@ -229,7 +238,7 @@ impl Dictionary {
     ///
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
-    pub fn shallow_copy(&self) -> Self {
+    pub fn shallow_copy(&self) -> Arc<Self> {
         let copy = Self::new();
         {
             let DictInner { entries, .. } = &*self.lock();
