@@ -5,23 +5,24 @@
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/fdio/cpp/caller.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fd.h>
-#include <lib/fdio/fdio.h>
-#include <lib/fdio/unsafe.h>
-#include <lib/fdio/watcher.h>
-#include <limits.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fidl/cpp/wire/wire_messaging_declarations.h>
+#include <lib/zx/result.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
+#include <zircon/compiler.h>
+#include <zircon/errors.h>
+#include <zircon/status.h>
 #include <zircon/types.h>
 
+#include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 
-#include <fbl/string_buffer.h>
+#include <fbl/string.h>
 #include <fbl/unique_fd.h>
 #include <ramdevice-client-test/ramnandctl.h>
+#include <ramdevice-client/ramnand.h>
 
 namespace ramdevice_client_test {
 
@@ -57,7 +58,7 @@ zx_status_t RamNandCtl::CreateRamNand(fuchsia_hardware_nand::wire::RamNandInfo c
       "sys/platform/ram-nand/nand-ctl/",
       response.name.get(),
   });
-  fprintf(stderr, "Trying to open (%s)\n", path.c_str());
+  fprintf(stdout, "Trying to open (%s)\n", path.c_str());
 
   std::string controller_path = std::string(path.c_str()) + "/device_controller";
   zx::result channel =
