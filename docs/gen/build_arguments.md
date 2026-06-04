@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -9619,7 +9619,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:955
+From //build/config/BUILDCONFIG.gn:957
 
 ### truncate_build_info_commit_date
 
@@ -10191,7 +10191,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:972
+From //build/config/BUILDCONFIG.gn:974
 
 ### zircon_tracelog
 
