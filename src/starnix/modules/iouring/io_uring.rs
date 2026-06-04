@@ -6,23 +6,23 @@
 // Expects are used for programming errors.
 #![allow(clippy::unwrap_in_result)]
 
-use crate::mm::memory::MemoryObject;
-use crate::mm::{
+use bitflags::bitflags;
+use starnix_core::mm::memory::MemoryObject;
+use starnix_core::mm::{
     DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt,
     PAGE_SIZE, ProtectionFlags, read_to_object_as_bytes,
 };
-use crate::task::CurrentTask;
-use crate::vfs::socket::syscalls::{
+use starnix_core::task::CurrentTask;
+use starnix_core::vfs::socket::syscalls::{
     MsgHdrPtr, MsgHdrRef, WithAlternateBuffer, recvmsg_impl, sys_recvfrom, sys_sendmsg, sys_sendto,
 };
-use crate::vfs::syscalls::{
+use starnix_core::vfs::syscalls::{
     sys_pread64, sys_preadv2, sys_pwrite64, sys_pwritev2, sys_read, sys_write,
 };
-use crate::vfs::{
+use starnix_core::vfs::{
     Anon, FdNumber, FileHandle, FileObject, FileOps, NamespaceNode, fileops_impl_dataless,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use bitflags::bitflags;
 use starnix_logging::{set_zx_name, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, OrderedMutex, TerminalLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};

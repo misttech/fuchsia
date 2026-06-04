@@ -12,7 +12,6 @@ use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
 use crate::vfs::eventfd::{EventFdType, new_eventfd};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::inotify::InotifyFileObject;
-use crate::vfs::io_uring::{IORING_MAX_ENTRIES, IoUringFileObject};
 use crate::vfs::pidfd::new_pidfd;
 use crate::vfs::pipe::{PipeFileObject, new_pipe};
 use crate::vfs::timer::TimerFile;
@@ -67,21 +66,13 @@ use starnix_uapi::{
     POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL,
     POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME,
     TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno,
-    error, f_owner_ex, io_event, io_uring_params,
-    io_uring_register_op_IORING_REGISTER_BUFFERS as IORING_REGISTER_BUFFERS,
-    io_uring_register_op_IORING_REGISTER_IOWQ_MAX_WORKERS as IORING_REGISTER_IOWQ_MAX_WORKERS,
-    io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
-    io_uring_register_op_IORING_REGISTER_PBUF_STATUS as IORING_REGISTER_PBUF_STATUS,
-    io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
-    io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS,
-    io_uring_register_op_IORING_UNREGISTER_PBUF_RING as IORING_UNREGISTER_PBUF_RING,
-    io_uring_register_op_IORING_UNREGISTER_RING_FDS as IORING_UNREGISTER_RING_FDS, iocb, off_t,
-    pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
+    error, f_owner_ex, io_event, iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t, statx,
+    timespec, uapi, uid_t,
 };
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use std::sync::{Arc, atomic};
+use std::sync::Arc;
 use std::usize;
 use zerocopy::{Immutable, IntoBytes};
 
@@ -3263,195 +3254,6 @@ pub fn sys_io_destroy(
     Ok(())
 }
 
-pub fn sys_io_uring_setup(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    user_entries: UserValue<u32>,
-    user_params: UserRef<io_uring_params>,
-) -> Result<FdNumber, Errno> {
-    // TODO: https://fxbug.dev/397186254 - we will want to do a no-audit CAP_IPC_LOCK capability
-    // check; see "If not granted CAP_IPC_LOCK io_uring operations are accounted against the user's
-    // RLIMIT_MEMLOCK limit" at
-    // https://github.com/SELinuxProject/selinux-notebook/blob/main/src/auditing.md#capability-audit-exemptions
-
-    if !current_task.kernel().features.io_uring {
-        return error!(ENOSYS);
-    }
-
-    // Apply policy from /proc/sys/kernel/io_uring_disabled
-    let limits = &current_task.kernel().system_limits;
-    match limits.io_uring_disabled.load(atomic::Ordering::Relaxed) {
-        0 => (),
-        1 => {
-            let io_uring_group = limits.io_uring_group.load(atomic::Ordering::Relaxed).try_into();
-            if io_uring_group.is_err()
-                || !current_task.current_creds().is_in_group(io_uring_group.unwrap())
-            {
-                security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-            }
-        }
-        _ => {
-            return error!(EPERM);
-        }
-    }
-
-    let entries = user_entries.validate(1..IORING_MAX_ENTRIES).ok_or_else(|| errno!(EINVAL))?;
-
-    let mut params = current_task.read_object(user_params)?;
-    for byte in params.resv {
-        if byte != 0 {
-            return error!(EINVAL);
-        }
-    }
-
-    let file = IoUringFileObject::new_file(locked, current_task, entries, &mut params)?;
-
-    // io_uring file descriptors are always created with CLOEXEC.
-    let fd = current_task.add_file(locked, file, FdFlags::CLOEXEC)?;
-    current_task.write_object(user_params, &params)?;
-    Ok(fd)
-}
-
-pub fn sys_io_uring_enter(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    to_submit: u32,
-    min_complete: u32,
-    flags: u32,
-    _sig: UserRef<SigSet>,
-    sigset_size: usize,
-) -> Result<u32, Errno> {
-    if !current_task.kernel().features.io_uring {
-        return error!(ENOSYS);
-    }
-    if !_sig.is_null() {
-        if sigset_size != std::mem::size_of::<SigSet>() {
-            return error!(EINVAL);
-        }
-    }
-    let file = current_task.get_file(fd)?;
-    let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
-    // TODO(https://fxbug.dev/297431387): Use `_sig` to change the signal mask for `current_task`.
-    io_uring.enter(locked, current_task, to_submit, min_complete, flags)
-}
-
-pub fn sys_io_uring_register(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    fd: FdNumber,
-    opcode: u32,
-    arg: UserAddress,
-    nr_args: UserValue<u32>,
-) -> Result<SyscallResult, Errno> {
-    if !current_task.kernel().features.io_uring {
-        return error!(ENOSYS);
-    }
-    let file = current_task.get_file(fd)?;
-    let io_uring = file.downcast_file::<IoUringFileObject>().ok_or_else(|| errno!(EOPNOTSUPP))?;
-    match opcode {
-        IORING_REGISTER_BUFFERS => {
-            // TODO(https://fxbug.dev/297431387): Check nr_args for zero and return EINVAL here.
-            let iovec = IOVecPtr::new(current_task, arg);
-            let buffers = current_task.read_iovec(iovec, nr_args)?;
-            io_uring.register_buffers(locked, buffers);
-            return Ok(SUCCESS);
-        }
-        IORING_UNREGISTER_BUFFERS => {
-            if !arg.is_null() {
-                return error!(EINVAL);
-            }
-            io_uring.unregister_buffers(locked);
-            return Ok(SUCCESS);
-        }
-        IORING_REGISTER_IOWQ_MAX_WORKERS => {
-            track_stub!(
-                TODO("https://fxbug.dev/297431387"),
-                "io_uring_register IORING_REGISTER_IOWQ_MAX_WORKERS",
-                opcode
-            );
-            // The current implementation only ever use 1 worker for read and 1 for write.
-            return Ok(SUCCESS);
-        }
-        IORING_REGISTER_RING_FDS => {
-            track_stub!(
-                TODO("https://fxbug.dev/297431387"),
-                "io_uring_register IORING_REGISTER_RING_FDS",
-                opcode
-            );
-            // The current implementation doesn't use any thread local specific identifier for
-            // performance. Instead, when registering a fd, just return the passed fd as the value
-            // to use.
-            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
-            if nr_args > 16 {
-                return error!(EINVAL);
-            }
-            let updates_addr = UserRef::<uapi::io_uring_rsrc_update>::from(arg);
-            let mut updates = current_task
-                .read_objects_to_smallvec::<uapi::io_uring_rsrc_update, 1>(updates_addr, nr_args)?;
-            let mut result = 0;
-            for update in updates.iter_mut() {
-                if update.offset == u32::MAX {
-                    update.offset = update.data.try_into().map_err(|_| errno!(EINVAL))?;
-                    result += 1;
-                }
-            }
-            current_task.write_objects(updates_addr, &updates)?;
-            return Ok(result.into());
-        }
-        IORING_UNREGISTER_RING_FDS => {
-            track_stub!(
-                TODO("https://fxbug.dev/297431387"),
-                "io_uring_register IORING_UNREGISTER_RING_FDS",
-                opcode
-            );
-            // Because registering a fd doesn't use any resource currently, unregistering is free.
-            return Ok(SUCCESS);
-        }
-        IORING_REGISTER_PBUF_RING => {
-            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
-            if nr_args != 1 {
-                return error!(EINVAL);
-            }
-            let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
-            io_uring.register_ring_buffers(locked, buffer_definition)?;
-            return Ok(SUCCESS);
-        }
-
-        IORING_UNREGISTER_PBUF_RING => {
-            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
-            if nr_args != 1 {
-                return error!(EINVAL);
-            }
-            let buffer_definition: uapi::io_uring_buf_reg = current_task.read_object(arg.into())?;
-            io_uring.unregister_ring_buffers(locked, buffer_definition)?;
-            return Ok(SUCCESS);
-        }
-
-        IORING_REGISTER_PBUF_STATUS => {
-            let nr_args: usize = nr_args.raw().try_into().map_err(|_| errno!(EINVAL))?;
-            if nr_args != 1 {
-                return error!(EINVAL);
-            }
-            let buffer_status_addr = UserRef::<uapi::io_uring_buf_status>::from(arg);
-            let mut buffer_status: uapi::io_uring_buf_status =
-                current_task.read_object(buffer_status_addr)?;
-            io_uring.ring_buffer_status(locked, &mut buffer_status)?;
-            current_task.write_object(buffer_status_addr, &buffer_status)?;
-            return Ok(SUCCESS);
-        }
-
-        _ => {
-            track_stub!(
-                TODO("https://fxbug.dev/297431387"),
-                "io_uring_register unknown op",
-                opcode
-            );
-            return error!(EINVAL);
-        }
-    }
-}
-
 // Syscalls for arch32 usage
 #[cfg(target_arch = "aarch64")]
 mod arch32 {
@@ -3888,21 +3690,18 @@ mod arch32 {
         sys_inotify_rm_watch as sys_arch32_inotify_rm_watch, sys_io_cancel as sys_arch32_io_cancel,
         sys_io_destroy as sys_arch32_io_destroy, sys_io_getevents as sys_arch32_io_getevents,
         sys_io_setup as sys_arch32_io_setup, sys_io_submit as sys_arch32_io_submit,
-        sys_io_uring_enter as sys_arch32_io_uring_enter,
-        sys_io_uring_register as sys_arch32_io_uring_register,
-        sys_io_uring_setup as sys_arch32_io_uring_setup, sys_lgetxattr as sys_arch32_lgetxattr,
-        sys_linkat as sys_arch32_linkat, sys_listxattr as sys_arch32_listxattr,
-        sys_llistxattr as sys_arch32_llistxattr, sys_lsetxattr as sys_arch32_lsetxattr,
-        sys_mkdirat as sys_arch32_mkdirat, sys_mknodat as sys_arch32_mknodat,
-        sys_pidfd_getfd as sys_arch32_pidfd_getfd, sys_pidfd_open as sys_arch32_pidfd_open,
-        sys_ppoll as sys_arch32_ppoll, sys_preadv as sys_arch32_preadv,
-        sys_pselect6 as sys_arch32_pselect6, sys_readv as sys_arch32_readv,
-        sys_removexattr as sys_arch32_removexattr, sys_renameat2 as sys_arch32_renameat2,
-        sys_select as sys_arch32__newselect, sys_sendfile as sys_arch32_sendfile,
-        sys_setxattr as sys_arch32_setxattr, sys_splice as sys_arch32_splice,
-        sys_statfs as sys_arch32_statfs, sys_statx as sys_arch32_statx,
-        sys_symlinkat as sys_arch32_symlinkat, sys_sync as sys_arch32_sync,
-        sys_syncfs as sys_arch32_syncfs, sys_tee as sys_arch32_tee,
+        sys_lgetxattr as sys_arch32_lgetxattr, sys_linkat as sys_arch32_linkat,
+        sys_listxattr as sys_arch32_listxattr, sys_llistxattr as sys_arch32_llistxattr,
+        sys_lsetxattr as sys_arch32_lsetxattr, sys_mkdirat as sys_arch32_mkdirat,
+        sys_mknodat as sys_arch32_mknodat, sys_pidfd_getfd as sys_arch32_pidfd_getfd,
+        sys_pidfd_open as sys_arch32_pidfd_open, sys_ppoll as sys_arch32_ppoll,
+        sys_preadv as sys_arch32_preadv, sys_pselect6 as sys_arch32_pselect6,
+        sys_readv as sys_arch32_readv, sys_removexattr as sys_arch32_removexattr,
+        sys_renameat2 as sys_arch32_renameat2, sys_select as sys_arch32__newselect,
+        sys_sendfile as sys_arch32_sendfile, sys_setxattr as sys_arch32_setxattr,
+        sys_splice as sys_arch32_splice, sys_statfs as sys_arch32_statfs,
+        sys_statx as sys_arch32_statx, sys_symlinkat as sys_arch32_symlinkat,
+        sys_sync as sys_arch32_sync, sys_syncfs as sys_arch32_syncfs, sys_tee as sys_arch32_tee,
         sys_timerfd_create as sys_arch32_timerfd_create,
         sys_timerfd_gettime as sys_arch32_timerfd_gettime,
         sys_timerfd_settime as sys_arch32_timerfd_settime, sys_truncate as sys_arch32_truncate,

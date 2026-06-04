@@ -31,7 +31,6 @@ pub mod fs_node_cache;
 pub mod fs_registry;
 pub mod fsverity;
 pub mod inotify;
-pub mod io_uring;
 pub mod memory_directory;
 pub mod path;
 pub mod pidfd;
