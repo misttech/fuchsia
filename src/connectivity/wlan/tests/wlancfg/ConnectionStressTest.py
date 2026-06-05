@@ -5,21 +5,22 @@
 # found in the LICENSE file.
 """
 Script for testing WiFi connection and disconnection in a loop
-
 """
 
 import logging
 import time
 from dataclasses import dataclass
 
+import fuchsia_wlan_base_test
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    CountryCode,
+    SecurityType,
+)
 from mobly import asserts, signals, test_runner
-from mobly.records import TestResultRecord
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -48,13 +49,13 @@ class TestParams:
     expect_associated: bool
 
 
-class ConnectionStressTest(base_test.WifiBaseTest):
+class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     # Default number of test iterations here.
     # Override using parameter in config file.
     # Eg: "connection_stress_test_iterations": "50"
     num_of_iterations = 10
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         tests: list[TestParams] = []
 
         # Successful associate
@@ -125,20 +126,25 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             self.connect_disconnect, test_name, [(t,) for t in tests]
         )
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
         self.ssid = AccessPointConfig.random_string(10)
 
-        self.dut = self.get_dut(AssociationMode.POLICY)
+        # Set country code US for 5G DFS channels
+        await self.dut.wlan_policy.set_country_code(
+            CountryCode.UNITED_STATES_OF_AMERICA
+        )
 
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        # The base class FuchsiaWlanBaseTest setup_class registers access_points
+        # and openwrt_aps automatically.
+        if not self.openwrt_aps and not self.access_points:
             raise signals.TestAbortClass("Requires at least one access point")
+
+        # Since the base class setup_class does NOT call stop_all_aps on access_point,
+        # let's preserve that setup behavior here:
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
         self.num_of_iterations = int(
             self.user_params.get(
@@ -147,21 +153,25 @@ class ConnectionStressTest(base_test.WifiBaseTest):
         )
         self.log.info(f"iterations: {self.num_of_iterations}")
 
-    def teardown_test(self) -> None:
-        self.download_logs()
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
         if self.openwrt_ap:
             self.openwrt_ap.stop_wifi()
         elif self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_test()
 
-    def on_fail(self, record: TestResultRecord) -> None:
-        super().on_fail(record)
-        if self.openwrt_ap:
-            self.openwrt_ap.stop_wifi()
-        elif self.access_point:
+    async def teardown_class(self) -> None:
+        # We don't need this cleanup for OpenWRT APs, as the controller handles it in its destroy method.
+        if self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_class()
 
-    def connect_disconnect(self, test: TestParams) -> None:
+    async def connect_disconnect(self, test: TestParams) -> None:
         """Helper to start an AP, connect DUT to it and disconnect
 
         Args:
@@ -196,12 +206,30 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                 ),
             )
 
+        if isinstance(test.security, SecurityOpen):
+            security_type = SecurityType.NONE
+        elif isinstance(test.security, SecurityWpa2):
+            security_type = SecurityType.WPA2
+        else:
+            raise TypeError(f"Unsupported security type: {test.security}")
+
         for iteration in range(0, self.num_of_iterations):
-            associated = self.dut.associate(
-                test.dut_ssid,
-                target_pwd=test.dut_password,
-                target_security=ConfigMapper.to_hostapd_security(test.security),
-            )
+            associated = False
+            try:
+                await self.dut.wlan_policy.save_network(
+                    test.dut_ssid,
+                    security_type,
+                    target_pwd=test.dut_password,
+                )
+                await self.dut.wlan_policy.connect(
+                    test.dut_ssid,
+                    security_type,
+                    timeout=30,
+                )
+                associated = True
+            except Exception as e:
+                self.log.info(f"Connection failed on attempt {iteration}: {e}")
+
             asserts.assert_equal(
                 associated,
                 test.expect_associated,
@@ -211,7 +239,8 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                 ),
             )
 
-            self.dut.disconnect()
+            await self.dut.wlan_policy.remove_all_networks()
+            await self.dut.wlan_policy.wait_for_no_connections()
 
             # Wait a second before trying again
             time.sleep(1)
