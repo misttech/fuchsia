@@ -1542,6 +1542,8 @@ TEST(StreamTestCase, FaultBeyondStreamSizeResizeDownRace) {
       return true;
     });
 
+    auto terminate_read_spam = fit::defer([&terminate] { terminate = true; });
+
     // Interleave read & reduce stream size.
     ASSERT_TRUE(read_spam.Start());
     ASSERT_TRUE(set_thread.Start());
