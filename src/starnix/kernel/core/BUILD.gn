@@ -228,7 +228,6 @@ _starnix_core_sources = [
   "vfs/symlink_node.rs",
   "vfs/syscalls.rs",
   "vfs/timer.rs",
-  "vfs/userfault_file.rs",
   "vfs/wd_number.rs",
   "vfs/xattr.rs",
 

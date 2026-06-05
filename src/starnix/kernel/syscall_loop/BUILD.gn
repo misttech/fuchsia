@@ -27,6 +27,7 @@ rustc_library("starnix_syscall_loop") {
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/iouring",
+    "//src/starnix/modules/userfaultfd",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:zerocopy",

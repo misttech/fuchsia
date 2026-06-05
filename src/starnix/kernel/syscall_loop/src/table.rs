@@ -75,7 +75,7 @@ pub fn dispatch_syscall(
         sys_brk, sys_futex, sys_get_robust_list, sys_madvise, sys_membarrier, sys_mincore,
         sys_mlock, sys_mlock2, sys_mlockall, sys_mmap, sys_mprotect, sys_mremap, sys_msync,
         sys_munlock, sys_munlockall, sys_munmap, sys_process_madvise, sys_process_mrelease,
-        sys_process_vm_readv, sys_process_vm_writev, sys_set_robust_list, sys_userfaultfd,
+        sys_process_vm_readv, sys_process_vm_writev, sys_set_robust_list,
     };
     use starnix_core::perf::sys_perf_event_open;
     use starnix_core::signals::syscalls::{
@@ -132,6 +132,7 @@ pub fn dispatch_syscall(
     use starnix_modules_iouring::syscalls::{
         sys_io_uring_enter, sys_io_uring_register, sys_io_uring_setup,
     };
+    use starnix_modules_userfaultfd::syscalls::sys_userfaultfd;
 
     #[cfg(target_arch = "aarch64")]
     use starnix_core::arch::syscalls::sys_renameat;
@@ -149,7 +150,7 @@ pub fn dispatch_syscall(
             sys_arch32_mlockall, sys_arch32_mmap2, sys_arch32_mremap, sys_arch32_msync,
             sys_arch32_munlock, sys_arch32_munlockall, sys_arch32_munmap,
             sys_arch32_process_mrelease, sys_arch32_process_vm_readv, sys_arch32_set_robust_list,
-            sys_arch32_userfaultfd, sys_brk as sys_arch32_brk, sys_mprotect as sys_arch32_mprotect,
+            sys_brk as sys_arch32_brk, sys_mprotect as sys_arch32_mprotect,
             sys_process_madvise as sys_arch32_process_madvise,
         };
         pub use starnix_core::perf::sys_arch32_perf_event_open;
@@ -248,6 +249,7 @@ pub fn dispatch_syscall(
         pub use starnix_modules_iouring::syscalls::{
             sys_arch32_io_uring_enter, sys_arch32_io_uring_register, sys_arch32_io_uring_setup,
         };
+        pub use starnix_modules_userfaultfd::syscalls::sys_arch32_userfaultfd;
     }
     #[cfg(all(target_arch = "aarch64"))]
     #[allow(clippy::wildcard_imports)]

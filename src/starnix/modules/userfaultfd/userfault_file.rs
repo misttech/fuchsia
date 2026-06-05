@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::{
-    FaultCopyMode, FaultRegisterMode, FaultZeroMode, MemoryAccessorExt, UserFault,
-    UserFaultFeatures,
-};
-use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
-use crate::vfs::{
-    Anon, FileHandle, FileObject, FileObjectState, FileOps, InputBuffer, OutputBuffer,
-    fileops_impl_nonseekable, fileops_impl_noop_sync,
-};
 use linux_uapi::{
     UFFDIO_CONTINUE, UFFDIO_COPY, UFFDIO_WAKE, UFFDIO_WRITEPROTECT, UFFDIO_ZEROPAGE, uffdio_copy,
     uffdio_zeropage,
+};
+use starnix_core::mm::{
+    FaultCopyMode, FaultRegisterMode, FaultZeroMode, MemoryAccessorExt, UserFault,
+    UserFaultFeatures,
+};
+use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
+use starnix_core::vfs::{
+    Anon, FileHandle, FileObject, FileObjectState, FileOps, InputBuffer, OutputBuffer,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Unlocked, UserFaultInner};

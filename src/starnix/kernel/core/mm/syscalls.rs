@@ -14,19 +14,16 @@ use crate::syscalls::time::TimeSpecPtr;
 use crate::task::CurrentTask;
 use crate::time::TargetTime;
 use crate::time::utc::estimate_boot_deadline_from_utc;
+use crate::vfs::FdNumber;
 use crate::vfs::buffers::{OutputBuffer, UserBuffersInputBuffer, UserBuffersOutputBuffer};
-use crate::vfs::{FdFlags, FdNumber, UserFaultFile};
 use fuchsia_runtime::UtcTimeline;
 use linux_uapi::MLOCK_ONFAULT;
 use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec, timespec_from_time};
-use starnix_uapi::auth::{
-    CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_READ_REALCREDS,
-};
+use starnix_uapi::auth::{PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_READ_REALCREDS};
 use starnix_uapi::errors::{EINTR, Errno};
-use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{
@@ -35,8 +32,8 @@ use starnix_uapi::{
     FUTEX_TRYLOCK_PI, FUTEX_UNLOCK_PI, FUTEX_WAIT, FUTEX_WAIT_BITSET, FUTEX_WAIT_REQUEUE_PI,
     FUTEX_WAKE, FUTEX_WAKE_BITSET, FUTEX_WAKE_OP, MAP_ANONYMOUS, MAP_DENYWRITE, MAP_FIXED,
     MAP_FIXED_NOREPLACE, MAP_GROWSDOWN, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE,
-    MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK, O_CLOEXEC, O_NONBLOCK, PROT_EXEC,
-    UFFD_USER_MODE_ONLY, errno, error, robust_list_head, tid_t, uapi,
+    MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK, PROT_EXEC, errno, error, robust_list_head, tid_t,
+    uapi,
 };
 use std::ops::Deref as _;
 use zx;
@@ -471,38 +468,6 @@ pub fn sys_membarrier(
     }
 }
 
-pub fn sys_userfaultfd(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    raw_flags: u32,
-) -> Result<FdNumber, Errno> {
-    let unknown_flags = raw_flags & !(O_CLOEXEC | O_NONBLOCK | UFFD_USER_MODE_ONLY);
-    if unknown_flags != 0 {
-        return error!(EINVAL, format!("unknown flags provided: {unknown_flags:x?}"));
-    }
-    let mut open_flags = OpenFlags::empty();
-    if raw_flags & O_NONBLOCK != 0 {
-        open_flags |= OpenFlags::NONBLOCK;
-    }
-    if raw_flags & O_CLOEXEC != 0 {
-        open_flags |= OpenFlags::CLOEXEC;
-    }
-
-    let fd_flags = if raw_flags & O_CLOEXEC != 0 {
-        FdFlags::CLOEXEC
-    } else {
-        track_stub!(TODO("https://fxbug.dev/297375964"), "userfaultfds that survive exec()");
-        return error!(ENOSYS);
-    };
-
-    let user_mode_only = raw_flags & UFFD_USER_MODE_ONLY != 0;
-    if !user_mode_only {
-        security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
-    }
-    let uff_handle = UserFaultFile::new(locked, current_task, open_flags, user_mode_only)?;
-    current_task.add_file(locked, uff_handle, fd_flags)
-}
-
 pub fn sys_futex(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
@@ -900,7 +865,6 @@ mod arch32 {
         sys_munlockall as sys_arch32_munlockall,
         sys_process_mrelease as sys_arch32_process_mrelease,
         sys_process_vm_readv as sys_arch32_process_vm_readv,
-        sys_userfaultfd as sys_arch32_userfaultfd,
     };
 }
 

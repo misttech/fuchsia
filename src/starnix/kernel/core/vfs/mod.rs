@@ -18,7 +18,6 @@ mod namespace;
 mod record_locks;
 mod splice;
 mod symlink_node;
-mod userfault_file;
 mod wd_number;
 mod xattr;
 
@@ -60,6 +59,5 @@ pub use path::*;
 pub use pidfd::*;
 pub use record_locks::*;
 pub use symlink_node::*;
-pub use userfault_file::*;
 pub use wd_number::*;
 pub use xattr::*;
