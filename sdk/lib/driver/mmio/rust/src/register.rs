@@ -193,8 +193,9 @@ pub trait WritableRegister: Register {
 /// # Examples
 ///
 /// ```rust
-/// indexed_register! {
-///     DataReg, u32, 0x100, 4, 16, RW, {
+/// register! {
+///     #[indexed_register(offset = 0x100, stride = 4, count = 16, mode = RW)]
+///     pub struct DataReg(u32) {
 ///         pub value, set_value: 31, 0;
 ///     }
 /// }
@@ -251,16 +252,17 @@ pub trait WritableIndexedRegister: IndexedRegister {
     }
 }
 
-/// A macro for defining a [`Register`] and its bitfields.
+/// A macro for defining a [`Register`] or [`IndexedRegister`] and its bitfields.
 ///
-/// This macro generates a bitfield struct that implements the [`Register`],
+/// This macro generates a bitfield struct that implements the [`Register`] or [`IndexedRegister`],
 /// [`RegisterReadAccess`] and [`RegisterWriteAccess`] traits. The access mode (RO, WO, RW)
-/// determines which of the [`ReadableRegister`] and [`WritableRegister`] traits are implemented.
+/// determines which of the [`ReadableRegister`]/[`ReadableIndexedRegister`] and
+/// [`WritableRegister`]/[`WritableIndexedRegister`] traits are implemented.
 ///
 /// Access modes:
-/// * `RO`: Read-Only (implements [`ReadableRegister`]).
-/// * `WO`: Write-Only (implements [`WritableRegister`]).
-/// * `RW`: Read-Write (implements both [`ReadableRegister`] and [`WritableRegister`]).
+/// * `RO`: Read-Only.
+/// * `WO`: Write-Only.
+/// * `RW`: Read-Write.
 ///
 /// # Examples
 ///
@@ -281,6 +283,26 @@ pub trait WritableIndexedRegister: IndexedRegister {
 /// register! {
 ///     #[register(offset = 0x14, mode = RW)]
 ///     pub struct ControlReg(u32);
+/// }
+/// ```
+///
+/// Indexed register:
+///
+/// ```rust
+/// register! {
+///     #[indexed_register(offset = 0x100, stride = 4, count = 16, mode = RO)]
+///     pub struct DataReg(u32) {
+///         pub value, _: 31, 0;
+///     }
+/// }
+/// ```
+///
+/// Full-width indexed register:
+///
+/// ```rust
+/// register! {
+///     #[indexed_register(offset = 0x200, stride = 4, count = 8, mode = RW)]
+///     pub struct ValueReg(u32);
 /// }
 /// ```
 ///
@@ -310,6 +332,28 @@ macro_rules! register {
         $crate::register! { $($tail)+ }
     };
 
+    // Multiple definitions support (with block, indexed)
+    (
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = $mode:ident)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
+        $($tail:tt)+
+    ) => {
+        $crate::register! { #[indexed_register(offset = $base_offset, stride = $stride, count = $count, mode = $mode)] $(#[$attr])* pub struct $name($val_type) { $($field_spec)* } }
+        $crate::register! { $($tail)+ }
+    };
+
+    // Multiple definitions support (full-width, indexed)
+    (
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = $mode:ident)]
+        $(#[$attr:meta])*
+        pub struct $name:ident ($val_type:ty) ;
+        $($tail:tt)+
+    ) => {
+        $crate::register! { #[indexed_register(offset = $base_offset, stride = $stride, count = $count, mode = $mode)] $(#[$attr])* pub struct $name($val_type) ; }
+        $crate::register! { $($tail)+ }
+    };
+
     // Read-Only with block
     (
         #[register(offset = $offset:expr, mode = RO)]
@@ -513,42 +557,10 @@ macro_rules! register {
             fn get_write_proxy<'a>(mmio: &'a mut M) -> Self::WriteProxy<'a> { $crate::RegisterProxyMut::new(mmio) }
         }
     };
-}
 
-/// A macro for defining an [`IndexedRegister`] and its bitfields.
-///
-/// This macro generates a bitfield struct that implements the [`IndexedRegister`],
-/// [`RegisterReadAccess`] and [`RegisterWriteAccess`] traits. The access mode (RO, WO, RW)
-/// determines which of the [`ReadableIndexedRegister`] and [`WritableIndexedRegister`]
-/// traits are implemented.
-///
-/// # Examples
-///
-/// ```rust
-/// indexed_register! {
-///     #[register(offset = 0x100, stride = 4, count = 16, mode = RO)]
-///     pub struct DataReg(u32) {
-///         pub value, _: 31, 0;
-///     }
-/// }
-/// ```
-///
-/// Full-width indexed register:
-///
-/// ```rust
-/// indexed_register! {
-///     #[register(offset = 0x200, stride = 4, count = 8, mode = RW)]
-///     pub struct ValueReg(u32);
-/// }
-/// ```
-///
-/// NOTE: If you use this macro, you must add a dependency on the bitfield crate. (At the time of
-/// writing, it isn't easy to avoid this.)
-#[macro_export]
-macro_rules! indexed_register {
-    // Read-Only with block
+    // Read-Only with block, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
     ) => {
@@ -580,9 +592,9 @@ macro_rules! indexed_register {
         }
     };
 
-    // Write-Only with block
+    // Write-Only with block, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
     ) => {
@@ -614,9 +626,9 @@ macro_rules! indexed_register {
         }
     };
 
-    // Read-Write with block
+    // Read-Write with block, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) { $($field_spec:tt)* }
     ) => {
@@ -649,9 +661,9 @@ macro_rules! indexed_register {
         }
     };
 
-    // Read-Only full-width
+    // Read-Only full-width, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RO)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) ;
     ) => {
@@ -686,9 +698,9 @@ macro_rules! indexed_register {
         }
     };
 
-    // Write-Only full-width
+    // Write-Only full-width, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = WO)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) ;
     ) => {
@@ -723,9 +735,9 @@ macro_rules! indexed_register {
         }
     };
 
-    // Read-Write full-width
+    // Read-Write full-width, indexed
     (
-        #[register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
+        #[indexed_register(offset = $base_offset:expr, stride = $stride:expr, count = $count:expr, mode = RW)]
         $(#[$attr:meta])*
         pub struct $name:ident ($val_type:ty) ;
     ) => {
@@ -857,8 +869,8 @@ mod tests {
         }
     }
 
-    indexed_register! {
-        #[register(offset = 16, stride = 4, count = 2, mode = RW)]
+    register! {
+        #[indexed_register(offset = 16, stride = 4, count = 2, mode = RW)]
         pub struct TestIndexedReg(u32) {
             pub field1, set_field1: 7, 0;
         }
@@ -1039,8 +1051,8 @@ mod tests {
         pub struct FullWidthReg(u32);
     }
 
-    indexed_register! {
-        #[register(offset = 12, stride = 4, count = 2, mode = RW)]
+    register! {
+        #[indexed_register(offset = 12, stride = 4, count = 2, mode = RW)]
         /// New syntax indexed register
         pub struct NewSyntaxIndexedReg(u32) {
             pub field1, set_field1: 7, 0;
