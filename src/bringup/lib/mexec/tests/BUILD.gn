@@ -8,6 +8,10 @@ import("//src/bringup/lib/mexec/testing/zbi_test.gni")
 
 group("tests") {
   testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
   deps = [
     ":mexec-entropy-test",
     ":mexec-smoke-test",

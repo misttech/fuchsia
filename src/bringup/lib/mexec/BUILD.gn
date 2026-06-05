@@ -19,3 +19,8 @@ group("tests") {
   testonly = true
   deps = [ "tests" ]
 }
+
+group("boot_tests") {
+  testonly = true
+  deps = [ "tests:boot_tests" ]
+}

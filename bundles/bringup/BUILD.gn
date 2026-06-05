@@ -9,7 +9,7 @@ group("boot_tests") {
 
   deps = [
     "//sdk/lib/c:boot_tests",
-    "//src/bringup/lib:boot_tests",
+    "//src/bringup:boot_tests",
     "//src/lib:boot_tests",
     "//zircon/kernel:boot_tests",
     "//zircon/system/utest/core:boot_tests",

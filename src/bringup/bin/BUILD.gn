@@ -16,3 +16,7 @@ group("tests") {
     "virtcon:tests",
   ]
 }
+
+group("boot_tests") {
+  testonly = true
+}

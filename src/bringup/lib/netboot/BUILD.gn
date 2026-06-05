@@ -11,3 +11,11 @@ source_set("netboot") {
 
   public_configs = [ ":includes" ]
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}
