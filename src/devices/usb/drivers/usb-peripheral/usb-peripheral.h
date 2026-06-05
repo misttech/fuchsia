@@ -26,6 +26,7 @@
 
 #include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb-monitor-util/usb-monitor-util.h>
 #include <usb/request-cpp.h>
 
@@ -216,6 +217,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   void SetUsbMode(usb_mode_t mode) {
     fbl::AutoLock lock(&lock_);
     cur_usb_mode_ = mode;
+    dci_inspect_.UpdateUsbMode(mode);
   }
 
   struct StringDescriptor {
@@ -251,6 +253,10 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
   void OnHostConnectionChanged(bool connected);
+  inspect::Node& inspect_node() { return usb_peripheral_node_; }
+  const inspect::Inspector& inspector() const { return inspector_->inspector(); }
+
+  inline usb_inspect::DciInspect& dci_inspect() { return dci_inspect_; }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
@@ -393,6 +399,10 @@ class UsbPeripheral : public fdf::DriverBase2,
   driver_devfs::Connector<fuchsia_hardware_usb_peripheral::Device> devfs_connector_{
       fit::bind_member<&UsbPeripheral::Connect>(this)};
   std::shared_ptr<fdf::Namespace> incoming_;
+
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node usb_peripheral_node_;
+  usb_inspect::DciInspect dci_inspect_;
 };
 
 }  // namespace usb_peripheral

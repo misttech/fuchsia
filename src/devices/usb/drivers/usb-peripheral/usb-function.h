@@ -17,6 +17,7 @@
 #include <format>
 
 #include <fbl/array.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/usb.h>
 
 namespace usb_peripheral {
@@ -101,6 +102,8 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
       fuchsia_hardware_usb_function::EndpointConfiguration endpoint_configuration);
   zx_status_t CommonEndpointDisable(uint8_t ep_address);
   void CloseFunctionInterface();
+  void SetDescriptors(uint8_t* descriptors, size_t length);
+  void ClearDescriptors();
 
   // fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface>
   class FunctionEventHandler
@@ -157,6 +160,7 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
       serial_number_metadata_server_;
   std::optional<DeconfigureCompleter::Async> deconfigure_completer_;
   std::shared_ptr<fdf::OutgoingDirectory> outgoing_;
+  usb_inspect::FunctionInspect inspect_;
   std::string name_;
 };
 

@@ -11,6 +11,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/cpp/reader.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/interrupt.h>
@@ -25,6 +26,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <sdk/lib/inspect/testing/cpp/inspect.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 #include <usb/peripheral.h>
 #include <usb/request-cpp.h>
 #include <usb/usb.h>
@@ -49,6 +52,15 @@ inline std::ostream& operator<<(std::ostream& os, const UsbPeripheral::DeviceSta
 
 namespace usb_peripheral::test {
 namespace {
+
+using inspect::testing::BoolIs;
+using inspect::testing::NameMatches;
+using inspect::testing::NodeMatches;
+using inspect::testing::PropertyList;
+using inspect::testing::StringIs;
+using inspect::testing::UintIs;
+using ::testing::AllOf;
+using ::testing::Contains;
 
 class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
  public:
@@ -476,8 +488,15 @@ class UsbPeripheralHarness : public ::testing::Test {
   fidl::WireSyncClient<fdci::UsbDciInterface>& dci() { return dci_; }
 
   void ExpectState(UsbPeripheral::DeviceState state) {
-    dut().RunInDriverContext(
-        [state](UsbPeripheral& peripheral) { EXPECT_EQ(peripheral.SnapshotState(), state); });
+    this->dut().RunInDriverContext([state](UsbPeripheral& peripheral) {
+      EXPECT_EQ(peripheral.SnapshotState(), state);
+
+      auto hierarchy = usb_inspect::ReadHierarchyFromInspector(peripheral.inspector());
+      auto* node = hierarchy.GetByPath({"usb-peripheral", "dci_metrics"});
+      ASSERT_NE(node, nullptr);
+      EXPECT_THAT(*node,
+                  NodeMatches(PropertyList(Contains(StringIs("state", std::format("{}", state))))));
+    });
   }
 
   void WaitUntilState(UsbPeripheral::DeviceState state) {
@@ -737,6 +756,90 @@ TEST_F(ManagedUsbPeripheralTest, WorksWithVendorSpecificCommandWhenConfiguration
   ASSERT_EQ(ZX_ERR_BAD_STATE, result->error_value());
 }
 
+TEST_F(UsbPeripheralReadyTest, InspectMetrics) {
+  // Initial state should be PeripheralReady.
+  {
+    inspect::Hierarchy hierarchy;
+    this->dut().RunInDriverContext([&](UsbPeripheral& driver) {
+      hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector());
+    });
+
+    auto* dci_metrics = hierarchy.GetByPath({"usb-peripheral", "dci_metrics"});
+    ASSERT_NE(dci_metrics, nullptr);
+    EXPECT_THAT(*dci_metrics,
+                NodeMatches(AllOf(NameMatches("dci_metrics"),
+                                  PropertyList(Contains(StringIs("state", "kPeripheralReady"))))));
+
+    auto* function_node = hierarchy.GetByPath({"usb-peripheral", "function-000"});
+    ASSERT_NE(function_node, nullptr);
+    EXPECT_THAT(*function_node, NodeMatches(AllOf(NameMatches("function-000"),
+                                                  PropertyList(Contains(UintIs("index", 0))))));
+
+    auto* interface_node = hierarchy.GetByPath({"usb-peripheral", "function-000", "interface-000"});
+    ASSERT_NE(interface_node, nullptr);
+    EXPECT_THAT(*interface_node,
+                NodeMatches(AllOf(
+                    NameMatches("interface-000"),
+                    PropertyList(::testing::UnorderedElementsAre(
+                        UintIs("interface_number", ::testing::_), UintIs("alternate_setting", 0),
+                        UintIs("num_endpoints", 2), UintIs("interface_class", 255),
+                        UintIs("interface_subclass", 0), UintIs("interface_protocol", 0))))));
+
+    auto& ep_children = interface_node->children();
+    ASSERT_EQ(ep_children.size(), 2u);
+    EXPECT_THAT(ep_children[0],
+                NodeMatches(AllOf(PropertyList(Contains(UintIs("attributes", 2))),
+                                  PropertyList(Contains(UintIs("max_packet_size", 64))))));
+  }
+
+  // Connect host.
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Check Inspect again.
+  {
+    inspect::Hierarchy hierarchy;
+    this->dut().RunInDriverContext([&](UsbPeripheral& driver) {
+      hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector());
+    });
+
+    auto* dci_metrics = hierarchy.GetByPath({"usb-peripheral", "dci_metrics"});
+    ASSERT_NE(dci_metrics, nullptr);
+    EXPECT_THAT(*dci_metrics,
+                NodeMatches(AllOf(NameMatches("dci_metrics"),
+                                  PropertyList(Contains(StringIs("state", "kHostConnected"))))));
+
+    // Check dci_metrics.
+    EXPECT_THAT(*dci_metrics,
+                NodeMatches(AllOf(NameMatches("dci_metrics"),
+                                  PropertyList(Contains(BoolIs("connected", true))))));
+  }
+
+  // Disconnect host.
+  auto disconnected_res = this->dci()->SetConnected(false);
+  ASSERT_TRUE(disconnected_res.ok());
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // Check Inspect again.
+  {
+    inspect::Hierarchy hierarchy;
+    this->dut().RunInDriverContext([&](UsbPeripheral& driver) {
+      hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector());
+    });
+
+    auto* dci_metrics = hierarchy.GetByPath({"usb-peripheral", "dci_metrics"});
+    ASSERT_NE(dci_metrics, nullptr);
+    EXPECT_THAT(*dci_metrics,
+                NodeMatches(AllOf(NameMatches("dci_metrics"),
+                                  PropertyList(Contains(StringIs("state", "kPeripheralReady"))))));
+
+    EXPECT_THAT(*dci_metrics,
+                NodeMatches(AllOf(NameMatches("dci_metrics"),
+                                  PropertyList(Contains(BoolIs("connected", false))))));
+  }
+}
+
 TEST_F(UsbPeripheralReadyTest, HostConnectionToggle) {
   for (int i = 0; i < 10; ++i) {
     // Connect host.
@@ -806,6 +909,9 @@ TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
 
   fake_events.WaitUntilCleared(this->dut().runtime());
   fake_events.Unbind();
+
+  // Verify Inspect state is kNoConfiguration.
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {

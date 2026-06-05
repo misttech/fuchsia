@@ -20,16 +20,36 @@ void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sy
 
   cpp20::span<uint8_t> span_write = req->write.get();
 
+  uint8_t request_type = req->setup.bm_request_type;
+  uint8_t request = req->setup.b_request;
+  uint16_t value = le16toh(req->setup.w_value);
+  uint16_t index = le16toh(req->setup.w_index);
+  uint16_t length = le16toh(req->setup.w_length);
+
   drv_->CommonControl(
       req->setup, span_write,
-      [completer = completer.ToAsync()](zx::result<std::vector<uint8_t>> result) mutable {
+      [drv = drv_, request_type, request, value, index, length,
+       completer = completer.ToAsync()](zx::result<std::vector<uint8_t>> result) mutable {
+        zx_status_t status = ZX_OK;
+        size_t actual_len = 0;
         if (result.is_error()) {
-          completer.ReplyError(result.error_value());
-          return;
+          status = result.error_value();
+          completer.ReplyError(status);
+        } else {
+          actual_len = result.value().size();
+          fidl::Arena arena;
+          completer.buffer(arena).ReplySuccess(
+              fidl::VectorView<uint8_t>::FromExternal(result.value()));
         }
-        fidl::Arena arena;
-        completer.buffer(arena).ReplySuccess(
-            fidl::VectorView<uint8_t>::FromExternal(result.value()));
+        drv->dci_inspect().RecordControlTransfer({
+            .request_type = request_type,
+            .request = request,
+            .value = value,
+            .index = index,
+            .length = length,
+            .status = status,
+            .actual_length = actual_len,
+        });
       });
 }
 
@@ -37,12 +57,22 @@ void UsbDciInterfaceServer::SetConnected(SetConnectedRequestView req,
                                          SetConnectedCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
   drv_->OnHostConnectionChanged(req->is_connected);
+  drv_->dci_inspect().RecordEvent(
+      std::format("host connection changed: {}", req->is_connected ? "connected" : "disconnected"));
   completer.ReplySuccess();
 }
 
 void UsbDciInterfaceServer::SetSpeed(SetSpeedRequestView req, SetSpeedCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
   drv_->speed_ = static_cast<usb_speed_t>(req->speed);
+  const char* speed_str = usb_inspect::SpeedToString(drv_->speed_);
+  bool connected;
+  {
+    fbl::AutoLock lock(&drv_->lock_);
+    connected = drv_->state_ == UsbPeripheral::DeviceState::kHostConnected;
+  }
+  drv_->dci_inspect().UpdateConnectionStatus(connected, drv_->speed_);
+  drv_->dci_inspect().RecordEvent(std::format("speed set to: {}", speed_str));
   completer.ReplySuccess();
 }
 

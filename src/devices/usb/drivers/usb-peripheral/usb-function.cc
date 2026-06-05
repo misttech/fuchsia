@@ -27,6 +27,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
                                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing) {
   TRACE_DURATION("usb-peripheral", __func__);
   outgoing_ = outgoing;
+  inspect_.Init(peripheral_->inspect_node(), name_, static_cast<uint8_t>(index_));
   if (child_.is_valid()) {
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
@@ -293,15 +294,16 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   }
   num_interfaces_ = validate_result.value();
 
-  descriptors_.reset(descriptors, length);
+  SetDescriptors(descriptors, length);
   function_intf_.Bind(std::move(request.iface()), dispatcher_,
                       std::make_unique<FunctionEventHandler>(this));
   zx_status_t status = peripheral_->FunctionRegistered();
+
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
     fdf::error("FunctionRegistered failed: {}", zx_status_get_string(status));
     function_intf_ = {};
-    descriptors_.reset();
+    ClearDescriptors();
     return;
   }
 
@@ -353,8 +355,10 @@ UsbFunction::FunctionEventHandler::~FunctionEventHandler() {
 
 void UsbFunction::CloseFunctionInterface() {
   function_intf_ = {};
-  descriptors_.reset();
+  ClearDescriptors();
+  inspect_.UpdateConfiguration(0, false);
   peripheral_->FunctionUnregistered();
+
   if (deconfigure_completer_.has_value()) {
     deconfigure_completer_->Reply(fit::ok());
     deconfigure_completer_.reset();
@@ -432,9 +436,9 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
   }
 
   fdescriptor::wire::UsbSpeed fspeed = static_cast<fdescriptor::wire::UsbSpeed>(speed);
-
-  auto send_set_configured = [configured, fspeed](UsbFunction* self,
-                                                  fit::callback<void(zx_status_t)> completer) {
+  auto send_set_configured = [configured, fspeed, weak_this = weak_from_this()](
+                                 fit::callback<void(zx_status_t)> completer) {
+    auto self = weak_this.lock();
     if (!self) {
       completer(ZX_ERR_CANCELED);
       return;
@@ -446,7 +450,7 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
     }
     self->function_intf_->SetConfigured(configured, fspeed)
         .ThenExactlyOnce(
-            [completer = std::move(completer)](
+            [weak_this, configured, completer = std::move(completer)](
                 fidl::WireUnownedResult<ffunction::UsbFunctionInterface::SetConfigured>&
                     result) mutable {
               if (!result.ok()) {
@@ -461,6 +465,9 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
                 completer(result->error_value());
                 return;
               }
+              if (auto self = weak_this.lock()) {
+                self->inspect_.UpdateConfiguration(self->configuration_ + 1, configured);
+              }
               completer(ZX_OK);
             });
   };
@@ -468,7 +475,7 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
   if (unconfigure_first) {
     function_intf_->SetConfigured(false, fspeed)
         .ThenExactlyOnce(
-            [weak_this = weak_from_this(), send_set_configured = std::move(send_set_configured),
+            [send_set_configured = std::move(send_set_configured),
              completer = std::move(completer)](
                 fidl::WireUnownedResult<ffunction::UsbFunctionInterface::SetConfigured>&
                     result) mutable {
@@ -484,11 +491,10 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
                 completer(result->error_value());
                 return;
               }
-              auto self = weak_this.lock();
-              send_set_configured(self.get(), std::move(completer));
+              send_set_configured(std::move(completer));
             });
   } else {
-    send_set_configured(this, std::move(completer));
+    send_set_configured(std::move(completer));
   }
 }
 
@@ -574,6 +580,7 @@ zx_status_t UsbFunction::CommonEndpointSetStall(uint8_t ep_address) {
     fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} stalled", ep_address));
   return ZX_OK;
 }
 
@@ -593,6 +600,8 @@ zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
     fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
+  peripheral_->dci_inspect().RecordEvent(
+      std::format("endpoint 0x{:02x} stall cleared", ep_address));
   return ZX_OK;
 }
 
@@ -635,6 +644,7 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
     fdf::error("Failed to configure endpoint: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} configured", ep_address));
   return ZX_OK;
 }
 
@@ -654,7 +664,19 @@ zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
     fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
+  peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} disabled", ep_address));
   return ZX_OK;
+}
+
+void UsbFunction::SetDescriptors(uint8_t* descriptors, size_t length) {
+  descriptors_.reset(descriptors, length);
+  inspect_.SetDescriptors(
+      std::vector<uint8_t>(descriptors_.data(), descriptors_.data() + descriptors_.size()));
+}
+
+void UsbFunction::ClearDescriptors() {
+  descriptors_.reset();
+  inspect_.SetDescriptors({});
 }
 
 }  // namespace usb_peripheral

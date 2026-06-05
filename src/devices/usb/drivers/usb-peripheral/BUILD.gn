@@ -56,6 +56,7 @@ source_set("common") {
     "//sdk/lib/driver/metadata/cpp",
     "//src/devices/usb/lib/usb:peripheral",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-inspect",
     "//src/devices/usb/lib/usb-monitor-util:usb-monitor-util-dfv2",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync:sync-cpp",
@@ -103,9 +104,13 @@ test("usb-peripheral-unittest-bin") {
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp_testing",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
   ]
 }
 

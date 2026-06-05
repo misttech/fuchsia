@@ -59,6 +59,7 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
     }
     return result->error_value();
   }
+  dci_inspect_.RecordEvent(std::format("endpoint 0x{:02x} cancelled all requests", ep_address));
   return ZX_OK;
 }
 
@@ -78,8 +79,17 @@ zx_status_t UsbPeripheral::ConnectToEndpoint(uint8_t ep_address,
 
 zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   TRACE_DURATION("usb-peripheral", __func__);
+  inspector_ = context.CreateInspector(this);
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   executor_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  usb_peripheral_node_ = inspector_->root().CreateChild("usb-peripheral");
+  dci_inspect_.Init(usb_peripheral_node_, "dci_metrics");
+  {
+    fbl::AutoLock lock(&lock_);
+    dci_inspect_.UpdateState(std::format("{}", state_));
+    dci_inspect_.UpdateUsbMode(cur_usb_mode_);
+  }
+
   zx::result dci_fidl = incoming_->Connect<fdci::UsbDciService::Device>();
   if (dci_fidl.is_error()) {
     fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
@@ -590,6 +600,7 @@ zx_status_t UsbPeripheral::StopController() {
 void UsbPeripheral::SetStateLocked(DeviceState state) {
   fdf::info("UsbPeripheral: State transition {} -> {}", state_, state);
   state_ = state;
+  dci_inspect_.UpdateState(std::format("{}", state));
 }
 
 zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num) {
@@ -1260,6 +1271,7 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected) {
   fbl::AutoLock lock(&lock_);
 
   fdf::info("OnHostConnectionChanged: current_state={} connected={}", state_, connected);
+  dci_inspect_.UpdateConnectionStatus(connected, speed_);
 
   if (connected) {
     // We also allow transition from kStarting because the controller might report
