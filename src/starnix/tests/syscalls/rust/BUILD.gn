@@ -87,12 +87,17 @@ rustc_binary("fscrypt_test_bin") {
 
 resource("simple_ext4_image") {
   sources = [
-    "data/corrupted_hashtree.txt",
-    "data/corrupted_image_with_hashtree.txt",
-    "data/hashtree_truncated.txt",
-    "data/root_hash.txt",
+    "data/corrupted_hashtree_sha256.txt",
+    "data/corrupted_hashtree_sha512.txt",
+    "data/corrupted_root_hash_sha256.txt",
+    "data/corrupted_root_hash_sha512.txt",
+    "data/hashtree_sha256.txt",
+    "data/hashtree_sha512.txt",
+    "data/root_hash_sha256.txt",
+    "data/root_hash_sha512.txt",
     "data/simple_ext4.img",
-    "data/valid_image_with_hashtree.txt",
+    "data/valid_image_with_corrupted_hashtree_sha256.txt",
+    "data/valid_image_with_hashtree_sha256.txt",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }

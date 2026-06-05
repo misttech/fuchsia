@@ -26,6 +26,8 @@ mod tests {
     const LOOP_MAJOR: u32 = 7;
     const DATA_BLOCK_SIZE: usize = 4096;
     const HASH_BLOCK_SIZE: usize = 4096;
+    const SHA256_ALGORITHM: &str = "sha256";
+    const SHA512_ALGORITHM: &str = "sha512";
 
     // Based on observable Linux kernel behavior from Kernel: Linux 6.6.15-2rodete2-amd64
     const DM_VERITY_VERSION_MAJOR: u32 = 1;
@@ -54,8 +56,22 @@ mod tests {
         assert_eq!(io.data_start, 0);
     }
 
-    fn create_verity_target_two_loop_devices(
-        corrupted: bool,
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum VerityTargetState {
+        // A valid dm-verity target. Both the Merkle tree and the data blocks are valid, and the
+        // root hash matches. Tests that normal reads succeed.
+        Valid,
+        // The hash tree and root hash matches, but does not match the data blocks. The load should
+        // succeed, but reads should fail. Tests read-time failure.
+        CorruptedTreeWithMatchingRoot,
+        // The hash tree is valid, but the root hash passed at load time does not match the tree.
+        // The load should fail immediately. Tests load-time failure.
+        ValidTreeWithMismatchedRoot,
+    }
+
+    fn create_verity_target_two_loop_devices_internal(
+        state: VerityTargetState,
+        hash_algorithm: &str,
     ) -> (String, linux_uapi::dm_target_spec, Vec<u8>) {
         let mut ext4_image_file =
             OpenOptions::new().read(true).open("data/simple_ext4.img").unwrap();
@@ -64,16 +80,44 @@ mod tests {
         ext4_image_file.read_to_end(&mut ext4_image).expect("failed to read ext4 image");
         let image_size = ext4_image.len();
 
-        let hashtree_file = if corrupted {
-            OpenOptions::new().read(true).open("data/corrupted_hashtree.txt").unwrap()
-        } else {
-            OpenOptions::new().read(true).open("data/hashtree_truncated.txt").unwrap()
+        let hashtree_file = match state {
+            VerityTargetState::Valid | VerityTargetState::ValidTreeWithMismatchedRoot => {
+                OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/hashtree_{hash_algorithm}.txt"))
+                    .unwrap()
+            }
+            VerityTargetState::CorruptedTreeWithMatchingRoot => OpenOptions::new()
+                .read(true)
+                .open(format!("data/corrupted_hashtree_{hash_algorithm}.txt"))
+                .unwrap(),
         };
 
-        let mut root_hash_file = OpenOptions::new().read(true).open("data/root_hash.txt").unwrap();
-        let mut root_hash = String::new();
-        let _root_hash_size =
-            root_hash_file.read_to_string(&mut root_hash).expect("failed to read the root_hash");
+        let root_hash = match state {
+            VerityTargetState::Valid => {
+                let mut root_hash_file = OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/root_hash_{hash_algorithm}.txt"))
+                    .unwrap();
+                let mut hash = String::new();
+                root_hash_file.read_to_string(&mut hash).expect("failed to read the root_hash");
+                hash.trim().to_string()
+            }
+            VerityTargetState::CorruptedTreeWithMatchingRoot => {
+                let mut root_hash_file = OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/corrupted_root_hash_{hash_algorithm}.txt"))
+                    .unwrap();
+                let mut hash = String::new();
+                root_hash_file
+                    .read_to_string(&mut hash)
+                    .expect("failed to read the corrupted_tree_valid_root_hash");
+                hash.trim().to_string()
+            }
+            VerityTargetState::ValidTreeWithMismatchedRoot => {
+                if hash_algorithm == SHA256_ALGORITHM { "0".repeat(64) } else { "0".repeat(128) }
+            }
+        };
 
         let loop_control_device =
             OpenOptions::new().read(true).write(true).open("/dev/loop-control").unwrap();
@@ -130,7 +174,7 @@ mod tests {
         assert!(ret == 0, "loop configure ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let parameter_string = format!(
-            "1 {LOOP_MAJOR}:{image_device_num} {LOOP_MAJOR}:{hashtree_device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} 0 sha256 {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
+            "1 {LOOP_MAJOR}:{image_device_num} {LOOP_MAJOR}:{hashtree_device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} 0 {hash_algorithm} {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
             image_size / DATA_BLOCK_SIZE
         );
         let target_type_cstr = std::ffi::CString::new("verity").unwrap();
@@ -166,19 +210,38 @@ mod tests {
             .extend(std::ffi::CString::new(parameter_string.clone()).unwrap().as_bytes_with_nul());
 
         for _ in 0..padding {
-            target_vec.push(b'\0');
+            target_vec.push(0);
         }
 
         (parameter_string, target_spec, target_vec)
     }
 
-    fn create_verity_target_shared_loop_device(
-        corrupted: bool,
+    fn create_verity_target_two_loop_devices_sha256(
+        state: VerityTargetState,
     ) -> (String, linux_uapi::dm_target_spec, Vec<u8>) {
-        let mut ext4_image_with_hashtree_file = if corrupted {
-            OpenOptions::new().read(true).open("data/corrupted_image_with_hashtree.txt").unwrap()
-        } else {
-            OpenOptions::new().read(true).open("data/valid_image_with_hashtree.txt").unwrap()
+        create_verity_target_two_loop_devices_internal(state, SHA256_ALGORITHM)
+    }
+
+    fn create_verity_target_two_loop_devices_sha512(
+        state: VerityTargetState,
+    ) -> (String, linux_uapi::dm_target_spec, Vec<u8>) {
+        create_verity_target_two_loop_devices_internal(state, SHA512_ALGORITHM)
+    }
+
+    fn create_verity_target_shared_loop_device(
+        state: VerityTargetState,
+    ) -> (String, linux_uapi::dm_target_spec, Vec<u8>) {
+        let mut ext4_image_with_hashtree_file = match state {
+            VerityTargetState::Valid | VerityTargetState::ValidTreeWithMismatchedRoot => {
+                OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/valid_image_with_hashtree_{SHA256_ALGORITHM}.txt"))
+                    .unwrap()
+            }
+            VerityTargetState::CorruptedTreeWithMatchingRoot => OpenOptions::new()
+                .read(true)
+                .open(format!("data/valid_image_with_corrupted_hashtree_{SHA256_ALGORITHM}.txt"))
+                .unwrap(),
         };
 
         let mut ext4_image_with_hashtree = vec![];
@@ -188,10 +251,31 @@ mod tests {
         // The hashtree has is 4096 bytes.
         let image_size = ext4_image_with_hashtree.len() - 4096;
 
-        let mut root_hash_file = OpenOptions::new().read(true).open("data/root_hash.txt").unwrap();
-        let mut root_hash = String::new();
-        let _ =
-            root_hash_file.read_to_string(&mut root_hash).expect("failed to read the root_hash");
+        let root_hash = match state {
+            VerityTargetState::Valid => {
+                let mut root_hash_file = OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/root_hash_{SHA256_ALGORITHM}.txt"))
+                    .unwrap();
+                let mut root_hash = String::new();
+                let _ = root_hash_file
+                    .read_to_string(&mut root_hash)
+                    .expect("failed to read the root_hash");
+                root_hash.trim().to_string()
+            }
+            VerityTargetState::CorruptedTreeWithMatchingRoot => {
+                let mut root_hash_file = OpenOptions::new()
+                    .read(true)
+                    .open(format!("data/corrupted_root_hash_{SHA256_ALGORITHM}.txt"))
+                    .unwrap();
+                let mut hash = String::new();
+                root_hash_file
+                    .read_to_string(&mut hash)
+                    .expect("failed to read the corrupted_tree_valid_root_hash");
+                hash.trim().to_string()
+            }
+            VerityTargetState::ValidTreeWithMismatchedRoot => "0".repeat(64),
+        };
 
         let loop_control_device =
             OpenOptions::new().read(true).write(true).open("/dev/loop-control").unwrap();
@@ -224,7 +308,7 @@ mod tests {
         assert!(ret == 0, "loop configure ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let parameter_string = format!(
-            "1 {LOOP_MAJOR}:{device_num} {LOOP_MAJOR}:{device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} {:?} sha256 {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
+            "1 {LOOP_MAJOR}:{device_num} {LOOP_MAJOR}:{device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} {:?} {SHA256_ALGORITHM} {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
             image_size / DATA_BLOCK_SIZE,
             image_size / HASH_BLOCK_SIZE
         );
@@ -488,10 +572,13 @@ mod tests {
     }
 
     #[test_case(create_verity_target_shared_loop_device)]
-    #[test_case(create_verity_target_two_loop_devices)]
+    #[test_case(create_verity_target_two_loop_devices_sha256)]
+    #[test_case(create_verity_target_two_loop_devices_sha512)]
     #[serial]
     fn read_loaded_and_resumed_dm_device(
-        create_verity_target: fn(bool) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
+        create_verity_target: fn(
+            VerityTargetState,
+        ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
         let Some(dm_control) = open_dm_control() else {
             return;
@@ -525,7 +612,7 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, target_spec, target_vec) = create_verity_target(false);
+        let (_, target_spec, target_vec) = create_verity_target(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -628,7 +715,8 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -702,7 +790,8 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -751,10 +840,13 @@ mod tests {
     }
 
     #[test_case(create_verity_target_shared_loop_device)]
-    #[test_case(create_verity_target_two_loop_devices)]
+    #[test_case(create_verity_target_two_loop_devices_sha256)]
+    #[test_case(create_verity_target_two_loop_devices_sha512)]
     #[serial]
     fn read_corrupted_dm_verity_device(
-        create_verity_target: fn(bool) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
+        create_verity_target: fn(
+            VerityTargetState,
+        ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
         let Some(dm_control) = open_dm_control() else {
             return;
@@ -783,7 +875,8 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, target_spec, target_vec) = create_verity_target(true);
+        let (_, target_spec, target_vec) =
+            create_verity_target(VerityTargetState::CorruptedTreeWithMatchingRoot);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -812,9 +905,76 @@ mod tests {
             let mut dm_device =
                 OpenOptions::new().read(true).open(&format!("/dev/dm-{:?}", dm_minor)).unwrap();
             let mut buf = vec![0; (target_spec.length * SECTOR_SIZE) as usize];
-            dm_device.read(&mut buf).expect_err("failed to read the dm-device");
+            dm_device.read(&mut buf).expect_err("unexpectedly passed reading dm-device");
         }
 
+        let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
+        init_io(&mut io_remove, name_slice.clone());
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
+        };
+        assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
+    }
+
+    #[test_case(create_verity_target_shared_loop_device)]
+    #[test_case(create_verity_target_two_loop_devices_sha256)]
+    #[test_case(create_verity_target_two_loop_devices_sha512)]
+    #[serial]
+    fn test_dm_table_load_invalid_root_hash(
+        create_verity_target: fn(
+            VerityTargetState,
+        ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
+    ) {
+        let Some(dm_control) = open_dm_control() else {
+            return;
+        };
+        let mut io = linux_uapi::dm_ioctl { ..Default::default() };
+
+        let name = std::ffi::CString::new("test-device-invalid-root").unwrap();
+        let name_slice = name
+            .as_bytes_with_nul()
+            .iter()
+            .map(|v| *v as std::ffi::c_char)
+            .collect::<Vec<std::ffi::c_char>>();
+        let uuid = std::ffi::CString::new(vec![b'a'; 37]).unwrap();
+        let uuid_slice = uuid
+            .as_bytes_with_nul()
+            .iter()
+            .map(|v| *v as std::ffi::c_char)
+            .collect::<Vec<std::ffi::c_char>>();
+
+        init_io(&mut io, name_slice.clone());
+        io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
+
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
+        assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
+
+        let (_, _target_spec, target_vec) =
+            create_verity_target(VerityTargetState::ValidTreeWithMismatchedRoot);
+
+        let mut io = linux_uapi::dm_ioctl { ..Default::default() };
+        init_io(&mut io, name_slice.clone());
+        io.target_count = 1;
+        io.flags |= DM_READONLY_FLAG;
+        io.data_start = std::mem::size_of::<linux_uapi::dm_ioctl>() as u32;
+        io.data_size = (std::mem::size_of::<linux_uapi::dm_ioctl>() + target_vec.len()) as u32;
+
+        let mut io_vec = io.as_bytes().to_vec();
+        io_vec.extend(target_vec);
+
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_TABLE_LOAD.try_into().unwrap(), io_vec.as_ptr())
+        };
+        assert!(
+            ret != 0,
+            "dm table load succeeded but should have failed due to invalid root hash"
+        );
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
+        assert_eq!(errno, libc::EINVAL);
+
+        // Clean up
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice.clone());
         let ret = unsafe {
@@ -853,7 +1013,8 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, target_spec, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, target_spec, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -926,7 +1087,8 @@ mod tests {
         };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -973,7 +1135,8 @@ mod tests {
         assert_eq!(io.flags, DM_ACTIVE_PRESENT_FLAG | DM_SUSPEND_FLAG | DM_READONLY_FLAG);
 
         // While the first table is active and suspended, load a second table.
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -1334,7 +1497,8 @@ mod tests {
         };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -1420,7 +1584,8 @@ mod tests {
         };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
-        let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, _, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -1469,10 +1634,13 @@ mod tests {
     }
 
     #[test_case(create_verity_target_shared_loop_device)]
-    #[test_case(create_verity_target_two_loop_devices)]
+    #[test_case(create_verity_target_two_loop_devices_sha256)]
+    #[test_case(create_verity_target_two_loop_devices_sha512)]
     #[serial]
     fn dm_table_status_corrupt(
-        create_verity_target: fn(bool) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
+        create_verity_target: fn(
+            VerityTargetState,
+        ) -> (String, linux_uapi::dm_target_spec, Vec<u8>),
     ) {
         let Some(dm_control) = open_dm_control() else {
             return;
@@ -1501,7 +1669,8 @@ mod tests {
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
-        let (_, target_spec, target_vec) = create_verity_target(true);
+        let (_, target_spec, target_vec) =
+            create_verity_target(VerityTargetState::CorruptedTreeWithMatchingRoot);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -1644,7 +1813,8 @@ mod tests {
         };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
-        let (_, target_spec, target_vec) = create_verity_target_two_loop_devices(false);
+        let (_, target_spec, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
@@ -1778,7 +1948,8 @@ mod tests {
         };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
-        let (param_str, target_spec, target_vec) = create_verity_target_two_loop_devices(false);
+        let (param_str, target_spec, target_vec) =
+            create_verity_target_two_loop_devices_sha256(VerityTargetState::Valid);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());

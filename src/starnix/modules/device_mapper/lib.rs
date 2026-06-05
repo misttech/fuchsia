@@ -5,7 +5,7 @@
 #![recursion_limit = "512"]
 
 use bitflags::bitflags;
-use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
+use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
 use linux_uapi::DM_UUID_LEN;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use starnix_core::device::DeviceMode;
@@ -43,6 +43,8 @@ use std::ops::Sub;
 use std::sync::Arc;
 
 const SECTOR_SIZE: u64 = 512;
+const SHA256_ALGORITHM: &str = "sha256";
+const SHA512_ALGORITHM: &str = "sha512";
 // The value of the data_size field in the output dm_ioctl struct when no data is returned as per
 // Linux 6.6.15.
 const DATA_SIZE: u32 = 305;
@@ -265,14 +267,14 @@ fn verify_read(
     offset: usize,
 ) -> Result<(), Errno> {
     let (hasher, digest_size) = match args.base_args.hash_algorithm.as_str() {
-        "sha256" => {
+        SHA256_ALGORITHM => {
             let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new_dmverity(
                 hex::decode(args.base_args.salt.clone()).unwrap(),
                 args.base_args.hash_block_size as usize,
             ));
             (hasher, <Sha256 as Hasher>::Digest::DIGEST_LEN)
         }
-        "sha512" => {
+        SHA512_ALGORITHM => {
             let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new_dmverity(
                 hex::decode(args.base_args.salt.clone()).unwrap(),
                 args.base_args.hash_block_size as usize,
@@ -573,6 +575,23 @@ struct VerityTargetParams {
 }
 
 impl VerityTargetParams {
+    fn create_and_verify(
+        base_args: VerityTargetBaseArgs,
+        optional_args: VerityTargetOptionalArgs,
+        block_device: FileHandle,
+        hash_device: Vec<u8>,
+    ) -> Result<Self, Errno> {
+        let params = VerityTargetParams {
+            base_args,
+            optional_args,
+            block_device,
+            hash_device,
+            corrupted: false,
+        };
+        params.verify_root()?;
+        Ok(params)
+    }
+
     fn parameter_string(&self) -> String {
         let base_string = format!(
             "{} {} {} {:?} {:?} {:?} {:?} {} {} {}",
@@ -602,6 +621,42 @@ impl VerityTargetParams {
         } else {
             base_string
         }
+    }
+
+    fn verify_root(&self) -> Result<(), Errno> {
+        let (hasher, digest_size) = match self.base_args.hash_algorithm.as_str() {
+            SHA256_ALGORITHM => {
+                let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new_dmverity(
+                    hex::decode(self.base_args.salt.clone()).map_err(|_| errno!(EINVAL))?,
+                    self.base_args.hash_block_size as usize,
+                ));
+                (hasher, <Sha256 as Hasher>::Digest::DIGEST_LEN)
+            }
+            SHA512_ALGORITHM => {
+                let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new_dmverity(
+                    hex::decode(self.base_args.salt.clone()).map_err(|_| errno!(EINVAL))?,
+                    self.base_args.hash_block_size as usize,
+                ));
+                (hasher, <Sha512 as Hasher>::Digest::DIGEST_LEN)
+            }
+            _ => return error!(ENOTSUP),
+        };
+
+        let mut builder = MerkleTreeBuilder::new(hasher);
+        for chunk in self.hash_device.chunks(digest_size) {
+            builder.push_data_hash(chunk.to_vec());
+        }
+        let tree = builder.finish();
+        let calculated_root = tree.root();
+
+        let expected_root = hex::decode(&self.base_args.root_digest).map_err(|_| errno!(EINVAL))?;
+
+        if calculated_root != expected_root {
+            starnix_logging::log_warn!("Merkle tree root hash mismatch");
+            return error!(EINVAL);
+        }
+
+        Ok(())
     }
 }
 
@@ -725,8 +780,8 @@ fn parse_parameter_string(
             base_args.hash_device_path = format!("{LOOP_MAJOR}:{minor}");
 
             let hash_size: u64 = match base_args.hash_algorithm.as_str() {
-                "sha256" => <Sha256 as Hasher>::Digest::DIGEST_LEN as u64,
-                "sha512" => <Sha512 as Hasher>::Digest::DIGEST_LEN as u64,
+                SHA256_ALGORITHM => <Sha256 as Hasher>::Digest::DIGEST_LEN as u64,
+                SHA512_ALGORITHM => <Sha512 as Hasher>::Digest::DIGEST_LEN as u64,
                 _ => return error!(ENOTSUP),
             };
 
@@ -749,13 +804,13 @@ fn parse_parameter_string(
             )?;
             debug_assert!(bytes_read == leaf_nodes_size as usize);
 
-            Ok(TargetType::Verity(Box::new(VerityTargetParams {
-                base_args: base_args,
-                optional_args: optional_args,
+            let params = VerityTargetParams::create_and_verify(
+                base_args,
+                optional_args,
                 block_device,
-                hash_device: buffer.into(),
-                corrupted: false,
-            })))
+                buffer.into(),
+            )?;
+            Ok(TargetType::Verity(Box::new(params)))
         }
         "error" => Ok(TargetType::Error),
         _ => error!(ENOTSUP),
