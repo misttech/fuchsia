@@ -330,6 +330,10 @@
                 "CloneTest.NewUserNamespacePermitsAllOtherNamespaces",
                 "CloneTest.NonCanonicalTLS",
 
+                // TODO(https://fxbug.dev/519607444): CLONE_NEWPID not supported.
+                "CloneTest.CloneParentOrThreadWithExitSignalFails",
+                "CloneTest.CloneParentInitProcessFails",
+
                 // futex_test - https://fxbug.dev/42159495 Needs atomic ops on restricted memory.
                 "PrivateFutexTest.WakeOp0Set",
                 "PrivateFutexTest.WakeOp0Add",
