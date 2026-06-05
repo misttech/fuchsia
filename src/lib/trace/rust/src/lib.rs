@@ -9,6 +9,7 @@ use std::ffi::CStr;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::task::Poll;
 use std::{mem, ptr};
 
@@ -146,6 +147,12 @@ impl CategoryString for &'static CStr {
 
     #[inline]
     fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
+        let current_state = site.load(Ordering::Relaxed);
+        // kSiteStateDisabled = 1, and the top bits are used for other tracking, so we use a mask
+        // instead of equality.
+        if (current_state & 1) != 0 {
+            return None;
+        }
         unsafe {
             // SAFETY: The call to `trace_acquire_context_for_category_cached` is sound because
             // all arguments are live and non-null. If this function returns a non-null
@@ -209,6 +216,12 @@ impl CategoryString for &'static str {
 
     #[inline]
     fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
+        let current_state = site.load(Ordering::Relaxed);
+        // kSiteStateDisabled = 1, and the top bits are used for other tracking, so we use a mask
+        // instead of equality.
+        if (current_state & 1) != 0 {
+            return None;
+        }
         unsafe {
             // SAFETY: The call to `trace_acquire_context_for_category_bytestring_cached` is sound
             // because all arguments are live and non-null. If this function returns a non-null
