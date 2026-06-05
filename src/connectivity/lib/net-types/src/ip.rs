@@ -1185,15 +1185,18 @@ impl ScopeableAddress for Ipv4Addr {
 
 /// The list of IPv6 scopes.
 ///
-/// These scopes are defined by [RFC 4291 Section 2.7].
+/// These scopes are defined by [RFC 4291 Section 2.7] and updated by [RFC 7346].
 ///
 /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+/// [RFC 7346]: https://tools.ietf.org/html/rfc7346
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Ipv6Scope {
     /// The interface-local scope.
     InterfaceLocal,
     /// The link-local scope.
     LinkLocal,
+    /// The realm-local scope.
+    RealmLocal,
     /// The admin-local scope.
     AdminLocal,
     /// The (deprecated) site-local scope.
@@ -1216,24 +1219,21 @@ pub enum Ipv6Scope {
     OrganizationLocal,
     /// The global scope.
     Global,
-    /// Scopes which are reserved for future use by [RFC 4291 Section 2.7].
+    /// Scopes which are reserved for future use by [RFC 7436].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     Reserved(Ipv6ReservedScope),
     /// Scopes which are available for local definition by administrators.
     Unassigned(Ipv6UnassignedScope),
 }
 
-/// The list of IPv6 scopes which are reserved for future use by [RFC 4291
-/// Section 2.7].
+/// The list of IPv6 scopes which are reserved for future use by [RFC 7346].
 ///
-/// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+/// [RFC 7346]: https://tools.ietf.org/html/rfc7346
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Ipv6ReservedScope {
     /// The scope with numerical value 0.
     Scope0 = 0,
-    /// The scope with numerical value 3.
-    Scope3 = 3,
     /// The scope with numerical value 0xF.
     ScopeF = 0xF,
 }
@@ -1285,42 +1285,44 @@ impl Scope for Ipv6Scope {
 }
 
 impl Ipv6Scope {
-    /// The multicast scope ID of an interface-local address, defined in [RFC
-    /// 4291 Section 2.7].
+    /// The multicast scope ID of an interface-local address, defined in
+    /// [RFC 7346].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_INTERFACE_LOCAL: u8 = 1;
 
-    /// The multicast scope ID of a link-local address, defined in [RFC 4291
-    /// Section 2.7].
+    /// The multicast scope ID of a link-local address, defined in [RFC 7346].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_LINK_LOCAL: u8 = 2;
 
-    /// The multicast scope ID of an admin-local address, defined in [RFC 4291
-    /// Section 2.7].
+    /// The multicast scope ID of a realm-local address, defined in [RFC 7346].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
+    pub const MULTICAST_SCOPE_ID_REALM_LOCAL: u8 = 3;
+
+    /// The multicast scope ID of an admin-local address, defined in [RFC 7346].
+    ///
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_ADMIN_LOCAL: u8 = 4;
 
     /// The multicast scope ID of a (deprecated) site-local address, defined in
-    /// [RFC 4291 Section 2.7].
+    /// [RFC 7346].
     ///
     /// Note that site-local addresses are deprecated.
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_SITE_LOCAL: u8 = 5;
 
-    /// The multicast scope ID of an organization-local address, defined in [RFC
-    /// 4291 Section 2.7].
+    /// The multicast scope ID of an organization-local address, defined in
+    /// [RFC 7346].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_ORG_LOCAL: u8 = 8;
 
-    /// The multicast scope ID of global address, defined in [RFC 4291 Section
-    /// 2.7].
+    /// The multicast scope ID of global address, defined in [RFC 7346].
     ///
-    /// [RFC 4291 Section 2.7]: https://tools.ietf.org/html/rfc4291#section-2.7
+    /// [RFC 7346]: https://tools.ietf.org/html/rfc7346
     pub const MULTICAST_SCOPE_ID_GLOBAL: u8 = 0xE;
 
     /// The ID used to indicate this scope in a multicast IPv6 address.
@@ -1345,7 +1347,7 @@ impl Ipv6Scope {
             Ipv6Scope::Reserved(Ipv6ReservedScope::Scope0) => 0,
             Ipv6Scope::InterfaceLocal => Self::MULTICAST_SCOPE_ID_INTERFACE_LOCAL,
             Ipv6Scope::LinkLocal => Self::MULTICAST_SCOPE_ID_LINK_LOCAL,
-            Ipv6Scope::Reserved(Ipv6ReservedScope::Scope3) => 3,
+            Ipv6Scope::RealmLocal => Self::MULTICAST_SCOPE_ID_REALM_LOCAL,
             Ipv6Scope::AdminLocal => Self::MULTICAST_SCOPE_ID_ADMIN_LOCAL,
             Ipv6Scope::SiteLocal => Self::MULTICAST_SCOPE_ID_SITE_LOCAL,
             Ipv6Scope::Unassigned(Ipv6UnassignedScope::Scope6) => 6,
@@ -1380,7 +1382,7 @@ impl ScopeableAddress for Ipv6Addr {
                 0 => Reserved(Scope0),
                 Ipv6Scope::MULTICAST_SCOPE_ID_INTERFACE_LOCAL => InterfaceLocal,
                 Ipv6Scope::MULTICAST_SCOPE_ID_LINK_LOCAL => LinkLocal,
-                3 => Reserved(Scope3),
+                Ipv6Scope::MULTICAST_SCOPE_ID_REALM_LOCAL => RealmLocal,
                 Ipv6Scope::MULTICAST_SCOPE_ID_ADMIN_LOCAL => AdminLocal,
                 Ipv6Scope::MULTICAST_SCOPE_ID_SITE_LOCAL => SiteLocal,
                 6 => Unassigned(Scope6),
@@ -4158,7 +4160,7 @@ mod tests {
         assert_scope(0, Reserved(Scope0));
         assert_scope(1, InterfaceLocal);
         assert_scope(2, LinkLocal);
-        assert_scope(3, Reserved(Scope3));
+        assert_scope(3, RealmLocal);
         assert_scope(4, AdminLocal);
         assert_scope(5, SiteLocal);
         assert_scope(6, Unassigned(Scope6));
@@ -4179,7 +4181,7 @@ mod tests {
             Ipv6Scope::Reserved(Ipv6ReservedScope::Scope0),
             Ipv6Scope::InterfaceLocal,
             Ipv6Scope::LinkLocal,
-            Ipv6Scope::Reserved(Ipv6ReservedScope::Scope3),
+            Ipv6Scope::RealmLocal,
             Ipv6Scope::AdminLocal,
             Ipv6Scope::SiteLocal,
             Ipv6Scope::Unassigned(Ipv6UnassignedScope::Scope6),

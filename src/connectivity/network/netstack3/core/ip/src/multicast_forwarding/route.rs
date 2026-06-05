@@ -100,10 +100,10 @@ impl Ipv6SourceAddr {
         match addr.scope() {
             Ipv6Scope::InterfaceLocal | Ipv6Scope::LinkLocal => None,
             Ipv6Scope::Reserved(_) | Ipv6Scope::Unassigned(_) => None,
-            Ipv6Scope::AdminLocal
-            | Ipv6Scope::SiteLocal
-            | Ipv6Scope::OrganizationLocal
-            | Ipv6Scope::Global => Some(Ipv6SourceAddr { addr }),
+            Ipv6Scope::RealmLocal | Ipv6Scope::AdminLocal | Ipv6Scope::OrganizationLocal => {
+                unreachable!("Observed a multicast scope ID on a known unicast address");
+            }
+            Ipv6Scope::SiteLocal | Ipv6Scope::Global => Some(Ipv6SourceAddr { addr }),
         }
     }
 }
