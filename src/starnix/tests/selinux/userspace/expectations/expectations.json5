@@ -24,6 +24,11 @@
                 // demonstrated in this test.
                 "InheritTest.ExecutableFdRemappedToNull",
 
+                // TODO: https://fxbug.dev/505326546 - Implement the security_uring_cmd hook once
+                // the IORING_OP_URING_CMD flag is supported by Fuchsia.
+                "IoUringTest/IoUringCmdTest.Cmd/Allowed",
+                "IoUringTest/IoUringCmdTest.Cmd/Denied",
+
                 // TODO: https://fxbug.dev/492550768 - Apply filesystem { relabelfrom relabelto }
                 // checks when mounting with fscontext= or context=.
                 "MountTest.FsContextRequiresRelabelFromAndTo",

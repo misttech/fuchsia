@@ -603,6 +603,16 @@
             ]
         },
         {
+            "name": "IoUringTest/IoUringCmdTest.Cmd/Allowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "IoUringTest/IoUringCmdTest.Cmd/Denied",
+            "audit_expectations": [
+                "avc: denied { cmd } scontext=test_u:test_r:io_uring_test_no_cmd_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
             "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
