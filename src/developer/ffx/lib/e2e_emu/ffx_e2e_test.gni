@@ -49,7 +49,8 @@ template("ffx_e2e_test") {
   if (defined(invoker.product_bundle)) {
     _pb_label = invoker.product_bundle
 
-    # Ensure we only ever add dependency edges to assembly on the default toolchain.
+    # Ensure we only ever add dependency edges to assembly on the default
+    # toolchain.
     if (get_label_info(_pb_label, "toolchain") != default_toolchain) {
       _pb_label = get_label_info(_pb_label, "label_no_toolchain") +
                   "($default_toolchain)"
@@ -115,9 +116,9 @@ template("ffx_e2e_test") {
   }
 }
 
-# Simplified wrapper around product assembly templates, designed just for tweaking the things that
-# are useful for an ffx_e2e_emu test. Uses an appropriate emulator board for the current target
-# architecture.
+# Simplified wrapper around product assembly templates, designed just for
+# tweaking the things that are useful for an ffx_e2e_emu test. Uses an
+# appropriate emulator board for the current target architecture.
 #
 # Parameters
 #
@@ -128,8 +129,8 @@ template("ffx_e2e_test") {
 #   product_configuration (scope, required)
 #     A scope whose contents will be forwarded to an invocation of product_assembly_configuration().
 template("ffx_e2e_product_bundle") {
-  # Don't let the assembly templates expand except on the default toolchain. Weirndess ensues if
-  # they're expanded on variant toolchains like for asan.
+  # Don't let the assembly templates expand except on the default toolchain.
+  # Weirndess ensues if they're expanded on variant toolchains like for asan.
   if (current_toolchain == default_toolchain) {
     _pb_name = target_name
     if (defined(invoker.name)) {
@@ -188,8 +189,8 @@ template("ffx_e2e_product_bundle") {
   }
 }
 
-# Simplified wrapper around package repository templates, designed just for making some packages
-# available from a repository server to an ffx_e2e_test().
+# Simplified wrapper around package repository templates, designed just for
+# making some packages available from a repository server to an ffx_e2e_test().
 #
 # Parameters
 #
@@ -230,7 +231,8 @@ template("ffx_e2e_package_repository") {
       }
     }
 
-    # Prevent packages in this list from making it into the overall universe set via our deps.
+    # Prevent packages in this list from making it into the overall universe set
+    # via our deps.
     metadata = {
       package_barrier = []
     }

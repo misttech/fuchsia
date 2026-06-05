@@ -10,15 +10,15 @@ group("host_tests") {
   testonly = true
   deps = []
 
-  # Also check for has_board, since this test cannot run on a configuration without a
-  # board.
+  # Also check for has_board, since this test cannot run on a configuration
+  # without a board.
   if (is_host && is_linux && has_board) {
     deps += [ ":emu_e2e_host_test" ]
   }
 }
 
-# Also check for has_board, since this test cannot run on a configuration without a
-# board.
+# Also check for has_board, since this test cannot run on a configuration
+# without a board.
 if (is_host && is_linux && has_board) {
   rustc_test("emu_e2e_host_test") {
     edition = "2024"

@@ -32,8 +32,8 @@ ffx_plugin("ffx_target_package_explore") {
   sources = [ "src/lib.rs" ]
 }
 
-# Target is needed for //src/developer/ffx/tools:tests but this command just uses integration
-# tests.
+# Target is needed for //src/developer/ffx/tools:tests but this command just
+# uses integration tests.
 group("tests") {
   testonly = true
 }

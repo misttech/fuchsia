@@ -207,7 +207,8 @@ source_set("tests") {
     "vm_stream_unittest.cc",
   ]
 
-  # Note: this should not depend on client/ or console/ libraries, including their test_support.
+  # Note: this should not depend on client/ or console/ libraries, including
+  # their test_support.
   deps = [
     ":expr",
     ":test_support",

@@ -79,8 +79,9 @@ cc_test_executable("annotation_metrics_unittest_exe") {
 cc_test_executable("attachment_metrics_unittest_exe") {
   testonly = true
 
-  # "attachment_metrics_unittest_exe" is rather generic for the default_output_dir that is set
-  # to root_out_dir so instead we write the binary to target_out_dir.
+  # "attachment_metrics_unittest_exe" is rather generic for the
+  # default_output_dir that is set to root_out_dir so instead we write the
+  # binary to target_out_dir.
   output_dir = target_out_dir
 
   sources = [ "attachment_metrics_unittest.cc" ]
@@ -401,7 +402,8 @@ cc_test_executable("namespace_init_unittest_exe") {
 cc_test_executable("prod_configs_unittest_exe") {
   testonly = true
 
-  # "prod_configs_unittest_exe" exists in //src/developer/forensics/crash_reports/BUILD.gn
+  # "prod_configs_unittest_exe" exists in
+  # //src/developer/forensics/crash_reports/BUILD.gn
   output_dir = target_out_dir
 
   sources = [ "prod_configs_unittest.cc" ]

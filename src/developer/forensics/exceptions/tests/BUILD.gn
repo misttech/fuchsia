@@ -1,5 +1,6 @@
 # Copyright 2019 The Fuchsia Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
+# Use of this source code is governed by a BSD-style license that can be found
+# in the LICENSE file.
 
 import("//build/components.gni")
 import("//build/components/fuchsia_unittest_component.gni")
@@ -165,8 +166,9 @@ cc_test_executable("wake_lease_unittest_exe") {
 executable("stub_exception_handler_exe") {
   testonly = true
 
-  # We need the same name as the real sub-process spawned by the exception broker,
-  # but we need to put it in a different build directory that the default one.
+  # We need the same name as the real sub-process spawned by the exception
+  # broker, but we need to put it in a different build directory that the
+  # default one.
   output_name = "exception_handler"
   output_dir = target_out_dir
 
@@ -240,7 +242,8 @@ fuchsia_component("exception_broker_unittest") {
     ":crasher",
     ":exception_broker_unittest_exe",
 
-    # Stub exception handler sub-process that avoids making FIDL calls like the real one.
+    # Stub exception handler sub-process that avoids making FIDL calls like the
+    # real one.
     ":stub_exception_handler_exe",
   ]
 }
@@ -254,7 +257,8 @@ fuchsia_component("process_launch_failure_unittest") {
     ":crasher",
     ":process_launch_failure_unittest_exe",
 
-    # Stub exception handler sub-process that avoids making FIDL calls like the real one.
+    # Stub exception handler sub-process that avoids making FIDL calls like the
+    # real one.
     ":stub_exception_handler_exe",
   ]
 }

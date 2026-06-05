@@ -13,10 +13,12 @@ visibility = [ "//src/developer/ffx/*" ]
 
 assert(is_host, "ffx is for use with the host toolchain only")
 
-# A note for developers interested in generating a Cargo.toml file for this tool:
+# A note for developers interested in generating a Cargo.toml file for this
+# tool:
 # FFX generates a `ffx_bin_unversioned` rule, which is what should be used as the target for
 # cargo gen. The appropriate command is:
-# `fx gen-cargo '//src/developer/ffx/frontends/ffx:ffx_bin_unversioned(//build/toolchain:host_x64)'`
+# fx gen-cargo \
+#   '//src/developer/ffx/frontends/ffx:ffx_bin_unversioned(//build/toolchain:host_x64)'
 
 ffx("ffx") {
   sdk_category = "not-yet-specified"
@@ -110,9 +112,9 @@ host_test("ffx-e2e-with-target") {
     ":ffx_bin",
     "//src/developer/ffx/plugins/self-test:ffx_selftest_tool",
 
-    # Required by the test_debug_limbo in `ffx self-test`.
-    # We cannot add it to the dependency of `ffx self-test` plugin because that will make
-    # the crasher into all production builds.
+    # Required by the test_debug_limbo in `ffx self-test`. We cannot add it to
+    # the dependency of `ffx self-test` plugin because that will make the
+    # crasher into all production builds.
     "//src/developer/forensics/crasher($target_toolchain)",
   ]
   data_deps = [

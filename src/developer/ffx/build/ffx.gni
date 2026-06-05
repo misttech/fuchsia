@@ -53,8 +53,8 @@ template("ffx") {
       configs += [ "//build/config/rust:codegen_units_16" ]
 
       if (is_debug) {
-        # Disable lto for debug builds, as the additional codegen units imply the
-        # use of thin-local lto
+        # Disable lto for debug builds, as the additional codegen units imply
+        # the use of thin-local lto
         configs += [ "//build/config/lto:no-lto" ]
       } else {
         # Use thin lto (instead of implied thin-local), to run (thin) lto across
@@ -80,7 +80,8 @@ template("ffx") {
                            ])
   }
 
-  # Replace the special linker sections containing the version information with the real values
+  # Replace the special linker sections containing the version information with
+  # the real values
   ffx_apply_version(ffx_name + "_bin") {
     output_name = ffx_name
     ffx_unversioned_binary_path = "${root_out_dir}/${ffx_name}_unversioned"

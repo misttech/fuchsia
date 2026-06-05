@@ -118,8 +118,9 @@ inferior("pretty_types") {
   deps = [ "//build/config/fuchsia:uses-outline-atomics-fxbug98632" ]
 }
 
-# Creates some types that are linked in to the pretty_types_rust binary below to make sure the
-# expression evaluation doesn't fail when types shadow member variable names.
+# Creates some types that are linked in to the pretty_types_rust binary below to
+# make sure the expression evaluation doesn't fail when types shadow member
+# variable names.
 static_library("rust_pretty_types_lib") {
   visibility = [ ":*" ]
   sources = [

@@ -29,9 +29,10 @@ if (is_fuchsia) {
   }
 }
 
-# This is an intentionally tiny product definition. If you're reading this because your test needs
-# more features enabled or additional packages, please use this template in your test's BUILD.gn
-# and customize the configuration to your needs instead of adding here.
+# This is an intentionally tiny product definition. If you're reading this
+# because your test needs more features enabled or additional packages, please
+# use this template in your test's BUILD.gn and customize the configuration to
+# your needs instead of adding here.
 ffx_e2e_product_bundle("default_ffx_e2e_emu_product") {
   product_configuration = {
     platform = {
@@ -80,8 +81,8 @@ if (is_host) {
   _test_repo_path = get_label_info(_test_repo_label, "target_out_dir") + "/" +
                     get_label_info(_test_repo_label, "name")
 
-  # This test uses non-public interfaces from e2e_emu, it cannot use `ffx_e2e_test` template
-  # as the template includes e2e_emu as a dependency.
+  # This test uses non-public interfaces from e2e_emu, it cannot use
+  # `ffx_e2e_test` template as the template includes e2e_emu as a dependency.
   rustc_test("e2e_emu_test") {
     edition = "2024"
 

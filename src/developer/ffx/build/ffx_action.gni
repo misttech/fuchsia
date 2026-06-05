@@ -193,8 +193,9 @@ template("ffx_action") {
 
     args = [ "--no-environment" ]
 
-    # Pass the ffx config at runtime. ffx checks that it has read and write access to the
-    # config files which causes hermetic actions error if using a global ffx config file.
+    # Pass the ffx config at runtime. ffx checks that it has read and write
+    # access to the config files which causes hermetic actions error if using a
+    # global ffx config file.
     args += [
               "--env",
               rebase_path(env_file, root_build_dir),

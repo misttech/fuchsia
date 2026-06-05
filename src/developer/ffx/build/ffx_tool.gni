@@ -34,7 +34,8 @@ import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
 #      Dependencies for inclusion in the sdk. See `sdk_atom` for more
 #      information on this.
 #
-# The following targets will be produced, in addition to any from `rustc_binary`:
+# The following targets will be produced, in addition to any from
+# `rustc_binary`:
 #
 #   `<target_name>`
 #     The rust binary before applying build version information to it.
@@ -102,14 +103,15 @@ template("ffx_tool") {
                              "sdk_deps",
                            ])
 
-    # As these are large libraries that are slow to compile on RBE workers, switch
-    # them to the larger RBE workers.
+    # As these are large libraries that are slow to compile on RBE workers,
+    # switch them to the larger RBE workers.
     _concurrent_jobs = concurrent_jobs.rust_highmem
     configs += _concurrent_jobs.configs
     forward_variables_from(_concurrent_jobs.vars, "*")
   }
 
-  # Replace the special linker sections containing the version information with the real values
+  # Replace the special linker sections containing the version information with
+  # the real values
   ffx_apply_version(target_versioned_bin) {
     output_name = output_versioned
     ffx_unversioned_binary_path = "${root_out_dir}/${output_unversioned}"

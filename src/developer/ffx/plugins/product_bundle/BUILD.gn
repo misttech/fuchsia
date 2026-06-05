@@ -41,7 +41,8 @@ ffx_tool("ffx_product_bundle_tool") {
   sdk_target_name = "sdk"
   sdk_category = "partner"
 
-  # Avoid instrumenting this target as it has a large negative impact on performance.
+  # Avoid instrumenting this target as it has a large negative impact on
+  # performance.
   exclude_toolchain_tags = [
     "asan",
     "coverage",

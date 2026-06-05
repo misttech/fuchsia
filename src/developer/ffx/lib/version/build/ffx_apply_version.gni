@@ -88,11 +88,12 @@ template("ffx_apply_version") {
 
     # do the real work
     args = [
-      # -x applies a "strip" on the output. Strip is currently performed after the link
-      # step in the normal toolchain rules, and uses this same flag on most platforms (see
-      # clang_toolchain.gni). Note on macOS this is a "different strip", as at time of
-      # writing, binaries on macOS are normally stripped with xcrun strip -Sx.
-      # The outcome produces the same size binary as the stripped binary on macOS.
+      # -x applies a "strip" on the output. Strip is currently performed after
+      # the link step in the normal toolchain rules, and uses this same flag on
+      # most platforms (see clang_toolchain.gni). Note on macOS this is a
+      # "different strip", as at time of writing, binaries on macOS are normally
+      # stripped with xcrun strip -Sx. The outcome produces the same size binary
+      # as the stripped binary on macOS.
       "-x",
 
       "--update-section=${version_info_section}=" +
@@ -115,7 +116,8 @@ template("ffx_apply_version") {
       }
     }
 
-    # Note: binaries metadata is not produced, as the build-id is not updated, and will match with the unversioned build.
+    # Note: binaries metadata is not produced, as the build-id is not updated,
+    # and will match with the unversioned build.
     metadata = {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")

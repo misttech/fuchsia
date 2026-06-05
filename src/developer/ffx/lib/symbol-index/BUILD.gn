@@ -96,8 +96,9 @@ if (current_toolchain == default_toolchain) {
     contents = {
       build_id_dirs = [
         {
-          # The config will be located at $sdk/data/config/symbol-index*/config.json
-          # and the build id directory will be at $sdk/.build-id.
+          # The config will be located at
+          # $sdk/data/config/symbol-index*/config.json and the build id
+          # directory will be at $sdk/.build-id.
           path = "../../../.build-id"
         },
       ]

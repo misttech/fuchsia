@@ -28,7 +28,8 @@ if (current_toolchain == default_toolchain) {
     script = "write_ffx_config.py"
     inputs = [ _ffx_build_dir_config_data_file ]
 
-    # The output path matches the code in ffx to look for $BUILD_DIR/ffx-config.json.
+    # The output path matches the code in ffx to look for
+    # $BUILD_DIR/ffx-config.json.
     outputs = [ "${root_build_dir}/ffx-config.json" ]
 
     args = [
@@ -47,7 +48,8 @@ if (current_toolchain == default_toolchain) {
 
   # Builds the build directory level configuration file for ffx.
   generated_file("ffx-build-config.metadata") {
-    # The output directory should be in the root build dir, so the path can be correctly computed.
+    # The output directory should be in the root build dir, so the path can be
+    # correctly computed.
     outputs = [ _ffx_build_dir_config_data_file ]
     data_keys = [ "ffx" ]
     deps = [
@@ -70,14 +72,16 @@ if (current_toolchain == default_toolchain) {
 
   group("default_ffx_config") {
     #
-    # NOTE: There is a long standing issue with using $ in the value of string variables in scopes.
-    # To work around this, !! is used as a placeholder for $ and replaced before writing out
-    # the configuration file.
+    # NOTE: There is a long standing issue with using $ in the value of string
+    # variables in scopes. To work around this, !! is used as a placeholder for
+    # $ and replaced before writing out the configuration file.
     #
-    # Don't use absolute paths since they risk poisoning the build cache across machines.
+    # Don't use absolute paths since they risk poisoning the build cache across
+    # machines.
     #
     metadata = {
-      # The "ffx" metadata is collected and written into the build-dir level ffx config file.
+      # The "ffx" metadata is collected and written into the build-dir level ffx
+      # config file.
       ffx = [
         {
           # FIDL IR root is the location of all FIDL IR files
@@ -112,10 +116,10 @@ if (current_toolchain == default_toolchain) {
             ]
           }
 
-          # The "main" product bundle
-          # Only define it if the variable exists since there are builds, such as SDK only,
-          # that do not build any product bundles. In those builds, there is no product, so
-          # it is OK to not set this value.
+          # The "main" product bundle. Only define it if the variable exists
+          # since there are builds, such as SDK only, that do not build any
+          # product bundles. In those builds, there is no product, so it is OK
+          # to not set this value.
           if (defined(_product_path)) {
             product = {
               path = "!!BUILD_DIR/" + rebase_path(_product_path, root_out_dir)
@@ -247,11 +251,11 @@ if (is_host) {
   }
 
   json_merge("ffx-defaults.json") {
-    # the "DEFAULT" config level will be made up of a json merge of the following
-    # source json, some of which may be generated. Anything that's part of an
-    # ffx_plugin() definition included under the main ffx binary will automatically
-    # be merged in by that machinery, but if it comes from an external subtool or a library
-    # it has to be manually added to this list.
+    # the "DEFAULT" config level will be made up of a json merge of the
+    # following source json, some of which may be generated. Anything that's
+    # part of an ffx_plugin() definition included under the main ffx binary will
+    # automatically be merged in by that machinery, but if it comes from an
+    # external subtool or a library it has to be manually added to this list.
     sources = [
       rebase_path("//src/developer/ffx/data/config.json"),
       rebase_path("//src/developer/ffx/daemon/data/config.json"),
@@ -268,7 +272,8 @@ if (is_host) {
       }
     }
 
-    # Add any dynamically generated config.json files (ie. from ffx plugin roots) here.
+    # Add any dynamically generated config.json files (ie. from ffx plugin
+    # roots) here.
     deps = [
       # This will bring in all built-in subtool config.json files.
       "//src/developer/ffx/frontends/ffx:config.json($host_toolchain)",
@@ -285,9 +290,9 @@ if (is_host) {
   }
 }
 
-# NOTE: this group is included in `//src/developer:tests` and `//src:tests` which get added as
-# dependencies of the system image in infra builds. Tests which need to depend on a system image
-# should be added to `host_tests` below.
+# NOTE: this group is included in `//src/developer:tests` and `//src:tests`
+# which get added as dependencies of the system image in infra builds. Tests
+# which need to depend on a system image should be added to `host_tests` below.
 # TODO(https://fxbug.dev/409023538): Rename this group and all group deps.
 group("tests") {
   testonly = true
@@ -312,9 +317,9 @@ group("tests") {
   ]
 }
 
-# NOTE: this group is for tests which need to transitively depend on a Fuchsia system image for
-# "e2e" testing of ffx behavior. These are included in `//bundles/buildbot/host` in order to prevent
-# dep cycles.
+# NOTE: this group is for tests which need to transitively depend on a Fuchsia
+# system image for "e2e" testing of ffx behavior. These are included in
+# `//bundles/buildbot/host` in order to prevent dep cycles.
 # TODO(https://fxbug.dev/409023538): Rename this group and all group deps.
 if (is_host) {
   group("host_tests") {

@@ -11,8 +11,9 @@ import("//build/testing/symbols_dir_test_data.gni")
 import("//src/developer/ffx/config.gni")
 
 if (is_host && has_board) {
-  # Directory to store debug symbols, which are required for the e2e test to run.
-  # The path is relative to the $root_out_dir, where zxdb_e2e_tests binary lives.
+  # Directory to store debug symbols, which are required for the e2e test to
+  # run. The path is relative to the $root_out_dir, where zxdb_e2e_tests binary
+  # lives.
   symbol_dir = "test_data/zxdb_e2e_tests/build-id"
   scripts_dir = "test_data/zxdb_e2e_tests/scripts"
 
@@ -34,14 +35,16 @@ if (is_host && has_board) {
       "//src/developer/forensics/crasher:crasher_test",
     ]
     deps = [
-      # In variant builds the variant version of the test executable will be run. However, the test
-      # will expect it can still run the host_x64 default variant of ffx, which is still built
-      # regardless of build variant. But a simple dependency here would try to build an ASAN variant
-      # of ffx, which creates a conflict because then there are two ffx binaries in the path of the
-      # existing tooling, which causes the infra builds (and local attempts to invoke ffx) to fail
-      # horribly. ${toolchain_variant.base} specifies specifically to depend on the normal
-      # non-variant version of ffx that's built all the time so we don't create a second copy, and
-      # can expect the path to be consistent and predictable.
+      # In variant builds the variant version of the test executable will be
+      # run. However, the test will expect it can still run the host_x64 default
+      # variant of ffx, which is still built regardless of build variant. But a
+      # simple dependency here would try to build an ASAN variant of ffx, which
+      # creates a conflict because then there are two ffx binaries in the path
+      # of the existing tooling, which causes the infra builds (and local
+      # attempts to invoke ffx) to fail horribly. ${toolchain_variant.base}
+      # specifies specifically to depend on the normal non-variant version of
+      # ffx that's built all the time so we don't create a second copy, and can
+      # expect the path to be consistent and predictable.
       ":zxdb_e2e_symbols(${toolchain_variant.base})",
       ":zxdb_e2e_test_data(${toolchain_variant.base})",
       "//src/developer/debug/shared",
@@ -86,13 +89,13 @@ if (is_host && has_board) {
 
     # TODO(b/319276232): Reenable sherlock when the flake is fixed.
     #
-    # Note that sherlock cannot run the Starnix tests, which happen to be the only e2e tests
-    # that currently run on these environments (see below).
+    # Note that sherlock cannot run the Starnix tests, which happen to be the
+    # only e2e tests that currently run on these environments (see below).
     environments -= [ sherlock_env ]
 
     # TODO(https://fxbug.dev/42109154): Re-enable astro/nelson when enabling non-Starnix
-    # breakpoint tests below. These environments cannot run the Starnix tests which are the
-    # only e2e tests that currently run on these environments.
+    # breakpoint tests below. These environments cannot run the Starnix tests
+    # which are the only e2e tests that currently run on these environments.
     environments -= [
       astro_env,
       nelson_env,
@@ -113,8 +116,8 @@ if (is_host && has_board) {
 
     if (target_cpu == "arm64") {
       sources += [
-        # This test requires a 32 bit ARM binary which is only built when we're building for an arm
-        # target.
+        # This test requires a 32 bit ARM binary which is only built when we're
+        # building for an arm target.
         "scripts/starnix_proc_exception32.script",
       ]
     } else {

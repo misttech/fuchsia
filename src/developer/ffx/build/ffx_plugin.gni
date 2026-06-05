@@ -149,7 +149,8 @@ template("ffx_plugin") {
              "Unexpected SDK category '${sdk_category}'.")
       category_marker = "//sdk/categories:marker-${sdk_category}"
 
-      # Host tools in the IDK can depend on up to "host_tool" regardless of category.
+      # Host tools in the IDK can depend on up to "host_tool" regardless of
+      # category.
       disallowed_category_markers =
           markers_partner_idk_host_tools_must_not_depend_on
     } else {
@@ -211,8 +212,8 @@ template("ffx_plugin") {
         assert_no_deps = disallowed_category_markers
         deps += [ category_marker ]
 
-        # As these are large libraries that are slow to compile on RBE workers, switch
-        # them to the larger RBE workers.
+        # As these are large libraries that are slow to compile on RBE workers,
+        # switch them to the larger RBE workers.
         _concurrent_jobs = concurrent_jobs.rust_highmem
         configs += _concurrent_jobs.configs
         configs += _extra_configs
@@ -294,8 +295,8 @@ template("ffx_plugin") {
       deps += [ category_marker ]
       configs += _extra_configs
 
-      # As these are large libraries that are slow to compile on RBE workers, switch
-      # them to the larger RBE workers.
+      # As these are large libraries that are slow to compile on RBE workers,
+      # switch them to the larger RBE workers.
       _concurrent_jobs = concurrent_jobs.rust_highmem
       configs += _concurrent_jobs.configs
       forward_variables_from(_concurrent_jobs.vars, "*")
@@ -423,8 +424,8 @@ template("ffx_plugin") {
       }
       assert_no_deps += disallowed_category_markers
 
-      # As these are large libraries that are slow to compile on RBE workers, switch
-      # them to the larger RBE workers.
+      # As these are large libraries that are slow to compile on RBE workers,
+      # switch them to the larger RBE workers.
       _concurrent_jobs = concurrent_jobs.rust_highmem
       configs += _concurrent_jobs.configs
       forward_variables_from(_concurrent_jobs.vars, "*")

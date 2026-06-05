@@ -136,9 +136,8 @@ if (has_board) {
     testonly = true
 
     # TODO(https://fxbug.dev/42075360): Support product bundle for testing on mac
-    # For now, just test on linux.
-    # Also check for has_board, since this test cannot run on a configuration without a
-    # board.
+    # For now, just test on linux. Also check for has_board, since this test
+    # cannot run on a configuration without a board.
     if (is_linux) {
       deps = [ ":ffx-golden-command-list" ] + command_test_deps
     }

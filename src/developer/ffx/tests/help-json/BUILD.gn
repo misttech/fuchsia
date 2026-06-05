@@ -31,7 +31,8 @@ group("tests") {
   testonly = true
   deps = []
 
-  # TODO(b/302523315): Refactor ffx_testing so it can be used with other CPUs and without an image.
+  # TODO(b/302523315): Refactor ffx_testing so it can be used with other CPUs
+  # and without an image.
   if (is_host && target_cpu == "x64" && has_board) {
     deps += [ ":ffx_help_json" ]
   }

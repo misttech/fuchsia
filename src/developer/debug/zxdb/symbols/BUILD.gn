@@ -8,12 +8,13 @@ static_library("symbols") {
   friend = [
     ":*",
 
-    # These "large" test files should really live in this directory but it's small and keeping it in
-    # the zxdb root makes the flag controlling the compilation of that target need to be local to
-    # only one file.
+    # These "large" test files should really live in this directory but it's
+    # small and keeping it in the zxdb root makes the flag controlling the
+    # compilation of that target need to be local to only one file.
     "//src/developer/debug/zxdb:zxdb_large_tests",
 
-    # The client one directory up instantiates the "Impl" classes using the non-public headers.
+    # The client one directory up instantiates the "Impl" classes using the
+    # non-public headers.
     "//src/developer/debug/zxdb/client/*",
   ]
 
@@ -187,8 +188,9 @@ static_library("symbols") {
     "//src/lib/files",
   ]
 
-  # zxdb will be 500% slower in loading symbols if compiled with no optimization,
-  # which is not desirable for in-tree developers. Optimize us for speed by default.
+  # zxdb will be 500% slower in loading symbols if compiled with no
+  # optimization, which is not desirable for in-tree developers. Optimize us for
+  # speed by default.
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
 
@@ -249,11 +251,13 @@ if (is_host) {
   host_test_data("rust_symbols") {
     sources = [ "//prebuilt/test_data/debug/rust_test_data/rust_symbol_test" ]
 
-    # This executable is built with the target toolchain, but isn't packaged in a fuchsia component
-    # or package, so can't actually be executed on the target or the host.
+    # This executable is built with the target toolchain, but isn't packaged in
+    # a fuchsia component or package, so can't actually be executed on the
+    # target or the host.
     outputs = [ "$root_out_dir/test_data/zxdb/{{source_file_part}}.targetexe" ]
 
-    # **NOTE**: Uncomment the below dep target when updating the rust CIPD package. See the notes in
+    # **NOTE**: Uncomment the below dep target when updating the rust CIPD
+    # package. See the notes in
     # the test_data/README.md for instructions.
 
     # deps = [
@@ -265,9 +269,9 @@ if (is_host) {
     sources = [ "test_data/libsymbol_test_so.targetso" ]
 
     outputs = [
-      # This output name must match the build ID of the checked-in symbol file. See
-      # test_symbol_module.cc for the build ID constant used in the test code and instructions on
-      # how to update.
+      # This output name must match the build ID of the checked-in symbol file.
+      # See test_symbol_module.cc for the build ID constant used in the test
+      # code and instructions on how to update.
       "$root_out_dir/test_data/zxdb/build_id/.build-id/9e/b335ffa35de20c.debug",
     ]
   }

@@ -8,7 +8,8 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
 
 declare_args() {
-  # The console tool is intended only for developers. Disabled by default to prevent automated use.
+  # The console tool is intended only for developers. Disabled by default to
+  # prevent automated use.
   starnix_enable_console_tool = false
 }
 

@@ -72,8 +72,8 @@ dual_mode_defaults = [
   "//src/developer/ffx/plugins/repository/data/config.json",
 ]
 
-# The same list as `dual_mode_plugins`, but with the normal suffix for plugins converted to
-# subtools.
+# The same list as `dual_mode_plugins`, but with the normal suffix for plugins
+# converted to subtools.
 dual_mode_subtools = []
 dual_mode_subtool_bins = []
 dual_mode_subtool_tests = []

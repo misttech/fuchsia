@@ -25,9 +25,9 @@ rustc_library("symbolize") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  # Tokio sets up a sigaltstack that is not page-aligned, and the asan runtime tries to unmap
-  # that when tearing down a thread which fails. Work around this mismatch by disabling asan's use
-  # of sigaltstack.
+  # Tokio sets up a sigaltstack that is not page-aligned, and the asan runtime
+  # tries to unmap that when tearing down a thread which fails. Work around this
+  # mismatch by disabling asan's use of sigaltstack.
   deps += [ ":asan_dont_use_sigaltstack" ]
 }
 

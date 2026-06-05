@@ -153,7 +153,8 @@ cc_test_executable("test_suite") {
   ]
 
   data_deps = [
-    # NOTE: The 'test_suite' executable will launch '/pkg/bin/hw_watchpointer' at runtime!
+    # NOTE: The 'test_suite' executable will launch '/pkg/bin/hw_watchpointer'
+    # at runtime!
     ":hw_watchpointer",
   ]
 

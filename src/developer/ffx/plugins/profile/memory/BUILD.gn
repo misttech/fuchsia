@@ -4,7 +4,8 @@
 
 # Run all tests with:
 #
-# fx set <product>.<board> --with //src/developer/ffx/plugins/profile/memory:tests
+# fx set <product>.<board> --with \
+#    //src/developer/ffx/plugins/profile/memory:tests
 # fx test --host
 
 import("//src/developer/ffx/build/ffx_plugin.gni")

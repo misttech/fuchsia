@@ -123,7 +123,8 @@ ffx_tool("ffx_assembly_tool") {
   sdk_target_name = "sdk"
   sdk_category = "partner"
 
-  # We avoid instrumenting assembly for certain builds as this negatively impacts performance.
+  # We avoid instrumenting assembly for certain builds as this negatively
+  # impacts performance.
   exclude_toolchain_tags = [
     "asan",
     "coverage",

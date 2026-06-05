@@ -6,9 +6,10 @@ import("//build/host.gni")
 import("//build/sdk/sdk_host_tool.gni")
 
 declare_args() {
-  # Normally these tests are not built and run because they require large amounts of optional data
-  # be downloaded. Set this to true to enable the build for the zxdb_large_tests.
-  # See symbols/test_data/README.md for how to download the data required for this test.
+  # Normally these tests are not built and run because they require large
+  # amounts of optional data be downloaded. Set this to true to enable the build
+  # for the zxdb_large_tests. See symbols/test_data/README.md for how to
+  # download the data required for this test.
   include_zxdb_large_tests = false
 }
 
@@ -62,7 +63,8 @@ if (is_host) {
   }
 
   if (include_zxdb_large_tests) {
-    # See symbols/test_data/README.md for how to download the data required for this test.
+    # See symbols/test_data/README.md for how to download the data required for
+    # this test.
     test("zxdb_large_tests") {
       sources = [
         "symbols/index_largetest.cc",

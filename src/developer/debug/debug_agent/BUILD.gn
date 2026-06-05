@@ -284,8 +284,8 @@ if (current_cpu == "riscv64") {
     ]
 
     # Set manually to true to compile helper executables for manual debugger
-    # testing of various conditions. Use `ffx component explore /core/debug_agent`
-    # to run these executables.
+    # testing of various conditions. Use `ffx component explore
+    # /core/debug_agent` to run these executables.
     include_helper_executables = false
 
     if (include_helper_executables) {
@@ -400,8 +400,8 @@ test("unit_tests") {
       "//sdk/lib/component/outgoing/cpp",
       "//src/storage/lib/vfs/cpp",
 
-      # Only include these here in the Fuchsia build because on the host build they're included in
-      # the zxdb_unit_tests.
+      # Only include these here in the Fuchsia build because on the host build
+      # they're included in the zxdb_unit_tests.
       "//src/developer/debug/ipc:tests",
       "//src/developer/debug/shared:tests",
       "//zircon/system/ulib/fbl",

@@ -71,8 +71,8 @@ source_set("src") {
   ]
 }
 
-# This file is not needed in system_log_recorder per se, but should be kept in sync
-# with the writer.
+# This file is not needed in system_log_recorder per se, but should be kept in
+# sync with the writer.
 source_set("reader") {
   sources = [
     "reader.cc",
