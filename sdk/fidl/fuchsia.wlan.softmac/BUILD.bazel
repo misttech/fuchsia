@@ -15,6 +15,7 @@ fidl_library(
     api_area = "WLAN",
     category = "partner",
     contains_drivers = True,
+    enable_rust_next = True,
     stable = True,
     visibility = ["//visibility:public"],
     deps = [

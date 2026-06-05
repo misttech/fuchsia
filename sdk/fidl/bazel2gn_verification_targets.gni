@@ -472,6 +472,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.wlan.common:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.device.service:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.device:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.wlan.driver:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.fullmac:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.ieee80211:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.internal:verify_bazel2gn",
