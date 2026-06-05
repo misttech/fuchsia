@@ -13,6 +13,8 @@ use fidl_fuchsia_settings::{
     AudioStreamSettings, AudioStreamSettings2, AudioWatch2Responder, AudioWatchResponder,
     Error as SettingsError, Volume,
 };
+use fuchsia_async as fasync;
+use fuchsia_trace as ftrace;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
@@ -20,7 +22,6 @@ use settings_common::inspect::event::{
     RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 use settings_common::{trace, trace_guard};
-use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 impl From<&AudioInfo> for AudioSettings {
     fn from(info: &AudioInfo) -> Self {
@@ -292,15 +293,19 @@ impl AudioFidlHandler {
     }
 
     pub fn handle_stream(&mut self, mut stream: AudioRequestStream) {
-        let request_handler = RequestHandler {
+        let request_handler = std::rc::Rc::new(RequestHandler {
             subscriber: self.hanging_get.new_subscriber(),
             subscriber2: self.hanging_get2.new_subscriber(),
             controller_tx: self.controller_tx.clone(),
             usage_publisher: self.usage_publisher.clone(),
-        };
+        });
         fasync::Task::local(async move {
             while let Some(Ok(request)) = stream.next().await {
-                request_handler.handle_request(request).await;
+                let request_handler = std::rc::Rc::clone(&request_handler);
+                fasync::Task::local(async move {
+                    request_handler.handle_request(request).await;
+                })
+                .detach();
             }
         })
         .detach();
