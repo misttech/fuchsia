@@ -521,7 +521,11 @@ template("test_spec") {
     dims = env.dimensions
 
     if (defined(env.emulator)) {
+      # Clear from previous iteration.
+      emu_config = {
+      }
       emu_config = env.emulator
+
       assert(defined(emu_config.name),
              "The `emulator` scope requires a unique `name`")
       if (defined(emu_config.uefi) && emu_config.uefi) {
