@@ -637,6 +637,23 @@ def _extract_bazel_target_list_block(content, list_name):
 
     return ""
 
+# Files that should not be checked for the reasons specified.
+_BAZEL_BUILD_PATHS_TO_IGNORE = [
+    # There is no fidl library in this file.
+    "sdk/fidl/BUILD.bazel",
+
+    # These files currently use Bazel SDK macros and thus fail these checks.
+    # TODO(https://fxbug.dev/493687765): Remove each entry as the use of the Bazel
+    # SDK is removed from it.
+    "sdk/fidl/fuchsia.boot/BUILD.bazel",
+    "sdk/fidl/fuchsia.driver.compat/BUILD.bazel",
+    "sdk/fidl/fuchsia.hardware.clock.measure/BUILD.bazel",
+    "sdk/fidl/fuchsia.hardware.qcom.hvdcpopti/BUILD.bazel",
+    "sdk/fidl/fuchsia.hardware.sockettunnel/BUILD.bazel",
+    "sdk/fidl/fuchsia.power.battery/BUILD.bazel",
+    "sdk/fidl/system.state/BUILD.bazel",
+]
+
 # The potential target file meets the criteria:
 # 1. It is a BUILD.bazel file.
 # 2. It is newly added or modified.
@@ -656,8 +673,8 @@ def _is_target_bazel_build_file(ctx, path, meta):
     if not path.endswith("BUILD.bazel"):
         return False
 
-    # Skip the BUILD.bazel file in the //sdk/fidl/ directory.
-    if path == "sdk/fidl/BUILD.bazel":
+    # Skip ignored BUILD.bazel files.
+    if path in _BAZEL_BUILD_PATHS_TO_IGNORE:
         return False
 
     # Check if corresponding BUILD.gn file exists in the same directory.
