@@ -1044,19 +1044,30 @@ pub fn is_task_capable_noaudit(
 
 /// Checks if a task has the specified `capability`.
 /// Corresponds to the `capable()` LSM hook.
+pub fn check_creds_capable(
+    current_task: &CurrentTask,
+    creds: &Credentials,
+    capability: starnix_uapi::auth::Capabilities,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.check_creds_capable");
+    common_cap::creds_capable(creds, capability)?;
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::task::check_creds_capable(
+            &selinux_hooks::build_permission_check(current_task, security_server),
+            &current_task,
+            creds,
+            capability,
+        )
+    })
+}
+
+/// Checks if a task has the specified `capability`.
+/// Corresponds to the `capable()` LSM hook.
 pub fn check_task_capable(
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.check_task_capable");
-    common_cap::capable(current_task, capability)?;
-    if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::task::check_task_capable(
-            &selinux_hooks::build_permission_check(current_task, security_server),
-            &current_task,
-            capability,
-        )
-    })
+    check_creds_capable(current_task, &**current_task.current_creds(), capability)
 }
 
 /// Checks if creating a task is allowed.

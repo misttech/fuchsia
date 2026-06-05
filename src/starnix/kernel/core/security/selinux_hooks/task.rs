@@ -772,12 +772,13 @@ pub(in crate::security) fn is_task_capable_noaudit(
         || permission_check.has_permission(sid, sid, permission).permit()
 }
 
-pub(in crate::security) fn check_task_capable(
+pub(in crate::security) fn check_creds_capable(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
+    creds: &Credentials,
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
-    let sid = current_task_state(current_task).current_sid;
+    let sid = creds.security_state.current_sid;
     let permission = permission_from_capability(capability);
     check_self_permission(&permission_check, current_task, sid, permission, current_task.into())
         .map_err(|_| errno!(EPERM))
