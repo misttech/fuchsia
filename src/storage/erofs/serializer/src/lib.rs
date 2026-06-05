@@ -244,16 +244,16 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
 mod tests {
     use super::*;
     use erofs::readers::VecReader;
-    use erofs::{ErofsParser, Node};
+    use erofs::{ErofsFilesystem, Node};
     use std::sync::Arc;
 
     fn assert_dir_recursive(
-        parser: &ErofsParser,
+        fs: &ErofsFilesystem,
         expected_entries: &[SerializerNode],
         actual_dir: &erofs::DirectoryNode,
     ) {
         let mut actual_entries_buf = vec![erofs::DirectoryEntry::default(); 100];
-        let filled = parser.read_directory(actual_dir, 0, &mut actual_entries_buf).unwrap();
+        let filled = fs.read_directory(actual_dir, 0, &mut actual_entries_buf).unwrap();
         let mut actual_entries = actual_entries_buf[..filled].to_vec();
 
         // EROFS includes '.' and '..' so filter them out first
@@ -268,7 +268,7 @@ mod tests {
             let actual_entry = &actual_entries[i];
             assert_eq!(actual_entry.name, expected_node.name());
 
-            let child_node = parser.node(actual_entry.nid).expect("failed to read child node");
+            let child_node = fs.node(actual_entry.nid).expect("failed to read child node");
 
             match expected_node {
                 SerializerNode::Directory { entries, .. } => {
@@ -276,7 +276,7 @@ mod tests {
                         Node::Directory(d) => d,
                         _ => panic!("Expected directory node for {}", expected_node.name()),
                     };
-                    assert_dir_recursive(parser, entries, &actual_child_dir);
+                    assert_dir_recursive(fs, entries, &actual_child_dir);
                 }
                 SerializerNode::File { data, .. } => {
                     let actual_child_file = match child_node {
@@ -285,7 +285,7 @@ mod tests {
                     };
                     assert_eq!(actual_child_file.size(), data.len() as u64);
                     let mut file_buf = vec![0u8; data.len()];
-                    parser.read_file_range(&actual_child_file, 0, &mut file_buf).unwrap();
+                    fs.read_file_range(&actual_child_file, 0, &mut file_buf).unwrap();
                     assert_eq!(&file_buf, data);
                 }
             }
@@ -316,11 +316,11 @@ mod tests {
 
         let image = serialize(&tree);
         let reader = Arc::new(VecReader::new(image));
-        let parser = ErofsParser::new(reader).expect("Failed to parse serialized EROFS image");
+        let fs = ErofsFilesystem::new(reader).expect("Failed to parse serialized EROFS image");
 
-        let root = parser.root_node();
+        let root = fs.root_node();
         assert_eq!(root.ino(), 0);
 
-        assert_dir_recursive(&parser, &tree, &root);
+        assert_dir_recursive(&fs, &tree, &root);
     }
 }

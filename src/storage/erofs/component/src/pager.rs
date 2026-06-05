@@ -83,11 +83,10 @@ impl ErofsPacketReceiver {
         let len = range.end - range.start;
 
         let mut buf = vec![0u8; len as usize];
-        let read_bytes =
-            file.parser().read_file_range(file.node(), offset, &mut buf).map_err(|e| {
-                log::error!("Read EROFS file range failed: {:?}", e);
-                e.to_status()
-            })?;
+        let read_bytes = file.fs().read_file_range(file.node(), offset, &mut buf).map_err(|e| {
+            log::error!("Read EROFS file range failed: {:?}", e);
+            e.to_status()
+        })?;
 
         if read_bytes < buf.len() {
             buf[read_bytes..].fill(0);

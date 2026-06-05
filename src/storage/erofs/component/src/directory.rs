@@ -106,7 +106,7 @@ impl Directory for ErofsDirectory {
         };
 
         // Lookup the child in the EROFS image.
-        let child_node_opt = self.volume.parser().lookup(&self.node, name).map_err(|e| {
+        let child_node_opt = self.volume.fs().lookup(&self.node, name).map_err(|e| {
             log::error!("Lookup failed for '{}': {:?}", name, e);
             e.to_status()
         })?;
@@ -159,7 +159,7 @@ impl Directory for ErofsDirectory {
         loop {
             let filled = self
                 .volume
-                .parser()
+                .fs()
                 .read_directory(&self.node, entry_offset as usize, &mut buffer)
                 .map_err(|e| {
                     log::error!("Read directory failed at offset {}: {:?}", entry_offset, e);
@@ -180,7 +180,7 @@ impl Directory for ErofsDirectory {
                 };
 
                 // We have to go parse the child inode entry to find the ino.
-                let child = self.volume.parser().node(entry.nid).map_err(|e| {
+                let child = self.volume.fs().node(entry.nid).map_err(|e| {
                     log::error!("Failed to lookup child node {} for ino: {:?}", entry.nid, e);
                     e.to_status()
                 })?;
@@ -216,18 +216,17 @@ impl Directory for ErofsDirectory {
         let mut entry_offset = 0;
         let mut buffer = vec![erofs::DirectoryEntry::default(); 16];
         loop {
-            let filled = self
-                .volume
-                .parser()
-                .read_directory(&self.node, entry_offset, &mut buffer)
-                .map_err(|e| {
-                    log::error!(
-                        "Watcher read directory failed at offset {}: {:?}",
-                        entry_offset,
-                        e
-                    );
-                    e.to_status()
-                })?;
+            let filled =
+                self.volume.fs().read_directory(&self.node, entry_offset, &mut buffer).map_err(
+                    |e| {
+                        log::error!(
+                            "Watcher read directory failed at offset {}: {:?}",
+                            entry_offset,
+                            e
+                        );
+                        e.to_status()
+                    },
+                )?;
             if filled == 0 {
                 break;
             }

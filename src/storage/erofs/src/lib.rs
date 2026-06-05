@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! EROFS filesystem parser.
+//! EROFS filesystem.
 
 use bitflags::bitflags;
 use crc::{CRC_32_ISCSI, Crc};
@@ -299,16 +299,16 @@ impl Node {
     }
 }
 
-/// The parser for an EROFS image.
-pub struct ErofsParser {
+/// The filesystem implementation for an EROFS image.
+pub struct ErofsFilesystem {
     reader: Arc<dyn Reader>,
     block_size: u64,
     meta_addr: u64,
     root_node: DirectoryNode,
 }
 
-impl ErofsParser {
-    /// Creates a new parser for an EROFS image from a reader.
+impl ErofsFilesystem {
+    /// Creates a new filesystem instance for an EROFS image from a reader.
     pub fn new(reader: Arc<dyn Reader>) -> Result<Self, ErofsError> {
         let super_block = Self::parse_superblock(&reader)?;
         let block_size = 1u64 << super_block.block_size_bits;
@@ -644,8 +644,8 @@ mod tests {
     fn test_parse_superblock(path: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles.clone()));
-        // The parser validates the superblock during construction.
-        let _parser = ErofsParser::new(reader).expect("failed to parse superblock");
+        // The fs validates the superblock during construction.
+        let _fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
 
         // Now mutate a byte in the superblock. This ensures the checksumming is actually happening
         // and getting evaluated correctly.
@@ -653,9 +653,9 @@ mod tests {
         mutated_runfiles[1088] ^= 0xFF;
 
         let reader = Arc::new(VecReader::new(mutated_runfiles));
-        let parser = ErofsParser::new(reader);
-        assert!(parser.is_err());
-        match parser.err().unwrap() {
+        let fs = ErofsFilesystem::new(reader);
+        assert!(fs.is_err());
+        match fs.err().unwrap() {
             ErofsError::Parse(ParsingError::ChecksumMismatch(_, _)) => {}
             e => panic!("Expected ChecksumMismatch error, got {:?}", e),
         }
@@ -667,12 +667,11 @@ mod tests {
     fn test_list_dir(path: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
-        let parser = ErofsParser::new(reader).expect("failed to parse superblock");
-        let root_node = parser.root_node();
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
 
         let mut buf = vec![DirectoryEntry::default(); 16];
-        let filled =
-            parser.read_directory(&root_node, 0, &mut buf).expect("failed to read directory");
+        let filled = fs.read_directory(&root_node, 0, &mut buf).expect("failed to read directory");
 
         let names: Vec<String> = buf[..filled].iter().map(|e| e.name.clone()).collect();
         assert_eq!(names, vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum"]);
@@ -684,8 +683,8 @@ mod tests {
     fn test_overflow_nid(path: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
-        let parser = ErofsParser::new(reader).expect("failed to parse superblock");
-        let result = parser.node(u64::MAX);
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let result = fs.node(u64::MAX);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), ErofsError::Parse(ParsingError::InvalidNid(u64::MAX)));
     }
@@ -698,11 +697,10 @@ mod tests {
     fn test_read_file_range(path: &str, name: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
-        let parser = ErofsParser::new(reader).expect("failed to parse superblock");
-        let root_node = parser.root_node();
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
 
-        let node =
-            parser.lookup(&root_node, name).expect("failed to lookup").expect("file not found");
+        let node = fs.lookup(&root_node, name).expect("failed to lookup").expect("file not found");
         let file_node = match node {
             Node::File(f) => f,
             _ => panic!("Expected file node"),
@@ -710,7 +708,7 @@ mod tests {
 
         let size = file_node.size() as usize;
         let mut buf = vec![0u8; size];
-        let bytes_read = parser.read_file_range(&file_node, 0, &mut buf).expect("failed to read");
+        let bytes_read = fs.read_file_range(&file_node, 0, &mut buf).expect("failed to read");
         assert_eq!(bytes_read, size);
         if name == "file1" {
             assert_eq!(&buf[..14], b"this is a file");
@@ -718,7 +716,7 @@ mod tests {
 
         // Test partial read within file
         let mut buf = vec![0u8; 5];
-        let bytes_read = parser.read_file_range(&file_node, 5, &mut buf).expect("failed to read");
+        let bytes_read = fs.read_file_range(&file_node, 5, &mut buf).expect("failed to read");
         assert_eq!(bytes_read, 5);
         if name == "file1" {
             assert_eq!(&buf, b"is a ");
@@ -726,9 +724,8 @@ mod tests {
 
         // Test read spanning across EOF (buffer larger than remaining data)
         let mut buf = vec![0u8; 100];
-        let bytes_read = parser
-            .read_file_range(&file_node, (size - 5) as u64, &mut buf)
-            .expect("failed to read");
+        let bytes_read =
+            fs.read_file_range(&file_node, (size - 5) as u64, &mut buf).expect("failed to read");
         assert_eq!(bytes_read, 5);
         if name == "file1" {
             assert_eq!(&buf[..5], b"file\n");
@@ -737,7 +734,7 @@ mod tests {
         // Test read at EOF
         let mut buf = vec![0u8; 100];
         let bytes_read =
-            parser.read_file_range(&file_node, size as u64, &mut buf).expect("failed to read");
+            fs.read_file_range(&file_node, size as u64, &mut buf).expect("failed to read");
         assert_eq!(bytes_read, 0);
     }
 
@@ -747,8 +744,8 @@ mod tests {
     fn test_read_directory_pagination(path: &str) {
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
-        let parser = ErofsParser::new(reader).expect("failed to parse superblock");
-        let root_node = parser.root_node();
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
 
         let expected_names = vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum"];
 
@@ -756,35 +753,34 @@ mod tests {
         let mut buf = vec![DirectoryEntry::default(); 2];
 
         // Page 1 (offset 0)
-        let filled = parser.read_directory(&root_node, 0, &mut buf).expect("failed to read dir");
+        let filled = fs.read_directory(&root_node, 0, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 2);
         assert_eq!(buf[0].name, expected_names[0]);
         assert_eq!(buf[1].name, expected_names[1]);
 
         // Page 2 (offset 2)
-        let filled = parser.read_directory(&root_node, 2, &mut buf).expect("failed to read dir");
+        let filled = fs.read_directory(&root_node, 2, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 2);
         assert_eq!(buf[0].name, expected_names[2]);
         assert_eq!(buf[1].name, expected_names[3]);
 
         // Page 4 (offset 5)
-        let filled = parser.read_directory(&root_node, 5, &mut buf).expect("failed to read dir");
+        let filled = fs.read_directory(&root_node, 5, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 1);
         assert_eq!(buf[0].name, expected_names[5]);
 
         // Page 5 (offset 6 - EOF)
-        let filled = parser.read_directory(&root_node, 6, &mut buf).expect("failed to read dir");
+        let filled = fs.read_directory(&root_node, 6, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 0);
 
         // Test reading with buffer size 1 (extreme pagination)
         let mut buf1 = vec![DirectoryEntry::default(); 1];
         for i in 0..expected_names.len() {
-            let filled =
-                parser.read_directory(&root_node, i, &mut buf1).expect("failed to read dir");
+            let filled = fs.read_directory(&root_node, i, &mut buf1).expect("failed to read dir");
             assert_eq!(filled, 1);
             assert_eq!(buf1[0].name, expected_names[i]);
         }
-        let filled = parser
+        let filled = fs
             .read_directory(&root_node, expected_names.len(), &mut buf1)
             .expect("failed to read dir");
         assert_eq!(filled, 0);
@@ -798,10 +794,10 @@ mod tests {
         // into multiple blocks on the 512 block size golden.
         let runfiles = fs::read(path).expect("failed to read test file");
         let reader = Arc::new(VecReader::new(runfiles));
-        let parser = ErofsParser::new(reader).expect("failed to parse superblock");
-        let root_node = parser.root_node();
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
 
-        let large_dir_node = parser
+        let large_dir_node = fs
             .lookup(&root_node, "large_dir")
             .expect("failed to look up large_dir")
             .expect("large_dir not found");
@@ -815,7 +811,7 @@ mod tests {
         let mut entry_offset = 2;
         let mut buffer = vec![DirectoryEntry::default(); 16];
         loop {
-            let filled = parser.read_directory(&large_dir, entry_offset, &mut buffer).unwrap();
+            let filled = fs.read_directory(&large_dir, entry_offset, &mut buffer).unwrap();
             for i in 0..filled {
                 // check the prefix
                 assert_eq!(buffer[i].name[..12], format!("file_number_"));

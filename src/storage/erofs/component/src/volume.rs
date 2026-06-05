@@ -5,7 +5,7 @@
 use crate::directory::ErofsDirectory;
 use crate::pager::ErofsPager;
 use anyhow::Context as _;
-use erofs::ErofsParser;
+use erofs::ErofsFilesystem;
 use erofs::readers::VmoReader;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
@@ -13,8 +13,8 @@ use vfs::execution_scope::ExecutionScope;
 
 /// Holds the volume-level state for an active EROFS instance.
 pub struct ErofsVolume {
-    /// The parser for this EROFS volume.
-    parser: ErofsParser,
+    /// The filesystem for this EROFS volume.
+    fs: ErofsFilesystem,
     /// Reference to the unified pager.
     pager: Arc<ErofsPager>,
 }
@@ -23,8 +23,8 @@ impl ErofsVolume {
     pub fn new(backing_vmo: zx::Vmo, pager: Arc<ErofsPager>) -> Result<Self, anyhow::Error> {
         let reader =
             Arc::new(VmoReader::new(Arc::new(backing_vmo)).context("Failed to create VmoReader")?);
-        let parser = ErofsParser::new(reader).context("Failed to create ErofsParser")?;
-        Ok(Self { parser, pager })
+        let fs = ErofsFilesystem::new(reader).context("Failed to create ErofsFilesystem")?;
+        Ok(Self { fs, pager })
     }
 
     /// Sets up and serves an EROFS volume from a backing VMO.
@@ -36,16 +36,16 @@ impl ErofsVolume {
     ) -> Result<(), anyhow::Error> {
         let scope = ExecutionScope::new();
         let volume = Arc::new(Self::new(backing_vmo, pager)?);
-        let root_node = volume.parser().root_node();
+        let root_node = volume.fs().root_node();
         let root_dir = Arc::new(ErofsDirectory::new(volume, root_node));
 
         vfs::directory::serve_on(root_dir, flags, scope, root);
         Ok(())
     }
 
-    /// Returns a reference to the parser.
-    pub fn parser(&self) -> &ErofsParser {
-        &self.parser
+    /// Returns a reference to the filesystem.
+    pub fn fs(&self) -> &ErofsFilesystem {
+        &self.fs
     }
 
     /// Returns a reference to the pager.

@@ -38,8 +38,8 @@ impl ErofsFile {
         Ok(file)
     }
 
-    pub fn parser(&self) -> &erofs::ErofsParser {
-        self.volume.parser()
+    pub fn fs(&self) -> &erofs::ErofsFilesystem {
+        self.volume.fs()
     }
 
     pub fn node(&self) -> &FileNode {
