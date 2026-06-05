@@ -217,10 +217,11 @@ enum TaskRequest {
         arg: u64,
         koid: u64,
         vmo: zx::Vmo,
+        ioctl_reads: Vec<fbinder::IoctlReadWrite>,
         files: Vec<fbinder::FileHandle>,
         // a synchronous function avoids thread hops.
         #[derivative(Debug = "ignore")]
-        responder: SynchronousResponder<Vec<fbinder::IoctlWrite>>,
+        responder: SynchronousResponder<Vec<fbinder::IoctlReadWrite>>,
     },
     /// Open the binder device driver situated at `path` in the Task filesystem namespace.
     Open {
@@ -591,12 +592,20 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 );
                 waiter.await;
             }
-            fbinder::BinderRequest::Ioctl { tid, request, arg, vmo, files, responder } => {
+            fbinder::BinderRequest::Ioctl {
+                tid,
+                request,
+                arg,
+                vmo,
+                ioctl_reads,
+                files,
+                responder,
+            } => {
                 trace_duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_SEND_WORK, "request" => request);
                 trace_flow_begin!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, tid.into(), "request" => request);
 
                 let (responder, waiter) = Self::make_synchronous_responder::<
-                    Vec<fbinder::IoctlWrite>,
+                    Vec<fbinder::IoctlReadWrite>,
                     _,
                     _,
                 >(responder, move |responder, e| {
@@ -618,6 +627,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         arg,
                         koid: tid,
                         vmo,
+                        ioctl_reads,
                         files,
                         responder,
                     },
@@ -1060,6 +1070,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     arg,
                     koid,
                     vmo,
+                    ioctl_reads,
                     files,
                     responder,
                 } => {
@@ -1070,8 +1081,9 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         current_task,
                         request,
                         arg.into(),
-                        vmo,
+                        ioctl_reads,
                         files,
+                        vmo,
                     );
                     // Once the potentially blocking calls is made, the task is ready to handle the
                     // next request.
@@ -1357,7 +1369,7 @@ mod tests {
             let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
             let files = Vec::new();
             let user_writes = binder
-                .ioctl(42, uapi::BINDER_VERSION, version_ref as u64, vmo, files)
+                .ioctl(42, uapi::BINDER_VERSION, version_ref as u64, vmo, &[], files)
                 .await
                 .expect("ioctl")
                 .expect("ioctl");

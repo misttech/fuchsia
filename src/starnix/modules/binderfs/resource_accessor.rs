@@ -23,7 +23,8 @@ use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 pub struct RemoteIoctl {
-    pub ioctl_writes: Cell<Vec<fbinder::IoctlWrite>>,
+    pub ioctl_reads: Vec<fbinder::IoctlReadWrite>,
+    pub ioctl_writes: Cell<Vec<fbinder::IoctlReadWrite>>,
     pub vmo: zx::Vmo,
 }
 
@@ -125,38 +126,60 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
     fn read_memory<'a>(
         &self,
         addr: UserAddress,
-        mut unread_bytes: &'a mut [MaybeUninit<u8>],
+        unread_bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        let mut addr = self.untag_address(addr);
+        let addr = self.untag_address(addr);
         let unread_bytes_ptr = unread_bytes.as_mut_ptr();
         let unread_bytes_len = unread_bytes.len();
-        while !unread_bytes.is_empty() {
-            let len = std::cmp::min(unread_bytes.len(), MAX_PROCESS_READ_WRITE_MEMORY_BUFFER_SIZE);
-            let (read_bytes, _unread_bytes) = self
-                .remote_resource_accessor
-                .process
-                .read_memory_uninit(addr, &mut unread_bytes[..len])
-                .map_err(|_| errno!(EINVAL))?;
-            let bytes_count = read_bytes.len();
-            // bytes_count can be less than len when:
-            // - there is a fault
-            // - the reading is done across 2 mappings
-            // To detect this, this only fails when nothing could be read. Otherwise, a new
-            // read will be issued with the remaining of the buffer, and a fault will be
-            // detected when no byte can be read.
-            if bytes_count == 0 {
-                return error!(EFAULT);
+
+        let mut current_offset = 0;
+        while current_offset < unread_bytes_len {
+            let current_addr = (addr + current_offset) as u64;
+            let remaining_len = unread_bytes_len - current_offset;
+
+            // Find an IoctlRead that covers current_addr
+            if let Some(ioctl_read) = self
+                .remote_ioctl
+                .ioctl_reads
+                .iter()
+                .find(|r| current_addr >= r.address && (current_addr - r.address) < r.length)
+            {
+                let read_len = std::cmp::min(
+                    remaining_len,
+                    (ioctl_read.address + ioctl_read.length - current_addr) as usize,
+                );
+                let offset_in_vmo = ioctl_read.offset + (current_addr - ioctl_read.address);
+                // SAFETY: `MaybeUninit<u8>` has the same layout as `u8`. Creating a mutable slice
+                // of `u8` from a mutable slice of `MaybeUninit<u8>` is safe once all bytes are
+                // initialized, which `vmo.read` will guarantee.
+                let dest_slice = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        unread_bytes_ptr.add(current_offset) as *mut u8,
+                        read_len,
+                    )
+                };
+                self.remote_ioctl
+                    .vmo
+                    .read(dest_slice, offset_in_vmo)
+                    .map_err(|_| errno!(EFAULT))?;
+                current_offset += read_len;
+            } else {
+                let read_len =
+                    std::cmp::min(remaining_len, MAX_PROCESS_READ_WRITE_MEMORY_BUFFER_SIZE);
+                let dest_slice = &mut unread_bytes[current_offset..current_offset + read_len];
+                let (read_bytes, _) = self
+                    .remote_resource_accessor
+                    .process
+                    .read_memory_uninit(current_addr as usize, dest_slice)
+                    .map_err(|_| errno!(EFAULT))?;
+                if read_bytes.is_empty() {
+                    return error!(EFAULT);
+                }
+                current_offset += read_bytes.len();
             }
-            addr += bytes_count;
-            // Note that we can't use `_unread_bytes` because it does not extend
-            // to the end of `unread_bytes`. We pass `unread_bytes[..len]` to
-            // `read_memory_uninit` so the returned unread bytes would be
-            // `unread_bytes[bytes_count..len]` vs. `unread_bytes[bytes_count..]`
-            // which is what we want.
-            unread_bytes = &mut unread_bytes[bytes_count..];
         }
 
-        debug_assert_eq!(unread_bytes.len(), 0);
+        debug_assert_eq!(current_offset, unread_bytes_len);
         // SAFETY: [MaybeUninit<T>] and [T] have the same layout. All bytes have been
         // initialized.
         let bytes = unsafe {
@@ -192,13 +215,13 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
         // Writes are returned through ioctl, if there is space.
         let mut ioctl_writes = self.remote_ioctl.ioctl_writes.take();
         if ioctl_writes.len() < fbinder::MAX_IOCTL_WRITE_COUNT as usize {
-            let last = ioctl_writes.last().unwrap_or(&fbinder::IoctlWrite {
+            let last = ioctl_writes.last().unwrap_or(&fbinder::IoctlReadWrite {
                 address: 0,
                 offset: 0,
                 length: 0,
             });
             let offset = last.offset + last.length;
-            ioctl_writes.push(fbinder::IoctlWrite {
+            ioctl_writes.push(fbinder::IoctlReadWrite {
                 address: untagged_addr,
                 offset,
                 length: bytes.len() as u64,

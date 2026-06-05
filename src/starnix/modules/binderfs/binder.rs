@@ -365,12 +365,14 @@ impl RemoteBinderConnection {
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
-        vmo: zx::Vmo,
+        ioctl_reads: Vec<fbinder::IoctlReadWrite>,
         files: Vec<fbinder::FileHandle>,
-    ) -> Result<Vec<fbinder::IoctlWrite>, Errno> {
+        vmo: zx::Vmo,
+    ) -> Result<Vec<fbinder::IoctlReadWrite>, Errno> {
         let binder_process = self.binder_connection.proc(current_task)?;
         release_after!(binder_process, current_task.kernel(), {
-            let remote_ioctl = RemoteIoctl { ioctl_writes: Cell::new(Vec::new()), vmo };
+            let remote_ioctl =
+                RemoteIoctl { ioctl_reads, ioctl_writes: Cell::new(Vec::new()), vmo };
             self.binder_connection.device.ioctl(
                 locked,
                 current_task,

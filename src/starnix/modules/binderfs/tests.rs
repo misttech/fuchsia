@@ -4013,7 +4013,7 @@ pub mod tests {
     }
 
     #[allow(dead_code)]
-    fn apply_writes(ioctl_writes: Vec<fbinder::IoctlWrite>, vmo: &zx::Vmo) {
+    fn apply_writes(ioctl_writes: Vec<fbinder::IoctlReadWrite>, vmo: &zx::Vmo) {
         for ioctl_write in ioctl_writes.iter() {
             // SAFETY This is required to emulate the scattered writes for tests.
             #[allow(
@@ -4060,6 +4060,7 @@ pub mod tests {
             }
             let remote_ioctl = RemoteIoctl {
                 ioctl_writes: Cell::new(Vec::new()),
+                ioctl_reads: Vec::new(),
                 vmo: zx::Vmo::create(VECTOR_SIZE as u64).expect("Vmo::create"),
             };
             let remote_memory_accessor = RemoteMemoryAccessor {
