@@ -13,12 +13,10 @@ from enum import Enum, StrEnum, auto, unique
 
 from antlion import utils
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
-from antlion.controllers.ap_lib.hostapd_constants import (
-    AP_SSID_LENGTH_2G,
-    BandType,
+from antlion.controllers.ap_lib.hostapd_constants import AP_SSID_LENGTH_2G
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
@@ -28,6 +26,23 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import ConnectionState
 from mobly import asserts, signals, test_runner
+from openwrt_access_point import AddrType as OpenWrtAddrType
+from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+    SecurityOpen,
+    SecurityWpa2,
+    SecurityWpa3,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 DUT_NETWORK_CONNECTION_TIMEOUT = 60
 
@@ -81,8 +96,8 @@ class IpVersionType(Enum):
 class TestParams:
     reboot_device: DeviceType
     reboot_type: RebootType
-    band: BandType
-    security_mode: SecurityMode
+    band: Band
+    security: Security
     ip_version: IpVersionType
 
 
@@ -97,11 +112,16 @@ class WlanRebootTest(base_test.WifiBaseTest):
 
     def pre_run(self) -> None:
         test_params: list[tuple[TestParams]] = []
+        securities: list[Security] = [
+            SecurityOpen(),
+            SecurityWpa2(),
+            SecurityWpa3(),
+        ]
         for (
             device_type,
             reboot_type,
             band,
-            security_mode,
+            security,
             ip_version,
         ) in itertools.product(
             # DeviceType,
@@ -114,8 +134,8 @@ class WlanRebootTest(base_test.WifiBaseTest):
             # with the commented code above once the bug affecting StrEnum resolves.
             [e for e in DeviceType],
             [e for e in RebootType],
-            [e for e in BandType],
-            [SecurityMode.OPEN, SecurityMode.WPA2, SecurityMode.WPA3],
+            [Band.BAND_2G, Band.BAND_5G],
+            securities,
             [e for e in IpVersionType],
         ):
             test_params.append(
@@ -124,19 +144,25 @@ class WlanRebootTest(base_test.WifiBaseTest):
                         device_type,
                         reboot_type,
                         band,
-                        security_mode,
+                        security,
                         ip_version,
                     ),
                 )
             )
 
         def generate_test_name(t: TestParams) -> str:
+            # Map OpenWrt's "none" security string to "open" to match legacy test name format
+            encryption = (
+                "open"
+                if t.security.uci_encryption == "none"
+                else t.security.uci_encryption
+            )
             test_name = (
                 "test"
                 f"_{t.reboot_type}_reboot"
                 f"_{t.reboot_device}"
-                f"_{t.band}"
-                f"_{t.security_mode}"
+                f"_{t.band.lower()}"
+                f"_{encryption}"
             )
             if t.ip_version.ipv4():
                 test_name += "_ipv4"
@@ -154,9 +180,13 @@ class WlanRebootTest(base_test.WifiBaseTest):
         super().setup_class()
         self.log = logging.getLogger()
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
 
         self.fuchsia_device, self.dut = self.get_dut_type(
             FuchsiaDevice, AssociationMode.POLICY
@@ -164,20 +194,20 @@ class WlanRebootTest(base_test.WifiBaseTest):
 
     def setup_test(self) -> None:
         super().setup_test()
-        assert self.access_point is not None
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def teardown_test(self) -> None:
-        assert self.access_point is not None
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         super().teardown_test()
 
     def setup_ap(
         self,
         ssid: str,
-        band: BandType,
+        band: Band,
         ip_version: IpVersionType,
-        security_mode: SecurityMode,
+        security: Security,
         password: str | None = None,
     ) -> None:
         """Setup ap with basic config.
@@ -189,53 +219,95 @@ class WlanRebootTest(base_test.WifiBaseTest):
             security_mode: The type of security mode.
             password: The PSK or passphase.
         """
-        assert self.access_point is not None
-        security_profile = Security(
-            security_mode=security_mode, password=password
-        )
-
-        self.access_point.start_ap(
-            hostapd_config=create_ap_preset(
-                iface_wlan_2g=self.access_point.wlan_2g,
-                iface_wlan_5g=self.access_point.wlan_5g,
-                profile_name="whirlwind",
-                channel=band.default_channel(),
-                ssid=ssid,
-                security=security_profile,
-                # TODO(http://b/271628778): Remove ap_max_inactivity once
-                # Fuchsia respects 802.11w (PMF) comeback-time.
-                ap_max_inactivity=100 if band == BandType.BAND_5G else None,
-            ),
-            radvd_config=RadvdConfig() if ip_version.ipv6() else None,
-        )
+        if self.openwrt_ap:
+            channel = (
+                DEFAULT_2G_CHANNEL
+                if band == Band.BAND_2G
+                else DEFAULT_5G_CHANNEL
+            )
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=band)
+        elif self.access_point:
+            legacy_security_mode = ConfigMapper.to_hostapd_security(security)
+            security_profile = DeprecatedSecurity(
+                security_mode=legacy_security_mode, password=password
+            )
+            legacy_band = ConfigMapper.to_hostapd_band(band)
+            self.access_point.start_ap(
+                hostapd_config=create_ap_preset(
+                    iface_wlan_2g=self.access_point.wlan_2g,
+                    iface_wlan_5g=self.access_point.wlan_5g,
+                    profile_name="whirlwind",
+                    channel=legacy_band.default_channel(),
+                    ssid=ssid,
+                    security=security_profile,
+                    # TODO(http://b/271628778): Remove ap_max_inactivity once
+                    # Fuchsia respects 802.11w (PMF) comeback-time.
+                    ap_max_inactivity=100 if band == Band.BAND_5G else None,
+                ),
+                radvd_config=RadvdConfig() if ip_version.ipv6() else None,
+            )
 
         if not ip_version.ipv4():
-            self.access_point.stop_dhcp()
+            if self.openwrt_ap:
+                self.openwrt_ap.dhcp.stop_dhcp()
+            elif self.access_point:
+                self.access_point.stop_dhcp()
 
         self.log.info(f"Network (SSID: {ssid}) is up.")
 
     def ping_dut_to_ap(
         self,
-        band: BandType,
+        band: Band,
         ip_version: IpVersionType,
     ) -> None:
         """Validate the DUT is pingable."""
-        assert self.access_point is not None
-        if band == BandType.BAND_2G:
-            test_interface = self.access_point.wlan_2g
-        elif band == BandType.BAND_5G:
-            test_interface = self.access_point.wlan_5g
-
-        if ip_version == IpVersionType.IPV4:
-            ap_address = utils.get_addr(self.access_point.ssh, test_interface)
-        elif ip_version == IpVersionType.IPV6:
-            ap_address = utils.get_addr(
-                self.access_point.ssh,
-                test_interface,
-                addr_type="ipv6_link_local",
-            )
+        if self.openwrt_ap:
+            if ip_version == IpVersionType.IPV4:
+                ap_address = self.openwrt_ap.get_addr(
+                    OpenWrtInterfaceName.lan,
+                    OpenWrtAddrType.ipv4_private,
+                )
+            elif ip_version == IpVersionType.IPV6:
+                ap_address = self.openwrt_ap.get_addr(
+                    OpenWrtInterfaceName.lan,
+                    OpenWrtAddrType.ipv6_link_local,
+                )
+            else:
+                raise TypeError(f"Invalid IP type: {ip_version}")
         else:
-            raise TypeError(f"Invalid IP type: {ip_version}")
+            assert self.access_point is not None
+            if band == Band.BAND_2G:
+                test_interface = self.access_point.wlan_2g
+            elif band == Band.BAND_5G:
+                test_interface = self.access_point.wlan_5g
+
+            if ip_version == IpVersionType.IPV4:
+                ap_address = utils.get_addr(
+                    self.access_point.ssh, test_interface
+                )
+            elif ip_version == IpVersionType.IPV6:
+                ap_address = utils.get_addr(
+                    self.access_point.ssh,
+                    test_interface,
+                    addr_type="ipv6_link_local",
+                )
+            else:
+                raise TypeError(f"Invalid IP type: {ip_version}")
 
         if ap_address:
             if ip_version == IpVersionType.IPV4:
@@ -328,7 +400,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 security_mode: security mode to set up either OPEN, WPA2, or WPA3.
                 ip_version: the ip version (ipv4 or ipv6)
         """
-        assert self.access_point is not None
+        assert self.openwrt_ap is not None or self.access_point is not None
         # TODO(b/286443517): Properly support WLAN on android devices.
         assert (
             self.fuchsia_device is not None
@@ -337,12 +409,13 @@ class WlanRebootTest(base_test.WifiBaseTest):
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
         reboot_device: DeviceType = settings.reboot_device
         reboot_type: RebootType = settings.reboot_type
-        band: BandType = settings.band
+        band: Band = settings.band
         ip_version: IpVersionType = settings.ip_version
-        security_mode: SecurityMode = settings.security_mode
+        security: Security = settings.security
+        legacy_security_mode = ConfigMapper.to_hostapd_security(security)
         password: str | None = None
-        if security_mode != SecurityMode.OPEN:
-            password = generate_random_password(security_mode=security_mode)
+        if not isinstance(security, SecurityOpen):
+            password = AccessPointConfig.random_string()
 
         # Skip hard reboots if no PDU present
         asserts.skip_if(
@@ -354,13 +427,13 @@ class WlanRebootTest(base_test.WifiBaseTest):
             ssid,
             band,
             ip_version,
-            security_mode,
+            security,
             password,
         )
 
         if not self.dut.associate(
             ssid,
-            target_security=security_mode,
+            target_security=legacy_security_mode,
             target_pwd=password,
         ):
             raise EnvironmentError("Initial network connection failed.")
@@ -390,9 +463,16 @@ class WlanRebootTest(base_test.WifiBaseTest):
         elif reboot_device == DeviceType.AP:
             if reboot_type == RebootType.SOFT:
                 self.log.info("Cleanly stopping ap.")
-                self.access_point.stop_all_aps()
+                if self.openwrt_ap:
+                    self.openwrt_ap.stop_wifi()
+                elif self.access_point:
+                    self.access_point.stop_all_aps()
             elif reboot_type == RebootType.HARD:
-                self.access_point.hard_power_cycle(self.pdu_devices)
+                if self.openwrt_ap:
+                    # TODO(b/520236968): Add support for OpenWrt AP hard power cycle
+                    pass
+                elif self.access_point:
+                    self.access_point.hard_power_cycle(self.pdu_devices)
             self.log.info(
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
                 f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
@@ -400,7 +480,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
             self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections(
                 timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
             )
-            self.setup_ap(ssid, band, ip_version, security_mode, password)
+            self.setup_ap(ssid, band, ip_version, security, password)
 
         uptime = time.time()
         try:
@@ -415,9 +495,8 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
                 )
             except HoneydewWlanError as e:
-                if (
-                    reboot_device == DeviceType.DUT
-                    and security_mode == SecurityMode.WPA3
+                if reboot_device == DeviceType.DUT and isinstance(
+                    security, SecurityWpa3
                 ):
                     # TODO(http://b/271628778): Remove this try/except statement
                     # once Fuchsia respects 802.11w (PMF) comeback-time.
