@@ -31,7 +31,7 @@
 
 #include <functional>
 #include <map>
-#include <mutex>
+#include <memory>
 #include <optional>
 #include <queue>
 #include <utility>
@@ -199,7 +199,7 @@ class FidlRequest {
         addr = d.buffer()->data()->data();
       } else {
         buffer_size = mapped->size;
-        addr = reinterpret_cast<uint8_t*>(mapped->addr);
+        addr = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(mapped->addr));
       }
 
       if (cur_offset >= buffer_size) {
@@ -254,7 +254,7 @@ class FidlRequest {
       }
 
       size_t cp_size = std::min(todo, *d.size() - cur_offset);
-      memcpy(start, reinterpret_cast<uint8_t*>(addr) + cur_offset, cp_size);
+      memcpy(start, reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(addr)) + cur_offset, cp_size);
       cur_offset = 0;
       start += cp_size;
       todo -= cp_size;
@@ -311,7 +311,8 @@ class FidlRequest {
       return ZX_OK;
     }
 
-    auto status = zx_cache_flush(reinterpret_cast<void*>(mapped->addr), *buffer.size(), options);
+    auto status = zx_cache_flush(reinterpret_cast<void*>(static_cast<uintptr_t>(mapped->addr)),
+                                 *buffer.size(), options);
     if (status != ZX_OK) {
       return status;
     }
@@ -329,7 +330,7 @@ class FidlRequest {
     for (auto& d : *request_.data()) {
       idx++;
       zx_handle_t vmo_handle = ZX_HANDLE_INVALID;
-      void* mapped;
+      zx_vaddr_t mapped_addr = 0;
       switch (d.buffer()->Which()) {
         case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId:
           // Pre-registered and already pinned. Does not need to be pinned again.
@@ -345,15 +346,18 @@ class FidlRequest {
             return status;
           }
 
-          status =
-              zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, *d.offset(),
-                                         *d.size(), reinterpret_cast<uintptr_t*>(&mapped));
+          uintptr_t mapped = 0;
+          status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo,
+                                              *d.offset(), *d.size(), &mapped);
           if (status != ZX_OK) {
             return status;
           }
 
-          memcpy(mapped, d.buffer()->data()->data(), *d.size());
-          zx_cache_flush(&mapped, *d.size(), ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+          const uint8_t* src_buffer = d.buffer()->data()->data();
+          memcpy(reinterpret_cast<void*>(mapped), src_buffer, *d.size());
+          zx_cache_flush(reinterpret_cast<void*>(mapped), *d.size(),
+                         ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+          mapped_addr = mapped;
           vmo_handle = vmo.release();
         } break;
         default:
@@ -388,7 +392,11 @@ class FidlRequest {
       paddrs.get()[0] += sub_offset;
 
       pinned_vmos_[idx] = {
-          pmt, paddrs.release(), pages, {reinterpret_cast<zx_vaddr_t>(mapped), *d.size()}};
+          pmt,
+          paddrs.release(),
+          pages,
+          {mapped_addr, *d.size()},
+      };
     }
 
     return ZX_OK;
@@ -398,11 +406,11 @@ class FidlRequest {
   zx_status_t Unpin() {
     auto pinned_vmos = std::move(pinned_vmos_);
     for (const auto& [idx, pinned] : pinned_vmos) {
-      if ((*request_.data())[idx].buffer()->Which() ==
+      if (request_.data()->at(idx).buffer()->Which() ==
           fuchsia_hardware_usb_request::Buffer::Tag::kData) {
         memcpy((*request_.data())[idx].buffer()->data()->data(),
-               reinterpret_cast<void*>(pinned.mapped.addr),
-               std::min(*(*request_.data())[idx].size(), pinned.mapped.size));
+               reinterpret_cast<void*>(static_cast<uintptr_t>(pinned.mapped.addr)),
+               std::min((*request_.data())[idx].size().value(), pinned.mapped.size));
 
         auto status = zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(pinned.mapped.addr),
                                                    pinned.mapped.size);
@@ -470,15 +478,15 @@ template <typename RequestType>
 class FidlRequestPool {
  public:
   // Add: called when adding a new request to the pool.
-  void Add(RequestType&& request) {
-    std::lock_guard<std::mutex> _(mutex_);
+  void Add(RequestType&& request) __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     size_++;
     PutLocked(std::move(request));
   }
 
   // Remove: called when removing a request from the pool.
-  std::optional<RequestType> Remove() {
-    std::lock_guard<std::mutex> _(mutex_);
+  std::optional<RequestType> Remove() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     auto req = GetLocked();
     if (req.has_value()) {
       size_--;
@@ -486,25 +494,35 @@ class FidlRequestPool {
     return req;
   }
 
-  std::optional<RequestType> Get() {
-    std::lock_guard<std::mutex> _(mutex_);
+  std::optional<RequestType> Get() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     return GetLocked();
   }
 
   // Put: called when a request (originally obtained from `get`) is returned to the pool.
-  void Put(RequestType&& request) {
-    std::lock_guard<std::mutex> _(mutex_);
+  void Put(RequestType&& request) __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     PutLocked(std::move(request));
   }
 
-  bool Full() {
-    std::lock_guard<std::mutex> _(mutex_);
+  bool Full() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     return free_reqs_.size() == size_;
   }
 
-  bool Empty() {
-    std::lock_guard<std::mutex> _(mutex_);
+  bool Empty() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
     return free_reqs_.empty();
+  }
+
+  size_t GetInFlightCount() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
+    return size_ - free_reqs_.size();
+  }
+
+  size_t GetTotalCount() __TA_EXCLUDES(mutex_) {
+    std::scoped_lock _(mutex_);
+    return size_;
   }
 
  private:

@@ -48,6 +48,8 @@ class EndpointClientBase {
   void PutRequest(usb::FidlRequest&& request) { free_reqs_.Put(std::move(request)); }
   bool RequestsFull() { return free_reqs_.Full(); }
   bool RequestsEmpty() { return free_reqs_.Empty(); }
+  size_t GetInFlightCount() { return free_reqs_.GetInFlightCount(); }
+  size_t GetTotalCount() { return free_reqs_.GetTotalCount(); }
   // Helper function that deletes a request from the pool. If this function is not called when
   // deleting a request from the pool, it will stay mapped (and registered) until the endpoint is
   // destructed.
