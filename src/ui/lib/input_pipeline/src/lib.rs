@@ -14,7 +14,6 @@ pub mod keyboard_binding;
 pub mod mouse_binding;
 pub mod touch_binding;
 
-pub mod dead_keys_handler;
 pub mod display_ownership;
 pub mod factory_reset_handler;
 pub mod ime_handler;

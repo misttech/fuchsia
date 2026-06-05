@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
-import("//build/icu/icu_fuchsia_package.gni")
-export_icu_package_to_bazel("scene_manager") {
+
+export_fuchsia_package_to_bazel("scene_manager") {
   package = "//src/ui/bin/scene_manager:scene_manager"
 }
 

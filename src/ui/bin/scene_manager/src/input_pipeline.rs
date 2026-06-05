@@ -19,9 +19,7 @@ use crate::lib::mouse_injector_handler::MouseInjectorHandler;
 
 use crate::lib::text_settings_handler::TextSettingsHandler;
 use crate::lib::touch_injector_handler::TouchInjectorHandler;
-use crate::lib::{
-    CursorMessage, Dispatcher, Incoming, dead_keys_handler, input_device, keymap_handler, metrics,
-};
+use crate::lib::{CursorMessage, Dispatcher, Incoming, input_device, keymap_handler, metrics};
 use crate::scene_management::SceneManagerTrait;
 use anyhow::{Context, Error};
 use fidl_fuchsia_factory::MiscFactoryStoreProviderProxy;
@@ -74,7 +72,6 @@ pub async fn handle_input(
     factory_reset_device_request_stream_receiver: futures::channel::mpsc::UnboundedReceiver<
         DeviceRequestStream,
     >,
-    icu_data_loader: icu_data::Loader,
     node: inspect::Node,
     display_ownership_event: zx::Event,
     focus_chain_publisher: FocusChainProviderPublisher,
@@ -160,7 +157,6 @@ pub async fn handle_input(
         build_input_pipeline_assembly(
             incoming,
             scene_manager,
-            icu_data_loader,
             &node,
             display_ownership_event,
             factory_reset_handler.clone(),
@@ -302,7 +298,6 @@ async fn register_keyboard_related_input_handlers(
     incoming: &Incoming,
     assembly: InputPipelineAssembly,
     display_ownership_event: zx::Event,
-    icu_data_loader: icu_data::Loader,
     focus_chain_publisher: FocusChainProviderPublisher,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
@@ -320,12 +315,6 @@ async fn register_keyboard_related_input_handlers(
     assembly = add_keymap_handler(assembly, input_handlers_node, metrics_logger.clone());
     assembly =
         add_key_meaning_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
-    assembly = add_dead_keys_handler(
-        assembly,
-        icu_data_loader,
-        input_handlers_node,
-        metrics_logger.clone(),
-    );
 
     // ime_handler is the last handler for key event handling, it sends out key events to
     // listeners. Please double check tracing events, when changing the handlers assembly order.
@@ -380,7 +369,6 @@ async fn register_mouse_related_input_handlers(
 async fn build_input_pipeline_assembly(
     incoming: &Incoming,
     scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
-    icu_data_loader: icu_data::Loader,
     node: &inspect::Node,
     display_ownership_event: zx::Event,
     factory_reset_handler: Rc<FactoryResetHandler>,
@@ -409,7 +397,6 @@ async fn build_input_pipeline_assembly(
                 incoming,
                 assembly,
                 display_ownership_event,
-                icu_data_loader,
                 focus_chain_publisher,
                 &input_handlers_node,
                 metrics_logger.clone(),
@@ -530,21 +517,6 @@ fn add_keymap_handler(
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     assembly.add_handler(keymap_handler::KeymapHandler::new(input_handlers_node, metrics_logger))
-}
-
-/// Hooks up the dead keys handler. This allows us to input accented characters by composing a
-/// diacritic and a character.
-fn add_dead_keys_handler(
-    assembly: InputPipelineAssembly,
-    loader: icu_data::Loader,
-    input_handlers_node: &inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    assembly.add_handler(dead_keys_handler::DeadKeysHandler::new(
-        loader,
-        input_handlers_node,
-        metrics_logger,
-    ))
 }
 
 async fn add_ime(

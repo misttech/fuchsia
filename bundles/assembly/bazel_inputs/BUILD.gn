@@ -1462,9 +1462,9 @@ group("ui") {
 icu_aib_bazel_inputs("ui_eng") {
   icu_dependencies = [
     "//bundles/assembly/bazel_inputs/src/ui/a11y/bin/a11y_manager:a11y-manager",
-    "//bundles/assembly/bazel_inputs/src/ui/bin/scene_manager",
   ]
   deps = [
+    "//bundles/assembly/bazel_inputs/src/ui/bin/scene_manager",
     "//bundles/assembly/bazel_inputs/src/ui/bin/text:text_manager",
     "//bundles/assembly/bazel_inputs/src/ui/bin/virtual_keyboard_manager",
     "//bundles/assembly/bazel_inputs/src/ui/scenic:scenic_pkg",
@@ -1486,9 +1486,9 @@ icu_aib_bazel_inputs("ui_eng_dso") {
 icu_aib_bazel_inputs("ui_user_and_userdebug") {
   icu_dependencies = [
     "//bundles/assembly/bazel_inputs/src/ui/a11y/bin/a11y_manager:a11y-manager",
-    "//bundles/assembly/bazel_inputs/src/ui/bin/scene_manager",
   ]
   deps = [
+    "//bundles/assembly/bazel_inputs/src/ui/bin/scene_manager",
     "//bundles/assembly/bazel_inputs/src/ui/bin/text:text_manager",
     "//bundles/assembly/bazel_inputs/src/ui/bin/virtual_keyboard_manager",
     "//bundles/assembly/bazel_inputs/src/ui/scenic:scenic_pkg",

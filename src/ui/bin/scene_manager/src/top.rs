@@ -156,10 +156,6 @@ pub async fn start(
     let (factory_reset_device_server, factory_reset_device_request_stream_receiver) =
         crate::factory_reset_device_server::make_server_and_receiver();
 
-    // This call should normally never fail. The ICU data loader must be kept alive to ensure
-    // Unicode data is kept in memory.
-    let icu_data_loader = icu_data::Loader::new().unwrap();
-
     let ownership_proxy = incoming
         .connect_protocol::<fcomp::DisplayOwnershipProxy>()
         .context("while connecting to DisplayOwnership proxy")?;
@@ -247,7 +243,6 @@ pub async fn start(
         media_buttons_listener_registry_request_stream_receiver,
         factory_reset_countdown_request_stream_receiver,
         factory_reset_device_request_stream_receiver,
-        icu_data_loader,
         inspect_node,
         display_ownership,
         focus_chain_publisher,

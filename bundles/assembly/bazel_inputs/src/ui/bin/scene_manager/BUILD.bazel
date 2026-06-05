@@ -2,12 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/icu:icu_prebuilt_package.bzl", "icu_prebuilt_package")
 load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
 
 package(default_visibility = ["//bundles/assembly:__subpackages__"])
 
-icu_prebuilt_package(
+prebuilt_package(
     name = "scene_manager",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/ui/bin/scene_manager:scene_manager",
 )
