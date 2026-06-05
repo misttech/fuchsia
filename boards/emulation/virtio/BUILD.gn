@@ -83,6 +83,12 @@ board_input_bundle("virtio") {
       package_set = "bootfs"
       driver_components = [ "meta/virtio-gpu-display.cm" ]
     },
+    {
+      package_target =
+          "//src/graphics/display/drivers/virtio-gpu-display:package-rust"
+      package_set = "bootfs"
+      driver_components = [ "meta/virtio-gpu-display.cm" ]
+    },
   ]
   version = build_info_version
 }
