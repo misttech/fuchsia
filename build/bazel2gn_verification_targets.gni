@@ -176,6 +176,7 @@ bazel2gn_verification_targets = [
   "//tools/net/netutil:verify_bazel2gn",
   "//tools/net/sshutil:verify_bazel2gn",
   "//tools/net/tftp:verify_bazel2gn",
+  "//tools/rust_extract:verify_bazel2gn",
   "//tools/rust_test_parser:verify_bazel2gn",
   "//tools/staticanalysis/rfcmeta:verify_bazel2gn",
   "//tools/staticanalysis:verify_bazel2gn",

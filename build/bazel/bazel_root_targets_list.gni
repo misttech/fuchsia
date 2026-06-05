@@ -202,6 +202,10 @@ declare_args() {
           bazel_label = "//tools/jq5:jq5"
           install_host_tool = true
         },
+        {
+          bazel_label = "//tools/rust_extract"
+          install_host_tool = true
+        },
 
         # Various tests that we want to ensure can build correctly.
         # TODO(https://fxbug.dev/514526401): Run these Bazel tests in CQ.
