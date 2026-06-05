@@ -130,7 +130,7 @@ impl Ipv6DestinationAddr {
         // As per RFC 4291 Section 2.7:
         //   Routers must not forward any multicast packets beyond of the scope
         //   indicated by the scop field in the destination multicast address.
-        if addr.scope().multicast_scope_id() <= Ipv6Scope::MULTICAST_SCOPE_ID_LINK_LOCAL {
+        if addr.scope().multicast_scope_id() <= Ipv6Scope::MULTICAST_SCOPE_ID_REALM_LOCAL {
             None
         } else {
             Some(Ipv6DestinationAddr { addr: MulticastAddr::new(addr)? })
@@ -383,6 +383,7 @@ mod tests {
     const LL_UNICAST_V6: Ipv6Addr = net_ip_v6!("fe80::1");
     const LL_MULTICAST_V6: Ipv6Addr = net_ip_v6!("ff02::1");
     const V4_MAPPED_V6: Ipv6Addr = net_ip_v6!("::FFFF:192.0.2.1");
+    const RL_MULTICAST_V6: Ipv6Addr = net_ip_v6!("ff03::1");
 
     #[test_case(UNICAST_V4, MULTICAST_V4 => true; "success")]
     #[test_case(UNICAST_V4, UNICAST_V4 => false; "unicast_dst")]
@@ -403,6 +404,7 @@ mod tests {
     #[test_case(LL_UNICAST_V6, MULTICAST_V6 => false; "ll_unicast_src")]
     #[test_case(UNICAST_V6, LL_MULTICAST_V6 => false; "ll_multicast_dst")]
     #[test_case(V4_MAPPED_V6, LL_MULTICAST_V6 => false; "mapped_src")]
+    #[test_case(UNICAST_V6, RL_MULTICAST_V6 => false; "rl_multicast_dst")]
     fn new_ipv6_route_key(src_addr: Ipv6Addr, dst_addr: Ipv6Addr) -> bool {
         MulticastRouteKey::<Ipv6>::new(src_addr, dst_addr).is_some()
     }
