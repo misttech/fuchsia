@@ -132,4 +132,7 @@ all_variant_tags = [
   # The `heapdump` tag is used for variants that link the Heapdump
   # instrumentation library into the final executables.
   "heapdump",
+
+  # The `cfi` tag is used for instrumentation for Control Flow Integrety.
+  "cfi",
 ]

@@ -451,6 +451,7 @@ declare_args() {
       tags = [
         "lto",
         "custom-runtime",
+        "cfi",
       ]
     },
     {
@@ -461,6 +462,7 @@ declare_args() {
       tags = [
         "lto",
         "custom-runtime",
+        "cfi",
       ]
     },
 
