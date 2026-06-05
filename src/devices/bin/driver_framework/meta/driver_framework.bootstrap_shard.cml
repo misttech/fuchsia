@@ -105,6 +105,7 @@
         },
         {
             config: [
+                "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.StoragePowerManagementEnabled",

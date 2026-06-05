@@ -857,7 +857,8 @@ TEST_F(GpioTest, DebugDevfs) {
 
   EXPECT_TRUE(driver_test()
                   .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
-                    gpio_config::Config config{{.enable_suspend = true}};
+                    gpio_config::Config config{
+                        {.enable_suspend = true, .expose_debug_capabilities = true}};
                     args.config(config.ToVmo());
                   })
                   .is_ok());

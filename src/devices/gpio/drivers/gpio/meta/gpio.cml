@@ -27,6 +27,13 @@
             availability: "optional",
             default: false,
         },
+        {
+            config: "fuchsia.driver.ExposeDebugCapabilities",
+            key: "expose_debug_capabilities",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: 'fuchsia.hardware.pinimpl.Service' },
         { service: 'fuchsia.hardware.pinimpl.Metadata' },
         { service: "fuchsia.hardware.power.PowerTokenService" },

@@ -141,6 +141,14 @@ impl
             Config::new(ConfigValueType::Int64, 10000.into()),
         )?;
 
+        builder.set_config_capability(
+            "fuchsia.driver.ExposeDebugCapabilities",
+            Config::new(
+                ConfigValueType::Bool,
+                matches!(context.build_type, BuildType::Eng | BuildType::UserDebug).into(),
+            ),
+        )?;
+
         let mut software_names = Vec::new();
         let mut software_ids = Vec::new();
         if storage.filesystems.image_mode == FilesystemImageMode::Ramdisk {

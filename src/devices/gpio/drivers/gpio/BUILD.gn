@@ -79,6 +79,7 @@ fuchsia_driver_component("gpio") {
 
 fuchsia_driver_package("package") {
   package_name = "gpio"
+  validate_structured_config = false
   driver_components = [ ":gpio" ]
 }
 

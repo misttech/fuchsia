@@ -326,16 +326,24 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
       fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
   };
 
-  zx::result connector = devfs_connector_.Bind(fidl_dispatcher_);
+  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result;
+  if (config.expose_debug_capabilities()) {
+    zx::result connector = devfs_connector_.Bind(fidl_dispatcher_);
+    if (connector.is_error()) {
+      logger.log(fdf::ERROR, "Failed to bind devfs connector: {}", connector.status_string());
+      return connector.take_error();
+    }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs{{
-      .connector = *std::move(connector),
-      .class_name = "gpio",
-      .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
-  }};
+    fuchsia_driver_framework::DevfsAddArgs devfs{{
+        .connector = *std::move(connector),
+        .class_name = "gpio",
+        .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
+    }};
 
-  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =
-      fdf::AddChild(root_node, logger, pin_name(), devfs, props, offers);
+    result = fdf::AddChild(root_node, logger, pin_name(), devfs, props, offers);
+  } else {
+    result = fdf::AddChild(root_node, logger, pin_name(), props, offers);
+  }
   if (result.is_error()) {
     logger.log(fdf::TRACE, "AddChild failed for pin {}", pin_);
     return result.take_error();

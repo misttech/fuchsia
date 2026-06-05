@@ -152,6 +152,7 @@
         },
         {
             config: [
+                "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.usb.peripheral",
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.usb.PeripheralConfig.Functions",
