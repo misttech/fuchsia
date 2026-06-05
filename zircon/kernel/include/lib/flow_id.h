@@ -9,6 +9,13 @@
 
 #include <stdint.h>
 
+#if ENABLE_RUST_IN_ZIRCON
+
+// Generates globally unique 64-bit flow IDs for tracing (C-exported).
+extern "C" uint64_t flow_id_generate();
+
+#else  // ENABLE_RUST_IN_ZIRCON
+
 #include <ktl/atomic.h>
 
 // Generates globally unique 64bit flow ids for tracing.
@@ -26,5 +33,7 @@ class FlowId {
 
   inline static ktl::atomic<uint64_t> flow_id_generator_{kFirstKernelFlowId};
 };
+
+#endif  // ENABLE_RUST_IN_ZIRCON
 
 #endif  // ZIRCON_KERNEL_INCLUDE_LIB_FLOW_ID_H_

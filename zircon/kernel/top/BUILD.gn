@@ -51,6 +51,7 @@ source_set("top") {
     deps += [
       "//src/lib/ksync",
       "//zircon/kernel/lib/counters:counters-rs",
+      "//zircon/kernel/lib/flow-id:flow-id-rs",
     ]
   }
 }

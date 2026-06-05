@@ -247,6 +247,7 @@ variant("kernel_config") {
     "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
     "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
     "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
+    "ENABLE_RUST_IN_ZIRCON=$enable_rust_in_zircon",
   ]
 
   if (kernel_no_userabi) {
