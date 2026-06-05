@@ -4,11 +4,6 @@
 
 pub use fuchsia_trace::Scope as TraceScope;
 
-// This needs to be available to the macros in this module without clients having to depend on
-// fuchsia_trace themselves.
-#[doc(hidden)]
-pub use fuchsia_trace as __fuchsia_trace;
-
 // The trace category used for starnix-related traces.
 pub const CATEGORY_STARNIX: &'static str = "starnix";
 
@@ -57,160 +52,23 @@ pub fn regular_trace_category_enabled(category: &'static str) -> bool {
     fuchsia_trace::category_enabled(category)
 }
 
-#[macro_export]
-macro_rules! trace_instant {
-    ($category:expr, $name:expr, $scope:expr $(, $key:expr => $val:expr)*) => {
-        $crate::__fuchsia_trace::instant!($category, $name, $scope $(, $key => $val)*);
-    };
-}
+pub use fuchsia_trace::{instant as trace_instant, instant as firehose_trace_instant};
 
-#[macro_export]
-macro_rules! firehose_trace_instant {
-    ($category:expr, $name:expr, $scope:expr $(, $key:expr => $val:expr)*) => {
-        $crate::trace_instant!($category, $name, $scope $(, $key => $val)*);
-    }
-}
+pub use fuchsia_trace::{duration as trace_duration, duration as firehose_trace_duration};
 
-// The `trace_duration` macro defines a `_scope` instead of executing a statement because the
-// lifetime of the `_scope` variable corresponds to the duration.
-#[macro_export]
-macro_rules! trace_duration {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        let args;
-        let _scope = {
-            static CACHE: $crate::__fuchsia_trace::trace_site_t = $crate::__fuchsia_trace::trace_site_t::new(0);
-            if let Some(_context) =
-                    $crate::__fuchsia_trace::TraceCategoryContext::acquire_cached($category, &CACHE) {
-                args = [$($crate::__fuchsia_trace::ArgValue::of($key, $val)),*];
-                Some($crate::__fuchsia_trace::duration($category, $name, &args))
-            } else {
-                None
-            }
-        };
-    }
-}
+pub use fuchsia_trace::{
+    duration_begin as trace_duration_begin, duration_begin as firehose_trace_duration_begin,
+};
 
-#[macro_export]
-macro_rules! firehose_trace_duration {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        $crate::trace_duration!($category, $name $(, $key => $val)*);
-    }
-}
+pub use fuchsia_trace::{
+    duration_end as trace_duration_end, duration_end as firehose_trace_duration_end,
+};
 
-#[macro_export]
-macro_rules! trace_duration_begin {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        $crate::__fuchsia_trace::duration_begin!($category, $name $(, $key => $val)*);
-    };
-}
+pub use fuchsia_trace::{
+    flow_begin as trace_flow_begin, flow_end as trace_flow_end, flow_step as trace_flow_step,
+};
 
-#[macro_export]
-macro_rules! firehose_trace_duration_begin {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        $crate::trace_duration_begin!($category, $name $(, $key => $val)*);
-    }
-}
-
-#[macro_export]
-macro_rules! trace_duration_end {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        $crate::__fuchsia_trace::duration_end!($category, $name $(, $key => $val)*);
-    };
-}
-
-#[macro_export]
-macro_rules! firehose_trace_duration_end {
-    ($category:expr, $name:expr $(, $key:expr => $val:expr)*) => {
-        $crate::trace_duration_end!($category, $name $(, $key => $val)*);
-    }
-}
-
-#[macro_export]
-macro_rules! trace_flow_begin {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        $crate::__fuchsia_trace::flow_begin!($category, $name, _flow_id $(, $key => $val)*);
-    };
-}
-
-#[macro_export]
-macro_rules! trace_flow_step {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        $crate::__fuchsia_trace::flow_step!($category, $name, _flow_id $(, $key => $val)*);
-    };
-}
-
-#[macro_export]
-macro_rules! trace_flow_end {
-    ($category:expr, $name:expr, $flow_id:expr $(, $key:expr => $val:expr)*) => {
-        let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-        $crate::__fuchsia_trace::flow_end!($category, $name, _flow_id $(, $key => $val)*);
-    };
-}
-
-#[macro_export]
-macro_rules! trace_instaflow_begin {
-    (
-        $category:expr,
-        $flow_name:expr,
-        $step_name:expr,
-        $flow_id:expr
-        $(, $key:expr => $val:expr)*
-    ) => {
-        {
-            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-            $crate::__fuchsia_trace::instaflow_begin!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! trace_instaflow_end {
-    (
-        $category:expr,
-        $flow_name:expr,
-        $step_name:expr,
-        $flow_id:expr
-        $(, $key:expr => $val:expr)*
-    ) => {
-        {
-            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-            $crate::__fuchsia_trace::instaflow_end!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! trace_instaflow_step {
-    (
-        $category:expr,
-        $flow_name:expr,
-        $step_name:expr,
-        $flow_id:expr
-        $(, $key:expr => $val:expr)*
-    ) => {
-        {
-            let _flow_id: $crate::__fuchsia_trace::Id = $flow_id;
-            $crate::__fuchsia_trace::instaflow_step!(
-                $category,
-                $flow_name,
-                $step_name,
-                _flow_id
-                $(, $key => $val)*
-            );
-        }
-    };
-}
+pub use fuchsia_trace::{
+    instaflow_begin as trace_instaflow_begin, instaflow_end as trace_instaflow_end,
+    instaflow_step as trace_instaflow_step,
+};
