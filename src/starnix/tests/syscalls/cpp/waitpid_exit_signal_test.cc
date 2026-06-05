@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -40,7 +41,6 @@ void ensureWait(int pid, unsigned int waitFlags) {
   EXPECT_EQ(errno, 0);
   EXPECT_EQ(pid, actual_waitpid);
 }
-}  // namespace
 
 class SignalHelper {
  public:
@@ -167,58 +167,46 @@ TEST(WaitpidExitSignalTest, childThreadGroupSendsCorrectExitSignalWhenLeaderTerm
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
-namespace {
-
-int pipefd[2];
-
-int pdeath_waiter(void *) {
-  close(pipefd[1]);  // Close our write end of the pipe
-
-  pid_t pid = 0;
-  read(pipefd[0], &pid, sizeof(pid));
-
-  EXPECT_EQ(pid, getppid());
-
-  // Wait for the parent to exit so that this task will
-  // have been reparented before exiting.
-
-  // 1. Wait to read EOF on the pipe, which will happen when the parent file
-  //    descriptors are closed when it exits.
-  char c;
-  while (read(pipefd[0], &c, 1) > 0) {
-  }
-
-  // 2. Wait for the reparenting to be done.
-  while (getppid() == pid) {
-    sched_yield();
-  }
-
-  return 0;
-}
-
-int parentSpawningPDeathWaiter(void *) {
-  EXPECT_EQ(pipe(pipefd), 0);
-  nested_clone_helper.runInClonedChild(SIGUSR2, pdeath_waiter);
-
-  pid_t pid = getpid();
-  write(pipefd[1], &pid, sizeof(pid));
-
-  return 0;
-}
-
 TEST(WaitpidExitSignalTest, SubreaperCloneExitSignal) {
   test_helper::ForkHelper fork_helper;
   fork_helper.RunInForkedProcess([] {
     test_helper::CloneHelper helper;
-    ASSERT_EQ(prctl(PR_SET_CHILD_SUBREAPER, 1), 0) << strerror(errno);
+    ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
 
     sigset_t signal_set;
     sigemptyset(&signal_set);
     sigaddset(&signal_set, SIGUSR2);
     sigaddset(&signal_set, SIGCHLD);
-    EXPECT_EQ(sigprocmask(SIG_BLOCK, &signal_set, nullptr), 0);
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &signal_set, nullptr), SyscallSucceeds());
 
-    helper.runInClonedChild(SIGUSR2, parentSpawningPDeathWaiter);
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous finished = test_helper::MakeRendezvous();
+
+    helper.runInClonedChild(SIGUSR2, [&]() {
+      test_helper::CloneHelper clone_helper;
+      pid_t parent_pid = getpid();
+
+      clone_helper.runInClonedChild(SIGUSR2, [&]() {
+        finished.poker = {};
+        ready.holder = {};
+
+        EXPECT_EQ(getppid(), parent_pid);
+
+        ready.poker.poke();
+        finished.holder.hold();
+
+        // Wait for reparenting to complete.
+        while (getppid() == parent_pid) {
+          sched_yield();
+        }
+      });
+
+      finished.holder = {};
+      ready.poker = {};
+
+      ready.holder.hold();
+      finished.poker.poke();
+    });
 
     // Wait for the parent to exit, which should exit with SIGUSR2.
     int received_signal;
@@ -238,4 +226,5 @@ TEST(WaitpidExitSignalTest, SubreaperCloneExitSignal) {
   });
   EXPECT_TRUE(fork_helper.WaitForChildren());
 }
+
 }  // namespace
