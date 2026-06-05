@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+rustc_library(
+    name = "fidl_next_util",
+    srcs = [
+        "src/lib.rs",
+        "src/multiserver.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        # NOTE: these bindings are currently in a phased rollout
+        # "//:developer_universe_packages",
+        "//sdk/lib/driver:__subpackages__",
+        "//src/lib/fidl/rust_next:__subpackages__",
+        "//tools/fidl/fidlc/testdata:__subpackages__",
+        "//tools/fidl/fidlgen_rust_next:__subpackages__",
+    ],
+    with_unit_tests = True,
+    deps = [
+        "//src/lib/fidl/rust_next/fidl_next_bind",
+        "//src/lib/fidl/rust_next/fidl_next_protocol",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)

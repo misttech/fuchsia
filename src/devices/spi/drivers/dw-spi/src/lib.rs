@@ -11,7 +11,6 @@ use fspi_businfo::SpiBusMetadata;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
-use futures::channel::mpsc;
 use log::{error, info};
 use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
@@ -20,8 +19,9 @@ use zx::Status;
 use fdf_power::PowerExt;
 use fdf_resource::{ClockExt, GpioExt, ResetExt};
 
-use fidl_next::{Request, Responder, ServerEnd};
-use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
+use fidl_next::ServerEnd;
+use fidl_next::util::{Multiserver, multiserver};
+use fidl_next_fuchsia_hardware_spiimpl as fspi_impl;
 
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
 
@@ -31,132 +31,20 @@ use fidl_next_fuchsia_hardware_clock::ClockGetRateResponse;
 use anyhow::Context;
 
 mod spi_device;
-use spi_device::{DwSpiDevice, SpiImplRequest};
+use spi_device::DwSpiDevice;
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct DwSpiConfig {
     dw_spi_rx_sample_delay_ns: u64,
 }
 
-struct SpiImplServer {
-    tx: mpsc::UnboundedSender<SpiImplRequest>,
-}
-
-impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer {
-    async fn get_chip_select_count(&mut self, responder: Responder<fspi_impl::GetChipSelectCount>) {
-        let _ = responder.respond(1).await;
-    }
-
-    async fn transmit_vector(
-        &mut self,
-        request: Request<fspi_impl::TransmitVector>,
-        responder: Responder<fspi_impl::TransmitVector>,
-    ) {
-        let payload = request.payload();
-        let _ = self.tx.unbounded_send(SpiImplRequest::TransmitVector {
-            chip_select: payload.chip_select,
-            data: payload.data,
-            responder,
-        });
-    }
-
-    async fn receive_vector(
-        &mut self,
-        request: Request<fspi_impl::ReceiveVector>,
-        responder: Responder<fspi_impl::ReceiveVector>,
-    ) {
-        let payload = request.payload();
-        let _ = self.tx.unbounded_send(SpiImplRequest::ReceiveVector {
-            chip_select: payload.chip_select,
-            size: payload.size as usize,
-            responder,
-        });
-    }
-
-    async fn exchange_vector(
-        &mut self,
-        request: Request<fspi_impl::ExchangeVector>,
-        responder: Responder<fspi_impl::ExchangeVector>,
-    ) {
-        let payload = request.payload();
-        let _ = self.tx.unbounded_send(SpiImplRequest::ExchangeVector {
-            chip_select: payload.chip_select,
-            txdata: payload.txdata,
-            responder,
-        });
-    }
-
-    async fn lock_bus(
-        &mut self,
-        _request: Request<fspi_impl::LockBus>,
-        responder: Responder<fspi_impl::LockBus>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn unlock_bus(
-        &mut self,
-        _request: Request<fspi_impl::UnlockBus>,
-        responder: Responder<fspi_impl::UnlockBus>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn register_vmo(
-        &mut self,
-        _request: Request<fspi_impl::RegisterVmo>,
-        responder: Responder<fspi_impl::RegisterVmo>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn unregister_vmo(
-        &mut self,
-        _request: Request<fspi_impl::UnregisterVmo>,
-        responder: Responder<fspi_impl::UnregisterVmo>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn release_registered_vmos(
-        &mut self,
-        _request: Request<fspi_impl::ReleaseRegisteredVmos>,
-    ) {
-    }
-
-    async fn transmit_vmo(
-        &mut self,
-        _request: Request<fspi_impl::TransmitVmo>,
-        responder: Responder<fspi_impl::TransmitVmo>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn receive_vmo(
-        &mut self,
-        _request: Request<fspi_impl::ReceiveVmo>,
-        responder: Responder<fspi_impl::ReceiveVmo>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-
-    async fn exchange_vmo(
-        &mut self,
-        _request: Request<fspi_impl::ExchangeVmo>,
-        responder: Responder<fspi_impl::ExchangeVmo>,
-    ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
-    }
-}
-
 struct SpiImplService {
-    scope: fasync::ScopeHandle,
-    tx: mpsc::UnboundedSender<SpiImplRequest>,
+    server: Multiserver<fspi_impl::SpiImpl>,
 }
 
-impl fidl_next_fuchsia_hardware_spiimpl::ServiceHandler for SpiImplService {
-    fn device(&self, server_end: ServerEnd<fidl_next_fuchsia_hardware_spiimpl::SpiImpl>) {
-        server_end.spawn_on(SpiImplServer { tx: self.tx.clone() }, &self.scope);
+impl fspi_impl::ServiceHandler for SpiImplService {
+    fn device(&self, server_end: ServerEnd<fspi_impl::SpiImpl>) {
+        let _ = self.server.forward(server_end);
     }
 }
 
@@ -239,14 +127,10 @@ impl Driver for DwSpiDriver {
 
         let scope = fasync::Scope::new_with_name(Self::NAME);
 
-        let (spi_req_tx, mut spi_req_rx) = mpsc::unbounded();
+        let (server, dispatcher) = multiserver();
 
-        let offer = ServiceOffer::<fidl_next_fuchsia_hardware_spiimpl::Service>::new_next()
-            .add_default_named_next(
-                &mut outgoing,
-                "default",
-                SpiImplService { scope: scope.to_handle(), tx: spi_req_tx },
-            )
+        let offer = ServiceOffer::<fspi_impl::Service>::new_next()
+            .add_default_named_next(&mut outgoing, "default", SpiImplService { server })
             .build_driver_offer();
 
         let mut node_args = NodeBuilder::new(Self::NAME).add_offer(offer);
@@ -275,11 +159,7 @@ impl Driver for DwSpiDriver {
         context.serve_outgoing(&mut outgoing)?;
         scope.spawn(outgoing.collect());
 
-        scope.spawn_local(async move {
-            while let Some(req) = spi_req_rx.next().await {
-                device.handle_request(req).await;
-            }
-        });
+        scope.spawn_local(dispatcher.run(device));
 
         info!("dw-spi driver initialized successfully");
 

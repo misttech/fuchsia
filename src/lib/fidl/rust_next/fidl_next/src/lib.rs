@@ -26,6 +26,7 @@ pub use ::fidl_next_protocol::{
     self as protocol, ClientHandler, Flexible, FrameworkError, Message, ProtocolError,
     ServerHandler, Strict, Transport,
 };
+pub use fidl_next_util as util;
 
 /// FIDL wire type definitions and implementations.
 pub mod wire {

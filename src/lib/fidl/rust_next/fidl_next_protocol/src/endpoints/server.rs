@@ -143,7 +143,7 @@ pub trait LocalServerHandler<T: Transport> {
 
 /// An adapter for a [`ServerHandler`] which implements [`LocalServerHandler`].
 #[repr(transparent)]
-pub struct ServerHandlerToLocalAdapter<H>(H);
+pub struct ServerHandlerToLocalAdapter<H>(pub H);
 
 impl<T, H> LocalServerHandler<T> for ServerHandlerToLocalAdapter<H>
 where

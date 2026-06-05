@@ -33,5 +33,6 @@ rustc_library(
         "//src/lib/fidl/rust_next/fidl_next_bind",
         "//src/lib/fidl/rust_next/fidl_next_codec",
         "//src/lib/fidl/rust_next/fidl_next_protocol",
+        "//src/lib/fidl/rust_next/fidl_next_util",
     ],
 )

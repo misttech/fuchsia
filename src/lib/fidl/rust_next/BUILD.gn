@@ -13,5 +13,6 @@ group("tests") {
     "fidl_next_bind:tests",
     "fidl_next_codec:tests",
     "fidl_next_protocol:tests",
+    "fidl_next_util:tests",
   ]
 }

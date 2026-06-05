@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_next::Responder;
+use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_spiimpl::{
     self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
@@ -17,24 +17,6 @@ use registers::DwSpiRegsBlock;
 use zx::Status;
 
 const FIFO_SIZE: usize = 256;
-
-pub enum SpiImplRequest {
-    TransmitVector {
-        chip_select: u32,
-        data: Vec<u8>,
-        responder: Responder<fspi_impl::TransmitVector>,
-    },
-    ReceiveVector {
-        chip_select: u32,
-        size: usize,
-        responder: Responder<fspi_impl::ReceiveVector>,
-    },
-    ExchangeVector {
-        chip_select: u32,
-        txdata: Vec<u8>,
-        responder: Responder<fspi_impl::ExchangeVector>,
-    },
-}
 
 pub struct DwSpiDevice {
     mmio: DwSpiRegsBlock<MmioRegion<VmoMemory>>,
@@ -231,29 +213,112 @@ impl DwSpiDevice {
 
         return Ok(rxdata);
     }
+}
 
-    pub async fn handle_request(&mut self, req: SpiImplRequest) {
-        match req {
-            SpiImplRequest::TransmitVector { chip_select, data, responder } => {
-                let result =
-                    self.exchange_pio(chip_select, &data, false, data.len()).await.map(|_| ());
-                let _ = responder.respond_with(result).await;
-            }
-            SpiImplRequest::ReceiveVector { chip_select, size, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &[], true, size)
-                    .await
-                    .map(|data| SpiImplReceiveVectorResponse { data });
-                let _ = responder.respond_with(result).await;
-            }
-            SpiImplRequest::ExchangeVector { chip_select, txdata, responder } => {
-                let result = self
-                    .exchange_pio(chip_select, &txdata, true, txdata.len())
-                    .await
-                    .map(|rxdata| SpiImplExchangeVectorResponse { rxdata });
-                let _ = responder.respond_with(result).await;
-            }
-        }
+impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for DwSpiDevice {
+    async fn get_chip_select_count(&mut self, responder: Responder<fspi_impl::GetChipSelectCount>) {
+        let _ = responder.respond(1).await;
+    }
+
+    async fn transmit_vector(
+        &mut self,
+        request: Request<fspi_impl::TransmitVector>,
+        responder: Responder<fspi_impl::TransmitVector>,
+    ) {
+        let payload = request.payload();
+        let result = self
+            .exchange_pio(payload.chip_select, &payload.data, false, payload.data.len())
+            .await
+            .map(|_| ());
+        let _ = responder.respond_with(result).await;
+    }
+
+    async fn receive_vector(
+        &mut self,
+        request: Request<fspi_impl::ReceiveVector>,
+        responder: Responder<fspi_impl::ReceiveVector>,
+    ) {
+        let payload = request.payload();
+        let result = self
+            .exchange_pio(payload.chip_select, &[], true, payload.size as usize)
+            .await
+            .map(|data| SpiImplReceiveVectorResponse { data });
+        let _ = responder.respond_with(result).await;
+    }
+
+    async fn exchange_vector(
+        &mut self,
+        request: Request<fspi_impl::ExchangeVector>,
+        responder: Responder<fspi_impl::ExchangeVector>,
+    ) {
+        let payload = request.payload();
+        let result = self
+            .exchange_pio(payload.chip_select, &payload.txdata, true, payload.txdata.len())
+            .await
+            .map(|rxdata| SpiImplExchangeVectorResponse { rxdata });
+        let _ = responder.respond_with(result).await;
+    }
+
+    async fn lock_bus(
+        &mut self,
+        _request: Request<fspi_impl::LockBus>,
+        responder: Responder<fspi_impl::LockBus>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn unlock_bus(
+        &mut self,
+        _request: Request<fspi_impl::UnlockBus>,
+        responder: Responder<fspi_impl::UnlockBus>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn register_vmo(
+        &mut self,
+        _request: Request<fspi_impl::RegisterVmo>,
+        responder: Responder<fspi_impl::RegisterVmo>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn unregister_vmo(
+        &mut self,
+        _request: Request<fspi_impl::UnregisterVmo>,
+        responder: Responder<fspi_impl::UnregisterVmo>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn release_registered_vmos(
+        &mut self,
+        _request: Request<fspi_impl::ReleaseRegisteredVmos>,
+    ) {
+    }
+
+    async fn transmit_vmo(
+        &mut self,
+        _request: Request<fspi_impl::TransmitVmo>,
+        responder: Responder<fspi_impl::TransmitVmo>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn receive_vmo(
+        &mut self,
+        _request: Request<fspi_impl::ReceiveVmo>,
+        responder: Responder<fspi_impl::ReceiveVmo>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
+    }
+
+    async fn exchange_vmo(
+        &mut self,
+        _request: Request<fspi_impl::ExchangeVmo>,
+        responder: Responder<fspi_impl::ExchangeVmo>,
+    ) {
+        let _ = responder.respond_err(Status::NOT_SUPPORTED).await;
     }
 }
 
