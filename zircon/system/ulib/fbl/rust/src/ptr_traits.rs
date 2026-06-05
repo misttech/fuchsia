@@ -7,6 +7,7 @@ use crate::ref_counted::HasRefCount;
 use crate::ref_ptr::RefPtr;
 use crate::unique_ptr::UniquePtr;
 use core::ops::Deref;
+use core::ptr::NonNull;
 
 /// Trait for pointer types that can be stored in intrusive containers.
 ///
@@ -58,6 +59,26 @@ unsafe impl<T> PtrTraits for *mut T {
     fn get_ref(&self) -> &T {
         // SAFETY: The caller must ensure that `self` (which is `&(*mut T)`) points to a valid T.
         unsafe { &**self }
+    }
+}
+
+// SAFETY: `NonNull<T>` behaves as a raw pointer with identity mapped into/from raw conversions.
+// It performs no lifecycle management and get_ref is safe if the pointer is valid.
+unsafe impl<T> PtrTraits for NonNull<T> {
+    type Target = T;
+    const IS_MANAGED: bool = false;
+    fn into_raw(self) -> *mut T {
+        self.as_ptr()
+    }
+    unsafe fn from_raw(raw: *mut T) -> Self {
+        // SAFETY: The caller of `from_raw` must ensure that `raw` was returned
+        // by a previous call to `into_raw` on an instance of `Self`. Since `into_raw`
+        // for `NonNull` always returns a non-null pointer, `raw` is guaranteed to be non-null.
+        unsafe { NonNull::new_unchecked(raw) }
+    }
+    fn get_ref(&self) -> &T {
+        // SAFETY: The caller must ensure that `self` points to a valid T.
+        unsafe { self.as_ref() }
     }
 }
 

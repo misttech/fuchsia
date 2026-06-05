@@ -255,6 +255,17 @@ where
         }
     }
 
+    /// Returns a mutable reference to the first element of the list, or `None` if it is empty.
+    pub fn front_mut(&mut self) -> Option<&mut P::Target> {
+        if self.is_empty() {
+            None
+        } else {
+            // SAFETY: The list is not empty, so `self.head` is a valid pointer to an element.
+            // We have `&mut self`, ensuring exclusive access.
+            unsafe { Some(&mut *self.head) }
+        }
+    }
+
     /// Pushes an element to the front of the list.
     ///
     /// # Panics
