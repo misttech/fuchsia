@@ -835,7 +835,14 @@ class FfxTests(unittest.TestCase):
     ) -> None:
         """Test case for ffx.wait_for_rcs_disconnection()"""
         self.ffx_obj_with_ip.wait_for_rcs_disconnection()
-        self.assertEqual(mock_ffx_popen.call_count, 1)
+        mock_ffx_popen.assert_called_once_with(
+            self.ffx_obj_with_ip,
+            cmd=["target", "wait", "--down", "--timeout", "0"],
+            config_overrides={
+                "ssh.connect_timeout": 2,
+                "ssh.connection_attempts": 1,
+            },
+        )
 
     @mock.patch.object(
         host_shell,

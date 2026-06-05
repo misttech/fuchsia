@@ -504,6 +504,7 @@ class FFX:
     def popen(  # type: ignore[no-untyped-def]
         self,
         cmd: list[str],
+        config_overrides: dict[str, Any] | None = None,
         **kwargs,
     ) -> subprocess.Popen[custom_types.AnyString]:
         """Starts a new process to run the FFX cmd and returns the corresponding
@@ -526,7 +527,11 @@ class FFX:
             subprocess.Popen[bytes] will be returned.
         """
         return host_shell.popen(
-            cmd=self.generate_ffx_cmd(cmd=cmd, machine=MachineFormat.RAW),
+            cmd=self.generate_ffx_cmd(
+                cmd=cmd,
+                machine=MachineFormat.RAW,
+                config_overrides=config_overrides,
+            ),
             **kwargs,
         )
 
@@ -675,7 +680,13 @@ class FFX:
             "Waiting for %s to disconnect from host in background...",
             self._log_name,
         )
-        return self.popen(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"])
+        return self.popen(
+            cmd=_FFX_CMDS["TARGET_WAIT_DOWN"],
+            config_overrides={
+                "ssh.connect_timeout": 2,
+                "ssh.connection_attempts": 1,
+            },
+        )
 
     def _get_target_status(self) -> MonitorTargetInfo:
         """Gets the status information of the target node from 'ffx monitor status'.
@@ -733,6 +744,7 @@ class FFX:
         include_target_name: bool = False,
         machine: MachineFormat = MachineFormat.JSON,
         disable_controlmaster: bool = False,
+        config_overrides: dict[str, Any] | None = None,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
@@ -768,6 +780,10 @@ class FFX:
 
         if disable_controlmaster:
             ffx_args.extend(["-c", "ssh.controlmaster.mode=none"])
+
+        if config_overrides:
+            for k, v in config_overrides.items():
+                ffx_args.extend(["-c", f"{k}={v}"])
 
         # Add log file path
         ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])
