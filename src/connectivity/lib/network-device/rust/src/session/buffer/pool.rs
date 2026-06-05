@@ -517,6 +517,35 @@ impl Buffer<Tx> {
     pub fn set_tx_flags(&mut self, flags: netdev::TxFlags) {
         self.alloc.descriptor_mut().set_tx_flags(flags)
     }
+
+    /// Shrinks the buffer.
+    ///
+    /// This method shrinks the buffer length to the larger of
+    ///   - requested new length
+    ///   - device required minimum Tx data length
+    ///
+    /// It is an error to try to increase the buffer length.
+    pub fn shrink_to(&mut self, mut new_len: usize) -> Result<()> {
+        let current_len = self.len();
+
+        if new_len > current_len {
+            return Err(Error::TxLength);
+        }
+
+        let min_tx_data = usize::from(self.alloc.pool.buffer_layout.min_tx_data);
+        new_len = new_len.max(min_tx_data);
+
+        let layouts = self.alloc.calculate_descriptor_layouts(new_len)?;
+
+        for (desc_id, DescriptorLayout { data_length, tail_length, .. }) in
+            self.alloc.descs.iter_mut().zip(layouts)
+        {
+            let mut descriptor = self.alloc.pool.descriptors.borrow_mut(desc_id);
+            descriptor.set_data_length(data_length);
+            descriptor.set_tail_length(tail_length);
+        }
+        Ok(())
+    }
 }
 
 impl Buffer<Rx> {
@@ -758,8 +787,7 @@ impl<T> Chained<T> {
 impl<T> FromIterator<T> for Chained<T> {
     /// # Panics
     ///
-    /// if the iterator is empty or the iterator can yield more than
-    ///  MAX_DESCRIPTOR_CHAIN elements.
+    /// if the iterator can yield more than MAX_DESCRIPTOR_CHAIN elements.
     fn from_iter<I: IntoIterator<Item = T>>(elements: I) -> Self {
         let mut result = Self::empty();
         let mut len = 0u8;
@@ -767,7 +795,6 @@ impl<T> FromIterator<T> for Chained<T> {
             result.storage[idx] = MaybeUninit::new(e);
             len += 1;
         }
-        assert!(len > 0);
         // `len` can not be larger than `MAX_DESCRIPTOR_CHAIN`, otherwise we can't
         // get here due to the bound checks on `result.storage`.
         result.len = ChainLength::try_from(len).unwrap();
@@ -881,7 +908,76 @@ impl<K: AllocKind> AllocGuard<K> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DescriptorLayout {
+    chain_length: ChainLength,
+    head_length: u16,
+    data_length: u32,
+    tail_length: u16,
+}
+
 impl AllocGuard<Tx> {
+    /// Calculates the layout for each descriptor in this allocation chain.
+    ///
+    /// The layouts are calculated to satisfy the requested `target_len`, while
+    /// ensuring the session's `min_tx_head` and `min_tx_tail` requirements are
+    /// met.
+    ///
+    /// Returns `Err(Error::TxLength)` if the requirements cannot be met (e.g. if the
+    /// required tail padding overflows `u16`).
+    fn calculate_descriptor_layouts(&self, target_len: usize) -> Result<Chained<DescriptorLayout>> {
+        let len = self.len();
+        let BufferLayout { min_tx_head, min_tx_tail, length: buffer_length, .. } =
+            self.pool.buffer_layout;
+
+        let mut remaining_target = target_len;
+        (0..len)
+            .rev()
+            .map(|clen| {
+                let chain_length = ChainLength::try_from(clen).unwrap();
+                let head_length = if clen + 1 == len { min_tx_head } else { 0 };
+                let mut tail_length = if clen == 0 { min_tx_tail } else { 0 };
+
+                // head_length and tail_length. The check was done when the config
+                // for pool was created, so the subtraction won't overflow.
+                let available_bytes = u32::try_from(
+                    buffer_length - usize::from(head_length) - usize::from(tail_length),
+                )
+                .unwrap();
+
+                let data_length = match u32::try_from(remaining_target) {
+                    Ok(target) => {
+                        if target < available_bytes {
+                            // The target bytes are less than what is available,
+                            // we need to put the excess in the tail so that the
+                            // user cannot write more than they requested (or padded).
+                            let excess = available_bytes - target;
+                            tail_length = u16::try_from(excess)
+                                .ok_checked::<TryFromIntError>()
+                                .and_then(|tail_adjustment| {
+                                    tail_length.checked_add(tail_adjustment)
+                                })
+                                .ok_or(Error::TxLength)?;
+                        }
+                        target.min(available_bytes)
+                    }
+                    Err(TryFromIntError { .. }) => available_bytes,
+                };
+
+                let data_length_usize =
+                    usize::try_from(data_length).expect("u32 must fit in a usize");
+                remaining_target = remaining_target.saturating_sub(data_length_usize);
+
+                Ok::<_, Error>(DescriptorLayout {
+                    chain_length,
+                    head_length,
+                    data_length,
+                    tail_length,
+                })
+            })
+            .collect()
+    }
+
     /// Initializes descriptors of a tx allocation.
     ///
     /// We choose to enforce and satisfy the `min_tx_data` layout requirement
@@ -897,51 +993,24 @@ impl AllocGuard<Tx> {
     /// usage), this guarantees that buffer is always suitable for sending. This
     /// also makes the transmit path (`Session::send`) infallible.
     fn init(&mut self, requested_bytes: usize) -> Result<()> {
-        let len = self.len();
-        let BufferLayout { min_tx_head, min_tx_tail, length: buffer_length, min_tx_data } =
-            self.pool.buffer_layout;
-
+        let min_tx_data = self.pool.buffer_layout.min_tx_data;
         let target_len = requested_bytes.max(usize::from(min_tx_data));
-        let mut remaining_target = target_len;
+        let layouts = self.calculate_descriptor_layouts(target_len)?;
+
         let mut remaining_requested = requested_bytes;
 
-        for (desc_id, clen) in self.descs.iter_mut().zip((0..len).rev()) {
-            let chain_length = ChainLength::try_from(clen).unwrap();
-            let head_length = if clen + 1 == len { min_tx_head } else { 0 };
-            let mut tail_length = if clen == 0 { min_tx_tail } else { 0 };
-
-            // head_length and tail_length. The check was done when the config
-            // for pool was created, so the subtraction won't overflow.
-            let available_bytes =
-                u32::try_from(buffer_length - usize::from(head_length) - usize::from(tail_length))
-                    .unwrap();
-
-            let data_length = match u32::try_from(remaining_target) {
-                Ok(target) => {
-                    if target < available_bytes {
-                        // The target bytes are less than what is available,
-                        // we need to put the excess in the tail so that the
-                        // user cannot write more than they requested (or padded).
-                        let excess = available_bytes - target;
-                        tail_length = u16::try_from(excess)
-                            .ok_checked::<TryFromIntError>()
-                            .and_then(|tail_adjustment| tail_length.checked_add(tail_adjustment))
-                            .ok_or(Error::TxLength)?;
-                    }
-                    target.min(available_bytes)
-                }
-                Err(TryFromIntError { .. }) => available_bytes,
-            };
-
-            let data_length_usize = usize::try_from(data_length).expect("u32 must fit in a usize");
-            let requested_in_part = std::cmp::min(remaining_requested, data_length_usize);
-            let pad_in_part = data_length_usize - requested_in_part;
-
+        for (desc_id, DescriptorLayout { chain_length, head_length, data_length, tail_length }) in
+            self.descs.iter_mut().zip(layouts)
+        {
             // Initialize the descriptor.
             {
                 let mut descriptor = self.pool.descriptors.borrow_mut(desc_id);
                 descriptor.initialize(chain_length, head_length, data_length, tail_length);
             }
+
+            let data_length_usize = usize::try_from(data_length).expect("u32 must fit in a usize");
+            let requested_in_part = std::cmp::min(remaining_requested, data_length_usize);
+            let pad_in_part = data_length_usize - requested_in_part;
 
             // Zero-pad any excess capacity in this buffer part that was allocated
             // to satisfy the `min_tx_data` layout requirement but not requested by
@@ -959,10 +1028,8 @@ impl AllocGuard<Tx> {
                 slice[requested_in_part..requested_in_part + pad_in_part].fill(0);
             }
 
-            remaining_target -= data_length_usize;
             remaining_requested -= requested_in_part;
         }
-        assert_eq!(remaining_target, 0);
         Ok(())
     }
 }

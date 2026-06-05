@@ -145,6 +145,18 @@ impl<K: AllocKind> Descriptor<K> {
         *inbound_flags = 0;
         *return_flags = 0;
     }
+
+    /// Sets the data_length field of the descriptor.
+    fn set_data_length(&mut self, len: u32) {
+        let Self(sys::buffer_descriptor { data_length, .. }, _marker) = self;
+        *data_length = len;
+    }
+
+    /// Sets the tail_length field of the descriptor.
+    fn set_tail_length(&mut self, len: u16) {
+        let Self(sys::buffer_descriptor { tail_length, .. }, _marker) = self;
+        *tail_length = len;
+    }
 }
 
 impl Descriptor<Rx> {

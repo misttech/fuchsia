@@ -701,6 +701,7 @@ fn send_netdevice_frame(
                     }
                 };
             let buf_len = buf_vec.as_ref().len();
+            tx_buffer.shrink_to(buf_len).expect("failed to shrink buffer");
             let written = tx_buffer.io_mut().write_at(0, buf_vec.as_ref());
             debug_assert_eq!(written, buf_len);
             tx_buffer

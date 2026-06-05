@@ -1115,3 +1115,116 @@ async fn ethernet_frame_zero_padding(name: &str) {
     let padding = &full_frame[UNPADDED_LEN..];
     assert_eq!(padding, &[0; EXPECTED_PADDING_LEN], "padding is not zero: {:?}", padding);
 }
+
+#[netstack_test]
+async fn tx_large_buffer_small_payload(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm =
+        sandbox.create_netstack_realm::<Netstack3, _>(name).expect("failed to create source realm");
+
+    let (tun, netdevice) =
+        netstack_testing_common::devices::create_tun_device_with(fnet_tun::DeviceConfig {
+            blocking: Some(true),
+            ..Default::default()
+        });
+    let (tun_port, dev_port) =
+        netstack_testing_common::devices::create_eth_tun_port(&tun, 1, SOURCE_MAC_ADDRESS).await;
+
+    let device_control = netstack_testing_common::devices::install_device(&realm, netdevice);
+    let port_id = dev_port.get_info().await.expect("get info").id.expect("missing port id");
+    let (control_proxy, server_end) =
+        fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
+    device_control
+        .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
+        .expect("create interface");
+    let control = fnet_interfaces_ext::admin::Control::new(control_proxy);
+
+    assert_eq!(control.enable().await.expect("can enabled"), Ok(true));
+    tun_port.set_online(true).await.expect("can set online");
+
+    let id = control.get_id().await.expect("get ID");
+
+    let state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+    netstack_testing_common::interfaces::wait_for_online(&state, id, true)
+        .await
+        .expect("waiting interface online");
+
+    let source_ip = net_ip_v4!("192.168.2.1");
+    let target_ip = net_ip_v4!("192.168.2.2");
+    let prefix_len = 24;
+
+    let _address_state_provider = netstack_testing_common::interfaces::add_address_wait_assigned(
+        &control,
+        fnet::Subnet { addr: to_fidl_address(source_ip), prefix_len },
+        fidl_fuchsia_net_interfaces_admin::AddressParameters {
+            add_subnet_route: Some(true),
+            perform_dad: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("add subnet address");
+
+    realm
+        .add_neighbor_entry(id, to_fidl_address(target_ip), TARGET_MAC_ADDRESS)
+        .await
+        .expect("add neighbor entry failed");
+
+    let sock = fasync::net::UdpSocket::bind_in_realm(
+        &realm,
+        std::net::SocketAddr::V4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 0)),
+    )
+    .await
+    .expect("error creating socket");
+
+    let payload = b"hello";
+    let target_addr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(target_ip.into(), 1234));
+
+    // Send 3x the FIFO depth to ensure we exercise the vec buffer case.
+    let packet_send_count = 3 * usize::from(fidl_fuchsia_net_tun::FIFO_DEPTH);
+
+    for _ in 0..packet_send_count {
+        let sent = sock.send_to(payload, target_addr).await.expect("send_to failed");
+        assert_eq!(sent, payload.len());
+    }
+
+    let mut received_count = 0;
+    while received_count < packet_send_count {
+        let frame = tun.read_frame().await.expect("can read").expect("has frame");
+        let frame_data = frame.data.expect("frame has no data");
+        let mut data = &frame_data[..];
+        let eth = EthernetFrame::parse(&mut data, EthernetFrameLengthCheck::NoCheck)
+            .expect("failed to parse ethernet frame");
+        // Note: There are other packets being sent besides the UDP packets,
+        // however it is very unlikely that the frame size violation only
+        // happens to those packets but not the UDP one, so we ignore those
+        // packets.
+        match eth.ethertype() {
+            Some(EtherType::Ipv4) => {
+                let mut body = eth.body();
+                let ipv4 = packet_formats::ipv4::Ipv4Packet::parse(&mut body, ())
+                    .expect("failed to parse IPv4 packet");
+                let meta = packet::ParsablePacket::parse_metadata(&ipv4);
+                let expected = ETHERNET_HDR_LEN_NO_TAG + meta.header_len() + meta.body_len();
+                if ipv4.proto()
+                    == packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp)
+                    && ipv4.dst_ip() == target_ip
+                {
+                    assert_eq!(&ipv4.body()[8..], payload, "payload mismatch");
+                    received_count += 1;
+                }
+                assert_eq!(
+                    frame_data.len(),
+                    expected,
+                    "received_count = {}, frame_data len = {}, expected = {}",
+                    received_count,
+                    frame_data.len(),
+                    expected
+                );
+            }
+            _ => {}
+        }
+    }
+}
