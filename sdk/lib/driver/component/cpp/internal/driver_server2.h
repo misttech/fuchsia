@@ -45,7 +45,8 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
 
   DriverServer2(fdf_dispatcher_t* dispatcher, fdf_handle_t server_handle)
       : dispatcher_(dispatcher), driver_(std::make_unique<DriverBaseImpl>()) {
-    binding_.emplace(dispatcher_,
+    fdf_dispatcher_t* always_on_dispatcher = fdf_dispatcher_get_always_on_dispatcher(dispatcher_);
+    binding_.emplace(always_on_dispatcher,
                      fdf::ServerEnd<fuchsia_driver_framework::Driver>(fdf::Channel(server_handle)),
                      this, fidl::kIgnoreBindingClosure);
   }
@@ -126,7 +127,8 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
       return;
     }
 
-    async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher_),
+    fdf_dispatcher_t* always_on_dispatcher = fdf_dispatcher_get_always_on_dispatcher(dispatcher_);
+    async::PostTask(fdf_dispatcher_get_async_dispatcher(always_on_dispatcher),
                     [this]() { binding_.reset(); });
   }
 

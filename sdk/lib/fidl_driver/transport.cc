@@ -8,6 +8,7 @@
 #include <lib/fidl_driver/cpp/transport.h>
 // clang-format on
 
+#include <lib/async/sequence_id.h>
 #include <lib/fdf/cpp/channel_read.h>
 #include <lib/fdf/dispatcher.h>
 #include <lib/fidl/cpp/wire/message.h>
@@ -181,8 +182,9 @@ fidl::internal::DriverWaiter::CancellationResult DriverWaiter::Cancel() {
   }
 
   // Synchronized dispatcher.
-  fdf_dispatcher_t* current_dispatcher = fdf_dispatcher_get_current_dispatcher();
-  if (current_dispatcher == dispatcher) {
+  async_sequence_id_t seq_id;
+  const char* error = nullptr;
+  if (async_get_sequence_id(dispatcher_, &seq_id, &error) == ZX_OK) {
     // The binding is being torn down from a dispatcher thread.
     zx_status_t status = channel_read_.Cancel();
     switch (status) {
@@ -191,7 +193,7 @@ fidl::internal::DriverWaiter::CancellationResult DriverWaiter::Cancel() {
       case ZX_ERR_NOT_FOUND:
         return CancellationResult::kNotFound;
       default:
-        ZX_PANIC("Unsupported status: %d", status);
+        ZX_PANIC("Unsupported status: (%s) %s", zx_status_get_string(status), error);
     }
   }
 

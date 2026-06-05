@@ -48,4 +48,46 @@ pub trait Driver: Sized + Send + 'static {
     /// Note: The driver will not be considered fully stopped until the node client end bound in
     /// [`Driver::start`] has been closed.
     fn stop(&self) -> impl Future<Output = ()> + Send;
+
+    /// Called when the driver has been asked to suspend.
+    ///
+    /// This method is invoked after the driver runtime has suspended the driver's dispatchers
+    /// and waited for all executing power-managed (normal) tasks to complete.
+    ///
+    /// The driver should use this opportunity to put its hardware into a low-power state.
+    ///
+    /// Note: This will only be called after the driver has successfully finished [`Driver::start`].
+    /// If a stop is initiated while the driver is suspended, the driver will be fully resumed
+    /// (via [`Driver::system_resume`]) before [`Driver::stop`] is invoked.
+    ///
+    /// Only called when `power_managed_dispatchers_enabled` is set to `"true"` in the
+    /// driver's component manifest.
+    fn system_suspend(&self) -> impl Future<Output = Result<(), DriverError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Called when the driver has been asked to resume.
+    ///
+    /// This method is invoked when the system resumes or a registered wake vector triggers.
+    /// It executes *before* anything else. The driver should use this opportunity to bring
+    /// its hardware out of its low-power state. Any task queued for the driver to execute will
+    /// only run after this function completes, starting with the wake vector's task if there
+    /// was one.
+    ///
+    /// If the resume was triggered by a wake vector, `lease` will contain a lease token
+    /// representing the lease associated with the wakeup. The driver can retain this lease
+    /// token to keep the driver active and prevent it from suspending again.
+    ///
+    /// Note: This will only be called after the driver has successfully finished [`Driver::start`].
+    /// If the driver is suspended when a stop is initiated, this method is called to resume the
+    /// driver first, ensuring the driver is in a running state during the shutdown hook [`Driver::stop`].
+    ///
+    /// Only called when `power_managed_dispatchers_enabled` is set to `"true"` in the
+    /// driver's component manifest.
+    fn system_resume(
+        &self,
+        _lease: Option<zx::EventPair>,
+    ) -> impl Future<Output = Result<(), DriverError>> + Send {
+        async { Ok(()) }
+    }
 }

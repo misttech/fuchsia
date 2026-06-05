@@ -68,14 +68,18 @@ impl<T: Driver> DriverServer<T> {
         let server = unsafe { &mut *server_ptr };
 
         // Build a new dispatcher that we can have spin on a fuchsia-async executor main loop
-        // to act as a reactor for non-driver events.
+        // to act as a reactor for non-driver events. Use the always_on_dispatcher on it because
+        // this thread is always running and we don't want to hold up the driver's dispatcher
+        // suspension operation.
         let rust_async_dispatcher = DispatcherBuilder::new()
             .name("fuchsia-async")
             .allow_thread_blocking()
             .create_released()
-            .expect("failure creating blocking dispatcher for rust async");
+            .expect("failure creating blocking dispatcher for rust async")
+            .always_on_dispatcher();
         // Post the task to the dispatcher that will run the fuchsia-async loop, and have it run
         // the server's message loop waiting for start and stop messages from the driver host.
+        let root_dispatcher_always_on = root_dispatcher.always_on_dispatcher();
         rust_async_dispatcher
             .post_task_sync(move |status| {
                 // bail immediately if we were somehow cancelled before we started
@@ -87,7 +91,7 @@ impl<T: Driver> DriverServer<T> {
                     let port = zx::Port::create_with_opts(zx::PortOptions::BIND_TO_INTERRUPT);
                     let mut executor = LocalExecutorBuilder::new().port(port).build();
                     executor.run_singlethreaded(async move {
-                        server.message_loop(root_dispatcher).await;
+                        server.message_loop(root_dispatcher_always_on).await;
                         // take the server handle so it can drop after the async block is done,
                         // which will signal to the driver host that the driver has finished
                         // shutdown, so that we are can guarantee that when `destroy` is called, we
@@ -171,6 +175,18 @@ impl<T: Driver> DriverServer<T> {
             .await;
     }
 
+    async fn handle_suspend(&self) -> Result<(), Status> {
+        log::debug!("driver suspending");
+        let driver = self.driver.get().expect("received suspend message without starting");
+        driver.system_suspend().await.map_err(DriverError::log_to_status)
+    }
+
+    async fn handle_resume(&self, lease: Option<zx::EventPair>) -> Result<(), Status> {
+        log::debug!("driver resuming");
+        let driver = self.driver.get().expect("received resume message without starting");
+        driver.system_resume(lease).await.map_err(DriverError::log_to_status)
+    }
+
     /// Dispatches messages from the driver host to the appropriate implementation.
     ///
     /// # Panics
@@ -196,6 +212,22 @@ impl<T: Driver> DriverServer<T> {
             DriverRequest::Stop {} => {
                 self.handle_stop().await;
                 ControlFlow::Break(())
+            }
+            DriverRequest::Suspend { responder } => {
+                let res = self.handle_suspend().await.map_err(Status::into_raw);
+                let Some(server_handle) = self.server_handle.get() else {
+                    panic!("driver shutting down before it was finished suspending")
+                };
+                responder.send_response(server_handle, res).unwrap();
+                ControlFlow::Continue(())
+            }
+            DriverRequest::Resume { power_element_lease, responder } => {
+                let res = self.handle_resume(power_element_lease).await.map_err(Status::into_raw);
+                let Some(server_handle) = self.server_handle.get() else {
+                    panic!("driver shutting down before it was finished resuming")
+                };
+                responder.send_response(server_handle, res).unwrap();
+                ControlFlow::Continue(())
             }
             _ => panic!("Unknown message on server channel"),
         }
@@ -238,6 +270,14 @@ mod tests {
         async fn stop(&self) {
             println!("driver stop message");
         }
+        async fn system_suspend(&self) -> Result<(), DriverError> {
+            println!("driver suspend message");
+            Ok(())
+        }
+        async fn system_resume(&self, _lease: Option<zx::EventPair>) -> Result<(), DriverError> {
+            println!("driver resume message");
+            Ok(())
+        }
     }
 
     crate::driver_register!(TestDriver);
@@ -275,6 +315,9 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
+
+            client.suspend().await.unwrap().unwrap();
+            client.resume(None::<zx::EventPair>).await.unwrap().unwrap();
 
             client.stop().await.unwrap();
             client_task.await.unwrap();
