@@ -99,7 +99,7 @@ impl Child {
     }
 
     fn record_inspect(&self, node: &fuchsia_inspect::Node) {
-        node.record_child(self.path.name(), |child| {
+        node.record_child(format!("{}-{}", self.path.name(), self.path.id()), |child| {
             child.record_uint("average_bandwidth_bps", self.average_bandwidth_bps.get());
             child.record_uint("peak_bandwidth_bps", self.peak_bandwidth_bps.get());
             self.path.record_inspect(&child);
