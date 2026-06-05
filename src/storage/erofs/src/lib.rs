@@ -468,6 +468,12 @@ impl ErofsParser {
     /// entry slots provided in the buffer, there are no more entries in this directory. Entries
     /// are sorted lexicographically. Reads past the end of the number of entries will return zero
     /// entries filled.
+    ///
+    /// TODO(https://fxbug.dev/479841115): It is possible for directories to omit their "." entries
+    /// in erofs, and in that case there is a flag marking it and we are expected to synthesize it.
+    /// Parse that flag and implement it.
+    /// TODO(https://fxbug.dev/479841115): This API is slightly awkward to hold. We should consider
+    /// making it an iterator interface.
     pub fn read_directory(
         &self,
         node: &DirectoryNode,

@@ -20,6 +20,7 @@ rustc_library("lib") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/storage/erofs",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
@@ -77,6 +78,7 @@ rustc_test("erofs_integration_test_bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:test-case",
   ]
 

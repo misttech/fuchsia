@@ -193,19 +193,8 @@ impl FileLike for ErofsFile {
         let request = object_request.take();
         let scope_clone = scope.clone();
         scope.spawn(request.handle_async(async move |object_request_ref| {
-            if let Err(e) = vfs::file::StreamIoConnection::create(
-                scope_clone,
-                self,
-                options,
-                object_request_ref,
-            )
-            .await
-            {
-                log::error!("Failed to create StreamIoConnection: {:?}", e);
-                Err(e)
-            } else {
-                Ok(())
-            }
+            vfs::file::StreamIoConnection::create(scope_clone, self, options, object_request_ref)
+                .await
         }));
         Ok(())
     }

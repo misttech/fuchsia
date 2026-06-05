@@ -6,7 +6,10 @@ use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_erofs::{ErofsMarker, ErofsProxy, ErofsServeRequest};
 use fidl_fuchsia_io as fio;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-use fuchsia_fs::directory::{DirEntry, DirentKind, readdir, readdir_inclusive};
+use fuchsia_fs::directory::{
+    DirEntry, DirentKind, WatchEvent, Watcher, readdir, readdir_inclusive,
+};
+use futures::StreamExt as _;
 use std::fs;
 use std::io::Read as _;
 use test_case::test_case;
@@ -66,7 +69,6 @@ async fn test_erofs_directory_traversal() {
 
     let expected_entries = [
         DirEntry { name: ".".to_string(), kind: DirentKind::Directory },
-        DirEntry { name: "..".to_string(), kind: DirentKind::Directory },
         DirEntry { name: "file1".to_string(), kind: DirentKind::File },
         DirEntry { name: "large_dir".to_string(), kind: DirentKind::Directory },
         DirEntry { name: "photosynthesis".to_string(), kind: DirentKind::File },
@@ -191,4 +193,34 @@ async fn test_erofs_file_paging_after_close() {
     let mut buf = [0u8; 10];
     paged_vmo.read(&mut buf, 4100).expect("Failed to read VMO after closing file connection");
     assert_ne!(buf, [0u8; 10]); // The read should succeed and return actual data.
+}
+
+#[fuchsia::test]
+async fn test_erofs_directory_watcher() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    let mut watcher = Watcher::new(&root_client).await.expect("Failed to create watcher");
+
+    let mut existing_files = std::collections::HashSet::new();
+
+    while let Some(msg) = watcher.next().await {
+        let msg = msg.expect("Watcher error");
+        match msg.event {
+            WatchEvent::EXISTING => {
+                existing_files.insert(msg.filename);
+            }
+            WatchEvent::IDLE => {
+                break;
+            }
+            event => panic!("Unexpected watch event: {:?}", event),
+        }
+    }
+
+    let expected_files: std::collections::HashSet<_> =
+        [".", "file1", "large_dir", "photosynthesis", "quantum"]
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+
+    assert_eq!(existing_files, expected_files);
 }
