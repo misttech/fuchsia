@@ -179,12 +179,17 @@ std::vector<ForkResult> ForkHelper::WaitForChildrenWithResults() {
 }
 
 pid_t ForkHelper::RunInForkedProcess(fit::function<void()> action) {
+  // Flush parent buffers before forking to prevent the child from double-flushing them.
+  fflush(nullptr);
   pid_t pid = SAFE_SYSCALL(fork());
   if (pid != 0) {
     child_pids_.push_back(pid);
     return pid;
   }
   action();
+  // Flush buffers before exiting to ensure failures are logged. Unlike exit(), _exit() bypasses
+  // flushing.
+  fflush(nullptr);
   _exit(testing::Test::HasFailure());
 }
 
