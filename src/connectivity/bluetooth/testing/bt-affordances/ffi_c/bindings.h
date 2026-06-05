@@ -57,12 +57,6 @@ UuidBytes uuid_from_string(const char *uuid_str);
 /// The caller must ensure that `out_str` points to a valid buffer of at least 37 bytes.
 int32_t uuid_to_string(UuidBytes uuid, char *out_str);
 
-/// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
-/// result in the channel being closed after the new channel is opened.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
-
 /// Disconnect an L2CAP channel if one exists.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).

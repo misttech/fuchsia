@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use bitfield::bitfield;
-use fidl_fuchsia_bluetooth::PeerId;
+use fidl_fuchsia_bluetooth;
 use fidl_fuchsia_bluetooth_gatt2::{
     AttributePermissions, Characteristic, CharacteristicPropertyBits, Handle, SecurityRequirements,
     ServiceHandle,
@@ -109,21 +109,6 @@ pub unsafe extern "C" fn uuid_to_string(uuid: UuidBytes, out_str: *mut core::ffi
     }
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_str as *mut u8, bytes.len());
-    }
-    zx::Status::OK.into_raw()
-}
-
-/// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
-/// result in the channel being closed after the new channel is opened.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> i32 {
-    let peer_id = PeerId { value: peer_id };
-
-    if let Err(err) = block_on(STATE.worker.connect_l2cap_channel(peer_id, psm)) {
-        eprintln!("connect_l2cap_channel encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
     }
     zx::Status::OK.into_raw()
 }
