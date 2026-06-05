@@ -241,8 +241,8 @@ mod encode;
 pub mod encoder;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
+pub mod never;
 mod slot;
-pub mod util;
 mod validate;
 pub mod wire;
 mod wire_type;

@@ -22202,7 +22202,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -22210,7 +22210,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -22242,7 +22242,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
             crate::generic::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse<
                 ___R,
             >,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -22255,7 +22255,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -22283,7 +22283,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -22291,7 +22291,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -22319,7 +22319,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -22327,7 +22327,7 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -23300,7 +23300,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -23308,7 +23308,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -23338,7 +23338,7 @@ pub mod unknown_interactions_ajar_protocol {
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -23351,7 +23351,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -23379,7 +23379,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -23387,7 +23387,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -23415,7 +23415,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -23423,7 +23423,7 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -25296,7 +25296,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -25304,7 +25304,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -25336,7 +25336,7 @@ pub mod unknown_interactions_closed_driver_protocol {
             crate::generic::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse<
                 ___R,
             >,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -25349,7 +25349,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -25379,7 +25379,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -25387,7 +25387,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -25417,7 +25417,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -25425,7 +25425,7 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -26275,7 +26275,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -26283,7 +26283,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -26313,7 +26313,7 @@ pub mod unknown_interactions_closed_protocol {
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -26326,7 +26326,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -26354,7 +26354,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -26362,7 +26362,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -26390,7 +26390,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -26398,7 +26398,7 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -27781,7 +27781,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -27789,7 +27789,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -27819,7 +27819,7 @@ pub mod unknown_interactions_driver_protocol {
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -27832,7 +27832,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -27860,7 +27860,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -27868,7 +27868,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -27896,7 +27896,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -27904,7 +27904,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -28046,7 +28046,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -28054,7 +28054,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -28084,7 +28084,7 @@ pub mod unknown_interactions_driver_protocol {
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -28097,7 +28097,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -28125,7 +28125,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -28133,7 +28133,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -28161,7 +28161,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -28169,7 +28169,7 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29617,7 +29617,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -29625,7 +29625,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29655,7 +29655,7 @@ pub mod unknown_interactions_protocol {
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -29668,7 +29668,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29696,7 +29696,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -29704,7 +29704,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29732,7 +29732,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -29740,7 +29740,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29882,7 +29882,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -29890,7 +29890,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29920,7 +29920,7 @@ pub mod unknown_interactions_protocol {
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayFieldsErr {
         type Output = ::core::result::Result<
             crate::generic::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -29933,7 +29933,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayFieldsErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29961,7 +29961,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -29969,7 +29969,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayUnionErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -29997,7 +29997,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for FlexibleTwoWayTableErr {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -30005,7 +30005,7 @@ pub mod unknown_interactions_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayTableErr {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)

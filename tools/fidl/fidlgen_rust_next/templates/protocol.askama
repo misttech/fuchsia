@@ -164,7 +164,7 @@ pub mod {{ module_name }} {
                         type Output =
                             ::core::result::Result<
                                 {{ self.generic_id(response_struct.name) }}<___R>,
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
@@ -180,7 +180,7 @@ pub mod {{ module_name }} {
                         type Output =
                             ::core::result::Result<
                                 ___R,
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
@@ -195,7 +195,7 @@ pub mod {{ module_name }} {
                     impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
                         type Output =
                             ::core::result::Result<
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                                 {{ self.generic_id(response_struct.name) }}<___R>,
                             >;
 
@@ -211,7 +211,7 @@ pub mod {{ module_name }} {
                     impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
                         type Output =
                             ::core::result::Result<
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                                 ___R,
                             >;
 

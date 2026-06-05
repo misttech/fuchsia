@@ -8796,7 +8796,7 @@ pub mod allowed {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for Denied {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -8804,7 +8804,7 @@ pub mod allowed {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for Denied {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9631,7 +9631,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenyCpp {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenyCppResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9642,7 +9642,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyCpp {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9672,7 +9672,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenyDart {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenyDartResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9683,7 +9683,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyDart {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9713,7 +9713,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenyGo {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenyGoResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9724,7 +9724,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyGo {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9754,7 +9754,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenyPython {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenyPythonResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9765,7 +9765,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyPython {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9795,7 +9795,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenyRust {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenyRustResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9806,7 +9806,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenyRust {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -9836,7 +9836,7 @@ pub mod deny_each_binding {
     impl<___R> ::fidl_next::Respond<___R> for OnlyDenySyzkaller {
         type Output = ::core::result::Result<
             crate::generic::DenyEachBindingOnlyDenySyzkallerResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -9847,7 +9847,7 @@ pub mod deny_each_binding {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for OnlyDenySyzkaller {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)

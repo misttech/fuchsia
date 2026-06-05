@@ -164,7 +164,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonComposedWithError {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -172,7 +172,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for TwoWayAnonComposedWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -251,7 +251,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayNamedComposedWithError {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -259,7 +259,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for TwoWayNamedComposedWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -337,7 +337,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayImportWithError {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -345,7 +345,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for TwoWayImportWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -421,7 +421,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayLocalWithError {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -429,7 +429,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for TwoWayLocalWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -506,7 +506,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonWithError {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -514,7 +514,7 @@ pub mod main_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for TwoWayAnonWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -3073,7 +3073,7 @@ pub mod open_protocol {
         type Output =
                             ::core::result::Result<
                                 ::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolFlexibleTwoWayWithErrorResponse<___R>,
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                             >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -3086,7 +3086,7 @@ pub mod open_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for FlexibleTwoWayWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -3213,7 +3213,7 @@ pub mod open_protocol {
         type Output =
                             ::core::result::Result<
                                 ::fidl_next_test_protocollayouts_imported::generic::ComposedOpenProtocolStrictTwoWayWithErrorResponse<___R>,
-                                ::fidl_next::util::Never,
+                                ::fidl_next::never::Never,
                             >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -3226,7 +3226,7 @@ pub mod open_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for StrictTwoWayWithError {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)

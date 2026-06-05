@@ -3225,7 +3225,7 @@ pub mod some_protocol {
     impl<___R> ::fidl_next::Respond<___R> for SomeMethod {
         type Output = ::core::result::Result<
             crate::generic::SomeProtocolSomeMethodResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -3236,7 +3236,7 @@ pub mod some_protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for SomeMethod {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)

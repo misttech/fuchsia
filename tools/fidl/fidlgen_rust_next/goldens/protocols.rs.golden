@@ -4837,7 +4837,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ResponseAsStruct {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -4845,7 +4845,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ResponseAsStruct {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -4873,7 +4873,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorAsPrimitive {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -4881,7 +4881,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorAsPrimitive {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -4909,7 +4909,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorAsEnum {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -4917,7 +4917,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorAsEnum {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -4947,7 +4947,7 @@ pub mod with_error_syntax {
     impl<___R> ::fidl_next::Respond<___R> for HandleInResult {
         type Output = ::core::result::Result<
             crate::generic::WithErrorSyntaxHandleInResultResponse<___R>,
-            ::fidl_next::util::Never,
+            ::fidl_next::never::Never,
         >;
 
         fn respond(response: ___R) -> Self::Output {
@@ -4958,7 +4958,7 @@ pub mod with_error_syntax {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for HandleInResult {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)

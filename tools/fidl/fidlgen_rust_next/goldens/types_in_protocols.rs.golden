@@ -1667,7 +1667,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorBasic {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -1675,7 +1675,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorBasic {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -1751,7 +1751,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorCompound {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -1759,7 +1759,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorCompound {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -1835,7 +1835,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorArrayBasic {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -1843,7 +1843,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayBasic {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -1919,7 +1919,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorArrayCompound {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -1927,7 +1927,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayCompound {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -2003,7 +2003,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorVectorBasic {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -2011,7 +2011,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorBasic {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -2087,7 +2087,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorVectorCompound {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -2095,7 +2095,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorCompound {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -2171,7 +2171,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorVectorOptional {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -2179,7 +2179,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorOptional {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -2255,7 +2255,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorArrayVectorNested {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -2263,7 +2263,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayVectorNested {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
@@ -2339,7 +2339,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::Respond<___R> for ErrorResource {
-        type Output = ::core::result::Result<___R, ::fidl_next::util::Never>;
+        type Output = ::core::result::Result<___R, ::fidl_next::never::Never>;
 
         fn respond(response: ___R) -> Self::Output {
             ::core::result::Result::Ok(response)
@@ -2347,7 +2347,7 @@ pub mod protocol {
     }
 
     impl<___R> ::fidl_next::RespondErr<___R> for ErrorResource {
-        type Output = ::core::result::Result<::fidl_next::util::Never, ___R>;
+        type Output = ::core::result::Result<::fidl_next::never::Never, ___R>;
 
         fn respond_err(response: ___R) -> Self::Output {
             ::core::result::Result::Err(response)
