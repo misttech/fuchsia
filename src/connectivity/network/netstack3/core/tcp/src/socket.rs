@@ -3444,7 +3444,7 @@ where
     fn set_device_listener<WireI, D>(
         demux_id: &WireI::DemuxSocketId<D, C::BindingsContext>,
         ip_addr: ListenerIpAddr<WireI::Addr, NonZeroU16>,
-        old_device: &mut Option<D>,
+        old_device: Option<D>,
         new_device: Option<&D>,
         DemuxState { socketmap }: &mut DemuxState<WireI, D, C::BindingsContext>,
     ) -> Result<(), SetDeviceError>
@@ -3467,10 +3467,7 @@ where
             Err(SocketDeviceUpdateNotAllowedError) => return Err(SetDeviceError::ZoneChange),
         }
         match entry.try_update_addr(ListenerAddr { device: new_device.cloned(), ip: ip_addr }) {
-            Ok(entry) => {
-                *old_device = entry.get_addr().device.clone();
-                Ok(())
-            }
+            Ok(_entry) => Ok(()),
             Err((ExistsError, _entry)) => Err(SetDeviceError::Conflict),
         }
     }
@@ -3553,10 +3550,12 @@ where
                             Self::set_device_listener(
                                 &I::into_demux_socket_id(id.clone()),
                                 ip.clone(),
-                                device,
+                                device.clone(),
                                 weak_device.as_ref(),
                                 demux,
-                            )
+                            )?;
+                            *device = weak_device;
+                            Ok(())
                         })
                     }
                     MaybeDualStack::DualStack((core_ctx, converter)) => {
@@ -3566,10 +3565,12 @@ where
                                     Self::set_device_listener(
                                         &I::into_demux_socket_id(id.clone()),
                                         ip.clone(),
-                                        device,
+                                        device.clone(),
                                         weak_device.as_ref(),
                                         demux,
-                                    )
+                                    )?;
+                                    *device = weak_device;
+                                    Ok(())
                                 })
                             }
                             ListenerAddr {
@@ -3584,10 +3585,12 @@ where
                                         Self::set_device_listener(
                                             &other_demux_id,
                                             ip.clone(),
-                                            device,
+                                            device.clone(),
                                             weak_device.as_ref(),
                                             demux,
-                                        )
+                                        )?;
+                                        *device = weak_device;
+                                        Ok(())
                                     },
                                 )
                             }
@@ -3598,27 +3601,31 @@ where
                                 let other_demux_id =
                                     core_ctx.into_other_demux_socket_id(id.clone());
                                 core_ctx.with_both_demux_mut(|demux, other_demux| {
+                                    let old_device = device.clone();
                                     Self::set_device_listener(
                                         &I::into_demux_socket_id(id.clone()),
                                         ListenerIpAddr { addr: None, identifier: *port },
-                                        device,
+                                        old_device.clone(),
                                         weak_device.as_ref(),
                                         demux,
                                     )?;
                                     match Self::set_device_listener(
                                         &other_demux_id,
                                         ListenerIpAddr { addr: None, identifier: *port },
-                                        device,
+                                        old_device.clone(),
                                         weak_device.as_ref(),
                                         other_demux,
                                     ) {
-                                        Ok(()) => Ok(()),
+                                        Ok(()) => {
+                                            *device = weak_device;
+                                            Ok(())
+                                        }
                                         Err(e) => {
                                             Self::set_device_listener(
                                                 &I::into_demux_socket_id(id.clone()),
                                                 ListenerIpAddr { addr: None, identifier: *port },
-                                                device,
-                                                device.clone().as_ref(),
+                                                weak_device.clone(),
+                                                old_device.as_ref(),
                                                 demux,
                                             )
                                             .expect("failed to revert back the device setting");
@@ -7880,6 +7887,19 @@ mod tests {
             assert_eq!(device, Some(FakeWeakDeviceId(FakeDeviceId)));
             api.close(socket);
         });
+    }
+
+    #[test]
+    fn set_device_dual_stack_listener() {
+        set_logger_for_test();
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new_multiple_devices());
+        let mut api = ctx.tcp_api::<Ipv6>();
+        let socket = api.create(Default::default());
+        api.bind(&socket, None, Some(LOCAL_PORT)).expect("bind should succeed");
+        assert_matches!(api.set_device(&socket, Some(MultipleDevicesId::A)), Ok(()));
+        let info = api.get_info(&socket);
+        let device = assert_matches!(info, SocketInfo::Bound(BoundInfo { device, .. }) => device);
+        assert_eq!(device, Some(MultipleDevicesId::A.downgrade()));
     }
 
     #[ip_test(I)]
