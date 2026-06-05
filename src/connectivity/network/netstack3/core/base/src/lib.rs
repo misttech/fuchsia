@@ -98,8 +98,8 @@ pub use rng::RngContext;
 pub use settings::{BufferSizeSettings, SettingsContext};
 pub use tcp::base::{Control, EffectiveMss, FragmentedPayload, Mss, MssSizeLimiters};
 pub use tcp::segment::{
-    HandshakeOptions, Options, Payload, PayloadLen, ResetOptions, SackBlock, SackBlocks, Segment,
-    SegmentHeader, SegmentOptions, VerifiedTcpSegment,
+    HandshakeOptions, MalformedFlags, Options, Payload, PayloadLen, ResetOptions, SackBlock,
+    SackBlocks, Segment, SegmentHeader, SegmentOptions, VerifiedTcpSegment,
 };
 pub use tcp::seqnum::{SeqNum, UnscaledWindowSize, WindowScale, WindowSize};
 pub use tcp::timestamp::{

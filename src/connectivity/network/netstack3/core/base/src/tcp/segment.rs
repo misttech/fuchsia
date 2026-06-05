@@ -871,6 +871,7 @@ impl<I: PayloadLen, B> PayloadLen for InnerSerializer<I, B> {
     }
 }
 
+/// Error returned when mutually exclusive TCP control flags are set together.
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("multiple mutually exclusive flags are set: syn: {syn}, fin: {fin}, rst: {rst}")]
 pub struct MalformedFlags {

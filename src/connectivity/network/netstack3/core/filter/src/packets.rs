@@ -10,8 +10,8 @@ use net_types::ip::{
     GenericOverIp, Ip, IpAddress, IpInvariant, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
 use netstack3_base::{
-    DynamicNetworkSerializer, NetworkPartialSerializer, NetworkSerializationContext,
-    NetworkSerializer, Options, PayloadLen, SegmentHeader,
+    DynamicNetworkSerializer, MalformedFlags, NetworkPartialSerializer,
+    NetworkSerializationContext, NetworkSerializer, Options, PayloadLen, SegmentHeader,
 };
 use packet::{
     Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, EitherSerializer,
@@ -254,10 +254,35 @@ pub trait IpPacket<I: FilterIpExt> {
             })
         } else {
             self.maybe_transport_packet().transport_packet_data().and_then(|transport_data| {
+                let protocol =
+                    I::map_ip(self.protocol()?, |proto| proto.into(), |proto| proto.into());
+                match (protocol, &transport_data) {
+                    (conntrack::TransportProtocol::Tcp, TransportPacketData::Tcp { .. }) => {}
+                    // If the IP protocol is TCP, but we failed to parse the TCP header,
+                    // we fall back to generic transport info. In that case, we do not want
+                    // to track the packet, so we return `None`.
+                    (conntrack::TransportProtocol::Tcp, TransportPacketData::Generic { .. }) => {
+                        return None
+                    }
+                    (
+                        conntrack::TransportProtocol::Udp
+                        | conntrack::TransportProtocol::Icmp
+                        | conntrack::TransportProtocol::Other(_),
+                        TransportPacketData::Generic { .. },
+                    ) => {}
+                    (
+                        conntrack::TransportProtocol::Udp
+                        | conntrack::TransportProtocol::Icmp
+                        | conntrack::TransportProtocol::Other(_),
+                        TransportPacketData::Tcp { .. },
+                    ) => unreachable!(
+                        "non-TCP packet with TCP transport data: proto={protocol:?}, data={transport_data:?}"
+                    ),
+                }
                 Some(conntrack::PacketMetadata::new(
                     self.src_addr(),
                     self.dst_addr(),
-                    I::map_ip(self.protocol()?, |proto| proto.into(), |proto| proto.into()),
+                    protocol,
                     transport_data,
                 ))
             })
@@ -2485,10 +2510,31 @@ fn parse_tcp_header<B: ParseBuffer, I: IpExt>(
     // offloading).
     let packet = body.parse::<TcpSegmentRaw<_>>().ok()?;
 
-    let (builder, options, body) = packet.into_builder_options(src_ip, dst_ip)?;
-    let options = Options::try_from_options(&builder, &options).ok()?;
+    let (fallback_src_port, fallback_dst_port) = packet.flow_header().src_dst();
+    let fallback =
+        TransportPacketData::Generic { src_port: fallback_src_port, dst_port: fallback_dst_port };
 
-    let segment = SegmentHeader::from_builder_options(&builder, options).ok()?;
+    // TODO(https://fxbug.dev/328064909): When we enable configurable dropping of
+    // invalid packets, we're going to want to bubble up the detection of a
+    // truncated packet or invalid flags into the hooks in logic.rs (maybe coming
+    // out of `IpPacket::conntrack_packet()`).
+    let (builder, options_res, body) = match packet.into_builder_options(src_ip, dst_ip) {
+        Ok(x) => x,
+        Err(_) => return Some(fallback),
+    };
+    let options = match options_res {
+        Ok(options) => options,
+        Err((options, _err)) => options,
+    };
+    let options = match Options::try_from_options(&builder, &options) {
+        Ok(x) => x,
+        Err(MalformedFlags { .. }) => return Some(fallback),
+    };
+
+    let segment = match SegmentHeader::from_builder_options(&builder, options) {
+        Ok(x) => x,
+        Err(MalformedFlags { .. }) => return Some(fallback),
+    };
 
     Some(TransportPacketData::Tcp {
         src_port: builder.src_port().map(NonZeroU16::get).unwrap_or(0),
@@ -3960,6 +4006,73 @@ mod tests {
         .expect("failed to parse transport packet data");
 
         assert_eq!(parsed_data, expected_data);
+    }
+
+    // Regression test for https://fxbug.dev/518696592.
+    // Verifies that we still extract port information (as Tcp packet data)
+    // even if TCP options parsing fails due to malformed options.
+    #[ip_test(I)]
+    fn transport_packet_data_from_serialized_invalid_tcp_options<I: TestIpExt>() {
+        let mut buf = TransportPacketDataProtocol::Tcp.make_packet::<I>(I::SRC_IP, I::DST_IP);
+
+        // Normal TCP header is 20 bytes.
+        assert!(buf.len() >= 20);
+
+        // data_offset is in buf[12], most significant 4 bits.
+        // Change data_offset from 5 (20 bytes) to 6 (24 bytes) to make room for options.
+        buf[12] = (6 << 4) | (buf[12] & 0x0F);
+
+        // Modify TCP header to include an invalid option [255, 0, 0, 0] at index 20.
+        let mut new_buf = Vec::new();
+        new_buf.extend_from_slice(&buf[..20]);
+        new_buf.extend_from_slice(&[255, 0, 0, 0]);
+        new_buf.extend_from_slice(&buf[20..]);
+
+        let parsed_data = TransportPacketData::parse_in_ip_packet::<I, _>(
+            I::SRC_IP,
+            I::DST_IP,
+            IpProto::Tcp.into(),
+            new_buf.as_slice(),
+        );
+
+        assert_matches!(
+            parsed_data,
+            Some(TransportPacketData::Tcp { src_port, dst_port, .. }) => {
+                assert_eq!(src_port, SRC_PORT.get());
+                assert_eq!(dst_port, DST_PORT.get());
+            }
+        );
+    }
+
+    // Regression test for https://fxbug.dev/518696592.
+    // Verifies that we still extract port information (as Generic packet data)
+    // even if TCP header parsing fails due to malformed (mutually exclusive) flags.
+    #[ip_test(I)]
+    fn transport_packet_data_from_serialized_malformed_tcp_flags<I: TestIpExt>() {
+        let mut buf = TransportPacketDataProtocol::Tcp.make_packet::<I>(I::SRC_IP, I::DST_IP);
+
+        // Modify TCP header to include mutually exclusive flags: SYN and RST.
+        // Normal TCP header is 20 bytes.
+        assert!(buf.len() >= 20);
+
+        // Flags are in buf[13].
+        // SYN is 0x02, RST is 0x04. Set both.
+        buf[13] |= 0x02 | 0x04;
+
+        let parsed_data = TransportPacketData::parse_in_ip_packet::<I, _>(
+            I::SRC_IP,
+            I::DST_IP,
+            IpProto::Tcp.into(),
+            buf.as_slice(),
+        );
+
+        assert_matches!(
+            parsed_data,
+            Some(TransportPacketData::Generic { src_port, dst_port }) => {
+                assert_eq!(src_port, SRC_PORT.get());
+                assert_eq!(dst_port, DST_PORT.get());
+            }
+        );
     }
 
     enum PacketType {

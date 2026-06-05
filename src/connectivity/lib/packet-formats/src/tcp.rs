@@ -337,7 +337,7 @@ impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress, C: TcpParseContext>
             .ok_or_else(|_| debug_err!(ParseError::Format, "Incomplete options"))
             .and_then(|o| {
                 TcpOptionsRef::try_from_raw(o)
-                    .map_err(|e| debug_err!(e.into(), "Options validation failed"))
+                    .map_err(|(_parsed, e)| debug_err!(e, "Options validation failed"))
             })?;
         let body = raw.body;
 
@@ -708,17 +708,22 @@ impl<B: SplitByteSlice + CloneableByteSlice> TcpSegmentRaw<B> {
         self,
         src_ip: A,
         dst_ip: A,
-    ) -> Option<(TcpSegmentBuilder<A>, TcpOptionsRef<B>, B)> {
+    ) -> Result<
+        (TcpSegmentBuilder<A>, Result<TcpOptionsRef<B>, (TcpOptionsRef<B>, ParseError)>, B),
+        ParseError,
+    > {
         let Self { hdr_prefix, options, body } = self;
 
         let builder = hdr_prefix
             .complete()
             .ok_checked::<PartialHeaderPrefix<B>>()
-            .map(|hdr_prefix| hdr_prefix.builder(src_ip, dst_ip))?;
+            .map(|hdr_prefix| hdr_prefix.builder(src_ip, dst_ip))
+            .ok_or(ParseError::Format)?;
 
-        let options = TcpOptionsRef::try_from_raw(options.complete().ok_checked::<B>()?).ok()?;
+        let raw_options = options.complete().ok_checked::<B>().ok_or(ParseError::Format)?;
+        let options = TcpOptionsRef::try_from_raw(raw_options);
 
-        Some((builder, options, body))
+        Ok((builder, options, body))
     }
 }
 
@@ -1240,7 +1245,9 @@ pub mod options {
         ///
         /// Each Option is composed of a 1 byte "kind" field, followed by a
         /// 1 byte "len" field, followed by variable length "data" field.
-        pub(super) fn try_from_raw(raw: TcpOptionsRaw<B>) -> Result<Self, ParseError> {
+        ///
+        /// If parsing fails, return the parsed options so far and the error.
+        pub(super) fn try_from_raw(raw: TcpOptionsRaw<B>) -> Result<Self, (Self, ParseError)> {
             let TcpOptionsRaw { bytes } = raw;
 
             // A mutable result to be filled in as we walk the options list.
@@ -1272,91 +1279,93 @@ pub mod options {
             // to options in the middle.
             let mut bytes = SplitByteSliceBufView::new(result.bytes.clone());
 
-            let TcpOptionsRef {
-                bytes: _,
-                mss,
-                window_scale,
-                sack_permitted,
-                sack_blocks,
-                timestamp,
-            } = &mut result;
+            let parse = |result: &mut Self,
+                         bytes: &mut SplitByteSliceBufView<B>|
+             -> Result<(), ParseError> {
+                // HOT PATH: Only Timestamp Option.
+                if bytes.len() == ALIGNED_TIMESTAMP_OPTION_LENGTH
+                    && bytes.peek_obj_front::<[u8; 4]>() == Some(&TIMESTAMP_HOTPATH_PREFIX)
+                {
+                    result.timestamp = bytes.take_owned_obj_back::<TimestampOption>();
+                    return Ok(());
+                }
 
-            // HOT PATH: Only Timestamp Option.
-            if bytes.len() == ALIGNED_TIMESTAMP_OPTION_LENGTH
-                && bytes.peek_obj_front::<[u8; 4]>() == Some(&TIMESTAMP_HOTPATH_PREFIX)
-            {
-                *timestamp = bytes.take_owned_obj_back::<TimestampOption>();
-                return Ok(result);
+                while let Some(kind) = bytes.take_owned_obj_front::<u8>() {
+                    if kind == OPTION_KIND_EOL {
+                        break;
+                    }
+                    if kind == OPTION_KIND_NOP {
+                        continue;
+                    }
+                    // Every option besides EOL & NOP must have a length.
+                    let len = bytes.take_owned_obj_front::<u8>().ok_or(ParseError::Format)?;
+                    let len = usize::from(len);
+
+                    match kind {
+                        OPTION_KIND_MSS => {
+                            if len != OPTION_LEN_MSS {
+                                return Err(ParseError::Format);
+                            }
+                            result.mss = Some(
+                                bytes
+                                    .take_owned_obj_front::<U16>()
+                                    .ok_or(ParseError::Format)?
+                                    .get(),
+                            );
+                        }
+                        OPTION_KIND_WINDOW_SCALE => {
+                            if len != OPTION_LEN_WINDOW_SCALE {
+                                return Err(ParseError::Format);
+                            }
+                            result.window_scale =
+                                Some(bytes.take_owned_obj_front::<u8>().ok_or(ParseError::Format)?);
+                        }
+
+                        OPTION_KIND_SACK_PERMITTED => {
+                            if len != OPTION_LEN_SACK_PERMITTED {
+                                return Err(ParseError::Format);
+                            }
+                            result.sack_permitted = true;
+                        }
+                        OPTION_KIND_SACK => {
+                            // NB: Subtract 2 since we've already advanced beyond
+                            // the kind and length fields
+                            let len = len.checked_sub(2).ok_or(ParseError::Format)?;
+                            result.sack_blocks = Some(
+                                bytes
+                                    .take_front(len)
+                                    .map(|b| Ref::from_bytes(b).map_err(|_| ParseError::Format))
+                                    .unwrap_or(Err(ParseError::Format))?,
+                            );
+                        }
+                        OPTION_KIND_TIMESTAMP => {
+                            if len != OPTION_LEN_TIMESTAMP {
+                                return Err(ParseError::Format);
+                            }
+                            result.timestamp = Some(
+                                bytes
+                                    .take_owned_obj_front::<TimestampOption>()
+                                    .ok_or(ParseError::Format)?,
+                            );
+                        }
+                        _ => {
+                            // NB: Subtract 2 since we've already advanced beyond
+                            // the kind and length fields
+                            let len = len.checked_sub(2).ok_or(ParseError::Format)?;
+
+                            // Ignore unknown options, but move `bytes` ahead to
+                            // allow subsequent options to be parsed.
+                            let _: B = bytes.take_front(len).ok_or(ParseError::Format)?;
+                        }
+                    }
+                }
+                Ok(())
+            };
+
+            match parse(&mut result, &mut bytes) {
+                Ok(()) => Ok(result),
+                Err(err) => Err((result, err)),
             }
-
-            while let Some(kind) = bytes.take_owned_obj_front::<u8>() {
-                if kind == OPTION_KIND_EOL {
-                    break;
-                }
-                if kind == OPTION_KIND_NOP {
-                    continue;
-                }
-                // Every option besides EOL & NOP must have a length.
-                let len = bytes.take_owned_obj_front::<u8>().ok_or(ParseError::Format)?;
-                let len = usize::from(len);
-
-                match kind {
-                    OPTION_KIND_MSS => {
-                        if len != OPTION_LEN_MSS {
-                            return Err(ParseError::Format);
-                        }
-                        *mss = Some(
-                            bytes.take_owned_obj_front::<U16>().ok_or(ParseError::Format)?.get(),
-                        );
-                    }
-                    OPTION_KIND_WINDOW_SCALE => {
-                        if len != OPTION_LEN_WINDOW_SCALE {
-                            return Err(ParseError::Format);
-                        }
-                        *window_scale =
-                            Some(bytes.take_owned_obj_front::<u8>().ok_or(ParseError::Format)?);
-                    }
-
-                    OPTION_KIND_SACK_PERMITTED => {
-                        if len != OPTION_LEN_SACK_PERMITTED {
-                            return Err(ParseError::Format);
-                        }
-                        *sack_permitted = true;
-                    }
-                    OPTION_KIND_SACK => {
-                        // NB: Subtract 2 since we've already advanced beyond
-                        // the kind and length fields
-                        let len = len.checked_sub(2).ok_or(ParseError::Format)?;
-                        *sack_blocks = Some(
-                            bytes
-                                .take_front(len)
-                                .map(|b| Ref::from_bytes(b).map_err(|_| ParseError::Format))
-                                .unwrap_or(Err(ParseError::Format))?,
-                        );
-                    }
-                    OPTION_KIND_TIMESTAMP => {
-                        if len != OPTION_LEN_TIMESTAMP {
-                            return Err(ParseError::Format);
-                        }
-                        *timestamp = Some(
-                            bytes
-                                .take_owned_obj_front::<TimestampOption>()
-                                .ok_or(ParseError::Format)?,
-                        );
-                    }
-                    _ => {
-                        // NB: Subtract 2 since we've already advanced beyond
-                        // the kind and length fields
-                        let len = len.checked_sub(2).ok_or(ParseError::Format)?;
-
-                        // Ignore unknown options, but move `bytes` ahead to
-                        // allow subsequent options to be parsed.
-                        let _: B = bytes.take_front(len).ok_or(ParseError::Format)?;
-                    }
-                }
-            }
-
-            Ok(result)
         }
     }
 
