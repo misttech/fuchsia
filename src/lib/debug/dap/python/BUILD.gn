@@ -29,8 +29,9 @@ if (is_host) {
     main_source = "tests/client_test.py"
     deps = [ ":lib" ]
 
-    # Explicitly depend on pydantic-core's test_data. This is to ensure that the module's DSO is
-    # bundled together with our test so the top-level pydantic module loads correctly.
+    # Explicitly depend on pydantic-core's test_data. This is to ensure that the
+    # module's DSO is bundled together with our test so the top-level pydantic
+    # module loads correctly.
     test_data_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
   }
 }

@@ -25,8 +25,9 @@ if (is_host) {
     test_data_deps = [
       ":daemon_test_data",
 
-      # Explicitly depend on pydantic-core's test_data. This is to ensure that the module's DSO is
-      # bundled together with our test so the top-level pydantic module loads correctly.
+      # Explicitly depend on pydantic-core's test_data. This is to ensure that
+      # the module's DSO is bundled together with our test so the top-level
+      # pydantic module loads correctly.
       "//prebuilt/third_party/pydantic-core:test_data",
     ]
   }

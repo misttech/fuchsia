@@ -17,7 +17,8 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
 
-    # fake-clock/fidl defines library fuchsia.testing, unrelated to fuchsia.testing.harness.
+    # fake-clock/fidl defines library fuchsia.testing, unrelated to
+    # fuchsia.testing.harness.
     "//sdk/rust/zx",
     "//src/lib/fake-clock/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",

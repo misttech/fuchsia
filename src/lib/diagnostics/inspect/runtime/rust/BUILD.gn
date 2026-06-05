@@ -12,8 +12,9 @@ rustc_library("lib") {
   edition = "2024"
   with_unit_tests = true
 
-  # Restrict visibility to local targets. Clients looking to use the inspect_runtime library
-  # should depend on `:rust` or, in rare circumstances, `:unchecked_includes`.
+  # Restrict visibility to local targets. Clients looking to use the
+  # inspect_runtime library should depend on `:rust` or, in rare circumstances,
+  # `:unchecked_includes`.
   visibility = [ ":*" ]
 
   deps = [

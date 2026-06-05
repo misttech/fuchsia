@@ -85,7 +85,8 @@ rustc_test("validator_bin") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
-# The parent component of #validator_component and #puppet. Provides the necessary topology.
+# The parent component of #validator_component and #puppet. Provides the
+# necessary topology.
 fuchsia_test_component("inspect_validator_test_executor") {
   component_name = "test"
   manifest = "meta/test.cml"

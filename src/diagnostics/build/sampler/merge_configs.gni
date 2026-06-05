@@ -4,9 +4,10 @@
 
 import("//build/compiled_action.gni")
 
-# Generates a single file containing all possible sampler configurations for usage in assembly.
-# This command doesn't validate or perform any logic beyond ensuring that the schemas are as
-# expected. It'll generate a JSON file containing the contents of the input files as:
+# Generates a single file containing all possible sampler configurations for
+# usage in assembly. This command doesn't validate or perform any logic beyond
+# ensuring that the schemas are as expected. It'll generate a JSON file
+# containing the contents of the input files as:
 #
 # {
 #    project_configs: [ project configs objects ],

@@ -29,10 +29,10 @@ _deps = [
   "//third_party/rust_crates:thiserror",
 ]
 
-# NOTE: It isn't currently possible to link to more than one rustc_staticlib; it results in
-# duplicate definition linker errors on LTO builds. To workaround this, log_decoder_c_bindings is
-# included in the fake-log-sink rustc static library, which is then used by the C++ fake-log-sink
-# library.
+# NOTE: It isn't currently possible to link to more than one rustc_staticlib; it
+# results in duplicate definition linker errors on LTO builds. To workaround
+# this, log_decoder_c_bindings is included in the fake-log-sink rustc static
+# library, which is then used by the C++ fake-log-sink library.
 rustc_library("lib") {
   visibility = [ "//src/lib/diagnostics/fake-log-sink/rust:*" ]
   name = "log_decoder_c_bindings"
@@ -42,7 +42,8 @@ rustc_library("lib") {
   deps = _deps
 }
 
-# Use this target if you need both fake-log-sink and cpp-log-decoder (see comment above).
+# Use this target if you need both fake-log-sink and cpp-log-decoder (see
+# comment above).
 source_set("headers") {
   testonly = true
   sources = [ "log_decoder.h" ]
