@@ -145,7 +145,7 @@ void EndpointServer::RegisterVmos(RegisterVmosRequest& request,
       vmos.emplace_back(
           std::move(fuchsia_hardware_usb_endpoint::VmoHandle().id(id).vmo(std::move(vmo))));
       registered_vmos_[id] = {
-          .pmt = req.pmt, .phys_list = req.phys_list, .phys_count = req.phys_count};
+          .pmt = req.pmt, .phys_list = req.phys_list, .phys_count = req.phys_count, .size = size};
     }
   }
 

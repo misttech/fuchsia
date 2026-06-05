@@ -45,6 +45,21 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
   const zx::bti& bti() { return bti_; }
   uint8_t ep_addr() const { return ep_addr_; }
 
+  struct VmoInfo {
+    uint64_t id;
+    uint64_t size;
+  };
+
+  // Gets information about all registered VMOs (ID and size in bytes).
+  std::vector<VmoInfo> GetRegisteredVmosInfo() const {
+    std::lock_guard<std::mutex> lock(lock_);
+    std::vector<VmoInfo> info;
+    for (const auto& [id, vmo] : registered_vmos_) {
+      info.push_back({id, vmo.size});
+    }
+    return info;
+  }
+
  protected:
   // OnUnbound: May be overwritten. If not overwritten, unregisters VMOs.
   virtual void OnUnbound(fidl::UnbindInfo info,
@@ -64,6 +79,7 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
     zx_handle_t pmt;
     uint64_t* phys_list;
     size_t phys_count;
+    uint64_t size;
   };
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to RegisteredVmo.
