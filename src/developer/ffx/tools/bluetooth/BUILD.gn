@@ -14,6 +14,7 @@ ffx_plugin("ffx_bluetooth") {
   with_unit_tests = false
 
   plugin_deps = [
+    "src/connectable:ffx_bluetooth_connectable",
     "src/controller:ffx_bluetooth_controller",
     "src/discoverable:ffx_bluetooth_discoverable",
     "src/discovery:ffx_bluetooth_discovery",
