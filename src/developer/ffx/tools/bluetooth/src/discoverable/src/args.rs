@@ -38,7 +38,7 @@ pub struct StartCommand {}
 #[argh(
     subcommand,
     name = "stop",
-    description = "Revoking this device's discoverability.",
+    description = "Revoke this device's discoverability.",
     example = "ffx bluetooth discoverable stop"
 )]
 pub struct StopCommand {}

@@ -22,6 +22,7 @@ pub struct ConnectableCommand {
 #[argh(subcommand)]
 pub enum ConnectableSubCommand {
     Start(StartCommand),
+    Stop(StopCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -32,3 +33,12 @@ pub enum ConnectableSubCommand {
     example = "ffx bluetooth connectable start"
 )]
 pub struct StartCommand {}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "stop",
+    description = "Revoke this device's connectability.",
+    example = "ffx bluetooth connectable stop"
+)]
+pub struct StopCommand {}

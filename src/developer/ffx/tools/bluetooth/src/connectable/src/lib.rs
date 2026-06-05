@@ -32,6 +32,11 @@ impl FfxMain for ConnectableTool {
                 self.set_connectability(true).await?;
                 writer.line("Becoming connectable")?;
             }
+            // ffx bluetooth connectable stop
+            ConnectableSubCommand::Stop(_) => {
+                self.set_connectability(false).await?;
+                writer.line("Revoking connectability")?;
+            }
         }
         Ok(())
     }
