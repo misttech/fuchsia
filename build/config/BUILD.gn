@@ -1649,7 +1649,9 @@ config("standalone") {
   configs = [ "//build/config/zircon:nolibc" ]
 
   ldflags = []
-  if (!is_gcc) {
+  if (is_gcc) {
+    ldflags += [ "-nostdlib" ]
+  } else {
     # The sanitizer runtimes need libc ABIs that aren't provided here.
     ldflags += [ "-fno-sanitize-link-runtime" ]
 
