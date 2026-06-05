@@ -41,8 +41,9 @@ fuchsia_unittest_component("test-component") {
   deps = [ ":test-bin" ]
 }
 
-# Template to generate a test package for a specific devicetree. The fake board driver will create
-# child nodes based off the provided devicetree during the test.
+# Template to generate a test package for a specific devicetree. The fake board
+# driver will create child nodes based off the provided devicetree during the
+# test.
 # Parameters:
 #   dts: Path to the .dts source file.
 #   golden: Path to the golden .dts file.

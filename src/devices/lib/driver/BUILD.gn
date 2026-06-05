@@ -16,11 +16,11 @@ shared_library("driver") {
   #    |\_________\   \|__|  \|_______|\|__|
   #    \|_________|
   #
-  # New drivers should be written for DFv2. If you need to target a board stuck on DFv1,
-  # it is acceptable to add an entry to this list.
+  # New drivers should be written for DFv2. If you need to target a board stuck
+  # on DFv1, it is acceptable to add an entry to this list.
   #
-  # To remove items from the allowlist, please send a change to one of the OWNERS of
-  # this file to remove an element from the visibility list below.
+  # To remove items from the allowlist, please send a change to one of the
+  # OWNERS of this file to remove an element from the visibility list below.
   #
   # Please allowlist entire directories rather than individual targets as it
   # requires less allowlist churn over time.

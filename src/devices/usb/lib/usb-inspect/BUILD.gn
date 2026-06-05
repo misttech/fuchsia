@@ -14,9 +14,10 @@ source_set("usb-inspect") {
   sources = [ "usb-inspect.cc" ]
   public_configs = [ ":usb_inspect_config" ]
   public_deps = [
-    # We depend on Banjo strictly to retrieve the generated C-struct layouts of USB descriptors
-    # (usb_interface_descriptor_t, usb_endpoint_descriptor_t) for the lazy inspect parser,
-    # without pulling in any compiled helper library object code (which would cause duplicate symbol linker errors).
+    # We depend on Banjo strictly to retrieve the generated C-struct layouts of
+    # USB descriptors (usb_interface_descriptor_t, usb_endpoint_descriptor_t)
+    # for the lazy inspect parser, without pulling in any compiled helper
+    # library object code (which would cause duplicate symbol linker errors).
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit",

@@ -26,9 +26,10 @@ shared_public_deps = [
 ]
 
 # See https://github.com/acpica/acpica/pull/856. This is technically incorrect, but necessary
-# because our acpi::error<E, T> inherits from fit::result<E, T> where T sometimes has a flexible
-# array member; inheritance is not permitted in such cases, and compilation fails. Properly fixing
-# this is a problem for another day.
+# because our acpi::error<E, T> inherits from fit::result<E, T> where T
+# sometimes has a flexible array member; inheritance is not permitted in such
+# cases, and compilation fails. Properly fixing this is a problem for another
+# day.
 #
 # TODO(https://fxbug.dev/42075906): Remove this and the #ifndef guard around ACPI_FLEX_ARRAY in
 # https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/acpica-migrating/src/source/include/platform/acgcc.h.

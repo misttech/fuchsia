@@ -110,8 +110,9 @@ cc_test_executable("camera_device_unittest_bin") {
     "//third_party/googletest:gmock",
   ]
 
-  # Increase the default stack size from 256 KB because creating the configs can take up a very
-  # large amount of stack and would otherwise cause crashes on ASAN builds.
+  # Increase the default stack size from 256 KB because creating the configs can
+  # take up a very large amount of stack and would otherwise cause crashes on
+  # ASAN builds.
   ldflags = [ "-Wl,-z,stack-size=0x100000" ]
 }
 

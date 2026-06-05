@@ -114,7 +114,8 @@ fuchsia_component_perf_test("trace_system_throughput_benchmarks") {
   package = ":trace_system_throughput_benchmarks_standalone"
   component_name = "trace-system-throughput-benchmarks"
 
-  # We run the throughput benchmarks with fewer runs as they take longer to complete
+  # We run the throughput benchmarks with fewer runs as they take longer to
+  # complete
   process_runs = 2
   test_component_args = [
     "-p",

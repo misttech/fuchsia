@@ -6,11 +6,12 @@ import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
 import("//build/testing/environments.gni")
 
-# This must not be testonly so that we can include it into non-testonly product and board
-# definitions.
+# This must not be testonly so that we can include it into non-testonly product
+# and board definitions.
 #
-# In this example we include this test as both a regular fuchsia test inside a core based
-# test realm, as well as through a bootfs packaged test to run under a bootstrap test realm.
+# In this example we include this test as both a regular fuchsia test inside a
+# core based test realm, as well as through a bootfs packaged test to run under
+# a bootstrap test realm.
 cc_test_executable("test") {
   output_name = "power-system-integration-example-test"
   sources = [ "test.cc" ]

@@ -64,8 +64,8 @@ executable("all_in_one_test_bin") {
   ]
 }
 
-# A test that implements a provider and controller in the same component so that it should be able
-# to read its own data.
+# A test that implements a provider and controller in the same component so that
+# it should be able to read its own data.
 fuchsia_test_component("all_in_one_test_component") {
   component_name = "all_in_one_test"
   manifest = "meta/all_in_one.cml"

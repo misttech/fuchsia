@@ -71,7 +71,8 @@ fuchsia_test_package("fxt_integration_test_cpp_puppet") {
     "//src/performance/trace_manager:component_hermetic",
   ]
 
-  # Make a data dep so that the golden tests get "run" as build actions when running w/ fx test.
+  # Make a data dep so that the golden tests get "run" as build actions when
+  # running w/ fx test.
   data_deps = [ "goldens:goldens($host_toolchain)" ]
 }
 
@@ -83,7 +84,8 @@ fuchsia_test_package("fxt_integration_test_rust_puppet") {
     "//src/performance/trace_manager:component_hermetic",
   ]
 
-  # Make a data dep so that the golden tests get "run" as build actions when running w/ fx test.
+  # Make a data dep so that the golden tests get "run" as build actions when
+  # running w/ fx test.
   data_deps = [ "goldens:goldens($host_toolchain)" ]
 }
 

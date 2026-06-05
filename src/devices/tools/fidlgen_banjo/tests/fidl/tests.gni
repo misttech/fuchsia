@@ -190,7 +190,8 @@ _simple_libraries = [
     deps = [ "//zircon/vdso/zx" ]
   },
 
-  # Note: libraryparts is omitted as FIDL supports libraries across multiple files.
+  # Note: libraryparts is omitted as FIDL supports libraries across multiple
+  # files.
   {
     name = "order"
     backends = [ "c" ]
@@ -227,7 +228,8 @@ _simple_libraries = [
     backends = []
   },
 
-  # Note: parameterattributes is an AST-only test, the tested feature is supported by FIDL.
+  # Note: parameterattributes is an AST-only test, the tested feature is
+  # supported by FIDL.
   {
     name = "passcallback"
     backends = [

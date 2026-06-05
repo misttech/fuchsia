@@ -7,12 +7,14 @@ import("//build/dist/resource.gni")
 
 # Define a system power mode configuration target for a given JSON5 file.
 #
-# The template validates the provided JSON5 file to ensure it matches the expected system power mode
-# configuration schema and criteria. If valid, a `resource` target will be created to allow the file
-# to be included in a package. If invalid, the build will fail.
+# The template validates the provided JSON5 file to ensure it matches the
+# expected system power mode configuration schema and criteria. If valid, a
+# `resource` target will be created to allow the file to be included in a
+# package. If invalid, the build will fail.
 #
-# When a `system_power_mode_config` target is added as a bootfs dependency, the provided JSON5 file
-# will be accessible at the `output` path on the device (defaults to
+# When a `system_power_mode_config` target is added as a bootfs dependency, the
+# provided JSON5 file will be accessible at the `output` path on the device
+# (defaults to
 # "/pkg/config/power_manager/system_power_mode_config.json").
 #
 # Parameters:

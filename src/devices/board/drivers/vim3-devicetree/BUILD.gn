@@ -47,8 +47,8 @@ devicetree("vim3") {
   deps = [ ":vim3-power-config" ]
   golden = "dts/vim3.golden.dts"
 
-  # Suppressing warnings for bus@ffd00000 and video-decoder@ffd00000 which both use the same
-  # mmio region by design.
+  # Suppressing warnings for bus@ffd00000 and video-decoder@ffd00000 which both
+  # use the same mmio region by design.
   dtcflags = [ "-Wno-unique_unit_address" ]
 }
 

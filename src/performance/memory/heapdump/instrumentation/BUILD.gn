@@ -46,8 +46,8 @@ rustc_staticlib("core") {
   dynamic_libstd = false
 }
 
-# Processes that link to this library must call either `heapdump_bind_with_channel`
-# or `heapdump_bind_with_fdio` themselves.
+# Processes that link to this library must call either
+# `heapdump_bind_with_channel` or `heapdump_bind_with_fdio` themselves.
 sdk_shared_library("instrumentation") {
   category = "partner"
   sdk_name = "heapdump_instrumentation"

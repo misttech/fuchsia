@@ -7,12 +7,14 @@ import("//build/dist/resource.gni")
 
 # Define a thermal configuration target for a given JSON file.
 #
-# The template validates the provided JSON file to ensure it matches the expected thermal
-# configuration schema and criteria. If valid, a `resource` target will be created to allow the file
-# to be included in a package. If invalid, the build will fail.
+# The template validates the provided JSON file to ensure it matches the
+# expected thermal configuration schema and criteria. If valid, a `resource`
+# target will be created to allow the file to be included in a package. If
+# invalid, the build will fail.
 #
-# When a `thermal_config` target is added as a bootfs dependency, the provided JSON file will be
-# accessible at the path "/pkg/config/power_manager/thermal_config.json" on the device.
+# When a `thermal_config` target is added as a bootfs dependency, the provided
+# JSON file will be accessible at the path
+# "/pkg/config/power_manager/thermal_config.json" on the device.
 #
 # Parameters
 #

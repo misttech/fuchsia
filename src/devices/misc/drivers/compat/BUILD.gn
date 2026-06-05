@@ -20,7 +20,8 @@ group("tests") {
   deps = [ ":compat_test" ]
 }
 
-# Set this to true to see all active node names that a driver that is logging is binded to.
+# Set this to true to see all active node names that a driver that is logging is
+# binded to.
 add_node_names_to_log_tags = false
 
 source_set("lib") {

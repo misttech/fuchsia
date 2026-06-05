@@ -215,7 +215,8 @@ fuchsia_unittest_component("driver-manager-devfs-test") {
   deps = [ ":driver_manager_devfs_test" ]
 }
 
-# This is a separate test binary because this test fixture uses gtest, not zxtest
+# This is a separate test binary because this test fixture uses gtest, not
+# zxtest
 test("driver_host_loader_service_test") {
   sources = [ "driver_host_loader_service_test.cc" ]
   deps = [

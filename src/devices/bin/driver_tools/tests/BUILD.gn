@@ -89,7 +89,8 @@ group("tests") {
     # TODO(https://fxbug.dev/42070980): Enable this test when CQ issue is fixed.
     # ":host_tests($host_toolchain)",
     #
-    # # Included because the host test needs this component to be available on the Fuchsia device.
+    # Included because the host test needs this component to be available on the
+    # Fuchsia device.
     # ":start_driver_test_realm_and_hang",
   ]
 }

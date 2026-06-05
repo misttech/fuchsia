@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# These are the non-hermetic tests that don't need to be ran under the bringup_with_tests product.
+# These are the non-hermetic tests that don't need to be ran under the
+# bringup_with_tests product.
 group("tests") {
   testonly = true
   deps = [

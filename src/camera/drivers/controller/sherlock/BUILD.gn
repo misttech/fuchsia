@@ -66,9 +66,10 @@ camera_controller_driver("sherlock") {
 }
 
 # TODO(https://fxbug.dev/42051133): This test is of dubious value in its current state, and is little more
-# than a comparison of constants defined in one place to a set of shadowed constants defined in the
-# test. If the goal is to prevent accidental changes to the configuration constants, this would be
-# better accomplished with the "goldens" paradigm.
+# than a comparison of constants defined in one place to a set of shadowed
+# constants defined in the test. If the goal is to prevent accidental changes to
+# the configuration constants, this would be better accomplished with the
+# "goldens" paradigm.
 cc_test_executable("sherlock_configs_unittest_bin") {
   testonly = true
   sources = [ "configs_unittest.cc" ]
@@ -79,8 +80,9 @@ cc_test_executable("sherlock_configs_unittest_bin") {
     "//src/lib/testing/loop_fixture",
   ]
 
-  # Increase the default stack size from 256 KB because creating the configs can take up a very
-  # large amount of stack and would otherwise cause crashes on ASAN builds.
+  # Increase the default stack size from 256 KB because creating the configs can
+  # take up a very large amount of stack and would otherwise cause crashes on
+  # ASAN builds.
   ldflags = [ "-Wl,-z,stack-size=0x100000" ]
 }
 
