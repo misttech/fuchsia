@@ -325,7 +325,8 @@ class OpenWrtAP:
                 raise ValueError(f"Unsupported band: {band}")
         res = self.ssh.run(f"ubus list hostapd.{phy}*")
         return [
-            iface.strip() for iface in res.stdout.decode("utf-8").splitlines()
+            iface.strip().removeprefix("hostapd.")
+            for iface in res.stdout.decode("utf-8").splitlines()
         ]
 
     def _is_ap_enabled(
@@ -338,7 +339,7 @@ class OpenWrtAP:
                 return False
             for iface in interfaces:
                 status_res = self.ssh.run(
-                    f"ubus call {iface.strip()} get_status"
+                    f"ubus call hostapd.{iface} get_status"
                 )
                 status_data = json.loads(status_res.stdout.decode("utf-8"))
                 if status_data.get("status") != "ENABLED":
@@ -357,7 +358,7 @@ class OpenWrtAP:
             interfaces = self._get_hostapd_interfaces(band)
             for iface in interfaces:
                 clients_res = self.ssh.run(
-                    f"ubus call {iface} get_clients"
+                    f"ubus call hostapd.{iface} get_clients"
                 ).stdout.decode()
                 clients_data = json.loads(clients_res)
                 clients = clients_data.get("clients", {})
@@ -369,8 +370,10 @@ class OpenWrtAP:
                             authorized=status.get("authorized", False),
                         )
         except Exception as e:
-            _LOGGER.error(f"Failed to get status for band {band}: {e}")
-            raise
+            error_msg = (
+                f"Failed to get status for station {mac} on band {band}: {e}"
+            )
+            raise RuntimeError(error_msg) from e
         return result
 
     def _is_ap_broadcasting(
@@ -424,8 +427,7 @@ class OpenWrtAP:
         result: dict[str, ExtendedCapabilities] = {}
         try:
             interfaces = self._get_hostapd_interfaces(band)
-            for iface_full in interfaces:
-                iface = iface_full.replace("hostapd.", "")
+            for iface in interfaces:
                 cmd = f"hostapd_cli -i {iface} sta {mac}"
                 try:
                     res = self.ssh.run(cmd)
@@ -543,6 +545,66 @@ class OpenWrtAP:
     def stop_wifi(self) -> None:
         """Stops the access point."""
         self.ssh.run("wifi down")
+
+    def set_txpower(self, interface: str, dbm: int) -> None:
+        """Sets the transmit power for the radio device associated with the interface.
+
+        Args:
+            interface: The interface name (e.g. wlan_2g_interface, wlan_5g_interface).
+            dbm: The power level in dBm
+        """
+        if interface == self.wlan_2g_interface:
+            phy = PHY_2G
+        elif interface == self.wlan_5g_interface:
+            phy = PHY_5G
+        else:
+            raise ValueError(f"Unknown interface: {interface}")
+
+        mbm = dbm * 100
+        self.ssh.run(f"iw phy {phy} set txpower limit {mbm}")
+
+    def reset_txpower(self, interface: str) -> None:
+        """Resets the transmit power to the regulatory default maximum (full power).
+
+        Args:
+            interface: The interface name (e.g. wlan_2g_interface, wlan_5g_interface).
+        """
+        if interface == self.wlan_2g_interface:
+            phy = PHY_2G
+        elif interface == self.wlan_5g_interface:
+            phy = PHY_5G
+        else:
+            raise ValueError(f"Unknown interface: {interface}")
+
+        self.ssh.run(f"iw phy {phy} set txpower auto")
+
+    def _set_radio_enabled(self, radio: Radio, enabled: bool) -> None:
+        """Enables or disables the given radio.
+
+        Args:
+            radio: The radio (e.g. Radio.RADIO_2G, Radio.RADIO_5G).
+            enabled: True to enable, False to disable.
+        """
+        disabled_val = "0" if enabled else "1"
+        self.ssh.run(f"uci set wireless.{radio}.disabled='{disabled_val}'")
+        self.ssh.run("uci commit wireless")
+        self.ssh.run(f"wifi reload {radio}")
+
+    def enable_radio(self, radio: Radio) -> None:
+        """Enables the given radio.
+
+        Args:
+            radio: The radio (e.g. Radio.RADIO_2G, Radio.RADIO_5G).
+        """
+        self._set_radio_enabled(radio, True)
+
+    def disable_radio(self, radio: Radio) -> None:
+        """Disables the given radio.
+
+        Args:
+            radio: The radio (e.g. Radio.RADIO_2G, Radio.RADIO_5G).
+        """
+        self._set_radio_enabled(radio, False)
 
     def reset_wifi_config(self) -> None:
         """Resets wireless configuration to system defaults.

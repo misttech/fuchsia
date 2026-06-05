@@ -12,55 +12,78 @@ import fidl_fuchsia_wlan_common as f_wlan_common
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
+from openwrt_access_point import Radio
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    RadioConfig,
+    Security,
+    SecurityOpen,
+    SecurityWep,
+    SecurityWpa,
+    SecurityWpa2,
+    SecurityWpa2Wpa3Mixed,
+    SecurityWpa3,
+    SecurityWpaWpa2Mixed,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 
 @dataclass
 class TestParams:
-    dut_security_mode: SecurityMode
-    original_security_mode: SecurityMode
-    original_band: hostapd_constants.BandType
-    target_security_mode: SecurityMode
-    target_band: hostapd_constants.BandType
+    dut_security: Security
+    original_security: Security
+    original_channel: BssChannel
+    target_security: Security
+    target_channel: BssChannel
     expect_roam: bool
 
 
-_DUT_SECURITY_MODES: frozenset[SecurityMode] = frozenset(
+_DUT_SECURITIES: frozenset[Security] = frozenset(
     [
-        SecurityMode.OPEN,
-        SecurityMode.WEP,
-        SecurityMode.WPA,
-        SecurityMode.WPA2,
-        SecurityMode.WPA3,
+        SecurityOpen(),
+        SecurityWep(),
+        SecurityWpa(),
+        SecurityWpa2(),
+        SecurityWpa3(),
     ]
 )
 
-_AP_SECURITY_MODES: frozenset[SecurityMode] = _DUT_SECURITY_MODES | frozenset(
+_AP_SECURITIES: frozenset[Security] = _DUT_SECURITIES | frozenset(
     [
-        SecurityMode.WPA_WPA2,
-        SecurityMode.WPA2_WPA3,
+        SecurityWpaWpa2Mixed(),
+        SecurityWpa2Wpa3Mixed(),
     ]
 )
 
-_DUT_SECURITY_MODE_TO_COMPATIBLE_AP_MODES: dict[
-    SecurityMode, frozenset[SecurityMode]
+_DUT_SECURITY_TO_COMPATIBLE_AP_SECURITIES: dict[
+    Security, frozenset[Security]
 ] = {
-    SecurityMode.OPEN: frozenset([SecurityMode.OPEN]),
-    SecurityMode.WEP: frozenset([SecurityMode.WEP]),
-    SecurityMode.WPA: frozenset([SecurityMode.WPA, SecurityMode.WPA_WPA2]),
-    SecurityMode.WPA2: frozenset(
+    SecurityOpen(): frozenset([SecurityOpen()]),
+    SecurityWep(): frozenset([SecurityWep()]),
+    SecurityWpa(): frozenset([SecurityWpa(), SecurityWpaWpa2Mixed()]),
+    SecurityWpa2(): frozenset(
         [
-            SecurityMode.WPA2,
-            SecurityMode.WPA_WPA2,
-            SecurityMode.WPA2_WPA3,
+            SecurityWpa2(),
+            SecurityWpaWpa2Mixed(),
+            SecurityWpa2Wpa3Mixed(),
         ]
     ),
-    SecurityMode.WPA3: frozenset([SecurityMode.WPA3, SecurityMode.WPA2_WPA3]),
+    SecurityWpa3(): frozenset([SecurityWpa3(), SecurityWpa2Wpa3Mixed()]),
 }
 
 
@@ -76,19 +99,19 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
         test_args: list[tuple[TestParams]] = []
 
         for (
-            dut_mode,
-            compatible_ap_modes,
-        ) in _DUT_SECURITY_MODE_TO_COMPATIBLE_AP_MODES.items():
-            for ap_mode in compatible_ap_modes:
+            dut_security,
+            compatible_ap_securities,
+        ) in _DUT_SECURITY_TO_COMPATIBLE_AP_SECURITIES.items():
+            for ap_security in compatible_ap_securities:
                 # Same compatible security mode on both APs, 2.4 GHz to 5 GHz.
                 test_args.append(
                     (
                         TestParams(
-                            dut_security_mode=dut_mode,
-                            original_security_mode=ap_mode,
-                            original_band=hostapd_constants.BandType.BAND_2G,
-                            target_security_mode=ap_mode,
-                            target_band=hostapd_constants.BandType.BAND_5G,
+                            dut_security=dut_security,
+                            original_security=ap_security,
+                            original_channel=DEFAULT_2G_CHANNEL,
+                            target_security=ap_security,
+                            target_channel=DEFAULT_5G_CHANNEL,
                             expect_roam=True,
                         ),
                     )
@@ -98,41 +121,40 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                 test_args.append(
                     (
                         TestParams(
-                            dut_security_mode=dut_mode,
-                            original_security_mode=ap_mode,
-                            original_band=hostapd_constants.BandType.BAND_5G,
-                            target_security_mode=ap_mode,
-                            target_band=hostapd_constants.BandType.BAND_2G,
+                            dut_security=dut_security,
+                            original_security=ap_security,
+                            original_channel=DEFAULT_5G_CHANNEL,
+                            target_security=ap_security,
+                            target_channel=DEFAULT_2G_CHANNEL,
                             expect_roam=True,
                         ),
                     )
                 )
 
                 # Test incompatible roams, which should all fail.
-                incompatible_modes = _AP_SECURITY_MODES - compatible_ap_modes
-                for incompatible_mode in incompatible_modes:
+                incompatible_securities = (
+                    _AP_SECURITIES - compatible_ap_securities
+                )
+                for incompatible_security in incompatible_securities:
                     test_args.append(
                         (
                             TestParams(
-                                dut_security_mode=dut_mode,
-                                original_security_mode=ap_mode,
-                                original_band=hostapd_constants.BandType.BAND_2G,
-                                target_security_mode=incompatible_mode,
-                                target_band=hostapd_constants.BandType.BAND_5G,
+                                dut_security=dut_security,
+                                original_security=ap_security,
+                                original_channel=DEFAULT_2G_CHANNEL,
+                                target_security=incompatible_security,
+                                target_channel=DEFAULT_5G_CHANNEL,
                                 expect_roam=False,
                             ),
                         ),
                     )
 
         def generate_roam_test_name(test: TestParams) -> str:
-            if test.expect_roam:
-                expected = "roams"
-            else:
-                expected = "does_not_roam"
-            return f"test_{test.dut_security_mode}_dut_{expected}_from_{test.original_security_mode}_{test.original_band}_to_{test.target_security_mode}_{test.target_band}"
+            expected = "roams" if test.expect_roam else "does_not_roam"
+            return f"test_{test.dut_security.uci_encryption}_dut_{expected}_from_{test.original_security.uci_encryption}_{test.original_channel.band}_to_{test.target_security.uci_encryption}_{test.target_channel.band}"
 
         self.generate_tests(
-            test_logic=self.setup_connect_attenuate_roam,
+            test_logic=self._test_logic,
             name_func=generate_roam_test_name,
             arg_sets=test_args,
         )
@@ -144,52 +166,33 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             FuchsiaDevice, AssociationMode.POLICY
         )
 
-        if len(self.access_points) == 0:
+        self.openwrt_ap = None
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
 
     def teardown_class(self) -> None:
         self.dut.disconnect()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         super().teardown_class()
 
     def teardown_test(self) -> None:
         self.dut.disconnect()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         super().teardown_test()
 
     def on_fail(self, record: TestResultRecord) -> None:
         self.dut.disconnect()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         super().on_fail(record)
-
-    def setup_ap(
-        self,
-        ssid: str,
-        security: Security | None = None,
-        additional_ap_parameters: dict[str, int] | None = None,
-        channel: int = hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-    ) -> None:
-        """Sets up an AP using the provided parameters.
-
-        Args:
-            ssid: SSID for the AP.
-            security: security config for AP, defaults to None (open network
-                with no password).
-            additional_ap_parameters: A dictionary of parameters that can be set
-                directly in the hostapd config file.
-            channel: which channel number to set the AP to (default is
-                AP_DEFAULT_CHANNEL_2G).
-        """
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=channel,
-            ssid=ssid,
-            security=security,
-            additional_ap_parameters=additional_ap_parameters,
-        )
 
     def _get_client_mac(self) -> str:
         """Get the MAC address of the DUT client interface.
@@ -210,8 +213,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             "Failed to get client interface mac address. No client interface found."
         )
 
-    # This is called in generate_tests.
-    def setup_connect_attenuate_roam(self, test: TestParams) -> None:
+    def _test_logic(self, test: TestParams) -> None:
         """Setup the APs, associate a DUT, and slowly reduce AP signal strength until roam.
 
         Args:
@@ -219,53 +221,135 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
         """
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         original_password = None
-        if test.original_security_mode != SecurityMode.OPEN:
+        if not isinstance(test.original_security, SecurityOpen):
             # Length 13, so it can be used for WEP or WPA
             original_password = utils.rand_ascii_str(13)
 
-        # Setup original AP.
-        original_security = Security(
-            test.original_security_mode, original_password
-        )
-        self.setup_ap(
-            ssid,
-            security=original_security,
-            channel=test.original_band.default_channel(),
-        )
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=test.original_channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=test.original_security,
+                                password=original_password,
+                            )
+                        ],
+                    ),
+                    RadioConfig.generate(
+                        channel=test.target_channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=test.target_security,
+                                password=original_password,
+                            )
+                        ],
+                    ),
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=test.original_channel.band)
 
+            target_radio = (
+                Radio.RADIO_5G
+                if test.target_channel.band == Band.BAND_5G
+                else Radio.RADIO_2G
+            )
+            # Disable target radio immediately so client connects to original band
+            self.openwrt_ap.disable_radio(target_radio)
+        elif self.access_point:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=test.original_channel.number,
+                ssid=ssid,
+                security=DeprecatedSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(
+                        test.original_security
+                    ),
+                    password=original_password,
+                ),
+            )
         asserts.assert_true(
             self.dut.associate(
                 ssid,
                 target_pwd=original_password,
-                target_security=test.dut_security_mode,
+                target_security=ConfigMapper.to_hostapd_security(
+                    test.dut_security
+                ),
             ),
             "Failed to associate.",
         )
         # Verify that DUT is actually associated (as seen from AP).
         client_mac = self._get_client_mac()
 
-        if test.original_band == hostapd_constants.BandType.BAND_2G:
-            original_identifier = self.access_point.wlan_2g
-        elif test.original_band == hostapd_constants.BandType.BAND_5G:
-            original_identifier = self.access_point.wlan_5g
+        original_identifier = ""
+        target_identifier = ""
+
+        if self.openwrt_ap:
+            if test.original_channel.band == Band.BAND_2G:
+                original_identifier = self.openwrt_ap.wlan_2g_interface
+            else:
+                original_identifier = self.openwrt_ap.wlan_5g_interface
+        elif self.access_point:
+            if test.original_channel.band == Band.BAND_2G:
+                original_identifier = self.access_point.wlan_2g
+            elif test.original_channel.band == Band.BAND_5G:
+                original_identifier = self.access_point.wlan_5g
+
+        if self.openwrt_ap:
+            status = self.openwrt_ap.get_sta_status(
+                client_mac, test.original_channel.band
+            )
+            iface_status = status.get(original_identifier)
+            is_assoc = iface_status and iface_status.assoc
+        else:
+            assert self.access_point is not None
+            is_assoc = self.access_point.sta_associated(
+                original_identifier, client_mac
+            )
 
         asserts.assert_true(
-            self.access_point.sta_associated(original_identifier, client_mac),
-            f"DUT is not associated on the {test.original_band} band",
+            is_assoc,
+            f"DUT is not associated on the {test.original_channel.band} band",
         )
 
         # Setup target AP.
-        target_security = Security(test.target_security_mode, original_password)
-        self.setup_ap(
-            ssid,
-            security=target_security,
-            channel=test.target_band.default_channel(),
-        )
+        if self.openwrt_ap:
+            target_radio = (
+                Radio.RADIO_5G
+                if test.target_channel.band == Band.BAND_5G
+                else Radio.RADIO_2G
+            )
+            self.openwrt_ap.enable_radio(target_radio)
+            self.openwrt_ap.verify_wifi_status(band=test.target_channel.band)
+        elif self.access_point:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=test.target_channel.number,
+                ssid=ssid,
+                security=DeprecatedSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(
+                        test.target_security
+                    ),
+                    password=original_password,
+                ),
+            )
 
-        if test.target_band == hostapd_constants.BandType.BAND_2G:
-            target_identifier = self.access_point.wlan_2g
-        elif test.target_band == hostapd_constants.BandType.BAND_5G:
-            target_identifier = self.access_point.wlan_5g
+        if self.openwrt_ap:
+            if test.target_channel.band == Band.BAND_2G:
+                target_identifier = self.openwrt_ap.wlan_2g_interface
+            else:
+                target_identifier = self.openwrt_ap.wlan_5g_interface
+        elif self.access_point:
+            if test.target_channel.band == Band.BAND_2G:
+                target_identifier = self.access_point.wlan_2g
+            elif test.target_channel.band == Band.BAND_5G:
+                target_identifier = self.access_point.wlan_5g
 
         FULL_POWER_DBM = 23
         current_dbm = FULL_POWER_DBM
@@ -274,25 +358,40 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
 
         for id in (original_identifier, target_identifier):
             # Reset back to full power.
-            self.access_point.iwconfig.ap_iwconfig(
-                id, f"txpower {FULL_POWER_DBM}"
-            )
-            self.access_point.iwconfig.ap_iwconfig(id, "txpower auto")
-
+            if self.openwrt_ap:
+                self.openwrt_ap.reset_txpower(id)
+            elif self.access_point:
+                self.access_point.iwconfig.ap_iwconfig(
+                    id, f"txpower {FULL_POWER_DBM}"
+                )
+                self.access_point.iwconfig.ap_iwconfig(id, "txpower auto")
         for i in range(NUM_ITERATIONS):
             # Reduce power, but with a floor of 1 dBm.
             current_dbm = max(current_dbm // 2, 1)
-            self.access_point.iwconfig.ap_iwconfig(
-                original_identifier, f"txpower {current_dbm}"
-            )
+            if self.openwrt_ap:
+                self.openwrt_ap.set_txpower(original_identifier, current_dbm)
+            elif self.access_point:
+                self.access_point.iwconfig.ap_iwconfig(
+                    original_identifier, f"txpower {current_dbm}"
+                )
 
             period_deadline = datetime.now() + timedelta(seconds=PERIOD_S)
             while datetime.now() < period_deadline:
                 # Check for STA on destination, and if it has roamed, end the test.
                 if test.expect_roam:
-                    if self.access_point.sta_authorized(
-                        target_identifier, client_mac
-                    ):
+                    if self.openwrt_ap:
+                        status = self.openwrt_ap.get_sta_status(
+                            client_mac, test.target_channel.band
+                        )
+                        iface_status = status.get(target_identifier)
+                        is_authorized = iface_status and iface_status.authorized
+                    else:
+                        assert self.access_point is not None
+                        is_authorized = self.access_point.sta_authorized(
+                            target_identifier, client_mac
+                        )
+
+                    if is_authorized:
                         break
                     # We want to detect if DUT disconnected from the original BSS without roaming to the
                     # target BSS. Specifically, we want to avoid a false positive if DUT does a full
@@ -301,9 +400,19 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                     # case, but it suffices for manually run tests. Automated tests will need a better
                     # way to detect this scenario.
                     # TODO(https://fxbug.dev/359966771): Surface intermediate states to Antlion.
-                    if not self.access_point.sta_associated(
-                        original_identifier, client_mac
-                    ):
+                    if self.openwrt_ap:
+                        status = self.openwrt_ap.get_sta_status(
+                            client_mac, test.original_channel.band
+                        )
+                        iface_status = status.get(original_identifier)
+                        is_assoc = iface_status and iface_status.assoc
+                    else:
+                        assert self.access_point is not None
+                        is_assoc = self.access_point.sta_associated(
+                            original_identifier, client_mac
+                        )
+
+                    if not is_assoc:
                         raise signals.TestFailure(
                             "DUT left original BSS without roaming to target BSS"
                         )
@@ -311,27 +420,54 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
 
         if test.expect_roam:
             # Verify that DUT roamed (as seen from AP).
-            asserts.assert_true(
-                self.access_point.sta_authenticated(
+            if self.openwrt_ap:
+                status = self.openwrt_ap.get_sta_status(
+                    client_mac, test.target_channel.band
+                )
+                iface_status = status.get(target_identifier)
+                is_auth = iface_status and iface_status.auth
+                is_assoc = iface_status and iface_status.assoc
+                is_authorized = iface_status and iface_status.authorized
+            else:
+                assert self.access_point is not None
+                is_auth = self.access_point.sta_authenticated(
                     target_identifier, client_mac
-                ),
-                f"DUT is not authenticated on the {test.target_band} band",
+                )
+                is_assoc = self.access_point.sta_associated(
+                    target_identifier, client_mac
+                )
+                is_authorized = self.access_point.sta_authorized(
+                    target_identifier, client_mac
+                )
+
+            asserts.assert_true(
+                is_auth,
+                f"DUT is not authenticated on the {test.target_channel.band} band",
             )
             asserts.assert_true(
-                self.access_point.sta_associated(target_identifier, client_mac),
-                f"DUT is not associated on the {test.target_band} band",
+                is_assoc,
+                f"DUT is not associated on the {test.target_channel.band} band",
             )
             asserts.assert_true(
-                self.access_point.sta_authorized(target_identifier, client_mac),
-                "DUT is not 802.1X authorized on the 5GHz band",
+                is_authorized, "DUT is not 802.1X authorized on the 5GHz band"
             )
         else:
             # DUT should have stayed on the original BSS.
-            asserts.assert_true(
-                self.access_point.sta_authenticated(
+            if self.openwrt_ap:
+                status = self.openwrt_ap.get_sta_status(
+                    client_mac, test.original_channel.band
+                )
+                iface_status = status.get(original_identifier)
+                is_auth = iface_status and iface_status.auth
+            else:
+                assert self.access_point is not None
+                is_auth = self.access_point.sta_authenticated(
                     original_identifier, client_mac
-                ),
-                f"DUT is not authenticated on the {test.original_band} band",
+                )
+
+            asserts.assert_true(
+                is_auth,
+                f"DUT is not authenticated on the {test.original_channel.band.name} band",
             )
 
 
