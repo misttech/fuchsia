@@ -342,10 +342,6 @@ group("bus_pci_driver") {
   deps = [ "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-pci-package" ]
 }
 
-group("bus_kpci_driver") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-kpci-package" ]
-}
-
 group("realtek_8211f_driver") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/realtek-8211f:package" ]
 }

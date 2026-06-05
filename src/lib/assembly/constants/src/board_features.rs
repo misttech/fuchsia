@@ -15,8 +15,6 @@ pub enum BoardFeature {
     AmlHrtimer,
     /// Bluetooth transport support over UART.
     BtTransportUart,
-    /// Kernel-mode PCI bus support.
-    BusKpci,
     /// User-space PCI bus support.
     BusPci,
     /// CPU power boost/frequency scaling support.
@@ -115,7 +113,6 @@ impl AsRef<str> for BoardFeature {
             Self::AlwaysOnCounter => "fuchsia::always_on_counter",
             Self::AmlHrtimer => "fuchsia::aml-hrtimer",
             Self::BtTransportUart => "fuchsia::bt_transport_uart",
-            Self::BusKpci => "fuchsia::bus_kpci",
             Self::BusPci => "fuchsia::bus_pci",
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",
             Self::CustomAudioCore => "fuchsia::custom_audio_core",

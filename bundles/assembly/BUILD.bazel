@@ -697,19 +697,6 @@ assembly_input_bundle(
     ],
 )
 
-# AIB for the bus-kpci driver
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "bus_kpci_driver",
-    drivers = [
-        {
-            "set": "bootfs",
-            "package_target": "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-kpci-package",
-            "driver_components": ["meta/bus-kpci.cm"],
-        },
-    ],
-)
-
 # AIB for the realtek-8211f driver
 # buildifier: leave-alone
 assembly_input_bundle(

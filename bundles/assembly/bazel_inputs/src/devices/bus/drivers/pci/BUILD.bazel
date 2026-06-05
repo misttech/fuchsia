@@ -7,11 +7,6 @@ load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
 package(default_visibility = ["//bundles/assembly:__subpackages__"])
 
 prebuilt_package(
-    name = "bus-kpci-package",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-kpci-package",
-)
-
-prebuilt_package(
     name = "bus-pci-package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-pci-package",
 )

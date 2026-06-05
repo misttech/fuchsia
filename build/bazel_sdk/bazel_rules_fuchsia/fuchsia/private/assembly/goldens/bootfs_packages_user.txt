@@ -8,7 +8,6 @@ block-core
 ?block-relay
 ?bootstrap
 ?bt-transport-usb
-?bus-kpci
 ?bus-pci
 ?buttons
 clock

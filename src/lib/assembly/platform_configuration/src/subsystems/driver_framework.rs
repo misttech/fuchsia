@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::anyhow;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
 use assembly_config_schema::platform_settings::driver_framework_config::{
@@ -188,25 +187,14 @@ impl
             ),
         )?;
 
-        // Include bus-pci or bus-kpci driver through platform AIBs.
-        let bus_pci = context.board_config.provides_feature(BoardFeature::BusPci);
-        let bus_kpci = context.board_config.provides_feature(BoardFeature::BusKpci);
-
-        if bus_pci && bus_kpci {
-            return Err(anyhow!(
-                "Cannot enable both bus_pci and bus_kpci features in the same configuration."
-            ));
-        }
-        if bus_pci {
+        // Include the bus-pci driver through platform AIBs.
+        if context.board_config.provides_feature(BoardFeature::BusPci) {
             builder.platform_bundle("bus_pci_driver")?;
             // In engineering builds, include the lspci tool whenever the pci
             // bus feature is enabled.
             if context.build_type == &BuildType::Eng {
                 builder.platform_bundle("lspci")?;
             }
-        }
-        if bus_kpci {
-            builder.platform_bundle("bus_kpci_driver")?;
         }
 
         let interconnect = context.board_config.provides_feature(BoardFeature::Interconnect);

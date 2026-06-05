@@ -80,7 +80,6 @@ bringup_platform_aib_names = [
     "registers_driver",
     "wlanphy_driver",
     "bt_transport_uart_driver",
-    "bus_kpci_driver",
     "bus_pci_driver",
     "realtek_8211f_driver",
     "xhci_driver",

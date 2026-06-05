@@ -4,10 +4,6 @@
 
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 
-export_fuchsia_package_to_bazel("bus-kpci-package") {
-  package = "//src/devices/bus/drivers/pci:bus-kpci-package"
-}
-
 export_fuchsia_package_to_bazel("bus-pci-package") {
   package = "//src/devices/bus/drivers/pci:bus-pci-package"
 }

@@ -9,7 +9,6 @@ block-core
 ?boot-shell-commands
 ?bootstrap
 ?bt-transport-usb
-?bus-kpci
 ?bus-pci
 ?buttons
 clock
