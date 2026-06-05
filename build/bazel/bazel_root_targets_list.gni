@@ -97,6 +97,7 @@ declare_args() {
               ninja = "rfcmeta"
             },
           ]
+          install_host_tool = true
         },
         {
           bazel_label = "//tools/debug/covargs:covargs"
@@ -106,6 +107,7 @@ declare_args() {
               ninja = "covargs"
             },
           ]
+          install_host_tool = true  # Required by CI recipe
         },
         {
           bazel_label = "//tools/debug/symbolize:symbolize"

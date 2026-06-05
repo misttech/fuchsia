@@ -1565,7 +1565,7 @@ build_api_module("tool_paths") {
     "//zircon/third_party/uapp/mkfs-msdosfs($host_toolchain)",
     "//src/storage/blobfs/tools:blobfs($host_toolchain)",
     "//zircon/tools/lz4($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.merkleroot($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools($host_toolchain)",
     "//src/storage/minfs/tools:minfs($host_toolchain)",
     "//zircon/tools/zbi($host_toolchain)",
     "//zircon/tools/zither($host_toolchain)",

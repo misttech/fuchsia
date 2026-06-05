@@ -6,9 +6,12 @@
 group("shac_tools") {
   testonly = true
   deps = [
-    "//build/bazel/host:bazel_root_host_tools.formatjson5($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.mdlint($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.rfcmeta($host_toolchain)",
+    # For Bazel tools, use the .host_tool label which is the one populating
+    # host-tools/, used by LUCI recipes to locate them
+    #  (without this suffix, the target only writes to host_x64/).
+    "//build/bazel/host:bazel_root_host_tools.formatjson5.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.rfcmeta.host_tool($host_toolchain)",
     "//tools/cmc:cmc.actual($host_toolchain)",
     "//tools/doc_checker:doc_checker_bin.actual($host_toolchain)",
     "//tools/fidl/fidlc:fidl-format($host_toolchain)",
