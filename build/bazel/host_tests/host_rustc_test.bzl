@@ -10,6 +10,7 @@ load(":host_test_data.bzl", "host_test_data_files")
 def wrap_host_rustc_test(
         name,
         binary_name,
+        test_label = None,
         test_args = [],
         test_data = [],
         visibility = None):
@@ -22,6 +23,7 @@ def wrap_host_rustc_test(
     Args:
        name: (string) host_test() target name
        binary_name: (string) label to rustc_test() binary.
+       test_label: (Optional[string]) Optional test_label to pass to host_test(). Default to None.
        test_args: (list[string]) List of test arguments.
        test_data: (list[string]) List of labels to test's runtime requirements.
        visibility: (list[string]) Visibility of the final host_test() target.
@@ -60,6 +62,7 @@ def wrap_host_rustc_test(
     host_test(
         name = name,
         binary = wrapper_script,
+        test_label = test_label,
         test_args = test_args,
         data = test_data,
         target_compatible_with = HOST_CONSTRAINTS,
@@ -69,6 +72,7 @@ def wrap_host_rustc_test(
 def legacy_host_rustc_test(
         name,
         binary_name = "",
+        test_label = None,
         test_args = [],
         test_data = [],
         tags = [],
@@ -114,6 +118,7 @@ def legacy_host_rustc_test(
 
     wrap_host_rustc_test(
         name,
+        test_label = test_label,
         binary_name = binary_name,
         test_args = test_args,
         test_data = test_data,
@@ -123,14 +128,16 @@ def legacy_host_rustc_test(
 def _host_rustc_test_impl(
         name,
         visibility,
-        binary_name = "",
-        test_args = [],
-        test_data = [],
-        tags = [],
+        binary_name,
+        test_label,
+        test_args,
+        test_data,
+        tags,
         **kwargs):
     legacy_host_rustc_test(
         name = name,
         binary_name = binary_name,
+        test_label = test_label,
         test_args = test_args,
         test_data = test_data,
         tags = tags,
@@ -164,6 +171,7 @@ Accepts all rustc_test() attributes, plus `binary_name` and `test_xxx` ones.
     inherit_attrs = rustc_test,
     attrs = {
         "binary_name": attr.string(default = "", doc = "The name of the rustc_test target, defaults to 'name + \"_bin\"'."),
+        "test_label": attr.label(default = None, doc = "Optional override for the test_label passed to host_test()."),
         "test_args": attr.string_list(default = [], doc = "Arguments to pass to the test binary. Do not use `args`."),
         "test_data": attr.label_list(default = [], doc = "Data dependencies for the test target itself."),
     },

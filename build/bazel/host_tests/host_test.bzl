@@ -142,13 +142,15 @@ def _host_test_impl(ctx):
         for arg in ctx.attr.host_test_wrapper_generator_args
     ]
 
+    test_label = Label(ctx.attr.test_label) if ctx.attr.test_label else ctx.label
+
     generate_python_build_action(
         ctx = ctx,
         py_script = ctx.file._generate_host_test_wrapper,
         arguments = [
             "--entry-point={}".format(entry_point.path),
             "--entry-runfiles-manifest={}".format(binary_runfiles_manifest.path),
-            "--test-label={}".format(ctx.label),
+            "--test-label={}".format(test_label),
             "--output-launcher={}".format(launcher.path),
             "--output-runtime-dir={}".format(runtime_dir.path),
             "--output-test-runtime-deps-json={}".format(test_runtime_deps_json.path),
@@ -185,7 +187,7 @@ def _host_test_impl(ctx):
             executable = launcher,
         ),
         FuchsiaHostTestInfo(
-            test_label = ctx.label,
+            test_label = test_label,
             test_launcher = launcher,
             test_runtime_dir = runtime_dir.path,
             test_runtime_deps_json = test_runtime_deps_json,
@@ -236,6 +238,16 @@ host_test = rule(
                   "test target, as long as it doesn't have its own `args` attribute values.",
             mandatory = True,
             aspects = [collect_fuchsia_host_test_data_aspect],
+        ),
+        "test_label": attr.string(
+            doc = "The test label as it will appear in tests.json. This defaults to the current " +
+                  "target's label, and should only be overriden for specific edge cases, for " +
+                  "example if foo_test is an alias() target that uses select() to choose a " +
+                  "different test target based on the current build configuration. The aliased " +
+                  "targets should set test_label to 'foo_test' for readability and to avoid " +
+                  "breaking existing workflows. " +
+                  "IMPORTANT: This attribute must be a string to avoid dependency cycles. It " +
+                  "will always be expanded as a full label by the rule though.",
         ),
         "test_args": attr.string_list(
             doc = "Arguments to pass to the test binary. Do *not* use `args` for this purpose.",
