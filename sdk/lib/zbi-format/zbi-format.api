@@ -7,5 +7,6 @@
   "pkg/zbi-format/include/lib/zbi-format/memory.h": "44a8d1c6f183d98ac5a9b655a1a33a35",
   "pkg/zbi-format/include/lib/zbi-format/partition.h": "5a0e49f2d7c624fa4b98a32bf5697c44",
   "pkg/zbi-format/include/lib/zbi-format/reboot.h": "7070ddae12785120dcc27b3c0ce589bb",
+  "pkg/zbi-format/include/lib/zbi-format/secure-entropy.h": "9c72426eeeb8a4ea0cb9b396d6e9098f",
   "pkg/zbi-format/include/lib/zbi-format/zbi.h": "4e000f8974eda30eee9e4347a4348bca"
 }

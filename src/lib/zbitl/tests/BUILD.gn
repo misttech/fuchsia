@@ -193,7 +193,10 @@ cpp_fuzzer("copy-fuzzer") {
 # undefined identifier error, but cpp_fuzzer is a direct delegate to fuzzer.
 fuchsia_library_fuzzer("bootfs-iteration-fuzzer") {
   sources = [ "bootfs-iteration-fuzzer.cc" ]
-  deps = [ ".." ]
+  deps = [
+    "..",
+    "//sdk/lib/zbi-format:internal",
+  ]
 }
 
 cpp_fuzzer("view-iteration-fuzzer") {

@@ -13,7 +13,7 @@ executable("zbi") {
   sources = [ "zbi.cc" ]
   deps = [
     "//sdk/lib/stdcompat",
-    "//sdk/lib/zbi-format",
+    "//sdk/lib/zbi-format:internal",
     "//src/lib/zbitl",
     "//third_party/boringssl:crypto-static",
     "//third_party/rapidjson",

@@ -94,6 +94,7 @@ static_library("boot-shim") {
 
   deps = [
     "//sdk/lib/fit",
+    "//sdk/lib/zbi-format:internal",
     "//zircon/kernel/lib/acpi_lite",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/phys/efi:page-size",
@@ -197,7 +198,7 @@ if (!is_kernel) {
     deps = [
       ":boot-shim",
       ":boot-shim-test",
-      "//sdk/lib/zbi-format",
+      "//sdk/lib/zbi-format:internal",
       "//zircon/kernel/lib/acpi_lite",
       "//zircon/kernel/lib/devicetree/testing",
       "//zircon/kernel/phys/lib/memalloc",

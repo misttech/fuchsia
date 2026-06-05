@@ -54,6 +54,7 @@ kernel_elf_binary("userboot.executable") {
     ":ubsan-runtime",
     ":util",
     "//sdk/lib/ld:standalone",
+    "//sdk/lib/zbi-format:internal",
     "//src/lib/elfldltl",
     "//src/lib/elfldltl/test:static-pie",
     "//src/lib/zbitl",

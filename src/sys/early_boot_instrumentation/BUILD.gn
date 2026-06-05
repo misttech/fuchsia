@@ -28,7 +28,7 @@ source_set("coverage-source") {
     "//sdk/lib/stdcompat",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//sdk/lib/zbi-format",
+    "//sdk/lib/zbi-format:internal",
     "//src/lib/zbitl",
   ]
 }
@@ -59,7 +59,7 @@ test("coverage-source-test") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//sdk/lib/zbi-format",
+    "//sdk/lib/zbi-format:internal",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/zbitl",
     "//third_party/googletest:gmock",

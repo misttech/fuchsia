@@ -20,6 +20,9 @@ zx_library("zbitl") {
   ]
   deps = [
     ":internal.decompress-zstd",
+
+    # debugdata.cc includes lib/zbi-format/internal/debugdata.h
+    "//sdk/lib/zbi-format:internal",
     "//src/zircon/lib/zircon",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",

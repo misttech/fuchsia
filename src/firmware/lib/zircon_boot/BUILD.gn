@@ -23,6 +23,7 @@ common_vars = {
     "zircon_vboot.h",
   ]
   public_deps = [ "//sdk/lib/zbi-format" ]
+  deps = [ "//sdk/lib/zbi-format:internal" ]
 }
 
 # SDK library.
@@ -54,7 +55,7 @@ in_tree_vars = {
   # executable target or toolchain need to provide the implementation
   # accordingly.
   public_deps += [ "//third_party/android/platform/external/avb:lib" ]
-  deps = [ "//zircon/system/public" ]
+  deps += [ "//zircon/system/public" ]
 }
 
 # Default in-tree library.
