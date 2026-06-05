@@ -47,6 +47,7 @@ Directive keywords and their definitions are defined below. This sections serves
   * `URL` and `Revision`: This is the required option if it is a git repository.
   OR
   * `CPEPrefix` and `Version`
+
 This information gives vulnerability scanners enough information to accurately scan these dependencies.
 
 * For licensing purposes, each README.fuchsia needs to keep updated information on:
@@ -81,6 +82,7 @@ Common directive keywords include:
   ```
   URL: https://github.com/openssh/openssh-portable
   ```
+
   ```
   URL: https://chromium.googlesource.com/chromium/src/
   ```
@@ -153,7 +155,7 @@ Common directive keywords include:
 
 * `Version`
 
-  *(REQUIRED if using CPEPrefix for vuln scanning)* A searchable version number for the package (if the package does not version or is versioned by date or revision this field should be "N/A" and the revision, or date should be enumerated in the appropriate field). If the dependency is managed by an autoroller or a script, you must ensure the uprev process also updates the `README.fuchsia` file with the correct Version.
+  *(REQUIRED if using CPEPrefix for vuln scanning)* This is often a git tag. If not git, it should be a searchable version number for the package (if the package does not version or is versioned by date or revision this field should be "N/A" and the revision, or date should be enumerated in the appropriate field). If the dependency is managed by an autoroller or a script, you must ensure the uprev process also updates the `README.fuchsia` file with the correct Version.
 
   ```
   Version: 7.6
