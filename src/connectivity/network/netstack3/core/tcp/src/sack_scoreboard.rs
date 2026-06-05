@@ -100,7 +100,11 @@ impl SackScoreboard {
         let new = sack_blocks.iter_skip_invalid().fold(false, |new, sack_block| {
             // NB: SackBlock type here ensures this is a valid non-empty range.
             let (start, end) = sack_block.into_parts();
-            if start.before_or_eq(ack) || end.after(snd_nxt) {
+            // NB: Take care to check both `start` and `end` using "before"
+            // rather than "after". TCP Sequence Numbers have more values before
+            // them then they do after them (see the definition of `SeqNum`),
+            // so using `before` makes this check more conservative.
+            if start.before_or_eq(ack) || snd_nxt.before(end) {
                 // Ignore block that is not in the expected range [ack, snd_nxt].
                 return new;
             }
@@ -334,6 +338,8 @@ fn sacked_bytes_threshold(mss: EffectiveMss) -> u32 {
 
 #[cfg(test)]
 mod test {
+    use alloc::vec::Vec;
+    use assert_matches::assert_matches;
     use core::ops::Range;
     use netstack3_base::{Mss, MssSizeLimiters};
     use test_case::test_case;
@@ -717,5 +723,31 @@ mod test {
             assert_eq!(sb.first_unsacked_range_from(start), Some(expect_range.clone()));
             start = expect_range.end() + mss;
         }
+    }
+
+    // Verify that the SACK Scoreboard correctly ignores invalid sack blocks at
+    // the boundary of the sequence number space.
+    #[test_case((1 << 31) - 1; "two_pow_31_minus_1")]
+    #[test_case( 1 << 31; "two_pow_31")]
+    fn process_ack_ignores_wrapping_bad_block(boundary: u32) {
+        let mut sb = SackScoreboard::default();
+        let ack = SeqNum::new(5);
+        let snd_nxt = SeqNum::new(100);
+        let high_rxt = None;
+
+        let start = snd_nxt + 1;
+        let end = snd_nxt + boundary;
+
+        let is_duplicate_ack = sb.process_ack(
+            ack,
+            snd_nxt,
+            high_rxt,
+            &testutil::sack_blocks([u32::from(start)..u32::from(end)]),
+            TEST_MSS,
+        );
+        assert!(!is_duplicate_ack);
+
+        let blocks = sb.acked_ranges.iter().collect::<Vec<_>>();
+        assert_matches!(&blocks[..], &[], "expected SACK blocks to be empty");
     }
 }
