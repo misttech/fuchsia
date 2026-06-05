@@ -9,7 +9,6 @@ fidl_library(
     srcs = [
         "thermal.fidl",
     ],
-    enable_hlcpp = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.hardware.fan",

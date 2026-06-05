@@ -35,7 +35,6 @@ if (is_host) {
 
 fidl("fuchsia.hardware.thermal") {
   sources = [ "thermal.fidl" ]
-  enable_hlcpp = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.fan",

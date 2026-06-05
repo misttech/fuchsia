@@ -4,7 +4,7 @@
 
 #include "temperature_sensor.h"
 
-#include <fuchsia/hardware/thermal/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.thermal/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fdio/directory.h>
 #include <lib/zx/result.h>
@@ -29,23 +29,21 @@ namespace hwstress {
 
 class SystemTemperatureSensor : public TemperatureSensor {
  public:
-  explicit SystemTemperatureSensor(fuchsia::hardware::thermal::DeviceSyncPtr channel)
-      : channel_(std::move(channel)) {}
+  explicit SystemTemperatureSensor(fidl::ClientEnd<fuchsia_hardware_thermal::Device> client)
+      : client_(std::move(client)) {}
 
   // |TemperatureSensor| implementation.
   std::optional<double> ReadCelcius() override {
-    float value;
-    zx_status_t status2;
-    zx_status_t status = channel_->GetTemperatureCelsius(&status2, &value);
-    if (status != ZX_OK || status2 != ZX_OK) {
+    fidl::WireResult<fuchsia_hardware_thermal::Device::GetTemperatureCelsius> temperature =
+        client_->GetTemperatureCelsius();
+    if (!temperature.ok() || temperature.value().status != ZX_OK) {
       return std::nullopt;
     }
-
-    return value;
+    return temperature.value().temp;
   }
 
  private:
-  fuchsia::hardware::thermal::DeviceSyncPtr channel_;
+  fidl::WireSyncClient<fuchsia_hardware_thermal::Device> client_;
 };
 
 std::unique_ptr<TemperatureSensor> CreateSystemTemperatureSensor(std::string_view device_path) {
@@ -58,9 +56,8 @@ std::unique_ptr<TemperatureSensor> CreateSystemTemperatureSensor(std::string_vie
 }
 
 std::unique_ptr<TemperatureSensor> CreateSystemTemperatureSensor(zx::channel channel) {
-  fuchsia::hardware::thermal::DeviceSyncPtr device{};
-  device.Bind(std::move(channel));
-  return std::make_unique<SystemTemperatureSensor>(std::move(device));
+  fidl::ClientEnd<fuchsia_hardware_thermal::Device> client(std::move(channel));
+  return std::make_unique<SystemTemperatureSensor>(std::move(client));
 }
 
 class NullTemperatureSensor : public TemperatureSensor {

@@ -4,10 +4,11 @@
 
 #include "temperature_sensor.h"
 
-#include <fuchsia/hardware/thermal/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.thermal/cpp/wire.h>
+#include <fidl/fuchsia.hardware.thermal/cpp/wire_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/fidl/cpp/binding.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <stdio.h>
 #include <zircon/compiler.h>
 #include <zircon/status.h>
@@ -17,40 +18,23 @@
 
 #include <gtest/gtest.h>
 
-#include "testing_util.h"
-
 namespace hwstress {
 namespace {
 
-class FakeThermalServer : public fuchsia::hardware::thermal::Device {
+class FakeThermalServer : public fidl::testing::WireTestBase<fuchsia_hardware_thermal::Device> {
  public:
   explicit FakeThermalServer(float reported_temperature)
       : reported_temperature_(reported_temperature) {}
 
-  void GetTemperatureCelsius(
-      fuchsia::hardware::thermal::Device::GetTemperatureCelsiusCallback callback) override {
-    callback(ZX_OK, reported_temperature_);
+  void GetTemperatureCelsius(GetTemperatureCelsiusCompleter::Sync& completer) override {
+    completer.Reply(ZX_OK, reported_temperature_);
   }
 
-  void GetSensorName(fuchsia::hardware::thermal::Device::GetSensorNameCallback callback) override {}
-
-  // Implementation of |Device| methods we don't care about.
-  void GetInfo(GetInfoCallback callback) override {}
-  void GetDeviceInfo(GetDeviceInfoCallback callback) override {}
-  void GetDvfsInfo(fuchsia::hardware::thermal::PowerDomain power_domain,
-                   GetDvfsInfoCallback callback) override {}
-  void GetStateChangeEvent(GetStateChangeEventCallback callback) override {}
-  void GetStateChangePort(GetStateChangePortCallback callback) override {}
-  void SetTripCelsius(uint32_t id, float temp, SetTripCelsiusCallback callback) override {}
-  void GetDvfsOperatingPoint(fuchsia::hardware::thermal::PowerDomain power_domain,
-                             GetDvfsOperatingPointCallback callback) override {}
-  void SetDvfsOperatingPoint(uint16_t op_idx, fuchsia::hardware::thermal::PowerDomain power_domain,
-                             SetDvfsOperatingPointCallback callback) override {}
-  void GetFanLevel(GetFanLevelCallback callback) override {}
-  void SetFanLevel(uint32_t fan_level, SetFanLevelCallback callback) override {}
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
 
  private:
-  // Temperature to report back.
   float reported_temperature_;
 };
 
@@ -59,22 +43,26 @@ TEST(TemperatureSensor, NullSensor) {
 }
 
 TEST(TemperatureSensor, SystemTemperatureSensor) {
-  auto factory = std::make_unique<testing::LoopbackConnectionFactory>();
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_EQ(loop.StartThread("fake-thermal-server-thread"), ZX_OK);
 
   // Create a server that always reports a single, static value.
   FakeThermalServer server{42.0};
 
-  // Create a channel.
-  zx::channel client = factory->CreateChannelTo<fuchsia::hardware::thermal::Device>(&server);
+  // Create endpoints.
+  auto endpoints = fidl::Endpoints<fuchsia_hardware_thermal::Device>::Create();
+
+  // Bind the server.
+  fidl::BindServer(loop.dispatcher(), std::move(endpoints.server), &server);
 
   // Ensure we can read from the server.
-  auto sensor = CreateSystemTemperatureSensor(std::move(client));
+  auto sensor = CreateSystemTemperatureSensor(endpoints.client.TakeChannel());
   ASSERT_EQ(42.0, sensor->ReadCelcius());
   ASSERT_EQ(42.0, sensor->ReadCelcius());
   ASSERT_EQ(42.0, sensor->ReadCelcius());
 
-  // Close the connection. Ensure that we get nullopt results.
-  factory.reset();
+  // Close the server by shutting down the loop. Ensure that we get nullopt results.
+  loop.Shutdown();
   ASSERT_EQ(std::nullopt, sensor->ReadCelcius());
 }
 
