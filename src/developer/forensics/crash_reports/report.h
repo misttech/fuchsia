@@ -52,6 +52,9 @@ class Report {
 
   bool IsHourlyReport() const { return is_hourly_report_; }
 
+  // Whether the key is valid, i.e. doesn't contain disallowed characters.
+  static bool IsValidAttachmentKey(const std::string& key);
+
  private:
   ReportId id_;
   std::string program_shortname_;

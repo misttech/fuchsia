@@ -29,6 +29,11 @@ std::optional<SizedData> MakeAttachment(const fuchsia::mem::Buffer& buffer) {
   return data;
 }
 
+// Returns true iff every character in the string is a printable ASCII character.
+bool IsPrintableAscii(const std::string& str) {
+  return std::all_of(str.begin(), str.end(), [](char c) { return c >= 32 && c <= 126; });
+}
+
 }  // namespace
 
 fpromise::result<Report> Report::MakeReport(const ReportId report_id,
@@ -70,6 +75,18 @@ Report::Report(const ReportId report_id, const std::string& program_shortname,
       snapshot_uuid_(std::move(snapshot_uuid)),
       minidump_(std::move(minidump)),
       is_hourly_report_(is_hourly_report) {}
+
+bool Report::IsValidAttachmentKey(const std::string& key) {
+  if (key.empty() || key == "." || key == "..") {
+    return false;
+  }
+
+  if (key.find('/') != std::string::npos || key.find(' ') != std::string::npos) {
+    return false;
+  }
+
+  return IsPrintableAscii(key);
+}
 
 }  // namespace crash_reports
 }  // namespace forensics

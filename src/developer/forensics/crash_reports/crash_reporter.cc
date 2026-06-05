@@ -96,6 +96,20 @@ CrashReporter_FileReport_Result InternalResultsToFidl(const FilingResult result,
   return fpromise::ok(std::move(results));
 }
 
+std::optional<std::string> GetFirstInvalidAttachmentKey(const CrashReport& report) {
+  if (!report.has_attachments()) {
+    return std::nullopt;
+  }
+
+  for (const ::fuchsia::feedback::Attachment& attachment : report.attachments()) {
+    if (!Report::IsValidAttachmentKey(attachment.key)) {
+      return attachment.key;
+    }
+  }
+
+  return std::nullopt;
+}
+
 }  // namespace
 
 CrashReporter::CrashReporter(
@@ -178,6 +192,14 @@ void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReport
 
   if (report.has_weight() && report.weight() == 0) {
     FX_LOGS(ERROR) << "Input report has invalid weight of 0. Won't file.";
+    callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
+    info_.LogCrashState(cobalt::CrashState::kDropped);
+    return;
+  }
+
+  if (const std::optional<std::string> invalid_key = GetFirstInvalidAttachmentKey(report);
+      invalid_key.has_value()) {
+    FX_LOGS(ERROR) << "Attachment key '" << *invalid_key << "' is invalid. Won't file.";
     callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
     info_.LogCrashState(cobalt::CrashState::kDropped);
     return;

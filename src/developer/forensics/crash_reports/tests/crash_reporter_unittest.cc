@@ -738,6 +738,96 @@ TEST_F(CrashReporterTest, FailOnInvalidInputZeroWeight) {
   EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
 }
 
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyIsEmpty) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment("", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyContainsSlash) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment("my/attachment.key", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyContainsSpace) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment("my attachment.key", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyContainsNonPrintableAscii) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment(std::string("key\0with_null", 13), "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyIsDot) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment(".", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyIsDotDot) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment("..", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
 TEST_F(CrashReporterTest, Succeed_OnInputCrashReportWithIsFatalTrue) {
   SetUpDataProviderServer(
       std::make_unique<stubs::DataProvider>(kFeedbackAnnotations, kDefaultAttachmentBundleKey));
