@@ -89,7 +89,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:780
+From //build/config/BUILDCONFIG.gn:782
 
 ### allowed_test_device_types
 
@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:222
+From //build/bazel/bazel_root_targets_list.gni:226
 
 ### bazel_upload_build_events
 
@@ -1011,7 +1011,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1685,7 +1685,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-fuchsia/libclang_rt.lsan.a"
@@ -2224,6 +2224,9 @@ From //build/config/compiler.gni:82
   install_host_tool = true
 }, {
   bazel_label = "//tools/jq5:jq5"
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/rust_extract"
   install_host_tool = true
 }, {
   bazel_label = "//tools/check-licenses:tests"
@@ -4332,7 +4335,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:538
+From //build/config/BUILDCONFIG.gn:540
 
 ### fastboot_product
 
@@ -5423,10 +5426,10 @@ Each element of the list is one variant, which is a scope defining:
   toolchain_args = { }
 }, {
   configs = ["//build/config/lto", "//build/config/sanitizers:cfi"]
-  tags = ["lto", "custom-runtime"]
+  tags = ["lto", "custom-runtime", "cfi"]
 }, {
   configs = ["//build/config/lto:thinlto", "//build/config/sanitizers:cfi"]
-  tags = ["lto", "custom-runtime"]
+  tags = ["lto", "custom-runtime", "cfi"]
 }, {
   configs = ["//build/config/sanitizers:asan", "//build/config:no-safe-stack", "//build/config/sanitizers:sancov"]
   host_only = {
@@ -9148,7 +9151,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:770
+From //build/config/BUILDCONFIG.gn:772
 
 ### select_variant_canonical
 
@@ -9158,7 +9161,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:775
+From //build/config/BUILDCONFIG.gn:777
 
 ### select_variant_shortcuts
 
@@ -9235,7 +9238,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:545
+From //build/config/BUILDCONFIG.gn:547
 
 ### skip_buildtools_check
 
@@ -9619,7 +9622,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:957
+From //build/config/BUILDCONFIG.gn:959
 
 ### truncate_build_info_commit_date
 
@@ -10191,7 +10194,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:974
+From //build/config/BUILDCONFIG.gn:976
 
 ### zircon_tracelog
 
