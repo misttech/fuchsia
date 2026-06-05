@@ -17,8 +17,8 @@ use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
     FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
     FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    LookupVec, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
-    fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl,
+    default_seek, fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
@@ -228,16 +228,22 @@ impl FileSystemOps for RemoteFs {
         _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        renamed: &FsNodeHandle,
-        replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
-        // Renames should fail if the src or target directory is encrypted and locked.
-        old_parent.fail_if_locked(current_task)?;
-        new_parent.fail_if_locked(current_task)?;
+        let renamed = &context.renamed.node;
+        let replaced = context.replaced.map(|r| &r.node);
+        let old_parent = &context.old_parent().node;
+        let new_parent = &context.new_parent().node;
+        let old_parent_info = context.old_parent_info();
+        let new_parent_info = context.new_parent_info();
+        // Renames should fail if the src or target directory is
+        // encrypted and locked.
+        old_parent.fail_if_locked(current_task, old_parent_info)?;
+        if let Some(info) = new_parent_info {
+            new_parent.fail_if_locked(current_task, info)?;
+        }
 
         let Some((old_parent_ops, new_parent_ops)) =
             old_parent.downcast_ops::<RemoteNode>().zip(new_parent.downcast_ops::<RemoteNode>())
@@ -1072,7 +1078,7 @@ impl FsNodeOps for RemoteNode {
         }
 
         // Locked encrypted files cannot be opened.
-        node.fail_if_locked(current_task)?;
+        node.fail_if_locked(current_task, &node.info())?;
 
         // fsverity files cannot be opened in write mode, including while building.
         if flags.can_write() {
@@ -1096,7 +1102,7 @@ impl FsNodeOps for RemoteNode {
         dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.fail_if_locked(current_task)?;
+        node.fail_if_locked(current_task, &node.info())?;
         let name = get_name_str(name)?;
 
         let fs = node.fs();
@@ -1144,7 +1150,7 @@ impl FsNodeOps for RemoteNode {
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.fail_if_locked(current_task)?;
+        node.fail_if_locked(current_task, &node.info())?;
         let name = get_name_str(name)?;
 
         let fs = node.fs();
@@ -1262,7 +1268,7 @@ impl FsNodeOps for RemoteNode {
         current_task: &CurrentTask,
         length: u64,
     ) -> Result<(), Errno> {
-        node.fail_if_locked(current_task)?;
+        node.fail_if_locked(current_task, &node.info())?;
 
         let _guard = self.node.info_state.dirty_op_guard(true);
 
@@ -1281,7 +1287,7 @@ impl FsNodeOps for RemoteNode {
     ) -> Result<(), Errno> {
         match mode {
             FallocMode::Allocate { keep_size: false } => {
-                node.fail_if_locked(current_task)?;
+                node.fail_if_locked(current_task, &node.info())?;
 
                 will_dirty(&[&self.node], || {
                     self.node
@@ -1347,7 +1353,7 @@ impl FsNodeOps for RemoteNode {
         target: &FsStr,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.fail_if_locked(current_task)?;
+        node.fail_if_locked(current_task, &node.info())?;
 
         let name = get_name_str(name)?;
         let io = will_dirty(&[&self.node], || {

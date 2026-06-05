@@ -6,7 +6,7 @@ use crate::fs::fuchsia::RemoteFs;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
-    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeHandle, FsStr,
+    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr, RenameContext,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
@@ -61,24 +61,11 @@ impl FileSystemOps for RemoteVolume {
         locked: &mut Locked<FileOpsCore>,
         fs: &FileSystem,
         current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        renamed: &FsNodeHandle,
-        replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
-        self.remotefs.rename(
-            locked,
-            fs,
-            current_task,
-            old_parent,
-            old_name,
-            new_parent,
-            new_name,
-            renamed,
-            replaced,
-        )
+        self.remotefs.rename(locked, fs, current_task, context, old_name, new_name)
     }
 
     fn unmount(&self) {

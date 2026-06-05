@@ -23,9 +23,9 @@ use starnix_core::vfs::{
     DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode,
-    PeekBufferSegmentsCallback, SeekTarget, SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp,
-    default_eof_offset, default_fcntl, default_ioctl, default_seek, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly,
+    PeekBufferSegmentsCallback, RenameContext, SeekTarget, SymlinkTarget, ValueOrSize,
+    WeakFileHandle, XattrOp, default_eof_offset, default_fcntl, default_ioctl, default_seek,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly,
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
@@ -304,13 +304,12 @@ impl FileSystemOps for FuseFs {
         locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        _renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
+        let old_parent = &context.old_parent().node;
+        let new_parent = &context.new_parent().node;
         self.connection.lock().execute_operation(
             locked,
             current_task,
@@ -405,12 +404,9 @@ impl FileSystemOps for FuseCtlFs {
         _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        _old_parent: &FsNodeHandle,
+        _context: &mut RenameContext<'_>,
         _old_name: &FsStr,
-        _new_parent: &FsNodeHandle,
         _new_name: &FsStr,
-        _renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
         error!(ENOTSUP)
     }

@@ -8,7 +8,7 @@ use crate::vfs::fs_args::MountParams;
 use crate::vfs::fs_node_cache::FsNodeCache;
 use crate::vfs::{
     DirEntry, DirEntryHandle, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
-    FsString,
+    FsString, RenameContext,
 };
 use flyweights::FlyByteStr;
 use linked_hash_map::LinkedHashMap;
@@ -376,43 +376,27 @@ impl FileSystem {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        renamed: &FsNodeHandle,
-        replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let locked = locked.cast_locked::<FileOpsCore>();
-        self.ops.rename(
-            locked,
-            self,
-            current_task,
-            old_parent,
-            old_name,
-            new_parent,
-            new_name,
-            renamed,
-            replaced,
-        )
+        self.ops.rename(locked, self, current_task, context, old_name, new_name)
     }
 
-    /// Exchanges `node1` and `node2`. Parent directory node and the corresponding names
-    /// for the two exchanged nodes are passed as `parent1`, `name1`, `parent2`, `name2`.
+    /// Exchanges the two nodes identified by `name1` and `name2` in the context.
+    /// The parent directories and other metadata are contained within the `context`.
     pub fn exchange(
         &self,
         current_task: &CurrentTask,
-        node1: &FsNodeHandle,
-        parent1: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         name1: &FsStr,
-        node2: &FsNodeHandle,
-        parent2: &FsNodeHandle,
         name2: &FsStr,
     ) -> Result<(), Errno> {
-        self.ops.exchange(self, current_task, node1, parent1, name1, node2, parent2, name2)
+        self.ops.exchange(self, current_task, context, name1, name2)
     }
 
     /// Forces a FileSystem unmount.
@@ -606,25 +590,25 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
         _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        _old_parent: &FsNodeHandle,
+        _context: &mut RenameContext<'_>,
         _old_name: &FsStr,
-        _new_parent: &FsNodeHandle,
         _new_name: &FsStr,
-        _renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
         error!(EROFS)
     }
 
+    /// Exchanges the two nodes identified by `name1` and `name2` in the context.
+    ///
+    /// Semantically, this is an atomic exchange of two paths (similar to two
+    /// renames, one in each direction). It uses `RenameContext` because the
+    /// locking requirements and metadata needed (parent directories, node info)
+    /// are identical to a rename operation involving two paths.
     fn exchange(
         &self,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        _node1: &FsNodeHandle,
-        _parent1: &FsNodeHandle,
+        _context: &mut RenameContext<'_>,
         _name1: &FsStr,
-        _node2: &FsNodeHandle,
-        _parent2: &FsNodeHandle,
         _name2: &FsStr,
     ) -> Result<(), Errno> {
         error!(EINVAL)

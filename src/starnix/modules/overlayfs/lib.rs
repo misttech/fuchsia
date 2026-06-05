@@ -18,7 +18,7 @@ use starnix_core::vfs::{
     DirectoryEntryType, DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, MountInfo, OutputBuffer,
-    RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer,
+    RenameContext, RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer,
     VecOutputBuffer, XattrOp, default_seek, emit_dotdot, fileops_impl_directory,
     fileops_impl_noop_sync, fileops_impl_seekable,
 };
@@ -1542,13 +1542,13 @@ impl FileSystemOps for OverlayFs {
         locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
+        let old_parent = &context.old_parent().node;
+        let new_parent = &context.new_parent().node;
+        let renamed = &context.renamed.node;
         current_task.override_creds(self.stack.mounter.clone(), || {
             let renamed_overlay = OverlayNode::from_fs_node(renamed)?;
             if renamed_overlay.has_lower() && renamed_overlay.main_entry().entry().node.is_dir() {

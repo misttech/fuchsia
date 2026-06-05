@@ -9,7 +9,7 @@ use crate::vfs::memory_directory::MemoryDirectoryFile;
 use crate::vfs::{
     CacheMode, DirEntry, DirEntryHandle, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
     FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    MemoryRegularNode, MemoryXattrStorage, SymlinkNode, XattrStorage as _, fs_args,
+    MemoryRegularNode, MemoryXattrStorage, RenameContext, SymlinkNode, XattrStorage as _, fs_args,
     fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{log_warn, track_stub};
@@ -52,12 +52,9 @@ impl FileSystemOps for Arc<TmpFs> {
         _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        old_parent: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         _old_name: &FsStr,
-        new_parent: &FsNodeHandle,
         _new_name: &FsStr,
-        renamed: &FsNodeHandle,
-        replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
         fn child_count(node: &FsNodeHandle) -> &AtomicU32 {
             // The following cast are safe, unless something is seriously wrong:
@@ -66,33 +63,48 @@ impl FileSystemOps for Arc<TmpFs> {
             // - TmpFsDirectory is the ops for directories in this filesystem.
             &node.downcast_ops::<TmpFsDirectory>().unwrap().child_count
         }
+        let replaced = context.replaced.map(|r| &r.node);
+        let renamed_is_dir = context.renamed_is_dir();
+        let replaced_is_dir = context.replaced_is_dir();
+
         if let Some(replaced) = replaced {
-            if replaced.is_dir() {
+            if replaced_is_dir {
                 // Ensures that replaces is empty.
                 if child_count(replaced).load(Ordering::Acquire) != 0 {
                     return error!(ENOTEMPTY);
                 }
             }
         }
-        child_count(old_parent).fetch_sub(1, Ordering::Release);
-        child_count(new_parent).fetch_add(1, Ordering::Release);
-        if renamed.is_dir() {
-            old_parent.update_info(|info| {
-                info.link_count -= 1;
-            });
-            new_parent.update_info(|info| {
-                info.link_count += 1;
-            });
-        }
-        // Fix the wrong changes to new_parent due to the fact that the target element has
-        // been replaced instead of added.
-        if let Some(replaced) = replaced {
-            if replaced.is_dir() {
-                new_parent.update_info(|info| {
-                    info.link_count -= 1;
-                });
+
+        // Update child counts before borrowing parent_infos_mut to
+        // avoid borrow checker issues with context methods.
+        {
+            let old_parent = &context.old_parent().node;
+            let new_parent = &context.new_parent().node;
+            if !Arc::ptr_eq(old_parent, new_parent) {
+                child_count(new_parent).fetch_add(1, Ordering::Release);
+                child_count(old_parent).fetch_sub(1, Ordering::Release);
             }
-            child_count(new_parent).fetch_sub(1, Ordering::Release);
+            if replaced.is_some() {
+                child_count(new_parent).fetch_sub(1, Ordering::Release);
+            }
+        }
+
+        let (old_parent_info, mut new_parent_info) = context.parent_infos_mut();
+        if renamed_is_dir {
+            if let Some(new_info) = new_parent_info.as_deref_mut() {
+                new_info.link_count += 1;
+                old_parent_info.link_count -= 1;
+            }
+        }
+        // Fix the wrong changes to new_parent due to the fact that the
+        // target element has been replaced instead of added.
+        if replaced_is_dir {
+            if let Some(new_info) = new_parent_info.as_deref_mut() {
+                new_info.link_count -= 1;
+            } else {
+                old_parent_info.link_count -= 1;
+            }
         }
         Ok(())
     }
@@ -101,29 +113,23 @@ impl FileSystemOps for Arc<TmpFs> {
         &self,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        node1: &FsNodeHandle,
-        parent1: &FsNodeHandle,
+        context: &mut RenameContext<'_>,
         _name1: &FsStr,
-        node2: &FsNodeHandle,
-        parent2: &FsNodeHandle,
         _name2: &FsStr,
     ) -> Result<(), Errno> {
-        if node1.is_dir() {
-            parent1.update_info(|info| {
-                info.link_count -= 1;
-            });
-            parent2.update_info(|info| {
-                info.link_count += 1;
-            });
-        }
-
-        if node2.is_dir() {
-            parent1.update_info(|info| {
-                info.link_count += 1;
-            });
-            parent2.update_info(|info| {
-                info.link_count -= 1;
-            });
+        let is_dir1 = context.renamed_is_dir();
+        let is_dir2 = context.replaced_is_dir();
+        let (parent1_info, mut parent2_info) = context.parent_infos_mut();
+        if let Some(parent2_info) = parent2_info.as_deref_mut() {
+            if is_dir1 != is_dir2 {
+                if is_dir1 {
+                    parent1_info.link_count -= 1;
+                    parent2_info.link_count += 1;
+                } else {
+                    parent1_info.link_count += 1;
+                    parent2_info.link_count -= 1;
+                }
+            }
         }
 
         Ok(())

@@ -17,7 +17,7 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     CacheMode, CheckAccessReason, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
-    MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, XattrStorage as _,
+    MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, RenameContext, XattrStorage as _,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
     fs_node_impl_xattr_delegate,
 };
@@ -335,12 +335,9 @@ impl FileSystemOps for BpfFs {
         _locked: &mut Locked<FileOpsCore>,
         _fs: &FileSystem,
         _current_task: &CurrentTask,
-        _old_parent: &FsNodeHandle,
+        _context: &mut RenameContext<'_>,
         _old_name: &FsStr,
-        _new_parent: &FsNodeHandle,
         _new_name: &FsStr,
-        _renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
         Ok(())
     }

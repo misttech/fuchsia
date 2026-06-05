@@ -29,7 +29,7 @@ use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
     BeforeFsNodeAppend, DynamicLockDepRwLock, FileOpsCore, FsNodeAppend, FsNodeInfoLevel,
     FsNodeInfoRecursiveLevel, FuseFsNodeInfoLevel, LockDepReadGuard, LockEqualOrBefore, Locked,
-    Mutex, Unlocked,
+    Mutex, Unlocked, allow_subclass,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
@@ -1297,8 +1297,11 @@ impl FsNode {
     /// Returns an error if this node is encrypted and locked. Does not require
     /// fetch_and_refresh_info because FS_IOC_SET_ENCRYPTION_POLICY updates info and once a node is
     /// encrypted, it remains encrypted forever.
-    pub fn fail_if_locked(&self, _current_task: &CurrentTask) -> Result<(), Errno> {
-        let node_info = self.info();
+    pub fn fail_if_locked(
+        &self,
+        _current_task: &CurrentTask,
+        node_info: &FsNodeInfo,
+    ) -> Result<(), Errno> {
         if let Some(wrapping_key_id) = node_info.wrapping_key_id {
             let crypt_service = self.fs().crypt_service().ok_or_else(|| errno!(ENOKEY))?;
             if !crypt_service.contains_key(EncryptionKeyId::from(wrapping_key_id)) {
@@ -1757,7 +1760,14 @@ impl FsNode {
             CheckAccessReason::InternalPermissionChecks,
             security::Auditable::Name(name),
         )?;
-        self.check_sticky_bit(current_task, child)?;
+        {
+            let parent_info = self.info();
+            // Safe because we acquire the parent directory lock first, and then the child lock
+            // inside check_sticky_bit. This parent -> child acquisition follows the
+            // hierarchical lock ordering.
+            let _token = allow_subclass();
+            self.check_sticky_bit(current_task, child, &parent_info)?;
+        }
         if child.is_dir() {
             security::check_fs_node_rmdir_access(current_task, self, child, name)?;
         } else {
@@ -2042,8 +2052,9 @@ impl FsNode {
         &self,
         current_task: &CurrentTask,
         child: &FsNodeHandle,
+        info: &FsNodeInfo,
     ) -> Result<(), Errno> {
-        if self.info().mode.contains(FileMode::ISVTX)
+        if info.mode.contains(FileMode::ISVTX)
             && child.info().uid != current_task.current_creds().fsuid
         {
             security::check_task_capable(current_task, CAP_FOWNER)?;
@@ -2580,6 +2591,14 @@ impl FsNode {
     /// Returns current `FsNodeInfo`.
     pub fn info(&self) -> LockDepReadGuard<'_, FsNodeInfo> {
         self.info.read()
+    }
+
+    /// Returns a reference to the `info` lock itself.
+    ///
+    /// This should ONLY be used by `RenameGuard` to perform ordered write locking on independent
+    /// nodes.
+    pub(super) fn info_lock(&self) -> &DynamicLockDepRwLock<FsNodeInfo> {
+        &self.info
     }
 
     /// Refreshes the `FsNodeInfo` if necessary and returns a read guard.

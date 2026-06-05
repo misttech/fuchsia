@@ -21,7 +21,7 @@ use starnix_uapi::errors::{ENOENT, Errno};
 use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{NAME_MAX, RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT, errno, error};
+use starnix_uapi::{NAME_MAX, RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT, error};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
@@ -740,21 +740,6 @@ impl DirEntry {
             // trying to acquire these locks.
             let _lock = fs.rename_mutex.lock();
 
-            // Compute the list of ancestors of new_parent to check whether new_parent is a
-            // descendant of the renamed node. This must be computed before taking any lock to
-            // prevent lock inversions.
-            //
-            // TODO: This walk is now lock-free, which means we don't need to materialize this
-            // list. We can just walk the tree and check for cycles.
-            let mut new_parent_ancestor_list = Vec::<DirEntryHandle>::new();
-            {
-                let mut current = Some(new_parent.clone());
-                while let Some(entry) = current {
-                    current = entry.parent();
-                    new_parent_ancestor_list.push(entry);
-                }
-            }
-
             // We cannot simply grab the locks on old_parent and new_parent
             // independently because old_parent and new_parent might be the
             // same directory entry. Instead, we use the RenameGuard helper to
@@ -763,16 +748,64 @@ impl DirEntry {
 
             // Now that we know the old_parent child list cannot change, we
             // establish the DirEntry that we are going to try to rename.
-            renamed =
-                state.old_parent().component_lookup(locked, current_task, mount, old_basename)?;
+            renamed = state.old_parent_children().component_lookup(
+                locked,
+                current_task,
+                mount,
+                old_basename,
+            )?;
+
+            // We need to check if there is already a DirEntry with
+            // new_basename in new_parent. If so, there are additional checks
+            // we need to perform.
+            // This must be done BEFORE locking info to avoid self-deadlock.
+            let lookup_replaced = state.new_parent_children().component_lookup(
+                locked,
+                current_task,
+                mount,
+                new_basename,
+            );
+
+            // If the target entry is an ancestor of the source parent, the
+            // rename would create a cycle (for EXCHANGE) or attempt to
+            // overwrite a non-empty directory.
+            // We check this before acquiring child locks to avoid
+            // deadlocks from bottom-up locking (locking ancestor after
+            // descendant).
+            // This is done early (before parent locks) as a fail-fast
+            // optimization since we already have the lookup result.
+            if let Ok(replaced) = &lookup_replaced {
+                if old_parent.is_descendant_of(replaced) {
+                    if flags.contains(RenameFlags::EXCHANGE) {
+                        return error!(EINVAL);
+                    } else {
+                        return error!(ENOTEMPTY);
+                    }
+                }
+            }
+
+            // Lock the info for the parents to ensure that subsequent checks on their
+            // state (e.g., sticky bit checks) and the actual rename operation are not racy.
+            let mut state =
+                state.lock_info(old_parent, new_parent, &renamed, lookup_replaced.as_ref().ok());
 
             // Check whether the sticky bit on the old parent prevents us from
             // removing this child.
-            old_parent.node.check_sticky_bit(current_task, &renamed.node)?;
+            {
+                // Safe because the parent is locked first, and then we check the
+                // sticky bit of the child. This parent -> child acquisition follows
+                // the hierarchical lock ordering.
+                let _token = allow_subclass();
+                old_parent.node.check_sticky_bit(
+                    current_task,
+                    &renamed.node,
+                    state.old_parent_info(),
+                )?;
+            }
 
             // If new_parent is a descendant of renamed, the operation would
             // create a cycle. That's disallowed.
-            if new_parent_ancestor_list.into_iter().any(|entry| Arc::ptr_eq(&entry, &renamed)) {
+            if new_parent.is_descendant_of(&renamed) {
                 return error!(EINVAL);
             }
 
@@ -782,13 +815,14 @@ impl DirEntry {
             //       while this function is executing.
             renamed.require_no_mounts(mount)?;
 
-            // We need to check if there is already a DirEntry with
-            // new_basename in new_parent. If so, there are additional checks
-            // we need to perform.
-            match state.new_parent().component_lookup(locked, current_task, mount, new_basename) {
+            // We lookup the replaced entry before locking info to avoid deadlock, but we match
+            // on the result here under the parent info locks. This ensures that checks on the
+            // replaced entry (e.g., existence, directory status, identity) are consistent and
+            // do not race with concurrent operations.
+            match &lookup_replaced {
                 Ok(replaced) => {
                     // Set `maybe_replaced` now to ensure it gets dropped in the right order.
-                    let replaced = maybe_replaced.insert(replaced);
+                    let replaced = maybe_replaced.insert(replaced.clone());
 
                     if flags.contains(RenameFlags::NOREPLACE) {
                         return error!(EEXIST);
@@ -807,7 +841,7 @@ impl DirEntry {
                     //
                     // "oldpath can specify a directory.  In this case, newpath must"
                     // either not exist, or it must specify an empty directory."
-                    if replaced.node.is_dir() {
+                    if state.replaced_is_dir() {
                         // Check whether the replaced entry is a mountpoint.
                         // TODO: We should hold a read lock on the mount points for this
                         //       namespace to prevent the child from becoming a mount point
@@ -816,17 +850,23 @@ impl DirEntry {
                     }
 
                     if !flags.intersects(RenameFlags::EXCHANGE | RenameFlags::REPLACE_ANY) {
-                        if renamed.node.is_dir() && !replaced.node.is_dir() {
+                        let renamed_is_dir = state.renamed_is_dir();
+                        let replaced_is_dir = state.replaced_is_dir();
+                        if renamed_is_dir && !replaced_is_dir {
                             return error!(ENOTDIR);
-                        } else if !renamed.node.is_dir() && replaced.node.is_dir() {
+                        } else if !renamed_is_dir && replaced_is_dir {
                             return error!(EISDIR);
                         }
                     }
                 }
                 // It's fine for the lookup to fail to find a child.
-                Err(errno) if errno == ENOENT => {}
+                Err(errno) if *errno == ENOENT => {
+                    if flags.contains(RenameFlags::EXCHANGE) {
+                        return error!(ENOENT);
+                    }
+                }
                 // However, other errors are fatal.
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.clone()),
             }
 
             security::check_fs_node_rename_access(
@@ -846,27 +886,9 @@ impl DirEntry {
             // consistent state.
 
             if flags.contains(RenameFlags::EXCHANGE) {
-                let replaced = maybe_replaced.as_ref().ok_or_else(|| errno!(ENOENT))?;
-                fs.exchange(
-                    current_task,
-                    &renamed.node,
-                    &old_parent.node,
-                    old_basename,
-                    &replaced.node,
-                    &new_parent.node,
-                    new_basename,
-                )?;
+                fs.exchange(current_task, &mut state, old_basename, new_basename)?;
             } else {
-                fs.rename(
-                    locked,
-                    current_task,
-                    &old_parent.node,
-                    old_basename,
-                    &new_parent.node,
-                    new_basename,
-                    &renamed.node,
-                    maybe_replaced.as_ref().map(|replaced| &replaced.node),
-                )?;
+                fs.rename(locked, current_task, &mut state, old_basename, new_basename)?;
             }
 
             // We need to update the parent and local name for the DirEntry
@@ -877,13 +899,17 @@ impl DirEntry {
             // Actually add the renamed child to the new_parent's child list.
             // This operation implicitly removes the replaced child (if any)
             // from the child list.
-            state.new_parent().children.insert(new_basename.into(), Arc::downgrade(&renamed));
+            state
+                .new_parent_children()
+                .children
+                .insert(new_basename.into(), Arc::downgrade(&renamed));
 
             #[cfg(detect_lock_cycles)]
             unsafe {
                 // Lock ordering is enforced from parent-to-child, and therefore we need to
                 // reset the lock ordering constraints when we reorder the tree nodes.
                 util::reset_dependencies(renamed.children.raw());
+                util::reset_dependencies(renamed.node.info.raw());
             }
 
             if flags.contains(RenameFlags::EXCHANGE) {
@@ -892,17 +918,21 @@ impl DirEntry {
                     maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
                 replaced.set_parent(old_parent.clone());
                 replaced.local_name.update(old_basename.to_owned());
-                state.old_parent().children.insert(old_basename.into(), Arc::downgrade(replaced));
+                state
+                    .old_parent_children()
+                    .children
+                    .insert(old_basename.into(), Arc::downgrade(replaced));
 
                 #[cfg(detect_lock_cycles)]
                 unsafe {
                     // Lock ordering is enforced from parent-to-child, and therefore we need to
                     // reset the lock ordering constraints when we reorder the tree nodes.
                     util::reset_dependencies(replaced.children.raw());
+                    util::reset_dependencies(replaced.node.info.raw());
                 }
             } else {
                 // Remove the renamed child from the old_parent's child list.
-                state.old_parent().children.remove(old_basename);
+                state.old_parent_children().children.remove(old_basename);
             }
         };
 
@@ -982,7 +1012,7 @@ impl DirEntry {
         let child = self.children.read().get(name).and_then(Weak::upgrade);
         let (child, create_result) = if let Some(child) = child {
             // Do not cache a child in a locked directory
-            if self.node.fail_if_locked(current_task).is_ok() {
+            if self.node.fail_if_locked(current_task, &self.node.info()).is_ok() {
                 child.node.fs().did_access_dir_entry(&child);
             }
             (child, CreationResult::Existed { create_fn })
@@ -1222,7 +1252,7 @@ impl<'a> DirEntryLockedChildren<'a> {
             Entry::Vacant(entry) => {
                 let (child, create_result) = create_child(locked, create_fn)?;
                 // Do not cache a child in a locked directory
-                if self.entry.node.fail_if_locked(current_task).is_ok() {
+                if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
                     entry.insert(Arc::downgrade(&child));
                 }
                 (child, create_result)
@@ -1233,14 +1263,15 @@ impl<'a> DirEntryLockedChildren<'a> {
                 // populated this entry while we were not holding any locks.
                 if let Some(child) = Weak::upgrade(entry.get()) {
                     // Do not cache a child in a locked directory
-                    if self.entry.node.fail_if_locked(current_task).is_ok() {
+                    if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok()
+                    {
                         child.node.fs().did_access_dir_entry(&child);
                     }
                     return Ok((child, CreationResult::Existed { create_fn }));
                 }
                 let (child, create_result) = create_child(locked, create_fn)?;
                 // Do not cache a child in a locked directory
-                if self.entry.node.fail_if_locked(current_task).is_ok() {
+                if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
                     entry.insert(Arc::downgrade(&child));
                 }
                 (child, create_result)
@@ -1270,45 +1301,226 @@ impl fmt::Debug for DirEntry {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum RenameRelationship {
+    Same,
+    NewIsDescendant,
+    OldIsDescendant,
+    Independent,
+}
+
 struct RenameGuard<'a> {
     old_parent_guard: DirEntryLockedChildren<'a>,
     new_parent_guard: Option<DirEntryLockedChildren<'a>>,
+    relationship: RenameRelationship,
 }
 
 impl<'a> RenameGuard<'a> {
     fn lock(old_parent: &'a DirEntryHandle, new_parent: &'a DirEntryHandle) -> Self {
         if Arc::ptr_eq(old_parent, new_parent) {
-            Self { old_parent_guard: old_parent.lock_children(), new_parent_guard: None }
+            let old_parent_guard = old_parent.lock_children();
+            Self {
+                old_parent_guard,
+                new_parent_guard: None,
+                relationship: RenameRelationship::Same,
+            }
+        } else if new_parent.is_descendant_of(old_parent) {
+            let old_parent_guard = old_parent.lock_children();
+            let _token = allow_subclass();
+            let new_parent_guard = new_parent.lock_children();
+            Self {
+                old_parent_guard,
+                new_parent_guard: Some(new_parent_guard),
+                relationship: RenameRelationship::NewIsDescendant,
+            }
+        } else if old_parent.is_descendant_of(new_parent) {
+            let new_parent_guard = new_parent.lock_children();
+            let _token = allow_subclass();
+            let old_parent_guard = old_parent.lock_children();
+            Self {
+                old_parent_guard,
+                new_parent_guard: Some(new_parent_guard),
+                relationship: RenameRelationship::OldIsDescendant,
+            }
         } else {
-            // Following gVisor, these locks are taken in ancestor-to-descendant order.
-            // Moreover, if the node are not comparable, they are taken from smallest inode to
-            // biggest.
-            if new_parent.is_descendant_of(old_parent)
-                || (!old_parent.is_descendant_of(new_parent)
-                    && old_parent.node.node_key() < new_parent.node.node_key())
-            {
-                let old_parent_guard = old_parent.lock_children();
-                let _token = allow_subclass();
-                let new_parent_guard = new_parent.lock_children();
-                Self { old_parent_guard, new_parent_guard: Some(new_parent_guard) }
-            } else {
-                let new_parent_guard = new_parent.lock_children();
-                let _token = allow_subclass();
-                let old_parent_guard = old_parent.lock_children();
-                Self { old_parent_guard, new_parent_guard: Some(new_parent_guard) }
+            // Independent directories can be locked in address order.
+            let (g1, g2) =
+                starnix_sync::ordered_write_lock(&old_parent.children, &new_parent.children);
+            let old_parent_guard = DirEntryLockedChildren { entry: old_parent, children: g1 };
+            let new_parent_guard = DirEntryLockedChildren { entry: new_parent, children: g2 };
+            Self {
+                old_parent_guard,
+                new_parent_guard: Some(new_parent_guard),
+                relationship: RenameRelationship::Independent,
             }
         }
     }
 
-    fn old_parent(&mut self) -> &mut DirEntryLockedChildren<'a> {
+    /// Consumes the `RenameGuard` (which only holds children locks) and locks the `info`
+    /// of the parent directories in a safe order to prevent deadlocks. Returns a
+    /// `RenameGuardLocked` which encapsulates all acquired locks (both children and info).
+    fn lock_info(
+        self,
+        old_parent: &'a DirEntryHandle,
+        new_parent: &'a DirEntryHandle,
+        renamed: &'a DirEntryHandle,
+        replaced: Option<&'a DirEntryHandle>,
+    ) -> RenameContext<'a> {
+        let (g1, g2) = match self.relationship {
+            RenameRelationship::Same => (old_parent.node.info_lock().write(), None),
+            RenameRelationship::NewIsDescendant => {
+                let g1 = old_parent.node.info_lock().write();
+                let _token = allow_subclass();
+                let g2 = new_parent.node.info_lock().write();
+                (g1, Some(g2))
+            }
+            RenameRelationship::OldIsDescendant => {
+                let g2 = new_parent.node.info_lock().write();
+                let _token = allow_subclass();
+                let g1 = old_parent.node.info_lock().write();
+                (g1, Some(g2))
+            }
+            RenameRelationship::Independent => {
+                let (g1, g2) = starnix_sync::ordered_write_lock(
+                    old_parent.node.info_lock(),
+                    new_parent.node.info_lock(),
+                );
+                (g1, Some(g2))
+            }
+        };
+
+        RenameContext {
+            renamed,
+            replaced,
+            old_parent_guard: self.old_parent_guard,
+            new_parent_guard: self.new_parent_guard,
+            old_parent_info_guard: g1,
+            new_parent_info_guard: g2,
+        }
+    }
+
+    fn old_parent_children(&mut self) -> &mut DirEntryLockedChildren<'a> {
         &mut self.old_parent_guard
     }
 
-    fn new_parent(&mut self) -> &mut DirEntryLockedChildren<'a> {
+    fn new_parent_children(&mut self) -> &mut DirEntryLockedChildren<'a> {
         if let Some(new_guard) = self.new_parent_guard.as_mut() {
             new_guard
         } else {
             &mut self.old_parent_guard
+        }
+    }
+}
+
+/// A context that holds the locked children and info of the parents during a
+/// rename operation.
+///
+/// The context is constructed by locking the parent directories
+/// (`old_parent`, `new_parent`) for write. These parent locks are held for
+/// the duration of the context's lifetime, preventing concurrent
+/// modifications to the parents.
+///
+/// Child nodes (`renamed` and `replaced`) are *not* locked upon
+/// construction. To query properties of the children (like whether they are
+/// directories) without risking deadlocks, use the provided helper methods
+/// (`renamed_is_dir`, `replaced_is_dir`) instead of locking them directly.
+pub struct RenameContext<'a> {
+    pub renamed: &'a DirEntryHandle,
+    pub replaced: Option<&'a DirEntryHandle>,
+    old_parent_guard: DirEntryLockedChildren<'a>,
+    new_parent_guard: Option<DirEntryLockedChildren<'a>>,
+    old_parent_info_guard: LockDepWriteGuard<'a, crate::vfs::FsNodeInfo>,
+    new_parent_info_guard: Option<LockDepWriteGuard<'a, crate::vfs::FsNodeInfo>>,
+}
+
+impl<'a> RenameContext<'a> {
+    /// Returns whether the renamed child node is a directory.
+    ///
+    /// This method safely handles child info locking under the parent locks.
+    /// If the renamed node is same as a parent (which is already locked),
+    /// it uses the parent's guard to avoid self-deadlock. Otherwise, it
+    /// locks the child info using `allow_subclass`.
+    pub fn renamed_is_dir(&self) -> bool {
+        self.is_dir(&self.renamed.node)
+    }
+
+    /// Returns whether the replaced child node is a directory.
+    ///
+    /// Returns `false` if `replaced` is `None`.
+    ///
+    /// This method safely handles child info locking under the parent locks.
+    /// If the replaced node is same as a parent (which is already locked),
+    /// it uses the parent's guard to avoid self-deadlock. Otherwise, it
+    /// locks the child info using `allow_subclass`.
+    pub fn replaced_is_dir(&self) -> bool {
+        self.replaced.map(|r| self.is_dir(&r.node)).unwrap_or(false)
+    }
+
+    /// Returns the old parent directory entry handle.
+    ///
+    /// The old parent's child list is write-locked for the lifetime of the
+    /// context.
+    pub fn old_parent(&self) -> &DirEntryHandle {
+        self.old_parent_guard.entry
+    }
+
+    /// Returns the new parent directory entry handle.
+    ///
+    /// The new parent's child list is write-locked for the lifetime of the
+    /// context.
+    pub fn new_parent(&self) -> &DirEntryHandle {
+        self.new_parent_guard.as_ref().map(|g| g.entry).unwrap_or(self.old_parent_guard.entry)
+    }
+
+    /// Returns mutable references to the `FsNodeInfo` of both parent
+    /// directories.
+    ///
+    /// The references are returned as a tuple to allow them to be borrowed
+    /// mutably at the same time (e.g., to update link counts in both).
+    ///
+    /// If `new_parent` is the same as `old_parent`, the second element of the
+    /// tuple will be `None` to prevent mutable aliasing of the same guard.
+    pub fn parent_infos_mut(
+        &mut self,
+    ) -> (&mut crate::vfs::FsNodeInfo, Option<&mut crate::vfs::FsNodeInfo>) {
+        let old = &mut *self.old_parent_info_guard;
+        let new = self.new_parent_info_guard.as_mut().map(|g| &mut **g);
+        (old, new)
+    }
+
+    /// Returns a shared reference to the `FsNodeInfo` of the old parent
+    /// directory.
+    pub fn old_parent_info(&self) -> &crate::vfs::FsNodeInfo {
+        &self.old_parent_info_guard
+    }
+
+    /// Returns a shared reference to the `FsNodeInfo` of the new parent
+    /// directory.
+    ///
+    /// Returns `None` if `new_parent` is the same as `old_parent`.
+    pub fn new_parent_info(&self) -> Option<&crate::vfs::FsNodeInfo> {
+        self.new_parent_info_guard.as_deref()
+    }
+
+    fn new_parent_children(&mut self) -> &mut DirEntryLockedChildren<'a> {
+        self.new_parent_guard.as_mut().unwrap_or(&mut self.old_parent_guard)
+    }
+
+    fn old_parent_children(&mut self) -> &mut DirEntryLockedChildren<'a> {
+        &mut self.old_parent_guard
+    }
+
+    fn is_dir(&self, node: &FsNodeHandle) -> bool {
+        if Arc::ptr_eq(node, &self.old_parent().node) {
+            self.old_parent_info_guard.mode.is_dir()
+        } else if Arc::ptr_eq(node, &self.new_parent().node) {
+            self.new_parent_info_guard
+                .as_ref()
+                .map(|g| g.mode.is_dir())
+                .unwrap_or_else(|| self.old_parent_info_guard.mode.is_dir())
+        } else {
+            let _token = allow_subclass();
+            node.is_dir()
         }
     }
 }
