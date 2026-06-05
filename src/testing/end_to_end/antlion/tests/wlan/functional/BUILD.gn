@@ -30,11 +30,6 @@ antlion_host_test("channel_switch_test_with_soft_ap") {
   test_cases = [ "re:.*with_soft_ap.*" ]
 }
 
-antlion_host_test("connection_stress_test") {
-  main_source = "ConnectionStressTest.py"
-  environments = wlan_ap_envs
-}
-
 antlion_host_test("ping_test") {
   main_source = "PingTest.py"
   environments = wlan_ap_envs

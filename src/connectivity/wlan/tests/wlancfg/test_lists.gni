@@ -51,4 +51,5 @@ wlancfg_tests_for_fyi = [
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run
 # them at reduced frequency.
-wlancfg_tests_for_fyi_long = []
+wlancfg_tests_for_fyi_long =
+    [ "//src/connectivity/wlan/tests/wlancfg:connection_stress_test" ]

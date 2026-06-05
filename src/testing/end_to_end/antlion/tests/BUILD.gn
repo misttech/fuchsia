@@ -14,6 +14,7 @@ group("e2e_tests") {
     # As tests are migrated out of the antlion directory, add them to this
     # group to ensure they are still included in the e2e test suite for
     # release testing.
+    "//src/connectivity/wlan/tests/wlancfg:connection_stress_test",
     "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
     "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
     "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
