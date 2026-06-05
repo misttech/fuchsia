@@ -18,11 +18,13 @@ namespace thermal {
 static constexpr uint32_t kMaxProfileLen = 200;
 static constexpr uint32_t kMaxNameLen = 50;
 
+// TODO(b/448631407): Replace with a FIDL metadata type.
 struct NtcTable {
   float temperature_c;
   uint32_t resistance_ohm;
 };
 
+// TODO(b/448631407): Replace with a FIDL metadata type.
 struct NtcChannel {
   uint32_t adc_channel;
   uint32_t pullup_ohms;
