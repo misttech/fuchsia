@@ -11,10 +11,10 @@
 //!       is to move this code when it's further along. Potentially using it for
 //!       all ffx UI.
 
-use anyhow::Result;
 use fuchsia_sync::Mutex;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, IsTerminal, Read, Write, stdout};
+use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
 // An ANSI escape sequence to clear from the cursor position to the end of the
@@ -22,6 +22,20 @@ use unicode_segmentation::UnicodeSegmentation;
 // See the "Erase in Display" table entry in
 // https://en.wikipedia.org/wiki/ANSI_escape_code for details.
 const CLEAR_TO_END_OF_SCREEN: &'static str = "\x1b[J";
+
+/// Error type returned by the structured user interface (SUI) library.
+#[derive(Error, Debug)]
+pub enum StructuredUiError {
+    /// An error encountered during terminal write or escape sequence operations.
+    #[error("Terminal I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// An error encountered while reading interactive prompts from stdin.
+    #[error("Failed to read prompt input: {0}")]
+    PromptInput(#[source] std::io::Error),
+}
+
+pub type Result<T> = std::result::Result<T, StructuredUiError>;
 
 /// Move the terminal cursor 'up' and clear N rows.
 fn clear_rows<W: ?Sized>(output: &mut W, rows: usize) -> Result<()>
@@ -327,7 +341,7 @@ pub enum Presentation {
 }
 
 /// User response to a request.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Response {
     /// The default action was chosen, i.e. pressed "Enter" or "Return".
     Default,
@@ -496,7 +510,7 @@ impl<'a> TextUi<'a> {
         writeln!(inner.output, "{}: ", element.prompt)?;
         let mut buf_reader = BufReader::new(&mut inner.input);
         let mut choice = String::new();
-        buf_reader.read_line(&mut choice).expect("reading string input line");
+        buf_reader.read_line(&mut choice).map_err(StructuredUiError::PromptInput)?;
         if choice.is_empty() { Ok(Response::Default) } else { Ok(Response::Choice(choice)) }
     }
 
@@ -813,5 +827,46 @@ mod tests {
         assert_eq!(ellipsis("/x/cake/drought_fins", 13, Some('/')), "/x/...ht_fins");
         assert_eq!(ellipsis("/x/cake/drought_fins", 12, Some('/')), "/x/...t_fins");
         assert_eq!(ellipsis("/x/cake/drought_fins", 11, Some('/')), "/x/..._fins");
+    }
+
+    #[test]
+    fn test_string_prompt_success() {
+        let mut input = "my choice\n".as_bytes();
+        let mut output: Vec<u8> = Vec::new();
+        let mut err_out: Vec<u8> = Vec::new();
+        let ui = TextUi::new_for_test(&mut input, &mut output, &mut err_out, true);
+        let mut prompt = SimplePresentation::builder();
+        prompt.title("Prompt Title");
+        prompt.message("Prompt Message");
+        prompt.prompt("Enter choice");
+
+        let res = ui.present(&Presentation::StringPrompt(prompt)).unwrap();
+        assert_eq!(res, Response::Choice("my choice\n".to_string()));
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Prompt Title"));
+        assert!(output_str.contains("Prompt Message"));
+        assert!(output_str.contains("Enter choice:"));
+    }
+
+    struct FailingReader;
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "mock read error"))
+        }
+    }
+
+    #[test]
+    fn test_string_prompt_read_error() {
+        let mut input = FailingReader;
+        let mut output: Vec<u8> = Vec::new();
+        let mut err_out: Vec<u8> = Vec::new();
+        let ui = TextUi::new_for_test(&mut input, &mut output, &mut err_out, true);
+        let mut prompt = SimplePresentation::builder();
+        prompt.prompt("Enter choice");
+
+        let res = ui.present(&Presentation::StringPrompt(prompt));
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), StructuredUiError::PromptInput(_)));
     }
 }

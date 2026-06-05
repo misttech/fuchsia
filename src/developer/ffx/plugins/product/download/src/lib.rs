@@ -166,7 +166,8 @@ pub async fn pb_download_impl<I: structured_ui::Interface>(
     for layer in layers {
         progress.entry(&layer.name, layer.at, layer.of, layer.units);
     }
-    ui.present(&structured_ui::Presentation::Progress(progress))?;
+    ui.present(&structured_ui::Presentation::Progress(progress))
+        .map_err(|e| anyhow::Error::new(e))?;
 
     log::debug!("Total ffx product download runtime {} seconds.", start.elapsed().as_secs_f32());
     log::debug!("End");

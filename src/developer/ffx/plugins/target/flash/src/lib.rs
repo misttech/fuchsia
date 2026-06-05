@@ -221,7 +221,7 @@ pub enum ProductBundleError {
 
     #[exit_with_code(1)]
     #[error("Failed to clear progress indicators from UI: {0}")]
-    UiClearFailed(#[source] anyhow::Error),
+    UiClearFailed(#[from] structured_ui::StructuredUiError),
 
     #[exit_with_code(1)]
     #[error("SSH key setup failed: {0}")]
@@ -314,10 +314,7 @@ impl FfxMain for FlashTool {
     }
 }
 
-fn preflight_checks<W: Write>(
-    cmd: &FlashCommand,
-    mut writer: W,
-) -> Result<(), PreflightError> {
+fn preflight_checks<W: Write>(cmd: &FlashCommand, mut writer: W) -> Result<(), PreflightError> {
     if cmd.manifest_path.is_some() {
         // TODO(https://fxbug.dev/42076631)
         writeln!(writer, "{}WARNING:{} specifying the flash manifest via a positional argument is deprecated. Use the --manifest flag instead (https://fxbug.dev/42076631)", color::Fg(color::Red), style::Reset)
@@ -396,7 +393,7 @@ async fn preprocess_flash_cmd(
                 })
                 .await
                 .map_err(ProductBundleError::GcsDownloadFailed)?;
-            ui.clear_progress().map_err(ProductBundleError::UiClearFailed)?;
+            ui.clear_progress()?;
 
             log::debug!("Downloaded to {}", local_path.display());
 
@@ -838,7 +835,7 @@ async fn handle_event_text(
     loop {
         // Clear TUI so normal stdout/stderr doesn't instantly get overwritten
         // by the progress indicator.
-        ui.clear_progress()?;
+        ui.clear_progress().map_err(|e| anyhow::Error::new(e))?;
         match rec.recv().await {
             Some(event) => match event {
                 Event::Upload(upload) => match upload {

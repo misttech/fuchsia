@@ -15,7 +15,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/structured_ui",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
   ]

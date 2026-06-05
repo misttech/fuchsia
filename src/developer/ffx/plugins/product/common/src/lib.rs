@@ -43,12 +43,17 @@ pub struct MachineUi<T: Serialize + JsonSchema> {
 }
 
 impl<T: Serialize + JsonSchema> Interface for MachineUi<T> {
-    fn present(&self, output: &structured_ui::Presentation) -> anyhow::Result<Response> {
+    fn present(
+        &self,
+        output: &structured_ui::Presentation,
+    ) -> std::result::Result<Response, structured_ui::StructuredUiError> {
         match output {
-            Presentation::Notice(notice) => self.machine(MachineOutput::<T>::Notice {
-                title: notice.get_title(),
-                message: notice.get_message(),
-            })?,
+            Presentation::Notice(notice) => self
+                .machine(MachineOutput::<T>::Notice {
+                    title: notice.get_title(),
+                    message: notice.get_message(),
+                })
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
             Presentation::Progress(_) => (), //ignore progress for machine output.
             Presentation::StringPrompt(p) => {
                 todo!("String prompt not supported in machine mode: {p:?}")

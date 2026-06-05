@@ -63,7 +63,7 @@ async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
         })
         .await?;
 
-    ui.clear_progress()?;
+    ui.clear_progress().map_err(|e| anyhow::Error::new(e))?;
 
     log::debug!("Downloaded to {}", local_path.display());
 

@@ -11,9 +11,9 @@ rustc_library("lib") {
 
   deps = [
     "//src/lib/fuchsia-sync",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:termion",
+    "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:unicode-segmentation",
   ]
 
