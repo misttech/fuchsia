@@ -13,7 +13,7 @@ import time
 from typing import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.fuchsia_device import FuchsiaDevice
@@ -31,6 +31,18 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
+from openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    HtMode,
+    PhyMode,
+    RadioConfig,
+    SecurityOpen,
+    VhtMode,
+)
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 # Number of channel switch announcement beacons to send.
 CSA_BEACON_COUNT = 10
@@ -41,9 +53,27 @@ BEACON_INTERVAL_KUS = 100
 # 1 kus = 1.024ms.
 SEC_PER_KUS = 0.001024
 
+US_DFS_CHANNELS = [
+    52,
+    56,
+    60,
+    64,
+    100,
+    104,
+    108,
+    112,
+    116,
+    120,
+    124,
+    128,
+    132,
+    136,
+    140,
+    144,
+]
+
 
 class ChannelSwitchTest(base_test.WifiBaseTest):
-    access_point: AccessPoint
     # Time to wait between issuing channel switches
     WAIT_BETWEEN_CHANNEL_SWITCHES_S = 15
 
@@ -62,10 +92,13 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         self.log = logging.getLogger()
         self.ssid = rand_ascii_str(10)
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-
-        self.access_point = self.access_points[0]
 
         self.fuchsia_device, self.dut = self.get_dut_type(
             FuchsiaDevice, AssociationMode.POLICY
@@ -78,7 +111,8 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         self.dut.disconnect()
         self.dut.reset_wifi()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         try:
             self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
         except HoneydewWlanError as e:
@@ -88,7 +122,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
 
     def channel_switch(
         self,
-        band: hostapd_constants.BandType,
+        band: Band,
         starting_channel: int,
         channel_switches: Sequence[int],
         test_with_soft_ap: bool = False,
@@ -114,11 +148,26 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         """
         current_channel = starting_channel
 
+        phy_mode: PhyMode
         match band:
-            case hostapd_constants.BandType.BAND_2G:
-                ap_iface = self.access_point.wlan_2g
-            case hostapd_constants.BandType.BAND_5G:
-                ap_iface = self.access_point.wlan_5g
+            case Band.BAND_2G:
+                wlan_band = Band.BAND_2G
+                phy_mode = HtMode(bw=20)
+                if self.openwrt_ap:
+                    ap_iface = self.openwrt_ap.wlan_2g_interface
+                elif self.access_point:
+                    ap_iface = self.access_point.wlan_2g
+                else:
+                    raise signals.TestAbortClass("No access point initialized")
+            case Band.BAND_5G:
+                wlan_band = Band.BAND_5G
+                phy_mode = VhtMode(bw=20)
+                if self.openwrt_ap:
+                    ap_iface = self.openwrt_ap.wlan_5g_interface
+                elif self.access_point:
+                    ap_iface = self.access_point.wlan_5g
+                else:
+                    raise signals.TestAbortClass("No access point initialized")
 
         asserts.assert_true(
             self._channels_valid_for_band([current_channel], band),
@@ -126,16 +175,40 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
                 f"starting channel {current_channel} not a valid channel for band {band}"
             ),
         )
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=BssChannel(
+                            band=wlan_band,
+                            number=current_channel,
+                            phy_mode=phy_mode,
+                        ),
+                        custom_uci_options=UciRadioOptions(
+                            beacon_int=BEACON_INTERVAL_KUS
+                        ),
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.ssid,
+                                security=SecurityOpen(),
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=wlan_band)
+        elif self.access_point:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=current_channel,
+                ssid=self.ssid,
+                beacon_interval=BEACON_INTERVAL_KUS,
+                # Antlion channel_switch currently only supports 20 MHz.
+                vht_bandwidth=20,
+            )
 
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=current_channel,
-            ssid=self.ssid,
-            beacon_interval=BEACON_INTERVAL_KUS,
-            # Antlion channel_switch currently only supports 20 MHz.
-            vht_bandwidth=20,
-        )
         if test_with_soft_ap:
             self._start_soft_ap()
         self.log.info("sending associate command for ssid %s", self.ssid)
@@ -156,13 +229,27 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         for channel_num in channel_switches:
             if channel_num == current_channel:
                 continue
+            # TODO(b/504795188): Support switching to DFS channels.
+            if channel_num in US_DFS_CHANNELS:
+                self.log.info(f"Skipping DFS channel {channel_num}")
+                continue
             self.log.info(f"channel switch: {current_channel} -> {channel_num}")
-            self.access_point.channel_switch(
-                ap_iface, channel_num, CSA_BEACON_COUNT
-            )
-            channel_num_after_switch = self.access_point.get_current_channel(
-                ap_iface
-            )
+            if self.openwrt_ap:
+                self.openwrt_ap.channel_switch(
+                    ap_iface, channel_num, CSA_BEACON_COUNT
+                )
+                channel_num_after_switch = self.openwrt_ap.get_current_channel(
+                    ap_iface
+                )
+            else:
+                assert self.access_point is not None
+                self.access_point.channel_switch(
+                    ap_iface, channel_num, CSA_BEACON_COUNT
+                )
+                channel_num_after_switch = (
+                    self.access_point.get_current_channel(ap_iface)
+                )
+
             asserts.assert_equal(
                 channel_num_after_switch,
                 channel_num,
@@ -223,7 +310,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
     def test_channel_switch_2g(self) -> None:
         """Channel switch through all (US only) channels in the 2 GHz band."""
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_2G,
+            band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=hostapd_constants.US_CHANNELS_2G,
         )
@@ -231,7 +318,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
     def test_channel_switch_2g_with_soft_ap(self) -> None:
         """Channel switch through (US only) 2 Ghz channels with SoftAP up."""
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_2G,
+            band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=hostapd_constants.US_CHANNELS_2G,
             test_with_soft_ap=True,
@@ -243,7 +330,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         random.shuffle(channels)
         self.log.info(f"Shuffled channel switch sequence: {channels}")
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_2G,
+            band=Band.BAND_2G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             channel_switches=channels,
             test_with_soft_ap=True,
@@ -252,7 +339,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
     def test_channel_switch_5g(self) -> None:
         """Channel switch through all (US only) channels in the 5 GHz band."""
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=hostapd_constants.US_CHANNELS_5G,
         )
@@ -260,7 +347,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
     def test_channel_switch_5g_with_soft_ap(self) -> None:
         """Channel switch through (US only) 5 GHz channels with SoftAP up."""
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=hostapd_constants.US_CHANNELS_5G,
             test_with_soft_ap=True,
@@ -272,7 +359,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         random.shuffle(channels)
         self.log.info(f"Shuffled channel switch sequence: {channels}")
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             channel_switches=channels,
             test_with_soft_ap=True,
@@ -288,7 +375,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL
         ]
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL,
             channel_switches=channels,
         )
@@ -304,7 +391,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL
         ]
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_115_CHANNEL,
             channel_switches=channels,
             test_with_soft_ap=True,
@@ -320,7 +407,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL
         ]
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL,
             channel_switches=channels,
         )
@@ -336,14 +423,14 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL
         ]
         self.channel_switch(
-            band=hostapd_constants.BandType.BAND_5G,
+            band=Band.BAND_5G,
             starting_channel=self.NON_GLOBAL_OPERATING_CLASS_124_CHANNEL,
             channel_switches=channels,
             test_with_soft_ap=True,
         )
 
     def _channels_valid_for_band(
-        self, channels: Sequence[int], band: hostapd_constants.BandType
+        self, channels: Sequence[int], band: Band
     ) -> bool:
         """Determine if the channels are valid for the band (US only).
 
@@ -353,9 +440,9 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         """
         channels_set = frozenset(channels)
         match band:
-            case hostapd_constants.BandType.BAND_2G:
+            case Band.BAND_2G:
                 band_channels = frozenset(hostapd_constants.US_CHANNELS_2G)
-            case hostapd_constants.BandType.BAND_5G:
+            case Band.BAND_5G:
                 band_channels = frozenset(hostapd_constants.US_CHANNELS_5G)
         return channels_set <= band_channels
 

@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Dict, List
 
+from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger, utils
+from openwrt_access_point.lib import capabilities
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
@@ -280,7 +282,6 @@ class OpenWrtAP:
         For a list of available OpenWrt UCI capabilities, refer to:
         https://openwrt.org/docs/guide-user/network/wifi/basic#ht_high_throughput_capabilities
         """
-        from openwrt_access_point.lib import capabilities
 
         # Start from a clean, controlled state by setting all known capabilities
         # to their default values.
@@ -457,9 +458,6 @@ class OpenWrtAP:
             (`antlion.controllers.ap_lib.hostapd._bss_tm_req`) to construct
             the command for `hostapd_cli`.
         """
-        from antlion.controllers.ap_lib.wireless_network_management import (
-            BssTransitionManagementRequest,
-        )
 
         phy = "phy0" if band == Band.BAND_2G else "phy1"
         try:
@@ -796,3 +794,44 @@ class OpenWrtAP:
         with open(logread_path, "w") as f:
             f.write(filtered_logs)
         _LOGGER.debug("Wrote OpenWRT logread to %s", logread_path)
+
+    def channel_switch(
+        self,
+        interface: str,
+        channel_num: int,
+        csa_beacon_count: int = 10,
+    ) -> None:
+        """Switch to a different channel on the given AP interface.
+
+        Args:
+            interface: The interface name (e.g. "phy0-ap0")
+            channel_num: Channel number to switch to
+            csa_beacon_count: Number of CSA beacons to send
+        """
+
+        try:
+            channel_freq = hostapd_constants.FREQUENCY_MAP[channel_num]
+        except KeyError:
+            raise ValueError(f"Invalid channel number {channel_num}")
+
+        cmd = f"hostapd_cli -i {interface} chan_switch {csa_beacon_count} {channel_freq}"
+        self.ssh.run(cmd)
+
+    def get_current_channel(self, interface: str) -> int:
+        """Find the current channel on the given AP interface.
+
+        Args:
+            interface: The interface name (e.g. "phy0-ap0")
+
+        Returns:
+            The current channel number as an integer.
+        """
+        cmd = f"hostapd_cli -i {interface} status"
+        res = self.ssh.run(cmd)
+        output = res.stdout.decode("utf-8")
+        match = re.search(r"^channel=(\d+)$", output, re.MULTILINE)
+        if not match:
+            raise RuntimeError(
+                f"Current channel could not be determined for interface {interface}"
+            )
+        return int(match.group(1))
