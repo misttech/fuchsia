@@ -1011,11 +1011,11 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -1685,7 +1685,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-fuchsia/libclang_rt.lsan.a"
@@ -9798,11 +9798,12 @@ From //build/config/features.gni:12
 
 ### use_llvm_libc_string_functions
 
-**NOTE: Experimental** Use the llvm-libc implementations of string functions.
+**NOTE: Experimental** Use the llvm-libc implementations of string
+functions.
 
 **Current value (from the default):** `false`
 
-From //sdk/lib/c/libc.gni:20
+From //sdk/lib/c/libc.gni:21
 
 ### use_null_vulkan_on_host
 
