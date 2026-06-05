@@ -95,7 +95,6 @@ if (is_host) {
       "//src/developer/ffx/config/domain:test_data",
       "//src/lib/fuchsia",
       "//third_party/rust_crates:assert_matches",
-      "//third_party/rust_crates:futures",
     ]
     version = "0.1.0"
     with_unit_tests = true

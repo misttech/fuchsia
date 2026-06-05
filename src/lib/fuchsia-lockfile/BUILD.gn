@@ -55,7 +55,6 @@ if (is_host) {
     edition = "2024"
     test_deps = [
       "//src/lib/fuchsia",
-      "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-sync",
       "//third_party/rust_crates:tempfile",
     ]

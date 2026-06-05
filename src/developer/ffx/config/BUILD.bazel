@@ -60,7 +60,6 @@ rustc_library(
         "//src/developer/ffx/config/domain:test_data",
         "//src/lib/fuchsia",
         "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:futures",
     ],
     version = "0.1.0",
     with_host_unit_tests = True,
