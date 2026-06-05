@@ -176,6 +176,8 @@ source_set("program_shortname") {
     "program_shortname.cc",
     "program_shortname.h",
   ]
+
+  deps = [ "//sdk/lib/syslog/cpp" ]
 }
 
 source_set("queue") {

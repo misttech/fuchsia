@@ -36,6 +36,14 @@ const MAX_REPORT_ID_LENGTH uint32 = 64;
 /// Represents a crash report.
 type CrashReport = resource table {
     /// The name of the program that crashed, e.g., the process or component's name.
+    ///
+    /// Internally, the program name is used to persist the report in case it can't be uploaded
+    /// immediately. As a result, it's sanitized when used as a filesystem path, e.g., stripped of
+    /// any fuchsia-pkg:// prefix. ZX_ERR_INVALID_ARGS will be returned if the sanitized program
+    /// name is any of the following:
+    ///  * ""
+    ///  * "."
+    ///  * ".."
     1: program_name string:MAX_PROGRAM_NAME_LENGTH;
 
     /// How long the program was running before it crashed.

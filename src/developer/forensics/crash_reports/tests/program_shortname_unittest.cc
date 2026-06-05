@@ -54,6 +54,16 @@ TEST(ProgramShortname, WhitespaceOnlyInvalid) {
   EXPECT_FALSE(invalid.has_value());
 }
 
+TEST(ProgramShortname, DotInvalid) {
+  EXPECT_FALSE(ProgramShortname::Create(".").has_value());
+  EXPECT_FALSE(ProgramShortname::Create("   .   ").has_value());
+}
+
+TEST(ProgramShortname, DotDotInvalid) {
+  EXPECT_FALSE(ProgramShortname::Create("..").has_value());
+  EXPECT_FALSE(ProgramShortname::Create("   ..   ").has_value());
+}
+
 TEST(ProgramShortname, LognameCorrect) {
   const std::map<std::string, std::string> name_to_logname = {
       // Does nothing.

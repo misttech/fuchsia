@@ -170,7 +170,7 @@ void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReport
       ProgramShortname::Create(report.program_name());
   if (!program_shortname.has_value()) {
     FX_LOGS(ERROR) << "Program name of '" << report.program_name()
-                   << "' shortens to empty. Won't file.";
+                   << "' shortens to an invalid value. Won't file.";
     callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
     info_.LogCrashState(cobalt::CrashState::kDropped);
     return;

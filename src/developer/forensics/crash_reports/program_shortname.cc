@@ -4,6 +4,8 @@
 
 #include "src/developer/forensics/crash_reports/program_shortname.h"
 
+#include <lib/syslog/cpp/macros.h>
+
 #include <algorithm>
 #include <optional>
 #include <string>
@@ -48,7 +50,8 @@ std::string Shorten(std::string program_name) {
 
 std::optional<ProgramShortname> ProgramShortname::Create(std::string program_name) {
   const std::string shortened = Shorten(std::move(program_name));
-  if (shortened.empty()) {
+  if (shortened.empty() || shortened == "." || shortened == "..") {
+    FX_LOGS(ERROR) << "Invalid shortened program name: '" << shortened << "'";
     return std::nullopt;
   }
 
