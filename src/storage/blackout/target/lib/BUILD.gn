@@ -46,8 +46,8 @@ rustc_library("blackout-target") {
   ]
 }
 
-# These tests are broken out into their own components because they don't respond well when they
-# aren't the only ones with access to /dev.
+# These tests are broken out into their own components because they don't
+# respond well when they aren't the only ones with access to /dev.
 # rustc_test("blackout-target-test-no-path") {
 #   edition = "2024"
 #   deps = [

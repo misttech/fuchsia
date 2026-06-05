@@ -201,11 +201,13 @@ foreach(fs,
   storage_benchmark(target_name) {
     fs = fs
     excluded_environments = [
-      # These benchmarks aren't enabled on Astro to avoid extra flash wear on that device type.
+      # These benchmarks aren't enabled on Astro to avoid extra flash wear on
+      # that device type.
       astro_env,
 
-      # Minfs and Blobfs aren't enabled on Sorrel because they are slow to run and aren't used on
-      # that device. F2fs's minimum partition size with FVM is too larger for Sorrel.
+      # Minfs and Blobfs aren't enabled on Sorrel because they are slow to run
+      # and aren't used on that device. F2fs's minimum partition size with FVM
+      # is too large for Sorrel.
       sorrel_env,
     ]
   }
@@ -222,7 +224,8 @@ foreach(fs,
   storage_benchmark(target_name) {
     fs = fs
     excluded_environments = [
-      # These benchmarks aren't enabled on Astro to avoid extra flash wear on that device type.
+      # These benchmarks aren't enabled on Astro to avoid extra flash wear on
+      # that device type.
       astro_env,
     ]
   }

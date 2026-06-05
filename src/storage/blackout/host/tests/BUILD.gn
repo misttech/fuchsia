@@ -78,10 +78,11 @@ python_mobly_test("blackout_fxfs_tree_soft_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -103,10 +104,11 @@ python_mobly_test("blackout_minfs_tree_soft_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -128,10 +130,11 @@ python_mobly_test("blackout_fxfs_tree_hard_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -153,10 +156,11 @@ python_mobly_test("blackout_minfs_tree_hard_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -178,10 +182,11 @@ python_mobly_test("blackout_fxfs_allocate_soft_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -204,10 +209,11 @@ python_mobly_test("blackout_fxfs_allocate_hard_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -230,10 +236,11 @@ python_mobly_test("blackout_fxfs_barriers_soft_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -256,10 +263,11 @@ python_mobly_test("blackout_fxfs_barriers_hard_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -282,10 +290,11 @@ python_mobly_test("blackout_fvm_minfs_soft_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args
@@ -307,10 +316,11 @@ python_mobly_test("blackout_fvm_minfs_hard_reboot") {
     load_generation_duration = 30
 
     # TODO(https://fxbug.dev/338452001): the vim3 bootloader currently resets the gpt partition
-    # table if it isn't the exact hard-coded partition table it expects, so we use the label of a
-    # 32MiB partition that isn't used so it doesn't get blown away on reboot. Once the bootloader
-    # doesn't do that, we can use our own partition (in other words, delete the following line
-    # once the bug is resolved).
+    # table if it isn't the exact hard-coded partition table it expects, so we
+    # use the label of a 32MiB partition that isn't used so it doesn't get blown
+    # away on reboot. Once the bootloader doesn't do that, we can use our own
+    # partition (in other words, delete the following line once the bug is
+    # resolved).
     device_label = "factory"
 
     # test case revive args

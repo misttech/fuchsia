@@ -50,7 +50,8 @@ rustc_library("crypto") {
     "//vendor/google/*",
   ]
 
-  # Default optimizations are for size, but that has a noticeable impact on speed.
+  # Default optimizations are for size, but that has a noticeable impact on
+  # speed.
   if (!is_debug) {
     configs -= [ "//build/config:default_optimize" ]
     configs += [ "//build/config:optimize_speed" ]

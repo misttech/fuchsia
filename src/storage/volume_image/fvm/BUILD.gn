@@ -83,7 +83,8 @@ source_set("fvm-unpack") {
   ]
 }
 
-# This source set is included in the volume image test package in the directory above.
+# This source set is included in the volume image test package in the directory
+# above.
 source_set("fvm-test") {
   testonly = true
   sources = [
@@ -164,8 +165,9 @@ generate_fvm("test_fvm.sparse.blk") {
   ]
 
   partitions = [
-    # Place blobfs first, since it is A/B enabled (thus allocates extra slices for B-copies of some
-    # metadata) and bugs are likely to be detected in partitions added after this partition.
+    # Place blobfs first, since it is A/B enabled (thus allocates extra slices
+    # for B-copies of some metadata) and bugs are likely to be detected in
+    # partitions added after this partition.
     test_fvm_blob_partition,
     test_fvm_data_partition,
   ]

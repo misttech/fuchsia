@@ -5,15 +5,15 @@
 import("//build/compiled_action.gni")
 import("//build/dist/distribution_manifest.gni")
 
-# Convert a ext4 image into something that can be included in a package. It can then be mounted
-# within Starnix using the remote_bundle mount type.  For example, a system image could be mounted
-# with a specification of:
+# Convert a ext4 image into something that can be included in a package. It can
+# then be mounted within Starnix using the remote_bundle mount type. For
+# example, a system image could be mounted with a specification of:
 #
 #     /:remote_bundle:data/system
 #
-# If the image contains elf binaries, then you should use a prefix starting with "data" to avoid
-# verification failures: Fuchsia does not like Linux elf binaries, but will skip checking anything
-# in "data".
+# If the image contains elf binaries, then you should use a prefix starting with
+# "data" to avoid verification failures: Fuchsia does not like Linux elf
+# binaries, but will skip checking anything in "data".
 #
 # Parameters
 #

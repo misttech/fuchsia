@@ -119,8 +119,8 @@ rustc_binary("fshost") {
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
 
-  # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
-  # enabled, shift it to the large RBE worker pool)
+  # As this is a large binary that uses many resources to compile (and takes
+  # minutes when LTO is enabled, shift it to the large RBE worker pool)
   _concurrent_jobs = concurrent_jobs.link_highmem
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")

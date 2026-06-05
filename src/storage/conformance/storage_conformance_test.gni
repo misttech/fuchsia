@@ -4,7 +4,8 @@
 
 import("//build/components.gni")
 
-# Defines storage conformance test components and package for a given filesystem harness binary.
+# Defines storage conformance test components and package for a given filesystem
+# harness binary.
 #
 # Parameters
 #

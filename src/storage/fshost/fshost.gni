@@ -37,9 +37,10 @@ template("fshost_cml") {
     not_needed([ "options" ])
 
     # The logic of which shards to include should match the AIBs included in
-    # //src/lib/assembly/platform_configuration/src/subsystems/storage.rs.  Because this template
-    # includes shards directly and the assembly configuration includes AIBs which themselves include
-    # shards, the definitions here are slightly redundant, for consistency with storage.rs.
+    # //src/lib/assembly/platform_configuration/src/subsystems/storage.rs.
+    # Because this template includes shards directly and the assembly
+    # configuration includes AIBs which themselves include shards, the
+    # definitions here are slightly redundant, for consistency with storage.rs.
     if (!defined(options.bootfs_only) || !options.bootfs_only) {
       # `fxfs_blob` defaults to true unless set
       _fxblob = !defined(options.fxfs_blob) || options.fxfs_blob
@@ -62,8 +63,8 @@ template("fshost_cml") {
         ]
       }
 
-      # These are components that must be included in the package depending on the data filesystem
-      # format and other configuration knobs.
+      # These are components that must be included in the package depending on
+      # the data filesystem format and other configuration knobs.
       deps = [
         "//src/storage/block-relay:component",
         "//src/storage/gpt/component",

@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 import("//build/components.gni")
 
-# We need to bundle images with our test to run on CQ but GN doesn't support wildcards.
-# The workaround is to regenerate a gni file containing all images
+# We need to bundle images with our test to run on CQ but GN doesn't support
+# wildcards. The workaround is to regenerate a gni file containing all images
 # whenever `fx fxfs create_golden` is run.
 import("images.gni")
 resource("golden_images") {

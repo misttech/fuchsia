@@ -61,9 +61,9 @@ group("blackout_workbench_vim3_unstable") {
   ]
 }
 
-# This is a special integration test which is supposed to fail, to test that verification failures
-# get caught. It shouldn't be run in CI/CQ since it's not set up to "succeed" on failure, it's just
-# for local testing.
+# This is a special integration test which is supposed to fail, to test that
+# verification failures get caught. It shouldn't be run in CI/CQ since it's not
+# set up to "succeed" on failure, it's just for local testing.
 group("blackout_fail") {
   testonly = true
   deps = [ "tests:blackout_integration_test_fail($host_toolchain)" ]

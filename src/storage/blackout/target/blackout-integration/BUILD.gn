@@ -8,7 +8,8 @@ import("//build/rust/rustc_binary.gni")
 group("tests") {
   testonly = true
 
-  # There aren't any tests but this makes sure it's in the build graph so the build doesn't break.
+  # There aren't any tests but this makes sure it's in the build graph so the
+  # build doesn't break.
   deps = [ ":blackout-integration" ]
 }
 

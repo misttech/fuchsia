@@ -6,7 +6,8 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 import("//src/storage/testing/driver_test_realm.gni")
 
-# This does not include any filesystems.  Callers should depend on the filesystems they need.
+# This does not include any filesystems. Callers should depend on the
+# filesystems they need.
 rustc_library("fs_management") {
   with_unit_tests = true
   edition = "2024"

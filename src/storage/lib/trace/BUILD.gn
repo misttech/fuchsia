@@ -101,8 +101,8 @@ source_set("storage_trace_disabled_cpp") {
   visibility = [ ":*" ]
 }
 
-# Generates the main c++ tracing target and a test that depends on it. The test is run on host to
-# ensure that the :cpp target can compile for host builds.
+# Generates the main c++ tracing target and a test that depends on it. The test
+# is run on host to ensure that the :cpp target can compile for host builds.
 cpp_storage_trace("cpp") {
   enable_tracing = is_fuchsia
   visibility = [ "//src/storage/*" ]
@@ -110,8 +110,9 @@ cpp_storage_trace("cpp") {
   test_name = "storage_trace_cpp_test"
 }
 
-# Generates a target with tracing enabled and a test that depends on it. The test ensures that
-# standard tracing macro usage compiles when tracing is enabled.
+# Generates a target with tracing enabled and a test that depends on it. The
+# test ensures that standard tracing macro usage compiles when tracing is
+# enabled.
 cpp_storage_trace("storage_trace_force_enabled_cpp") {
   enable_tracing = true
   visibility = [ ":*" ]
@@ -119,8 +120,9 @@ cpp_storage_trace("storage_trace_force_enabled_cpp") {
   test_name = "storage_trace_enabled_cpp_test"
 }
 
-# Generates a target with tracing disabled and a test that depends on it. The test ensures that
-# standard tracing macro usage compiles when tracing is disabled.
+# Generates a target with tracing disabled and a test that depends on it. The
+# test ensures that standard tracing macro usage compiles when tracing is
+# disabled.
 cpp_storage_trace("storage_trace_force_disabled_cpp") {
   enable_tracing = false
   visibility = [ ":*" ]

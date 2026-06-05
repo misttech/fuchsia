@@ -270,8 +270,8 @@ rustc_binary("fvm_rust") {
   sources = fvm_sources
   deps = fvm_deps
 
-  # Without optimizations, debug builds trigger test timeouts (e.g. minfs-full-tests), so enable
-  # optimizations for all builds.
+  # Without optimizations, debug builds trigger test timeouts (e.g.
+  # minfs-full-tests), so enable optimizations for all builds.
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
   configs += [ "//build/config/lto:lto-if-compatible" ]

@@ -127,8 +127,8 @@ fuchsia_component("fatfs-component") {
   ]
 }
 
-# FAT has different filename rules compared to other filesystems, so we substitute the
-# filename tests in the test suite with a different set.
+# FAT has different filename rules compared to other filesystems, so we
+# substitute the filename tests in the test suite with a different set.
 test("fat_filename_tests") {
   sources = [ "filename_tests.cc" ]
   deps = [
@@ -188,7 +188,8 @@ slow_fs_test_suite("fatfs") {
   ]
   component_deps = [ ":test_fatfs_component_manifest_shard" ]
 
-  # TODO(b/297201368): These tests are disabled in the regular test suite above due to timeouts.
+  # TODO(b/297201368): These tests are disabled in the regular test suite above
+  # due to timeouts.
   if (current_cpu == "riscv64") {
     extra_components = [
       ":fatfs-full-tests",
@@ -207,8 +208,9 @@ group("tests") {
   ]
 }
 
-# This group includes mkfs and fsck and the block_adapter tool that is required to run them.
-# fs-management requires all of these to be able to run mkfs and fsck for fatfs.
+# This group includes mkfs and fsck and the block_adapter tool that is required
+# to run them. fs-management requires all of these to be able to run mkfs and
+# fsck for fatfs.
 group("tools") {
   deps = [
     "//src/storage/block_adapter",

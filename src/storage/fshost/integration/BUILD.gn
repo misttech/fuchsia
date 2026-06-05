@@ -79,9 +79,10 @@ rustc_library("fshost_test_fixture") {
   data_deps = [ "//src/storage/crypt/fxfs" ]
 }
 
-# Generates an fshost integration test component based on one of the integration test files. The
-# binary also has config.rs included, and a couple of default dependencies, but the rest should be
-# specified as needed for the tests in the file.
+# Generates an fshost integration test component based on one of the integration
+# test files. The binary also has config.rs included, and a couple of default
+# dependencies, but the rest should be specified as needed for the tests in the
+# file.
 #
 #   data_filesystem_variant (required)
 #     [string] A variant string passed to the integration test harness.
@@ -163,8 +164,8 @@ template("fshost_integration_test_component") {
   }
 }
 
-# Generates an fshost integration test package. Includes the fshost component on which the test is
-# executed.
+# Generates an fshost integration test package. Includes the fshost component on
+# which the test is executed.
 #
 #   enable_corruption_tests (default: true)
 #     [bool] Include corruption tests in the integration test package.
@@ -329,8 +330,9 @@ template("fshost_integration_test_package") {
       ]
     }
 
-    # These tests verify mounting a corrupt or unformatted fxfs partition, which results in some
-    # error logs. This requires we use a separate test package so we can control the test specs.
+    # These tests verify mounting a corrupt or unformatted fxfs partition, which
+    # results in some error logs. This requires we use a separate test package
+    # so we can control the test specs.
     _system_volume_manipulation_test_package =
         "${target_name}_system_volume_manipulation_package"
     _test_packages += [ ":$_system_volume_manipulation_test_package" ]
@@ -380,7 +382,8 @@ template("fshost_integration_test_package") {
       source_root = "tests/corrupt.rs"
     }
 
-    # Corruption tests get their own package so we can give them separate test specs
+    # Corruption tests get their own package so we can give them separate test
+    # specs
     _corrupt_test_package = "${target_name}_corrupt_package"
     _test_packages += [ ":$_corrupt_test_package" ]
     fuchsia_test_package(_corrupt_test_package) {
@@ -425,7 +428,8 @@ template("fshost_integration_test_package") {
       ]
     }
 
-    # shred_keys tests get their own package so we can give them separate test specs
+    # shred_keys tests get their own package so we can give them separate test
+    # specs
     _shred_keys_test_package = "${target_name}_shred_keys_package"
     _test_packages += [ ":$_shred_keys_test_package" ]
     fuchsia_test_package(_shred_keys_test_package) {
@@ -461,8 +465,9 @@ template("fshost_integration_test_package") {
       ]
     }
 
-    # Bad Provision Fxfs tests get their own package so we can give them separate test specs. The
-    # tests will trigger fshost to crash and produce messages of ERROR severity.
+    # Bad Provision Fxfs tests get their own package so we can give them
+    # separate test specs. The tests will trigger fshost to crash and produce
+    # messages of ERROR severity.
     _bad_provision_fxfs_test_package =
         "${target_name}_bad_provision_fxfs_package"
     _test_packages += [ ":$_bad_provision_fxfs_test_package" ]
@@ -499,8 +504,9 @@ template("fshost_integration_test_package") {
       ]
     }
 
-    # The crash tests trigger fshost process termination and diagnostic error messages.
-    # They must reside in a separate test package configuring max_severity = "ERROR"
+    # The crash tests trigger fshost process termination and diagnostic error
+    # messages. They must reside in a separate test package configuring
+    # max_severity = "ERROR"
     _volume_death_test_package = "${target_name}_volume_death_package"
     _test_packages += [ ":$_volume_death_test_package" ]
     fuchsia_test_package(_volume_death_test_package) {
@@ -530,8 +536,8 @@ template("fshost_integration_test_package") {
     deps = [
       ":$_fshost_target",
 
-      # We need to make sure we have all the filesystems available in the package for various tests
-      # of the migration paths.
+      # We need to make sure we have all the filesystems available in the
+      # package for various tests of the migration paths.
       "//src/storage/blobfs/bin:component",
       "//src/storage/f2fs/bin:f2fs-component",
       "//src/storage/fxfs:fxfs_component",

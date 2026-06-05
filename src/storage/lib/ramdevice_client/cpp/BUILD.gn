@@ -21,13 +21,15 @@ source_set("ramdevice-client") {
     "ramnand.cc",
   ]
   public_deps = [
-    # <ramdevice-client/ramdisk.h> has #include <fidl/fuchsia.storage.block/cpp/wire.h>
+    # <ramdevice-client/ramdisk.h> has #include
+    # <fidl/fuchsia.storage.block/cpp/wire.h>
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
 
     # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.device/cpp/wire.h>
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
 
-    # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
+    # <ramdevice-client/ramnand.h> has #include
+    # <fidl/fuchsia.hardware.nand/cpp/wire.h>
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
 
     # <ramdevice-client/ramdisk.h> has #include <zircon/compiler.h>
@@ -56,13 +58,15 @@ source_set("ramdevice-client-test") {
   public = [ "include/ramdevice-client-test/ramnandctl.h" ]
   sources = [ "ramnandctl.cc" ]
   public_deps = [
-    # <ramdevice-client-test/ramnandctl.h> has #include <ramdevice-client/ramnand.h>
+    # <ramdevice-client-test/ramnandctl.h> has #include
+    # <ramdevice-client/ramnand.h>
     ":ramdevice-client",
 
     # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.device/cpp/wire.h>
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
 
-    # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
+    # <ramdevice-client/ramnand.h> has #include
+    # <fidl/fuchsia.hardware.nand/cpp/wire.h>
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//zircon/system/ulib/fbl",

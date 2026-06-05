@@ -6,8 +6,9 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("sync_io_client") {
-  # Visibility is restricted to Starnix because it is usually preferable to just use the standard
-  # library (which uses fdio and zxio).  This is used in Starnix for performance and memory reasons.
+  # Visibility is restricted to Starnix because it is usually preferable to just
+  # use the standard library (which uses fdio and zxio). This is used in Starnix
+  # for performance and memory reasons.
   visibility = [
     ":*",
     "//src/starnix/kernel/core:*",

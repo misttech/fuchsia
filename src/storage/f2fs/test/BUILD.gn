@@ -219,7 +219,8 @@ slow_fs_test_suite("f2fs") {
     "//src/storage/f2fs/bin:f2fs-component",
   ]
 
-  # TODO(b/297201368): These tests are disabled in the regular test suite above due to timeouts.
+  # TODO(b/297201368): These tests are disabled in the regular test suite above
+  # due to timeouts.
   if (current_cpu == "riscv64") {
     extra_components = [
       ":f2fs-unittest",

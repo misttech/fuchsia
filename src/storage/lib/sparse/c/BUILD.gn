@@ -16,7 +16,8 @@ sdk_source_set("sparse") {
   public_deps = [ "//third_party/android/platform/system:sparse_format" ]
 
   if (is_kernel) {
-    # Provide headers (e.g. errno.h) required by //third_party/android/platform/system:sparse_format.
+    # Provide headers (e.g. errno.h) required by
+    # //third_party/android/platform/system:sparse_format.
     public_deps += [
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",

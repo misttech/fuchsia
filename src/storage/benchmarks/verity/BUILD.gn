@@ -175,8 +175,8 @@ fuchsia_component_perf_test("verity-benchmarks-perf") {
   expected_metric_names_filepath =
       "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.verity.txt"
 
-  # We don't enable this test on Astro because of the potential for it to cause extra flash wear
-  # on that device type.
+  # We don't enable this test on Astro because of the potential for it to cause
+  # extra flash wear on that device type.
   environments = performance_testing_environments - [ astro_env ]
 }
 

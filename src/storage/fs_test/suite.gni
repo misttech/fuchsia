@@ -271,8 +271,8 @@ template("fs_test_suite") {
   }
 }
 
-# Instantiates filesystem tests that take longer to run.  This takes the same arguments as
-# fs_test_suite.
+# Instantiates filesystem tests that take longer to run. This takes the same
+# arguments as fs_test_suite.
 template("slow_fs_test_suite") {
   suite_name = target_name
 

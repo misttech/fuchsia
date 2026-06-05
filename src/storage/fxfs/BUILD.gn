@@ -263,15 +263,15 @@ rustc_binary("fxfs") {
     "//build/config/rust:bootfs",
   ]
 
-  # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
-  # enabled, shift it to the large RBE worker pool)
+  # As this is a large binary that uses many resources to compile (and takes
+  # minutes when LTO is enabled, shift it to the large RBE worker pool)
   _concurrent_jobs = concurrent_jobs.link_highmem
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")
 
-  # Fxfs depends on the vfs rlib instead of the dylib for performance. If any dependency of fxfs
-  # depends on the vfs dylib then all of the vfs' dependencies will be dynamically linked in fxfs
-  # which degrades performance.
+  # Fxfs depends on the vfs rlib instead of the dylib for performance. If any
+  # dependency of fxfs depends on the vfs dylib then all of the vfs'
+  # dependencies will be dynamically linked in fxfs which degrades performance.
   assert_no_deps = [ "//src/storage/lib/vfs/rust:vfs" ]
 }
 

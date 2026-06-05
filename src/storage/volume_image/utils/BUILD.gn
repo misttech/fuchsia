@@ -96,8 +96,8 @@ source_set("guid-test") {
     "//zircon/system/ulib/fbl",
   ]
 
-  # This double checks that the resulting guids are compatible with our existing guids.
-  # Because gpt is fuchsia only, this is required.
+  # This double checks that the resulting guids are compatible with our existing
+  # guids. Because gpt is fuchsia only, this is required.
   if (is_fuchsia) {
     sources += [ "guid_test_fuchsia.cc" ]
     deps += [ "//src/storage/gpt" ]

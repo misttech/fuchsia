@@ -42,7 +42,8 @@ template("generated_fshost_config") {
     component_name = _component_name
     manifest = "//src/storage/fshost/meta/config.cml"
     metadata = {
-      # we don't want this in the packaged output, it's just to give cmc something to work with
+      # we don't want this in the packaged output, it's just to give cmc
+      # something to work with
       distribution_entries_barrier = []
     }
   }

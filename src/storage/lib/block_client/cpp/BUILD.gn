@@ -10,8 +10,9 @@ group("tests") {
   deps = [ ":block_client_test_pkg" ]
 }
 
-# Contains just the BlockDevice interface, but not the concrete implementation (RemoteBlockDevice).
-# This also includes Reader and Writer which are simple wrappers around the interface.
+# Contains just the BlockDevice interface, but not the concrete implementation
+# (RemoteBlockDevice). This also includes Reader and Writer which are simple
+# wrappers around the interface.
 source_set("interface") {
   sources = [
     "block_device.cc",

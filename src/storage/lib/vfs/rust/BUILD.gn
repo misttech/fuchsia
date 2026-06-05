@@ -8,11 +8,12 @@ import("//build/rust/rustc_dylib.gni")
 import("//build/rust/rustc_library.gni")
 
 declare_args() {
-  # Set this to true to enable some additional logs in the vfs crate and have it depend on the
-  # log crate. This should not be enabled in general for non-host builds because it causes the vfs
-  # crate, which is built as a dylib, to be the source of the global logger, which can cause
-  # problems for things that dynamically link rust libraries (like drivers) and cause link errors
-  # at worst, or incorrect log attribution at best.
+  # Set this to true to enable some additional logs in the vfs crate and have it
+  # depend on the log crate. This should not be enabled in general for non-host
+  # builds because it causes the vfs crate, which is built as a dylib, to be the
+  # source of the global logger, which can cause problems for things that
+  # dynamically link rust libraries (like drivers) and cause link errors at
+  # worst, or incorrect log attribution at best.
   vfs_rust_uses_log = is_host
 }
 
@@ -146,9 +147,10 @@ if (is_fuchsia) {
 
   # Statically linked version of the vfs.
   #
-  # Filesystems interact frequently with the vfs. Due to this heavy usage, linking them against the
-  # dynamically linked vfs introduces significant performance overhead. To avoid this, filesystems
-  # should use this static version. Other components should use the dynamically linked vfs.
+  # Filesystems interact frequently with the vfs. Due to this heavy usage,
+  # linking them against the dynamically linked vfs introduces significant
+  # performance overhead. To avoid this, filesystems should use this static
+  # version. Other components should use the dynamically linked vfs.
   rustc_library("vfs_static") {
     name = "vfs"
     forward_variables_from(common_vfs_args, "*")

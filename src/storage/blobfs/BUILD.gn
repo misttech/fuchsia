@@ -6,9 +6,9 @@ import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 
 declare_args() {
-  # Set this to true when configuring gn args to enable blobfs page-in metrics recording. This will
-  # also increase the inspect VMO size for blobfs to 2 MiB, to accommodate the large number of
-  # metrics entries.
+  # Set this to true when configuring gn args to enable blobfs page-in metrics
+  # recording. This will also increase the inspect VMO size for blobfs to 2 MiB,
+  # to accommodate the large number of metrics entries.
   blobfs_page_in_metrics_recording = false
 }
 
@@ -239,7 +239,8 @@ static_library("blobfs") {
       # Enable blobfs page-in metrics.
       "BLOBFS_ENABLE_PAGE_IN_METRICS",
 
-      # The page-in metrics feature requires a large Inspect VMO (>512KB) for blobfs.
+      # The page-in metrics feature requires a large Inspect VMO (>512KB) for
+      # blobfs.
       "BLOBFS_ENABLE_LARGE_INSPECT_VMO",
     ]
   }

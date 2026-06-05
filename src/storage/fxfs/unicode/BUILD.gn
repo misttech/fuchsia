@@ -71,7 +71,8 @@ if (is_host) {
     sources = [ "//prebuilt/third_party/ucd/UCD.zip" ]
   }
 
-  # This (host) binary is responsible for taking UCD.zip and creating unicode_gen.rs.
+  # This (host) binary is responsible for taking UCD.zip and creating
+  # unicode_gen.rs.
   rustc_binary("unicode_gen_builder") {
     edition = "2024"
     source_root = "src/generator.rs"
