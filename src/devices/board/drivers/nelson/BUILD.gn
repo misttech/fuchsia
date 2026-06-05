@@ -146,7 +146,7 @@ fuchsia_cc_driver("nelson-module-driver") {
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/devices/lib/fidl-metadata",
-    "//src/devices/lib/thermal",
+    "//src/devices/lib/thermal/cpp",
     "//src/devices/usb/lib/fuchsia.hardware.usb.dwc2:fuchsia.hardware.usb.dwc2_cpp",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/lib/usb:cdc",

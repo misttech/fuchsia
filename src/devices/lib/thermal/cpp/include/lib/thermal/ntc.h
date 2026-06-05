@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_NTC_H_
-#define SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_NTC_H_
+#ifndef SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_NTC_H_
+#define SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_NTC_H_
 
 #include <zircon/assert.h>
 #include <zircon/types.h>
@@ -89,4 +89,4 @@ class Ntc : public linear_lookup_table::LinearLookupTable<float, uint32_t> {
 };
 }  // namespace thermal
 
-#endif  // SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_NTC_H_
+#endif  // SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_NTC_H_

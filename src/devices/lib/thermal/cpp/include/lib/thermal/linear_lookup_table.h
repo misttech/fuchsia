@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
-#define SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
+#ifndef SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
+#define SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
 
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
@@ -104,4 +104,4 @@ class LinearLookupTable {
 };
 }  // namespace linear_lookup_table
 
-#endif  // SRC_DEVICES_LIB_THERMAL_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
+#endif  // SRC_DEVICES_LIB_THERMAL_CPP_INCLUDE_LIB_THERMAL_LINEAR_LOOKUP_TABLE_H_
