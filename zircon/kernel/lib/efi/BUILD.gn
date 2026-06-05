@@ -21,6 +21,7 @@ static_library("efi") {
 library_headers("headers") {
   headers = [
     "efi/boot-services.h",
+    "efi/global-variable.h",
     "efi/protocol/block-io.h",
     "efi/protocol/device-path-to-text.h",
     "efi/protocol/device-path.h",
@@ -32,12 +33,15 @@ library_headers("headers") {
     "efi/protocol/loaded-image.h",
     "efi/protocol/managed-network.h",
     "efi/protocol/pci-root-bridge-io.h",
+    "efi/protocol/serial-io.h",
     "efi/protocol/service-binding.h",
+    "efi/protocol/serial-io.h",
     "efi/protocol/shell-parameters.h",
     "efi/protocol/simple-file-system.h",
     "efi/protocol/simple-network.h",
     "efi/protocol/simple-text-input.h",
     "efi/protocol/simple-text-output.h",
+    "efi/protocol/tcg2.h",
     "efi/protocol/tcp6.h",
     "efi/protocol/usb-io.h",
     "efi/runtime-services.h",
