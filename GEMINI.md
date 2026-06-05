@@ -36,18 +36,38 @@ If you're confused about why a command failed, try taking a look at the logs
 from the device before trying the next command. Device logs often reveal
 information not contained in host-side stdout/stderr.
 
-### Safety & Confirmations
+## Documentation
+
+Documentation for Fuchsia is in `docs/` and `vendor/google/docs/`. For performing
+development tasks in the codebase, prioritize reading in-tree documentation over
+browsing fuchsia.dev. Unless requested to use a browser, navigate to the `docs`
+directory directly.
+
+Example on translating `https://fuchsia.dev/` URLs to corresponding files:
+
+- From: `https://fuchsia.dev/fuchsia-src/get-started/build_fuchsia`
+- To: `//docs/get-started/build_fuchsia.md`
+
+Exceptions:
+
+- Directories and `index.md` in URLs map to `README.md` (e.g.,
+  `https://fuchsia.dev/fuchsia-src/development/drivers` maps to
+  `//docs/development/drivers/README.md`).
+
+- Internal pages (`https://fuchsia.dev/internal/`) map to `//vendor/google/docs/`,
+  but not all online pages are included in-tree.
+
+- Reference pages (e.g., `https://fuchsia.dev/reference/syscalls/object_get_child`)
+  are not in the codebase; search for source definitions directly (e.g., vDSO
+  syscall definitions under `//zircon/vdso/`).
+
+## Safety & Confirmations
 
 Follow these rules regarding user confirmations:
 
 1. **Destructive Commands (Always Ask):** Always ask for explicit confirmation
    from the user before running `fx clean` (wipes global build cache), `ffx
    target flash` (reboots device), or `fx ota`.
-
-Documentation for Fuchsia is in the `docs/` subdirectory and the
-`vendor/google/docs/` subdirectory. You should read the documentation if you're
-struggling with a concept. Additional documentation is at https://fuchsia.dev if
-the in-tree documentation doesn't solve your problem.
 
 When generating new code, follow the existing coding style.
 
