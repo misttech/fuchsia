@@ -16,7 +16,6 @@
                 "kcmp_kcmp_test",
                 "mm_mremap_test",
                 "net_psock_tpacket",
-                "net_reuseaddr_conflict",
                 "ptrace_peeksiginfo",
                 "rtc_rtctest",
                 "seccomp_seccomp_bpf",

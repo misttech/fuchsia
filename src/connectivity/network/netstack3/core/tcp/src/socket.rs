@@ -50,7 +50,7 @@ use netstack3_base::socket::{
     SocketMapConflictPolicy, SocketMapStateSpec, SocketMapUpdateSharingPolicy,
     SocketZonedAddrExt as _, UpdateSharingError,
 };
-use netstack3_base::socketmap::{IterShadows as _, SocketMap};
+use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged as _};
 use netstack3_base::sync::RwLock;
 use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
@@ -987,7 +987,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> SocketMap
     type ConnAddrState = ConnAddrState<Self::ConnId>;
 
     fn listener_tag(
-        ListenerAddrInfo { has_device, specified_addr: _ }: ListenerAddrInfo,
+        ListenerAddrInfo { has_device, specified_addr }: ListenerAddrInfo,
         state: &Self::ListenerAddrState,
     ) -> Self::AddrVecTag {
         let (sharing, state) = match state {
@@ -1005,12 +1005,17 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> SocketMap
                 },
             ),
         };
-        AddrVecTag { sharing, state, has_device }
+        AddrVecTag { sharing, state, has_device, specified_addr }
     }
 
     fn connected_tag(has_device: bool, state: &Self::ConnAddrState) -> Self::AddrVecTag {
         let ConnAddrState { sharing, id: _ } = state;
-        AddrVecTag { sharing: *sharing, has_device, state: SocketTagState::Conn }
+        AddrVecTag {
+            sharing: *sharing,
+            has_device,
+            state: SocketTagState::Conn,
+            specified_addr: true,
+        }
     }
 }
 
@@ -1019,6 +1024,7 @@ struct AddrVecTag {
     sharing: SharingState,
     state: SocketTagState,
     has_device: bool,
+    specified_addr: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -1161,6 +1167,57 @@ impl<S: SpecSocketId> SocketMapAddrStateSpec for ListenerAddrState<S> {
     }
 }
 
+/// Verifies that there are no conflicts with a socket at the specified address.
+/// Calls the `filter` with a tag for all potential conflicts. It should return
+/// true if the tag represents a socket that the new socket would conflict with.
+fn check_conflicts<I, D, BT>(
+    socketmap: &SocketMap<AddrVec<I, D, TcpPortSpec>, Bound<TcpSocketSpec<I, D, BT>>>,
+    addr: &ListenerAddr<ListenerIpAddr<I::Addr, NonZeroU16>, D>,
+    filter: impl Fn(&AddrVecTag) -> bool,
+) -> Result<(), InsertError>
+where
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+{
+    // Check all potential shadows.
+    let addr_vec = AddrVec::Listen(addr.clone());
+    for shadow_addr in addr_vec.iter_shadows() {
+        if let Some(bound) = socketmap.get(&shadow_addr) {
+            let tag = bound.tag(&shadow_addr);
+            if filter(&tag) {
+                return Err(InsertError::ShadowAddrExists);
+            }
+        }
+    }
+
+    // Check direct descendants.
+    if socketmap.descendant_counts(&addr.clone().into()).any(|(tag, _)| filter(tag)) {
+        return Err(InsertError::WouldShadowExisting);
+    }
+
+    // Check indirect conflicts.
+    // If device is specified, then look for socket with unspecified device.
+    if addr.device.is_some()
+        && socketmap
+            .descendant_counts(&addr.without_device().into())
+            .any(|(tag, _)| !tag.has_device && filter(tag))
+    {
+        return Err(InsertError::IndirectConflict);
+    }
+
+    // If address is specified, then look for socket with unspecified address.
+    if addr.ip.addr.is_some()
+        && socketmap
+            .descendant_counts(&addr.without_addr().into())
+            .any(|(tag, _)| !tag.specified_addr && filter(tag))
+    {
+        return Err(InsertError::IndirectConflict);
+    }
+
+    Ok(())
+}
+
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     SocketMapUpdateSharingPolicy<
         ListenerAddr<ListenerIpAddr<I::Addr, NonZeroU16>, D>,
@@ -1173,60 +1230,19 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     fn allows_sharing_update(
         socketmap: &SocketMap<AddrVec<I, D, TcpPortSpec>, Bound<Self>>,
         addr: &ListenerAddr<ListenerIpAddr<I::Addr, NonZeroU16>, D>,
-        ListenerSharingState{listening: old_listening, sharing: old_sharing}: &ListenerSharingState,
-        ListenerSharingState{listening: new_listening, sharing: new_sharing}: &ListenerSharingState,
+        old_state: &ListenerSharingState,
+        new_state: &ListenerSharingState,
     ) -> Result<(), UpdateSharingError> {
-        let ListenerAddr { device, ip } = addr;
-        match (old_listening, new_listening) {
+        match (old_state.listening, new_state.listening) {
             (true, false) => (), // Changing a listener to bound is always okay.
             (true, true) | (false, false) => (), // No change
             (false, true) => {
-                // Upgrading a bound socket to a listener requires no other listeners on similar
-                // addresses. This boils down to checking for listeners on either
-                //   1. addresses that this address shadows, or
-                //   2. addresses that shadow this address.
-
-                // First, check for condition (1).
-                let addr = AddrVec::Listen(addr.clone());
-                for a in addr.iter_shadows() {
-                    if let Some(s) = socketmap.get(&a) {
-                        match s {
-                            Bound::Conn(c) => {
-                                unreachable!("found conn state {c:?} at listener addr {a:?}")
-                            }
-                            Bound::Listen(l) => match l {
-                                ListenerAddrState::ExclusiveListener(_)
-                                | ListenerAddrState::ExclusiveBound(_) => {
-                                    return Err(UpdateSharingError);
-                                }
-                                ListenerAddrState::Shared { listener, bound: _ } => {
-                                    match listener {
-                                        Some(_) => {
-                                            return Err(UpdateSharingError);
-                                        }
-                                        None => (),
-                                    }
-                                }
-                            },
-                        }
-                    }
-                }
-
-                // Next, check for condition (2).
-                if socketmap.descendant_counts(&ListenerAddr { device: None, ip: *ip }.into()).any(
-                    |(AddrVecTag { state, has_device: _, sharing: _ }, _): &(_, NonZeroUsize)| {
-                        match state {
-                            SocketTagState::Conn | SocketTagState::Bound => false,
-                            SocketTagState::Listener => true,
-                        }
-                    },
-                ) {
-                    return Err(UpdateSharingError);
-                }
+                check_conflicts(socketmap, addr, |tag| tag.state == SocketTagState::Listener)
+                    .map_err(|_conflict| UpdateSharingError)?;
             }
         }
 
-        match (old_sharing, new_sharing) {
+        match (old_state.sharing, new_state.sharing) {
             (SharingState::Exclusive, SharingState::Exclusive)
             | (SharingState::ReuseAddress, SharingState::ReuseAddress)
             | (SharingState::Exclusive, SharingState::ReuseAddress) => (),
@@ -1236,48 +1252,8 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
                 // had SO_REUSEADDR set, then allowing clearing SO_REUSEADDR on
                 // one of them makes the state inconsistent. We only allow this
                 // if it doesn't introduce inconsistencies.
-                let root_addr = ListenerAddr {
-                    device: None,
-                    ip: ListenerIpAddr { addr: None, identifier: ip.identifier },
-                };
-
-                let conflicts = match device {
-                    // If the socket doesn't have a device, it conflicts with
-                    // any listeners that shadow it or that it shadows.
-                    None => {
-                        socketmap.descendant_counts(&addr.clone().into()).any(
-                            |(AddrVecTag { has_device: _, sharing: _, state }, _)| match state {
-                                SocketTagState::Conn => false,
-                                SocketTagState::Bound | SocketTagState::Listener => true,
-                            },
-                        ) || (addr != &root_addr && socketmap.get(&root_addr.into()).is_some())
-                    }
-                    Some(_) => {
-                        // If the socket has a device, it will indirectly
-                        // conflict with a listener that doesn't have a device
-                        // that is either on the same address or the unspecified
-                        // address (on the same port).
-                        socketmap.descendant_counts(&root_addr.into()).any(
-                            |(AddrVecTag { has_device, sharing: _, state }, _)| match state {
-                                SocketTagState::Conn => false,
-                                SocketTagState::Bound | SocketTagState::Listener => !has_device,
-                            },
-                        )
-                        // Detect a conflict with a shadower (which must also
-                        // have a device) on the same address or on a specific
-                        // address if this socket is on the unspecified address.
-                        || socketmap.descendant_counts(&addr.clone().into()).any(
-                            |(AddrVecTag { has_device: _, sharing: _, state }, _)| match state {
-                                SocketTagState::Conn => false,
-                                SocketTagState::Bound | SocketTagState::Listener => true,
-                            },
-                        )
-                    }
-                };
-
-                if conflicts {
-                    return Err(UpdateSharingError);
-                }
+                check_conflicts(socketmap, addr, |tag| tag.state != SocketTagState::Conn)
+                    .map_err(|_conflict| UpdateSharingError)?;
             }
         }
 
@@ -1391,51 +1367,17 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     > for TcpSocketSpec<I, D, BT>
 {
     fn check_insert_conflicts(
-        sharing: &ListenerSharingState,
+        state: &ListenerSharingState,
         addr: &ListenerAddr<ListenerIpAddr<I::Addr, NonZeroU16>, D>,
         socketmap: &SocketMap<AddrVec<I, D, TcpPortSpec>, Bound<Self>>,
     ) -> Result<(), InsertError> {
-        let addr = AddrVec::Listen(addr.clone());
-        let ListenerSharingState { listening: _, sharing } = sharing;
-        // Check if any shadow address is present, specifically, if
-        // there is an any-listener with the same port.
-        for a in addr.iter_shadows() {
-            if let Some(s) = socketmap.get(&a) {
-                match s {
-                    Bound::Conn(c) => unreachable!("found conn state {c:?} at listener addr {a:?}"),
-                    Bound::Listen(l) => match l {
-                        ListenerAddrState::ExclusiveListener(_)
-                        | ListenerAddrState::ExclusiveBound(_) => {
-                            return Err(InsertError::ShadowAddrExists);
-                        }
-                        ListenerAddrState::Shared { listener, bound: _ } => match sharing {
-                            SharingState::Exclusive => return Err(InsertError::ShadowAddrExists),
-                            SharingState::ReuseAddress => match listener {
-                                Some(_) => return Err(InsertError::ShadowAddrExists),
-                                None => (),
-                            },
-                        },
-                    },
-                }
-            }
+        fn can_share(s1: SharingState, s2: SharingState) -> bool {
+            (s1, s2) == (SharingState::ReuseAddress, SharingState::ReuseAddress)
         }
 
-        // Check if shadower exists. Note: Listeners do conflict with existing
-        // connections, unless the listeners and connections have sharing
-        // enabled.
-        for (tag, _count) in socketmap.descendant_counts(&addr) {
-            let AddrVecTag { sharing: tag_sharing, has_device: _, state: _ } = tag;
-            match (tag_sharing, sharing) {
-                (SharingState::Exclusive, SharingState::Exclusive | SharingState::ReuseAddress) => {
-                    return Err(InsertError::ShadowerExists);
-                }
-                (SharingState::ReuseAddress, SharingState::Exclusive) => {
-                    return Err(InsertError::ShadowerExists);
-                }
-                (SharingState::ReuseAddress, SharingState::ReuseAddress) => (),
-            }
-        }
-        Ok(())
+        check_conflicts(socketmap, addr, |tag| {
+            tag.state == SocketTagState::Listener || !can_share(tag.sharing, state.sharing)
+        })
     }
 }
 
@@ -1467,7 +1409,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
             // traffic from us.
             None => {
                 if socketmap.descendant_counts(&addr_vec).len() > 0 {
-                    return Err(InsertError::ShadowerExists);
+                    return Err(InsertError::WouldShadowExisting);
                 }
             }
             // If the new connection has a device bound, check if there is
@@ -5516,7 +5458,7 @@ where
                 .try_insert(conn_addr.clone(), sharing, demux_id.clone())
                 .map_err(|err| match err {
                     // The connection will conflict with an existing one.
-                    InsertError::Exists | InsertError::ShadowerExists => {
+                    InsertError::Exists | InsertError::WouldShadowExisting => {
                         ConnectError::ConnectionExists
                     }
                     // Connections don't conflict with listeners, and we should
@@ -6601,9 +6543,26 @@ mod tests {
 
     impl TcpCoreCtx<MultipleDevicesId, TcpBindingsCtx<MultipleDevicesId>> {
         fn new_multiple_devices() -> Self {
-            Self::with_ip_socket_ctx_state(FakeDualStackIpSocketCtx::new(core::iter::empty::<
-                FakeDeviceConfig<MultipleDevicesId, SpecifiedAddr<IpAddr>>,
-            >()))
+            let ip_v4_local =
+                SpecifiedAddr::new(IpAddr::V4(*<Ipv4 as TestIpExt>::TEST_ADDRS.local_ip)).unwrap();
+            let ip_v4_remote =
+                SpecifiedAddr::new(IpAddr::V4(*<Ipv4 as TestIpExt>::TEST_ADDRS.remote_ip)).unwrap();
+            let ip_v6_local =
+                SpecifiedAddr::new(IpAddr::V6(*<Ipv6 as TestIpExt>::TEST_ADDRS.local_ip)).unwrap();
+            let ip_v6_remote =
+                SpecifiedAddr::new(IpAddr::V6(*<Ipv6 as TestIpExt>::TEST_ADDRS.remote_ip)).unwrap();
+
+            let ips = vec![ip_v4_local, ip_v4_remote, ip_v6_local, ip_v6_remote];
+
+            Self::with_ip_socket_ctx_state(FakeDualStackIpSocketCtx::new(
+                MultipleDevicesId::all().into_iter().map(|device| {
+                    let local_ips = match device {
+                        MultipleDevicesId::A | MultipleDevicesId::B => ips.clone(),
+                        MultipleDevicesId::C => Vec::new(),
+                    };
+                    FakeDeviceConfig { device, local_ips, remote_ips: Vec::new() }
+                }),
+            ))
         }
     }
 
@@ -7580,17 +7539,256 @@ mod tests {
         api.listen(&sock_a, NonZeroUsize::new(10).unwrap()).expect("can listen");
 
         let socket = api.create(Default::default());
-        // Binding `socket` to the unspecified address should fail since the address
-        // is shadowed by `sock_a`.
+        // Binding `socket` to the unspecified address should fail since the
+        // address is shadowed by `sock_a`.
         assert_matches!(
             api.bind(&socket, None, Some(LOCAL_PORT)),
             Err(BindError::LocalAddressError(LocalAddressError::AddressInUse))
         );
 
-        // Once `socket` is bound to a different device, though, it no longer
-        // conflicts.
         assert_matches!(api.set_device(&socket, Some(MultipleDevicesId::B),), Ok(()));
         api.bind(&socket, None, Some(LOCAL_PORT)).expect("no conflict");
+    }
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    enum TestIp {
+        A,
+        B,
+    }
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    enum TestSocketConfig {
+        AnyIp,
+        AnyIpWithDev(MultipleDevicesId),
+        IpOnly(TestIp),
+        IpWithDev(MultipleDevicesId, TestIp),
+    }
+
+    impl TestSocketConfig {
+        fn create<'a, I: TcpTestIpExt>(
+            self,
+            api: &mut TcpApi<I, &'a mut TcpCtx<MultipleDevicesId>>,
+            reuseaddr: bool,
+        ) -> TcpApiSocketId<I, &'a mut TcpCtx<MultipleDevicesId>>
+        where
+            TcpCoreCtx<MultipleDevicesId, TcpBindingsCtx<MultipleDevicesId>>:
+                TcpContext<I, TcpBindingsCtx<MultipleDevicesId>>,
+        {
+            let socket = api.create(Default::default());
+            if reuseaddr {
+                api.set_reuseaddr(&socket, true).unwrap();
+            }
+            match self {
+                TestSocketConfig::AnyIp | TestSocketConfig::IpOnly(_) => {}
+                TestSocketConfig::AnyIpWithDev(device) | TestSocketConfig::IpWithDev(device, _) => {
+                    assert_matches!(api.set_device(&socket, Some(device)), Ok(()));
+                }
+            }
+            socket
+        }
+
+        fn get_bind_addr<I: TcpTestIpExt>(
+            self,
+        ) -> Option<ZonedAddr<SpecifiedAddr<I::Addr>, MultipleDevicesId>> {
+            match self {
+                TestSocketConfig::AnyIp | TestSocketConfig::AnyIpWithDev(_) => None,
+                TestSocketConfig::IpOnly(ip) | TestSocketConfig::IpWithDev(_, ip) => {
+                    let addr = match ip {
+                        TestIp::A => I::TEST_ADDRS.local_ip,
+                        TestIp::B => I::TEST_ADDRS.remote_ip,
+                    };
+                    Some(ZonedAddr::Unzoned(addr))
+                }
+            }
+        }
+
+        fn create_and_bind<'a, I: TcpTestIpExt>(
+            self,
+            api: &mut TcpApi<I, &'a mut TcpCtx<MultipleDevicesId>>,
+            port: NonZeroU16,
+            reuseaddr: bool,
+        ) -> TcpApiSocketId<I, &'a mut TcpCtx<MultipleDevicesId>>
+        where
+            TcpCoreCtx<MultipleDevicesId, TcpBindingsCtx<MultipleDevicesId>>:
+                TcpContext<I, TcpBindingsCtx<MultipleDevicesId>>,
+        {
+            let socket = self.create(api, reuseaddr);
+            api.bind(&socket, self.get_bind_addr::<I>(), Some(port)).expect("bind should succeed");
+            socket
+        }
+    }
+
+    #[ip_test(I)]
+    #[test_case(TestSocketConfig::AnyIp,
+                TestSocketConfig::AnyIp,
+                true; "both_wildcard")]
+    #[test_case(TestSocketConfig::AnyIp,
+                TestSocketConfig::AnyIpWithDev(MultipleDevicesId::A),
+                true; "wildcard_then_wildcard_dev_a")]
+    #[test_case(TestSocketConfig::AnyIp,
+                TestSocketConfig::IpOnly(TestIp::A),
+                true; "wildcard_vs_specific")]
+    #[test_case(TestSocketConfig::AnyIp,
+                TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::A),
+                true; "wildcard_then_specific_dev_a")]
+    #[test_case(TestSocketConfig::AnyIpWithDev(MultipleDevicesId::A),
+                TestSocketConfig::AnyIp,
+                true; "wildcard_dev_a_then_wildcard")]
+    #[test_case(TestSocketConfig::AnyIpWithDev(MultipleDevicesId::A),
+                TestSocketConfig::IpOnly(TestIp::A),
+                true; "any_dev_a_then_ip_only")]
+    #[test_case(TestSocketConfig::IpOnly(TestIp::A),
+                TestSocketConfig::AnyIpWithDev(MultipleDevicesId::A),
+                true; "ip_only_then_any_dev_a")]
+    #[test_case(TestSocketConfig::IpOnly(TestIp::A),
+                TestSocketConfig::IpOnly(TestIp::A),
+                true; "same_ip")]
+    #[test_case(TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::A),
+                TestSocketConfig::AnyIp,
+                true; "specific_dev_a_then_wildcard")]
+    #[test_case(TestSocketConfig::IpOnly(TestIp::A),
+                TestSocketConfig::AnyIp,
+                true; "specific_vs_wildcard_diff_ip")]
+    // Non-conflicting cases (different devices):
+    #[test_case(TestSocketConfig::AnyIpWithDev(MultipleDevicesId::A),
+                TestSocketConfig::AnyIpWithDev(MultipleDevicesId::B),
+                false; "different_devices_wildcard")]
+    #[test_case(TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::A),
+                TestSocketConfig::IpWithDev(MultipleDevicesId::B, TestIp::A),
+                false; "different_devices_specific")]
+    // Non-conflicting cases (different IPs):
+    #[test_case(TestSocketConfig::IpOnly(TestIp::A),
+                TestSocketConfig::IpOnly(TestIp::B),
+                false; "different_ips")]
+    #[test_case(TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::A),
+                TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::B),
+                false; "different_ips_same_device")]
+    #[test_case(TestSocketConfig::IpWithDev(MultipleDevicesId::A, TestIp::A),
+                TestSocketConfig::IpOnly(TestIp::B),
+                false; "different_ips_overlapping_device")]
+    fn test_address_conflict_detection<I: TcpTestIpExt>(
+        sock_a_config: TestSocketConfig,
+        sock_b_config: TestSocketConfig,
+        have_conflict: bool,
+    ) where
+        TcpCoreCtx<MultipleDevicesId, TcpBindingsCtx<MultipleDevicesId>>:
+            TcpContext<I, TcpBindingsCtx<MultipleDevicesId>>,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new_multiple_devices());
+        let mut api = ctx.tcp_api::<I>();
+
+        // Test conflict detection on bind.
+        {
+            let sock_a = sock_a_config.create_and_bind(&mut api, LOCAL_PORT, false);
+
+            let sock_b = sock_b_config.create(&mut api, false);
+            let res = api.bind(&sock_b, sock_b_config.get_bind_addr::<I>(), Some(LOCAL_PORT));
+            if have_conflict {
+                assert_matches!(
+                    res,
+                    Err(BindError::LocalAddressError(LocalAddressError::AddressInUse))
+                );
+            } else {
+                res.expect("bind should succeed");
+            }
+
+            api.close(sock_a);
+            api.close(sock_b);
+        }
+
+        // Test conflict detection when the first socket is listening and the second socket
+        // tries to bind.
+        {
+            let sock_a = sock_a_config.create_and_bind(&mut api, LOCAL_PORT, false);
+            api.listen(&sock_a, NonZeroUsize::new(10).unwrap()).expect("listen should succeed");
+
+            let sock_b = sock_b_config.create(&mut api, false);
+            let res = api.bind(&sock_b, sock_b_config.get_bind_addr::<I>(), Some(LOCAL_PORT));
+            if have_conflict {
+                assert_matches!(
+                    res,
+                    Err(BindError::LocalAddressError(LocalAddressError::AddressInUse))
+                );
+            } else {
+                res.expect("bind should succeed");
+            }
+
+            api.close(sock_a);
+            api.close(sock_b);
+        }
+
+        // Verify that SO_REUSEADDR does not allow binding to an address that is
+        // actively listened on by an overlapping socket.
+        {
+            let sock_a = sock_a_config.create_and_bind(&mut api, LOCAL_PORT, true);
+            api.listen(&sock_a, NonZeroUsize::new(10).unwrap()).expect("listen should succeed");
+
+            let sock_b = sock_b_config.create(&mut api, true);
+            let res = api.bind(&sock_b, sock_b_config.get_bind_addr::<I>(), Some(LOCAL_PORT));
+            if have_conflict {
+                assert_matches!(
+                    res,
+                    Err(BindError::LocalAddressError(LocalAddressError::AddressInUse))
+                );
+            } else {
+                res.expect("bind should succeed");
+            }
+
+            api.close(sock_a);
+            api.close(sock_b);
+        }
+
+        // Test conflict detection for listening sockets when both sockets are
+        // bound with SO_REUSEADDR, and then we try to listen. First listen will
+        // succeed, but the second is expected to fail when there is a conflict.
+        {
+            let sock_a = sock_a_config.create_and_bind(&mut api, LOCAL_PORT, true);
+            let sock_b = sock_b_config.create_and_bind(&mut api, LOCAL_PORT, true);
+
+            // First listen succeeds.
+            api.listen(&sock_a, NonZeroUsize::new(10).unwrap())
+                .expect("first listen should succeed");
+
+            // Second listen.
+            let res = api.listen(&sock_b, NonZeroUsize::new(10).unwrap());
+            if have_conflict {
+                assert_matches!(res, Err(ListenError::ListenerExists));
+            } else {
+                res.expect("second listen should succeed");
+            }
+
+            api.close(sock_a);
+            api.close(sock_b);
+        }
+
+        // Verify that resetting SO_REUSEADDR (setting it to false) is only
+        // allowed if it would not result in a conflict with other existing
+        // sockets.
+        {
+            let sock_a = sock_a_config.create_and_bind(&mut api, LOCAL_PORT, true);
+            let sock_b = sock_b_config.create_and_bind(&mut api, LOCAL_PORT, true);
+
+            // Try to reset SO_REUSEADDR on sock_a.
+            let res_a = api.set_reuseaddr(&sock_a, false);
+            if have_conflict {
+                assert_matches!(res_a, Err(SetReuseAddrError::AddrInUse));
+            } else {
+                res_a.expect("reset sock_a should succeed");
+            }
+
+            // Try to reset SO_REUSEADDR on sock_b.
+            let res_b = api.set_reuseaddr(&sock_b, false);
+            if have_conflict {
+                assert_matches!(res_b, Err(SetReuseAddrError::AddrInUse));
+            } else {
+                res_b.expect("reset sock_b should succeed");
+            }
+
+            api.close(sock_a);
+            api.close(sock_b);
+        }
     }
 
     #[test_case(None)]

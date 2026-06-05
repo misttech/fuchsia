@@ -1281,8 +1281,8 @@ pub enum InsertError {
     ShadowAddrExists,
     /// Entry already exists.
     Exists,
-    /// A shadower exists for the entry.
-    ShadowerExists,
+    /// Entry would shadow existing entry.
+    WouldShadowExisting,
     /// An indirect conflict was detected.
     IndirectConflict,
 }
@@ -1293,7 +1293,7 @@ impl From<InsertError> for LocalAddressError {
             InsertError::ShadowAddrExists
             | InsertError::Exists
             | InsertError::IndirectConflict
-            | InsertError::ShadowerExists => LocalAddressError::AddressInUse,
+            | InsertError::WouldShadowExisting => LocalAddressError::AddressInUse,
         }
     }
 }
@@ -1669,7 +1669,7 @@ mod tests {
                 .descendant_counts(&dest)
                 .any(|(sharing_state, _count)| !sharing_state.can_share_with(new_sharing_state))
             {
-                Err(InsertError::ShadowerExists)
+                Err(InsertError::WouldShadowExisting)
             } else {
                 Ok(())
             }

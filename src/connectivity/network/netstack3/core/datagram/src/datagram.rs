@@ -2038,7 +2038,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> BoundStateHandler
                 InsertError::Exists
                 | InsertError::IndirectConflict
                 | InsertError::ShadowAddrExists
-                | InsertError::ShadowerExists,
+                | InsertError::WouldShadowExisting,
             ) => false,
         }
     }
@@ -2607,8 +2607,8 @@ fn connect_inner<
         Err(
             InsertError::Exists
             | InsertError::IndirectConflict
-            | InsertError::ShadowerExists
-            | InsertError::ShadowAddrExists,
+            | InsertError::ShadowAddrExists
+            | InsertError::WouldShadowExisting,
         ) => {
             reinsert_original(sockets, reinsert_op);
             return Err(ConnectError::SockAddrConflict);

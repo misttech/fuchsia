@@ -278,6 +278,41 @@ pub struct ListenerAddr<A, D> {
     pub device: Option<D>,
 }
 
+impl<A, D> ListenerAddr<A, D>
+where
+    A: Clone,
+{
+    /// Returns this same `ListenerAddr` but with unspecified device.
+    pub fn without_device(&self) -> Self {
+        Self { ip: self.ip.clone(), device: None }
+    }
+
+    /// True if device is specified.
+    pub fn has_device(&self) -> bool {
+        self.device.is_some()
+    }
+}
+
+impl<A, LI, D> ListenerAddr<ListenerIpAddr<A, LI>, D>
+where
+    A: IpAddress,
+    LI: Clone,
+    D: Clone,
+{
+    /// Returns this same `ListenerAddr` but with the IP address set to unspecified.
+    pub fn without_addr(&self) -> Self {
+        Self {
+            ip: ListenerIpAddr { addr: None, identifier: self.ip.identifier.clone() },
+            device: self.device.clone(),
+        }
+    }
+
+    /// True if address is specified.
+    pub fn has_addr(&self) -> bool {
+        self.ip.addr.is_some()
+    }
+}
+
 impl<A, D> AsRef<Option<D>> for ListenerAddr<A, D> {
     fn as_ref(&self) -> &Option<D> {
         &self.device

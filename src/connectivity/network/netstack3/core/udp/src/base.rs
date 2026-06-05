@@ -167,7 +167,7 @@ fn check_posix_sharing<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
             if socketmap.descendant_counts(&dest).any(|(tag, _): &(_, NonZeroUsize)| {
                 !tag.to_sharing_options().is_shareable_with_new_state(new_sharing)
             }) {
-                return Err(InsertError::ShadowerExists);
+                return Err(InsertError::WouldShadowExisting);
             }
         }
         AddrVec::Conn(ConnAddr { ip: _, device: Some(_) }) => {

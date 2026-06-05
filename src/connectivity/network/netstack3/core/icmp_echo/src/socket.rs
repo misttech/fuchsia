@@ -790,7 +790,7 @@ where
         // Likewise, the presence of a value that shadows the target address is
         // also disqualifying.
         if socketmap.descendant_counts(&addr).len() != 0 {
-            return Err(InsertError::ShadowerExists);
+            return Err(InsertError::WouldShadowExisting);
         }
         Ok(())
     }
