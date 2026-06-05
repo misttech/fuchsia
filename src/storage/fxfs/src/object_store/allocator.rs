@@ -1030,6 +1030,9 @@ impl Allocator {
         let _guard = self.allocation_mutex.lock().await;
 
         let (mut result, listener) = TrimmableExtents::new(self);
+        if offset >= self.device_size {
+            return Ok(result);
+        }
         let mut bytes = 0;
 
         // We can't just use self.strategy here because it doesn't necessarily hold all
@@ -1041,7 +1044,9 @@ impl Allocator {
         let mut iter = self
             .filter(
                 merger
-                    .query(Query::FullRange(&AllocatorKey { device_range: Extent(0..offset + 1) }))
+                    .query(Query::FullRange(&AllocatorKey {
+                        device_range: Extent::search_key_from_offset(offset),
+                    }))
                     .await?,
                 false,
             )
