@@ -13,6 +13,7 @@ group("tests") {
   deps = [
     ":io_conformance_util_tests",
     "//src/storage/conformance/conformance_harness/cppvfs",
+    "//src/storage/conformance/conformance_harness/erofs",
     "//src/storage/conformance/conformance_harness/fxfs",
     "//src/storage/conformance/conformance_harness/memfs",
     "//src/storage/conformance/conformance_harness/minfs",

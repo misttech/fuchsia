@@ -95,7 +95,7 @@ fn serve_erofs(
     let root = payload.root.ok_or(zx::Status::INVALID_ARGS).context("Missing root")?;
 
     log::info!("Serving new EROFS instance");
-    ErofsVolume::serve(backing_vmo, pager, root)?;
+    ErofsVolume::serve(backing_vmo, pager, fio::PERM_READABLE, root)?;
 
     Ok(())
 }

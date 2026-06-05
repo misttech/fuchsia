@@ -31,6 +31,7 @@ impl ErofsVolume {
     pub fn serve(
         backing_vmo: zx::Vmo,
         pager: Arc<ErofsPager>,
+        flags: fio::Flags,
         root: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     ) -> Result<(), anyhow::Error> {
         let scope = ExecutionScope::new();
@@ -38,7 +39,7 @@ impl ErofsVolume {
         let root_node = volume.parser().root_node();
         let root_dir = Arc::new(ErofsDirectory::new(volume, root_node));
 
-        vfs::directory::serve_on(root_dir, fio::PERM_READABLE, scope, root);
+        vfs::directory::serve_on(root_dir, flags, scope, root);
         Ok(())
     }
 
