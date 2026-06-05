@@ -15,18 +15,26 @@ parameter in the test config file.
 import logging
 import time
 
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
+from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.utils import rand_ascii_str
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    RadioConfig,
+    SecurityOpen,
+)
 
 
 class BeaconLossTest(base_test.WifiBaseTest):
-    access_point: AccessPoint
     MAX_ASSOCIATE_ATTEMPTS = 2
     # Default number of test iterations here.
     # Override using parameter in config file.
@@ -53,9 +61,13 @@ class BeaconLossTest(base_test.WifiBaseTest):
 
         self.dut = self.get_dut(AssociationMode.POLICY)
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
 
         self.num_of_iterations = int(
             self.user_params.get(
@@ -69,11 +81,13 @@ class BeaconLossTest(base_test.WifiBaseTest):
         self.dut.reset_wifi()
         # ensure radio is on, in case the test failed while the radio was off
         if self.in_use_interface:
-            self.access_point.iwconfig.ap_iwconfig(
-                self.in_use_interface, "txpower on"
-            )
+            if self.access_point:
+                self.access_point.iwconfig.ap_iwconfig(
+                    self.in_use_interface, "txpower on"
+                )
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def _associate_dut_with_retry(self, ssid: str) -> None:
         for i in range(self.MAX_ASSOCIATE_ATTEMPTS):
@@ -113,21 +127,47 @@ class BeaconLossTest(base_test.WifiBaseTest):
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
-    def beacon_loss(self, channel: int) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=channel,
-            ssid=self.ssid,
-        )
+    def beacon_loss(self, channel: BssChannel) -> None:
+        band = channel.band
+
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.ssid,
+                                security=SecurityOpen(),
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=band)
+            self.in_use_interface = (
+                self.openwrt_ap.wlan_5g_interface
+                if band == Band.BAND_5G
+                else self.openwrt_ap.wlan_2g_interface
+            )
+        elif self.access_point:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=channel.number,
+                ssid=self.ssid,
+            )
+            if channel.number > 14:
+                self.in_use_interface = self.access_point.wlan_5g
+            else:
+                self.in_use_interface = self.access_point.wlan_2g
+
+        assert self.in_use_interface is not None
         time.sleep(self.wait_ap_startup_s)
-        if channel > 14:
-            self.in_use_interface = self.access_point.wlan_5g
-        else:
-            self.in_use_interface = self.access_point.wlan_2g
-
         self.log.info(
             f"Initial association with SSID: {self.ssid} on channel {channel}"
         )
@@ -141,9 +181,12 @@ class BeaconLossTest(base_test.WifiBaseTest):
             self.log.info(
                 f"Turning off AP radio for interface: {self.in_use_interface}"
             )
-            self.access_point.iwconfig.ap_iwconfig(
-                self.in_use_interface, "txpower off"
-            )
+            if self.openwrt_ap:
+                self.openwrt_ap.set_txpower(self.in_use_interface, 0)
+            elif self.access_point:
+                self.access_point.iwconfig.ap_iwconfig(
+                    self.in_use_interface, "txpower off"
+                )
             time.sleep(self.wait_after_ap_txoff_s)
 
             # Verify disconnection from AP
@@ -157,9 +200,13 @@ class BeaconLossTest(base_test.WifiBaseTest):
             self.log.info(
                 f"Turning on AP radio for interface: {self.in_use_interface}"
             )
-            self.access_point.iwconfig.ap_iwconfig(
-                self.in_use_interface, "txpower on"
-            )
+            assert self.in_use_interface is not None
+            if self.openwrt_ap:
+                self.openwrt_ap.reset_txpower(self.in_use_interface)
+            elif self.access_point:
+                self.access_point.iwconfig.ap_iwconfig(
+                    self.in_use_interface, "txpower on"
+                )
             time.sleep(self.wait_to_connect_after_ap_txon_s)
 
             # Initiate reconnection
@@ -175,10 +222,10 @@ class BeaconLossTest(base_test.WifiBaseTest):
             self.log.info(f"DUT successfully reconnected to {self.ssid}")
 
     def test_beacon_loss_2g(self) -> None:
-        self.beacon_loss(channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G)
+        self.beacon_loss(channel=DEFAULT_2G_CHANNEL)
 
     def test_beacon_loss_5g(self) -> None:
-        self.beacon_loss(channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G)
+        self.beacon_loss(channel=DEFAULT_5G_CHANNEL)
 
 
 if __name__ == "__main__":
