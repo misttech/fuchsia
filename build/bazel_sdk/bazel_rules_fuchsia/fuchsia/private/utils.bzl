@@ -7,20 +7,11 @@
 load(
     "@fuchsia_rules_common//:utils.bzl",
     "flatten",
+    "stub_executable",
 )
 load(":providers.bzl", "FuchsiaProvidersInfo")
 
 _INVALID_LABEL_CHARACTERS = "\"!%@^_#$&'()*+,;<=>?[]{|}~/".elems()
-
-def _fuchsia_cpu_alias(cpu):
-    if cpu == "aarch64":
-        return "arm64"
-    return cpu
-
-def fuchsia_cpu_from_ctx(ctx):
-    """ Returns the Fuchsia CPU for the given rule invocation. """
-    target_cpu = ctx.var["TARGET_CPU"]
-    return _fuchsia_cpu_alias(target_cpu)
 
 def normalized_target_name(label):
     label = label.lower()
@@ -61,27 +52,6 @@ def get_target_execroot(ctx, target):
     # Gets the execroot for a given target, relative to the project execroot.
     # See https://bazel.build/docs/output_directories.
     return target[DefaultInfo].files_to_run.runfiles_manifest.dirname + "/" + ctx.workspace_name
-
-def stub_executable(ctx):
-    # buildifier: disable=function-docstring-args
-    # buildifier: disable=function-docstring-return
-    """Returns a stub executable that fails with a message."""
-    executable_file = ctx.actions.declare_file(ctx.label.name + "_fail.sh")
-    content = """#!/bin/bash
-    echo "---------------------------------------------------------"
-    echo "ERROR: Attempting to run a target or dependency that is not runnable"
-    echo "Got {target}"
-    echo "---------------------------------------------------------"
-    exit 1
-    """.format(target = ctx.attr.name)
-
-    ctx.actions.write(
-        output = executable_file,
-        content = content,
-        is_executable = True,
-    )
-
-    return executable_file
 
 def collect_runfiles(ctx, *elements, ignore_types = []):
     # buildifier: disable=function-docstring-args

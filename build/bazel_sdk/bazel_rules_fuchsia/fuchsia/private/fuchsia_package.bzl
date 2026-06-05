@@ -5,22 +5,24 @@
 """fuchsia_package() rule."""
 
 load(
-    "@fuchsia_rules_common//:utils.bzl",
-    "make_resource_struct",
-)
-load(
     "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
     "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
     "find_and_process_unstripped_binaries",
     "merge_debug_symbol_infos",
-    "strip_resources",
 )
 load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     "FuchsiaDebugSymbolInfo",
 )
-load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
-load("@fuchsia_rules_common//packages:resources.bzl", "fuchsia_find_all_package_resources")
+load(
+    "@fuchsia_rules_common//packages:package.bzl",
+    "COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES",
+    "common_build_fuchsia_package_impl",
+)
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_find_all_package_resources",
+)
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
 load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
@@ -28,18 +30,11 @@ load(":fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk
 load(":fuchsia_transition.bzl", "fuchsia_transition")
 load(
     ":providers.bzl",
-    "FuchsiaCollectedPackageResourcesInfo",
-    "FuchsiaComponentInfo",
-    "FuchsiaDriverToolInfo",
     "FuchsiaPackageResourcesInfo",
-    "FuchsiaPackagedComponentInfo",
-    "FuchsiaStructuredConfigInfo",
 )
 load(
     ":utils.bzl",
     "append_suffix_to_label",
-    "fuchsia_cpu_from_ctx",
-    "stub_executable",
 )
 
 def fuchsia_package(
@@ -287,274 +282,8 @@ def fuchsia_unittest_package(
 
 def _build_fuchsia_package_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
-    archive_name = ctx.attr.archive_name or ctx.attr.package_name
 
-    if not archive_name.endswith(".far"):
-        archive_name += ".far"
-
-    # where we will collect all of the temporary files
-    pkg_dir = ctx.label.name + "_pkg/"
-
-    # Declare all of the output files
-    manifest = ctx.actions.declare_file(pkg_dir + "manifest")
-    meta_package = ctx.actions.declare_file(pkg_dir + "meta/package")
-    meta_far = ctx.actions.declare_file(pkg_dir + "meta.far")
-    output_package_manifest = ctx.actions.declare_file(pkg_dir + "package_manifest.json")
-    far_file = ctx.actions.declare_file(archive_name)
-
-    # Environment variables that create an isolated FFX instance.
-    ffx_isolate_build_dir = ctx.actions.declare_directory(pkg_dir + "_package_build.ffx")
-    ffx_isolate_archive_dir = ctx.actions.declare_directory(pkg_dir + "_package_archive.ffx")
-
-    # The Fuchsia target API level of this package
-    api_level_input = ["--api-level", get_fuchsia_api_level(ctx)]
-
-    # All of the resources that will go into the package
-    package_resources = [
-        # Initially include the meta package
-        make_resource_struct(
-            src = meta_package,
-            dest = "meta/package",
-        ),
-    ]
-
-    # Add all of the collected resources
-    package_resources.extend(
-        ctx.attr.collected_resources[FuchsiaCollectedPackageResourcesInfo].collected_resources.to_list(),
-    )
-
-    # Resources that we will pass through the debug symbol stripping process
-    resources_to_strip = []
-    packaged_components = []
-
-    # Verify correctness of test vs non-test components.
-    for test_component in ctx.attr.test_components:
-        if not test_component[FuchsiaComponentInfo].is_test:
-            fail("Please use `components` for non-test components.")
-    for component in ctx.attr.components:
-        if component[FuchsiaComponentInfo].is_test:
-            fail("Please use `test_components` for test components.")
-
-    # Collect all the resources from the deps
-    # TODO(342560609) Move all resource publishing from components into the
-    # component rules so they get collected into the collected_resources attr.
-    for dep in ctx.attr.test_components + ctx.attr.components:
-        if FuchsiaStructuredConfigInfo in dep:
-            sc_info = dep[FuchsiaStructuredConfigInfo]
-            package_resources.append(
-                # add the CVF file
-                make_resource_struct(
-                    src = sc_info.cvf_source,
-                    dest = sc_info.cvf_dest,
-                ),
-            )
-
-        if FuchsiaComponentInfo in dep:
-            component_info = dep[FuchsiaComponentInfo]
-            component_dest = "meta/%s.cm" % (component_info.name)
-
-            packaged_components.append(FuchsiaPackagedComponentInfo(
-                component_info = component_info,
-                dest = component_dest,
-            ))
-        else:
-            fail("Unknown dependency type being added to package: %s" % dep.label)
-
-    # This build-id directory is used for the in-tree build
-    # LINT.IfChange
-    build_id_path = ctx.label.name + "_build_id_dir"
-    # LINT.ThenChange(//build/bazel/bazel_fuchsia_package.gni)
-
-    # Grab all of our stripped resources
-    stripped_resources, _debug_info = strip_resources(ctx, resources_to_strip, build_id_path = build_id_path)
-    package_resources.extend(stripped_resources)
-
-    # Add the resources for stripped ELF binaries.
-    package_resources.extend(ctx.attr.processed_binaries[FuchsiaPackageResourcesInfo].resources)
-
-    # Write our package_manifest file. If we have subpackage to flatten, we will
-    # parse the subpackages contents, and append them into package manifest of
-    # parent package.  Sort for determinism.
-    content = "\n".join(["%s=%s" % (r.dest, r.src.path) for r in sorted(package_resources, key = lambda s: s.dest)])
-
-    meta_content_inputs = []
-    if ctx.attr.subpackages_to_flatten:
-        subpackage_manifests = []
-        for package in ctx.attr.subpackages_to_flatten:
-            meta_content_inputs.extend(package[FuchsiaPackageInfo].files)
-            subpackage_manifests.append(package[FuchsiaPackageInfo].package_manifest.path)
-
-        meta_contents_dir = ctx.actions.declare_directory(pkg_dir + "_meta_contents_dir")
-        ffx_meta_extract_dir = ctx.actions.declare_directory(pkg_dir + "_extract_archive.ffx")
-
-        ctx.actions.run(
-            executable = ctx.executable._meta_content_append_tool,
-            arguments = [
-                "--ffx",
-                sdk.ffx_package.path,
-                "--ffx-isolate-dir",
-                ffx_meta_extract_dir.path,
-                "--manifest-path",
-                manifest.path,
-                "--original-content",
-                content,
-                "--meta-contents-dir",
-                meta_contents_dir.path,
-                "--subpackage-manifests",
-            ] + subpackage_manifests,
-            inputs = meta_content_inputs + [sdk.ffx_package],
-            outputs = [
-                manifest,
-                meta_contents_dir,
-                ffx_meta_extract_dir,
-            ],
-            mnemonic = "MetaContentAppend",
-            progress_message = "Building manifest for %s" % ctx.label,
-        )
-        meta_content_inputs.append(meta_contents_dir)
-
-    else:
-        ctx.actions.write(
-            output = manifest,
-            content = content,
-        )
-
-    # Create the meta/package file
-    ctx.actions.write(
-        meta_package,
-        content = json.encode_indent({
-            "name": ctx.attr.package_name,
-            "version": "0",
-        }),
-    )
-
-    # The only input to the build step is the manifest but we need to
-    # include all of the resources as inputs so that if they change the
-    # package will get rebuilt.
-    build_inputs = [r.src for r in package_resources] + [
-        manifest,
-        meta_package,
-    ]
-
-    repo_name_args = []
-    if ctx.attr.package_repository_name:
-        repo_name_args = ["--repository", ctx.attr.package_repository_name]
-
-    subpackages_args = []
-    subpackages_inputs = []
-    subpackages = ctx.attr.subpackages
-    if subpackages:
-        # Create the subpackages file
-        subpackages_json = ctx.actions.declare_file(pkg_dir + "/subpackages.json")
-        ctx.actions.write(
-            subpackages_json,
-            content = json.encode_indent([{
-                "package_manifest_file": subpackage[FuchsiaPackageInfo].package_manifest.path,
-            } for subpackage in subpackages]),
-        )
-
-        subpackages_args = ["--subpackages-build-manifest-path", subpackages_json.path]
-        subpackages_inputs = [subpackages_json] + [
-            file
-            for subpackage in subpackages
-            for file in subpackage[FuchsiaPackageInfo].files
-        ]
-
-    # Validate binary paths in cmls
-    component_manifest_files = [c.component_info.manifest for c in packaged_components]
-    depfile = ctx.actions.declare_file(pkg_dir + "components_validation.depfile")
-    ctx.actions.run(
-        executable = ctx.executable._validate_component_manifests,
-        arguments = [
-            "--cmc",
-            sdk.cmc.path,
-            "--component-manifest-paths",
-            ",".join([c.path for c in component_manifest_files]),
-            "--package-manifest",
-            manifest.path,
-            "--output",
-            depfile.path,
-        ],
-        inputs = [sdk.cmc, manifest] + component_manifest_files,
-        outputs = [depfile],
-        mnemonic = "CmcValidate",
-        progress_message = "Validating binary paths in cml for %s" % ctx.label,
-    )
-
-    # Build the package
-    ctx.actions.run(
-        executable = sdk.ffx_package,
-        arguments = [
-            "--isolate-dir",
-            ffx_isolate_build_dir.path,
-            "package",
-            "build",
-            manifest.path,
-            "-o",  # output directory
-            output_package_manifest.dirname,
-            "--published-name",  # name of package
-            ctx.attr.package_name,
-        ] + subpackages_args + api_level_input + repo_name_args,
-        inputs = build_inputs + subpackages_inputs + meta_content_inputs + [depfile],
-        outputs = [
-            output_package_manifest,
-            meta_far,
-            ffx_isolate_build_dir,
-        ],
-        mnemonic = "FuchsiaFfxPackageBuild",
-        progress_message = "Building package for %s" % ctx.label,
-        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
-    )
-
-    artifact_inputs = [r.src for r in package_resources] + [
-        output_package_manifest,
-        meta_far,
-    ] + subpackages_inputs + meta_content_inputs
-
-    # Create the far file.
-    ctx.actions.run(
-        executable = sdk.ffx_package,
-        arguments = [
-            "--isolate-dir",
-            ffx_isolate_archive_dir.path,
-            "package",
-            "archive",
-            "create",
-            output_package_manifest.path,
-            "-o",
-            far_file.path,
-        ],
-        inputs = artifact_inputs,
-        outputs = [far_file, ffx_isolate_archive_dir],
-        mnemonic = "FuchsiaFfxPackageArchiveCreate",
-        progress_message = "Archiving package for %{label}",
-        toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
-    )
-
-    output_files = [
-        far_file,
-        output_package_manifest,
-        manifest,
-        meta_far,
-    ] + build_inputs
-
-    # Sanity check that we are not trying to put 2 different resources at the same mountpoint
-    collected_blobs = {}
-    for resource in package_resources:
-        if resource.dest in collected_blobs and resource.src.path != collected_blobs[resource.dest]:
-            fail("Trying to add multiple resources with the same filename and different content", resource)
-        else:
-            collected_blobs[resource.dest] = resource.src.path
-
-    # A FuchsiaDebugSymbolInfo value that covers all debug symbol
-    # directories needed for this package.
-    #
-    # TODO(https://fxbug.dev/339038603): Only use processed_binaries
-    # for this once all dependencies use the right rules to expose
-    # their debug symbols.
-    #
     fuchsia_debug_symbol_info = merge_debug_symbol_infos(
-        _debug_info,
         ctx.attr.subpackages,
         ctx.attr.test_components,
         ctx.attr.components,
@@ -564,99 +293,26 @@ def _build_fuchsia_package_impl(ctx):
         ctx.attr._fuchsia_sdk_debug_symbols,
     )
 
-    return [
-        DefaultInfo(files = depset(output_files), executable = stub_executable(ctx)),
-        FuchsiaPackageInfo(
-            fuchsia_cpu = fuchsia_cpu_from_ctx(ctx),
-            far_file = far_file,
-            package_manifest = output_package_manifest,
-            files = [output_package_manifest, meta_far] + build_inputs,
-            package_name = ctx.attr.package_name,
-            meta_far = meta_far,
-            package_resources = package_resources,
-            packaged_components = packaged_components,
-            build_id_dirs = fuchsia_debug_symbol_info.build_id_dirs_mapping.values(),
-        ),
-        fuchsia_debug_symbol_info,
-        OutputGroupInfo(
-            build_id_dirs = depset(transitive = fuchsia_debug_symbol_info.build_id_dirs_mapping.values()),
-        ),
-    ]
+    return common_build_fuchsia_package_impl(
+        ctx = ctx,
+        ffx_package = sdk.ffx_package,
+        ffx_package_is_ffx = True,
+        cmc_tool = sdk.cmc,
+        meta_content_append_tool = ctx.executable._meta_content_append_tool,
+        validate_component_manifests_tool = ctx.executable._validate_component_manifests,
+        fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
+        api_level = get_fuchsia_api_level(ctx),
+    )
 
 _build_fuchsia_package = rule(
     doc = "Builds a fuchsia package.",
     implementation = _build_fuchsia_package_impl,
     cfg = fuchsia_transition,
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION, "@bazel_tools//tools/cpp:toolchain_type"],
-    attrs = {
-        "package_name": attr.string(
-            doc = "The name of the package",
-            mandatory = True,
-        ),
-        "archive_name": attr.string(
-            doc = "What to name the archive. The .far file will be appended if not in this name. Defaults to package_name",
-        ),
-        # TODO(https://fxbug.dev/42065627): Improve doc for this field when we
-        # have more clarity from the bug.
-        "package_repository_name": attr.string(
-            doc = "Repository name of this package, defaults to None",
-        ),
-        "components": attr.label_list(
-            doc = "The list of components included in this package",
-            providers = [FuchsiaComponentInfo],
-        ),
-        "test_components": attr.label_list(
-            doc = "The list of test components included in this package",
-            providers = [FuchsiaComponentInfo],
-        ),
-        "resources": attr.label_list(
-            doc = "The list of resources included in this package",
-            providers = [FuchsiaPackageResourcesInfo],
-        ),
+    attrs = COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES | {
         "processed_binaries": attr.label(
             doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
             providers = [FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
-        ),
-        "collected_resources": attr.label(
-            doc = "Label to a fuchsia_find_all_package_resources() target for this package.",
-            providers = [FuchsiaCollectedPackageResourcesInfo],
-            mandatory = True,
-        ),
-        "tools": attr.label_list(
-            doc = "The list of tools included in this package",
-            providers = [FuchsiaDriverToolInfo],
-        ),
-        "subpackages": attr.label_list(
-            doc = "The list of subpackages included in this package",
-            providers = [FuchsiaPackageInfo],
-        ),
-        "subpackages_to_flatten": attr.label_list(
-            doc = """The list of subpackages included in this package.
-
-            The packages included in this list will be cracked open and all the
-            components included will be include in the parent package.
-
-            This is a workaround for lack of support for subpackages in
-            driver_test_realm. Please don't use it without consulting with the
-            SDK Experiences team!
-
-            TODO(https://fxbug.dev/330189874): Remove this attribute.
-            """,
-            providers = [FuchsiaPackageInfo],
-        ),
-        "fuchsia_api_level": attr.string(
-            doc = """The Fuchsia API level to use when building this package.
-
-            This value will be sent to the fidl compiler and cc_* rules when
-            compiling dependencies.
-            """,
-        ),
-        "platform": attr.string(
-            doc = """The Fuchsia platform to build for.
-
-            If this value is not set we will fall back to the cpu setting to determine
-            the correct platform.
-            """,
         ),
         "hack_ignore_cpp": attr.bool(
             doc = "This value is no longer used and will be removed shortly.",

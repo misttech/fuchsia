@@ -6,6 +6,19 @@
 
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
+def fuchsia_cpu_from_ctx(ctx):
+    """ Returns the Fuchsia CPU for the given rule invocation.
+
+    Args:
+        ctx: The rule context for which to find a toolchain.
+    Returns:
+        The Fuchsia CPU string.
+    """
+    target_cpu = ctx.var["TARGET_CPU"]
+    if target_cpu == "aarch64":
+        return "arm64"
+    return target_cpu
+
 def flatten(elements):
     # buildifier: disable=function-docstring-args
     # buildifier: disable=function-docstring-return
@@ -21,6 +34,27 @@ def flatten(elements):
         else:
             result.append(elem)
     fail("Unable to flatten list!")
+
+def stub_executable(ctx):
+    # buildifier: disable=function-docstring-args
+    # buildifier: disable=function-docstring-return
+    """Returns a stub executable that fails with a message."""
+    executable_file = ctx.actions.declare_file(ctx.label.name + "_fail.sh")
+    content = """#!/bin/bash
+    echo "---------------------------------------------------------"
+    echo "ERROR: Attempting to run a target or dependency that is not runnable"
+    echo "Got {target}"
+    echo "---------------------------------------------------------"
+    exit 1
+    """.format(target = ctx.attr.name)
+
+    ctx.actions.write(
+        output = executable_file,
+        content = content,
+        is_executable = True,
+    )
+
+    return executable_file
 
 def get_target_deps_from_attributes(rule_attr, rule_kind = None, known_rule_kinds = {}):
     """Return all dependencies from a given target context during analysis.
