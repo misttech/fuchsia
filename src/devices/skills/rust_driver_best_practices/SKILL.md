@@ -209,7 +209,7 @@ use bitfield::bitfield;
 
 bitfield! {
     pub struct Descriptor(u32);
-    impl debug;
+    impl Debug;
     pub bool, valid, set_valid: 0;
     pub u8, priority, set_priority: 7, 4;
 }
