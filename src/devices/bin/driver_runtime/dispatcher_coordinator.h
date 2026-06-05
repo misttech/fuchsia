@@ -59,9 +59,9 @@ class DispatcherCoordinator {
   // Returns ZX_OK if |dispatcher| was added successfully.
   // Returns ZX_ERR_BAD_STATE if the driver is currently shutting down.
   zx_status_t AddDispatcher(fbl::RefPtr<Dispatcher> dispatcher, std::string_view scheduler_role,
-                            std::unique_ptr<Dispatcher::EventWaiter> event_waiter);
+                            std::unique_ptr<EventWaiter> event_waiter);
   zx_status_t AddUnmanagedDispatcher(fbl::RefPtr<Dispatcher> dispatcher,
-                                     std::unique_ptr<Dispatcher::EventWaiter> event_waiter);
+                                     std::unique_ptr<EventWaiter> event_waiter);
   // Notifies the dispatcher coordinator that a dispatcher has completed shutdown.
   // |dispatcher_shutdown_observer| is the observer to call.
   void NotifyDispatcherShutdown(driver_runtime::Dispatcher& dispatcher,
@@ -232,7 +232,7 @@ class DispatcherCoordinator {
       __TA_REQUIRES(&lock_);
 
   zx_status_t RegisterDispatcherLocked(fbl::RefPtr<Dispatcher> dispatcher, ThreadPool* thread_pool,
-                                       std::unique_ptr<Dispatcher::EventWaiter> event_waiter)
+                                       std::unique_ptr<EventWaiter> event_waiter)
       __TA_REQUIRES(&lock_);
 
   // The options that were passed to the last call to |Start|.

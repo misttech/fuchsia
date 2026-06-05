@@ -9,6 +9,7 @@
 #include <lib/zx/thread.h>
 
 #include "dispatcher_coordinator.h"
+#include "dispatcher_internals.h"
 #include "src/devices/lib/log/log.h"
 
 namespace driver_runtime {
@@ -220,7 +221,7 @@ void ThreadPool::Reset() {
   }
 }
 
-void ThreadPool::CacheUnboundIrq(std::unique_ptr<Dispatcher::AsyncIrq> irq) {
+void ThreadPool::CacheUnboundIrq(std::unique_ptr<AsyncIrq> irq) {
   fbl::AutoLock lock(&lock_);
   cached_irqs_.AddIrqLocked(std::move(irq));
 }
@@ -242,7 +243,7 @@ void ThreadPool::OnThreadWakeup() {
   cached_irqs_.NewThreadWakeupLocked(num_threads_);
 }
 
-void ThreadPool::CachedIrqs::AddIrqLocked(std::unique_ptr<Dispatcher::AsyncIrq> irq) {
+void ThreadPool::CachedIrqs::AddIrqLocked(std::unique_ptr<AsyncIrq> irq) {
   // Check if we are tracking a new generation of irqs.
   if (cur_generation_.is_empty()) {
     IncrementGenerationId();

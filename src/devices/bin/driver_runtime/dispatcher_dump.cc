@@ -2,21 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/bin/driver_runtime/dispatcher.h"
+#include "dispatcher.h"
+#include "dispatcher_state.h"
 
 namespace driver_runtime {
 
 namespace {
 
-const char* DispatcherStateToString(Dispatcher::DispatcherState state) {
+const char* DispatcherStateToString(DispatcherState state) {
   switch (state) {
-    case Dispatcher::DispatcherState::kRunning:
+    case DispatcherState::kRunning:
       return "running";
-    case Dispatcher::DispatcherState::kShuttingDown:
+    case DispatcherState::kShuttingDown:
       return "shutting down";
-    case Dispatcher::DispatcherState::kShutdown:
+    case DispatcherState::kShutdown:
       return "shutdown";
-    case Dispatcher::DispatcherState::kDestroyed:
+    case DispatcherState::kDestroyed:
       return "destroyed";
   }
   return "unknown dispatcher state";
@@ -34,11 +35,10 @@ void OutputFormattedString(std::vector<std::string>* dump_out, const char* fmt, 
   va_end(args);
 }
 
-void AppendCallbackRequestAsTask(Dispatcher::DumpState* out_state,
-                                 CallbackRequest& callback_request) {
+void AppendCallbackRequestAsTask(DumpState* out_state, CallbackRequest& callback_request) {
   ZX_ASSERT(callback_request.request_type() == CallbackRequest::RequestType::kTask);
   async_task_t* task = static_cast<async_task_t*>(callback_request.async_operation());
-  out_state->queued_tasks.push_back(Dispatcher::TaskDebugInfo{
+  out_state->queued_tasks.push_back(TaskDebugInfo{
       .ptr = task,
       .handler = task->handler,
       .initiating_dispatcher = callback_request.initiating_dispatcher(),
@@ -109,7 +109,7 @@ void Dispatcher::FormatDump(DumpState* state, std::vector<std::string>* dump_out
   OutputFormattedString(dump_out, "Synchronized: %s", BoolToString(state->synchronized));
   OutputFormattedString(dump_out, "Allow sync calls: %s", BoolToString(state->allow_sync_calls));
   OutputFormattedString(dump_out, "State: %s", DispatcherStateToString(state->state));
-  if (state->state == Dispatcher::DispatcherState::kDestroyed) {
+  if (state->state == DispatcherState::kDestroyed) {
     OutputFormattedString(dump_out, "A call to Destroy() was made by dispatcher: %s",
                           state->dispatcher_destroy_context.c_str());
     if (state->dispatcher_destroy_user_initiated.has_value()) {

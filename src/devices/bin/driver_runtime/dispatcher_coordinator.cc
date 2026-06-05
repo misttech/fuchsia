@@ -4,8 +4,10 @@
 
 #include "dispatcher_coordinator.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/fit/defer.h>
 
+#include "dispatcher_internals.h"
 #include "src/devices/lib/log/log.h"
 
 namespace driver_runtime {
@@ -248,9 +250,9 @@ zx_status_t DispatcherCoordinator::TokenTransfer(zx_handle_t token, fdf_handle_t
   return coordinator.token_manager_.Transfer(token, handle);
 }
 
-zx_status_t DispatcherCoordinator::AddDispatcher(
-    fbl::RefPtr<Dispatcher> dispatcher, std::string_view scheduler_role,
-    std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
+zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatcher,
+                                                 std::string_view scheduler_role,
+                                                 std::unique_ptr<EventWaiter> event_waiter) {
   fbl::AutoLock lock(&lock_);
 
   ThreadPool* thread_pool = default_thread_pool();
@@ -303,7 +305,7 @@ zx_status_t DispatcherCoordinator::AddDispatcher(
 }
 
 zx_status_t DispatcherCoordinator::AddUnmanagedDispatcher(
-    fbl::RefPtr<Dispatcher> dispatcher, std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
+    fbl::RefPtr<Dispatcher> dispatcher, std::unique_ptr<EventWaiter> event_waiter) {
   fbl::AutoLock lock(&lock_);
 
   auto* thread_pool = GetOrCreateUnmanagedThreadPool();
@@ -312,7 +314,7 @@ zx_status_t DispatcherCoordinator::AddUnmanagedDispatcher(
 
 zx_status_t DispatcherCoordinator::RegisterDispatcherLocked(
     fbl::RefPtr<Dispatcher> dispatcher, ThreadPool* thread_pool,
-    std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
+    std::unique_ptr<EventWaiter> event_waiter) {
   auto driver_state = drivers_.find(dispatcher->owner());
   if (driver_state == drivers_.end()) {
     auto new_driver_state = fbl::AdoptRef(new DriverState(dispatcher->owner()));
@@ -331,8 +333,8 @@ zx_status_t DispatcherCoordinator::RegisterDispatcherLocked(
   }
 
   dispatcher->SetEventWaiter(event_waiter.get());
-  status = Dispatcher::EventWaiter::BeginWaitWithRef(std::move(event_waiter), dispatcher,
-                                                     thread_pool->loop()->dispatcher());
+  status = EventWaiter::BeginWaitWithRef(std::move(event_waiter), dispatcher,
+                                         thread_pool->loop()->dispatcher());
   if (status != ZX_OK) {
     thread_pool->OnDispatcherRemoved(*dispatcher);
     if (thread_pool->num_dispatchers() == 0) {

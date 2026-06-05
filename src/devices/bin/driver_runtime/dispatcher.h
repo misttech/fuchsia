@@ -5,27 +5,24 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_
 #define SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_
 
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
-#include <lib/async/irq.h>
 #include <lib/fdf/cpp/channel.h>
 #include <lib/fdf/env.h>
 #include <lib/fdf/token.h>
+#include <lib/zx/event.h>
 
+#include <string>
 #include <unordered_set>
-#include <vector>
 
 #include <fbl/auto_lock.h>
 #include <fbl/canary.h>
 #include <fbl/condition_variable.h>
 #include <fbl/intrusive_double_list.h>
-#include <fbl/intrusive_wavl_tree.h>
 #include <fbl/ref_counted.h>
 #include <fbl/string_buffer.h>
 
-#include "async_loop_owned_event_handler.h"
 #include "callback_request.h"
+#include "dispatcher_state.h"
 
 namespace driver_runtime {
 class Dispatcher;
@@ -46,7 +43,13 @@ struct fdf_dispatcher : public driver_runtime::DispatcherInterface {
 
 namespace driver_runtime {
 
+// Forward Declarations
 class ThreadPool;
+class EventWaiter;
+class AsyncWait;
+class AsyncIrq;
+struct DelayedTask;
+struct AsyncWaitTag;
 
 // CRITICAL: Dispatcher inherits from DispatcherInterface as its first base class.
 // This layout is relied upon by the Veneer implementation to allow safe casting
@@ -54,10 +57,8 @@ class ThreadPool;
 class Dispatcher : public DispatcherInterface,
                    public fbl::RefCounted<Dispatcher>,
                    public fbl::DoublyLinkedListable<fbl::RefPtr<Dispatcher>> {
-  friend struct DispatcherInterface;
-
-  // Forward Declaration
-  class AsyncWait;
+  friend class AsyncIrq;
+  friend class AsyncWait;
 
  public:
   // CRITICAL: The layout of this struct is relied upon by `GetDispatcher`
@@ -68,17 +69,6 @@ class Dispatcher : public DispatcherInterface,
     fbl::Canary<fbl::magic("FDFV")> canary_;
   };
 
-  enum class DispatcherState {
-    // The dispatcher is running and accepting new requests.
-    kRunning,
-    // The dispatcher is in the process of shutting down.
-    kShuttingDown,
-    // The dispatcher has completed shutdown and can be destroyed.
-    kShutdown,
-    // The dispatcher is about to be destroyed.
-    kDestroyed,
-  };
-
   enum class SuspendState : uint8_t {
     // The dispatcher is active and processing tasks.
     kNone,
@@ -86,193 +76,16 @@ class Dispatcher : public DispatcherInterface,
     kSuspended,
   };
 
-  // Indirect irq object which is used to ensure irqs are tracked and synchronize irqs on
-  // SYNCHRONIZED dispatchers.
-  // Public so it can be referenced by the DispatcherCoordinator.
-  class AsyncIrq : public async_irq_t, public fbl::DoublyLinkedListable<std::unique_ptr<AsyncIrq>> {
-   public:
-    AsyncIrq(async_irq_t* original_irq, Dispatcher& dispatcher);
-    ~AsyncIrq();
-
-    static zx_status_t Bind(std::unique_ptr<AsyncIrq> irq, Dispatcher& dispatcher)
-        __TA_REQUIRES(&dispatcher.callback_lock_);
-    bool Unbind();
-
-    static void Handler(async_dispatcher_t* dispatcher, async_irq_t* irq, zx_status_t status,
-                        const zx_packet_interrupt_t* packet);
-    void OnSignal(async_dispatcher_t* async_dispatcher, zx_status_t status,
-                  const zx_packet_interrupt_t* packet);
-
-    // Returns a callback request representing the triggered irq.
-    std::unique_ptr<driver_runtime::CallbackRequest> CreateCallbackRequest(Dispatcher& dispatcher,
-                                                                           bool locked = false);
-
-    fbl::RefPtr<Dispatcher> GetDispatcherRef() {
-      fbl::AutoLock lock(&lock_);
-      return dispatcher_;
-    }
-
-   private:
-    void SetDispatcherRef(fbl::RefPtr<Dispatcher> dispatcher) {
-      fbl::AutoLock lock(&lock_);
-      dispatcher_ = std::move(dispatcher);
-    }
-    // Unlike async::Wait, we cannot store the dispatcher_ref as a std::atomic<Dispatcher*>.
-    //
-    // Since the |OnSignal| handler may be called many times, it copies the dispatcher reference,
-    // rather than taking ownership of it. While |OnSignal| is accessing |dispatcher_|,
-    // another thread could be attempting to unbind the dispatcher, so with an atomic raw pointer,
-    // is is possible that the dispatcher has been destructed between when we access |dispatcher_|
-    // and when we try to convert it back to a RefPtr.
-    //
-    // If |lock_| needs to be acquired at the same time as the dispatcher's |callback_lock_|,
-    // you must acquire |callback_lock_| first.
-    fbl::Mutex lock_;
-    fbl::RefPtr<Dispatcher> dispatcher_ __TA_GUARDED(&lock_);
-
-    async_irq_t* original_irq_;
-
-    zx_packet_interrupt_t interrupt_packet_ = {};
-  };
-
-  // Object which waits on an underlying async loop and triggers the dispatcher to
-  // service its callbacks.
-  // Public so it can be referenced by the DispatcherCoordinator.
-  class EventWaiter : public AsyncLoopOwnedEventHandler<EventWaiter> {
-    using Callback =
-        fit::inline_function<void(std::unique_ptr<EventWaiter>, fbl::RefPtr<Dispatcher>),
-                             sizeof(Dispatcher*)>;
-
-   public:
-    EventWaiter(zx::event event, Callback callback)
-        : AsyncLoopOwnedEventHandler<EventWaiter>(std::move(event)),
-          callback_(std::move(callback)) {}
-
-    static void HandleEvent(std::unique_ptr<EventWaiter> event, async_dispatcher_t* dispatcher,
-                            async::WaitBase* wait, zx_status_t status,
-                            const zx_packet_signal_t* signal);
-
-    // Begins waiting on the provided |async_dispatcher|.
-    // This transfers ownership of |event| and the |dispatcher| reference to the async dispatcher.
-    // The async dispatcher returns ownership when the handler is invoked.
-    static zx_status_t BeginWaitWithRef(std::unique_ptr<EventWaiter> event,
-                                        fbl::RefPtr<Dispatcher> dispatcher,
-                                        async_dispatcher_t* async_dispatcher);
-
-    bool signaled() const { return signaled_; }
-
-    void signal() {
-      ZX_ASSERT(event()->signal(0, ZX_USER_SIGNAL_0) == ZX_OK);
-      signaled_ = true;
-    }
-
-    void designal() {
-      ZX_ASSERT(event()->signal(ZX_USER_SIGNAL_0, 0) == ZX_OK);
-      signaled_ = false;
-    }
-
-    void InvokeCallback(std::unique_ptr<EventWaiter> event_waiter,
-                        fbl::RefPtr<Dispatcher> dispatcher_ref) {
-      callback_(std::move(event_waiter), std::move(dispatcher_ref));
-    }
-
-    std::unique_ptr<EventWaiter> Cancel() {
-      // Cancelling may fail if the callback is happening right now, in which
-      // case the callback will take ownership of the dispatcher reference.
-      auto event = AsyncLoopOwnedEventHandler<EventWaiter>::Cancel();
-      if (event) {
-        event->dispatcher_ref_ = nullptr;
-      }
-      return event;
-    }
-
-   private:
-    bool signaled_ = false;
-    Callback callback_;
-
-    // The EventWaiter is provided ownership of a dispatcher reference when
-    // |BeginWaitWithRef| is called, and returns the reference with the callback.
-    fbl::RefPtr<Dispatcher> dispatcher_ref_;
-  };
+  // Public for std::make_unique.
+  // Use |Create| instead of calling directly.
+  Dispatcher(uint32_t options, std::string_view name, bool unsynchronized, bool allow_sync_calls,
+             const void* owner, fdf_dispatcher_shutdown_observer_t* observer);
+  ~Dispatcher();
 
   void SetEventWaiter(EventWaiter* event_waiter) __TA_EXCLUDES(&callback_lock_) {
     fbl::AutoLock lock(&callback_lock_);
     event_waiter_ = event_waiter;
   }
-
-  // Why a request was not inlined.
-  enum NonInlinedReason : uint8_t {
-    // Dispatcher has the ALLOW_SYNC_CALLS option set.
-    kAllowSyncCalls,
-    // The dispatcher is already handling a request on another thread.
-    kDispatchingOnAnotherThread,
-    // It was a posted task.
-    kTask,
-    // We are queueing to a dispatcher that is running on a non-runtime managed thread.
-    kUnknownThread,
-    // We are queueing to a dispatcher that is already in the callstack.
-    kReentrant,
-    // The channel received a message, but no channel read was registered yet.
-    kChannelWaitNotYetRegistered,
-    // We are queueing to a dispatcher that does not allow thread migration
-    kNoThreadMigration,
-  };
-
-  struct DebugStats {
-    // Counts the number of occurrences of each reason for why a request was not-inlined.
-    struct NonInlinedStats {
-      size_t allow_sync_calls = 0;
-      size_t parallel_dispatch = 0;
-      size_t task = 0;
-      size_t unknown_thread = 0;
-      size_t reentrant = 0;
-      size_t channel_wait_not_yet_registered = 0;
-      size_t no_thread_migration = 0;
-    };
-
-    NonInlinedStats non_inlined = {};
-
-    size_t num_inlined_requests = 0;
-    size_t num_total_requests = 0;
-  };
-
-  struct TaskDebugInfo {
-    async_task_t* ptr;
-    async_task_handler_t* handler;
-    Dispatcher* initiating_dispatcher;
-    const void* initiating_driver;
-  };
-
-  // Holds debug information for the current dispatcher state.
-  // Pointers are not guaranteed to stay valid and are for identification purposes only.
-  struct DumpState {
-    // The dispatcher that is running on the current thread.
-    // Will be NULL if the thread is not managed by the driver runtime.
-    Dispatcher* running_dispatcher;
-    const void* running_driver;
-    // The dispatcher that has been requested to be dumped to the log.
-    Dispatcher* dispatcher_to_dump;
-    // State of |dispatcher_to_dump|.
-    const void* driver_owner;
-    fbl::String name;
-    bool synchronized;
-    bool allow_sync_calls;
-    DispatcherState state;
-    std::vector<TaskDebugInfo> queued_tasks;
-    DebugStats debug_stats;
-    // If a call to |Destroy| has been made, this will store the name of the dispatcher that made
-    // the call. This is useful if multiple calls to |Destroy| are erroneously made and there is
-    // still a ptr to the dispatcher keeping it alive.
-    std::string dispatcher_destroy_context;
-    // If true, |Destroy| was called by the user via |fdf_dispatcher_destroy|,
-    // otherwise |Destroy| was called by the environment via |fdf_env_destroy_all_dispatchers|.
-    std::optional<bool> dispatcher_destroy_user_initiated;
-  };
-
-  // Public for std::make_unique.
-  // Use |Create| instead of calling directly.
-  Dispatcher(uint32_t options, std::string_view name, bool unsynchronized, bool allow_sync_calls,
-             const void* owner, fdf_dispatcher_shutdown_observer_t* observer);
 
   // This must be called before the dispatcher will actually be running.
   void SetThreadPool(ThreadPool* thread_pool, async_dispatcher_t* process_shared_dispatcher) {
@@ -442,6 +255,8 @@ class Dispatcher : public DispatcherInterface,
     return callback_queue_.size_slow();
   }
 
+  void AssertCanary() const { canary_.Assert(); }
+
  private:
   // TODO(https://fxbug.dev/42168999): determine an appropriate size.
   static constexpr uint32_t kBatchSize = 10;
@@ -456,66 +271,6 @@ class Dispatcher : public DispatcherInterface,
 
    private:
     zx::event event_;
-  };
-
-  struct AsyncWaitTag {};
-
-  // Indirect wait object which is used to ensure waits are tracked and synchronize waits on
-  // SYNCHRONIZED dispatchers.
-  class AsyncWait
-      : public CallbackRequest,
-        public async_wait_t,
-        // This is owned by a Dispatcher, but in two different lists, however only one at a time. We
-        // could avoid this by storing |waits_| as a CallbackRequest, however that would require
-        // additional casts and pointer math when erasing the wait from the list.
-        public fbl::ContainableBaseClasses<fbl::TaggedDoublyLinkedListable<
-            std::unique_ptr<AsyncWait>, AsyncWaitTag, fbl::NodeOptions::AllowMultiContainerUptr>> {
-   public:
-    AsyncWait(async_wait_t* original_wait, Dispatcher& dispatcher);
-    ~AsyncWait();
-
-    static zx_status_t BeginWait(std::unique_ptr<AsyncWait> wait, Dispatcher& dispatcher)
-        __TA_REQUIRES(&dispatcher.callback_lock_);
-
-    bool Cancel();
-
-    static void Handler(async_dispatcher_t* dispatcher, async_wait_t* wait, zx_status_t status,
-                        const zx_packet_signal_t* signal);
-
-    void OnSignal(async_dispatcher_t* async_dispatcher, zx_status_t status,
-                  const zx_packet_signal_t* signal);
-
-    // Sets the pending_cancellation_ flag to true. See that field's comment for details.
-    void MarkPendingCancellation() { pending_cancellation_ = true; }
-    bool is_pending_cancellation() const { return pending_cancellation_; }
-
-   private:
-    // Implementing a specialization of std::atomic<fbl::RefPtr<T>> is more challenging than just
-    // manipulating it as a raw pointer. It must be stored as an atomic because it is mutated from
-    // multiple threads after AsyncWait is constructed, and we wish to avoid a lock.
-    std::atomic<Dispatcher*> dispatcher_ref_;
-    async_wait_t* original_wait_;
-
-    // If true, CancelWait() has been called on another thread and we should cancel the wait rather
-    // than invoking the callback.
-    //
-    // This condition occurs when a wait has been pulled off the dispatcher's port but the callback
-    // has not yet been invoked. AsyncWait wraps the underlying async_wait_t callback in its own
-    // custom callback (OnSignal), so there is an interval between when OnSignal is invoked and the
-    // underlying callback is invoked during which a race with Dispatcher::CancelWait() can occur.
-    // See https://fxbug.dev/42061372 for details.
-    bool pending_cancellation_ = false;
-
-    // driver_runtime::Callback can store only 2 pointers, so we store other state in the async
-    // wait.
-    std::optional<zx_packet_signal_t> signal_packet_;
-  };
-
-  // A task which will be triggered at some point in the future.
-  struct DelayedTask : public CallbackRequest {
-    explicit DelayedTask(zx::time deadline, RequestType request_type = RequestType::kTask)
-        : CallbackRequest(request_type), deadline(deadline) {}
-    zx::time deadline;
   };
 
   // A timer primitive built on top of an async task.
@@ -730,71 +485,47 @@ class Dispatcher : public DispatcherInterface,
   fbl::Canary<fbl::magic("FDFD")> canary_;
 };
 
-// Singleton to keep track of allowed scheduler roles.
-class AllowedSchedulerRoles {
- public:
-  static AllowedSchedulerRoles* Get();
-
-  AllowedSchedulerRoles(const AllowedSchedulerRoles&) = delete;
-  AllowedSchedulerRoles& operator=(const AllowedSchedulerRoles&) = delete;
-
-  void AddForDriver(const void* driver, std::string_view role);
-  bool IsAllowed(std::string_view role);
-
- private:
-  AllowedSchedulerRoles() = default;
-
-  fbl::Mutex lock_;
-  std::unordered_map<const void*, std::unordered_set<std::string>> allowed_roles_
-      __TA_GUARDED(&lock_);
-};
-
-}  // namespace driver_runtime
-
-namespace driver_runtime {
 extern const async_ops_t g_veneer_ops;
-}  // namespace driver_runtime
 
-inline bool driver_runtime::DispatcherInterface::IsVeneer() const {
-  return ops == &driver_runtime::g_veneer_ops;
-}
+inline bool DispatcherInterface::IsVeneer() const { return ops == &g_veneer_ops; }
 
-inline driver_runtime::Dispatcher* driver_runtime::DispatcherInterface::GetDispatcher() {
+inline Dispatcher* DispatcherInterface::GetDispatcher() {
   if (IsVeneer()) {
-    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(this);
+    auto veneer = reinterpret_cast<Dispatcher::Veneer*>(this);
     return veneer->dispatcher;
   }
-  return static_cast<driver_runtime::Dispatcher*>(this);
+  return static_cast<Dispatcher*>(this);
 }
 
-inline const driver_runtime::Dispatcher* driver_runtime::DispatcherInterface::GetDispatcher()
-    const {
+inline const Dispatcher* DispatcherInterface::GetDispatcher() const {
   if (IsVeneer()) {
-    auto veneer = reinterpret_cast<const driver_runtime::Dispatcher::Veneer*>(this);
+    auto veneer = reinterpret_cast<const Dispatcher::Veneer*>(this);
     return veneer->dispatcher;
   }
-  return static_cast<const driver_runtime::Dispatcher*>(this);
+  return static_cast<const Dispatcher*>(this);
 }
 
-inline async_dispatcher_t* driver_runtime::DispatcherInterface::GetAsyncDispatcher() {
+inline async_dispatcher_t* DispatcherInterface::GetAsyncDispatcher() {
   if (IsVeneer()) {
-    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(this);
+    auto veneer = reinterpret_cast<Dispatcher::Veneer*>(this);
     return &veneer->async_dispatcher;
   }
   return static_cast<async_dispatcher_t*>(this);
 }
 
-inline fdf_dispatcher_t* driver_runtime::DispatcherInterface::DowncastAsyncDispatcher(
+inline fdf_dispatcher_t* DispatcherInterface::DowncastAsyncDispatcher(
     async_dispatcher_t* dispatcher) {
-  auto interface = static_cast<driver_runtime::DispatcherInterface*>(dispatcher);
+  auto interface = static_cast<DispatcherInterface*>(dispatcher);
   if (interface->IsVeneer()) {
-    auto veneer = reinterpret_cast<driver_runtime::Dispatcher::Veneer*>(interface);
+    auto veneer = reinterpret_cast<Dispatcher::Veneer*>(interface);
     veneer->canary_.Assert();
     return static_cast<fdf_dispatcher_t*>(interface);
   }
-  auto concrete = static_cast<driver_runtime::Dispatcher*>(interface);
-  concrete->canary_.Assert();
+  auto concrete = static_cast<Dispatcher*>(interface);
+  concrete->AssertCanary();
   return static_cast<fdf_dispatcher*>(interface);
 }
+
+}  // namespace driver_runtime
 
 #endif  // SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_

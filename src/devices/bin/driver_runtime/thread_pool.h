@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_RUNTIME_THREAD_POOL_H_
 #define SRC_DEVICES_BIN_DRIVER_RUNTIME_THREAD_POOL_H_
 
+#include <lib/async-loop/cpp/loop.h>
 #include <zircon/types.h>
 
 #include <string_view>
@@ -12,6 +13,7 @@
 #include <fbl/intrusive_wavl_tree.h>
 
 #include "dispatcher.h"
+#include "dispatcher_internals.h"
 
 namespace driver_runtime {
 
@@ -55,7 +57,7 @@ class ThreadPool : public fbl::WAVLTreeContainable<std::unique_ptr<ThreadPool>> 
   // This is avoid destroying the irq wrapper immediately after unbinding, as it's possible
   // another thread in the thread pool has already pulled an irq packet
   // from the port and may attempt to call the irq handler.
-  void CacheUnboundIrq(std::unique_ptr<driver_runtime::Dispatcher::AsyncIrq> irq);
+  void CacheUnboundIrq(std::unique_ptr<AsyncIrq> irq);
 
   // Updates the thread tracking and checks whether to garbage collect the current generation of
   // irqs.
@@ -125,7 +127,7 @@ class ThreadPool : public fbl::WAVLTreeContainable<std::unique_ptr<ThreadPool>> 
   class CachedIrqs {
    public:
     // Adds an unbound irq to the cached irqs.
-    void AddIrqLocked(std::unique_ptr<Dispatcher::AsyncIrq> irq) __TA_REQUIRES(&lock_);
+    void AddIrqLocked(std::unique_ptr<AsyncIrq> irq) __TA_REQUIRES(&lock_);
 
     void NewThreadWakeupLocked(uint32_t total_number_threads) __TA_REQUIRES(&lock_);
 
@@ -135,7 +137,7 @@ class ThreadPool : public fbl::WAVLTreeContainable<std::unique_ptr<ThreadPool>> 
     uint32_t cur_generation_id() { return cur_generation_id_.load(); }
 
    private:
-    using List = fbl::DoublyLinkedList<std::unique_ptr<Dispatcher::AsyncIrq>, fbl::DefaultObjectTag,
+    using List = fbl::DoublyLinkedList<std::unique_ptr<AsyncIrq>, fbl::DefaultObjectTag,
                                        fbl::SizeOrder::Constant>;
 
     void IncrementGenerationId() __TA_REQUIRES(&lock_) {

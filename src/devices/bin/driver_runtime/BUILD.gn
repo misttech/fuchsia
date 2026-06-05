@@ -30,6 +30,7 @@ source_set("driver_runtime_impl") {
     "dispatcher.cc",
     "dispatcher_coordinator.cc",
     "dispatcher_dump.cc",
+    "dispatcher_internals.cc",
     "handle.cc",
     "message_packet.cc",
     "thread_context.cc",

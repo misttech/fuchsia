@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/async/cpp/irq.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/fdf/cpp/dispatcher.h>
