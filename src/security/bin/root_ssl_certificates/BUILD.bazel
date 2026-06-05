@@ -2,11 +2,38 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "resource",
+)
+load("@rules_license//rules:license.bzl", "license")
+load(
+    "//build/bazel/rules/packages:fx_package.bzl",
+    "fx_package",
+)
 
-package(default_visibility = ["//visibility:public"])
-
-fuchsia_prebuilt_package(
+fx_package(
     name = "root_ssl_certificates",
-    archive = "@gn_targets//src/security/bin/root_ssl_certificates:root_ssl_certificates",
+    package_name = "root_ssl_certificates",
+    resources = [":root_ssl_certificates_pem"],
+    visibility = [
+        "//build/images/guest:__subpackages__",
+        "//bundles/assembly:__subpackages__",
+    ],
+)
+
+resource(
+    name = "root_ssl_certificates_pem",
+    src = "third_party/cert/cert.pem",
+    applicable_licenses = [":license"],
+    dest = "data/cert.pem",
+)
+
+license(
+    name = "license",
+    package_name = "certdata.txt",
+    license_kinds = [
+        "@rules_license//licenses/spdx:MPL-2.0",
+    ],
+    license_text = "third_party/cert/LICENSE.MPLv2",
 )

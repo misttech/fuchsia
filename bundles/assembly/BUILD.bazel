@@ -2204,12 +2204,12 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/diagnostics/sampler",
         # Internationalization
         "//bundles/assembly/bazel_inputs/src/intl/tzdata_provider:tzdata_provider_pkg",
-        # Security
-        "//bundles/assembly/bazel_inputs/src/security/bin/root_ssl_certificates",
         # Activity
         "//bundles/assembly/bazel_inputs/src/sys/activity",
         # Memory pressure monitoring
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
+        # Security
+        "//src/security/bin/root_ssl_certificates",
     ],
     config_data = [
         {
@@ -5031,8 +5031,8 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/recovery/system:system_recovery_android",
         "//bundles/assembly/bazel_inputs/src/developer/adb/bin:adb",
-        "//bundles/assembly/bazel_inputs/src/security/bin/root_ssl_certificates",
         "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
+        "//src/security/bin/root_ssl_certificates",
     ],
     core_shards = [
         "//src/recovery/system/meta/core_shards:system_recovery_android.core_shard.cml",

@@ -782,7 +782,6 @@ group("common_standard") {
     "//bundles/assembly/bazel_inputs/src/diagnostics/persistence:diagnostics-persistence",
     "//bundles/assembly/bazel_inputs/src/diagnostics/sampler",
     "//bundles/assembly/bazel_inputs/src/intl/tzdata_provider:tzdata_provider_pkg",
-    "//bundles/assembly/bazel_inputs/src/security/bin/root_ssl_certificates",
     "//bundles/assembly/bazel_inputs/src/sys/activity",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-updater",
   ]
@@ -1735,7 +1734,6 @@ group("recovery_android") {
     "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
     "//bundles/assembly/bazel_inputs/src/developer/adb/bin:adb",
     "//bundles/assembly/bazel_inputs/src/recovery/system:system_recovery_android",
-    "//bundles/assembly/bazel_inputs/src/security/bin/root_ssl_certificates",
   ]
 }
 

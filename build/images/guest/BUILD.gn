@@ -16,7 +16,6 @@ bazel_product_image("guest") {
     "//src/devices/serial/drivers/uart16550:package.bazel_input",
     "//src/virtualization/tests:virtualization_test_utils_pkg_bazel",
     "//src/performance/trace:trace_bazel",
-    "//src/security/bin/root_ssl_certificates:root_ssl_certificates.bazel_input",
     "//boards/emulation/virtio:virtio.bazel_inputs",
   ]
   image_use_vbmeta = false
