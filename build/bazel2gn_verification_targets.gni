@@ -104,6 +104,7 @@ bazel2gn_verification_targets = [
   "//src/lib/versioning/version-history/rust/proc-macro:verify_bazel2gn",
   "//src/lib/versioning/version-history/rust:verify_bazel2gn",
   "//src/lib/webpki-roots-fuchsia:verify_bazel2gn",
+  "//src/storage/fxfs/fidl/fuchsia.fxfs:verify_bazel2gn",
   "//src/storage/lib/vfs/cpp:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
   "//src/sys/pkg/testing/fake-omaha-client:verify_bazel2gn",
