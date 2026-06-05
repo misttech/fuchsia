@@ -1006,6 +1006,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            Field(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> FlexibleUnion<'de> {
@@ -1016,6 +1022,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::flexible_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::flexible_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::flexible_union::Value::Field(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                unknown => crate::wire::flexible_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -1344,6 +1362,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Field(&'de ::fidl_next::wire::Int32),
         }
+
+        pub enum Value {
+            Field(::fidl_next::wire::Int32),
+        }
     }
 
     impl StrictUnion {
@@ -1351,6 +1373,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::strict_union::Ref::Field(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_union::Value::Field(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -1545,6 +1579,10 @@ pub mod wire {
     impl<'de> Table<'de> {
         pub fn field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 

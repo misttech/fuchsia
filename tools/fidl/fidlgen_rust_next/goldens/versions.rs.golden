@@ -430,6 +430,10 @@ pub mod wire {
         pub fn x(&self) -> ::core::option::Option<&::fidl_next::wire::Uint32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for Table<'de> {
@@ -491,6 +495,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            X(::fidl_next::wire::Uint32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> Union<'de> {
@@ -501,6 +511,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union::Value::X(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                unknown => crate::wire::union::Value::UnknownOrdinal_(unknown),
             }
         }
     }

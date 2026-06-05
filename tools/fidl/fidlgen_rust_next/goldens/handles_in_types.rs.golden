@@ -626,12 +626,24 @@ pub mod wire {
         pub enum Ref {
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> EmptyResourceUnion<'de> {
         pub fn as_ref(&self) -> crate::wire::empty_resource_union::Ref {
             match self.raw.ordinal() {
                 unknown => crate::wire::empty_resource_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::empty_resource_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                unknown => crate::wire::empty_resource_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -738,6 +750,10 @@ pub mod wire {
         pub fn h(&self) -> ::core::option::Option<&::fidl_next::wire::fuchsia::Vmo> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_h(&mut self) -> ::core::option::Option<::fidl_next::wire::fuchsia::Vmo> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for TableWithHandle<'de> {
@@ -801,6 +817,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            H(::fidl_next::wire::fuchsia::Vmo),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnionWithHandle<'de> {
@@ -811,6 +833,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::union_with_handle::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_with_handle::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_with_handle::Value::H(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
+                }),
+
+                unknown => crate::wire::union_with_handle::Value::UnknownOrdinal_(unknown),
             }
         }
     }

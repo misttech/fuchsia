@@ -75,16 +75,35 @@ impl<'de> Table<'de> {
 }
 
 impl Table<'_> {
-    /// Returns a reference to the envelope for the given ordinal, if any.
     #[inline]
-    pub fn get(&self, ordinal: usize) -> Option<&wire::Envelope> {
+    fn get_raw(&self, ordinal: usize) -> Option<*mut wire::Envelope> {
         if ordinal == 0 || ordinal > *self.len as usize {
             return None;
         }
 
         // SAFETY: `self.ptr` points to an array of `Envelope` of length `self.len`.
         // We checked that `ordinal` is within `1..=self.len`, so `ordinal - 1` is within bounds.
-        let envelope = unsafe { &*self.ptr.as_ptr().add(ordinal - 1) };
-        (!envelope.is_zero()).then_some(envelope)
+        unsafe {
+            let ptr = self.ptr.as_ptr().add(ordinal - 1);
+            (!(*ptr).is_zero()).then_some(ptr)
+        }
+    }
+
+    /// Returns a reference to the envelope for the given ordinal, if any.
+    #[inline]
+    pub fn get(&self, ordinal: usize) -> Option<&wire::Envelope> {
+        // SAFETY: `get_raw` always returns an envelope that is safe to
+        // dereference. We have a reference to `self`, so we can also alias
+        // the envelope.
+        unsafe { Some(&*self.get_raw(ordinal)?) }
+    }
+
+    /// Returns a mutable reference to the envelope for the given ordinal, if any.
+    #[inline]
+    pub fn get_mut(&mut self, ordinal: usize) -> Option<&mut wire::Envelope> {
+        // SAFETY: `get_raw` always returns an envelope that is safe to
+        // dereference. We have a mutable reference to `self`, so we can also
+        // mutably alias the envelope.
+        unsafe { Some(&mut *self.get_raw(ordinal)?) }
     }
 }

@@ -46,9 +46,18 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
 }
 
 pub mod {{ mod_name }} {
-    pub enum Ref{% if union_.members.is_empty() %}{% else %}<'de>{% endif %} {
+    pub enum Ref{% if !union_.members.is_empty() %}<'de>{% endif %} {
         {% for member in union_.members %}
             {{ member.name.camel() }}(&'de {{ self.wire_type(member.ty, member.from_alias.as_ref()) }}),
+        {% endfor %}
+        {% if !union_.is_strict %}
+            UnknownOrdinal_(u64),
+        {% endif %}
+    }
+
+    pub enum Value{% if !self.has_only_static_members() %}<'de>{% endif %} {
+        {% for member in union_.members %}
+            {{ member.name.camel() }}({{ self.wire_type(member.ty, member.from_alias.as_ref()) }}),
         {% endfor %}
         {% if !union_.is_strict %}
             UnknownOrdinal_(u64),
@@ -57,7 +66,7 @@ pub mod {{ mod_name }} {
 }
 
 impl{{ de }} {{ name }}{{ de }} {
-    pub fn as_ref(&self) -> crate::wire::{{ mod_name }}::Ref{% if union_.members.is_empty() %}{% else %}<'_>{% endif %} {
+    pub fn as_ref(&self) -> crate::wire::{{ mod_name }}::Ref{% if !union_.members.is_empty() %}<'_>{% endif %} {
         match self.raw.ordinal() {
             {% for member in union_.members %}
                 {{ member.ordinal }} => crate::wire::{{ mod_name }}::Ref::{{ member.name.camel() }}(
@@ -68,6 +77,23 @@ impl{{ de }} {{ name }}{{ de }} {
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             {% else %}
                 unknown => crate::wire::{{ mod_name }}::Ref::UnknownOrdinal_(unknown),
+            {% endif %}
+        }
+    }
+
+    pub fn into_inner(self) -> crate::wire::{{ mod_name }}::Value{% if !self.has_only_static_members() %}<'de>{% endif %} {
+        let this = ::core::mem::ManuallyDrop::new(self);
+
+        match this.raw.ordinal() {
+            {% for member in union_.members %}
+                {{ member.ordinal }} => crate::wire::{{ mod_name }}::Value::{{ member.name.camel() }}(
+                    unsafe { this.raw.get().read_unchecked::<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}>() }
+                ),
+            {% endfor %}
+            {% if union_.is_strict %}
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            {% else %}
+                unknown => crate::wire::{{ mod_name }}::Value::UnknownOrdinal_(unknown),
             {% endif %}
         }
     }

@@ -13227,6 +13227,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'de> {
@@ -13239,6 +13245,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -13363,6 +13384,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarDriverProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -13526,6 +13551,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -13538,6 +13569,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_err_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_driver_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -13662,6 +13708,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarDriverProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -13810,6 +13860,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'de> {
@@ -13825,6 +13881,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -13944,6 +14018,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -14095,6 +14173,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -14107,6 +14191,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_err_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -14226,6 +14328,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -14369,6 +14475,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarProtocolStrictEventUnionRequest<'de> {
@@ -14384,6 +14496,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_protocol_strict_event_union_request::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_ajar_protocol_strict_event_union_request::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_protocol_strict_event_union_request::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_protocol_strict_event_union_request::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -14499,6 +14629,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarProtocolStrictEventTableRequest<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -14642,6 +14776,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'de> {
@@ -14657,6 +14797,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_ajar_protocol_flexible_event_union_request::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_ajar_protocol_flexible_event_union_request::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_ajar_protocol_flexible_event_union_request::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_ajar_protocol_flexible_event_union_request::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -14776,6 +14934,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsAjarProtocolFlexibleEventTableRequest<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -14933,6 +15095,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'de> {
@@ -14945,6 +15113,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -15069,6 +15252,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsClosedDriverProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -15235,6 +15422,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -15247,6 +15440,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_err_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_closed_driver_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -15372,6 +15580,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsClosedDriverProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -15523,6 +15735,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'de> {
@@ -15538,6 +15756,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -15657,6 +15893,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsClosedProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -15811,6 +16051,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -15823,6 +16069,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_err_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_closed_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -15947,6 +16208,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -16095,6 +16360,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsClosedProtocolStrictEventUnionRequest<'de> {
@@ -16110,6 +16381,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_closed_protocol_strict_event_union_request::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_closed_protocol_strict_event_union_request::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_closed_protocol_strict_event_union_request::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_closed_protocol_strict_event_union_request::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -16229,6 +16518,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsClosedProtocolStrictEventTableRequest<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -16377,6 +16670,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'de> {
@@ -16392,6 +16691,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -16511,6 +16828,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsDriverProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -16665,6 +16986,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -16677,6 +17004,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_err_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_driver_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -16801,6 +17143,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsDriverProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -16956,6 +17302,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'de> {
@@ -16968,6 +17320,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -17087,6 +17457,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsDriverProtocolFlexibleTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -17241,6 +17615,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'de> {
@@ -17253,6 +17633,21 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(self) -> crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_err_response::Value{
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_driver_protocol_flexible_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -17377,6 +17772,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsDriverProtocolFlexibleTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -17523,6 +17922,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolStrictTwoWayUnionResponse<'de> {
@@ -17538,6 +17943,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_strict_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_strict_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_strict_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_strict_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -17653,6 +18076,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolStrictTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -17797,6 +18224,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'de> {
@@ -17812,6 +18245,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_strict_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_strict_two_way_union_err_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_strict_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_strict_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -17929,6 +18380,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolStrictTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -18075,6 +18530,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'de> {
@@ -18090,6 +18551,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_flexible_two_way_union_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_flexible_two_way_union_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_flexible_two_way_union_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_flexible_two_way_union_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -18205,6 +18684,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolFlexibleTwoWayTableResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -18354,6 +18837,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'de> {
@@ -18369,6 +18858,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_flexible_two_way_union_err_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_flexible_two_way_union_err_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_flexible_two_way_union_err_response::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_flexible_two_way_union_err_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -18488,6 +18995,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -18630,6 +19141,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolStrictEventUnionRequest<'de> {
@@ -18645,6 +19162,23 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_strict_event_union_request::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_strict_event_union_request::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_strict_event_union_request::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_strict_event_union_request::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -18760,6 +19294,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolStrictEventTableRequest<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -18901,6 +19439,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            SomeField(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnknownInteractionsProtocolFlexibleEventUnionRequest<'de> {
@@ -18916,6 +19460,24 @@ pub mod wire {
 
 
                 unknown => crate::wire::unknown_interactions_protocol_flexible_event_union_request::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::unknown_interactions_protocol_flexible_event_union_request::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::unknown_interactions_protocol_flexible_event_union_request::Value::SomeField(
+                    unsafe { this.raw.get().read_unchecked::<::fidl_next::wire::Int32>() }
+                ),
+
+
+                unknown => crate::wire::unknown_interactions_protocol_flexible_event_union_request::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -19031,6 +19593,10 @@ pub mod wire {
     impl<'de> UnknownInteractionsProtocolFlexibleEventTableRequest<'de> {
         pub fn some_field(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_some_field(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 

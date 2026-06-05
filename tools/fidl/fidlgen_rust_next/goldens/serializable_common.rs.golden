@@ -402,6 +402,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Unused(&'de bool),
         }
+
+        pub enum Value {
+            Unused(bool),
+        }
     }
 
     impl SerializableUnion {
@@ -409,6 +413,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::serializable_union::Ref::Unused(unsafe {
                     self.raw.get().deref_unchecked::<bool>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::serializable_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::serializable_union::Value::Unused(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

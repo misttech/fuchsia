@@ -1731,6 +1731,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Variant(&'de [u8; 6]),
         }
+
+        pub enum Value {
+            Variant([u8; 6]),
+        }
     }
 
     impl<'de> UnionSize12Alignment4<'de> {
@@ -1738,6 +1742,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_size12_alignment4::Ref::Variant(unsafe {
                     self.raw.get().deref_unchecked::<[u8; 6]>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_size12_alignment4::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_size12_alignment4::Value::Variant(unsafe {
+                    this.raw.get().read_unchecked::<[u8; 6]>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -2027,6 +2043,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Variant(&'de crate::wire::StructSize16Alignment8),
         }
+
+        pub enum Value {
+            Variant(crate::wire::StructSize16Alignment8),
+        }
     }
 
     impl<'de> UnionSize24Alignment8<'de> {
@@ -2034,6 +2054,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_size24_alignment8::Ref::Variant(unsafe {
                     self.raw.get().deref_unchecked::<crate::wire::StructSize16Alignment8>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_size24_alignment8::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_size24_alignment8::Value::Variant(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::StructSize16Alignment8>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -2247,6 +2279,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Variant(&'de [u8; 32]),
         }
+
+        pub enum Value {
+            Variant([u8; 32]),
+        }
     }
 
     impl<'de> UnionSize36Alignment4<'de> {
@@ -2254,6 +2290,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_size36_alignment4::Ref::Variant(unsafe {
                     self.raw.get().deref_unchecked::<[u8; 32]>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_size36_alignment4::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_size36_alignment4::Value::Variant(unsafe {
+                    this.raw.get().read_unchecked::<[u8; 32]>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -2462,6 +2510,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Variant(&'de ::fidl_next::wire::Uint32),
         }
+
+        pub enum Value {
+            Variant(::fidl_next::wire::Uint32),
+        }
     }
 
     impl UnionSize8Alignment4 {
@@ -2469,6 +2521,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_size8_alignment4::Ref::Variant(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_size8_alignment4::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_size8_alignment4::Value::Variant(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

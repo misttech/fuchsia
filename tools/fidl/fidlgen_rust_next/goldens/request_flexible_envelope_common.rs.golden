@@ -1143,6 +1143,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            S(::fidl_next::wire::String<'de>),
+
+            I(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> FlexibleFoo<'de> {
@@ -1157,6 +1165,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::flexible_foo::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::flexible_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::flexible_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                2 => crate::wire::flexible_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                unknown => crate::wire::flexible_foo::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -1258,6 +1282,12 @@ pub mod wire {
 
             I(&'de ::fidl_next::wire::Int32),
         }
+
+        pub enum Value<'de> {
+            S(::fidl_next::wire::String<'de>),
+
+            I(::fidl_next::wire::Int32),
+        }
     }
 
     impl<'de> StrictFoo<'de> {
@@ -1269,6 +1299,22 @@ pub mod wire {
 
                 2 => crate::wire::strict_foo::Ref::I(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                2 => crate::wire::strict_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

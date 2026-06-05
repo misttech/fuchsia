@@ -4453,12 +4453,24 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn y(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(5)?.deref_unchecked()) }
         }
 
+        pub fn take_y(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(5)?.take_unchecked()) }
+        }
+
         pub fn z(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(6)?.deref_unchecked()) }
+        }
+
+        pub fn take_z(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(6)?.take_unchecked()) }
         }
     }
 
@@ -4549,6 +4561,10 @@ pub mod wire {
     impl<'de> OlderSimpleTable<'de> {
         pub fn x(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 
@@ -4667,12 +4683,24 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_z(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn y(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
         }
 
+        pub fn take_y(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
+        }
+
         pub fn x(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
+        }
+
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(3)?.take_unchecked()) }
         }
     }
 
@@ -4780,8 +4808,16 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn y(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(5)?.deref_unchecked()) }
+        }
+
+        pub fn take_y(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(5)?.take_unchecked()) }
         }
     }
 
@@ -5813,256 +5849,512 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_v1(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn v2(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
+        }
+
+        pub fn take_v2(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
         }
 
         pub fn v3(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
 
+        pub fn take_v3(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(3)?.take_unchecked()) }
+        }
+
         pub fn v4(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(4)?.deref_unchecked()) }
+        }
+
+        pub fn take_v4(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(4)?.take_unchecked()) }
         }
 
         pub fn v5(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(5)?.deref_unchecked()) }
         }
 
+        pub fn take_v5(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(5)?.take_unchecked()) }
+        }
+
         pub fn v6(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(6)?.deref_unchecked()) }
+        }
+
+        pub fn take_v6(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(6)?.take_unchecked()) }
         }
 
         pub fn v7(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(7)?.deref_unchecked()) }
         }
 
+        pub fn take_v7(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(7)?.take_unchecked()) }
+        }
+
         pub fn v8(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(8)?.deref_unchecked()) }
+        }
+
+        pub fn take_v8(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(8)?.take_unchecked()) }
         }
 
         pub fn v9(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(9)?.deref_unchecked()) }
         }
 
+        pub fn take_v9(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(9)?.take_unchecked()) }
+        }
+
         pub fn v10(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(10)?.deref_unchecked()) }
+        }
+
+        pub fn take_v10(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(10)?.take_unchecked()) }
         }
 
         pub fn v11(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(11)?.deref_unchecked()) }
         }
 
+        pub fn take_v11(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(11)?.take_unchecked()) }
+        }
+
         pub fn v12(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(12)?.deref_unchecked()) }
+        }
+
+        pub fn take_v12(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(12)?.take_unchecked()) }
         }
 
         pub fn v13(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(13)?.deref_unchecked()) }
         }
 
+        pub fn take_v13(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(13)?.take_unchecked()) }
+        }
+
         pub fn v14(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(14)?.deref_unchecked()) }
+        }
+
+        pub fn take_v14(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(14)?.take_unchecked()) }
         }
 
         pub fn v15(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(15)?.deref_unchecked()) }
         }
 
+        pub fn take_v15(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(15)?.take_unchecked()) }
+        }
+
         pub fn v16(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(16)?.deref_unchecked()) }
+        }
+
+        pub fn take_v16(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(16)?.take_unchecked()) }
         }
 
         pub fn v17(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(17)?.deref_unchecked()) }
         }
 
+        pub fn take_v17(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(17)?.take_unchecked()) }
+        }
+
         pub fn v18(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(18)?.deref_unchecked()) }
+        }
+
+        pub fn take_v18(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(18)?.take_unchecked()) }
         }
 
         pub fn v19(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(19)?.deref_unchecked()) }
         }
 
+        pub fn take_v19(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(19)?.take_unchecked()) }
+        }
+
         pub fn v20(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(20)?.deref_unchecked()) }
+        }
+
+        pub fn take_v20(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(20)?.take_unchecked()) }
         }
 
         pub fn v21(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(21)?.deref_unchecked()) }
         }
 
+        pub fn take_v21(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(21)?.take_unchecked()) }
+        }
+
         pub fn v22(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(22)?.deref_unchecked()) }
+        }
+
+        pub fn take_v22(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(22)?.take_unchecked()) }
         }
 
         pub fn v23(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(23)?.deref_unchecked()) }
         }
 
+        pub fn take_v23(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(23)?.take_unchecked()) }
+        }
+
         pub fn v24(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(24)?.deref_unchecked()) }
+        }
+
+        pub fn take_v24(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(24)?.take_unchecked()) }
         }
 
         pub fn v25(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(25)?.deref_unchecked()) }
         }
 
+        pub fn take_v25(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(25)?.take_unchecked()) }
+        }
+
         pub fn v26(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(26)?.deref_unchecked()) }
+        }
+
+        pub fn take_v26(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(26)?.take_unchecked()) }
         }
 
         pub fn v27(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(27)?.deref_unchecked()) }
         }
 
+        pub fn take_v27(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(27)?.take_unchecked()) }
+        }
+
         pub fn v28(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(28)?.deref_unchecked()) }
+        }
+
+        pub fn take_v28(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(28)?.take_unchecked()) }
         }
 
         pub fn v29(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(29)?.deref_unchecked()) }
         }
 
+        pub fn take_v29(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(29)?.take_unchecked()) }
+        }
+
         pub fn v30(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(30)?.deref_unchecked()) }
+        }
+
+        pub fn take_v30(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(30)?.take_unchecked()) }
         }
 
         pub fn v31(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(31)?.deref_unchecked()) }
         }
 
+        pub fn take_v31(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(31)?.take_unchecked()) }
+        }
+
         pub fn v32(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(32)?.deref_unchecked()) }
+        }
+
+        pub fn take_v32(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(32)?.take_unchecked()) }
         }
 
         pub fn v33(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(33)?.deref_unchecked()) }
         }
 
+        pub fn take_v33(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(33)?.take_unchecked()) }
+        }
+
         pub fn v34(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(34)?.deref_unchecked()) }
+        }
+
+        pub fn take_v34(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(34)?.take_unchecked()) }
         }
 
         pub fn v35(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(35)?.deref_unchecked()) }
         }
 
+        pub fn take_v35(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(35)?.take_unchecked()) }
+        }
+
         pub fn v36(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(36)?.deref_unchecked()) }
+        }
+
+        pub fn take_v36(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(36)?.take_unchecked()) }
         }
 
         pub fn v37(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(37)?.deref_unchecked()) }
         }
 
+        pub fn take_v37(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(37)?.take_unchecked()) }
+        }
+
         pub fn v38(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(38)?.deref_unchecked()) }
+        }
+
+        pub fn take_v38(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(38)?.take_unchecked()) }
         }
 
         pub fn v39(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(39)?.deref_unchecked()) }
         }
 
+        pub fn take_v39(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(39)?.take_unchecked()) }
+        }
+
         pub fn v40(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(40)?.deref_unchecked()) }
+        }
+
+        pub fn take_v40(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(40)?.take_unchecked()) }
         }
 
         pub fn v41(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(41)?.deref_unchecked()) }
         }
 
+        pub fn take_v41(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(41)?.take_unchecked()) }
+        }
+
         pub fn v42(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(42)?.deref_unchecked()) }
+        }
+
+        pub fn take_v42(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(42)?.take_unchecked()) }
         }
 
         pub fn v43(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(43)?.deref_unchecked()) }
         }
 
+        pub fn take_v43(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(43)?.take_unchecked()) }
+        }
+
         pub fn v44(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(44)?.deref_unchecked()) }
+        }
+
+        pub fn take_v44(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(44)?.take_unchecked()) }
         }
 
         pub fn v45(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(45)?.deref_unchecked()) }
         }
 
+        pub fn take_v45(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(45)?.take_unchecked()) }
+        }
+
         pub fn v46(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(46)?.deref_unchecked()) }
+        }
+
+        pub fn take_v46(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(46)?.take_unchecked()) }
         }
 
         pub fn v47(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(47)?.deref_unchecked()) }
         }
 
+        pub fn take_v47(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(47)?.take_unchecked()) }
+        }
+
         pub fn v48(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(48)?.deref_unchecked()) }
+        }
+
+        pub fn take_v48(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(48)?.take_unchecked()) }
         }
 
         pub fn v49(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(49)?.deref_unchecked()) }
         }
 
+        pub fn take_v49(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(49)?.take_unchecked()) }
+        }
+
         pub fn v50(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(50)?.deref_unchecked()) }
+        }
+
+        pub fn take_v50(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(50)?.take_unchecked()) }
         }
 
         pub fn v51(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(51)?.deref_unchecked()) }
         }
 
+        pub fn take_v51(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(51)?.take_unchecked()) }
+        }
+
         pub fn v52(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(52)?.deref_unchecked()) }
+        }
+
+        pub fn take_v52(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(52)?.take_unchecked()) }
         }
 
         pub fn v53(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(53)?.deref_unchecked()) }
         }
 
+        pub fn take_v53(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(53)?.take_unchecked()) }
+        }
+
         pub fn v54(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(54)?.deref_unchecked()) }
+        }
+
+        pub fn take_v54(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(54)?.take_unchecked()) }
         }
 
         pub fn v55(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(55)?.deref_unchecked()) }
         }
 
+        pub fn take_v55(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(55)?.take_unchecked()) }
+        }
+
         pub fn v56(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(56)?.deref_unchecked()) }
+        }
+
+        pub fn take_v56(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(56)?.take_unchecked()) }
         }
 
         pub fn v57(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(57)?.deref_unchecked()) }
         }
 
+        pub fn take_v57(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(57)?.take_unchecked()) }
+        }
+
         pub fn v58(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(58)?.deref_unchecked()) }
+        }
+
+        pub fn take_v58(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(58)?.take_unchecked()) }
         }
 
         pub fn v59(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(59)?.deref_unchecked()) }
         }
 
+        pub fn take_v59(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(59)?.take_unchecked()) }
+        }
+
         pub fn v60(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(60)?.deref_unchecked()) }
+        }
+
+        pub fn take_v60(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(60)?.take_unchecked()) }
         }
 
         pub fn v61(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(61)?.deref_unchecked()) }
         }
 
+        pub fn take_v61(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(61)?.take_unchecked()) }
+        }
+
         pub fn v62(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(62)?.deref_unchecked()) }
+        }
+
+        pub fn take_v62(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(62)?.take_unchecked()) }
         }
 
         pub fn v63(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(63)?.deref_unchecked()) }
         }
 
+        pub fn take_v63(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(63)?.take_unchecked()) }
+        }
+
         pub fn v64(&self) -> ::core::option::Option<&crate::wire::ExtensionTable<'de>> {
             unsafe { Some(self.table.get(64)?.deref_unchecked()) }
+        }
+
+        pub fn take_v64(&mut self) -> ::core::option::Option<crate::wire::ExtensionTable<'de>> {
+            unsafe { Some(self.table.get_mut(64)?.take_unchecked()) }
         }
     }
 
@@ -6214,6 +6506,10 @@ pub mod wire {
     impl<'de> TableWithAttributes<'de> {
         pub fn x(&self) -> ::core::option::Option<&::fidl_next::wire::Int64> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
+        }
+
+        pub fn take_x(&mut self) -> ::core::option::Option<::fidl_next::wire::Int64> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
     }
 

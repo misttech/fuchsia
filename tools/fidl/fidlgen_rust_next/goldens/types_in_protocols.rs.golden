@@ -659,6 +659,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            B(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ResourceUnion<'de> {
@@ -669,6 +675,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::resource_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::resource_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::resource_union::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => crate::wire::resource_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }

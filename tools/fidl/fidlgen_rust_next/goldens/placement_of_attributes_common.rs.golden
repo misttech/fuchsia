@@ -1108,6 +1108,10 @@ pub mod wire {
         pub fn member(&self) -> ::core::option::Option<&::fidl_next::wire::Uint32> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_member(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint32> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ExampleTable<'de> {
@@ -1167,6 +1171,10 @@ pub mod wire {
         pub enum Ref<'de> {
             Variant(&'de ::fidl_next::wire::Uint32),
         }
+
+        pub enum Value {
+            Variant(::fidl_next::wire::Uint32),
+        }
     }
 
     impl ExampleUnion {
@@ -1174,6 +1182,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::example_union::Ref::Variant(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::example_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::example_union::Value::Variant(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

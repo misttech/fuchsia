@@ -721,6 +721,10 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_monotonic(&mut self) -> ::core::option::Option<[::fidl_next::wire::Int64; 10]> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn boot(
             &self,
         ) -> ::core::option::Option<&::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>
@@ -728,12 +732,31 @@ pub mod wire {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
         }
 
+        pub fn take_boot(
+            &mut self,
+        ) -> ::core::option::Option<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>
+        {
+            unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
+        }
+
         pub fn monotonic_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::Int64; 10]> {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
 
+        pub fn take_monotonic_ticks(
+            &mut self,
+        ) -> ::core::option::Option<[::fidl_next::wire::Int64; 10]> {
+            unsafe { Some(self.table.get_mut(3)?.take_unchecked()) }
+        }
+
         pub fn boot_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::Int64; 10]> {
             unsafe { Some(self.table.get(4)?.deref_unchecked()) }
+        }
+
+        pub fn take_boot_ticks(
+            &mut self,
+        ) -> ::core::option::Option<[::fidl_next::wire::Int64; 10]> {
+            unsafe { Some(self.table.get_mut(4)?.take_unchecked()) }
         }
     }
 

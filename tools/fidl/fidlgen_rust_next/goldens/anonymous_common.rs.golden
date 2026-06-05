@@ -2173,6 +2173,10 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_func(&mut self) -> ::core::option::Option<::fidl_next::wire::String<'de>> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn args(
             &self,
         ) -> ::core::option::Option<
@@ -2181,8 +2185,20 @@ pub mod wire {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
 
+        pub fn take_args(
+            &mut self,
+        ) -> ::core::option::Option<
+            ::fidl_next::wire::Vector<'de, crate::wire_optional::Expression<'de>>,
+        > {
+            unsafe { Some(self.table.get_mut(3)?.take_unchecked()) }
+        }
+
         pub fn flags(&self) -> ::core::option::Option<&crate::wire::Flags> {
             unsafe { Some(self.table.get(4)?.deref_unchecked()) }
+        }
+
+        pub fn take_flags(&mut self) -> ::core::option::Option<crate::wire::Flags> {
+            unsafe { Some(self.table.get_mut(4)?.take_unchecked()) }
         }
     }
 
@@ -2265,6 +2281,16 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            Value(::fidl_next::wire::Uint64),
+
+            BinOp(crate::wire::OverrideTest<'de>),
+
+            FunctionApplication(crate::wire::FunctionApplication<'de>),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> Expression<'de> {
@@ -2283,6 +2309,26 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::expression::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::expression::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::expression::Value::Value(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint64>()
+                }),
+
+                2 => crate::wire::expression::Value::BinOp(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::OverrideTest<'de>>()
+                }),
+
+                3 => crate::wire::expression::Value::FunctionApplication(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::FunctionApplication<'de>>()
+                }),
+
+                unknown => crate::wire::expression::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -2390,6 +2436,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            UnionData(u8),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnionMember<'de> {
@@ -2400,6 +2452,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::union_member::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_member::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                2 => crate::wire::union_member::Value::UnionData(unsafe {
+                    this.raw.get().read_unchecked::<u8>()
+                }),
+
+                unknown => crate::wire::union_member::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -2591,6 +2655,13 @@ pub mod wire {
         ) -> ::core::option::Option<&::fidl_next::wire::Vector<'de, crate::wire::TableData>>
         {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
+        }
+
+        pub fn take_table_data(
+            &mut self,
+        ) -> ::core::option::Option<::fidl_next::wire::Vector<'de, crate::wire::TableData>>
+        {
+            unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
         }
     }
 

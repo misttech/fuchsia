@@ -1528,6 +1528,12 @@ pub mod wire {
 
             B(&'de ::fidl_next::wire::Float32),
         }
+
+        pub enum Value {
+            A(::fidl_next::wire::Int32),
+
+            B(::fidl_next::wire::Float32),
+        }
     }
 
     impl SimpleUnion {
@@ -1539,6 +1545,22 @@ pub mod wire {
 
                 2 => crate::wire::simple_union::Ref::B(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Float32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::simple_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::simple_union::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::simple_union::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Float32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

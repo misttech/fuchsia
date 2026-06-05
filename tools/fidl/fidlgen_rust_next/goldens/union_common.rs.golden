@@ -5772,12 +5772,24 @@ pub mod wire {
         pub enum Ref {
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> EmptyFlexibleUnion<'de> {
         pub fn as_ref(&self) -> crate::wire::empty_flexible_union::Ref {
             match self.raw.ordinal() {
                 unknown => crate::wire::empty_flexible_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::empty_flexible_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                unknown => crate::wire::empty_flexible_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -5866,6 +5878,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            I(::fidl_next::wire::Int64),
+
+            F(::fidl_next::wire::Float32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ExplicitFlexibleUnion<'de> {
@@ -5880,6 +5900,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::explicit_flexible_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::explicit_flexible_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::explicit_flexible_union::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int64>()
+                }),
+
+                4 => crate::wire::explicit_flexible_union::Value::F(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Float32>()
+                }),
+
+                unknown => crate::wire::explicit_flexible_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -5985,6 +6021,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            I(::fidl_next::wire::Int32),
+
+            S(::fidl_next::wire::String<'de>),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ExplicitFoo<'de> {
@@ -5999,6 +6043,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::explicit_foo::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::explicit_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::explicit_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::explicit_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                unknown => crate::wire::explicit_foo::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -6243,6 +6303,12 @@ pub mod wire {
 
             Pasta(&'de crate::wire::Pasta<'de>),
         }
+
+        pub enum Value<'de> {
+            Pizza(crate::wire::Pizza<'de>),
+
+            Pasta(crate::wire::Pasta<'de>),
+        }
     }
 
     impl<'de> ExplicitPizzaOrPasta<'de> {
@@ -6254,6 +6320,22 @@ pub mod wire {
 
                 4 => crate::wire::explicit_pizza_or_pasta::Ref::Pasta(unsafe {
                     self.raw.get().deref_unchecked::<crate::wire::Pasta<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::explicit_pizza_or_pasta::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::explicit_pizza_or_pasta::Value::Pizza(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pizza<'de>>()
+                }),
+
+                4 => crate::wire::explicit_pizza_or_pasta::Value::Pasta(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pasta<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -6358,6 +6440,12 @@ pub mod wire {
 
             S(&'de ::fidl_next::wire::String<'de>),
         }
+
+        pub enum Value<'de> {
+            I(::fidl_next::wire::Int32),
+
+            S(::fidl_next::wire::String<'de>),
+        }
     }
 
     impl<'de> ExplicitStrictFoo<'de> {
@@ -6369,6 +6457,22 @@ pub mod wire {
 
                 3 => crate::wire::explicit_strict_foo::Ref::S(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::String<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::explicit_strict_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                2 => crate::wire::explicit_strict_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                3 => crate::wire::explicit_strict_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -6473,6 +6577,12 @@ pub mod wire {
 
             StringNeedsConstructor(&'de ::fidl_next::wire::String<'de>),
         }
+
+        pub enum Value<'de> {
+            Primitive(::fidl_next::wire::Int32),
+
+            StringNeedsConstructor(::fidl_next::wire::String<'de>),
+        }
     }
 
     impl<'de> ExplicitUnion<'de> {
@@ -6484,6 +6594,22 @@ pub mod wire {
 
                 3 => crate::wire::explicit_union::Ref::StringNeedsConstructor(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::String<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::explicit_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::explicit_union::Value::Primitive(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                3 => crate::wire::explicit_union::Value::StringNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -6580,6 +6706,10 @@ pub mod wire {
         pub enum Ref<'de> {
             FieldCollisionTag(&'de ::fidl_next::wire::Int32),
         }
+
+        pub enum Value {
+            FieldCollisionTag(::fidl_next::wire::Int32),
+        }
     }
 
     impl FieldCollision {
@@ -6587,6 +6717,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::field_collision::Ref::FieldCollisionTag(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::field_collision::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::field_collision::Value::FieldCollisionTag(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -6698,6 +6840,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            S(::fidl_next::wire::String<'de>),
+
+            I(::fidl_next::wire::Int32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> FlexibleFoo<'de> {
@@ -6712,6 +6862,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::flexible_foo::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::flexible_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::flexible_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                2 => crate::wire::flexible_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                unknown => crate::wire::flexible_foo::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -6813,6 +6979,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            Pizza(crate::wire::Pizza<'de>),
+
+            Pasta(crate::wire::Pasta<'de>),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> FlexiblePizzaOrPasta<'de> {
@@ -6827,6 +7001,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::flexible_pizza_or_pasta::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::flexible_pizza_or_pasta::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::flexible_pizza_or_pasta::Value::Pizza(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pizza<'de>>()
+                }),
+
+                2 => crate::wire::flexible_pizza_or_pasta::Value::Pasta(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pasta<'de>>()
+                }),
+
+                unknown => crate::wire::flexible_pizza_or_pasta::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -6940,6 +7130,18 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            Primitive(::fidl_next::wire::Int32),
+
+            StringNeedsConstructor(::fidl_next::wire::String<'de>),
+
+            VectorStringAlsoNeedsConstructor(
+                ::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>,
+            ),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> FlexibleUnion<'de> {
@@ -6958,6 +7160,26 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::flexible_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::flexible_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::flexible_union::Value::Primitive(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::flexible_union::Value::StringNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                3 => crate::wire::flexible_union::Value::VectorStringAlsoNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>>()
+                }),
+
+                unknown => crate::wire::flexible_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -7079,6 +7301,16 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value<'de> {
+            I(::fidl_next::wire::Int64),
+
+            S(::fidl_next::wire::String<'de>),
+
+            V(::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> NewerSimpleUnion<'de> {
@@ -7097,6 +7329,26 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::newer_simple_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::newer_simple_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::newer_simple_union::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int64>()
+                }),
+
+                2 => crate::wire::newer_simple_union::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                3 => crate::wire::newer_simple_union::Value::V(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>>()
+                }),
+
+                unknown => crate::wire::newer_simple_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -7280,6 +7532,14 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            I(::fidl_next::wire::Int64),
+
+            F(::fidl_next::wire::Float32),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> OlderSimpleUnion<'de> {
@@ -7294,6 +7554,22 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::older_simple_union::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::older_simple_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::older_simple_union::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int64>()
+                }),
+
+                2 => crate::wire::older_simple_union::Value::F(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Float32>()
+                }),
+
+                unknown => crate::wire::older_simple_union::Value::UnknownOrdinal_(unknown),
             }
         }
     }
@@ -7395,6 +7671,12 @@ pub mod wire {
 
             Pasta(&'de crate::wire::Pasta<'de>),
         }
+
+        pub enum Value<'de> {
+            Pizza(crate::wire::Pizza<'de>),
+
+            Pasta(crate::wire::Pasta<'de>),
+        }
     }
 
     impl<'de> PizzaOrPasta<'de> {
@@ -7406,6 +7688,22 @@ pub mod wire {
 
                 2 => crate::wire::pizza_or_pasta::Ref::Pasta(unsafe {
                     self.raw.get().deref_unchecked::<crate::wire::Pasta<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::pizza_or_pasta::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::pizza_or_pasta::Value::Pizza(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pizza<'de>>()
+                }),
+
+                2 => crate::wire::pizza_or_pasta::Value::Pasta(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pasta<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -7508,6 +7806,12 @@ pub mod wire {
 
             Second(&'de ::fidl_next::wire::Uint32),
         }
+
+        pub enum Value {
+            First(::fidl_next::wire::Uint32),
+
+            Second(::fidl_next::wire::Uint32),
+        }
     }
 
     impl ReverseOrdinalUnion {
@@ -7519,6 +7823,22 @@ pub mod wire {
 
                 2 => crate::wire::reverse_ordinal_union::Ref::Second(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::reverse_ordinal_union::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::reverse_ordinal_union::Value::First(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                2 => crate::wire::reverse_ordinal_union::Value::Second(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -7638,6 +7958,10 @@ pub mod wire {
         pub enum Ref<'de> {
             V(&'de ::fidl_next::wire::Vector<'de, u8>),
         }
+
+        pub enum Value<'de> {
+            V(::fidl_next::wire::Vector<'de, u8>),
+        }
     }
 
     impl<'de> StrictBoundedUnion<'de> {
@@ -7645,6 +7969,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::strict_bounded_union::Ref::V(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'_, u8>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_bounded_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_bounded_union::Value::V(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, u8>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -7746,6 +8082,12 @@ pub mod wire {
 
             I(&'de ::fidl_next::wire::Int32),
         }
+
+        pub enum Value<'de> {
+            S(::fidl_next::wire::String<'de>),
+
+            I(::fidl_next::wire::Int32),
+        }
     }
 
     impl<'de> StrictFoo<'de> {
@@ -7757,6 +8099,22 @@ pub mod wire {
 
                 2 => crate::wire::strict_foo::Ref::I(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_foo::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_foo::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                2 => crate::wire::strict_foo::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -7859,6 +8217,12 @@ pub mod wire {
 
             Pasta(&'de crate::wire::Pasta<'de>),
         }
+
+        pub enum Value<'de> {
+            Pizza(crate::wire::Pizza<'de>),
+
+            Pasta(crate::wire::Pasta<'de>),
+        }
     }
 
     impl<'de> StrictPizzaOrPasta<'de> {
@@ -7870,6 +8234,22 @@ pub mod wire {
 
                 2 => crate::wire::strict_pizza_or_pasta::Ref::Pasta(unsafe {
                     self.raw.get().deref_unchecked::<crate::wire::Pasta<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_pizza_or_pasta::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_pizza_or_pasta::Value::Pizza(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pizza<'de>>()
+                }),
+
+                2 => crate::wire::strict_pizza_or_pasta::Value::Pasta(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Pasta<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -7981,6 +8361,14 @@ pub mod wire {
 
             S(&'de ::fidl_next::wire::String<'de>),
         }
+
+        pub enum Value<'de> {
+            I(::fidl_next::wire::Int32),
+
+            F(::fidl_next::wire::Float32),
+
+            S(::fidl_next::wire::String<'de>),
+        }
     }
 
     impl<'de> StrictSimpleUnion<'de> {
@@ -7996,6 +8384,26 @@ pub mod wire {
 
                 3 => crate::wire::strict_simple_union::Ref::S(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::String<'_>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_simple_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_simple_union::Value::I(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::strict_simple_union::Value::F(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Float32>()
+                }),
+
+                3 => crate::wire::strict_simple_union::Value::S(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -8119,6 +8527,16 @@ pub mod wire {
                 &'de ::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>,
             ),
         }
+
+        pub enum Value<'de> {
+            Primitive(::fidl_next::wire::Int32),
+
+            StringNeedsConstructor(::fidl_next::wire::String<'de>),
+
+            VectorStringAlsoNeedsConstructor(
+                ::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>,
+            ),
+        }
     }
 
     impl<'de> StrictUnion<'de> {
@@ -8134,6 +8552,26 @@ pub mod wire {
 
                 3 => crate::wire::strict_union::Ref::VectorStringAlsoNeedsConstructor(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'_, ::fidl_next::wire::String<'_>>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::strict_union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::strict_union::Value::Primitive(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::strict_union::Value::StringNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                3 => crate::wire::strict_union::Value::VectorStringAlsoNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -8504,6 +8942,16 @@ pub mod wire {
                 &'de ::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>,
             ),
         }
+
+        pub enum Value<'de> {
+            Primitive(::fidl_next::wire::Int32),
+
+            StringNeedsConstructor(::fidl_next::wire::String<'de>),
+
+            VectorStringAlsoNeedsConstructor(
+                ::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>,
+            ),
+        }
     }
 
     impl<'de> Union<'de> {
@@ -8519,6 +8967,26 @@ pub mod wire {
 
                 3 => crate::wire::union::Ref::VectorStringAlsoNeedsConstructor(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'_, ::fidl_next::wire::String<'_>>>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union::Value<'de> {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union::Value::Primitive(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                }),
+
+                2 => crate::wire::union::Value::StringNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::String<'de>>()
+                }),
+
+                3 => crate::wire::union::Value::VectorStringAlsoNeedsConstructor(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::String<'de>>>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -8627,6 +9095,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            Empty(crate::wire::Empty),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnionContainingEmptyStruct<'de> {
@@ -8638,6 +9112,20 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::union_containing_empty_struct::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_containing_empty_struct::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_containing_empty_struct::Value::Empty(unsafe {
+                    this.raw.get().read_unchecked::<crate::wire::Empty>()
+                }),
+
+                unknown => {
+                    crate::wire::union_containing_empty_struct::Value::UnknownOrdinal_(unknown)
                 }
             }
         }
@@ -8835,6 +9323,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            X(::fidl_next::wire::Int64),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> UnionWithAttributes<'de> {
@@ -8845,6 +9339,18 @@ pub mod wire {
                 }),
 
                 unknown => crate::wire::union_with_attributes::Ref::UnknownOrdinal_(unknown),
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_with_attributes::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_with_attributes::Value::X(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Int64>()
+                }),
+
+                unknown => crate::wire::union_with_attributes::Value::UnknownOrdinal_(unknown),
             }
         }
     }

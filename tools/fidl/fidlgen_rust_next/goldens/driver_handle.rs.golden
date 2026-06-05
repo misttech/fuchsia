@@ -564,12 +564,26 @@ pub mod wire {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
+        pub fn take_zircon_handle(
+            &mut self,
+        ) -> ::core::option::Option<::fidl_next::wire::fuchsia::Event> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
+
         pub fn fdf_handle(
             &self,
         ) -> ::core::option::Option<
             &::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
         > {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
+        }
+
+        pub fn take_fdf_handle(
+            &mut self,
+        ) -> ::core::option::Option<
+            ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
+        > {
+            unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
         }
     }
 

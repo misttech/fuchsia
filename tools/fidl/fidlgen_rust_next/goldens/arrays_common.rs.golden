@@ -1184,6 +1184,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&[::fidl_next::wire::Uint32; 100]> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<[::fidl_next::wire::Uint32; 100]> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for TableLargeArray<'de> {
@@ -1268,6 +1272,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&[::fidl_next::wire::Uint32; 2]> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<[::fidl_next::wire::Uint32; 2]> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for TableSmallArray<'de> {
@@ -1329,6 +1337,10 @@ pub mod wire {
         pub enum Ref<'de> {
             A(&'de [::fidl_next::wire::Uint32; 100]),
         }
+
+        pub enum Value {
+            A([::fidl_next::wire::Uint32; 100]),
+        }
     }
 
     impl<'de> UnionLargeArray<'de> {
@@ -1336,6 +1348,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_large_array::Ref::A(unsafe {
                     self.raw.get().deref_unchecked::<[::fidl_next::wire::Uint32; 100]>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_large_array::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_large_array::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<[::fidl_next::wire::Uint32; 100]>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -1429,6 +1453,10 @@ pub mod wire {
         pub enum Ref<'de> {
             A(&'de [::fidl_next::wire::Uint32; 2]),
         }
+
+        pub enum Value {
+            A([::fidl_next::wire::Uint32; 2]),
+        }
     }
 
     impl<'de> UnionSmallArray<'de> {
@@ -1436,6 +1464,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_small_array::Ref::A(unsafe {
                     self.raw.get().deref_unchecked::<[::fidl_next::wire::Uint32; 2]>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_small_array::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_small_array::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<[::fidl_next::wire::Uint32; 2]>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

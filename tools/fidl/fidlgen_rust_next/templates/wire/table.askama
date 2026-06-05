@@ -127,6 +127,12 @@ impl<'de> {{ name }}<'de> {
                 Some(self.table.get({{ member.ordinal }})?.deref_unchecked())
             }
         }
+
+        pub fn take_{{ member.name.snake() }}(&mut self) -> ::core::option::Option<{{ self.wire_type(member.ty, member.from_alias.as_ref()) }}> {
+            unsafe {
+                Some(self.table.get_mut({{ member.ordinal }})?.take_unchecked())
+            }
+        }
     {% endfor %}
 }
 

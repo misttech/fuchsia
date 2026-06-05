@@ -5232,6 +5232,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&bool> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<bool> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ShouldNeverAppearInAnyBinding5<'de> {
@@ -5293,6 +5297,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            A(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ShouldNeverAppearInAnyBinding6<'de> {
@@ -5304,6 +5314,22 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::should_never_appear_in_any_binding6::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::should_never_appear_in_any_binding6::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::should_never_appear_in_any_binding6::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => {
+                    crate::wire::should_never_appear_in_any_binding6::Value::UnknownOrdinal_(
+                        unknown,
+                    )
                 }
             }
         }
@@ -5599,6 +5625,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&bool> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<bool> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ShouldNeverAppearInAnyBinding2<'de> {
@@ -5660,6 +5690,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            A(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ShouldNeverAppearInAnyBinding3<'de> {
@@ -5671,6 +5707,22 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::should_never_appear_in_any_binding3::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::should_never_appear_in_any_binding3::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::should_never_appear_in_any_binding3::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => {
+                    crate::wire::should_never_appear_in_any_binding3::Value::UnknownOrdinal_(
+                        unknown,
+                    )
                 }
             }
         }
@@ -5981,6 +6033,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&bool> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<bool> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ShouldNeverAppearInAnyBinding8<'de> {
@@ -6042,6 +6098,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            A(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> ShouldNeverAppearInAnyBinding9<'de> {
@@ -6053,6 +6115,22 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::should_never_appear_in_any_binding9::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::should_never_appear_in_any_binding9::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::should_never_appear_in_any_binding9::Value::A(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => {
+                    crate::wire::should_never_appear_in_any_binding9::Value::UnknownOrdinal_(
+                        unknown,
+                    )
                 }
             }
         }
@@ -7388,6 +7466,10 @@ pub mod wire {
         pub enum Ref<'de> {
             X(&'de ::fidl_next::wire::Uint32),
         }
+
+        pub enum Value {
+            X(::fidl_next::wire::Uint32),
+        }
     }
 
     impl OnlyLlcpp {
@@ -7395,6 +7477,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::only_llcpp::Ref::X(unsafe {
                     self.raw.get().deref_unchecked::<::fidl_next::wire::Uint32>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::only_llcpp::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::only_llcpp::Value::X(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Uint32>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },

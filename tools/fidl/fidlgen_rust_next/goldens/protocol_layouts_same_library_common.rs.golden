@@ -2634,6 +2634,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ComposedProtocolOneWayAnonComposedRequest<'de> {
@@ -2695,6 +2699,10 @@ pub mod wire {
         pub enum Ref<'de> {
             B(&'de bool),
         }
+
+        pub enum Value {
+            B(bool),
+        }
     }
 
     impl ComposedProtocolTwoWayAnonComposedRequest {
@@ -2705,6 +2713,22 @@ pub mod wire {
                 1 => crate::wire::composed_protocol_two_way_anon_composed_request::Ref::B(unsafe {
                     self.raw.get().deref_unchecked::<bool>()
                 }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::composed_protocol_two_way_anon_composed_request::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => {
+                    crate::wire::composed_protocol_two_way_anon_composed_request::Value::B(unsafe {
+                        this.raw.get().read_unchecked::<bool>()
+                    })
+                }
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             }
@@ -2828,6 +2852,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ComposedProtocolTwoWayAnonComposedResponse<'de> {
@@ -2917,6 +2945,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for ComposedProtocolTwoWayAnonComposedWithErrorRequest<'de> {
@@ -2978,6 +3010,10 @@ pub mod wire {
         pub enum Ref<'de> {
             B(&'de bool),
         }
+
+        pub enum Value {
+            B(bool),
+        }
     }
 
     impl ComposedProtocolTwoWayAnonComposedWithErrorResponse {
@@ -2994,6 +3030,24 @@ pub mod wire {
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::composed_protocol_two_way_anon_composed_with_error_response::Value
+        {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::composed_protocol_two_way_anon_composed_with_error_response::Value::B(
+                    unsafe { this.raw.get().read_unchecked::<bool>() }
+                ),
+
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+
+        }
         }
     }
 
@@ -3087,6 +3141,10 @@ pub mod wire {
         pub enum Ref<'de> {
             B(&'de bool),
         }
+
+        pub enum Value {
+            B(bool),
+        }
     }
 
     impl ComposedProtocolOnAnonComposedRequest {
@@ -3094,6 +3152,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::composed_protocol_on_anon_composed_request::Ref::B(unsafe {
                     self.raw.get().deref_unchecked::<bool>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::composed_protocol_on_anon_composed_request::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::composed_protocol_on_anon_composed_request::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -3218,6 +3288,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for TablePayload<'de> {
@@ -3277,6 +3351,10 @@ pub mod wire {
         pub enum Ref<'de> {
             B(&'de bool),
         }
+
+        pub enum Value {
+            B(bool),
+        }
     }
 
     impl UnionPayload {
@@ -3284,6 +3362,18 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => crate::wire::union_payload::Ref::B(unsafe {
                     self.raw.get().deref_unchecked::<bool>()
+                }),
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::union_payload::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::union_payload::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
                 }),
 
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -3408,6 +3498,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for MainProtocolOneWayAnonRequest<'de> {
@@ -3469,6 +3563,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            B(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> MainProtocolTwoWayAnonRequest<'de> {
@@ -3480,6 +3580,20 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::main_protocol_two_way_anon_request::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::main_protocol_two_way_anon_request::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::main_protocol_two_way_anon_request::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => {
+                    crate::wire::main_protocol_two_way_anon_request::Value::UnknownOrdinal_(unknown)
                 }
             }
         }
@@ -3590,6 +3704,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for MainProtocolTwoWayAnonResponse<'de> {
@@ -3676,6 +3794,10 @@ pub mod wire {
         pub fn a(&self) -> ::core::option::Option<&::fidl_next::wire::Uint16> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
+
+        pub fn take_a(&mut self) -> ::core::option::Option<::fidl_next::wire::Uint16> {
+            unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
+        }
     }
 
     impl<'de> ::core::fmt::Debug for MainProtocolTwoWayAnonWithErrorRequest<'de> {
@@ -3737,6 +3859,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            B(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> MainProtocolTwoWayAnonWithErrorResponse<'de> {
@@ -3751,6 +3879,23 @@ pub mod wire {
 
 
                 unknown => crate::wire::main_protocol_two_way_anon_with_error_response::Ref::UnknownOrdinal_(unknown),
+
+        }
+        }
+
+        pub fn into_inner(
+            self,
+        ) -> crate::wire::main_protocol_two_way_anon_with_error_response::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+
+                1 => crate::wire::main_protocol_two_way_anon_with_error_response::Value::B(
+                    unsafe { this.raw.get().read_unchecked::<bool>() }
+                ),
+
+
+                unknown => crate::wire::main_protocol_two_way_anon_with_error_response::Value::UnknownOrdinal_(unknown),
 
         }
         }
@@ -3836,6 +3981,12 @@ pub mod wire {
 
             UnknownOrdinal_(u64),
         }
+
+        pub enum Value {
+            B(bool),
+
+            UnknownOrdinal_(u64),
+        }
     }
 
     impl<'de> MainProtocolOnAnonRequest<'de> {
@@ -3847,6 +3998,20 @@ pub mod wire {
 
                 unknown => {
                     crate::wire::main_protocol_on_anon_request::Ref::UnknownOrdinal_(unknown)
+                }
+            }
+        }
+
+        pub fn into_inner(self) -> crate::wire::main_protocol_on_anon_request::Value {
+            let this = ::core::mem::ManuallyDrop::new(self);
+
+            match this.raw.ordinal() {
+                1 => crate::wire::main_protocol_on_anon_request::Value::B(unsafe {
+                    this.raw.get().read_unchecked::<bool>()
+                }),
+
+                unknown => {
+                    crate::wire::main_protocol_on_anon_request::Value::UnknownOrdinal_(unknown)
                 }
             }
         }

@@ -457,16 +457,34 @@ impl Envelope {
         unsafe { &*ptr }
     }
 
-    /// Returns an `Owned` to the contained `T`.
+    /// Returns the contained `T`.
     ///
     /// # Safety
     ///
-    ///  The envelope must have been successfully decoded as a `T`.
+    /// The envelope must have been successfully decoded as a `T`. Reading from
+    /// an envelope can cause undefined behavior if the underlying value is
+    /// dropped later. Precautions should be taken to ensure that values read
+    /// from an envelope are not dropped twice.
     #[inline]
     pub unsafe fn read_unchecked<T>(&self) -> T {
         // SAFETY: `into_raw(this)` is guaranteed to return a pointer that is non-null, properly
         // properly aligned, and valid for reads and writes.
         unsafe { Self::as_ptr::<T>((self as *const Self).cast_mut()).read() }
+    }
+
+    /// Takes the contained `T` out of the envelope.
+    ///
+    /// # Safety
+    ///
+    /// The envelope must have been successfully decoded as a `T`.
+    #[inline]
+    pub unsafe fn take_unchecked<T>(&mut self) -> T {
+        // SAFETY: The caller guaranteed that the envelope was successfully
+        // decoded as a `T`. The envelope is zeroed afterward to prevent double
+        // drops.
+        let result = unsafe { self.read_unchecked() };
+        *self = Self::zero();
+        result
     }
 
     /// Clones the envelope, assuming that it contains an inline `T`.
