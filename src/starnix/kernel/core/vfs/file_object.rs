@@ -29,9 +29,7 @@ use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::endpoints::ProtocolMarker as _;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
-use starnix_logging::{
-    CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
-};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, track_stub};
 use starnix_sync::{
     BeforeFsNodeAppend, FileObjectOffset, FileOpsCore, LockBefore, LockEqualOrBefore, Locked,
     Mutex, Unlocked,
@@ -249,15 +247,15 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         options: MappingOptions,
         filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
         let min_memory_size = (memory_offset as usize)
             .checked_add(round_up_to_system_page_size(length)?)
             .ok_or_else(|| errno!(EINVAL))?;
         let mut memory = if options.contains(MappingOptions::SHARED) {
-            trace_duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
             self.get_memory(locked, file, current_task, Some(min_memory_size), prot_flags)?
         } else {
-            trace_duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
             // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
             let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
             let memory = self.get_memory(
@@ -271,7 +269,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             if !prot_flags.contains(ProtectionFlags::WRITE) {
                 clone_flags |= zx::VmoChildOptions::NO_WRITE;
             }
-            trace_duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
             Arc::new(
                 memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?,
             )

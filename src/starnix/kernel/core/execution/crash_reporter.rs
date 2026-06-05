@@ -11,8 +11,7 @@ use fidl_fuchsia_feedback::{
 };
 use fuchsia_inspect::Node;
 use starnix_logging::{
-    CATEGORY_STARNIX, CoreDumpInfo, CoreDumpList, TraceScope, log_error, log_info, log_warn,
-    trace_instant,
+    CATEGORY_STARNIX, CoreDumpInfo, CoreDumpList, log_error, log_info, log_warn,
 };
 
 pub struct CrashReporter {
@@ -64,7 +63,7 @@ impl CrashReporter {
         signal_info: &SignalInfo,
         pending_crash_report: PendingCrashReport,
     ) {
-        trace_instant!(CATEGORY_STARNIX, "RecordCoreDump", TraceScope::Process);
+        fuchsia_trace::instant!(CATEGORY_STARNIX, "RecordCoreDump", fuchsia_trace::Scope::Process);
 
         let argv = pending_crash_report.argv;
         let argv0 = pending_crash_report.argv0;

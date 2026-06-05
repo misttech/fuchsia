@@ -50,7 +50,6 @@ use starnix_core::task::{
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
-    trace_duration,
 };
 use starnix_modules::{init_common_devices, register_common_file_systems};
 use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
@@ -569,7 +568,7 @@ async fn create_container(
     kernel_extra_features: &[String],
     task_complete: oneshot::Sender<TaskResult>,
 ) -> Result<Container, Error> {
-    trace_duration!(CATEGORY_STARNIX, NAME_CREATE_CONTAINER);
+    fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_CREATE_CONTAINER);
     const DEFAULT_INIT: &str = "/container/init";
 
     let pkg_channel = start_info.container_namespace.get_namespace_channel("/pkg").unwrap();

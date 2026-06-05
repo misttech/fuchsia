@@ -20,7 +20,7 @@ mod riscv64;
 #[cfg(target_arch = "riscv64")]
 pub use riscv64::*;
 
-use starnix_logging::{CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE, firehose_trace_duration};
+use starnix_logging::{CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE};
 use starnix_uapi::__static_assertions::assert_not_impl_any;
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -43,7 +43,7 @@ impl RestrictedState {
         register_state: &mut RegisterState<RegisterStorageEnum>,
         exception_report: &mut zx::sys::zx_exception_report_t,
     ) -> Result<Self, zx::Status> {
-        firehose_trace_duration!(CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE);
+        fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE);
         let mut out_vmo_handle = 0;
         // SAFETY: `out_vmo_handle` is a valid pointer to a handle on the stack.
         let status = zx::Status::from_raw(unsafe {

@@ -30,9 +30,7 @@ use range_map::RangeMap;
 use smallvec::SmallVec;
 use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
-use starnix_logging::{
-    CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, trace_duration, track_stub,
-};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, MmDumpable, OrderedMutex, RwLock, RwLockWriteGuard, ThreadGroupLimits,
     Unlocked, UserFaultInner,
@@ -443,7 +441,7 @@ fn map_in_vmar(
             // need it.
             zx::VmoOp::PREFETCH
         };
-        trace_duration!(CATEGORY_STARNIX_MM, "MmapCommitPages");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "MmapCommitPages");
         let _ = memory.op_range(op, memory_offset, length as u64);
         // "The mmap() call doesn't fail if the mapping cannot be populated."
     }
@@ -3570,7 +3568,7 @@ impl MemoryManager {
     where
         L: LockBefore<MmDumpable>,
     {
-        trace_duration!(CATEGORY_STARNIX_MM, "snapshot_of");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "snapshot_of");
         let backing_size = (source_mm.mapping_context.user_vmar_info.base
             + source_mm.mapping_context.user_vmar_info.len) as u64;
         let private_anonymous =
@@ -3602,7 +3600,7 @@ impl MemoryManager {
                 let target_mapping_flags = mapping.flags().difference(MappingFlags::LOCKED);
                 match state.get_mapping_backing(mapping) {
                     MappingBacking::Memory(backing) => {
-                        trace_duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
+                        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
                         let memory_offset = backing.address_to_offset(range.start);
 
                         let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
@@ -3637,7 +3635,10 @@ impl MemoryManager {
                         );
                     }
                     MappingBacking::PrivateAnonymous => {
-                        trace_duration!(CATEGORY_STARNIX_MM, "private_anonymous_backing_clone");
+                        fuchsia_trace::duration!(
+                            CATEGORY_STARNIX_MM,
+                            "private_anonymous_backing_clone"
+                        );
                         let length = range.end - range.start;
                         if mapping.flags().contains(MappingFlags::WIPEONFORK) {
                             target

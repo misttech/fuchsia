@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub use fuchsia_trace::Scope as TraceScope;
-
 // The trace category used for starnix-related traces.
 pub const CATEGORY_STARNIX: &'static str = "starnix";
 
@@ -51,24 +49,3 @@ pub const ARG_NAME: &'static str = "name";
 pub fn regular_trace_category_enabled(category: &'static str) -> bool {
     fuchsia_trace::category_enabled(category)
 }
-
-pub use fuchsia_trace::{instant as trace_instant, instant as firehose_trace_instant};
-
-pub use fuchsia_trace::{duration as trace_duration, duration as firehose_trace_duration};
-
-pub use fuchsia_trace::{
-    duration_begin as trace_duration_begin, duration_begin as firehose_trace_duration_begin,
-};
-
-pub use fuchsia_trace::{
-    duration_end as trace_duration_end, duration_end as firehose_trace_duration_end,
-};
-
-pub use fuchsia_trace::{
-    flow_begin as trace_flow_begin, flow_end as trace_flow_end, flow_step as trace_flow_step,
-};
-
-pub use fuchsia_trace::{
-    instaflow_begin as trace_instaflow_begin, instaflow_end as trace_instaflow_end,
-    instaflow_step as trace_instaflow_step,
-};

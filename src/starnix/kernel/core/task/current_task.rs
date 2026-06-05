@@ -22,9 +22,7 @@ use crate::vfs::{
 use fuchsia_rcu::RcuReadGuard;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
-use starnix_logging::{
-    CATEGORY_STARNIX, log_error, log_warn, trace_duration, track_file_not_found, track_stub,
-};
+use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn, track_file_not_found, track_stub};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
 use starnix_stack::clean_stack;
 use starnix_sync::{
@@ -1717,7 +1715,7 @@ impl CurrentTask {
                 let process_group = thread_group_state.process_group.clone();
 
                 let task_info = {
-                    trace_duration!(CATEGORY_STARNIX, "create_zircon_process");
+                    fuchsia_trace::duration!(CATEGORY_STARNIX, "create_zircon_process");
                     create_zircon_process(
                         locked,
                         kernel,

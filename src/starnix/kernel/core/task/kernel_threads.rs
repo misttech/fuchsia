@@ -247,7 +247,7 @@ impl<F: Future, C: Clone> Future for WrappedFuture<F, C> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        starnix_logging::trace_duration!(starnix_logging::CATEGORY_STARNIX, &*this.name);
+        fuchsia_trace::duration!(starnix_logging::CATEGORY_STARNIX, &*this.name);
         let result = this.fut.poll(cx);
 
         (this.cleaner)(this.context.clone());

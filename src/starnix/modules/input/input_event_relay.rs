@@ -25,9 +25,7 @@ use starnix_core::power::{
 };
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{Kernel, LockedAndTask};
-use starnix_logging::{
-    log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_end,
-};
+use starnix_logging::log_warn;
 use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
     new_touch_buttons_bitvec, parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
@@ -353,11 +351,15 @@ impl InputEventsRelay {
         default_touch_device: &mut DeviceState,
         touch_events: Vec<FidlTouchEvent>,
     ) -> Vec<FidlTouchResponse> {
-        trace_duration!("input", "starnix_process_touch_event");
+        fuchsia_trace::duration!("input", "starnix_process_touch_event");
         for e in &touch_events {
             match e.trace_flow_id {
                 Some(trace_flow_id) => {
-                    trace_flow_end!("input", "dispatch_event_to_client", trace_flow_id.into());
+                    fuchsia_trace::flow_end!(
+                        "input",
+                        "dispatch_event_to_client",
+                        trace_flow_id.into()
+                    );
                 }
                 None => {
                     log_warn!("touch event has not tracing id");
@@ -376,7 +378,7 @@ impl InputEventsRelay {
         num_ignored_events += ignored_events;
 
         for (device_id, mut events) in events_by_device {
-            trace_duration_begin!("input", "starnix_process_per_device_touch_event");
+            fuchsia_trace::duration_begin!("input", "starnix_process_per_device_touch_event");
 
             let dev = self.devices.get_mut(&device_id).unwrap_or(default_touch_device);
 
@@ -403,7 +405,7 @@ impl InputEventsRelay {
                 num_unexpected_events += batch.count_unexpected_fidl_events;
                 last_event_time_ns = batch.last_event_time_ns;
             } else {
-                trace_duration_end!("input", "starnix_process_per_device_touch_event");
+                fuchsia_trace::duration_end!("input", "starnix_process_per_device_touch_event");
                 log_warn!(
                     "Non touch device received touch events: device_id = {}, device_type = {}",
                     device_id,
@@ -429,7 +431,7 @@ impl InputEventsRelay {
                 );
             }
 
-            trace_duration_end!("input", "starnix_process_per_device_touch_event");
+            fuchsia_trace::duration_end!("input", "starnix_process_per_device_touch_event");
             dev.open_files.lock().retain(|f| {
                 let Some(file) = f.upgrade() else {
                     log_warn!("Dropping input file for touch that failed to upgrade");
@@ -473,7 +475,7 @@ impl InputEventsRelay {
     ) {
         match request {
             KeyboardListenerRequest::OnKeyEvent { event, responder } => {
-                trace_duration!("input", "starnix_process_keyboard_event");
+                fuchsia_trace::duration!("input", "starnix_process_keyboard_event");
 
                 let new_events = parse_fidl_keyboard_event_to_linux_input_event(
                     &event,
@@ -516,13 +518,13 @@ impl InputEventsRelay {
         match button_event {
             fuipolicy::MediaButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
-                    trace_flow_end!(
+                    fuchsia_trace::flow_end!(
                         "input",
                         "dispatch_media_buttons_to_listeners",
                         trace_flow_id.into()
                     );
                 }
-                trace_duration!("input", "starnix_process_media_button_event");
+                fuchsia_trace::duration!("input", "starnix_process_media_button_event");
 
                 let batch =
                     parse_fidl_media_button_event(&event, power_was_pressed, function_was_pressed);
@@ -613,11 +615,11 @@ impl InputEventsRelay {
         button_event: fuipolicy::TouchButtonsListenerRequest,
         touch_buttons_were_pressed: &bit_vec::BitVec,
     ) -> bit_vec::BitVec {
-        trace_duration!("input", "starnix_process_touch_button_event");
+        fuchsia_trace::duration!("input", "starnix_process_touch_button_event");
         match button_event {
             fuipolicy::TouchButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
-                    trace_flow_end!(
+                    fuchsia_trace::flow_end!(
                         "input",
                         "dispatch_touch_button_to_listeners",
                         trace_flow_id.into()

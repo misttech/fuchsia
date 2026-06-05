@@ -6,7 +6,7 @@ use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::task::{CurrentTask, Task, ThreadGroupReadGuard, WaitQueue, Waiter};
 use crate::time::IntervalTimerHandle;
 use fuchsia_trace::{TraceCategoryContext, trace_site_t};
-use starnix_logging::{trace_instaflow_begin, trace_instaflow_end};
+
 use starnix_sync::RwLock;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
@@ -487,7 +487,12 @@ impl Eq for SignalInfo {}
 impl Drop for SignalInfo {
     fn drop(&mut self) {
         if let Some(trace_id) = self.trace_id.take() {
-            trace_instaflow_end!(TRACE_CATEGORY, "SignalFlow", self.signal.name(), trace_id);
+            fuchsia_trace::instaflow_end!(
+                TRACE_CATEGORY,
+                "SignalFlow",
+                self.signal.name(),
+                trace_id
+            );
         }
     }
 }
@@ -635,7 +640,7 @@ impl SignalInfo {
         static CACHE: trace_site_t = trace_site_t::new(0);
         let trace_id = TraceCategoryContext::acquire_cached(TRACE_CATEGORY, &CACHE).map(|_context| {
             let id = fuchsia_trace::Id::new();
-            trace_instaflow_begin!(TRACE_CATEGORY, "SignalFlow", signal.name(), id, "code" => code);
+            fuchsia_trace::instaflow_begin!(TRACE_CATEGORY, "SignalFlow", signal.name(), id, "code" => code);
             id
         });
         Self {

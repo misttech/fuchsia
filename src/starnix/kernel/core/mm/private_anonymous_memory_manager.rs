@@ -4,7 +4,7 @@
 
 use crate::mm::VMEX_RESOURCE;
 use crate::mm::memory::MemoryObject;
-use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, trace_duration};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
@@ -70,7 +70,7 @@ impl PrivateAnonymousMemoryManager {
     }
 
     pub fn snapshot(&self, backing_size: u64) -> Result<Self, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, "private_anonymous_snapshot");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "private_anonymous_snapshot");
         Ok(Self {
             backing: Arc::new(
                 self.backing

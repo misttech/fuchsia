@@ -33,7 +33,7 @@ use linux_uapi::{
     perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
 };
 use selinux::{FileSystemMountOptions, InitialSid, SecurityPermission, SecurityServer, TaskAttrs};
-use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
+use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{Credentials, PtraceAccessMode};
@@ -54,7 +54,7 @@ use zerocopy::FromBytes;
 
 macro_rules! track_hook_duration {
     ($cname:literal) => {
-        trace_duration!(CATEGORY_STARNIX_SECURITY, $cname);
+        fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, $cname);
     };
 }
 

@@ -30,7 +30,7 @@ use starnix_kernel_runner::{
 };
 use starnix_kernel_structured_config::Config as KernelStructuredConfig;
 use starnix_logging::{
-    CATEGORY_STARNIX, NAME_START_KERNEL, log_debug, log_error, log_info, log_warn, trace_instant,
+    CATEGORY_STARNIX, NAME_START_KERNEL, log_debug, log_error, log_info, log_warn,
 };
 use std::rc::Rc;
 
@@ -169,7 +169,7 @@ async fn main() -> Result<(), Error> {
 
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     fuchsia_trace_provider::trace_provider_wait_for_init();
-    trace_instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
+    fuchsia_trace::instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
     // We use `inspector_print_debug_info` directly instead of `backtrace_request_thread` because
     // `backtrace_request_thread` relies on the exception mechanism (crashsvc). If we use

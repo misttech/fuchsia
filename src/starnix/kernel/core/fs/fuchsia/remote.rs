@@ -31,7 +31,7 @@ use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
 use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
-use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn};
 use starnix_sync::{
     DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepWriteGuard, LockEqualOrBefore,
     Locked, RwLock, Unlocked,
@@ -1807,7 +1807,7 @@ impl FileOps for RemoteFileObject {
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
         let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
             Some(&self.read_exec_memory)
         } else if prot == ProtectionFlags::READ {
@@ -1898,7 +1898,7 @@ impl FileOps for AnonymousRemoteFileObject {
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
         let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
             Some(&self.read_exec_memory)
         } else if prot == ProtectionFlags::READ {
@@ -2055,7 +2055,7 @@ impl FileOps for RemoteZxioFileObject {
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
         let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
             Some(&self.read_exec_memory)
         } else if prot == ProtectionFlags::READ {

@@ -5,7 +5,7 @@ use crate::cache_stats::{AtomicCacheStats, CacheStats, ShardedCacheStats};
 use crate::sync::RwLock;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::arch::asm;
-use starnix_logging::{CATEGORY_STARNIX_SECURITY, trace_duration};
+use starnix_logging::CATEGORY_STARNIX_SECURITY;
 use std::hint::cold_path;
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering, compiler_fence};
@@ -495,7 +495,7 @@ impl<
         // We expect >99% cache hits.
         cold_path();
 
-        trace_duration!(CATEGORY_STARNIX_SECURITY, "selinux.access_cache.miss");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "selinux.access_cache.miss");
         stats.lookups.fetch_add(1, Ordering::Relaxed);
         stats.misses.fetch_add(1, Ordering::Relaxed);
 

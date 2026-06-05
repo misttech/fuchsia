@@ -7,7 +7,7 @@ use crate::mm::{
 };
 use fuchsia_runtime::UtcClock;
 use mapped_clock::{CLOCK_SIZE, MappedClock};
-use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, set_zx_name, trace_duration};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, set_zx_name};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::mem::MaybeUninit;
@@ -485,7 +485,7 @@ impl MemoryObject {
         Ok(if !options.contains(MappingOptions::ANONYMOUS) && !rights.contains(zx::Rights::WRITE) {
             self.clone()
         } else {
-            trace_duration!(CATEGORY_STARNIX_MM, "pager_backed_memory_snapshot");
+            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "pager_backed_memory_snapshot");
             let mut cloned_memory = self
                 .create_child(
                     zx::VmoChildOptions::SNAPSHOT_MODIFIED | zx::VmoChildOptions::RESIZABLE,

@@ -26,10 +26,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_lifecycle::DropWaiter;
-use starnix_logging::{
-    CATEGORY_STARNIX, log_error, log_warn, trace_duration, trace_flow_begin, trace_flow_end,
-    trace_flow_step,
-};
+use starnix_logging::{CATEGORY_STARNIX, log_error, log_warn};
 use starnix_sync::{
     FileOpsCore, LockDepGuard, LockDepMutex, Locked, Mutex, RemoteBinderHandleLevel, Unlocked,
 };
@@ -601,16 +598,20 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 files,
                 responder,
             } => {
-                trace_duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_SEND_WORK, "request" => request);
-                trace_flow_begin!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, tid.into(), "request" => request);
+                fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_SEND_WORK, "request" => request);
+                fuchsia_trace::flow_begin!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, tid.into(), "request" => request);
 
                 let (responder, waiter) = Self::make_synchronous_responder::<
                     Vec<fbinder::IoctlReadWrite>,
                     _,
                     _,
                 >(responder, move |responder, e| {
-                    trace_duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY);
-                    trace_flow_end!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, tid.into());
+                    fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY);
+                    fuchsia_trace::flow_end!(
+                        CATEGORY_STARNIX,
+                        NAME_REMOTE_BINDER_IOCTL,
+                        tid.into()
+                    );
 
                     match e {
                         Ok(user_writes) => responder.send(Ok(user_writes.as_slice())),
@@ -1074,8 +1075,15 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     files,
                     responder,
                 } => {
-                    trace_duration!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS);
-                    trace_flow_step!(CATEGORY_STARNIX, NAME_REMOTE_BINDER_IOCTL, koid.into());
+                    fuchsia_trace::duration!(
+                        CATEGORY_STARNIX,
+                        NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS
+                    );
+                    fuchsia_trace::flow_step!(
+                        CATEGORY_STARNIX,
+                        NAME_REMOTE_BINDER_IOCTL,
+                        koid.into()
+                    );
                     let result = remote_binder_connection.ioctl(
                         locked,
                         current_task,

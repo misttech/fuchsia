@@ -11,9 +11,8 @@ use starnix_core::signals::{
 };
 use starnix_core::task::{CurrentTask, ExceptionResult, ExitStatus, SeccompStateValue, TaskFlags};
 use starnix_logging::{
-    CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_RESTRICTED_KICK, NAME_RUN_TASK,
-    firehose_trace_duration, firehose_trace_instant, log_error, log_syscall, log_trace, log_warn,
-    set_current_task_info,
+    CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_RESTRICTED_KICK, NAME_RUN_TASK, log_error,
+    log_syscall, log_trace, log_warn, set_current_task_info,
 };
 use starnix_registers::RestrictedState;
 use starnix_sync::{Locked, Unlocked};
@@ -109,7 +108,7 @@ fn run_task(
         current_task.tid,
     );
 
-    firehose_trace_duration!(CATEGORY_STARNIX, NAME_RUN_TASK);
+    fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_RUN_TASK);
 
     // This tracks the last failing system call for debugging purposes.
     let error_context = None;
@@ -253,14 +252,14 @@ fn process_restricted_exit(
             }
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
-            firehose_trace_duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
+            fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
             // SAFETY: `exception_report_raw` was written by Zircon during this restricted exit.
             let exception_report = unsafe { zx::ExceptionReport::from_raw(*exception_report_raw) };
             let exception_result = current_task.process_exception(locked, &exception_report);
             process_completed_exception(locked, current_task, exception_result, exception_report);
         }
         zx::sys::ZX_RESTRICTED_REASON_KICK => {
-            firehose_trace_instant!(
+            fuchsia_trace::instant!(
                 CATEGORY_STARNIX,
                 NAME_RESTRICTED_KICK,
                 fuchsia_trace::Scope::Thread
@@ -340,7 +339,7 @@ pub fn execute_syscall(
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
-    firehose_trace_duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
+    fuchsia_trace::duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
     let syscall = new_syscall(syscall_decl, current_task);
 
     current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);

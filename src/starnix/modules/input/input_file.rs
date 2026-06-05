@@ -10,7 +10,7 @@ use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{FileObject, FileOps, fileops_impl_noop_sync};
-use starnix_logging::{log_info, trace_duration, trace_flow_begin, trace_flow_end, track_stub};
+use starnix_logging::{log_info, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::duration_from_timeval;
@@ -273,8 +273,8 @@ impl LinuxEventWithTraceId {
         match event.type_ as u32 {
             uapi::EV_SYN => {
                 let trace_id = fuchsia_trace::Id::new();
-                trace_duration!("input", "linux_event_create");
-                trace_flow_begin!("input", "linux_event", trace_id);
+                fuchsia_trace::duration!("input", "linux_event_create");
+                fuchsia_trace::flow_begin!("input", "linux_event", trace_id);
                 LinuxEventWithTraceId { event: event, trace_id: Some(trace_id) }
             }
             // EV_SYN marks the end of a complete input event. Other event types are its properties,
@@ -701,7 +701,7 @@ impl FileOps for InputFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        trace_duration!("input", "InputFile::read");
+        fuchsia_trace::duration!("input", "InputFile::read");
         debug_assert!(offset == 0);
         let input_event_size = InputEventPtr::size_of_object_for(current_task);
 
@@ -725,8 +725,8 @@ impl FileOps for InputFile {
 
         for event in &events {
             if let Some(trace_id) = event.trace_id {
-                trace_duration!("input", "linux_event_read");
-                trace_flow_end!("input", "linux_event", trace_id);
+                fuchsia_trace::duration!("input", "linux_event_read");
+                fuchsia_trace::flow_end!("input", "linux_event", trace_id);
             }
         }
 

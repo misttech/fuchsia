@@ -18,7 +18,7 @@ use crate::vfs::buffers::{OutputBuffer, UserBuffersInputBuffer, UserBuffersOutpu
 use crate::vfs::{FdFlags, FdNumber, UserFaultFile};
 use fuchsia_runtime::UtcTimeline;
 use linux_uapi::MLOCK_ONFAULT;
-use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, trace_duration, track_stub};
+use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec, timespec_from_time};
@@ -178,10 +178,10 @@ where
     security::mmap_file(current_task, file.as_ref(), prot_flags, options)?;
 
     if flags & MAP_ANONYMOUS != 0 {
-        trace_duration!(CATEGORY_STARNIX_MM, "AnonymousMmap");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "AnonymousMmap");
         current_task.mm()?.map_anonymous(addr, length, prot_flags, options, MappingName::None)
     } else {
-        trace_duration!(CATEGORY_STARNIX_MM, "FileBackedMmap");
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileBackedMmap");
         // TODO(tbodt): maximize protection flags so that mprotect works
         let file = file.expect("file retrieved above for file-backed mapping");
         file.mmap(

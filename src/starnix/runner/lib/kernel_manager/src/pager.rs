@@ -8,9 +8,7 @@
 
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use futures::TryStreamExt;
-use starnix_logging::{
-    log_debug, log_error, log_warn, trace_duration, trace_instant, with_zx_name,
-};
+use starnix_logging::{log_debug, log_error, log_warn, with_zx_name};
 use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
@@ -70,7 +68,7 @@ pub async fn run_pager(
                 responder,
                 ..
             } => {
-                trace_instant!(
+                fuchsia_trace::instant!(
                     CATEGORY_STARNIX_PAGER,
                     "file_register",
                     fuchsia_trace::Scope::Thread
@@ -185,7 +183,7 @@ impl Pager {
                         zx::PacketContents::Pager(contents)
                             if contents.command() == ZX_PAGER_VMO_READ =>
                         {
-                            trace_duration!(CATEGORY_STARNIX_PAGER, "vmo_read");
+                            fuchsia_trace::duration!(CATEGORY_STARNIX_PAGER, "vmo_read");
                             let (filesystem_num, inode_num) = split_key(packet.key());
                             self.filesystems
                                 .lock()
@@ -201,14 +199,17 @@ impl Pager {
                         zx::PacketContents::Pager(contents)
                             if contents.command() == ZX_PAGER_VMO_COMPLETE =>
                         {
-                            trace_duration!(CATEGORY_STARNIX_PAGER, "vmo_complete");
+                            fuchsia_trace::duration!(CATEGORY_STARNIX_PAGER, "vmo_complete");
                             // We don't care about this command, but we will receive them and we
                             // don't want to log them as unexpected.
                         }
                         zx::PacketContents::SignalOne(signals)
                             if signals.observed().contains(zx::Signals::VMO_ZERO_CHILDREN) =>
                         {
-                            trace_duration!(CATEGORY_STARNIX_PAGER, "signal_zero_children");
+                            fuchsia_trace::duration!(
+                                CATEGORY_STARNIX_PAGER,
+                                "signal_zero_children"
+                            );
                             let (filesystem_num, inode_num) = split_key(packet.key());
                             // We may get VMO_ZERO_CHILDREN notifications for
                             // files within a filesystem after it is unmounted,

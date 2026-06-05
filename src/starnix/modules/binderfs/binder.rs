@@ -40,9 +40,7 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicCounter;
-use starnix_logging::{
-    CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, track_stub, with_zx_name,
-};
+use starnix_logging::{CATEGORY_STARNIX, log_error, log_trace, log_warn, track_stub, with_zx_name};
 use starnix_sync::{
     BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
     LockDepRwLock, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel, Unlocked,
@@ -581,7 +579,7 @@ impl BinderDriver {
         arg: SyscallArg,
         mut files: Vec<fbinder::FileHandle>,
     ) -> Result<SyscallResult, Errno> {
-        trace_duration!(CATEGORY_STARNIX, NAME_BINDER_IOCTL, "request" => request);
+        fuchsia_trace::duration!(CATEGORY_STARNIX, NAME_BINDER_IOCTL, "request" => request);
         let user_arg = UserAddress::from(arg);
         let remote_memory_accessor =
             match (binder_proc.remote_resource_accessor.as_ref(), remote_ioctl) {
@@ -895,7 +893,7 @@ impl BinderDriver {
         L: LockEqualOrBefore<ResourceAccessorLevel>,
     {
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
-        trace_duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
+        fuchsia_trace::duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
                 let (mut proc_state, mut thread_state) = context.lock();

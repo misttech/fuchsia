@@ -33,7 +33,7 @@ use selinux::{
     SecurityServer, TaskAttrs,
 };
 use smallvec;
-use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, trace_duration, track_stub};
+use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, track_stub};
 use starnix_sync::Mutex;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -226,7 +226,7 @@ fn has_fs_node_permissions_dontaudit(
     fs_node: &FsNode,
     permissions: &[impl ForClass<FsNodeClass>],
 ) -> Result<(), Errno> {
-    trace_duration!(
+    fuchsia_trace::duration!(
         CATEGORY_STARNIX_SECURITY,
         "security.selinux.has_fs_node_permissions_dontaudit"
     );
@@ -257,7 +257,7 @@ fn has_fs_node_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
+    fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
 
     if fs_node.is_private() {
         return Ok(());
@@ -337,7 +337,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.check_permission");
+    fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.check_permission");
 
     if is_internal_operation(current_task) {
         return Ok(());

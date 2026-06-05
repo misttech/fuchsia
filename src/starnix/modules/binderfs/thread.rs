@@ -12,7 +12,7 @@ use starnix_core::task::{
     Waiter,
 };
 
-use starnix_logging::{log_trace, log_warn, trace_instaflow_begin, trace_instaflow_end};
+use starnix_logging::{log_trace, log_warn};
 use starnix_sync::{LockDepGuard, LockDepMutex, TerminalLock, ordered_lock};
 use starnix_uapi::vfs::FdEvents;
 
@@ -733,7 +733,7 @@ impl CommandTraceGuard {
         };
         let id = fuchsia_trace::Id::new();
         let f = format!("{:?}", command);
-        trace_instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
+        fuchsia_trace::instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
         Self(Some(CommandTraceGuardInner { id, kind }))
     }
 }
@@ -741,7 +741,7 @@ impl CommandTraceGuard {
 impl Drop for CommandTraceGuard {
     fn drop(&mut self) {
         if let Some(CommandTraceGuardInner { id, kind }) = self.0.take() {
-            trace_instaflow_end!(TRACE_CATEGORY, "BinderFlow", kind, id);
+            fuchsia_trace::instaflow_end!(TRACE_CATEGORY, "BinderFlow", kind, id);
         }
     }
 }

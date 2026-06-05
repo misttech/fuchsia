@@ -14,7 +14,7 @@ use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
-use starnix_logging::{CATEGORY_STARNIX_SECURITY, trace_instant};
+use starnix_logging::CATEGORY_STARNIX_SECURITY;
 use std::collections::HashMap;
 use std::fmt::{Display, Error};
 use std::num::NonZeroU32;
@@ -180,7 +180,7 @@ pub(super) fn audit_decision(
     permission: KernelPermission,
     audit_data: Auditable<'_>,
 ) {
-    trace_instant!(
+    fuchsia_trace::instant!(
         CATEGORY_STARNIX_SECURITY,
         match (result.granted, result.todo_bug) {
             (true, None) => c"audit.granted",

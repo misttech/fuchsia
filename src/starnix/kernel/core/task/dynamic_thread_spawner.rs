@@ -15,7 +15,7 @@ use crate::task::{
 use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
 use futures::channel::oneshot;
-use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error, trace_duration};
+use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error};
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::release_after;
@@ -132,7 +132,7 @@ where
         let closure = closure_kind;
         let closure = maybe_apply_role(role, closure);
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-            trace_duration!(CATEGORY_STARNIX, debug_name);
+            fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
             let _ = closure(locked, current_task);
         });
         SpawnRequest { closure, debug_name }
@@ -157,7 +157,7 @@ where
         };
         let closure = maybe_apply_role(role, closure);
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-            trace_duration!(CATEGORY_STARNIX, debug_name);
+            fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
             let _ = sender.send(closure(locked, current_task));
         });
         (result_fn, SpawnRequest { closure, debug_name })
@@ -180,7 +180,7 @@ where
         let maybe_with_role = maybe_apply_role(role, closure);
         let repackaged =
             Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-                trace_duration!(CATEGORY_STARNIX, debug_name);
+                fuchsia_trace::duration!(CATEGORY_STARNIX, debug_name);
                 let result = maybe_with_role(locked, current_task);
                 let _ = sender_async.send(result);
             });
