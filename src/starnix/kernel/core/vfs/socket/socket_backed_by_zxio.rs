@@ -40,8 +40,9 @@ use static_assertions::const_assert_eq;
 use std::mem::size_of;
 use std::sync::{Arc, OnceLock};
 use syncio::zxio::{
-    IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_REUSEPORT, SO_TYPE, SOL_IP,
-    SOL_SOCKET, ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
+    IP_RECVERR, IP_TRANSPARENT, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_REUSEPORT,
+    SO_TYPE, SOL_IP, SOL_SOCKET, ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2,
+    zxio_socket_mark,
 };
 use syncio::{
     ControlMessage, RecvMessageInfo, ServiceConnector, Zxio, ZxioErrorCode,
@@ -760,6 +761,15 @@ impl SocketOps for ZxioBackedSocket {
                         current_task.thread_group(),
                     )
                 })?;
+            }
+            (SOL_IP, IP_TRANSPARENT) => {
+                // Either `CAP_NET_RAW` or `CAP_NET_ADMIN` is required to set
+                // `IP_TRANSPARENT`. If `CAP_NET_RAW` is not present, we then
+                // check `CAP_NET_ADMIN` using `check_task_capable`, which will
+                // generate an audit record if the capability is missing.
+                if !security::is_task_capable_noaudit(current_task, CAP_NET_RAW) {
+                    security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+                }
             }
             _ => {}
         }
