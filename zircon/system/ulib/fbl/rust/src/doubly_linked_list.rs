@@ -1194,7 +1194,7 @@ mod tests {
     }
 
     #[fbl::ref_counted]
-    #[derive(crate::DoublyLinkedListContainable)]
+    #[derive(crate::DoublyLinkedListContainable, crate::Recyclable)]
     #[repr(C)]
     pub struct RefTestObject {
         value: i32,
@@ -1942,7 +1942,7 @@ mod tests {
     struct Tag2;
 
     #[fbl::ref_counted]
-    #[derive(crate::DoublyLinkedListContainable)]
+    #[derive(crate::DoublyLinkedListContainable, crate::Recyclable)]
     #[repr(C)]
     struct MultiListObject {
         value: i32,

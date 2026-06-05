@@ -145,6 +145,7 @@ mod tests {
     }
 
     #[fbl::ref_counted]
+    #[derive(crate::Recyclable)]
     #[repr(C)]
     pub struct TestRustRefCounted {
         destroyed: Arc<AtomicBool>,

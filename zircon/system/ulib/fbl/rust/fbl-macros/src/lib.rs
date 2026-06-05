@@ -58,8 +58,6 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
         panic!("ref_counted attribute only supports structs with named fields");
     }
 
-    input.attrs.push(syn::parse_quote! { #[derive(::fbl::Recyclable)] });
-
     let expanded = quote! {
         #input
 

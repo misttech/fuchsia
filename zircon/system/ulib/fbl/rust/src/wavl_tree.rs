@@ -2622,7 +2622,7 @@ mod tests {
     }
 
     #[fbl::ref_counted]
-    #[derive(crate::WavlTreeContainable)]
+    #[derive(crate::WavlTreeContainable, crate::Recyclable)]
     #[repr(C)]
     pub struct RefTestObject {
         value: i32,
@@ -3064,7 +3064,7 @@ mod tests {
     struct Tag2;
 
     #[fbl::ref_counted]
-    #[derive(crate::WavlTreeContainable)]
+    #[derive(crate::WavlTreeContainable, crate::Recyclable)]
     #[repr(C)]
     struct MultiTreeObject {
         value: i32,
