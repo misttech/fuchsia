@@ -3,20 +3,44 @@
 # found in the LICENSE file.
 
 import("//build/config/compiler.gni")
+import("//build/config/linker_config.gni")
 import("//build/config/lto/config.gni")
 import("//build/config/riscv64/riscv64.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/variant.gni")
 
 config("fat-lto-objects") {
-  # only add fat-lto-objects when the feature is enabled
+  configs = [
+    ":fat-lto-objects-compilation",
+    ":fat-lto-objects-linking",
+  ]
+}
+
+config("fat-lto-objects-compilation") {
   if (fat_lto_objects && !is_gcc) {
     # TODO(https://fxbug.dev/340553826): - Add FatLTO support for Mach-O and COFF file formats
     # Currently, FatLTO requires ELF, so its only valid on non-EFI Fuchsia and
     # Linux
     if (is_elf) {
       cflags = [ "-ffat-lto-objects" ]
-      ldflags = cflags
+    }
+  }
+}
+
+linker_config("fat-lto-objects-linking") {
+  if (fat_lto_objects && !is_gcc) {
+    # TODO(https://fxbug.dev/340553826): - Add FatLTO support for Mach-O and COFF file formats
+    # Currently, FatLTO requires ELF, so its only valid on non-EFI Fuchsia and
+    # Linux
+    if (is_elf) {
+      ldflags = [ "-ffat-lto-objects" ]
+
+      # TODO(https://fxbug.dev/520129672): Enabling this on non-CFI builds leads to
+      # unexpected TLS effects, so let's enable this only on CFI builds for now.
+      if (toolchain_variant.tags + [ "cfi" ] - [ "cfi" ] !=
+          toolchain_variant.tags) {
+        rust_linker_flags = [ "--fat-lto-objects" ]
+      }
     }
   }
 }
@@ -32,25 +56,23 @@ config("no-fat-lto-objects-compilation") {
   }
 }
 
-config("no-fat-lto-objects-linking") {
+linker_config("no-fat-lto-objects-linking") {
   # The --no-fat-lto-objects option is only valid in LLD
   if (fat_lto_objects && !is_gcc) {
     # TODO(https://fxbug.dev/340553826): - Add FatLTO support for Mach-O and COFF file formats
     # Currently, FatLTO requires ELF, so its only valid on non-EFI Fuchsia and
     # Linux
     if (is_elf) {
-      ldflags = [ "-Wl,--no-fat-lto-objects" ]
+      linker_flags = [ "--no-fat-lto-objects" ]
     }
   }
 }
 
 config("no-fat-lto-objects") {
-  if (fat_lto_objects) {
-    configs = [
-      ":no-fat-lto-objects-compilation",
-      ":no-fat-lto-objects-linking",
-    ]
-  }
+  configs = [
+    ":no-fat-lto-objects-compilation",
+    ":no-fat-lto-objects-linking",
+  ]
 }
 
 config("lto-workarounds") {
