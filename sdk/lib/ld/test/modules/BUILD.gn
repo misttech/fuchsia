@@ -929,8 +929,8 @@ test_loadable_module("tls-dep-module") {
   configs = [ "//build/config:no-tlsdesc" ]
   deps = [ "//zircon/system/public" ]
 
-  # We need to allow undefined symbols, since __tls_get_addr will not be
-  # defined by this module or any link-time dependency, but will be supplied by libc.
+  # We need to allow undefined symbols, since __tls_get_addr will not be defined
+  # by this module or any link-time dependency, but will be supplied by libc.
   remove_configs = [ "//build/config:symbol_no_undefined" ]
 }
 
@@ -961,12 +961,13 @@ test_loadable_module("tls-initial-dep-module") {
   configs = [ "//build/config:no-tlsdesc" ]
   deps = [ "//zircon/system/public" ]
 
-  # We need to allow undefined symbols, since __tls_get_addr will not be
-  # defined by this module or any link-time dependency, but will be supplied by libc.
+  # We need to allow undefined symbols, since __tls_get_addr will not be defined
+  # by this module or any link-time dependency, but will be supplied by libc.
   remove_configs = [ "//build/config:symbol_no_undefined" ]
 }
 
-# This is the same as tls-initial-dep-module but using TLSDESC, with no __tls_get_addr.
+# This is the same as tls-initial-dep-module but using TLSDESC, with no
+# __tls_get_addr.
 test_loadable_module("tls-desc-initial-dep-module") {
   public = [ "tls-initial-dep.h" ]
   sources = [ "tls-initial-dep.cc" ]
@@ -984,12 +985,13 @@ test_loadable_module("tls-ld-dep-module") {
 
   configs = [ "//build/config:no-tlsdesc" ]
 
-  # We need to allow undefined symbols, since __tls_get_addr will not be
-  # defined by this module or any link-time dependency, but will be supplied by libc.
+  # We need to allow undefined symbols, since __tls_get_addr will not be defined
+  # by this module or any link-time dependency, but will be supplied by libc.
   remove_configs = [ "//build/config:symbol_no_undefined" ]
 }
 
-# This is the same as tls-dep-ld-module but using TLSDESC, with no __tls_get_addr.
+# This is the same as tls-dep-ld-module but using TLSDESC, with no
+# __tls_get_addr.
 test_loadable_module("tls-desc-ld-dep-module") {
   public = [ "tls-ld-dep.h" ]
   sources = [
@@ -1157,7 +1159,8 @@ test_loadable_module("second-session-module") {
 }
 
 test_shared_library("second-session-module-deps-a") {
-  # second-session-module-deps-a.cc does not use suffixed-symbols from indirect-deps.h.
+  # second-session-module-deps-a.cc does not use suffixed-symbols from
+  # indirect-deps.h.
   defines = [ "TEST_SYMBOL_SUFFIX=" ]
   sources = [ "second-session-module-deps-a.cc" ]
   deps = [ "//zircon/system/public" ]
@@ -1960,7 +1963,8 @@ init_fini_array_tests = [
   },
 ]
 
-# This will generate files and targets for each entry in `init_fini_array_tests`.
+# This will generate files and targets for each entry in
+# `init_fini_array_tests`.
 foreach(case, init_fini_array_tests) {
   generated_file("${case.name}.cc") {
     outputs = [ "$target_gen_dir/$target_name" ]
@@ -2042,8 +2046,8 @@ test_loadable_module("static-tls-module") {
     "//src/lib/elfldltl",
   ]
 
-  # We need to allow undefined symbols, since __tls_get_addr will not be
-  # defined by this module or any link-time dependency, but will be supplied by libc.
+  # We need to allow undefined symbols, since __tls_get_addr will not be defined
+  # by this module or any link-time dependency, but will be supplied by libc.
   remove_configs = [ "//build/config:symbol_no_undefined" ]
 
   # workaround for b/349448459 to remote-link successfully

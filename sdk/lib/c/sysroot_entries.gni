@@ -175,8 +175,8 @@ foreach(variant, sysroot_variants) {
     # conflicts later when creating Fuchsia packages which contains binaries
     # who indirectly depend on the core SDK.
     #
-    # IMPORTANT: KEEP THIS IN SYNC WITH THE toolchain_variant.libprefix computation
-    # in //build/config/BUILDCONFIG.gni
+    # IMPORTANT: KEEP THIS IN SYNC WITH THE toolchain_variant.libprefix
+    # computation in //build/config/BUILDCONFIG.gni
     #
     _libprefix = ""
     _libc_target = system_libc_target

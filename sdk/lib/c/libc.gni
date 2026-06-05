@@ -16,7 +16,8 @@ scudo = "//third_party/scudo/src"
 gwp_asan = "//third_party/scudo/gwp_asan"
 
 declare_args() {
-  # **NOTE: Experimental** Use the llvm-libc implementations of string functions.
+  # **NOTE: Experimental** Use the llvm-libc implementations of string
+  # functions.
   use_llvm_libc_string_functions = current_cpu == "riscv64"
 }
 

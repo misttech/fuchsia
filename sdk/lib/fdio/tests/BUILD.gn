@@ -37,10 +37,10 @@ fuchsia_test_package("fdio-unittest-package") {
 group("tests") {
   testonly = true
   deps = [
-    # We build the chroot-child binary for host to make it easier to experiment with host
-    # behavior of chroot. Unfortunately, we cannot test host chroot behavior automatically
-    # because calling chroot requires root (or other) privileges that we lack in our host
-    # test environment.
+    # We build the chroot-child binary for host to make it easier to experiment
+    # with host behavior of chroot. Unfortunately, we cannot test host chroot
+    # behavior automatically because calling chroot requires root (or other)
+    # privileges that we lack in our host test environment.
     ":chroot-child($host_toolchain)",
     ":cleanpath-tests",
     ":fdio-unittest-package",

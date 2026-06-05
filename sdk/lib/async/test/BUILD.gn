@@ -46,7 +46,8 @@ sdk_cpp_unittest_package("async-test-pkg") {
   deps = [ ":include-process-launcher" ]
 }
 
-# Use this group to include fuchsia.process.Launcher in generated test manifests.
+# Use this group to include fuchsia.process.Launcher in generated test
+# manifests.
 group("include-process-launcher") {
   visibility = [ ":*" ]
   testonly = true

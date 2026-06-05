@@ -1016,7 +1016,8 @@ template("generate_flatland-pixeltest-yuv-suite") {
     ]
     test_specs = {
       # TODO(https://fxbug.dev/42137913): Skip this test for AEMU as YUV Sysmem images are not supported yet.
-      # TODO(b/321072153) - lavapipe can't create images with explicit multiplane formats
+      # TODO(b/321072153) - lavapipe can't create images with explicit
+      # multiplane formats
       environments = vulkan_envs - vulkan_goldfish_envs - vulkan_lavapipe_envs
       log_settings = {
         max_severity = "ERROR"
@@ -1039,8 +1040,8 @@ template("generate_trusted-flatland-factory-integration-test-suite") {
   }
 }
 
-# Expands to an empty test suite for tests that were removed from CTF testing, but for which
-# binaries are still present in CIPD.
+# Expands to an empty test suite for tests that were removed from CTF testing,
+# but for which binaries are still present in CIPD.
 template("generate_disabled-ctf-test-suite") {
   forward_variables_from(invoker,
                          [
@@ -1062,7 +1063,8 @@ template("generate_disabled-ctf-test-suite") {
 # api_level, where api_level is a supported API level and ctf_test is a prebuilt
 # CTF package in the current checkout.
 #
-# CTF Test Authors: Do not modify this. See the comments at the top of this file.
+# CTF Test Authors: Do not modify this. See the comments at the top of this
+# file.
 template("generate_ctf_test") {
   assert(defined(invoker.api_level), "api_level is required")
   assert(defined(invoker.prebuilt_package), "prebuilt_package is required")
@@ -1096,9 +1098,9 @@ template("generate_ctf_test") {
   }
 
   target(target_for_downloaded_test, target_name) {
-    # fidl_coverage will be forwarded in each "generate_foo" target defined above.
-    # It can be un-forwarded to disable it for a specific test, or set to false
-    # here to disable it for all tests.
+    # fidl_coverage will be forwarded in each "generate_foo" target defined
+    # above. It can be un-forwarded to disable it for a specific test, or set to
+    # false here to disable it for all tests.
     fidl_coverage = api_level == "_in_development"
 
     # If you change these properties, change the docs at the top of this file.
@@ -1133,7 +1135,8 @@ template("generate_ctf_test") {
 #      Type: bool
 #      Default: false
 #
-# CTF Test Authors: Do not modify this. See the comments at the top of this file.
+# CTF Test Authors: Do not modify this. See the comments at the top of this
+# file.
 template("generate_ctf_tests") {
   assert(defined(invoker.api_level))
   assert(defined(invoker.manifest))

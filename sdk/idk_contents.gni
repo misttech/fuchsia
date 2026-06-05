@@ -14,7 +14,8 @@ _common_prebuilt_libraries = [ "//sdk:core_cc_prebuilt_libraries" ]
 _common_source_libraries = [ "//sdk:core_cc_source_libraries" ]
 _common_sysroot = [ "//sdk:core_sysroot" ]
 
-# Defines the contents of the Fuchsia IDK that is distributed to out-of-tree developers.
+# Defines the contents of the Fuchsia IDK that is distributed to out-of-tree
+# developers.
 fuchsia_idk_contents = {
   non_sdk_deps_build_tests_for_all_builds =
       [ "//sdk:common_non_sdk_deps_build_tests_for_all_builds" ]

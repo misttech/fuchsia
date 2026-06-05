@@ -285,12 +285,12 @@ if (current_toolchain == default_toolchain) {
         "-hwasan-record-stack-history=libcall",
 
         # This replaces all hwasan load/store checks with an outlined libcall.
-        # This is done so we can stub out checks on globals which would be tagged
-        # but before we can actually register their tags into shadow. Note that
-        # we could alternatively add NO_ASAN on each function that accesses a tagged
-        # global, but I've found too many instances where globals can be accessed
-        # in the initial execution path and this is cleaner than adding NO_ASAN
-        # on each of them.
+        # This is done so we can stub out checks on globals which would be
+        # tagged but before we can actually register their tags into shadow.
+        # Note that we could alternatively add NO_ASAN on each function that
+        # accesses a tagged global, but I've found too many instances where
+        # globals can be accessed in the initial execution path and this is
+        # cleaner than adding NO_ASAN on each of them.
         "-mllvm",
         "-hwasan-instrument-with-calls=1",
       ]
@@ -336,10 +336,10 @@ if (current_toolchain == libc_toolchain) {
     visibility = [ ":*" ]
 
     # As a special case, the C library must not be compiled with the default
-    # configs for shared_library() targets, but those or regular source_set()
-    # or static_library() targets. In practice, for the base toolchain, this
-    # means it will be compiled without -fno-rtti, but things get more complicated
-    # for variant toolchains.
+    # configs for shared_library() targets, but those or regular source_set() or
+    # static_library() targets. In practice, for the base toolchain, this means
+    # it will be compiled without -fno-rtti, but things get more complicated for
+    # variant toolchains.
     configs -= default_shared_library_configs
     configs += default_common_binary_configs
 

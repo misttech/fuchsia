@@ -8,18 +8,20 @@ import("//build/cpp/sdk_source_set.gni")
 import("//build/drivers.gni")
 import("//tools/cmc/build/expect_includes.gni")
 
-# WARNING: Prefer to use the realm-builder variants, unless you have a very basic use case and
-# don't need hermeticity in your test.
+# WARNING: Prefer to use the realm-builder variants, unless you have a very
+# basic use case and don't need hermeticity in your test.
 #
-# This is the static driver_test_realm. It is a layer on top of the driver_test_realm, that
-# adds it as a static component in the test. This is done by bringing in the client_includes
-# which is an expect_includes target with a client shard that the test must include in its cml.
-# This client shard contains a child entry for the driver-test-realm component. This is provided
-# with some default capabilities that simple tests can utilize (eg. the devfs directory), but it
-# can't be customized any further to add more capabilities (like a test specific driver service).
+# This is the static driver_test_realm. It is a layer on top of the
+# driver_test_realm, that adds it as a static component in the test. This is
+# done by bringing in the client_includes which is an expect_includes target
+# with a client shard that the test must include in its cml. This client shard
+# contains a child entry for the driver-test-realm component. This is provided
+# with some default capabilities that simple tests can utilize (eg. the devfs
+# directory), but it can't be customized any further to add more capabilities
+# (like a test specific driver service).
 #
-# See the realm-builder libraries if any customization outside of what currently exists in the
-# client shard is needed.
+# See the realm-builder libraries if any customization outside of what currently
+# exists in the client shard is needed.
 group("static") {
   testonly = true
   deps = [
@@ -28,10 +30,11 @@ group("static") {
   ]
 }
 
-# This is the main driver_test_realm group. It contains the driver-test-realm component that
-# configures the realm, as well as the inner components that are part of the inner realm.
-# Generally this should not be depended on directly, instead either the static target or the
-# realm_builder libraries should be depended on and they bring in this dependency.
+# This is the main driver_test_realm group. It contains the driver-test-realm
+# component that configures the realm, as well as the inner components that are
+# part of the inner realm. Generally this should not be depended on directly,
+# instead either the static target or the realm_builder libraries should be
+# depended on and they bring in this dependency.
 group("driver_test_realm") {
   deps = [
     ":driver_manager_test",

@@ -36,7 +36,8 @@ shared_library("shared_lib3") {
   testonly = true
   sources = [ "shared_lib3.c" ]
 
-  # This should in theory have  data_deps = [ ":shared_lib2" ]  but doesn't to avoid the circularity.
+  # This should in theory have data_deps = [ ":shared_lib2" ] but doesn't to
+  # avoid the circularity.
   deps = [ ":shared_lib2_ifs" ]
 }
 

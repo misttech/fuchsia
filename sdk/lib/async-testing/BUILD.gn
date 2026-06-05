@@ -20,7 +20,8 @@ zx_library("async-testing") {
     "test_loop_dispatcher.cc",
   ]
   public_deps = [
-    # <lib/async-testing/dispatcher.h_stub> has #include <lib/async/dispatcher.h>.
+    # <lib/async-testing/dispatcher.h_stub> has
+    # #include<lib/async/dispatcher.h>.
     "//sdk/lib/async",
 
     # <lib/async-testing/dispatcher.h_stub> has #include <lib/zx/time.h>.

@@ -103,8 +103,8 @@ if (!sdk_inside_sub_build) {
     public_deps = [ ":in_tree_collection" ]
 
     deps = [
-      # Ensure that the following target is available to build and that a default
-      # build, which includes `//sdk` will also create
+      # Ensure that the following target is available to build and that a
+      # default build, which includes `//sdk` will also create
       # $OUTPUT_DIR/sdk/exported/zircon_sysroot/. See the target for details.
       ":zircon_sysroot",
 
@@ -421,10 +421,10 @@ sdk_documentation("sdk_notice") {
   ]
 }
 
-# A tiny SDK collection used to export the content of the Zircon sysroot
-# This is only needed because several other parts of the Fuchsia build
-# depend on $OUTPUT_DIR/sdk/exported/zircon_sysroot/ to be available
-# and properly populated, see the links below for all details. Also, some third-party repos
+# A tiny SDK collection used to export the content of the Zircon sysroot This is
+# only needed because several other parts of the Fuchsia build depend on
+# $OUTPUT_DIR/sdk/exported/zircon_sysroot/ to be available and properly
+# populated, see the links below for all details. Also, some third-party repos
 # build or reference building this rule.
 #
 # Note that //zircon/public/sysroot_sdk is already
@@ -653,7 +653,8 @@ sdk_molecule("core_packages") {
 sdk_molecule("core_data") {
   visibility += [ "//vendor/*" ]
   deps = [
-    # TODO(ddorwin): Rename these to make it clear that they are data (e.g., _shards).
+    # TODO(ddorwin): Rename these to make it clear that they are data (e.g.,
+    # _shards).
     "//sdk/lib/driver:driver_pdev_sdk",
     "//sdk/lib/driver_component",
     "//sdk/lib/driver_test_realm/realm_builder:client_shard_sdk",

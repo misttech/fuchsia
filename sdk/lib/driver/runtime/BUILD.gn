@@ -23,7 +23,8 @@ sdk_source_set("driver_runtime") {
   ]
   public_configs = [ ":include" ]
   public_deps = [
-    # <lib/fdf/channel_read.h> and <lib/fdf/dispatcher.h> have #include <lib/async/dispatcher.h>.
+    # <lib/fdf/channel_read.h> and <lib/fdf/dispatcher.h> have
+    # #include <lib/async/dispatcher.h>.
     "//sdk/lib/async",
   ]
   if (is_fuchsia) {
@@ -74,7 +75,8 @@ sdk_source_set("driver_runtime_env") {
     "//src/devices/tee/drivers/optee:optee-controller-test-bin",
     "//src/devices/testing/driver-runtime-main/*",
 
-    # These can be removed when the tests stop using the fdf_env_register_driver_entry/exit calls.
+    # These can be removed when the tests stop using the
+    # fdf_env_register_driver_entry/exit calls.
     "//sdk/lib/fidl_driver/tests/transport/*",
     "//src/devices/securemem/drivers/aml-securemem:aml-securemem-test-bin",
     "//src/lib/fidl/llcpp/tests/integration:*",

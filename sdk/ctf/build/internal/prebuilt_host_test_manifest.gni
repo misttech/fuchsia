@@ -5,7 +5,8 @@ import("//build/testing/host_test.gni")
 
 # Defines a host test based on the contents of a test manifest.
 #
-# The test manifest should contain a JSON list of objects. Each object's schema is:
+# The test manifest should contain a JSON list of objects. Each object's schema
+# is:
 #
 #   test_name (required)
 #     The name of the host tool test.

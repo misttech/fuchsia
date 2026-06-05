@@ -46,7 +46,8 @@ fuchsia_test_component("resolve-test-root") {
   test_type = "ctf"
 }
 
-# A test utility used to test various features of fdio_spawn, extensively in spawn_test.cc.
+# A test utility used to test various features of fdio_spawn, extensively in
+# spawn_test.cc.
 executable("spawn-child-util-bin") {
   testonly = true
   visibility = [ ":*" ]
@@ -65,7 +66,8 @@ fuchsia_component("spawn-child-util-component") {
   deps = [ ":spawn-child-util-bin" ]
 }
 
-# A test utility that attempts to use zx_process_create (mimicking a launcher implementation).
+# A test utility that attempts to use zx_process_create (mimicking a launcher
+# implementation).
 executable("fake-launcher-util-bin") {
   testonly = true
   visibility = [ ":*" ]
@@ -87,7 +89,8 @@ fuchsia_component("fake-launcher-util-component") {
   deps = [ ":fake-launcher-util-bin" ]
 }
 
-# A simple test utility that returns the integer value provided to it in its first argument.
+# A simple test utility that returns the integer value provided to it in its
+# first argument.
 cc_test_executable("return-arg-test-util-bin") {
   testonly = true
   output_name = "return_arg_test_util"

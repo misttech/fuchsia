@@ -16,8 +16,9 @@ import("//build/toolchain/zircon/clang.gni")
 # The C library's own GN target label, without a toolchain
 sysroot_libc_label = "//sdk/lib/c"
 
-# The base toolchain used to build the C library. This is the toolchain that is used
-# when no variant is selected by the user through `select_variant` in args.gn.
+# The base toolchain used to build the C library. This is the toolchain that is
+# used when no variant is selected by the user through `select_variant` in
+# args.gn.
 sysroot_libc_base_toolchain = "//sdk/lib/c:user.libc_$target_cpu"
 
 # The variant selector fields corresponding to the C library.
@@ -124,9 +125,10 @@ if (_instrumented_target_variant != "") {
 
 _system_target_variant = _uninstrumented_target_variant
 
-# This is the toolchain used to build the C library that appears in the system package,
-# i.e. that is installed under /lib/ld.so.1. It must be a non-instrumented version of
-# the library, though a variant like "gcc" might be applied to it.
+# This is the toolchain used to build the C library that appears in the system
+# package, i.e. that is installed under /lib/ld.so.1. It must be a
+# non-instrumented version of the library, though a variant like "gcc" might be
+# applied to it.
 system_libc_toolchain = sysroot_libc_base_toolchain + _system_target_variant
 
 if (is_fuchsia) {
@@ -142,9 +144,9 @@ if (is_fuchsia) {
     sysroot_libc_toolchain = system_libc_toolchain
   }
 } else {
-  # This is the toolchain used to build the C library for regular Fuchsia packages.
-  # If an instrumented toolchain is used, it will be installed as lib/<variant>/ld.so.1
-  # as expected by other user-level binaries.
+  # This is the toolchain used to build the C library for regular Fuchsia
+  # packages. If an instrumented toolchain is used, it will be installed as
+  # lib/<variant>/ld.so.1 as expected by other user-level binaries.
   sysroot_libc_toolchain = sysroot_libc_base_toolchain + _user_target_variant
 }
 

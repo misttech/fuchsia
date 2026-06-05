@@ -200,7 +200,8 @@ template("generate_idk_targets") {
       # because this would require plumbing through a stamp file override and,
       # more significantly, require adding complexity to support
       # //build/scripts/ninjatrace2json.py.
-      # This should be okay since it should be rare that both variants are built.
+      # This should be okay since it should be rare that both variants are
+      # built.
       idk_subbuilds(subbuilds_target_name) {
         visibility = []
         visibility = invoker.subbuilds_visibility +
@@ -232,8 +233,8 @@ template("generate_idk_targets") {
       #
       # Due to limitations of the build system at the GN/Bazel boundary, this
       # cannot contain testonly atoms. See https://fxbug.dev/42070088.
-      # Libraries and packages for use in tests absolutely belong in the IDK, but
-      # the `testonly` attribute must be removed before they can be added.
+      # Libraries and packages for use in tests absolutely belong in the IDK,
+      # but the `testonly` attribute must be removed before they can be added.
       sdk_molecule(
           "${main_target_name}.fuchsia_idk_atoms_produced_by_main_platform_build") {
         deps = [
@@ -287,8 +288,8 @@ template("generate_idk_targets") {
             # This target contains atoms that depend on FIDL libraries, but it
             # does not build the underlying libraries.
             invoker.source_libraries +
-            # This target compiles the FIDL files, but the output used in the IDK
-            # is not specific to any API level or CPU architecture.
+            # This target compiles the FIDL files, but the output used in the
+            # IDK is not specific to any API level or CPU architecture.
             invoker.fidl_libraries +
             # Some generated documentation depends on FIDL and thus cannot be in
             # :fuchsia_idk_atoms_independent_of_api_level_for_one_cpu_arch_...

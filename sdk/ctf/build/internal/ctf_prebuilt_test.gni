@@ -56,8 +56,8 @@ template("ctf_prebuilt_test") {
     testonly = true
   }
 
-  # TODO(113115): We should be able to use the fuchsia_package above as $target_name.
-  # Debug why it fails and remove this group.
+  # TODO(113115): We should be able to use the fuchsia_package above as
+  # $target_name. Debug why it fails and remove this group.
   group(target_name) {
     deps = [
       ":$fuchsia_package_target",

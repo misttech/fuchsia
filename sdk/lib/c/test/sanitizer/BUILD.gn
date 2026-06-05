@@ -46,11 +46,11 @@ executable("sanitizer-module-loaded-test-helper") {
 
   exclude_toolchain_tags = [ "instrumentation-runtime" ]
 
-  # The linker can omit some symbols from the .dynsym since it's an executable and
-  # might not be able to find instances it links against at build time where this
-  # symbol can be externally referenced. This forces it to be manifested so weakrefs
-  # in sanitizer-module-loaded-test-dlopen-dso can use the strong definition
-  # provided in this executable.
+  # The linker can omit some symbols from the .dynsym since it's an executable
+  # and might not be able to find instances it links against at build time where
+  # this symbol can be externally referenced. This forces it to be manifested so
+  # weakrefs in sanitizer-module-loaded-test-dlopen-dso can use the strong
+  # definition provided in this executable.
   ldflags = [ "-rdynamic" ]
 }
 
@@ -73,7 +73,8 @@ shared_library("sanitizer-module-loaded-test-dlopen-needed-dso") {
   visibility = [ ":*" ]
   testonly = true
 
-  # This can just reuse the same source file as sanitizer-module-loaded-test-dlopen-dso since they check the same thing.
+  # This can just reuse the same source file as
+  # sanitizer-module-loaded-test-dlopen-dso since they check the same thing.
   sources = [ "sanitizer-module-loaded-test-dlopen-dso.cc" ]
 }
 

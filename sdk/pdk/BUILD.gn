@@ -45,8 +45,8 @@ sdk_final_manifest_golden("manifest_golden") {
 
 # "Do not use" refers to the fact that the SDK collection is stored in a well
 # known location (under $BUILD_DIR/sdk/export/pdk_collection_do_not_use), but
-# that's only for historical reasons. The SDK collection is an intermediate build
-# artifact and shouldn't be used directly by users.
+# that's only for historical reasons. The SDK collection is an intermediate
+# build artifact and shouldn't be used directly by users.
 sdk_collection("pdk_collection_do_not_use") {
   category = "partner"
   id = sdk_id

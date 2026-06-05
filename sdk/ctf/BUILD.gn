@@ -90,8 +90,8 @@ subbuild("ctf_subbuild") {
   target_cpu = target_cpu
   subbuild_dir_name = ctf_output_directory
   extra_deps = [
-    # Some host tools required by the sub-build are Bazel artifacts.
-    # Since Bazel cannot be invoked from sub-builds, ensure they are generated first.
+    # Some host tools required by the sub-build are Bazel artifacts. Since Bazel
+    # cannot be invoked from sub-builds, ensure they are generated first.
     "//build/bazel/host:bazel_root_host_tools($host_toolchain)",
 
     # Catch changes in source tests.

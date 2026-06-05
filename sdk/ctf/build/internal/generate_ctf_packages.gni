@@ -49,8 +49,8 @@ template("generate_ctf_package") {
 # originally named "fuchsia-echo-tests" in the CTF release for API level 11 can
 # be referred to using the label :fuchsia-echo-tests_ctf11.
 #
-# The input is a JSON list containing the set of packages to generated.
-# See `generate_ctf_package` above for the schema used by each object in the list.
+# The input is a JSON list containing the set of packages to be generated. See
+# `generate_ctf_package` above for the schema used by each object in the list.
 template("generate_ctf_packages") {
   assert(defined(invoker.api_level), "api_level is required")
   assert(defined(invoker.manifest), "manifest is required")
