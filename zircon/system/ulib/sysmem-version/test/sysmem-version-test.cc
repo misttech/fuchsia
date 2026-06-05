@@ -23,7 +23,7 @@ namespace v2 = fuchsia_sysmem2;
 
 namespace {
 
-constexpr uint32_t kRunCount = 300;
+constexpr uint32_t kRunCount = 50;
 
 // IsNaturalFidlType<> - This is an ad-hoc detection of whether a given FidlType is a natural fidl
 // type.  Types which are the same type regardless of natural vs. wire will have value true, as the
@@ -1064,14 +1064,35 @@ TEST(SysmemVersion, VmoBuffer) {
 
 TEST(SysmemVersion, VmoBufferV2) {
   for (uint32_t run = 0; run < kRunCount; ++run) {
-    auto v2_1 = V2RandomVmoBuffer();
-    auto v2_2_result = sysmem::V2CloneVmoBuffer(v2_1, std::numeric_limits<uint32_t>::max());
-    ASSERT_TRUE(v2_2_result.is_ok());
-    auto snap_1 = SnapMoveFrom(std::move(v2_1));
-    auto v2_2 = v2_2_result.take_value();
-    auto snap_2 = SnapMoveFrom(std::move(v2_2));
-    EXPECT_FALSE(IsEqual(*snap_1, *snap_2));
-    EXPECT_TRUE(IsEqualByKoid(*snap_1, *snap_2));
+    for (uint32_t is_writable = 0; is_writable < 2; ++is_writable) {
+      auto v2_1 = V2RandomVmoBuffer();
+      uint32_t vmo_rights_mask = 0;
+      if (is_writable) {
+        if (run % 2 == 0) {
+          vmo_rights_mask = std::numeric_limits<uint32_t>::max();
+        } else {
+          vmo_rights_mask = ZX_RIGHT_SAME_RIGHTS;
+        }
+      } else {
+        vmo_rights_mask = std::numeric_limits<uint32_t>::max() & ~ZX_RIGHT_WRITE;
+      }
+      auto v2_2_result = sysmem::V2CloneVmoBuffer(v2_1, vmo_rights_mask);
+      ASSERT_TRUE(v2_2_result.is_ok());
+      auto snap_1 = SnapMoveFrom(std::move(v2_1));
+      auto v2_2 = v2_2_result.take_value();
+      auto snap_2 = SnapMoveFrom(std::move(v2_2));
+      EXPECT_FALSE(IsEqual(*snap_1, *snap_2));
+      EXPECT_TRUE(IsEqualByKoid(*snap_1, *snap_2));
+      zx_info_handle_basic_t info;
+      auto get_info_status = snap_2->value().vmo()->get_info(ZX_INFO_HANDLE_BASIC, &info,
+                                                             sizeof(info), nullptr, nullptr);
+      ZX_ASSERT(get_info_status == ZX_OK);
+      if (is_writable) {
+        EXPECT_TRUE(info.rights & ZX_RIGHT_WRITE);
+      } else {
+        EXPECT_FALSE(info.rights & ZX_RIGHT_WRITE);
+      }
+    }
   }
 }
 

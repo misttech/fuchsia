@@ -1649,6 +1649,9 @@ fuchsia_sysmem2::wire::SingleBufferSettings V2CloneSingleBufferSettings(
 
 fpromise::result<fuchsia_sysmem2::VmoBuffer, zx_status_t> V2CloneVmoBuffer(
     const fuchsia_sysmem2::VmoBuffer& src, uint32_t vmo_rights_mask) {
+  if (vmo_rights_mask == ZX_RIGHT_SAME_RIGHTS) {
+    vmo_rights_mask = std::numeric_limits<uint32_t>::max();
+  }
   fuchsia_sysmem2::VmoBuffer vmo_buffer;
   if (src.vmo().has_value()) {
     if (src.vmo().value().get() != ZX_HANDLE_INVALID && vmo_rights_mask != 0) {
@@ -1690,6 +1693,9 @@ fpromise::result<fuchsia_sysmem2::VmoBuffer, zx_status_t> V2CloneVmoBuffer(
 fpromise::result<fuchsia_sysmem2::wire::VmoBuffer, zx_status_t> V2CloneVmoBuffer(
     fidl::AnyArena& allocator, const fuchsia_sysmem2::wire::VmoBuffer& src,
     uint32_t vmo_rights_mask) {
+  if (vmo_rights_mask == ZX_RIGHT_SAME_RIGHTS) {
+    vmo_rights_mask = std::numeric_limits<uint32_t>::max();
+  }
   fuchsia_sysmem2::wire::VmoBuffer vmo_buffer(allocator);
   if (src.has_vmo()) {
     zx::vmo clone_vmo;
