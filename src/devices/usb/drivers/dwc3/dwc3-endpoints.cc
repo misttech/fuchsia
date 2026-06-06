@@ -194,6 +194,9 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
     return;
   }
 
+  uep->ep.total_transfers++;
+  uep->ep.total_bytes += current_req.completed_bytes;
+
   uep->server->RequestComplete(ZX_OK, current_req.completed_bytes, std::move(current_req.request));
   uep->server->current_req.reset();
   uep->ep.xfer_in_progress = false;

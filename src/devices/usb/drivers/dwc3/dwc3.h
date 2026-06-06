@@ -32,9 +32,7 @@
 #include <zircon/threads.h>
 
 #include <cstdint>
-#include <deque>
 #include <memory>
-#include <string>
 
 #include <fbl/mutex.h>
 #include <usb-endpoint/sdk/usb-endpoint-server.h>
@@ -44,7 +42,6 @@
 #include "src/devices/usb/drivers/dwc3/dwc3-event-fifo.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-trb-fifo.h"
-#include "src/devices/usb/drivers/dwc3/dwc3-types.h"
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
@@ -204,6 +201,11 @@ class Dwc3 : public fdf::DriverBase2,
     bool got_not_ready{false};
     bool stalled{false};
     bool xfer_in_progress{false};
+
+    uint64_t total_transfers{0};
+    uint64_t total_bytes{0};
+    uint64_t command_failures{0};
+    uint8_t usb_endpoint_address{0};
   };
 
   struct UserEndpoint {
@@ -324,6 +326,7 @@ class Dwc3 : public fdf::DriverBase2,
     TrbFifo shared_fifo;
     std::unique_ptr<dma_buffer::ContiguousBuffer> buffer;
     State state = Ep0::State::None;
+    size_t cur_transfer_len = 0;
     Endpoint out;
     Endpoint in;
     fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup;
@@ -332,6 +335,9 @@ class Dwc3 : public fdf::DriverBase2,
   };
 
   friend struct std::formatter<Ep0::State>;
+  friend class Dwc3Metrics;
+  template <bool manage_lifetime, typename gtest_base>
+  friend class TestFixture;
 
   constexpr bool is_ep0_num(uint8_t ep_num) { return ((ep_num == kEp0Out) || (ep_num == kEp0In)); }
 

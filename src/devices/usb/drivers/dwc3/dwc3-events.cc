@@ -13,6 +13,55 @@
 
 namespace dwc3 {
 
+namespace {
+const char* LinkStateToString(uint32_t info) {
+  switch (info) {
+    case DSTS::USBLNKST_U0 | DEVT_LINK_STATE_CHANGE_SS:
+      return "U0 (SS Active)";
+    case DSTS::USBLNKST_U1 | DEVT_LINK_STATE_CHANGE_SS:
+      return "U1 (SS)";
+    case DSTS::USBLNKST_U2 | DEVT_LINK_STATE_CHANGE_SS:
+      return "U2 (SS)";
+    case DSTS::USBLNKST_U3 | DEVT_LINK_STATE_CHANGE_SS:
+      return "U3 (SS Suspend)";
+    case DSTS::USBLNKST_ESS_DIS | DEVT_LINK_STATE_CHANGE_SS:
+      return "SS Disabled";
+    case DSTS::USBLNKST_RX_DET | DEVT_LINK_STATE_CHANGE_SS:
+      return "Rx.Detect (SS)";
+    case DSTS::USBLNKST_ESS_INACT | DEVT_LINK_STATE_CHANGE_SS:
+      return "SS Inactive";
+    case DSTS::USBLNKST_POLL | DEVT_LINK_STATE_CHANGE_SS:
+      return "Polling (SS)";
+    case DSTS::USBLNKST_RECOV | DEVT_LINK_STATE_CHANGE_SS:
+      return "Recovery (SS)";
+    case DSTS::USBLNKST_HRESET | DEVT_LINK_STATE_CHANGE_SS:
+      return "Hot Reset (SS)";
+    case DSTS::USBLNKST_CMPLY | DEVT_LINK_STATE_CHANGE_SS:
+      return "Compliance Mode (SS)";
+    case DSTS::USBLNKST_LPBK | DEVT_LINK_STATE_CHANGE_SS:
+      return "Loopback (SS)";
+    case DSTS::USBLNKST_RESUME_RESET | DEVT_LINK_STATE_CHANGE_SS:
+      return "Resume/Reset (SS)";
+    case DSTS::USBLNKST_ON:
+      return "ON (USB 2.0)";
+    case DSTS::USBLNKST_SLEEP:
+      return "Sleep (USB 2.0)";
+    case DSTS::USBLNKST_SUSPEND:
+      return "Suspend (USB 2.0)";
+    case DSTS::USBLNKST_DISCONNECTED:
+      return "Disconnected (USB 2.0)";
+    case DSTS::USBLNKST_EARLY_SUSPEND:
+      return "Early Suspend (USB 2.0)";
+    case DSTS::USBLNKST_RESET:
+      return "Reset (USB 2.0)";
+    case DSTS::USBLNKST_RESUME:
+      return "Resume (USB 2.0)";
+    default:
+      return "unknown";
+  }
+}
+}  // namespace
+
 void Dwc3::HandleEpEvent(uint32_t event) {
   TRACE_DURATION("dwc3", "HandleEpEvent", "event", event);
   const uint32_t type = DEPEVT_TYPE(event);
@@ -46,6 +95,18 @@ void Dwc3::HandleEpEvent(uint32_t event) {
       uint32_t cmd_type = DEPEVT_CMD_CMPLT_CMD_TYPE(event);
       uint32_t rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
       fdf::debug("ep[{}] DEPEVT_CMD_COMPLETE: type {} rsrc_id {}", ep_num, cmd_type, rsrc_id);
+      if (status != 0) {
+        if (is_ep0_num(ep_num)) {
+          ((ep_num == kEp0Out) ? ep0_.out : ep0_.in).command_failures++;
+        } else {
+          UserEndpoint* const uep = get_user_endpoint(ep_num);
+          if (uep) {
+            uep->ep.command_failures++;
+          }
+        }
+        metrics_.RecordEvent(
+            std::format("ep[{}] command {} failed with status {}", ep_num, cmd_type, status));
+      }
       if (cmd_type == DEPCMD::DEPSTRTXFER) {
         HandleEpTransferStartedEvent(ep_num, rsrc_id);
       }
@@ -72,84 +133,24 @@ void Dwc3::HandleEvent(uint32_t event) {
   switch (type) {
     case DEVT_DISCONNECT:
       fdf::debug("DEVT_DISCONNECT");
+      metrics_.RecordEvent("USB Physical Disconnection");
       HandleDisconnectedEvent();
       break;
     case DEVT_USB_RESET:
       fdf::debug("DEVT_USB_RESET");
+      metrics_.RecordEvent("USB Reset received from Host");
       HandleResetEvent();
       break;
     case DEVT_CONNECTION_DONE:
       fdf::debug("DEVT_CONNECTION_DONE");
       HandleConnectionDoneEvent();
       break;
-    case DEVT_LINK_STATE_CHANGE:
-      fdf::debug("DEVT_LINK_STATE_CHANGE: ");
-      switch (info) {
-        case DSTS::USBLNKST_U0 | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS::USBLNKST_U0");
-          break;
-        case DSTS::USBLNKST_U1 | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_U1");
-          break;
-        case DSTS::USBLNKST_U2 | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_U2");
-          break;
-        case DSTS::USBLNKST_U3 | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_U3");
-          break;
-        case DSTS::USBLNKST_ESS_DIS | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_ESS_DIS");
-          break;
-        case DSTS::USBLNKST_RX_DET | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_RX_DET");
-          break;
-        case DSTS::USBLNKST_ESS_INACT | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_ESS_INACT");
-          break;
-        case DSTS::USBLNKST_POLL | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_POLL");
-          break;
-        case DSTS::USBLNKST_RECOV | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_RECOV");
-          break;
-        case DSTS::USBLNKST_HRESET | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_HRESET");
-          break;
-        case DSTS::USBLNKST_CMPLY | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_CMPLY");
-          break;
-        case DSTS::USBLNKST_LPBK | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_LPBK");
-          break;
-        case DSTS::USBLNKST_RESUME_RESET | DEVT_LINK_STATE_CHANGE_SS:
-          fdf::debug("DSTS_USBLNKST_RESUME_RESET");
-          break;
-        case DSTS::USBLNKST_ON:
-          fdf::debug("DSTS_USBLNKST_ON");
-          break;
-        case DSTS::USBLNKST_SLEEP:
-          fdf::debug("DSTS_USBLNKST_SLEEP");
-          break;
-        case DSTS::USBLNKST_SUSPEND:
-          fdf::debug("DSTS_USBLNKST_SUSPEND");
-          break;
-        case DSTS::USBLNKST_DISCONNECTED:
-          fdf::debug("DSTS_USBLNKST_DISCONNECTED");
-          break;
-        case DSTS::USBLNKST_EARLY_SUSPEND:
-          fdf::debug("DSTS_USBLNKST_EARLY_SUSPEND");
-          break;
-        case DSTS::USBLNKST_RESET:
-          fdf::debug("DSTS_USBLNKST_RESET");
-          break;
-        case DSTS::USBLNKST_RESUME:
-          fdf::debug("DSTS_USBLNKST_RESUME");
-          break;
-        default:
-          fdf::error("unknown state {}", info);
-          break;
-      }
+    case DEVT_LINK_STATE_CHANGE: {
+      const char* state_str = LinkStateToString(info);
+      fdf::debug("DEVT_LINK_STATE_CHANGE: {}", state_str);
+      metrics_.RecordEvent(std::format("Link State Change: {}", state_str));
       break;
+    }
     case DEVT_REMOTE_WAKEUP:
       fdf::debug("DEVT_REMOTE_WAKEUP");
       break;
@@ -203,9 +204,11 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
 
   auto* mmio = get_mmio();
 
+  uint32_t total_processed = 0;
   uint32_t event_bytes;
   while ((event_bytes = GEVNTCOUNT::Get(0).ReadFrom(mmio).EVNTCOUNT()) > 0) {
     uint32_t event_count = event_bytes / sizeof(uint32_t);
+    total_processed += event_count;
     for (uint32_t event : event_fifo_.Read(event_count)) {
       HandleEvent(event);
     }
@@ -214,6 +217,7 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
     // acknowledge the events we have processed
     GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(event_bytes).WriteTo(mmio);
   }
+  metrics_.UpdateMaxEventBatch(total_processed);
 }
 
 void Dwc3::StartEvents() {

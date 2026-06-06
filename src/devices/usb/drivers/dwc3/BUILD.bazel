@@ -68,6 +68,7 @@ cc_library(
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_cpp",
@@ -188,6 +189,18 @@ fuchsia_cc_test(
     ],
 )
 
+fuchsia_cc_test(
+    name = "dwc3-metrics-test-bin",
+    srcs = [
+        "dwc3-metrics-test.cc",
+    ],
+    linkstatic = True,
+    deps = [
+        ":dwc3-common",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 fuchsia_unittest_package(
     name = "dwc3-test-package",
     package_name = "dwc3-test",
@@ -196,6 +209,7 @@ fuchsia_unittest_package(
         ":dwc3-test-bin",
         ":dwc3-fifo-test-bin",
         ":dwc3-trb-fifo-test-bin",
+        ":dwc3-metrics-test-bin",
     ],
     visibility = ["//visibility:public"],
 )

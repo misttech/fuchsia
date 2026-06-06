@@ -46,15 +46,6 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
     }
     Fifo::Advance(read_);
   }
-
-  // Returns the number of available slots for writing.
-  size_t AvailableSlots() const {
-    size_t total_slots = last_ - first_;
-    if (write_ >= read_) {
-      return total_slots - (write_ - read_) - 1;
-    }
-    return (read_ - write_) - 1;
-  }
 };
 
 }  // namespace dwc3

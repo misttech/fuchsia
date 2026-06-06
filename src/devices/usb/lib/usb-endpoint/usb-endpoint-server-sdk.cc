@@ -77,7 +77,7 @@ void EndpointServer::OnUnbound(
   for (auto& [id, vmo] : registered_vmos) {
     zx_status_t status = zx_pmt_unpin(vmo.pmt);
     ZX_DEBUG_ASSERT(status == ZX_OK);
-    free(vmo.phys_list);
+    delete[] vmo.phys_list;
   }
 
   if (info.is_user_initiated()) {

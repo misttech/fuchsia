@@ -8,9 +8,17 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <zircon/types.h>
 
+#include <deque>
+#include <string>
+
 #include "src/devices/usb/drivers/dwc3/dwc3-types.h"
 
+namespace fdf {
+class MmioBuffer;
+}
+
 namespace dwc3 {
+class Dwc3;
 
 enum class MetricEventType : uint32_t {
   kDevtDisconnect = DEVT_DISCONNECT,
@@ -33,6 +41,11 @@ enum class MetricEventType : uint32_t {
   kDevtNumEventTypes,  // Keeps track of the number of event types
 };
 
+struct EventLogEntry {
+  zx_time_t timestamp;
+  std::string message;
+};
+
 class Dwc3Metrics {
  public:
   void Init();
@@ -40,13 +53,23 @@ class Dwc3Metrics {
     type = std::min(type, static_cast<uint32_t>(MetricEventType::kDevtUnknown));
     event_counts_[type]++;
   }
-  inspect::Inspector RecordMetrics();
+  void RecordEvent(std::string message);
+  void UpdateMaxEventBatch(uint32_t batch_size) {
+    if (batch_size > max_event_batch_size_) {
+      max_event_batch_size_ = batch_size;
+    }
+  }
+  inspect::Inspector RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3);
 
   friend struct std::formatter<MetricEventType>;
 
  private:
   zx_time_t time_start_;
   uint64_t event_counts_[static_cast<uint32_t>(MetricEventType::kDevtNumEventTypes)];
+  uint32_t max_event_batch_size_{0};
+
+  std::deque<EventLogEntry> event_history_;
+  static constexpr size_t kEventHistoryCapacity = 50;
 };
 
 }  // namespace dwc3

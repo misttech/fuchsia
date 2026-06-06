@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.reset/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/natural_ostream.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
@@ -33,16 +34,11 @@
 #include <zircon/syscalls.h>
 #include <zircon/threads.h>
 
-#include <ranges>
-#include <string>
-#include <unordered_map>
-
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 #include <fbl/auto_lock.h>
 #include <hwreg/bitfields.h>
 
-#include "lib/component/outgoing/cpp/outgoing_directory.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 
 namespace dwc3 {
@@ -503,8 +499,9 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
 
   // Set up Inspect data.
   metrics_.Init();
-  dwc3_root_ = inspector().root().CreateLazyNode(
-      "dwc3", [this] { return fpromise::make_ok_promise(this->metrics_.RecordMetrics()); });
+  dwc3_root_ = inspector().root().CreateLazyNode("dwc3", [this] {
+    return fpromise::make_ok_promise(this->metrics_.RecordMetrics(get_mmio(), this));
+  });
 
   if (zx_status_t status = AcquirePDevResources(); status != ZX_OK) {
     fdf::error("AcquirePDevResources: {}", zx_status_get_string(status));
@@ -828,6 +825,7 @@ zx_status_t Dwc3::ResetHw() {
   zx::time start = zx::clock::get_monotonic();
   while (DCTL::Get().ReadFrom(mmio).CSFTRST()) {
     if ((zx::clock::get_monotonic() - start) >= kHwResetTimeout) {
+      metrics_.RecordEvent("Error: Hardware reset timed out!");
       return ZX_ERR_TIMED_OUT;
     }
   }
@@ -956,6 +954,7 @@ void Dwc3::HandleConnectionDoneEvent() {
   TRACE_DURATION("dwc3", "Dwc3::HandleConnectionDoneEvent");
   uint16_t ep0_max_packet = 0;
   fdescriptor::wire::UsbSpeed new_speed{fdescriptor::UsbSpeed::kUndefined};
+  metrics_.RecordEvent("USB Reset Complete. Setting up control endpoint.");
 
   auto* mmio = get_mmio();
 
@@ -993,6 +992,11 @@ void Dwc3::HandleConnectionDoneEvent() {
     }
     ep0_.cur_speed = new_speed;
   }
+
+  std::ostringstream buf;
+  buf << "USB Connection Done (Speed: "
+      << fidl::ostream::Formatted<fdescriptor::UsbSpeed>(new_speed) << ")";
+  metrics_.RecordEvent(buf.str());
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -1053,6 +1057,7 @@ Dwc3::~Dwc3() {
 void Dwc3::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::info("Dwc3::Stop called");
+  dwc3_root_ = {};
   dci_bindings_.RemoveAll();
   policy_bindings_.RemoveAll();
   completer(zx::ok());
@@ -1177,6 +1182,7 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uep->ep.max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
   uep->ep.type = ep_type;
   uep->ep.interval = request.ep_descriptor().b_interval();
+  uep->ep.usb_endpoint_address = request.ep_descriptor().b_endpoint_address();
   // TODO(voydanoff) USB3 support
 
   EpSetConfig(uep->ep, true);
@@ -1428,6 +1434,7 @@ void Dwc3::OnConnectStatusChanged(
       }
     }
     power_on_ = true;
+    metrics_.RecordEvent("Power On / Resume (PHY Resumed)");
 
     SetDeviceState(fpolicy::DeviceState::kPowered);
 
@@ -1455,6 +1462,7 @@ void Dwc3::OnConnectStatusChanged(
       }
     }
     power_on_ = false;
+    metrics_.RecordEvent("Power Off / Suspend (PHY Suspended)");
   }
 
   if (dci_intf_.is_valid()) {

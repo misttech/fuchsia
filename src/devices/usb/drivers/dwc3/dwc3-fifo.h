@@ -11,6 +11,9 @@
 
 namespace dwc3 {
 
+template <bool manage_lifetime, typename gtest_base>
+class TestFixture;
+
 static inline const uint32_t kBufferSize = zx_system_get_page_size();
 
 // A dma_buffer::ContiguousBuffer is cached, but leaves cache management to the user. These methods
@@ -21,6 +24,9 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
 
 template <typename T>
 class Fifo {
+  template <bool manage_lifetime, typename gtest_base>
+  friend class TestFixture;
+
  public:
   virtual zx::result<> Init(zx::bti& bti) {
     if (!buffer_) {
@@ -45,6 +51,34 @@ class Fifo {
     buffer_.reset();
   }
 
+  size_t TotalSlots() const { return first_ ? (last_ - first_) : 0; }
+  size_t WriteOffset() const { return first_ ? (write_ - first_) : 0; }
+  size_t ReadOffset() const { return first_ ? (read_ - first_) : 0; }
+  bool IsEmpty() const { return read_ == write_; }
+
+  size_t AvailableSlots() const {
+    if (!first_ || !last_) {
+      return 0;
+    }
+    size_t total_slots = last_ - first_;
+    if (write_ >= read_) {
+      return total_slots - (write_ - read_) - 1;
+    }
+    return (read_ - write_) - 1;
+  }
+
+  size_t GetActiveCount() const {
+    if (!first_ || !last_) {
+      return 0;
+    }
+    return TotalSlots() - AvailableSlots() - 1;
+  }
+
+  std::vector<T> Read(size_t count) {
+    T* ptr = read_;
+    return Read(ptr, count);
+  }
+
   std::vector<T> Read(T*& ptr, size_t count) {
     ZX_ASSERT((ptr >= first_) && (ptr <= last_));
     // invalidate cache so we can read fresh events
@@ -58,7 +92,7 @@ class Fifo {
       memcpy(values.data() + todo, first_, (count - todo) * sizeof(T));
     };
 
-    return std::move(values);
+    return values;
   }
 
   zx_paddr_t Write(T*& ptr, size_t count = 1) {
@@ -75,6 +109,15 @@ class Fifo {
 
   T* Advance(T*& ptr, size_t count = 1) {
     T* cur = ptr;
+    ptr += count;
+    if (ptr >= last_) {
+      ptr = ptr - last_ + first_;
+    }
+    return cur;
+  }
+
+  const T* Advance(const T*& ptr, size_t count = 1) const {
+    const T* cur = ptr;
     ptr += count;
     if (ptr >= last_) {
       ptr = ptr - last_ + first_;
