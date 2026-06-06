@@ -24,7 +24,10 @@ use linux_uapi::{
     FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION,
     FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
 };
-use selinux::{CommonFsNodePermission, PolicyCap, SecurityId, SecurityServer};
+use selinux::{
+    CommonFilePermission, CommonFsNodePermission, ForClass, FsNodeClass, PolicyCap, SecurityId,
+    SecurityServer,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
@@ -60,6 +63,29 @@ pub(in crate::security) fn file_permission(
         &permissions_from_flags(permission_flags, file_class),
         current_task.into(),
     )
+}
+
+/// Checks whether `current_task` is allowed to open `file`.
+pub(in crate::security) fn file_open(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    file: &FileObject,
+) -> Result<(), Errno> {
+    if security_server.is_policycap_enabled(PolicyCap::OpenPerms) {
+        let current_sid = current_task_state(current_task).current_sid;
+        let FsNodeSidAndClass { class, .. } = fs_node_effective_sid_and_class(file.node());
+        if let FsNodeClass::File(file_class) = class {
+            has_file_permissions(
+                &build_permission_check(current_task, security_server),
+                current_task,
+                current_sid,
+                file,
+                &[CommonFilePermission::Open.for_class(file_class)],
+                current_task.into(),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Returns whether the `current_task` can receive `file` via a socket IPC.

@@ -913,9 +913,17 @@ impl CurrentTask {
         // > Note that mode applies only to future accesses of the newly created file; the
         // > open() call that creates a read-only file may well return a  read/write  file
         // > descriptor.
-
         let access_check = if created { AccessCheck::skip() } else { access_check };
-        name.open(locked, self, flags, access_check)
+        let file = name.open(locked, self, flags, access_check)?;
+
+        // If the new `FileHandle` represents an open file (rather than a handle to a location in
+        // the virtual file system, as created with `O_PATH`), then LSM permission checks may be
+        // required.
+        if !opath {
+            security::file_open(self, &file)?;
+        }
+
+        Ok(file)
     }
 
     /// A wrapper for FsContext::lookup_parent_at that resolves the given

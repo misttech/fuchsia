@@ -70,11 +70,6 @@
                 // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
                 "IoUringTest.IoUringSqpollAllowed",
                 "IoUringTest.IoUringSqpollDenied",
-
-                // TODO: https://fxbug.dev/517849228 - Make (SE)Starnix match the (SE)Linux behavior
-                // demonstrated in this test.
-                "OpenPermsTest.ReadDenied",
-                "OpenPermsTest.WriteDenied",
             ],
         },
         {

@@ -960,6 +960,8 @@ macro_rules! file_class_permission_enum {
             Link("link"),
             /// Permission to use as mount point; only useful for directories and files.
             MountOn("mounton"),
+            /// Permission to open a file.
+            Open("open"),
             /// Permission to rename a file.
             Rename("rename"),
             /// Permission to delete a file or remove a hard link.

@@ -461,6 +461,15 @@ pub fn file_permission(
     })
 }
 
+/// Checks whether the `current_task` is allowed to open `file`.
+/// Corresponds to the `file_open()` LSM hook.
+pub fn file_open(current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.file_open");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::file::file_open(security_server, current_task, file)
+    })
+}
+
 /// Called by the VFS to initialize the security state for an `FsNode` that is being linked at
 /// `dir_entry`.
 /// If the `FsNode` security state had already been initialized, or no policy is yet loaded, then
