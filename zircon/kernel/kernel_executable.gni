@@ -59,42 +59,40 @@ template("kernel_executable") {
     _kernel_deps += invoker.deps
   }
 
-  if (enable_rust_in_zircon) {
-    # kernel_rust_crate() leaves metadata breadcrumbs to be collected here.
+  # kernel_rust_crate() leaves metadata breadcrumbs to be collected here.
 
-    extern_crate_decls_file = "$target_out_dir/$target_name.extern-crates.rs"
-    extern_crate_flags_file = "$target_out_dir/$target_name.extern-crates.rsp"
+  extern_crate_decls_file = "$target_out_dir/$target_name.extern-crates.rs"
+  extern_crate_flags_file = "$target_out_dir/$target_name.extern-crates.rsp"
 
-    generated_file("$target_name.extern-crates.rs") {
-      visibility = [ ":*" ]
-      forward_variables_from(invoker, [ "testonly" ])
-      outputs = [ extern_crate_decls_file ]
-      output_conversion = "list lines"
+  generated_file("$target_name.extern-crates.rs") {
+    visibility = [ ":*" ]
+    forward_variables_from(invoker, [ "testonly" ])
+    outputs = [ extern_crate_decls_file ]
+    output_conversion = "list lines"
 
-      # Every kind of Rust target has a link_output_barrier, so this won't look
-      # past any rustc_library() to see another kernel_rust_crate() it depends
-      # on, which should be correct: Linking the executable only needs to know
-      # about C++ -> Rust deps; any Rust -> Rust deps were handled earlier.
-      walk_keys = [ "link_output_barrier" ]
-      data_keys = [ "kernel_rust_crate_decls" ]
-      deps = _kernel_deps
-    }
-
-    generated_file("$target_name.extern-crates.rsp") {
-      visibility = [ ":*" ]
-      forward_variables_from(invoker, [ "testonly" ])
-      outputs = [ extern_crate_flags_file ]
-      output_conversion = "list lines"
-      walk_keys = [ "link_output_barrier" ]
-      data_keys = [ "kernel_rust_crate_flags" ]
-      deps = _kernel_deps
-    }
-
-    _kernel_deps += [
-      ":$target_name.extern-crates.rs",
-      ":$target_name.extern-crates.rsp",
-    ]
+    # Every kind of Rust target has a link_output_barrier, so this won't look
+    # past any rustc_library() to see another kernel_rust_crate() it depends
+    # on, which should be correct: Linking the executable only needs to know
+    # about C++ -> Rust deps; any Rust -> Rust deps were handled earlier.
+    walk_keys = [ "link_output_barrier" ]
+    data_keys = [ "kernel_rust_crate_decls" ]
+    deps = _kernel_deps
   }
+
+  generated_file("$target_name.extern-crates.rsp") {
+    visibility = [ ":*" ]
+    forward_variables_from(invoker, [ "testonly" ])
+    outputs = [ extern_crate_flags_file ]
+    output_conversion = "list lines"
+    walk_keys = [ "link_output_barrier" ]
+    data_keys = [ "kernel_rust_crate_flags" ]
+    deps = _kernel_deps
+  }
+
+  _kernel_deps += [
+    ":$target_name.extern-crates.rs",
+    ":$target_name.extern-crates.rsp",
+  ]
 
   kernel_elf_binary(main_target) {
     forward_variables_from(invoker,
@@ -113,36 +111,38 @@ template("kernel_executable") {
 
     validations = [ ":$validate_symbols_target" ]
 
-    if (enable_rust_in_zircon) {
-      # GN will consider an executable() target to be C++ regardless of what
-      # mix of Rust and C++ link inputs are in the deps graph, unless it
-      # directly lists Rust source files.  So inject a single Rust source file
-      # here just to force this to be a Rust executable() that can have other
-      # Rust link inputs other than static_library() (via rustc_staticlib()).
-      crate_type = "bin"
-      crate_root = "//zircon/kernel/bin/src/main.rs"
-      sources = [ crate_root ]
+    # GN will consider an executable() target to be C++ regardless of what
+    # mix of Rust and C++ link inputs are in the deps graph, unless it
+    # directly lists Rust source files.  So inject a single Rust source file
+    # here just to force this to be a Rust executable() that can have other
+    # Rust link inputs other than static_library() (via rustc_staticlib()).
+    crate_type = "bin"
+    crate_root = "//zircon/kernel/bin/src/main.rs"
+    sources = [ crate_root ]
 
-      # The binary crate is always called "kernel_main" in every target.  This
-      # crate is not expected to define any normal Rust symbols (only the entry
-      # point function C symbol).  It is never referenced in Rust sources.
-      crate_name = "kernel_main"
+    # The binary crate is always called "kernel_main" in every target.  This
+    # crate is not expected to define any normal Rust symbols (only the entry
+    # point function C symbol).  It is never referenced in Rust sources.
+    crate_name = "kernel_main"
 
-      # This provides `extern crate name;` for each kernel_rust_crate().
-      inputs = [ extern_crate_decls_file ]
-      rustenv = [ "ZIRCON_EXTERN_CRATE_DECLS=" +
-                  rebase_path(extern_crate_decls_file, root_build_dir) ]
+    # This provides `extern crate name;` for each kernel_rust_crate().
+    inputs = [ extern_crate_decls_file ]
+    rustenv = [ "ZIRCON_EXTERN_CRATE_DECLS=" +
+                rebase_path(extern_crate_decls_file, root_build_dir) ]
 
-      # The code includes that file via the rustenv_path::envpath! proc macro.
-      deps += [ "//zircon/kernel/bin/rustenv_path" ]
+    # The code includes that file via the rustenv_path::envpath! proc macro.
+    deps += [ "//zircon/kernel/bin/rustenv_path" ]
 
-      # This provides the corresponding `--extern name=.../libname.rlib`.
-      # These are only needed because GN doesn't propagate the indirect deps to
-      # {{externs}} in tool("rust_bin").  It does produce necessary order-only
-      # deps that ensure the rlib is up to date, and rustc's depfile support
-      # provides the Ninja file dependency.
-      inputs += [ extern_crate_flags_file ]
-      rustflags = [ "@" + rebase_path(extern_crate_flags_file, root_build_dir) ]
+    # This provides the corresponding `--extern name=.../libname.rlib`.
+    # These are only needed because GN doesn't propagate the indirect deps to
+    # {{externs}} in tool("rust_bin").  It does produce necessary order-only
+    # deps that ensure the rlib is up to date, and rustc's depfile support
+    # provides the Ninja file dependency.
+    inputs += [ extern_crate_flags_file ]
+    rustflags = [ "@" + rebase_path(extern_crate_flags_file, root_build_dir) ]
+    if (rust_rbe_enable) {
+      rustflags += [ "--remote-inputs=" +
+                     string_join(",", rebase_path(inputs, root_build_dir)) ]
     }
   }
 
