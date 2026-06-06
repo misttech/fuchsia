@@ -37,6 +37,11 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("generate_host_test_wrapper_test") {
+    tests = [ "generate_host_test_wrapper_test.py" ]
+    inputs = [ "generate_host_test_wrapper_test.py" ]
+  }
+
   python_build_time_tests("generate_invocation_bazelrc_test") {
     tests = [ "generate_invocation_bazelrc_test.py" ]
     inputs = [ "generate_invocation_bazelrc_test.py" ]

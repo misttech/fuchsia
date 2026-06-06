@@ -116,9 +116,10 @@ def _host_test_impl(ctx):
             {},
         ))
 
-    data_runfiles = ctx.runfiles(
+    runfiles = ctx.runfiles(
         files = ctx.files.data,
     ).merge_all(
+        [binary_info.default_runfiles] +
         [target[DefaultInfo].default_runfiles for target in ctx.attr.data],
     )
 
@@ -133,7 +134,7 @@ def _host_test_impl(ctx):
         print("launcher path: {}".format(launcher.path))
         print("runtime_dir path: {}".format(runtime_dir.path))
         print("test_args: {}".format(test_args))
-        print(files_list_dump("data_runfiles", data_runfiles.files.to_list()))
+        print(files_list_dump("runfiles", runfiles.files.to_list()))
         print(files_list_dump("host_test_data_runtime_files", host_test_data_runtime_files))
 
     # Ensure $(location <label>) expressions are expanded for the generator arguments.
@@ -159,7 +160,7 @@ def _host_test_impl(ctx):
             "--host-test-wrapper-template={}".format(host_test_wrapper_template.path),
         ] + [
             "--data-runfile={}".format(f.path)
-            for f in data_runfiles.files.to_list()
+            for f in runfiles.files.to_list()
         ] + [
             "--test-arg={}".format(arg)
             for arg in test_args
@@ -176,7 +177,7 @@ def _host_test_impl(ctx):
 
     runfiles = ctx.runfiles(
         files = [launcher, runtime_dir] + host_test_data_runtime_files,
-    ).merge_all([binary_info.default_runfiles, data_runfiles])
+    ).merge(runfiles)
 
     current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
 

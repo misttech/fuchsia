@@ -68,7 +68,7 @@ class FuchsiaHostTestDataManifest:
         Raises:
             ValueError: If there are duplicate destination paths with different source paths.
         """
-        # Check fo duplicates.
+        # Check for duplicates.
         # Map dest_path to (label, source_path)
         result: dict[str, Path] = {}
         labels_map: dict[str, str] = {}  # maps dest_path -> label
@@ -78,7 +78,7 @@ class FuchsiaHostTestDataManifest:
                 cur_source = result.setdefault(dest_path, src_path)
                 if cur_source != src_path:
                     raise ValueError(
-                        """
+                        f"""
 Conflict for destination path with multiple sources: {dest_path}
 Labels:
     {labels_map[dest_path]}
@@ -89,6 +89,7 @@ Sources:
 
 """
                     )
+                labels_map[dest_path] = info.label
         return result
 
     @staticmethod
@@ -177,6 +178,39 @@ def parse_data_runfile_path(
     return rlocation, artifact_path
 
 
+def format_ld_library_path_export(
+    env_vars: list[tuple[str, str]], so_dirs: set[str]
+) -> tuple[list[tuple[str, str]], str]:
+    """Extracts user LD_LIBRARY_PATH, filters env_vars, and constructs the shell export statement."""
+    user_ld_library_path = None
+    filtered_env_vars = []
+    for varname, value in env_vars:
+        if varname == "LD_LIBRARY_PATH":
+            user_ld_library_path = value
+        else:
+            filtered_env_vars.append((varname, value))
+
+    ld_paths = []
+    if so_dirs:
+        for d in sorted(so_dirs):
+            if d == ".":
+                ld_paths.append("${PWD}")
+            else:
+                ld_paths.append(f"${{PWD}}/{d}")
+    if user_ld_library_path is not None and user_ld_library_path != "":
+        ld_paths.append(user_ld_library_path)
+
+    ld_library_path_export = ""
+    if ld_paths:
+        path_str = ":".join(ld_paths)
+        # The `${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` syntax safely appends the existing
+        # LD_LIBRARY_PATH if set, avoiding a trailing colon which would incorrectly
+        # cause the dynamic linker to search the current working directory.
+        ld_library_path_export = f'export LD_LIBRARY_PATH="{path_str}${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"'
+
+    return filtered_env_vars, ld_library_path_export
+
+
 def generate_test_wrapper(
     entry_point: Path,
     entry_runfiles_manifest: Path,
@@ -245,10 +279,11 @@ def generate_test_wrapper(
 
     # Second, locate the _repo_mapping file from it. This should be an absolute path or
     # an execroot-relative one.
-    repo_mapping_path = Path(input_manifest.lookup("_repo_mapping"))
+    repo_mapping_str = input_manifest.lookup("_repo_mapping")
     assert (
-        repo_mapping_path
+        repo_mapping_str
     ), f"Missing _repo_mapping entry from runfiles manifest at: {input_manifest_path}"
+    repo_mapping_path = Path(repo_mapping_str)
     if not repo_mapping_path.is_absolute():
         repo_mapping_path = bazel_execroot / repo_mapping_path
     assert (
@@ -256,18 +291,13 @@ def generate_test_wrapper(
     ), f"Missing Bazel repository mapping file: {repo_mapping_path}"
 
     def make_runtime_symlink(dest_path: Path, target_path: Path) -> None:
-        """Create a symlink in the runtime directory.
+        """Creates a symlink with a relative target path calculated from target_path.
 
-        The target path must be resolved to an absolute path before creating the symlink.
-        Without this, `bazel test --config=host <wrapper_test_label>` will fail because
-        the test is run in a sandbox, which makes relative symlinks invalid.
-
-        This does not affect `fx test`, which does not run the test in a sandbox.
-        For infra builds, the content of the runtime directory is uploaded as a content-addressed
-        directory of binary blobs after resolving the symlinks, so everything works when it
-        is downloaded then run separately on test runner bots.
+        This ensures the symlink remains valid in isolated environments (like
+        Swarming bots in infra).
         """
-        build_utils.force_raw_symlink(dest_path, target_path.resolve())
+        relative_target = os.path.relpath(target_path, dest_path.parent)
+        build_utils.force_raw_symlink(dest_path, Path(relative_target))
 
     if output_runtime_dir.exists():
         shutil.rmtree(output_runtime_dir)
@@ -280,8 +310,9 @@ def generate_test_wrapper(
 
     output_manifest_entries: dict[str, str] = {}
     runtime_deps_paths: list[str | Path] = []
-    for source_path, target_path in input_manifest.as_dict().items():
-        if not target_path:
+    so_dirs: set[str] = set()
+    for source_path, target_path_str in input_manifest.as_dict().items():
+        if not target_path_str:
             # This is an empty file in the input runfiles dir, create an empty
             # one in the output runfiles dir too. These are used for things like
             # Python __init__.py files.
@@ -292,10 +323,18 @@ def generate_test_wrapper(
         else:
             dest_path = output_runfiles_dir / source_path
 
-            if not os.path.isabs(target_path):
-                target_path = f"{bazel_execroot}/{target_path}"
-            make_runtime_symlink(dest_path, Path(target_path))
+            target_path = Path(target_path_str)
+            if not target_path.is_absolute():
+                target_path = bazel_execroot / target_path_str
+
+            make_runtime_symlink(dest_path, target_path)
             manifest_path = source_path
+
+            if source_path.endswith(".so") or ".so." in source_path:
+                rel_so_dir = os.path.relpath(
+                    dest_path.parent, output_runtime_dir
+                )
+                so_dirs.add(rel_so_dir)
 
         output_manifest_entries[source_path] = manifest_path
         runtime_deps_paths.append(dest_path)
@@ -312,6 +351,10 @@ def generate_test_wrapper(
         make_runtime_symlink(dest_path, artifact_path)
         output_manifest_entries.setdefault(rlocation, rlocation)
         runtime_deps_paths.append(dest_path)
+
+        if rlocation.endswith(".so") or ".so." in rlocation:
+            rel_so_dir = os.path.relpath(dest_path.parent, output_runtime_dir)
+            so_dirs.add(rel_so_dir)
 
     # Create the MANIFEST file in the destination runfiles directory.
     # Unlike the input manifest, it cannot contain absollute paths, and all paths are
@@ -336,7 +379,7 @@ def generate_test_wrapper(
 
     # Create a symlink in foo.runtime_dir for the entry point.
     output_entry_point = output_runtime_dir / entry_point.name
-    make_runtime_symlink(output_entry_point, entry_point)
+    make_runtime_symlink(output_entry_point, bazel_execroot / entry_point)
     runtime_deps_paths.append(output_entry_point)
 
     # Generate the launcher script
@@ -344,29 +387,36 @@ def generate_test_wrapper(
     # They are encoded as arguments which look like 'env VARNAME=VALUE'
     # where the space after 'env' is intentional. They can appear in
     # any location of test_args.
-    env_vars: list[str] = []
+    env_vars: list[tuple[str, str]] = []
     real_args: list[str] = []
     for n, arg in enumerate(test_args):
         if arg.startswith("env "):
             varname, equal, value = arg[4:].partition("=")
             assert equal == "=", f"Malformed environment argument [{arg}]"
-            env_vars.append(arg[4:])
+            env_vars.append((varname, value))
         else:
             real_args.append(arg)
+
+    env_vars, ld_library_path_export = format_ld_library_path_export(
+        env_vars, so_dirs
+    )
 
     # If there is at least one environment variable assignment
     # start the exec call with "env VAR1=VALUE1 VAR2=VALUE2 ..."
     env_vars_expr = (
-        "env " + " ".join(shlex.quote(v) for v in env_vars) if env_vars else ""
+        "env " + " ".join(shlex.quote(f"{k}={v}") for k, v in env_vars)
+        if env_vars
+        else ""
     )
 
     subtitutions = {
         "{{runtime_dir_location}}": os.path.relpath(
             output_runtime_dir, output_launcher.parent
         ),
-        "{{test_name}}": shlex.quote(os.path.basename(entry_point)),
+        "{{test_name}}": os.path.basename(entry_point),
         "{{test_args}}": " ".join([shlex.quote(arg) for arg in real_args]),
         "{{env_vars}}": env_vars_expr,
+        "{{ld_library_path_export}}": ld_library_path_export,
         "{{python_test_lister}}": (
             shlex.quote(python_test_lister) if python_test_lister else ""
         ),
@@ -403,7 +453,7 @@ def generate_test_wrapper(
         except Exception as e:
             print(
                 f"ERROR: Failed to parse host_test_data_manifest: {e}",
-                sys.stderr,
+                file=sys.stderr,
             )
             return 1
 

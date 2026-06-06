@@ -9,11 +9,13 @@
 
 # See comments in //build/bazel/host_tests/host_py_test.bzl for details.
 set -e
-cd $(dirname "${BASH_SOURCE[0]}")/{{runtime_dir_location}}
+cd -- "$(dirname "${BASH_SOURCE[0]}")/{{runtime_dir_location}}"
+export RUNFILES_DIR="${PWD}/{{test_name}}.runfiles"
+export RUNFILES_MANIFEST_FILE="${RUNFILES_DIR}/MANIFEST"
+{{ld_library_path_export}}
 if [[ "$1" == "--list_host_python_unittests" ]]; then
-  exec {{python_test_interpreter}} -S -u {{python_test_lister}} --list_tests {{test_name}}
+  exec {{env_vars}} {{python_test_interpreter}} -S -u {{python_test_lister}} --list_tests "{{test_name}}"
 else
-  echo starting tool {{test_name}}
-  exec {{env_vars}} {{python_test_interpreter}} -S {{test_name}} {{test_args}} "$@"
-  echo executing tool {{test_name}} failed
+  echo "starting tool {{test_name}}"
+  exec {{env_vars}} {{python_test_interpreter}} -S "{{test_name}}" {{test_args}} "$@"
 fi

@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 
 import python.runfiles.runfiles as runfiles
 
@@ -17,10 +16,11 @@ args = parser.parse_args()
 
 r = runfiles.Create()
 test_location = r.Rlocation(args.binary)
-test_env = r.EnvVars()
+test_env = os.environ.copy()
+test_env.update(r.EnvVars())
 
 print(
-    f"Found test at {test_location}\nEnvironment: {json.dumps(test_env, indent=2)}\ncwd = {os.getcwd()}\n"
+    f"Found test at {test_location}\nEnvironment: {json.dumps(r.EnvVars(), indent=2)}\ncwd = {os.getcwd()}\n"
 )
-subprocess.check_call([sys.executable, test_location], env=test_env)
-print("Test run succesfully!")
+subprocess.check_call([test_location], env=test_env)
+print("Test ran successfully!")

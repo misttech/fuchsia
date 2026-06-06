@@ -6,6 +6,10 @@ load("//build/bazel/host_tests:host_test.bzl", "host_test")
 
 test_suite(
     name = "cc_tests",
+    tests = [
+        ":dynamic_test_host",
+        ":static_test_host",
+    ],
     visibility = ["//visibility:public"],
 )
 

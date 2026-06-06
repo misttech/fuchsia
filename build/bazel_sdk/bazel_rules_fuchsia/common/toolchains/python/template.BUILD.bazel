@@ -55,7 +55,7 @@ py_runtime(
 # The use of readlink below is necessary to always get the path of the middle-man
 # script, which in turns allows finding the right runfiles directory.
 
-"exec" "$(readlink $0 || echo $0).runfiles/{repository_dir}/{python_launcher}" "$0" "$@"
+"exec" "${RUNFILES_DIR:-$(readlink $0 || echo $0).runfiles}/{repository_dir}/{python_launcher}" "$0" "$@"
 """,
 )
 
