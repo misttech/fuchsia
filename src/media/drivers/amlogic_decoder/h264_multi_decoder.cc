@@ -34,29 +34,6 @@ namespace fh_amlcanvas = fuchsia_hardware_amlogiccanvas;
 
 namespace amlogic_decoder {
 
-#if 0
-        1: StreamCreated
-        2: StreamDeleted
-        3: StreamFlushed
-        4: StreamEndOfStreamInput
-        5: StreamEndOfStreamOutput
-#In addition to separate reasons listed below.
-        6: StreamFailureAnyReason
-        7: CoreCreated
-        8: CoreDeleted
-        9: CoreFlushed
-        10: CoreEndOfStreamInput
-        11: CoreEndOfStreamOuput
-#In addition to separate reasons listed below.
-        12: CoreFailureAnyReason
-        13: InputBufferAllocationStarted
-        14: InputBufferAllocationSuccess
-        15: InputBufferAllocationFailure
-        16: OutputBufferAllocationStarted
-        17: OutputBufferAllocationSuccess
-        18: OutputBufferAllocationFailure
-#endif
-
 // TODO(https://fxbug.dev/42084549): Currently there's one frame of latency imposed by the need for
 // another NALU after the last byte of a frame for that frame to generate a pic data done interrupt.
 // A client can mitigate this by queueing an access unit delimeter NALU after each input frame's
@@ -1858,6 +1835,42 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     return;
   }
   frame_num_.emplace(frame_num);
+
+  const uint32_t mb_width = params_.data[HardwareRenderParams::kMbWidth];
+  const uint32_t mb_height = params_.data[HardwareRenderParams::kMbHeight];
+  const uint32_t total_mbs = mb_width * mb_height;
+  if (static_cast<uint32_t>(first_mb_in_slice) >= total_mbs) {
+    // A malformed/hostile slice header can encode an invalid first_mb_in_slice. The FW/HW _may_
+    // trigger HandleSliceHeadDone despite the invalid first_mb_in_slice. The present author is not
+    // certain whether FW/HW will do this, or will instead not trigger HandleSliceHeadDone in this
+    // case. There is text from one posted CL (thanks Mondoo for pointing this out along with the
+    // potential hazard involving H264CoMbWrAddr/H264CoMbRdAddr) that states that the FW/HW does
+    // trigger HandleSliceHeadDone with the invalid first_mb_in_slice, but the present author hasn't
+    // confirmed this directly. It's safer to assume HandleSliceHeadDone is triggered.
+    //
+    // While the HW/FW must guard against the current macroblock index becoming out-of-bounds during
+    // actual decoding, validating the starting macroblock index in SW _may_ be required to ensure
+    // that the physical addresses we program in H264CoMbWrAddr and H264CoMbRdAddr do not get used
+    // by the HW/FW to perform memory transactions outside the allocated reference_mv_buffer. The
+    // same reasoning could logically apply to output pixels as well, though the canvas HW is likely
+    // to reject that, so the main concern here is H264CoMbWrAddr/H264CoMbRdAddr.
+    //
+    // These FW/HW behaviors can potentially depend on FW version, so rather than characterize the
+    // current FW behavior, it makes sense to reject too-large first_mb_in_slice here in SW, since
+    // this way we know the FW/HW is fine to go ahead and process the macroblock index
+    // first_mb_in_slice.
+    //
+    // Testing of the current FW/HW behavior with respect to the above has not been performed so
+    // far. Any dependence on such testing would necessitate re-testing for each new FW version, so
+    // this author recommends against leaning on the FW/HW to do its macroblock index bounds check
+    // at the top of its macroblock processing loop (roughly speaking), even if a given FW version
+    // happens to do that.
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_FirstMbInSliceError);
+    LOG(ERROR, "first_mb_in_slice %d >= total_mbs %u - broken input data", first_mb_in_slice,
+        total_mbs);
+    OnFatalError();
+    return;
+  }
 
   if (first_mb_in_slice <= per_frame_attempt_seen_first_mb_in_slice_) {
     LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_FirstMbInSliceError);
