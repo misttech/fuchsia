@@ -25,8 +25,10 @@
 
 using safemath::CheckAdd;
 using safemath::CheckDiv;
+using safemath::CheckedNumeric;
 using safemath::CheckMul;
 using safemath::CheckSub;
+using safemath::MakeCheckedNum;
 
 namespace {
 
@@ -40,7 +42,6 @@ using ImageFormatWire = fuchsia_images2::wire::ImageFormat;
 using ImageFormatConstraintsWire = fuchsia_sysmem2::wire::ImageFormatConstraints;
 using PixelFormatWire = fuchsia_images2::wire::PixelFormat;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 // There are two aspects of the ColorSpaceWire and PixelFormatWire that we care about:
 //   * bits-per-sample - bits per primary sample (R, G, B, or Y)
 //   * RGB vs. YUV - whether the system supports the ColorSpaceWire or PixelFormatWire
@@ -98,26 +99,44 @@ const std::map<PixelFormatWire, SamplingInfo> kPixelFormatSamplingInfo = {
     {PixelFormat::kA2B10G10R10, {{8}, {kColorType_RGB}}},
     {PixelFormat::kA2R10G10B10, {{8}, {kColorType_RGB}}},
 };
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
-constexpr uint32_t kTransactionEliminationAlignment = 64;
+constexpr CheckedNumeric<uint32_t> kTransactionEliminationAlignment = 64;
 // The transaction elimination buffer is always reported as plane 3.
 constexpr uint32_t kTransactionEliminationPlane = 3;
 
-uint64_t arm_transaction_elimination_row_size(uint32_t width) {
-  uint32_t kTileSize = 32;
-  uint32_t kBytesPerTilePerRow = 16;
-  uint32_t width_in_tiles = fbl::round_up(width, kTileSize) / kTileSize;
-  return fbl::round_up(width_in_tiles * kBytesPerTilePerRow, kTransactionEliminationAlignment);
+constexpr CheckedNumeric<uint32_t> kInvalidCheckedNumeric32 =
+    CheckAdd(MakeCheckedNum(std::numeric_limits<uint32_t>::max()), 1);
+static_assert(!kInvalidCheckedNumeric32.IsValid());
+constexpr CheckedNumeric<uint64_t> kInvalidCheckedNumeric64 =
+    CheckAdd(MakeCheckedNum(std::numeric_limits<uint64_t>::max()), 1);
+static_assert(!kInvalidCheckedNumeric64.IsValid());
+
+template <typename T, typename U>
+CheckedNumeric<T> CheckRoundUp(CheckedNumeric<T> val, CheckedNumeric<U> multiple) {
+  // We could do template things to make the call site fail to find a template instantiation if
+  // these aren't true, but this gives more helpful compiler error messages.
+  static_assert(std::is_unsigned_v<T>);
+  static_assert(std::is_unsigned_v<U>);
+  static_assert(sizeof(T) >= sizeof(U));
+  return CheckMul(CheckDiv(CheckAdd(val, CheckSub(multiple, 1)), multiple), multiple);
 }
 
-uint64_t arm_transaction_elimination_buffer_size(uint64_t start, uint32_t width, uint32_t height) {
-  uint32_t kTileSize = 32;
-  uint32_t end = start;
-  end = fbl::round_up(end, kTransactionEliminationAlignment);
-  uint32_t kHeaderSize = kTransactionEliminationAlignment;
+CheckedNumeric<uint64_t> arm_transaction_elimination_row_size(CheckedNumeric<uint32_t> width) {
+  constexpr CheckedNumeric<uint32_t> kTileSize = 32;
+  constexpr CheckedNumeric<uint32_t> kBytesPerTilePerRow = 16;
+  CheckedNumeric<uint32_t> width_in_tiles = CheckRoundUp(width, kTileSize) / kTileSize;
+  return CheckRoundUp(width_in_tiles * kBytesPerTilePerRow, kTransactionEliminationAlignment);
+}
+
+CheckedNumeric<uint64_t> arm_transaction_elimination_buffer_size(CheckedNumeric<uint64_t> start,
+                                                                 CheckedNumeric<uint32_t> width,
+                                                                 CheckedNumeric<uint32_t> height) {
+  constexpr CheckedNumeric<uint32_t> kTileSize = 32;
+  CheckedNumeric<uint64_t> end = start;
+  end = CheckRoundUp(end, kTransactionEliminationAlignment);
+  constexpr CheckedNumeric<uint32_t> kHeaderSize = kTransactionEliminationAlignment;
   end += kHeaderSize;
-  uint32_t height_in_tiles = fbl::round_up(height, kTileSize) / kTileSize;
+  CheckedNumeric<uint32_t> height_in_tiles = CheckRoundUp(height, kTileSize) / kTileSize;
   end += arm_transaction_elimination_row_size(width) * 2 * height_in_tiles;
   return end - start;
 }
@@ -126,16 +145,16 @@ class ImageFormatSet {
  public:
   virtual const char* Name() const = 0;
   virtual bool IsSupported(const PixelFormatAndModifier& pixel_format) const = 0;
-  virtual uint64_t ImageFormatImageSize(const ImageFormat& image_format) const = 0;
-  virtual bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
-                                          uint64_t* offset_out) const = 0;
-  virtual bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
-                                        uint32_t* row_bytes_out) const = 0;
+  virtual CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const = 0;
+  virtual CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                              uint32_t plane) const = 0;
+  virtual CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                            uint32_t plane) const = 0;
   virtual bool ImageFormatIsNonTiledSinglePlane(
       const PixelFormatAndModifier& pixel_format_and_modifier) const = 0;
-  virtual bool ImageFormatMinimumRowBytes(
-      const fuchsia_sysmem2::ImageFormatConstraints& constraints, uint32_t width,
-      uint32_t* minimum_row_bytes_out) const = 0;
+  virtual CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const = 0;
 };
 
 class IntelTiledFormats : public ImageFormatSet {
@@ -163,13 +182,13 @@ class IntelTiledFormats : public ImageFormatSet {
     }
   }
 
-  uint64_t ImageFormatImageSize(const ImageFormat& image_format) const override {
+  CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(pixel_format_and_modifier)));
 
-    uint32_t width_in_tiles, height_in_tiles;
+    CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
     uint32_t num_of_planes = FormatNumOfPlanes(image_format.pixel_format().value());
-    uint64_t size = 0u;
+    CheckedNumeric<uint64_t> size = 0u;
 
     for (uint32_t plane_idx = 0; plane_idx < num_of_planes; plane_idx += 1) {
       GetSizeInTiles(image_format, plane_idx, &width_in_tiles, &height_in_tiles);
@@ -183,8 +202,8 @@ class IntelTiledFormats : public ImageFormatSet {
     return size;
   }
 
-  bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
-                                  uint64_t* offset_out) const override {
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                      uint32_t plane) const override {
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
         image_format.pixel_format().value(), image_format.pixel_format_modifier().value())));
 
@@ -198,47 +217,44 @@ class IntelTiledFormats : public ImageFormatSet {
     } else if (plane == kCcsPlane) {  // If requesting the CCS Aux plane, calculate the size of all
                                       // the image data planes
       end_plane = num_of_planes;
-    } else {  // Plane is out of bounds, return false
-      return false;
+    } else {  // Plane is out of bounds, return !IsValid
+      return kInvalidCheckedNumeric64;
     }
 
-    uint64_t offset = 0u;
+    CheckedNumeric<uint64_t> offset = 0u;
     for (uint32_t plane_idx = 0u; plane_idx < end_plane; plane_idx += 1u) {
-      uint32_t width_in_tiles, height_in_tiles;
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
       GetSizeInTiles(image_format, plane_idx, &width_in_tiles, &height_in_tiles);
       offset += (width_in_tiles * height_in_tiles * kIntelTileByteSize);
     }
-    ZX_DEBUG_ASSERT(offset % kIntelTileByteSize == 0);
-    *offset_out = offset;
-    return true;
+    ZX_DEBUG_ASSERT(offset.IsValid() && ((offset % kIntelTileByteSize).ValueOrDie() == 0));
+    return offset;
   }
 
-  bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
-                                uint32_t* row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                    uint32_t plane) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
 
     uint32_t num_of_planes = FormatNumOfPlanes(image_format.pixel_format().value());
 
     if (plane < num_of_planes) {
-      uint32_t width_in_tiles, height_in_tiles;
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
       GetSizeInTiles(image_format, plane, &width_in_tiles, &height_in_tiles);
       const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(PixelFormatAndModifier(
           image_format.pixel_format().value(), image_format.pixel_format_modifier().value())));
-      *row_bytes_out = width_in_tiles * tiling_data.bytes_per_row_per_tile;
-      return true;
+      return width_in_tiles * tiling_data.bytes_per_row_per_tile;
     }
 
     if (plane == kCcsPlane && FormatHasCcs(pixel_format_and_modifier)) {
-      uint32_t width_in_tiles, height_in_tiles;
+      CheckedNumeric<uint32_t> width_in_tiles, height_in_tiles;
       // Since we only care about the width, just use the first plane
       GetSizeInTiles(image_format, 0, &width_in_tiles, &height_in_tiles);
-      *row_bytes_out =
-          CcsWidthInTiles(width_in_tiles) * GetTilingData(TilingType::kY).bytes_per_row_per_tile;
-      return true;
+      return CcsWidthInTiles(width_in_tiles) * GetTilingData(TilingType::kY).bytes_per_row_per_tile;
     }
 
-    return false;
+    // invalid plane param
+    return kInvalidCheckedNumeric32;
   }
 
   bool ImageFormatIsNonTiledSinglePlane(
@@ -247,57 +263,65 @@ class IntelTiledFormats : public ImageFormatSet {
     return false;
   }
 
-  bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                                  uint32_t width, uint32_t* minimum_row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
     ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
 
-    ZX_DEBUG_ASSERT(minimum_row_bytes_out);
     // Caller must set pixel_format.
     ZX_DEBUG_ASSERT(constraints.pixel_format().has_value());
 
     if (constraints.size_alignment().has_value()) {
-      width = fbl::round_up(width, constraints.size_alignment()->width());
+      width = CheckRoundUp(width, safemath::MakeCheckedNum(constraints.size_alignment()->width()));
     }
 
-    if ((constraints.min_size().has_value() && width < constraints.min_size()->width()) ||
-        (constraints.max_size().has_value() && width > constraints.max_size()->width())) {
-      return false;
+    if (!width.IsValid()) {
+      return kInvalidCheckedNumeric32;
     }
-    uint32_t constraints_min_bytes_per_row =
+
+    if ((constraints.min_size().has_value() &&
+         width.ValueOrDie() < constraints.min_size()->width()) ||
+        (constraints.max_size().has_value() &&
+         width.ValueOrDie() > constraints.max_size()->width())) {
+      return kInvalidCheckedNumeric32;
+    }
+    CheckedNumeric<uint32_t> constraints_min_bytes_per_row =
         constraints.min_bytes_per_row().has_value() ? constraints.min_bytes_per_row().value() : 0;
-    uint32_t constraints_bytes_per_row_divisor = constraints.bytes_per_row_divisor().has_value()
-                                                     ? constraints.bytes_per_row_divisor().value()
-                                                     : 1;
+    CheckedNumeric<uint32_t> constraints_bytes_per_row_divisor =
+        constraints.bytes_per_row_divisor().has_value()
+            ? constraints.bytes_per_row_divisor().value()
+            : 1;
 
     const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
 
     constraints_bytes_per_row_divisor =
-        fbl::round_up(constraints_bytes_per_row_divisor, tiling_data.bytes_per_row_per_tile);
+        CheckRoundUp(constraints_bytes_per_row_divisor, tiling_data.bytes_per_row_per_tile);
 
     // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
-    uint32_t non_padding_bytes_per_row;
-    if (!CheckMul(
-             static_cast<uint64_t>(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)),
-             width)
-             .AssignIfValid(&non_padding_bytes_per_row)) {
-      return false;
+    CheckedNumeric<uint32_t> non_padding_bytes_per_row =
+        MakeCheckedNum(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier)) * width;
+    if (!non_padding_bytes_per_row.IsValid()) {
+      return kInvalidCheckedNumeric32;
     }
 
-    *minimum_row_bytes_out =
-        fbl::round_up(std::max(non_padding_bytes_per_row, constraints_min_bytes_per_row),
-                      constraints_bytes_per_row_divisor);
-    if (constraints.max_bytes_per_row().has_value() &&
-        *minimum_row_bytes_out > constraints.max_bytes_per_row().value()) {
-      return false;
+    CheckedNumeric<uint32_t> minimum_row_bytes =
+        CheckRoundUp(safemath::CheckMax(non_padding_bytes_per_row, constraints_min_bytes_per_row),
+                     constraints_bytes_per_row_divisor);
+    if (!minimum_row_bytes.IsValid()) {
+      return kInvalidCheckedNumeric32;
     }
-    return true;
+    if (constraints.max_bytes_per_row().has_value() &&
+        minimum_row_bytes.ValueOrDie() > constraints.max_bytes_per_row().value()) {
+      return kInvalidCheckedNumeric32;
+    }
+    return minimum_row_bytes;
   }
 
  private:
   struct TilingData {
-    uint32_t tile_rows;
-    uint32_t bytes_per_row_per_tile;
+    CheckedNumeric<uint32_t> tile_rows;
+    CheckedNumeric<uint32_t> bytes_per_row_per_tile;
   };
 
   // These are base Intel tilings, with no aux buffers.
@@ -305,7 +329,7 @@ class IntelTiledFormats : public ImageFormatSet {
 
   // See
   // https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-skl-vol05-memory_views.pdf
-  static constexpr uint32_t kIntelTileByteSize = 4096;
+  static constexpr CheckedNumeric<uint32_t> kIntelTileByteSize = 4096;
   static constexpr TilingData kTilingData[] = {
       {
           // kX
@@ -332,8 +356,8 @@ class IntelTiledFormats : public ImageFormatSet {
   // for a description of the color control surface. The CCS is always Y-tiled. A CCS cache-line
   // (64 bytes, so 2 fit horizontally in a tile) represents 16 horizontal cache line pairs (so 16
   // tiles) and 16 pixels tall.
-  static constexpr uint32_t kCcsTileWidthRatio = 2 * 16;
-  static constexpr uint32_t kCcsTileHeightRatio = 16;
+  static constexpr CheckedNumeric<uint32_t> kCcsTileWidthRatio = 2 * 16;
+  static constexpr CheckedNumeric<uint32_t> kCcsTileHeightRatio = 16;
 
   static TilingType GetTilingTypeForPixelFormat(const PixelFormatAndModifier& pixel_format) {
     auto modifier_without_ccs_bit = static_cast<fuchsia_images2::PixelFormatModifier>(
@@ -361,12 +385,18 @@ class IntelTiledFormats : public ImageFormatSet {
   }
 
   // Gets the total size (in tiles) of image data for non-aux planes
-  static void GetSizeInTiles(const ImageFormat& image_format, uint32_t plane, uint32_t* width_out,
-                             uint32_t* height_out) {
+  static void GetSizeInTiles(const ImageFormat& image_format, uint32_t plane,
+                             CheckedNumeric<uint32_t>* width_out,
+                             CheckedNumeric<uint32_t>* height_out) {
+    ZX_DEBUG_ASSERT(width_out);
+    ZX_DEBUG_ASSERT(height_out);
+    *width_out = kInvalidCheckedNumeric32;
+    *height_out = kInvalidCheckedNumeric32;
+
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
     ZX_DEBUG_ASSERT(image_format.bytes_per_row().has_value());
-    uint32_t bytes_per_row = image_format.bytes_per_row().value();
+    CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
 
     const auto& bytes_per_row_per_tile = tiling_data.bytes_per_row_per_tile;
     const auto& tile_rows = tiling_data.tile_rows;
@@ -379,8 +409,9 @@ class IntelTiledFormats : public ImageFormatSet {
         // Format only has one plane
         ZX_DEBUG_ASSERT(plane == 0);
 
-        *width_out = fbl::round_up(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
-        *height_out = fbl::round_up(image_format.size()->height(), tile_rows) / tile_rows;
+        *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
+        *height_out =
+            CheckRoundUp(MakeCheckedNum(image_format.size()->height()), tile_rows) / tile_rows;
       } break;
       // Since NV12 is a biplanar format we must handle the size for each plane separately. From
       // https://github.com/intel/gmmlib/blob/e1f634c5d5a41ac48756b25697ea499605711747/Source/GmmLib/Texture/GmmTextureAlloc.cpp#L1192:
@@ -389,20 +420,20 @@ class IntelTiledFormats : public ImageFormatSet {
       case PixelFormat::kNv12:
         if (plane == 0) {
           // Calculate the Y plane size (8 bpp)
-          *width_out =
-              fbl::round_up(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
-          *height_out = fbl::round_up(image_format.size()->height(), tile_rows) / tile_rows;
+          *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
+          *height_out =
+              CheckRoundUp(MakeCheckedNum(image_format.size()->height()), tile_rows) / tile_rows;
         } else if (plane == 1) {
           // Calculate the UV plane size (4 bpp)
           // We effectively have 1/2 the height of our original image since we are subsampled at
           // 4:2:0. Since width of the Y plane must match the width of the UV plane we divide the
           // height of the Y plane by 2 to calculate the height of the UV plane (aligned on tile
           // height boundaries). Ensure the height is aligned 2 before dividing.
-          uint32_t adjusted_height = fbl::round_up(image_format.size()->height(), 2u) / 2u;
+          CheckedNumeric<uint32_t> adjusted_height =
+              CheckRoundUp<uint32_t, uint32_t>(image_format.size()->height(), 2) / 2;
 
-          *width_out =
-              fbl::round_up(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
-          *height_out = fbl::round_up(adjusted_height, tile_rows) / tile_rows;
+          *width_out = CheckRoundUp(bytes_per_row, bytes_per_row_per_tile) / bytes_per_row_per_tile;
+          *height_out = CheckRoundUp(adjusted_height, tile_rows) / tile_rows;
         } else {
           ZX_DEBUG_ASSERT(false);
         }
@@ -410,6 +441,14 @@ class IntelTiledFormats : public ImageFormatSet {
       default:
         ZX_DEBUG_ASSERT(false);
         return;
+    }
+
+    // if either of width_out or height_out is invalid at this point, ensure both are invalid
+    if (!width_out->IsValid()) {
+      *height_out = kInvalidCheckedNumeric32;
+    }
+    if (!height_out->IsValid()) {
+      *width_out = kInvalidCheckedNumeric32;
     }
   }
 
@@ -434,13 +473,15 @@ class IntelTiledFormats : public ImageFormatSet {
     }
   }
 
-  static uint64_t CcsWidthInTiles(uint32_t main_plane_width_in_tiles) {
-    return fbl::round_up(main_plane_width_in_tiles, kCcsTileWidthRatio) / kCcsTileWidthRatio;
+  static CheckedNumeric<uint64_t> CcsWidthInTiles(
+      CheckedNumeric<uint32_t> main_plane_width_in_tiles) {
+    return CheckRoundUp(main_plane_width_in_tiles, kCcsTileWidthRatio) / kCcsTileWidthRatio;
   }
 
-  static uint64_t CcsSize(uint32_t width_in_tiles, uint32_t height_in_tiles) {
-    uint32_t height_in_ccs_tiles =
-        fbl::round_up(height_in_tiles, kCcsTileHeightRatio) / kCcsTileHeightRatio;
+  static CheckedNumeric<uint64_t> CcsSize(CheckedNumeric<uint32_t> width_in_tiles,
+                                          CheckedNumeric<uint32_t> height_in_tiles) {
+    CheckedNumeric<uint32_t> height_in_ccs_tiles =
+        CheckRoundUp(height_in_tiles, kCcsTileHeightRatio) / kCcsTileHeightRatio;
     return CcsWidthInTiles(width_in_tiles) * height_in_ccs_tiles * kIntelTileByteSize;
   }
 };
@@ -472,20 +513,20 @@ class AfbcFormats : public ImageFormatSet {
   }
 
   // Calculate the size of the Raw AFBC image without a transaction elimination buffer.
-  uint64_t NonTESize(const ImageFormat& image_format) const {
+  CheckedNumeric<uint64_t> NonTESize(const ImageFormat& image_format) const {
     // See
     // https://android.googlesource.com/device/linaro/hikey/+/android-o-preview-3/gralloc960/alloc_device.cpp
-    constexpr uint32_t kAfbcBodyAlignment = 1024u;
-    constexpr uint32_t kTiledAfbcBodyAlignment = 4096u;
+    constexpr CheckedNumeric<uint32_t> kAfbcBodyAlignment = 1024u;
+    constexpr CheckedNumeric<uint32_t> kTiledAfbcBodyAlignment = 4096u;
 
     ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
     ZX_DEBUG_ASSERT(image_format.pixel_format_modifier().has_value());
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
         image_format.pixel_format().value(), image_format.pixel_format_modifier().value())));
-    uint32_t block_width;
-    uint32_t block_height;
-    uint32_t width_alignment;
-    uint32_t height_alignment;
+    CheckedNumeric<uint64_t> block_width;
+    CheckedNumeric<uint64_t> block_height;
+    CheckedNumeric<uint64_t> width_alignment;
+    CheckedNumeric<uint64_t> height_alignment;
     bool tiled_header = fidl::ToUnderlying(image_format.pixel_format_modifier().value()) &
                         fuchsia_images2::kFormatModifierArmTiledHeaderBit;
 
@@ -519,26 +560,29 @@ class AfbcFormats : public ImageFormatSet {
         return 0;
     }
 
-    uint32_t body_alignment = tiled_header ? kTiledAfbcBodyAlignment : kAfbcBodyAlignment;
+    CheckedNumeric<uint64_t> body_alignment =
+        tiled_header ? kTiledAfbcBodyAlignment : kAfbcBodyAlignment;
 
     ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
     ZX_DEBUG_ASSERT(image_format.pixel_format().value() == PixelFormatWire::kR8G8B8A8 ||
                     image_format.pixel_format().value() == PixelFormatWire::kR8G8B8X8 ||
                     image_format.pixel_format().value() == PixelFormatWire::kB8G8R8A8 ||
                     image_format.pixel_format().value() == PixelFormatWire::kB8G8R8X8);
-    constexpr uint32_t kBytesPerPixel = 4;
-    constexpr uint32_t kBytesPerBlockHeader = 16;
+    constexpr CheckedNumeric<uint32_t> kBytesPerPixel = 4;
+    constexpr CheckedNumeric<uint32_t> kBytesPerBlockHeader = 16;
 
     ZX_DEBUG_ASSERT(image_format.size().has_value());
-    uint64_t block_count =
-        fbl::round_up(image_format.size()->width(), width_alignment) / block_width *
-        fbl::round_up(image_format.size()->height(), height_alignment) / block_height;
+    CheckedNumeric<uint64_t> block_count =
+        CheckRoundUp(MakeCheckedNum<uint64_t>(image_format.size()->width()), width_alignment) /
+        block_width *
+        CheckRoundUp(MakeCheckedNum<uint64_t>(image_format.size()->height()), height_alignment) /
+        block_height;
     return block_count * block_width * block_height * kBytesPerPixel +
-           fbl::round_up(block_count * kBytesPerBlockHeader, body_alignment);
+           CheckRoundUp(block_count * kBytesPerBlockHeader, body_alignment);
   }
 
-  uint64_t ImageFormatImageSize(const ImageFormat& image_format) const override {
-    uint64_t size = NonTESize(image_format);
+  CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
+    CheckedNumeric<uint64_t> size = NonTESize(image_format);
     if (fidl::ToUnderlying(image_format.pixel_format_modifier().value()) &
         fuchsia_images2::kFormatModifierArmTeBit) {
       size += arm_transaction_elimination_buffer_size(size, image_format.size()->width(),
@@ -548,31 +592,29 @@ class AfbcFormats : public ImageFormatSet {
     return size;
   }
 
-  bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
-                                  uint64_t* offset_out) const override {
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                      uint32_t plane) const override {
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
         image_format.pixel_format().value(), image_format.pixel_format_modifier().value())));
     if (plane == 0) {
-      *offset_out = 0;
-      return true;
+      return 0;
     }
     if (plane == kTransactionEliminationPlane) {
-      *offset_out = fbl::round_up(NonTESize(image_format), kTransactionEliminationAlignment);
-      return true;
+      return CheckRoundUp(NonTESize(image_format), kTransactionEliminationAlignment);
     }
-    return false;
+    // invalid plane param value
+    return kInvalidCheckedNumeric64;
   }
-  bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
-                                uint32_t* row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                    uint32_t plane) const override {
     if (plane == 0) {
-      *row_bytes_out = 0;
-      return true;
+      return 0;
     }
     if (plane == kTransactionEliminationPlane) {
-      *row_bytes_out = arm_transaction_elimination_row_size(image_format.size()->width());
-      return true;
+      return arm_transaction_elimination_row_size(image_format.size()->width());
     }
-    return false;
+    // invalid plane param value
+    return kInvalidCheckedNumeric32;
   }
   bool ImageFormatIsNonTiledSinglePlane(
       const PixelFormatAndModifier& pixel_format_and_modifier) const override {
@@ -580,20 +622,26 @@ class AfbcFormats : public ImageFormatSet {
     // only tiled formats are supported by this class
     return false;
   }
-  bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                                  uint32_t width, uint32_t* minimum_row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
         constraints.pixel_format().value(), constraints.pixel_format_modifier().value())));
-
-    if (constraints.min_size().has_value() && width < constraints.min_size()->width()) {
-      return false;
-    }
-    if (constraints.max_size().has_value() && width > constraints.max_size()->width()) {
-      return false;
+    if (!width.IsValid()) {
+      return kInvalidCheckedNumeric32;
     }
 
-    uint32_t block_width;
-    uint32_t width_alignment;
+    if (constraints.min_size().has_value() &&
+        width.ValueOrDie() < constraints.min_size()->width()) {
+      return kInvalidCheckedNumeric32;
+    }
+    if (constraints.max_size().has_value() &&
+        width.ValueOrDie() > constraints.max_size()->width()) {
+      return kInvalidCheckedNumeric32;
+    }
+
+    CheckedNumeric<uint64_t> block_width;
+    CheckedNumeric<uint64_t> width_alignment;
     bool tiled_header = fidl::ToUnderlying(constraints.pixel_format_modifier().value()) &
                         fuchsia_images2::kFormatModifierArmTiledHeaderBit;
 
@@ -618,25 +666,23 @@ class AfbcFormats : public ImageFormatSet {
         }
         break;
       default:
-        return false;
+        return kInvalidCheckedNumeric32;
     }
 
     // Divide with round up instead of down: (width + (width_alignment - 1)) / width_alignment
-    auto width_in_blocks = CheckDiv(
-        CheckAdd(static_cast<uint64_t>(width), CheckSub(width_alignment, 1)), width_alignment);
-    auto width_in_pixels = CheckMul(width_in_blocks, static_cast<uint64_t>(block_width));
-    constexpr uint64_t kBytesPerPixel = 4;
+    auto width_in_blocks =
+        (static_cast<CheckedNumeric<uint64_t>>(width) + width_alignment - 1) / width_alignment;
+    auto width_in_pixels = CheckMul(width_in_blocks, block_width);
+    constexpr CheckedNumeric<uint64_t> kBytesPerPixel = 4;
     auto width_in_bytes = CheckMul(width_in_pixels, kBytesPerPixel);
-    if (!width_in_bytes.AssignIfValid(minimum_row_bytes_out)) {
-      return false;
-    }
-
-    return true;
+    // minimum row bytes
+    return width_in_bytes;
   }
 };
 
-uint64_t linear_size(uint32_t surface_height_param, uint32_t bytes_per_row, PixelFormat type) {
-  uint64_t surface_height = surface_height_param;
+CheckedNumeric<uint64_t> linear_size(CheckedNumeric<uint32_t> surface_height_param,
+                                     CheckedNumeric<uint32_t> bytes_per_row, PixelFormat type) {
+  CheckedNumeric<uint64_t> surface_height = surface_height_param;
   switch (type) {
     case PixelFormat::kR8G8B8A8:
     case PixelFormat::kR8G8B8X8:
@@ -665,15 +711,19 @@ uint64_t linear_size(uint32_t surface_height_param, uint32_t bytes_per_row, Pixe
   }
 }
 
-bool linear_minimum_row_bytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                              uint32_t width, uint32_t* minimum_row_bytes_out) {
-  ZX_DEBUG_ASSERT(minimum_row_bytes_out);
+CheckedNumeric<uint32_t> linear_minimum_row_bytes(
+    const fuchsia_sysmem2::ImageFormatConstraints& constraints, CheckedNumeric<uint32_t> width) {
   // Caller must set pixel_format.
   ZX_DEBUG_ASSERT(constraints.pixel_format().has_value());
+  if (!width.IsValid()) {
+    return kInvalidCheckedNumeric32;
+  }
 
-  if ((constraints.min_size().has_value() && width < constraints.min_size()->width()) ||
-      (constraints.max_size().has_value() && width > constraints.max_size()->width())) {
-    return false;
+  if ((constraints.min_size().has_value() &&
+       width.ValueOrDie() < constraints.min_size()->width()) ||
+      (constraints.max_size().has_value() &&
+       width.ValueOrDie() > constraints.max_size()->width())) {
+    return kInvalidCheckedNumeric32;
   }
 
   // We don't enforce that width is already aligned up by the caller by the time of this call, but
@@ -681,27 +731,30 @@ bool linear_minimum_row_bytes(const fuchsia_sysmem2::ImageFormatConstraints& con
   // size_alignment.width divisibility requirement for any fuchsia.sysmem.ImageFormat2.coded_width
   // or fuchsia.images2.ImageFormat.size.width values the caller generates.
   if (constraints.size_alignment().has_value()) {
-    width = fbl::round_up(width, constraints.size_alignment()->width());
+    width = CheckRoundUp(width, MakeCheckedNum(constraints.size_alignment()->width()));
   }
 
-  uint32_t constraints_min_bytes_per_row =
+  CheckedNumeric<uint32_t> constraints_min_bytes_per_row =
       constraints.min_bytes_per_row().has_value() ? constraints.min_bytes_per_row().value() : 0;
-  uint32_t constraints_bytes_per_row_divisor = constraints.bytes_per_row_divisor().has_value()
-                                                   ? constraints.bytes_per_row_divisor().value()
-                                                   : 1;
+  CheckedNumeric<uint32_t> constraints_bytes_per_row_divisor =
+      constraints.bytes_per_row_divisor().has_value() ? constraints.bytes_per_row_divisor().value()
+                                                      : 1;
 
   // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
-  *minimum_row_bytes_out =
-      fbl::round_up(std::max(static_cast<uint64_t>(ImageFormatStrideBytesPerWidthPixel(
-                                 PixelFormatAndModifierFromConstraints(constraints))) *
-                                 static_cast<uint64_t>(width),
-                             static_cast<uint64_t>(constraints_min_bytes_per_row)),
-                    static_cast<uint64_t>(constraints_bytes_per_row_divisor));
-  if (constraints.max_bytes_per_row().has_value() &&
-      *minimum_row_bytes_out > constraints.max_bytes_per_row().value()) {
-    return false;
+  CheckedNumeric<uint32_t> minimum_row_bytes = CheckRoundUp(
+      safemath::CheckMax(
+          ImageFormatStrideBytesPerWidthPixel(PixelFormatAndModifierFromConstraints(constraints)) *
+              width,
+          constraints_min_bytes_per_row),
+      constraints_bytes_per_row_divisor);
+  if (!minimum_row_bytes.IsValid()) {
+    return kInvalidCheckedNumeric32;
   }
-  return true;
+  if (constraints.max_bytes_per_row().has_value() &&
+      minimum_row_bytes.ValueOrDie() > constraints.max_bytes_per_row().value()) {
+    return kInvalidCheckedNumeric32;
+  }
+  return minimum_row_bytes;
 }
 
 bool linear_is_single_plane(fuchsia_images2::PixelFormat pixel_format) {
@@ -775,23 +828,22 @@ class LinearFormats : public ImageFormatSet {
     return false;
   }
 
-  uint64_t ImageFormatImageSize(const ImageFormat& image_format) const override {
+  CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
     ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
     ZX_DEBUG_ASSERT(image_format.size().has_value());
     ZX_DEBUG_ASSERT(image_format.bytes_per_row().has_value());
-    uint32_t surface_height = image_format.size()->height();
-    uint32_t bytes_per_row =
+    CheckedNumeric<uint32_t> surface_height = image_format.size()->height();
+    CheckedNumeric<uint32_t> bytes_per_row =
         image_format.bytes_per_row().has_value() ? image_format.bytes_per_row().value() : 0;
     return linear_size(surface_height, bytes_per_row, pixel_format_and_modifier.pixel_format);
   }
 
-  bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
-                                  uint64_t* offset_out) const override {
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                      uint32_t plane) const override {
     if (plane == 0) {
-      *offset_out = 0;
-      return true;
+      return 0;
     }
     if (plane == 1) {
       switch (image_format.pixel_format().value()) {
@@ -799,68 +851,64 @@ class LinearFormats : public ImageFormatSet {
         case PixelFormat::kNv12:
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
-          *offset_out = CheckMul(static_cast<uint64_t>(image_format.size().value().height()),
-                                 image_format.bytes_per_row().value())
-                            .ValueOrDie();
-          return true;
+          return MakeCheckedNum<uint64_t>(image_format.size().value().height()) *
+                 image_format.bytes_per_row().value();
         }
         default:
-          return false;
+          return kInvalidCheckedNumeric64;
       }
     }
     if (plane == 2) {
       switch (image_format.pixel_format().value()) {
         case PixelFormat::kI420:
         case PixelFormat::kYv12: {
-          auto luma_bytes = CheckMul(static_cast<uint64_t>(image_format.size().value().height()),
-                                     image_format.bytes_per_row().value());
-          auto one_chroma_plane_bytes =
-              CheckMul(CheckDiv(static_cast<uint64_t>(image_format.size().value().height()), 2),
-                       CheckDiv(image_format.bytes_per_row().value(), 2));
-          auto offset_just_past_luma_and_one_chroma = CheckAdd(luma_bytes, one_chroma_plane_bytes);
+          CheckedNumeric<uint64_t> luma_bytes =
+              MakeCheckedNum<uint64_t>(image_format.size().value().height()) *
+              image_format.bytes_per_row().value();
+          CheckedNumeric<uint64_t> one_chroma_plane_bytes =
+              (MakeCheckedNum<uint64_t>(image_format.size().value().height()) / 2) *
+              (MakeCheckedNum<uint64_t>(image_format.bytes_per_row().value()) / 2);
+          CheckedNumeric<uint64_t> offset_just_past_luma_and_one_chroma =
+              luma_bytes + one_chroma_plane_bytes;
           // 2nd chroma plane is just past luma and 1st chroma plane
-          *offset_out = offset_just_past_luma_and_one_chroma.ValueOrDie();
-          return true;
+          return offset_just_past_luma_and_one_chroma;
         }
         default:
-          return false;
+          return kInvalidCheckedNumeric64;
       }
     }
 
-    return false;
+    // invalid plane param value
+    return kInvalidCheckedNumeric64;
   }
 
-  bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
-                                uint32_t* row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                    uint32_t plane) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     if (plane == 0) {
-      *row_bytes_out = image_format.bytes_per_row().value();
-      return true;
+      return image_format.bytes_per_row().value();
     }
     if (plane == 1) {
       switch (pixel_format_and_modifier.pixel_format) {
         case PixelFormat::kNv12:
         case PixelFormat::kP010:
-          *row_bytes_out = image_format.bytes_per_row().value();
-          return true;
+          return image_format.bytes_per_row().value();
         case PixelFormat::kI420:
         case PixelFormat::kYv12:
-          *row_bytes_out = image_format.bytes_per_row().value() / 2;
-          return true;
+          return MakeCheckedNum(image_format.bytes_per_row().value()) / 2;
         default:
-          return false;
+          return kInvalidCheckedNumeric32;
       }
     } else if (plane == 2) {
       switch (pixel_format_and_modifier.pixel_format) {
         case PixelFormat::kI420:
         case PixelFormat::kYv12:
-          *row_bytes_out = image_format.bytes_per_row().value() / 2;
-          return true;
+          return MakeCheckedNum(image_format.bytes_per_row().value()) / 2;
         default:
-          return false;
+          return kInvalidCheckedNumeric32;
       }
     }
-    return false;
+    return kInvalidCheckedNumeric32;
   }
 
   bool ImageFormatIsNonTiledSinglePlane(
@@ -868,9 +916,10 @@ class LinearFormats : public ImageFormatSet {
     return linear_is_single_plane(pixel_format_and_modifier.pixel_format);
   }
 
-  bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                                  uint32_t width, uint32_t* minimum_row_bytes_out) const override {
-    return linear_minimum_row_bytes(constraints, width, minimum_row_bytes_out);
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
+    return linear_minimum_row_bytes(constraints, width);
   }
 };
 
@@ -888,42 +937,41 @@ class GoldfishFormats : public ImageFormatSet {
         return false;
     }
   }
-  uint64_t ImageFormatImageSize(const ImageFormat& image_format) const override {
+  CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
     ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
     ZX_DEBUG_ASSERT(image_format.size().has_value());
     ZX_DEBUG_ASSERT(image_format.bytes_per_row().has_value());
 
-    uint32_t surface_height = image_format.size()->height();
-    uint32_t bytes_per_row = image_format.bytes_per_row().value();
+    CheckedNumeric<uint32_t> surface_height = image_format.size()->height();
+    CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
     return linear_size(surface_height, bytes_per_row, image_format.pixel_format().value());
   }
-  bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
-                                  uint64_t* offset_out) const override {
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
+                                                      uint32_t plane) const override {
     ZX_DEBUG_ASSERT(IsSupported(PixelFormatAndModifier(
         image_format.pixel_format().value(), image_format.pixel_format_modifier().value())));
     if (plane == 0) {
-      *offset_out = 0;
-      return true;
+      return 0;
     }
-    return false;
+    return kInvalidCheckedNumeric64;
   }
-  bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
-                                uint32_t* row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(const ImageFormat& image_format,
+                                                    uint32_t plane) const override {
     if (plane == 0) {
-      *row_bytes_out = image_format.bytes_per_row().value();
-      return true;
+      return image_format.bytes_per_row().value();
     }
-    return false;
+    return kInvalidCheckedNumeric32;
   }
   bool ImageFormatIsNonTiledSinglePlane(
       const PixelFormatAndModifier& pixel_format_and_modifier) const override {
     return false;
   }
-  bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                                  uint32_t width, uint32_t* minimum_row_bytes_out) const override {
-    return false;
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
+    return kInvalidCheckedNumeric32;
   }
 };
 
@@ -966,50 +1014,49 @@ class ArmTELinearFormats : public ImageFormatSet {
     return false;
   }
 
-  uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format) const override {
+  CheckedNumeric<uint64_t> ImageFormatImageSize(
+      const fuchsia_images2::ImageFormat& image_format) const override {
     auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
     ZX_DEBUG_ASSERT(IsSupported(pixel_format_and_modifier));
     ZX_DEBUG_ASSERT(image_format.size().has_value());
     ZX_DEBUG_ASSERT(image_format.bytes_per_row().has_value());
-    uint32_t bytes_per_row = image_format.bytes_per_row().value();
-    uint64_t size = linear_size(image_format.size()->height(), bytes_per_row,
-                                pixel_format_and_modifier.pixel_format);
-    uint64_t crc_size = arm_transaction_elimination_buffer_size(size, image_format.size()->width(),
-                                                                image_format.size()->height());
+    CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
+    CheckedNumeric<uint64_t> size = linear_size(image_format.size()->height(), bytes_per_row,
+                                                pixel_format_and_modifier.pixel_format);
+    CheckedNumeric<uint64_t> crc_size = arm_transaction_elimination_buffer_size(
+        size, image_format.size()->width(), image_format.size()->height());
     return size + crc_size;
   }
 
-  bool ImageFormatPlaneByteOffset(const fuchsia_images2::ImageFormat& image_format, uint32_t plane,
-                                  uint64_t* offset_out) const override {
+  CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(
+      const fuchsia_images2::ImageFormat& image_format, uint32_t plane) const override {
     if (plane < kTransactionEliminationPlane) {
-      return kLinearFormats.ImageFormatPlaneByteOffset(image_format, plane, offset_out);
+      return kLinearFormats.ImageFormatPlaneByteOffset(image_format, plane);
     }
     if (plane == kTransactionEliminationPlane) {
       ZX_DEBUG_ASSERT(image_format.size().has_value());
       ZX_DEBUG_ASSERT(image_format.bytes_per_row().has_value());
-      uint32_t bytes_per_row = image_format.bytes_per_row().value();
-      uint64_t size = linear_size(image_format.size()->height(), bytes_per_row,
-                                  image_format.pixel_format().value());
-      *offset_out = fbl::round_up(size, 64u);
-      return true;
+      CheckedNumeric<uint32_t> bytes_per_row = image_format.bytes_per_row().value();
+      CheckedNumeric<uint64_t> size = linear_size(image_format.size()->height(), bytes_per_row,
+                                                  image_format.pixel_format().value());
+      return CheckRoundUp(size, MakeCheckedNum<uint64_t>(64));
     }
 
-    return false;
+    return kInvalidCheckedNumeric64;
   }
 
-  bool ImageFormatPlaneRowBytes(const fuchsia_images2::ImageFormat& image_format, uint32_t plane,
-                                uint32_t* row_bytes_out) const override {
+  CheckedNumeric<uint32_t> ImageFormatPlaneRowBytes(
+      const fuchsia_images2::ImageFormat& image_format, uint32_t plane) const override {
     if (plane < kTransactionEliminationPlane) {
-      return kLinearFormats.ImageFormatPlaneRowBytes(image_format, plane, row_bytes_out);
+      return kLinearFormats.ImageFormatPlaneRowBytes(image_format, plane);
     }
     if (plane == kTransactionEliminationPlane) {
       if (!image_format.size().has_value()) {
-        return false;
+        return kInvalidCheckedNumeric32;
       }
-      *row_bytes_out = arm_transaction_elimination_row_size(image_format.size()->width());
-      return true;
+      return arm_transaction_elimination_row_size(image_format.size()->width());
     }
-    return false;
+    return kInvalidCheckedNumeric32;
   }
 
   bool ImageFormatIsNonTiledSinglePlane(
@@ -1018,9 +1065,10 @@ class ArmTELinearFormats : public ImageFormatSet {
     return false;
   }
 
-  bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
-                                  uint32_t width, uint32_t* minimum_row_bytes_out) const override {
-    return linear_minimum_row_bytes(constraints, width, minimum_row_bytes_out);
+  CheckedNumeric<uint32_t> ImageFormatMinimumRowBytes(
+      const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+      CheckedNumeric<uint32_t> width) const override {
+    return linear_minimum_row_bytes(constraints, width);
   }
 };
 
@@ -1034,8 +1082,6 @@ constexpr const ImageFormatSet* kImageFormats[] = {
 };
 
 }  // namespace
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatIsPixelFormatEqual(const PixelFormatAndModifier& a,
                                    const PixelFormatAndModifier& b) {
@@ -1104,16 +1150,12 @@ bool ImageFormatIsSupportedColorSpaceForPixelFormat(
   return ImageFormatIsSupportedColorSpaceForPixelFormat(color_space_v2, pixel_format_v2);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
-
 bool ImageFormatIsSupported(const PixelFormatAndModifier& pixel_format) {
   return std::any_of(std::begin(kImageFormats), std::end(kImageFormats),
                      [pixel_format](const ImageFormatSet* format_set) {
                        return format_set->IsSupported(pixel_format);
                      });
 }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatIsSupported(const fuchsia_sysmem::wire::PixelFormat& wire_pixel_format_v1) {
   auto pixel_format_v1 = fidl::ToNatural(wire_pixel_format_v1);
@@ -1174,8 +1216,6 @@ uint32_t ImageFormatBitsPerPixel(const fuchsia_sysmem::wire::PixelFormat& wire_p
   return ImageFormatBitsPerPixel(pixel_format_v2);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
-
 uint32_t ImageFormatStrideBytesPerWidthPixel(const PixelFormatAndModifier& pixel_format) {
   ZX_DEBUG_ASSERT(ImageFormatIsSupported(pixel_format));
   // This list should match the one in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
@@ -1228,8 +1268,6 @@ uint32_t ImageFormatStrideBytesPerWidthPixel(const PixelFormatAndModifier& pixel
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
-
 uint32_t ImageFormatStrideBytesPerWidthPixel(
     const fuchsia_sysmem::wire::PixelFormat& wire_pixel_format_v1) {
   auto pixel_format_v1 = fidl::ToNatural(wire_pixel_format_v1);
@@ -1237,7 +1275,10 @@ uint32_t ImageFormatStrideBytesPerWidthPixel(
   return ImageFormatStrideBytesPerWidthPixel(pixel_format_v2);
 }
 
-uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format) {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
+    const fuchsia_images2::ImageFormat& image_format) {
   ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
   auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
   for (auto format_set : kImageFormats) {
@@ -1247,7 +1288,37 @@ uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format) 
   }
   ZX_PANIC("Unknown Pixel Format: %u",
            sysmem::fidl_underlying_cast(image_format.pixel_format().value()));
-  return 0;
+}
+
+safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
+    const fuchsia_images2::wire::ImageFormat& image_format) {
+  return ImageFormatImageSizeChecked(fidl::ToNatural(image_format));
+}
+
+safemath::CheckedNumeric<uint64_t> ImageFormatImageSizeChecked(
+    const fuchsia_sysmem::wire::ImageFormat2& wire_image_format_v1) {
+  auto image_format_v1 = fidl::ToNatural(wire_image_format_v1);
+  auto image_format_v2 = sysmem::V2CopyFromV1ImageFormat(image_format_v1).take_value();
+  return ImageFormatImageSizeChecked(image_format_v2);
+}
+
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+uint64_t ImageFormatImageSize(const fuchsia_images2::ImageFormat& image_format) {
+  ZX_DEBUG_ASSERT(image_format.pixel_format().has_value());
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+  for (auto format_set : kImageFormats) {
+    if (format_set->IsSupported(pixel_format_and_modifier)) {
+      CheckedNumeric<uint64_t> size = format_set->ImageFormatImageSize(image_format);
+      if (!size.IsValid()) {
+        // Switch to ImageFormatImageSizeChecked instead.
+        ZX_PANIC("!size.IsValid()");
+      }
+      return size.ValueOrDie();
+    }
+  }
+  ZX_PANIC("Unknown Pixel Format: %u",
+           sysmem::fidl_underlying_cast(image_format.pixel_format().value()));
 }
 
 uint64_t ImageFormatImageSize(const fuchsia_images2::wire::ImageFormat& image_format) {
@@ -1433,7 +1504,43 @@ uint32_t ImageFormatSampleAlignment(const fuchsia_sysmem::wire::PixelFormat& wir
   return ImageFormatSampleAlignment(pixel_format_v2);
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
+// This is not under FUCHSIA_API_LEVEL_AT_LEAST(NEXT) due to being used by ImageConstraintsToFormat
+// which is available in prior API levels.
+safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
+    const fuchsia_sysmem2::ImageFormatConstraints& constraints,
+    safemath::CheckedNumeric<uint32_t> width) {
+  if (!width.IsValid()) {
+    return kInvalidCheckedNumeric32;
+  }
+  // Caller must set pixel_format.
+  ZX_DEBUG_ASSERT(constraints.pixel_format().has_value());
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
+  for (auto& format_set : kImageFormats) {
+    if (format_set->IsSupported(pixel_format_and_modifier)) {
+      return format_set->ImageFormatMinimumRowBytes(constraints, width);
+    }
+  }
+  return kInvalidCheckedNumeric32;
+}
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
+    const fuchsia_sysmem2::wire::ImageFormatConstraints& wire_constraints,
+    safemath::CheckedNumeric<uint32_t> width) {
+  return ImageFormatMinimumRowBytesChecked(fidl::ToNatural(wire_constraints), width);
+}
+
+safemath::CheckedNumeric<uint32_t> ImageFormatMinimumRowBytesChecked(
+    const fuchsia_sysmem::wire::ImageFormatConstraints& constraints,
+    safemath::CheckedNumeric<uint32_t> width) {
+  auto image_format_constraints_v1 = fidl::ToNatural(constraints);
+  auto image_format_constraints_v2 =
+      sysmem::V2CopyFromV1ImageFormatConstraints(image_format_constraints_v1).take_value();
+  return ImageFormatMinimumRowBytesChecked(image_format_constraints_v2, width);
+}
+
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 
 bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& constraints,
                                 uint32_t width, uint32_t* minimum_row_bytes_out) {
@@ -1444,16 +1551,18 @@ bool ImageFormatMinimumRowBytes(const fuchsia_sysmem2::ImageFormatConstraints& c
   auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
   for (auto& format_set : kImageFormats) {
     if (format_set->IsSupported(pixel_format_and_modifier)) {
-      bool result =
-          format_set->ImageFormatMinimumRowBytes(constraints, width, minimum_row_bytes_out);
-      ZX_ASSERT(!result || *minimum_row_bytes_out != 0);
-      return result;
+      CheckedNumeric<uint32_t> minimum_row_bytes =
+          format_set->ImageFormatMinimumRowBytes(constraints, width);
+      ZX_ASSERT(!minimum_row_bytes.IsValid() || minimum_row_bytes.ValueOrDie() != 0);
+      if (!minimum_row_bytes.IsValid()) {
+        return false;
+      }
+      *minimum_row_bytes_out = minimum_row_bytes.ValueOrDie();
+      return true;
     }
   }
   return false;
 }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatMinimumRowBytes(
     const fuchsia_sysmem2::wire::ImageFormatConstraints& wire_constraints, uint32_t width,
@@ -1509,8 +1618,6 @@ fpromise::result<fuchsia_images2::wire::PixelFormat> ImageFormatConvertZbiToSysm
   }
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
-
 fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstraints& constraints,
                                                        uint32_t width, uint32_t height) {
   if ((constraints.min_size().has_value() && width < constraints.min_size()->width()) ||
@@ -1530,12 +1637,13 @@ fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstrai
     }
   }
   ImageFormat result;
-  uint32_t minimum_row_bytes;
-  if (!ImageFormatMinimumRowBytes(constraints, width, &minimum_row_bytes)) {
+  CheckedNumeric<uint32_t> minimum_row_bytes =
+      ImageFormatMinimumRowBytesChecked(constraints, width);
+  if (!minimum_row_bytes.IsValid()) {
     return fpromise::error();
   }
-  ZX_ASSERT(minimum_row_bytes != 0);
-  result.bytes_per_row() = minimum_row_bytes;
+  ZX_ASSERT(minimum_row_bytes.ValueOrDie() != 0);
+  result.bytes_per_row() = minimum_row_bytes.ValueOrDie();
   result.pixel_format() = constraints.pixel_format().value();
   result.pixel_format_modifier() = constraints.pixel_format_modifier().value();
   result.size() = {width, height};
@@ -1549,7 +1657,6 @@ fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstrai
   return fpromise::ok(std::move(result));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 fpromise::result<ImageFormatWire> ImageConstraintsToFormat(
     fidl::AnyArena& allocator, const ImageFormatConstraintsWire& wire_constraints, uint32_t width,
     uint32_t height) {
@@ -1560,7 +1667,6 @@ fpromise::result<ImageFormatWire> ImageConstraintsToFormat(
   }
   return fpromise::ok(fidl::ToWire(allocator, result.take_value()));
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 fpromise::result<fuchsia_sysmem::wire::ImageFormat2> ImageConstraintsToFormat(
     const fuchsia_sysmem::wire::ImageFormatConstraints& wire_image_format_constraints_v1,
@@ -1588,24 +1694,59 @@ fpromise::result<fuchsia_sysmem::wire::ImageFormat2> ImageConstraintsToFormat(
   return fpromise::ok(wire_v1);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
+    const fuchsia_images2::ImageFormat& image_format, uint32_t plane) {
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+  for (auto& format_set : kImageFormats) {
+    if (format_set->IsSupported(pixel_format_and_modifier)) {
+      return format_set->ImageFormatPlaneByteOffset(image_format, plane);
+    }
+  }
+  return kInvalidCheckedNumeric64;
+}
+
+safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
+    const fuchsia_images2::wire::ImageFormat& image_format, uint32_t plane) {
+  return ImageFormatPlaneByteOffsetChecked(fidl::ToNatural(image_format), plane);
+}
+
+safemath::CheckedNumeric<uint64_t> ImageFormatPlaneByteOffsetChecked(
+    const fuchsia_sysmem::wire::ImageFormat2& image_format, uint32_t plane) {
+  auto image_format_v1 = fidl::ToNatural(image_format);
+  auto image_format_v2_result = sysmem::V2CopyFromV1ImageFormat(image_format_v1);
+  if (!image_format_v2_result.is_ok()) {
+    return kInvalidCheckedNumeric64;
+  }
+  auto image_format_v2 = image_format_v2_result.take_value();
+  return ImageFormatPlaneByteOffsetChecked(image_format_v2, plane);
+}
+
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
 bool ImageFormatPlaneByteOffset(const ImageFormat& image_format, uint32_t plane,
                                 uint64_t* offset_out) {
   ZX_DEBUG_ASSERT(offset_out);
   auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
   for (auto& format_set : kImageFormats) {
     if (format_set->IsSupported(pixel_format_and_modifier)) {
-      return format_set->ImageFormatPlaneByteOffset(image_format, plane, offset_out);
+      safemath::CheckedNumeric<uint64_t> plane_offset =
+          format_set->ImageFormatPlaneByteOffset(image_format, plane);
+      if (!plane_offset.IsValid()) {
+        return false;
+      }
+      *offset_out = plane_offset.ValueOrDie();
+      return true;
     }
   }
   return false;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 bool ImageFormatPlaneByteOffset(const ImageFormatWire& image_format, uint32_t plane,
                                 uint64_t* offset_out) {
   return ImageFormatPlaneByteOffset(fidl::ToNatural(image_format), plane, offset_out);
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatPlaneByteOffset(const fuchsia_sysmem::wire::ImageFormat2& wire_image_format_v1,
                                 uint32_t plane, uint64_t* offset_out) {
@@ -1619,24 +1760,59 @@ bool ImageFormatPlaneByteOffset(const fuchsia_sysmem::wire::ImageFormat2& wire_i
   return ImageFormatPlaneByteOffset(image_format_v2, plane, offset_out);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
+    const fuchsia_images2::ImageFormat& image_format, uint32_t plane) {
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+  for (auto& format_set : kImageFormats) {
+    if (format_set->IsSupported(pixel_format_and_modifier)) {
+      return format_set->ImageFormatPlaneRowBytes(image_format, plane);
+    }
+  }
+  return kInvalidCheckedNumeric32;
+}
+
+safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
+    const fuchsia_images2::wire::ImageFormat& image_format, uint32_t plane) {
+  return ImageFormatPlaneRowBytesChecked(fidl::ToNatural(image_format), plane);
+}
+
+safemath::CheckedNumeric<uint32_t> ImageFormatPlaneRowBytesChecked(
+    const fuchsia_sysmem::wire::ImageFormat2& image_format, uint32_t plane) {
+  auto image_format_v1 = fidl::ToNatural(image_format);
+  auto image_format_v2_result = sysmem::V2CopyFromV1ImageFormat(image_format_v1);
+  if (!image_format_v2_result.is_ok()) {
+    return kInvalidCheckedNumeric32;
+  }
+  auto image_format_v2 = image_format_v2_result.take_value();
+  return ImageFormatPlaneRowBytesChecked(image_format_v2, plane);
+}
+
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
 bool ImageFormatPlaneRowBytes(const ImageFormat& image_format, uint32_t plane,
                               uint32_t* row_bytes_out) {
   ZX_DEBUG_ASSERT(row_bytes_out);
   auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
   for (auto& format_set : kImageFormats) {
     if (format_set->IsSupported(pixel_format_and_modifier)) {
-      return format_set->ImageFormatPlaneRowBytes(image_format, plane, row_bytes_out);
+      safemath::CheckedNumeric<uint32_t> plane_row_bytes =
+          format_set->ImageFormatPlaneRowBytes(image_format, plane);
+      if (!plane_row_bytes.IsValid()) {
+        return false;
+      }
+      *row_bytes_out = plane_row_bytes.ValueOrDie();
+      return true;
     }
   }
   return false;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 bool ImageFormatPlaneRowBytes(const ImageFormatWire& wire_image_format, uint32_t plane,
                               uint32_t* row_bytes_out) {
   return ImageFormatPlaneRowBytes(fidl::ToNatural(wire_image_format), plane, row_bytes_out);
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatPlaneRowBytes(const fuchsia_sysmem::wire::ImageFormat2& wire_image_format_v1,
                               uint32_t plane, uint32_t* row_bytes_out) {
@@ -1649,8 +1825,6 @@ bool ImageFormatPlaneRowBytes(const fuchsia_sysmem::wire::ImageFormat2& wire_ima
   auto image_format_v2 = image_format_v2_result.take_value();
   return ImageFormatPlaneRowBytes(image_format_v2, plane, row_bytes_out);
 }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 bool ImageFormatCompatibleWithProtectedMemory(const PixelFormatAndModifier& pixel_format) {
   // AKA kFormatModifierLinear
@@ -1678,8 +1852,6 @@ bool ImageFormatCompatibleWithProtectedMemory(
   auto pixel_format_v2 = sysmem::V2CopyFromV1PixelFormat(pixel_format_v1);
   return ImageFormatCompatibleWithProtectedMemory(pixel_format_v2);
 }
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(30)
 bool ImageFormatIsNonTiledSinglePlane(const PixelFormatAndModifier& pixel_format_and_modifier) {

@@ -17,12 +17,12 @@ zx_library("image-format") {
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
     "//zircon/system/ulib/sysmem-version",
+    "//zircon/third_party/ulib/safemath",
   ]
   deps = [
     "//sdk/lib/fidl",
     "//sdk/lib/zbi-format",
     "//zircon/system/ulib/fbl",
-    "//zircon/third_party/ulib/safemath",
   ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
