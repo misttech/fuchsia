@@ -608,16 +608,6 @@ void Scheduler::RemoveFirstThread(Thread* thread) {
 // CPUs.
 Scheduler::DequeueResult Scheduler::DequeueThread(
     SchedTime now, Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  percpu& self = percpu::Get(this_cpu_);
-  if (IdlePowerThread::PendingPowerWorkPredicate pending_work =
-          self.idle_power_thread.pending_power_work()) {
-    // If the idle power thread is in the (offline, offline) state, CPU hot plugging attempted to
-    // block before restoring the idle power thread.
-    DEBUG_ASSERT(pending_work.current() != IdlePowerThread::State::Offline ||
-                 pending_work.target() != IdlePowerThread::State::Offline);
-    return &self.idle_power_thread.thread();
-  }
-
   if (IsDeadlineThreadEligible(now)) {
     return DequeueDeadlineThread(now);
   }
@@ -641,7 +631,7 @@ Scheduler::DequeueResult Scheduler::DequeueThread(
     return result;
   }
 
-  return &self.idle_power_thread.thread();
+  return &percpu::Get(this_cpu_).idle_power_thread.thread();
 }
 
 // Attempts to steal work from other busy CPUs and move it to the local run
@@ -1119,6 +1109,19 @@ Scheduler::DequeueResult Scheduler::EvaluateNextThread(
     SchedTime now, Thread* current_thread, bool current_is_migrating,
     Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "find_thread");
+
+  // First things first.  If we have pending power work, we choose the idle-power thread.
+  {
+    percpu& self = percpu::Get(this_cpu_);
+    if (IdlePowerThread::PendingPowerWorkPredicate pending_work =
+            self.idle_power_thread.pending_power_work()) {
+      // If the idle power thread is in the (offline, offline) state, CPU hot
+      // plugging attempted to block before restoring the idle power thread.
+      DEBUG_ASSERT(pending_work.current() != IdlePowerThread::State::Offline ||
+                   pending_work.target() != IdlePowerThread::State::Offline);
+      return &self.idle_power_thread.thread();
+    }
+  }
 
   const bool is_idle = current_thread->IsIdle();
   const bool is_runnable = current_thread->state() == THREAD_READY;

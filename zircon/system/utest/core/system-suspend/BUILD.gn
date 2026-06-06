@@ -12,6 +12,7 @@ source_set("system-suspend") {
   deps = [
     "..:needs-next",
     "//src/zircon/testing/standalone-test",
+    "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

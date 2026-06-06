@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
 #include <lib/standalone-test/standalone.h>
+#include <lib/sync/completion.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
 #include <lib/zx/result.h>
@@ -207,6 +209,50 @@ TEST(SystemSuspend, ConcurrentSuspend) {
 
   for (std::thread& thread : threads) {
     thread.join();
+  }
+}
+
+// This is a regression test for https://fxbug.dev/368687980
+TEST(SystemSuspend, FailureToEnterSuspendRegressionTest) {
+  NEEDS_NEXT_SKIP(zx_system_suspend_enter);
+
+  const zx::result resource_result = GetSystemCpuResource();
+  ASSERT_OK(resource_result.status_value());
+
+  std::atomic<bool> stop = false;
+  sync_completion_t started{};
+
+  // Set up a thread who just spins.  This is the thread which (with the
+  // original bug in place) will prevent the scheduler from properly choosing
+  // the idle-power thread when secondary CPUs have been asked to suspend.
+  std::thread t1([&]() {
+    sync_completion_signal(&started);
+    while (!stop.load()) {
+      // spin until the test ends.
+    }
+  });
+
+  // No matter what happens, make sure we clean up our spinning thread as we exit.
+  auto cleanup = fit::defer([&]() {
+    stop.store(true);
+    t1.join();
+  });
+
+  // Wait until our spinning thread has started.
+  sync_completion_wait(&started, ZX_TIME_INFINITE);
+
+  for (int i = 0; i < 5; i++) {
+    const zx_instant_boot_t deadline = zx_clock_get_boot() + ZX_MSEC(100);
+    const zx_status_t suspend_result =
+        zx_system_suspend_enter(resource_result->get(), deadline, ZX_SYSTEM_SUSPEND_OPTION_DISCARD,
+                                nullptr, nullptr, 0, nullptr);
+
+    // Note; if/when this test fails, it will not return an explicit error code.
+    // Instead, it will time out attempting to transition secondary CPUs into
+    // their suspended state and report a KERNEL OOPS.  We rely on the tefmo
+    // checker seeing this OOPS in the log and declaring the test to have been a
+    // failure as a result.
+    ASSERT_EQ(ZX_OK, suspend_result);
   }
 }
 
