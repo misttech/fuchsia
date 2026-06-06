@@ -19,6 +19,7 @@ mod checker;
 mod include_checker;
 mod link_checker;
 mod md_element;
+mod mermaid_checker;
 mod parser;
 pub(crate) mod path_ext;
 mod yaml;
@@ -239,6 +240,11 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
         markdown_checks.push(c);
     }
 
+    checks = mermaid_checker::register_markdown_checks(&opt)?;
+    for c in checks {
+        markdown_checks.push(c);
+    }
+
     let mut yaml_checks = yaml::register_yaml_checks(&opt)?;
 
     let markdown_errors: Vec<DocCheckError> =
@@ -438,6 +444,11 @@ mod test {
                 10,
                 PathBuf::from("doc_checker_test_data/docs/second.md"),
                 "Cannot normalize /docs/../../missing.md, references parent beyond root.",
+            ),
+            DocCheckError::new_error(
+                28,
+                PathBuf::from("doc_checker_test_data/docs/second.md"),
+                "Invalid Mermaid diagram type 'invalid_type'. Supported types include: graph, flowchart, sequenceDiagram, pie, mindmap, timeline, etc.",
             ),
             DocCheckError::new_error(
                 1,

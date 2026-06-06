@@ -16,3 +16,18 @@ Checks for links that are nested in paragraphs of list items
   ```sh
   Some markdown [sample](https://<server>/<path>[?<query>])
   ```
+
+* A valid mermaid diagram:
+
+  ```mermaid
+  graph TD
+      A --> B
+  ```
+
+* An invalid mermaid diagram:
+
+  ```mermaid
+  invalid_type TD
+      A --> B
+  ```
+

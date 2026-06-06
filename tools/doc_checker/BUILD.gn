@@ -29,6 +29,7 @@ if (is_host) {
       "src/link_checker.rs",
       "src/main.rs",
       "src/md_element.rs",
+      "src/mermaid_checker.rs",
       "src/parser.rs",
       "src/path_ext.rs",
       "src/yaml.rs",
