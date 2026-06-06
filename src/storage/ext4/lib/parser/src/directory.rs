@@ -96,7 +96,7 @@ impl ExtDirectory {
                     let name = Name::try_from(path.next().unwrap().to_string())?;
                     current_entry = dir.clone().open_child(&name, child_flags)?;
                 }
-                ExtNode::File(_) => {
+                ExtNode::File(_) | ExtNode::Symlink(_) => {
                     return Err(Status::NOT_DIR);
                 }
             }
@@ -188,6 +188,9 @@ impl Directory for ExtDirectory {
             }
             ExtNode::File(file) => {
                 file.open_entry(OpenRequest::new(scope, flags, Path::dot(), object_request))
+            }
+            ExtNode::Symlink(symlink) => {
+                symlink.open_entry(OpenRequest::new(scope, flags, Path::dot(), object_request))
             }
         }
     }

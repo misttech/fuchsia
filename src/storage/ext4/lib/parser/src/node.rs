@@ -6,6 +6,7 @@ use vfs::directory::entry::DirectoryEntry;
 
 use crate::directory::ExtDirectory;
 use crate::file::ExtFile;
+use crate::symlink::ExtSymlink;
 use std::sync::Arc;
 
 /// Represents an ext4 filesystem node which may be either a directory or a file. This holds a
@@ -14,6 +15,7 @@ use std::sync::Arc;
 pub enum ExtNode {
     Dir(Arc<ExtDirectory>),
     File(Arc<ExtFile>),
+    Symlink(Arc<ExtSymlink>),
 }
 
 impl ExtNode {
@@ -21,6 +23,7 @@ impl ExtNode {
         match self {
             Self::Dir(dir) => dir.as_ref(),
             Self::File(file) => file.as_ref(),
+            Self::Symlink(symlink) => symlink.as_ref(),
         }
     }
 }
@@ -37,6 +40,12 @@ impl From<ExtFile> for ExtNode {
     }
 }
 
+impl From<ExtSymlink> for ExtNode {
+    fn from(value: ExtSymlink) -> Self {
+        Self::Symlink(Arc::new(value))
+    }
+}
+
 impl From<Arc<ExtDirectory>> for ExtNode {
     fn from(value: Arc<ExtDirectory>) -> Self {
         Self::Dir(value)
@@ -46,5 +55,11 @@ impl From<Arc<ExtDirectory>> for ExtNode {
 impl From<Arc<ExtFile>> for ExtNode {
     fn from(value: Arc<ExtFile>) -> Self {
         Self::File(value)
+    }
+}
+
+impl From<Arc<ExtSymlink>> for ExtNode {
+    fn from(value: Arc<ExtSymlink>) -> Self {
+        Self::Symlink(value)
     }
 }

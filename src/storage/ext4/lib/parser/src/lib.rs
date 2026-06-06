@@ -4,6 +4,7 @@
 
 use crate::directory::ExtDirectory;
 use crate::file::ExtFile;
+use crate::symlink::ExtSymlink;
 use crate::types::ExtAttributes;
 use ext4_lib::processor::Ext4Processor;
 use ext4_lib::readers::{BlockDeviceReader, ReaderWriter, VmoReader};
@@ -16,6 +17,7 @@ use std::sync::Arc;
 mod directory;
 mod file;
 mod node;
+mod symlink;
 mod types;
 
 pub enum FsSourceType {
@@ -99,6 +101,14 @@ fn build_fs_dir(
                 )
                 .map_err(ConstructFsError::NodeError)?;
             }
+            EntryType::SymLink => {
+                dir.insert_child(
+                    entry_name,
+                    ExtSymlink::from_processor(processor.clone(), entry_ino)
+                        .map_err(ConstructFsError::NodeError)?,
+                )
+                .map_err(ConstructFsError::NodeError)?;
+            }
             _ => {
                 // TODO(https://fxbug.dev/42073143): Handle other types.
             }
@@ -110,14 +120,16 @@ fn build_fs_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::{FsSourceType, construct_fs};
+    use super::{ExtAttributes, ExtDirectory, ExtSymlink, FsSourceType, construct_fs};
 
+    use ext4_lib::parser::XattrMap;
     use ext4_lib::structs::MIN_EXT4_SIZE;
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_storage_block as fblock;
     use fuchsia_async as fasync;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
     use fuchsia_fs::file::{WriteError, read_to_string, write};
+    use futures::stream::StreamExt as _;
     use std::fs;
     use std::sync::Arc;
     use test_vmo_backed_block_server::VmoBackedServer;
@@ -688,6 +700,105 @@ mod tests {
         assert_eq!(read_to_string(&file).await.expect("read failed"), new_content);
 
         file.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_symlink() {
+        let root_dir = ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default());
+        let symlink_target = b"target/path";
+        let symlink_node = ExtSymlink::new(
+            2,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            symlink_target.to_vec(),
+        );
+
+        root_dir.insert_child("my_symlink", symlink_node).unwrap();
+
+        let root = vfs::directory::serve(
+            root_dir,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        // Verify readdir lists the symlink with DirentKind::Symlink
+        let expected =
+            vec![DirEntry { name: String::from("my_symlink"), kind: DirentKind::Symlink }];
+        assert_eq!(readdir(&root).await.unwrap(), expected);
+
+        // Verify we can open the symlink and read its target
+        let (symlink_proxy, server_end) = fidl::endpoints::create_proxy::<fio::SymlinkMarker>();
+        root.open(
+            "my_symlink",
+            fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+            &fio::Options::default(),
+            server_end.into_channel().into(),
+        )
+        .expect("open symlink failed");
+
+        let target_bytes = symlink_proxy.describe().await.expect("describe failed").target.unwrap();
+        assert_eq!(target_bytes, symlink_target);
+
+        // Verify that trying to traverse through the symlink fails with
+        // NOT_DIR.
+        let (node_proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
+        root.open(
+            "my_symlink/child",
+            fio::Flags::empty(),
+            &fio::Options::default(),
+            server_end.into_channel().into(),
+        )
+        .expect("open path through symlink failed");
+
+        let mut event_stream = node_proxy.take_event_stream();
+        let event = event_stream.next().await.unwrap().expect_err("expected closed channel error");
+        match event {
+            fidl::Error::ClientChannelClosed { status, .. } => assert_eq!(status, Status::NOT_DIR),
+            other => panic!("Unexpected event error: {:?}", other),
+        }
+
+        symlink_proxy.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+        root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_symlink_from_image() {
+        let data = fs::read("/pkg/data/symlink.img").expect("Unable to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("VMO is created");
+        vmo.write(data.as_slice(), 0).expect("VMO write() succeeds");
+        let buffer = FsSourceType::Vmo(vmo);
+
+        let tree = construct_fs(buffer, true, &fuchsia_inspect::Inspector::default())
+            .expect("construct_fs parses the vmo");
+        let root = vfs::directory::serve(
+            tree,
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        let expected = vec![
+            DirEntry { name: String::from("file1"), kind: DirentKind::File },
+            DirEntry { name: String::from("lost+found"), kind: DirentKind::Directory },
+            DirEntry { name: String::from("symlink1"), kind: DirentKind::Symlink },
+        ];
+        let mut actual = readdir(&root).await.unwrap();
+        actual.sort_by_key(|e| e.name.clone());
+        assert_eq!(actual, expected);
+
+        let (symlink_proxy, server_end) = fidl::endpoints::create_proxy::<fio::SymlinkMarker>();
+        root.open(
+            "symlink1",
+            fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+            &fio::Options::default(),
+            server_end.into_channel().into(),
+        )
+        .expect("open symlink failed");
+
+        let target_bytes = symlink_proxy.describe().await.expect("describe failed").target.unwrap();
+        assert_eq!(target_bytes, b"file1");
+
+        symlink_proxy.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
         root.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
     }
 }

@@ -118,3 +118,25 @@ Test that we can read extended attributes, both from the inode and a separate bl
 │   └── file2
 └── lost+found/
 ```
+
+## symlink.img
+
+Test that we can parse symbolic links from a real ext4 image.
+
+### Properties
+
+* `1 KiB` Block Size
+* Single block group
+
+#### Flags
+
+* 32 bit
+
+### Directory Tree
+
+```
+/
+├── file1
+├── symlink1 -> file1
+└── lost+found/
+```
