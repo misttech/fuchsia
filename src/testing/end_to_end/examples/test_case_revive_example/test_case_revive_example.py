@@ -36,7 +36,7 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             "This should run in normal Mobly but not run in 'revived' mode"
         )
 
-    def test_firmware_version(self) -> None:
+    async def test_firmware_version(self) -> None:
         """This test can be run as a normal or revived test.
 
         If built without `params.test_case_revive = true` it will run normally once.
@@ -53,7 +53,7 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             _LOGGER.info(
                 "%s is running on %s firmware",
                 fuchsia_device.device_name,
-                fuchsia_device.firmware_version,
+                await fuchsia_device.firmware_version(),
             )
 
     @tag_test(
