@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:226
+From //build/bazel/bazel_root_targets_list.gni:228
 
 ### bazel_upload_build_events
 
@@ -426,9 +426,9 @@ From //src/storage/blobfs/bin/BUILD.gn:20
 
 ### blobfs_page_in_metrics_recording
 
-Set this to true when configuring gn args to enable blobfs page-in metrics recording. This will
-also increase the inspect VMO size for blobfs to 2 MiB, to accommodate the large number of
-metrics entries.
+Set this to true when configuring gn args to enable blobfs page-in metrics
+recording. This will also increase the inspect VMO size for blobfs to 2 MiB,
+to accommodate the large number of metrics entries.
 
 **Current value (from the default):** `false`
 
@@ -1015,12 +1015,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2154,12 +2154,14 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
   ninja = "rfcmeta"
 }]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/debug/covargs:covargs"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
   ninja = "covargs"
 }]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/debug/symbolize:symbolize"
   copy_outputs = [{
@@ -4107,7 +4109,7 @@ From //third_party/perfetto/gn/perfetto.gni:390
 
 **Current value (from the default):** `false`
 
-From //src/power/power-manager/BUILD.gn:129
+From //src/power/power-manager/BUILD.gn:130
 
 ### enable_rseq_backend_for_rcu
 
@@ -5071,13 +5073,14 @@ From //build/rust/rust_auxiliary_args.gni:22
 
 ### include_zxdb_large_tests
 
-Normally these tests are not built and run because they require large amounts of optional data
-be downloaded. Set this to true to enable the build for the zxdb_large_tests.
-See symbols/test_data/README.md for how to download the data required for this test.
+Normally these tests are not built and run because they require large
+amounts of optional data be downloaded. Set this to true to enable the build
+for the zxdb_large_tests. See symbols/test_data/README.md for how to
+download the data required for this test.
 
 **Current value (from the default):** `false`
 
-From //src/developer/debug/zxdb/BUILD.gn:12
+From //src/developer/debug/zxdb/BUILD.gn:13
 
 ### inet_config_enable_async_dns_sockets
 
@@ -9274,11 +9277,12 @@ From //build/config/clang/stack_clash_protection.gni:9
 
 ### starnix_enable_console_tool
 
-The console tool is intended only for developers. Disabled by default to prevent automated use.
+The console tool is intended only for developers. Disabled by default to
+prevent automated use.
 
 **Current value (from the default):** `false`
 
-From //src/developer/ffx/tools/starnix/BUILD.gn:12
+From //src/developer/ffx/tools/starnix/BUILD.gn:13
 
 ### starnix_enable_rust_backtrace
 
@@ -9964,15 +9968,16 @@ From //build/rust/build.gni:25
 
 ### vfs_rust_uses_log
 
-Set this to true to enable some additional logs in the vfs crate and have it depend on the
-log crate. This should not be enabled in general for non-host builds because it causes the vfs
-crate, which is built as a dylib, to be the source of the global logger, which can cause
-problems for things that dynamically link rust libraries (like drivers) and cause link errors
-at worst, or incorrect log attribution at best.
+Set this to true to enable some additional logs in the vfs crate and have it
+depend on the log crate. This should not be enabled in general for non-host
+builds because it causes the vfs crate, which is built as a dylib, to be the
+source of the global logger, which can cause problems for things that
+dynamically link rust libraries (like drivers) and cause link errors at
+worst, or incorrect log attribution at best.
 
 **Current value (from the default):** `false`
 
-From //src/storage/lib/vfs/rust/BUILD.gn:16
+From //src/storage/lib/vfs/rust/BUILD.gn:17
 
 ### vim3_mcu_fan_default_level
 
