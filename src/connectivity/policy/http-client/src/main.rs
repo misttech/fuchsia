@@ -5,20 +5,22 @@
 use anyhow::Context as _;
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_net_http as net_http;
+use fidl_fuchsia_pkg_http as fpkg_http;
+use fidl_fuchsia_process_lifecycle as flifecycle;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use fuchsia_component::server::{Item, ServiceFs, ServiceFsDir};
+use fuchsia_hyper as fhyper;
+use fuchsia_inspect as finspect;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::StreamExt;
 use futures::future::Either;
 use futures::prelude::*;
 use http_client_config::Config;
+use hyper::header::{AUTHORIZATION, COOKIE, HeaderName, PROXY_AUTHORIZATION, WWW_AUTHENTICATE};
 use log::{debug, error, info, trace};
 use std::str::FromStr as _;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_net_http as net_http, fidl_fuchsia_pkg_http as fpkg_http,
-    fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_hyper as fhyper,
-    fuchsia_inspect as finspect,
-};
 
 mod pkg;
 mod resuming_get;
@@ -268,32 +270,28 @@ impl Loader {
         loop {
             break match client.request(self.build_request()).await {
                 Ok(hyper_response) => {
-                    let redirect = redirect_info(&self.url, &self.method, &hyper_response);
-                    if let Some(redirect) = redirect {
-                        if let Some(url) = redirect.url {
-                            self.url = url;
-                            self.method = redirect.method;
-                            trace!(
-                                "Reporting redirect to OnResponse: {} {}",
-                                self.method, self.url
-                            );
-                            let response = to_success_response(
-                                &self.url,
-                                &self.method,
-                                hyper_response,
-                                self.scope.clone(),
-                            )
-                            .await;
-                            match loader_client.on_response(response).await {
-                                Ok(()) => {}
-                                Err(e) => {
-                                    debug!("Not redirecting because: {}", e);
-                                    break Ok(());
-                                }
-                            };
-                            trace!("Redirect allowed to {} {}", self.method, self.url);
-                            continue;
-                        }
+                    if let Some((url, method)) =
+                        handle_redirect(&self.url, &self.method, &hyper_response, &mut self.headers)
+                    {
+                        let response = to_success_response(
+                            &self.url,
+                            &self.method,
+                            hyper_response,
+                            self.scope.clone(),
+                        )
+                        .await;
+                        self.url = url;
+                        self.method = method;
+                        trace!("Reporting redirect to OnResponse: {} {}", self.method, self.url);
+                        match loader_client.on_response(response).await {
+                            Ok(()) => {}
+                            Err(e) => {
+                                debug!("Not redirecting because: {}", e);
+                                break Ok(());
+                            }
+                        };
+                        trace!("Redirect allowed to {} {}", self.method, self.url);
+                        continue;
                     }
                     let response = to_success_response(
                         &self.url,
@@ -334,15 +332,17 @@ impl Loader {
                 break match client.request(self.build_request()).await {
                     Ok(hyper_response) => {
                         if redirects != MAX_REDIRECTS {
-                            let redirect = redirect_info(&self.url, &self.method, &hyper_response);
-                            if let Some(redirect) = redirect {
-                                if let Some(url) = redirect.url {
-                                    self.url = url;
-                                    self.method = redirect.method;
-                                    trace!("Redirecting to {} {}", self.method, self.url);
-                                    redirects += 1;
-                                    continue;
-                                }
+                            if let Some((url, method)) = handle_redirect(
+                                &self.url,
+                                &self.method,
+                                &hyper_response,
+                                &mut self.headers,
+                            ) {
+                                self.url = url;
+                                self.method = method;
+                                trace!("Redirecting to {} {}", self.method, self.url);
+                                redirects += 1;
+                                continue;
                             }
                         }
                         Ok((hyper_response, self.url, self.method))
@@ -372,6 +372,42 @@ fn calculate_redirect(
         new_parts.authority = old_parts.authority;
     }
     Some(hyper::Uri::from_parts(new_parts).ok()?)
+}
+
+// A request is considered cross-origin if the scheme or the authority differs
+// between the old and new url.
+fn is_cross_origin(old_url: &hyper::Uri, new_url: &hyper::Uri) -> bool {
+    old_url.scheme() != new_url.scheme() || old_url.authority() != new_url.authority()
+}
+
+fn sensitive_headers() -> [HeaderName; 5] {
+    [
+        AUTHORIZATION,
+        COOKIE,
+        HeaderName::from_static("cookie2"),
+        PROXY_AUTHORIZATION,
+        WWW_AUTHENTICATE,
+    ]
+}
+
+fn strip_sensitive_headers(headers: &mut hyper::HeaderMap) {
+    for header in sensitive_headers() {
+        let _ = headers.remove(header);
+    }
+}
+
+fn handle_redirect(
+    old_url: &hyper::Uri,
+    method: &hyper::Method,
+    hyper_response: &hyper::Response<hyper::Body>,
+    headers: &mut hyper::HeaderMap,
+) -> Option<(hyper::Uri, hyper::Method)> {
+    let redirect = redirect_info(old_url, method, hyper_response)?;
+    let url = redirect.url?;
+    if is_cross_origin(old_url, &url) {
+        strip_sensitive_headers(headers);
+    }
+    Some((url, redirect.method))
 }
 
 async fn loader_server(
@@ -545,4 +581,119 @@ fn escrow_outgoing(
     lifecycle_control_handle
         .send_on_escrow(flifecycle::LifecycleOnEscrowRequest { outgoing_dir, ..Default::default() })
         .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::header::{CONTENT_TYPE, HeaderMap, HeaderValue, LOCATION};
+
+    #[test]
+    fn test_is_cross_origin() {
+        let origin = hyper::Uri::from_static("https://example.com/path");
+
+        // Same origin, different path = same origin
+        assert!(!is_cross_origin(&origin, &hyper::Uri::from_static("https://example.com/other")));
+
+        // Same origin, same path with query = same origin
+        assert!(!is_cross_origin(
+            &origin,
+            &hyper::Uri::from_static("https://example.com/path?foo=bar")
+        ));
+
+        // Different host = cross-origin
+        assert!(is_cross_origin(&origin, &hyper::Uri::from_static("https://test.com/path")));
+
+        // Different scheme = cross-origin
+        assert!(is_cross_origin(&origin, &hyper::Uri::from_static("http://example.com/path")));
+
+        // Different port = cross-origin
+        assert!(is_cross_origin(
+            &origin,
+            &hyper::Uri::from_static("https://example.com:8080/path")
+        ));
+    }
+
+    #[test]
+    fn test_strip_sensitive_headers() {
+        let mut headers = HeaderMap::new();
+        let (content_label, content_value) =
+            (CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        assert!(!headers.append(&content_label, content_value.clone()));
+
+        for header in sensitive_headers() {
+            assert!(!headers.append(header, HeaderValue::from_static("value")));
+        }
+
+        strip_sensitive_headers(&mut headers);
+
+        let mut expected_headers = HeaderMap::new();
+        assert!(!expected_headers.append(content_label, content_value));
+        assert_eq!(headers, expected_headers);
+    }
+
+    #[test]
+    fn test_strip_sensitive_headers_multiple_values() {
+        let mut headers = HeaderMap::new();
+        assert!(!headers.append(COOKIE, HeaderValue::from_static("session1=123"),));
+        // Append will return true and add the header value to the list of
+        // values for COOKIE.
+        assert!(headers.append(COOKIE, HeaderValue::from_static("session2=456"),));
+
+        strip_sensitive_headers(&mut headers);
+
+        assert!(!headers.contains_key(COOKIE));
+    }
+
+    fn run_redirect_test(
+        redirect_url: &'static str,
+        initial_headers: &[(hyper::header::HeaderName, &'static str)],
+        expected_url: &'static str,
+    ) -> hyper::HeaderMap {
+        let old_url = hyper::Uri::from_static("https://example.com/path");
+        let method = hyper::Method::GET;
+
+        let mut response = hyper::Response::new(hyper::Body::empty());
+        *response.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+        assert!(!response.headers_mut().append(LOCATION, HeaderValue::from_static(redirect_url),));
+
+        let mut headers = HeaderMap::new();
+        for (name, val) in initial_headers {
+            assert!(!headers.append(name, HeaderValue::from_static(val)));
+        }
+
+        let result = handle_redirect(&old_url, &method, &response, &mut headers);
+        assert_eq!(result, Some((hyper::Uri::from_static(expected_url), hyper::Method::GET)));
+        headers
+    }
+
+    #[test]
+    fn test_handle_redirect_same_origin() {
+        let (auth_key, auth_val) = (AUTHORIZATION, "Bearer token");
+        let headers = run_redirect_test(
+            "/new-path",
+            &[(auth_key.clone(), auth_val)],
+            "https://example.com/new-path",
+        );
+        // Headers must be preserved on same-origin redirect
+        assert_eq!(headers.get(&auth_key), Some(&HeaderValue::from_static(auth_val)));
+    }
+
+    #[test]
+    fn test_handle_redirect_cross_origin() {
+        let (auth_key, auth_val) = (AUTHORIZATION, "Bearer token");
+        let (content_type_key, content_type_val) = (CONTENT_TYPE, "application/json");
+        let headers = run_redirect_test(
+            "https://other.com/new-path",
+            &[(auth_key.clone(), auth_val), (content_type_key.clone(), content_type_val)],
+            "https://other.com/new-path",
+        );
+        // Authorization must be stripped on cross-origin redirect
+        assert!(!headers.contains_key(&auth_key));
+        // Content-Type must be preserved
+        assert_eq!(
+            headers.get(&content_type_key),
+            Some(&HeaderValue::from_static(content_type_val))
+        );
+    }
 }
