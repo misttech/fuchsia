@@ -25,12 +25,18 @@ if (is_host) {
     main_source = "signal_utils_test.py"
     sources = [ "signal_utils.py" ]
   }
+
+  python_host_test("ninjatrace2json_test") {
+    main_source = "ninjatrace2json_test.py"
+    sources = [ "ninjatrace2json.py" ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":main_build_test($host_toolchain)",
+    ":ninjatrace2json_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
   ]
 }

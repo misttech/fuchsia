@@ -174,11 +174,25 @@ class Tracer:
         return True
 
 
+def extract_trace_events(raw_trace: Any) -> list[JsonTrace]:
+    """Extracts a list of Chrome trace events from parsed raw trace data.
+
+    Supports both official Chrome Trace formats:
+    - JSON Array: raw_trace is a flat list of event dictionaries.
+    - JSON Object: raw_trace is a dictionary containing a 'traceEvents' key.
+    """
+    if isinstance(raw_trace, list):
+        return raw_trace
+    if isinstance(raw_trace, dict):
+        return raw_trace.get("traceEvents", [])
+    return []
+
+
 def merge_profile(profile: Path, main_build_traces: list[JsonTrace]) -> bool:
     with open(profile) as f:
-        raw_trace: dict[str, Any] = json.load(f)
+        raw_trace = json.load(f)
 
-    main_build_traces.extend(raw_trace["traceEvents"])
+    main_build_traces.extend(extract_trace_events(raw_trace))
     return True
 
 
