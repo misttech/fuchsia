@@ -229,9 +229,8 @@ inline void SchedTraceWakeup(Thread* thread, cpu_num_t target_cpu) TA_REQ(thread
   if (!current_thread->IsIdle()) {
     KTRACE_THREAD_WAKEUP(
         "kernel:sched", target_cpu, thread->fxt_ref(),
-        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()));
-    // TODO(b/513012442) Re-enable when trace_processor fixes this.
-    // ("waker", ktrace::Koid{current_thread->tid()}));
+        ("weight", thread->IsIdle() ? kIdleWeight : state.GetWeightOrPackedDeadlineParams()),
+        ("waker", ktrace::Koid{current_thread->tid()}));
   } else {
     KTRACE_THREAD_WAKEUP(
         "kernel:sched", target_cpu, thread->fxt_ref(),
