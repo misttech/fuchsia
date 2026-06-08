@@ -27,6 +27,7 @@ load(
 
 visibility([
     "//build/bazel/rules/fidl/...",
+    "//build/bazel/rules/idk/...",
     "//build/sdk/...",
 ])
 

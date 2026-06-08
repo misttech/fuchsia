@@ -22,9 +22,7 @@ load(
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
-    "get_api_file_path",
     "get_atom_visibility",
-    "get_golden_file",
     "get_idk_deps",
     "json_encode_dict_values",
     "select_for_fuchsia",
@@ -37,7 +35,7 @@ visibility([
 
 # LINT.IfChange(idk_cc_prebuilt_library)
 
-def _get_shared_library_output_name(name, output_name):
+def get_shared_library_output_name(name, output_name):
     if output_name == "":
         return name
     elif output_name == name:
@@ -45,7 +43,7 @@ def _get_shared_library_output_name(name, output_name):
     else:
         return output_name
 
-def _get_ifs_golden_file_name(output_name):
+def get_ifs_golden_file_name(output_name):
     return "lib" + output_name + ".ifs"
 
 def _idk_cc_prebuilt_library_impl(
@@ -630,7 +628,7 @@ not have a stable ABI. Can be either "none" or "static".""",
 def _idk_cc_shared_library_impl(name, **kwargs):
     _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
 
-_idk_cc_shared_library = macro(
+idk_cc_shared_library = macro(
     doc = """Defines a C++ prebuilt shared library that can be exported to an IDK.
 
 Use the `idk_cc_shared_library()` wrapper instead.
@@ -654,32 +652,10 @@ Will be appended to "lib" to generate the library file name. Must not begin with
     implementation = _idk_cc_shared_library_impl,
 )
 
-def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
-    """Defines a C++ prebuilt shared library that can be exported to an IDK.
-
-    This is a wrapper around `_idk_cc_shared_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_shared_library()` for documentation.
-    """
-    stable = True
-    output_name = _get_shared_library_output_name(name, output_name)
-
-    _idk_cc_shared_library(
-        name = name,
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        output_name = output_name,
-        ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
-        **kwargs
-    )
-
 def _idk_cc_static_library_impl(name, **kwargs):
     _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "static", **kwargs)
 
-_idk_cc_static_library = macro(
+idk_cc_static_library = macro(
     doc = """Defines a C++ prebuilt static library that can be exported to an IDK.
 
 Use the `idk_cc_static_library()` wrapper instead.
@@ -708,24 +684,6 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
     implementation = _idk_cc_static_library_impl,
 )
 
-def idk_cc_static_library(idk_name, category, api_file_path = None, **kwargs):
-    """Defines a C++ prebuilt static library that can be exported to an IDK.
-
-    This is a wrapper around `_idk_cc_static_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_static_library()` for documentation.
-    """
-    stable = True
-
-    _idk_cc_static_library(
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        **kwargs
-    )
-
 def _idk_cc_shared_library_zx_impl(
         name,
         **kwargs):
@@ -733,12 +691,12 @@ def _idk_cc_shared_library_zx_impl(
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    _idk_cc_shared_library(
+    idk_cc_shared_library(
         name = name,
         **kwargs
     )
 
-_idk_cc_shared_library_zx = macro(
+idk_cc_shared_library_zx = macro(
     doc = """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
 
 Use the `idk_cc_shared_library_zx()` wrapper instead.
@@ -758,7 +716,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = _idk_cc_shared_library,
+    inherit_attrs = idk_cc_shared_library,
     implementation = _idk_cc_shared_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -789,28 +747,6 @@ GN equivalent: `deps`.""",
     },
 )
 
-def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
-    """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
-
-    This is a wrapper around `_idk_cc_shared_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_shared_library_zx()` for documentation.
-    """
-    stable = True
-    output_name = _get_shared_library_output_name(name, output_name)
-
-    _idk_cc_shared_library_zx(
-        name = name,
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        output_name = output_name,
-        ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
-        **kwargs
-    )
-
 def _idk_cc_static_library_zx_impl(
         name,
         **kwargs):
@@ -818,12 +754,12 @@ def _idk_cc_static_library_zx_impl(
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    _idk_cc_static_library(
+    idk_cc_static_library(
         name = name,
         **kwargs
     )
 
-_idk_cc_static_library_zx = macro(
+idk_cc_static_library_zx = macro(
     doc = """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
 
 Use the `idk_cc_static_library_zx()` wrapper instead.
@@ -843,7 +779,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = _idk_cc_static_library,
+    inherit_attrs = idk_cc_static_library,
     implementation = _idk_cc_static_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -873,21 +809,3 @@ GN equivalent: `deps`.""",
         "include_base": None,
     },
 )
-
-def idk_cc_static_library_zx(idk_name, category, api_file_path = None, **kwargs):
-    """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
-
-    This is a wrapper around `_idk_cc_static_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_static_library_zx()` for documentation.
-    """
-    stable = True
-
-    _idk_cc_static_library_zx(
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        **kwargs
-    )

@@ -15,7 +15,6 @@ load(
 load(":idk_atom.bzl", "ConfigurableInfo", "idk_atom")
 load(
     ":idk_common.bzl",
-    "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
@@ -275,7 +274,7 @@ def _idk_cc_source_library_impl(
         visibility = get_atom_visibility(visibility),
     )
 
-_idk_cc_source_library = macro(
+idk_cc_source_library = macro(
     doc = """Defines a C++ source library that can be exported to an IDK.
 
 Use the `idk_cc_source_library()` wrapper instead.
@@ -446,22 +445,6 @@ GN equivalent: `api`""",
     },
 )
 
-def idk_cc_source_library(idk_name, category, stable, api_file_path = None, **kwargs):
-    """Defines a C++ source library that can be exported to an IDK.
-
-    This is a wrapper around `_idk_cc_source_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_source_library()` for documentation.
-    """
-    _idk_cc_source_library(
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        **kwargs
-    )
-
 # LINT.ThenChange(//build/cpp/sdk_source_set.gni)
 
 def _idk_cc_source_library_zx_impl(
@@ -471,12 +454,12 @@ def _idk_cc_source_library_zx_impl(
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    _idk_cc_source_library(
+    idk_cc_source_library(
         name = name,
         **kwargs
     )
 
-_idk_cc_source_library_zx = macro(
+idk_cc_source_library_zx = macro(
     doc = """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
 
 Use the `idk_cc_source_library_zx()` wrapper instead.
@@ -498,7 +481,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = _idk_cc_source_library,
+    inherit_attrs = idk_cc_source_library,
     implementation = _idk_cc_source_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -520,19 +503,3 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
         "include_base": None,
     },
 )
-
-def idk_cc_source_library_zx(idk_name, category, stable, api_file_path = None, **kwargs):
-    """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
-
-    This is a wrapper around `_idk_cc_source_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
-
-    See `_idk_cc_source_library_zx()` for documentation.
-    """
-    _idk_cc_source_library_zx(
-        idk_name = idk_name,
-        category = category,
-        stable = stable,
-        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        **kwargs
-    )
