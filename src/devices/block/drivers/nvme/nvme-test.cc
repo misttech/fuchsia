@@ -470,6 +470,7 @@ TEST_F(NvmeTest, IoPushback) {
       .vmo_offset = 0,
       .dev_offset = 0,
   };
+  ASSERT_OK(fifo->value()->fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), nullptr));
   ASSERT_OK(fifo->value()->fifo.write(sizeof(request), &request, 1, &actual_count));
   ASSERT_EQ(actual_count, 1u);
 
