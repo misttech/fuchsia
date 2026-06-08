@@ -95,9 +95,9 @@ action("invoke_fidldoc") {
 
   deps = [
     ":${_fidldoc_transforms_script_target}",
+    "//build/bazel/host:bazel_root_host_tools.fidldoc.host_tool($host_toolchain)",
     "//build/fidl:sdk_fidl",
     "//tools/fidl/fidldoc:fidldoc_copy_config($host_toolchain)",
-    "//tools/fidl/fidldoc($host_toolchain)",
   ]
 }
 

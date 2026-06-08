@@ -46,9 +46,9 @@ group("tests") {
 
 group("tools") {
   deps = [
+    "//build/bazel/host:bazel_root_host_tools.fidldoc.host_tool($host_toolchain)",
     "//src/tests/benchmarks/fidl/benchmark_suite/gen:host",
     "//tools/fidl/abi-compat:generate-reports",
-    "//tools/fidl/fidldoc",
     "//tools/fidl/platform-ir:generate-platform-ir",
   ]
 }

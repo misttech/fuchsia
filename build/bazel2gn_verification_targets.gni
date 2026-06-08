@@ -138,6 +138,7 @@ bazel2gn_verification_targets = [
   "//tools/fidl/fidl_api_summarize:verify_bazel2gn",
   "//tools/fidl/fidl_ir:verify_bazel2gn",
   "//tools/fidl/fidlc:verify_bazel2gn",
+  "//tools/fidl/fidldoc:verify_bazel2gn",
   "//tools/fidl/fidlgen_cpp/codegen:verify_bazel2gn",
   "//tools/fidl/fidlgen_cpp:verify_bazel2gn",
   "//tools/fidl/fidlgen_hlcpp/codegen:verify_bazel2gn",
