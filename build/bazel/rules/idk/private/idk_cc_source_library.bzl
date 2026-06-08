@@ -275,7 +275,7 @@ def _idk_cc_source_library_impl(
     )
 
 idk_cc_source_library = macro(
-    doc = """Defines a C++ source library that can be exported to an IDK.
+    doc = """Defines a C/C++ source library in the IDK.
 
 Use the `idk_cc_source_library()` wrapper instead.
 
@@ -460,7 +460,7 @@ def _idk_cc_source_library_zx_impl(
     )
 
 idk_cc_source_library_zx = macro(
-    doc = """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
+    doc = """Defines a C/C++ source library in the IDK and will be a `zx_library()` in GN.
 
 Use the `idk_cc_source_library_zx()` wrapper instead.
 

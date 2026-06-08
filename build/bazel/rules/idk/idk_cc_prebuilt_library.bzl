@@ -19,13 +19,21 @@ load(
     "get_golden_file",
 )
 
-def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
-    """Defines a C++ prebuilt shared library that can be exported to an IDK.
+def idk_cc_shared_library(
+        name,
+        idk_name,
+        category,
+        api_file_path = None,
+        output_name = "",
+        **kwargs):
+    """Defines a C/C++ prebuilt shared library in the IDK.
 
-    This is a wrapper around `_idk_cc_shared_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_shared_library()` in `private:idk_cc_prebuilt_library.bzl`
+    for documentation.
 
-    See `_idk_cc_shared_library()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_shared_library()` to provide a default value for `api_file_path`
+    and specify the golden file.
     """
     stable = True
     output_name = _get_shared_library_output_name(name, output_name)
@@ -41,13 +49,18 @@ def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output
         **kwargs
     )
 
-def idk_cc_static_library(idk_name, category, api_file_path = None, **kwargs):
-    """Defines a C++ prebuilt static library that can be exported to an IDK.
+def idk_cc_static_library(
+        idk_name,
+        category,
+        api_file_path = None,
+        **kwargs):
+    """Defines a C/C++ prebuilt static library in the IDK.
 
-    This is a wrapper around `_idk_cc_static_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_static_library()` in `private:idk_cc_prebuilt_library.bzl`
+    for documentation.
 
-    See `_idk_cc_static_library()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_static_library()` to provide a default value for `api_file_path`.
     """
     stable = True
 
@@ -59,13 +72,21 @@ def idk_cc_static_library(idk_name, category, api_file_path = None, **kwargs):
         **kwargs
     )
 
-def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, output_name = "", **kwargs):
-    """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
+def idk_cc_shared_library_zx(
+        name,
+        idk_name,
+        category,
+        api_file_path = None,
+        output_name = "",
+        **kwargs):
+    """Defines a C/C++ prebuilt shared library in the IDK that will be a `zx_library()` in GN.
 
-    This is a wrapper around `_idk_cc_shared_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_shared_library_zx()` in `private:idk_cc_prebuilt_library.bzl`
+    for documentation.
 
-    See `_idk_cc_shared_library_zx()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_shared_library_zx()` to provide a default value for `api_file_path`
+    and specify the golden file.
     """
     stable = True
     output_name = _get_shared_library_output_name(name, output_name)
@@ -81,13 +102,18 @@ def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, out
         **kwargs
     )
 
-def idk_cc_static_library_zx(idk_name, category, api_file_path = None, **kwargs):
-    """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
+def idk_cc_static_library_zx(
+        idk_name,
+        category,
+        api_file_path = None,
+        **kwargs):
+    """Defines a C/C++ prebuilt static library in the IDK that will be a `zx_library()` in GN.
 
-    This is a wrapper around `_idk_cc_static_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_static_library_zx()` in `private:idk_cc_prebuilt_library.bzl`
+    for documentation.
 
-    See `_idk_cc_static_library_zx()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_static_library_zx()` to provide a default value for `api_file_path`.
     """
     stable = True
 

@@ -14,13 +14,19 @@ load(
     "get_api_file_path",
 )
 
-def idk_cc_source_library(idk_name, category, stable, api_file_path = None, **kwargs):
-    """Defines a C++ source library that can be exported to an IDK.
+def idk_cc_source_library(
+        idk_name,
+        category,
+        stable,
+        api_file_path = None,
+        **kwargs):
+    """Defines a C/C++ source library in the IDK.
 
-    This is a wrapper around `_idk_cc_source_library()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_source_library()` in `private:idk_cc_source_library.bzl`
+    for documentation.
 
-    See `_idk_cc_source_library()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_source_library()` to provide a default value for `api_file_path`.
     """
     _idk_cc_source_library(
         idk_name = idk_name,
@@ -30,13 +36,19 @@ def idk_cc_source_library(idk_name, category, stable, api_file_path = None, **kw
         **kwargs
     )
 
-def idk_cc_source_library_zx(idk_name, category, stable, api_file_path = None, **kwargs):
-    """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
+def idk_cc_source_library_zx(
+        idk_name,
+        category,
+        stable,
+        api_file_path = None,
+        **kwargs):
+    """Defines a C/C++ source library in the IDK that will be a `zx_library()` in GN.
 
-    This is a wrapper around `_idk_cc_source_library_zx()` that supports a
-    default value for `api_file_path` and sets the allowlist.
+    See `idk_cc_source_library_zx()` in `private:idk_cc_source_library.bzl`
+    for documentation.
 
-    See `_idk_cc_source_library_zx()` for documentation.
+    This legacy macro wraps the the private symbolic macro
+    `idk_cc_source_library_zx()` to provide a default value for `api_file_path`.
     """
     _idk_cc_source_library_zx(
         idk_name = idk_name,

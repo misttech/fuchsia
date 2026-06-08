@@ -427,7 +427,7 @@ def _idk_cc_prebuilt_library_impl(
     )
 
 _idk_cc_prebuilt_library = macro(
-    doc = """Defines a C++ prebuilt library that can be exported to an IDK.
+    doc = """Defines a C/C++ prebuilt library in the IDK.
 
 Defines a prebuilt library of `prebuilt_library_type` named `name` and an IDK
 atom named "{name}_idk". `name` must not begin with "lib".
@@ -629,7 +629,7 @@ def _idk_cc_shared_library_impl(name, **kwargs):
     _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
 
 idk_cc_shared_library = macro(
-    doc = """Defines a C++ prebuilt shared library that can be exported to an IDK.
+    doc = """Defines a C/C++ prebuilt shared library in the IDK.
 
 Use the `idk_cc_shared_library()` wrapper instead.
 """,
@@ -656,7 +656,7 @@ def _idk_cc_static_library_impl(name, **kwargs):
     _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "static", **kwargs)
 
 idk_cc_static_library = macro(
-    doc = """Defines a C++ prebuilt static library that can be exported to an IDK.
+    doc = """Defines a C/C++ prebuilt static library in the IDK.
 
 Use the `idk_cc_static_library()` wrapper instead.
 """,
@@ -697,7 +697,7 @@ def _idk_cc_shared_library_zx_impl(
     )
 
 idk_cc_shared_library_zx = macro(
-    doc = """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
+    doc = """Defines a C/C++ prebuilt shared library in the IDK that will be a `zx_library()` in GN.
 
 Use the `idk_cc_shared_library_zx()` wrapper instead.
 
@@ -760,7 +760,7 @@ def _idk_cc_static_library_zx_impl(
     )
 
 idk_cc_static_library_zx = macro(
-    doc = """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
+    doc = """Defines a C/C++ prebuilt static library in the IDK that will be a `zx_library()` in GN.
 
 Use the `idk_cc_static_library_zx()` wrapper instead.
 
