@@ -18,12 +18,9 @@
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 
-#include "lib/syslog/cpp/macros.h"
 #include "src/developer/debug/shared/logging/logging.h"
-#include "src/developer/debug/shared/string_util.h"
 #include "src/lib/elflib/elflib.h"
 #include "src/lib/files/glob.h"
-#include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/fxl/strings/trim.h"
 
 namespace zxdb {
@@ -31,7 +28,7 @@ namespace zxdb {
 BuildIDIndex::Entry BuildIDIndex::EntryForBuildID(const std::string& build_id) {
   EnsureCacheClean();
 
-  if (build_id_to_files_.find(build_id) == build_id_to_files_.end())
+  if (!build_id_to_files_.contains(build_id))
     SearchBuildIdDirs(build_id);
 
   // No matter whether SearchBuildIdDirs found the symbol or not, build_id_to_files_[build_id] will
@@ -91,29 +88,27 @@ bool BuildIDIndex::AddOneFile(const std::string& file_name) {
 
 void BuildIDIndex::AddIdsTxt(const std::string& ids_txt, const std::string& build_dir) {
   // If the file is already loaded, ignore it.
-  if (std::find_if(ids_txts_.begin(), ids_txts_.end(),
-                   [&ids_txt](const auto& it) { return it.path == ids_txt; }) != ids_txts_.end())
+  if (std::ranges::any_of(ids_txts_, [&ids_txt](const IdsTxt& it) { return it.path == ids_txt; }))
     return;
 
   DEBUG_LOG(BuildIDIndex) << "Adding ids.txt " << ids_txt << " for build id dir " << build_dir
                           << ".";
-  ids_txts_.push_back({ids_txt, build_dir});
+  ids_txts_.push_back({.path = ids_txt, .build_dir = build_dir});
   ClearCache();
 }
 
 void BuildIDIndex::AddBuildIdDir(const std::string& dir, const std::string& build_dir) {
-  if (std::find_if(build_id_dirs_.begin(), build_id_dirs_.end(),
-                   [&dir](const auto& it) { return it.path == dir; }) != build_id_dirs_.end())
+  if (std::ranges::any_of(build_id_dirs_, [&dir](const BuildIdDir& it) { return it.path == dir; }))
     return;
 
   DEBUG_LOG(BuildIDIndex) << "Adding build id dir " << build_dir << " for path " << dir << ".";
-  build_id_dirs_.push_back({dir, build_dir});
+  build_id_dirs_.push_back({.path = dir, .build_dir = build_dir});
   ClearCache();
 }
 
 void BuildIDIndex::AddSymbolServer(const std::string& url, bool require_authentication) {
-  if (std::find_if(symbol_servers_.begin(), symbol_servers_.end(),
-                   [&url](const auto& it) { return it.url == url; }) != symbol_servers_.end())
+  if (std::ranges::any_of(symbol_servers_,
+                          [&url](const SymbolServer& it) { return it.url == url; }))
     return;
 
   if (require_authentication) {
@@ -121,7 +116,7 @@ void BuildIDIndex::AddSymbolServer(const std::string& url, bool require_authenti
   } else {
     DEBUG_LOG(BuildIDIndex) << "Adding public symbol server " << url << ".";
   }
-  symbol_servers_.push_back({url, require_authentication});
+  symbol_servers_.push_back({.url = url, .require_authentication = require_authentication});
 }
 
 void BuildIDIndex::SetCacheDir(const std::string& cache_dir) {
@@ -154,7 +149,9 @@ void BuildIDIndex::AddSymbolIndexFile(const std::string& path) {
 }
 
 void BuildIDIndex::AddPlainFileOrDir(const std::string& path) {
-  if (std::find(sources_.begin(), sources_.end(), path) != sources_.end())
+  // TODO: https://fxbug.dev/459923005 - use std::ranges::contains after
+  // migrating to C++23.
+  if (std::ranges::find(sources_, path) != sources_.end())
     return;
 
   sources_.push_back(path);
@@ -266,7 +263,7 @@ void BuildIDIndex::LoadIndexFilesFromQueue(std::vector<std::filesystem::path>& f
     DEBUG_LOG(BuildIDIndex) << "Loading symbol index file " << file_name << "...";
 
     // Avoid recursive includes.
-    if (visited.find(file_name) != visited.end()) {
+    if (visited.contains(file_name)) {
       continue;
     }
     visited.insert(file_name);
