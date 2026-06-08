@@ -60,6 +60,14 @@ class EndpointInspect {
 
   void AddRxBytes(size_t bytes) { total_bytes_rx_.fetch_add(bytes, std::memory_order_relaxed); }
 
+  void AddFailedTxBytes(size_t bytes) {
+    failed_bytes_tx_.fetch_add(bytes, std::memory_order_relaxed);
+  }
+
+  void AddFailedRxBytes(size_t bytes) {
+    failed_bytes_rx_.fetch_add(bytes, std::memory_order_relaxed);
+  }
+
   void SetMaxByteRate(uint64_t max_rate) {
     max_bytes_per_second_.store(max_rate, std::memory_order_relaxed);
   }
@@ -70,6 +78,10 @@ class EndpointInspect {
 
   uint64_t total_bytes_tx_val() const { return total_bytes_tx_.load(std::memory_order_relaxed); }
   uint64_t total_bytes_rx_val() const { return total_bytes_rx_.load(std::memory_order_relaxed); }
+
+  uint64_t failed_bytes_tx_val() const { return failed_bytes_tx_.load(std::memory_order_relaxed); }
+
+  uint64_t failed_bytes_rx_val() const { return failed_bytes_rx_.load(std::memory_order_relaxed); }
 
  private:
   struct EventLogEntry {
@@ -85,6 +97,8 @@ class EndpointInspect {
   std::atomic<uint64_t> rx_pending_processing_{0};
   std::atomic<uint64_t> total_bytes_tx_{0};
   std::atomic<uint64_t> total_bytes_rx_{0};
+  std::atomic<uint64_t> failed_bytes_tx_{0};
+  std::atomic<uint64_t> failed_bytes_rx_{0};
   std::atomic<uint64_t> max_bytes_per_second_{0};
 
   std::deque<EventLogEntry> event_history_ __TA_GUARDED(lock_);

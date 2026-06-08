@@ -774,6 +774,7 @@ void RndisFunction::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
       }
     }
   }
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void RndisFunction::QueueRxSpace(QueueRxSpaceRequestView request, fdf::Arena& arena,
@@ -811,6 +812,7 @@ void RndisFunction::NotifyComplete(std::vector<fendpoint::Completion> completion
   for (auto& completion : completions) {
     notification_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
   }
+  notification_inspect_.UpdateTxQueue(notification_ep_.GetInFlightCount());
   ContinueStop();
 }
 
@@ -819,7 +821,15 @@ void RndisFunction::TxComplete(std::vector<fendpoint::Completion> completions) {
   auto results_iter = results.begin();
 
   for (auto& completion : completions) {
-    bulk_in_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+    zx_status_t status = *completion.status();
+    usb::FidlRequest req(std::move(completion.request().value()));
+    size_t size = req.length();
+    if (status == ZX_OK) {
+      bulk_in_inspect_.AddTxBytes(completion.transfer_size().value_or(0));
+    } else {
+      bulk_in_inspect_.AddFailedTxBytes(size);
+    }
+    bulk_in_ep_.PutRequest(std::move(req));
     if (tx_completion_queue_.empty()) {
       fdf::error("received tx completion without pending tx");
       continue;
@@ -839,7 +849,7 @@ void RndisFunction::TxComplete(std::vector<fendpoint::Completion> completions) {
       fdf::error("failed to complete tx: {}", status.FormatDescription());
     }
   }
-
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
   ContinueStop();
 }
 
@@ -881,7 +891,9 @@ void RndisFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> comp
 
     if (status != ZX_OK) {
       fdf::error("rx_completion: {}", zx_status_get_string(status));
-      reset_and_enqueue(usb::FidlRequest{std::move(completion.request().value())});
+      usb::FidlRequest req(std::move(completion.request().value()));
+      bulk_out_inspect_.AddFailedRxBytes(req.length());
+      reset_and_enqueue(std::move(req));
       continue;
     }
 
@@ -889,6 +901,8 @@ void RndisFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> comp
       rx_completion_queue_.push_back(std::move(completion));
       continue;
     }
+
+    bulk_out_inspect_.AddRxBytes(completion.transfer_size().value_or(0));
 
     usb::FidlRequest req(std::move(completion.request().value()));
     req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
@@ -967,6 +981,7 @@ void RndisFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> comp
       fdf::error("failed to queue rx requests: {}", queue_status.FormatDescription());
     }
   }
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void RndisFunction::Notify() {
@@ -998,6 +1013,7 @@ void RndisFunction::Notify() {
     fdf::error("failed to queue notify requests: {}", queue_status.FormatDescription());
     notification_ep_.PutRequest(std::move(*req));
   }
+  notification_inspect_.UpdateTxQueue(notification_ep_.GetInFlightCount());
 }
 
 void RndisFunction::IndicateConnectionStatus(bool connected) {
@@ -1024,6 +1040,7 @@ void RndisFunction::IndicateConnectionStatus(bool connected) {
 }
 
 zx::result<> RndisFunction::Start(fdf::DriverContext context) {
+  inspector_ = context.CreateInspector(this);
   zx::result func =
       context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (func.is_error()) {
@@ -1249,6 +1266,30 @@ zx::result<> RndisFunction::Start(fdf::DriverContext context) {
     return status.take_error();
   }
 
+  inspect_node_ = inspector().root().CreateChild(name());
+  inspect_node_.RecordString("mac_address", std::format("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                                                        mac_addr_[0], mac_addr_[1], mac_addr_[2],
+                                                        mac_addr_[3], mac_addr_[4], mac_addr_[5]));
+
+  bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+  notification_inspect_.Init(inspect_node_, "notification");
+
+  throughput_tracker_.emplace(
+      dispatcher(),
+      [this](zx::duration delta) {
+        bulk_in_inspect_.MeasureThroughput(delta);
+        bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
+
+        bulk_out_inspect_.MeasureThroughput(delta);
+        bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
+
+        notification_inspect_.MeasureThroughput(delta);
+        notification_inspect_.UpdateTxQueue(notification_ep_.GetInFlightCount());
+      },
+      zx::sec(1));
+  throughput_tracker_->Start();
+
   std::vector<fuchsia_driver_framework::Offer> offers;
   offers.push_back(fdf::MakeOffer2<fnetdev::Service>());
 
@@ -1387,6 +1428,9 @@ void RndisFunction::ContinueStop() {
 }
 
 void RndisFunction::Stop(fdf::StopCompleter completer) {
+  if (throughput_tracker_) {
+    throughput_tracker_->Stop();
+  }
   shutting_down_ = true;
   stop_completer_.emplace(std::move(completer));
 

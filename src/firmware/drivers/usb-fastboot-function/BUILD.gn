@@ -48,6 +48,7 @@ source_set("usb-fastboot-function-common") {
     "//src/devices/usb/lib/usb:peripheral",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-inspect",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/inspect",
@@ -84,6 +85,7 @@ test("usb-fastboot-function-test-bin") {
     "//sdk/lib/inspect/testing/cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/devices/usb/lib/usb-inspect",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

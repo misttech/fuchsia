@@ -30,6 +30,7 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 
 zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
+  inspector_ = context.CreateInspector(this);
   auto client = context.incoming().Connect<ffunction::UsbFunctionService::Device>();
   if (client.is_error()) {
     FDF_SLOG(ERROR, "Failed to connect fidl protocol",
@@ -136,6 +137,17 @@ zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
     FDF_LOG(ERROR, "Failed to add service: %s", service_result.status_string());
     return service_result.take_error();
   }
+
+  inspect_node_ = inspector().root().CreateChild("overnet-usb");
+  bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+  throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
+    bulk_in_inspect_.MeasureThroughput(delta);
+    bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
+    bulk_out_inspect_.MeasureThroughput(delta);
+    bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
+  });
+  throughput_tracker_->Start();
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {};
   zx::result child_result =
@@ -382,6 +394,7 @@ void OvernetUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_
         }
       },
       state_);
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 OvernetUsb::State OvernetUsb::Running::SendData(uint8_t* data, size_t len, size_t* actual,
@@ -579,6 +592,7 @@ void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
 
     uint8_t* data = reinterpret_cast<uint8_t*>(*addr);
     size_t data_length = *completion.transfer_size();
+    bulk_out_inspect_.AddRxBytes(data_length);
 
     std::visit(
         [this, data, data_length](auto&& state) {
@@ -588,6 +602,7 @@ void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
         std::move(state_));
   } else if (*completion.status() != ZX_ERR_CANCELED) {
     FDF_SLOG(ERROR, "Read failed", KV("status", zx_status_get_string(*completion.status())));
+    bulk_out_inspect_.AddFailedRxBytes(request.length());
   }
 
   if (Online()) {
@@ -616,6 +631,7 @@ void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
     ZX_ASSERT(!bulk_out_ep_.RequestsFull());
     bulk_out_ep_.PutRequest(std::move(request));
   }
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void OvernetUsb::WriteBatchComplete(std::vector<fendpoint::Completion> completions) {
@@ -626,7 +642,14 @@ void OvernetUsb::WriteBatchComplete(std::vector<fendpoint::Completion> completio
 
 void OvernetUsb::WriteComplete(fendpoint::Completion completion) {
   FDF_LOG(TRACE, "WriteComplete");
+  zx_status_t status = *completion.status();
   auto request = usb::FidlRequest(std::move(completion.request().value()));
+  size_t size = request.length();
+  if (status == ZX_OK) {
+    bulk_in_inspect_.AddTxBytes(completion.transfer_size().value_or(0));
+  } else {
+    bulk_in_inspect_.AddFailedTxBytes(size);
+  }
   if (std::holds_alternative<ShuttingDown>(state_)) {
     FDF_LOG(DEBUG, "Shutting down from WriteComplete and returning request to pool");
     ZX_ASSERT(!bulk_in_ep_.RequestsFull());
@@ -641,9 +664,13 @@ void OvernetUsb::WriteComplete(fendpoint::Completion completion) {
   ZX_ASSERT(!bulk_in_ep_.RequestsFull());
   bulk_in_ep_.PutRequest(std::move(request));
   ProcessReadsFromSocket();
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void OvernetUsb::Shutdown(fit::function<void()> callback) {
+  if (throughput_tracker_) {
+    throughput_tracker_->Stop();
+  }
   // Cancel all requests in the pipeline -- the completion handler will free these requests as they
   // come in.
   //

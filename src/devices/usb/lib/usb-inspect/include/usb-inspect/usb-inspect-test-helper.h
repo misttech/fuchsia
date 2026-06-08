@@ -33,7 +33,9 @@ inline fit::result<std::string> VerifyEndpointInspect(
     std::optional<uint64_t> tx_pending_requests = std::nullopt,
     std::optional<uint64_t> rx_pending_requests = std::nullopt,
     std::optional<uint64_t> max_bytes_per_second = std::nullopt,
-    std::optional<uint64_t> rx_pending_processing = std::nullopt) {
+    std::optional<uint64_t> rx_pending_processing = std::nullopt,
+    std::optional<uint64_t> failed_bytes_tx = std::nullopt,
+    std::optional<uint64_t> failed_bytes_rx = std::nullopt) {
   if (!node) {
     return fit::error("Node is null");
   }
@@ -64,6 +66,11 @@ inline fit::result<std::string> VerifyEndpointInspect(
   if (auto res = verify_prop("max_bytes_per_second", max_bytes_per_second); res.is_error())
     return res;
   if (auto res = verify_prop("rx_pending_processing", rx_pending_processing); res.is_error())
+    return res;
+
+  if (auto res = verify_prop("failed_bytes_tx", failed_bytes_tx); res.is_error())
+    return res;
+  if (auto res = verify_prop("failed_bytes_rx", failed_bytes_rx); res.is_error())
     return res;
 
   return fit::ok();

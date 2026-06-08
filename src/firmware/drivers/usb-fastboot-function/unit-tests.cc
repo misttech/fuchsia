@@ -9,6 +9,7 @@
 #include <lib/inspect/testing/cpp/inspect.h>
 
 #include <gtest/gtest.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/firmware/drivers/usb-fastboot-function/usb_fastboot_function.h"
@@ -306,6 +307,61 @@ TEST_F(UsbFastbootFunctionTest, SendFailsOnZeroContentSize) {
   InitializeSendVmo(send_vmo, send_data);
   ASSERT_EQ(ZX_OK, send_vmo.vmo().set_prop_content_size(0));
   ASSERT_FALSE(client()->Send(send_vmo.Release())->is_ok());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+}
+
+TEST_F(UsbFastbootFunctionTest, Inspect) {
+  EnableUsb();
+
+  const std::string_view send_data = "OKAY0.4";
+  const std::string_view recv_data = "getvar:all";
+
+  // 1. Send (TX)
+  fzl::OwnedVmoMapper send_vmo;
+  InitializeSendVmo(send_vmo, send_data);
+  std::thread t_send([&]() {
+    auto result = client()->Send(send_vmo.Release());
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  });
+  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) {
+    env.fake_dev_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, send_data.size());
+  });
+  t_send.join();
+
+  // 2. Receive (RX)
+  std::thread t_recv([&] {
+    auto res = client()->Receive(0);
+    ValidateVmo(res.value()->data, recv_data);
+  });
+  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) {
+    env.fake_dev_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, recv_data.size());
+  });
+  t_recv.join();
+
+  // 3. Trigger throughput and verify
+  driver_test_.RunInDriverContext(
+      [tx_size = send_data.size(), rx_size = recv_data.size()](UsbFastbootFunction& driver) {
+        driver.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
+
+        auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+
+        auto* fastboot_node = hierarchy.GetByPath({"usb-fastboot"});
+        ASSERT_TRUE(fastboot_node != nullptr);
+
+        auto* bulk_in = hierarchy.GetByPath({"usb-fastboot", "bulk_in"});
+        ASSERT_TRUE(bulk_in != nullptr);
+        auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, tx_size, std::nullopt, 0,
+                                                         std::nullopt, tx_size);
+        EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
+
+        auto* bulk_out = hierarchy.GetByPath({"usb-fastboot", "bulk_out"});
+        ASSERT_TRUE(bulk_out != nullptr);
+        auto err_out = usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, rx_size,
+                                                          std::nullopt, 0, rx_size);
+        EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
+      });
+
   ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 

@@ -27,8 +27,10 @@ source_set("usb-cdc-function-common") {
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-inspect",
     "//src/lib/vmo_store",
   ]
   deps = [

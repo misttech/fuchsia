@@ -13,12 +13,14 @@
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fdf/cpp/dispatcher.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/listnode.h>
 
 #include <array>
 
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/cdc.h>
 #include <usb/request-fidl.h>
 #include <usb/usb.h>
@@ -128,6 +130,9 @@ class UsbCdcFunction : public fdf::DriverBase2,
   uint8_t BulkOutAddress() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
   uint8_t InterruptAddress() const { return descriptors_.intr_ep.b_endpoint_address; }
 
+  inspect::ComponentInspector &inspector() { return *inspector_; }
+  usb_inspect::ThroughputTracker &GetThroughputTrackerForTesting() { return *throughput_tracker_; }
+
  private:
   zx_status_t AddNetworkDevice();
   fuchsia_hardware_network::PortStatus ReadStatus() const;
@@ -162,6 +167,12 @@ class UsbCdcFunction : public fdf::DriverBase2,
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
   std::string mac_addr_string_;
   fdf::WireClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdevice_ifc_;
+
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node inspect_node_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
 
   compat::SyncInitializedDeviceServer child_;
   std::shared_ptr<fdf::Namespace> incoming_;

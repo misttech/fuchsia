@@ -36,6 +36,7 @@ void UsbFastbootFunction::CleanUpTx(zx_status_t status, usb::FidlRequest req) {
     }
     send_completer_.reset();
   }
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::QueueTx() {
@@ -67,6 +68,7 @@ void UsbFastbootFunction::QueueTx() {
       ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
     }
   }
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::TxBatchComplete(
@@ -90,6 +92,7 @@ void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion c
   // Do not queue request on error.
   if (status != ZX_OK) {
     zxlogf(ERROR, "tx_completion error: %s", zx_status_get_string(status));
+    bulk_in_inspect_.AddFailedTxBytes(req.length());
     CleanUpTx(status, std::move(req));
     return;
   }
@@ -97,11 +100,14 @@ void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion c
   // If succeeds, update `sent_size_`, otherwise keep it the same to retry.
   sent_size_ += *completion.transfer_size();
   if (sent_size_ == total_to_send_) {
+    bulk_in_inspect_.AddTxBytes(*completion.transfer_size());
     CleanUpTx(ZX_OK, std::move(req));
     return;
   }
 
+  bulk_in_inspect_.AddTxBytes(*completion.transfer_size());
   bulk_in_ep_.PutRequest(std::move(req));
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::Send(::fuchsia_hardware_fastboot::wire::FastbootImplSendRequest* request,
@@ -153,6 +159,7 @@ void UsbFastbootFunction::CleanUpRx(zx_status_t status, usb::FidlRequest req) {
     }
     receive_completer_.reset();
   }
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::QueueRx() {
@@ -182,6 +189,7 @@ void UsbFastbootFunction::QueueRx() {
       ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
     }
   }
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::RxBatchComplete(
@@ -205,6 +213,7 @@ void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion c
 
   if (status != ZX_OK) {
     zxlogf(ERROR, "rx_completion error: %s", zx_status_get_string(status));
+    bulk_out_inspect_.AddFailedRxBytes(req.length());
     CleanUpRx(status, std::move(req));
     return;
   }
@@ -224,6 +233,7 @@ void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion c
   }
 
   const uint8_t* data = reinterpret_cast<const uint8_t*>(*addr);
+  bulk_out_inspect_.AddRxBytes(*completion.transfer_size());
   memcpy(static_cast<uint8_t*>(receive_vmo_.start()) + received_size_, data,
          *completion.transfer_size());
   received_size_ += *completion.transfer_size();
@@ -237,6 +247,7 @@ void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion c
   }
 
   bulk_out_ep_.PutRequest(std::move(req));
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void UsbFastbootFunction::Receive(
@@ -340,6 +351,7 @@ void UsbFastbootFunction::handle_unknown_method(
 }
 
 zx::result<> UsbFastbootFunction::Start(fdf::DriverContext context) {
+  inspector_ = context.CreateInspector(this);
   auto client =
       context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client.is_error()) {
@@ -441,11 +453,26 @@ zx::result<> UsbFastbootFunction::Start(fdf::DriverContext context) {
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  is_bound.Set(true);
+  inspect_node_ = inspector().root().CreateChild("usb-fastboot");
+  bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+  throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
+    bulk_in_inspect_.MeasureThroughput(delta);
+    bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
+    bulk_out_inspect_.MeasureThroughput(delta);
+    bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
+  });
+  throughput_tracker_->Start();
+
   return zx::ok();
 }
 
-void UsbFastbootFunction::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
+void UsbFastbootFunction::Stop(fdf::StopCompleter completer) {
+  if (throughput_tracker_) {
+    throughput_tracker_->Stop();
+  }
+  completer(zx::ok());
+}
 
 }  // namespace usb_fastboot_function
 

@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fzl/owned-vmo-mapper.h>
@@ -16,6 +17,7 @@
 #include <zircon/compiler.h>
 
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/request-cpp.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
@@ -39,11 +41,14 @@ class UsbFastbootFunction
   virtual ~UsbFastbootFunction() = default;
 
   // Driver lifecycle methods.
+  inspect::ComponentInspector& inspector() { return *inspector_; }
+
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
 
   // For inspect test.
-  zx::vmo inspect_vmo() { return inspect_.DuplicateVmo(); }
+  zx::vmo inspect_vmo() { return inspector().inspector().DuplicateVmo(); }
+  usb_inspect::ThroughputTracker& GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
   // UsbFunctionInterface methods.
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
@@ -67,8 +72,12 @@ class UsbFastbootFunction
 
   std::atomic<bool> configured_ = false;
 
-  inspect::Inspector inspect_;
-  inspect::BoolProperty is_bound = inspect_.GetRoot().CreateBool("is_bound", false);
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node inspect_node_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
+
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   size_t total_to_send_ = 0;

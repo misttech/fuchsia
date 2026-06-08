@@ -17,6 +17,7 @@
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/socket.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -29,6 +30,7 @@
 #include <bind/fuchsia/google/platform/usb/cpp/bind.h>
 #include <fbl/mutex.h>
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/request-cpp.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
@@ -44,6 +46,9 @@ class OvernetUsb : public fdf::DriverBase2,
                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   OvernetUsb() : fdf::DriverBase2("overnet-usb") {}
+
+  inspect::ComponentInspector& inspector() { return *inspector_; }
+  usb_inspect::ThroughputTracker& GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
@@ -64,6 +69,11 @@ class OvernetUsb : public fdf::DriverBase2,
   uint8_t BulkInAddress() const { return descriptors_.in_ep.b_endpoint_address; }
   // Endpoint address of our OUT endpoint.
   uint8_t BulkOutAddress() const { return descriptors_.out_ep.b_endpoint_address; }
+
+  // Whether there are any pending requests.
+  bool HasPendingRequests() { return !bulk_in_ep_.RequestsFull() || !bulk_out_ep_.RequestsFull(); }
+  bool HasPendingTxRequests() { return !bulk_in_ep_.RequestsFull(); }
+  bool HasPendingRxRequests() { return !bulk_out_ep_.RequestsFull(); }
 
  private:
   // Configures the device's endpoints and sets the device state to Running, if it's in the
@@ -233,9 +243,6 @@ class OvernetUsb : public fdf::DriverBase2,
     }
   }
 
-  // Whether there are any pending requests.
-  bool HasPendingRequests() { return !bulk_in_ep_.RequestsFull() || !bulk_out_ep_.RequestsFull(); }
-
   // Get an IN request ready for use.
   std::optional<usb::FidlRequest> PrepareTx();
 
@@ -310,6 +317,12 @@ class OvernetUsb : public fdf::DriverBase2,
                                                std::mem_fn(&OvernetUsb::ReadBatchComplete)};
   usb::EndpointClient<OvernetUsb> bulk_in_ep_{usb::EndpointType::BULK, this,
                                               std::mem_fn(&OvernetUsb::WriteBatchComplete)};
+
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node inspect_node_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
 
   struct {
     usb_interface_descriptor_t data_interface;

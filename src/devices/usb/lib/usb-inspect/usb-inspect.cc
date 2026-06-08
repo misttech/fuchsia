@@ -49,6 +49,8 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
   rx_pending_processing_.store(0, std::memory_order_relaxed);
   total_bytes_tx_.store(0, std::memory_order_relaxed);
   total_bytes_rx_.store(0, std::memory_order_relaxed);
+  failed_bytes_tx_.store(0, std::memory_order_relaxed);
+  failed_bytes_rx_.store(0, std::memory_order_relaxed);
   max_bytes_per_second_.store(0, std::memory_order_relaxed);
 
   last_total_bytes_val_ = 0;
@@ -66,6 +68,12 @@ void EndpointInspect::Init(inspect::Node& parent, const std::string& name, size_
                     &inspector);
     root.CreateUint("total_bytes_tx", total_bytes_tx_.load(std::memory_order_relaxed), &inspector);
     root.CreateUint("total_bytes_rx", total_bytes_rx_.load(std::memory_order_relaxed), &inspector);
+    if (auto failed_tx = failed_bytes_tx_.load(std::memory_order_relaxed); failed_tx > 0) {
+      root.CreateUint("failed_bytes_tx", failed_tx, &inspector);
+    }
+    if (auto failed_rx = failed_bytes_rx_.load(std::memory_order_relaxed); failed_rx > 0) {
+      root.CreateUint("failed_bytes_rx", failed_rx, &inspector);
+    }
     root.CreateUint("max_bytes_per_second", max_bytes_per_second_.load(std::memory_order_relaxed),
                     &inspector);
 

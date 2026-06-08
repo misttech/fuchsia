@@ -24,6 +24,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
@@ -569,6 +570,90 @@ TEST_F(UsbCdcTest, TeardownWithPendingRxCompletion) {
 
   // Bulk of verification happens on test teardown as part of stopping the
   // driver.
+}
+
+TEST_F(UsbCdcTest, Inspect) {
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  constexpr uint8_t kVmoId = 1;
+  constexpr uint32_t kTxBufferId = 100;
+  constexpr uint8_t kRxBufferId = 201;
+  constexpr size_t kTxDataSize = 4;
+  constexpr size_t kRxDataSize = 54;
+
+  zx::vmo vmo;
+  ASSERT_EQ(ZX_OK, zx::vmo::create(4096, 0, &vmo));
+  uint8_t tx_data[] = {0xAA, 0xBB, 0xCC, 0xDD};
+  ASSERT_EQ(ZX_OK, vmo.write(tx_data, 0, sizeof(tx_data)));
+
+  fdf::Arena arena(kArenaTag);
+  auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
+  ASSERT_EQ(ZX_OK, prepare_result.status());
+  ASSERT_EQ(ZX_OK, prepare_result->s);
+
+  // 1. Queue TX
+  fnetdev::wire::BufferRegion tx_region = {.vmo = kVmoId, .offset = 0, .length = kTxDataSize};
+  fnetdev::wire::TxBuffer tx_buffer = {
+      .id = kTxBufferId,
+      .data = fidl::VectorView<fnetdev::wire::BufferRegion>::FromExternal(&tx_region, 1),
+  };
+
+  sync_completion_t tx_completed;
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_ifc_.set_on_complete_tx([&]() { sync_completion_signal(&tx_completed); });
+  });
+  ASSERT_EQ(ZX_OK,
+            net_impl_client_.buffer(arena)
+                ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&tx_buffer, 1))
+                .status());
+
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, kTxDataSize);
+  });
+  sync_completion_wait(&tx_completed, ZX_TIME_INFINITE);
+
+  // 2. Queue RX Space and Receive
+  sync_completion_t rx_completed;
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([&]() { sync_completion_signal(&rx_completed); });
+  });
+
+  fnetdev::wire::RxSpaceBuffer rx_space = {
+      .id = kRxBufferId,
+      .region = {.vmo = kVmoId, .offset = 1024, .length = 2048},
+  };
+  ASSERT_EQ(ZX_OK, net_impl_client_.buffer(arena)
+                       ->QueueRxSpace(fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(
+                           &rx_space, 1))
+                       .status());
+
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, kRxDataSize);
+  });
+  sync_completion_wait(&rx_completed, ZX_TIME_INFINITE);
+
+  // 3. Trigger throughput and verify
+  driver_test_.RunInDriverContext([kTxDataSize, kRxDataSize](UsbCdcFunction& driver) {
+    driver.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
+
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+
+    auto* cdc_node = hierarchy.GetByPath({"usb-cdc-function"});
+    ASSERT_TRUE(cdc_node != nullptr);
+
+    auto* bulk_in = hierarchy.GetByPath({"usb-cdc-function", "bulk_in"});
+    ASSERT_TRUE(bulk_in != nullptr);
+    auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, kTxDataSize, std::nullopt, 0,
+                                                     std::nullopt, kTxDataSize);
+    EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
+
+    auto* bulk_out = hierarchy.GetByPath({"usb-cdc-function", "bulk_out"});
+    ASSERT_TRUE(bulk_out != nullptr);
+    auto err_out = usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, kRxDataSize,
+                                                      std::nullopt, 16, kRxDataSize);
+    EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
+  });
 }
 
 }  // namespace

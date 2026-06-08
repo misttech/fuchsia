@@ -252,7 +252,9 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
 
     if (status != ZX_OK) {
       fdf::error("[bug] rx_completion: {}", zx_status_get_string(status));
-      reset_and_enqueue(usb::FidlRequest{std::move(completion.request().value())});
+      usb::FidlRequest req(std::move(completion.request().value()));
+      bulk_out_inspect_.AddFailedRxBytes(req.length());
+      reset_and_enqueue(std::move(req));
       continue;
     }
 
@@ -263,6 +265,7 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
 
     usb::FidlRequest req(std::move(completion.request().value()));
     const size_t request_length = completion.transfer_size().value();
+    bulk_out_inspect_.AddRxBytes(request_length);
 
     fnetdev::wire::RxSpaceBuffer space = rx_space_buffers_.front();
 
@@ -328,6 +331,7 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
       fdf::error("failed to complete rx buffers: {}", queue_status.FormatDescription());
     }
   }
+  bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
 
 void UsbCdcFunction::CdcTxComplete(std::vector<fendpoint::Completion> completions) {
@@ -342,9 +346,14 @@ void UsbCdcFunction::CdcTxComplete(std::vector<fendpoint::Completion> completion
   auto results_iter = results.begin();
   for (auto &completion : completions) {
     zx_status_t status = *completion.status();
-    bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+    usb::FidlRequest req(std::move(completion.request().value()));
+    size_t size = req.length();
+    bulk_in_ep_.PutRequest(std::move(req));
     if (status != ZX_OK) {
       fdf::debug("tx completion error: {}", zx_status_get_string(status));
+      bulk_in_inspect_.AddFailedTxBytes(size);
+    } else {
+      bulk_in_inspect_.AddTxBytes(completion.transfer_size().value_or(0));
     }
     if (tx_completion_queue_.empty()) {
       fdf::error("received tx completion without pending tx");
@@ -364,6 +373,7 @@ void UsbCdcFunction::CdcTxComplete(std::vector<fendpoint::Completion> completion
   if (status.status() != ZX_OK) {
     fdf::error("CompleteTx() failed: {}", zx_status_get_string(status.status()));
   }
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void UsbCdcFunction::Control(ControlRequest &request, ControlCompleter::Sync &completer) {
@@ -521,6 +531,7 @@ void UsbCdcFunction::handle_unknown_method(
 
 // NetworkDeviceImpl protocol:
 zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
+  inspector_ = context.CreateInspector(this);
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result result = incoming()->Connect<ffunction::UsbFunctionService::Device>();
   if (result.is_error()) {
@@ -653,6 +664,18 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
+  inspect_node_ = inspector().root().CreateChild("usb-cdc-function");
+  bulk_in_inspect_.Init(inspect_node_, "bulk_in");
+  bulk_out_inspect_.Init(inspect_node_, "bulk_out");
+
+  throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
+    bulk_in_inspect_.MeasureThroughput(delta);
+    bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
+    bulk_out_inspect_.MeasureThroughput(delta);
+    bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
+  });
+  throughput_tracker_->Start();
+
   if (zx::result result =
           child_.Initialize(incoming(), outgoing(), context.node_name(), "usb-cdc-netdev");
       result.is_error()) {
@@ -687,6 +710,9 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
 }
 
 void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
+  if (throughput_tracker_) {
+    throughput_tracker_->Stop();
+  }
   unbound_ = true;
   stop_completer_.emplace(std::move(completer));
 
@@ -918,6 +944,7 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
       }
     }
   }
+  bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void UsbCdcFunction::QueueRxSpace(fnetdev::wire::NetworkDeviceImplQueueRxSpaceRequest *request,

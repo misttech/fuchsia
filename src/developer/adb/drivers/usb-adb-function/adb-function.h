@@ -9,15 +9,18 @@
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/compiler.h>
 
 #include <queue>
 
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/descriptors.h>
 #include <usb/usb.h>
 
@@ -109,6 +112,13 @@ class UsbAdbDevice : public fdf::DriverBase2,
 
   uint8_t bulk_out_addr() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
   uint8_t bulk_in_addr() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
+  inspect::Inspector GetInspectorForTesting() {
+    if (component_inspector_.has_value()) {
+      return component_inspector_->inspector();
+    }
+    return {};
+  }
+  usb_inspect::ThroughputTracker& GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
  private:
   State state_ = State::kAwaitingUsbConnection;
@@ -208,6 +218,38 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // Queue of pending transfer requests that need to be transmitted once the BULK IN request buffers
   // become available.
   std::queue<txn_req_t> tx_pending_reqs_;
+
+  // Inspect diagnostics
+  std::optional<inspect::ComponentInspector> component_inspector_;
+  inspect::Node inspect_node_;
+  inspect::StringProperty state_property_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+
+  void RecordEvent(const std::string& event_name) {
+    bulk_in_inspect_.RecordEvent(event_name);
+    bulk_out_inspect_.RecordEvent(event_name);
+  }
+  void UpdateQueueStats() {
+    bulk_in_inspect_.UpdateTxQueue(tx_pending_reqs_.size());
+    bulk_out_inspect_.UpdateRxQueue(rx_requests_.size());
+    bulk_out_inspect_.UpdateRxPendingProcessing(pending_replies_.size());
+  }
+
+  // Traffic and throughput calculation
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
+
+  static std::string StateToString(State state) {
+    switch (state) {
+      case State::kAwaitingUsbConnection:
+        return "kAwaitingUsbConnection";
+      case State::kOnline:
+        return "kOnline";
+      case State::kStoppingUsb:
+        return "kStoppingUsb";
+    }
+    return "unknown";
+  }
 };
 
 }  // namespace usb_adb_function

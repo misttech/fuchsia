@@ -16,12 +16,14 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspect.h>
 
 #include <array>
 #include <queue>
 
 #include <fbl/mutex.h>
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb-inspect/usb-inspect.h>
 #include <usb/cdc.h>
 #include <usb/request-fidl.h>
 #include <usb/usb.h>
@@ -62,6 +64,9 @@ class RndisFunction : public fdf::DriverBase2,
 
   using fdf::DriverBase2::Start;
   using fdf::DriverBase2::Stop;
+
+  inspect::ComponentInspector &inspector() { return *inspector_; }
+  usb_inspect::ThroughputTracker &GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
@@ -128,6 +133,7 @@ class RndisFunction : public fdf::DriverBase2,
   void ReturnPendingRxSpace();
 
   fuchsia_hardware_network::PortStatus ReadStatus() const;
+
   void UpdatePortStatus();
 
   bool Online() const { return netdevice_ifc_.is_valid() && rndis_ready_; }
@@ -206,6 +212,13 @@ class RndisFunction : public fdf::DriverBase2,
   } __PACKED descriptors_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+
+  std::optional<inspect::ComponentInspector> inspector_;
+  inspect::Node inspect_node_;
+  usb_inspect::EndpointInspect bulk_in_inspect_;
+  usb_inspect::EndpointInspect bulk_out_inspect_;
+  usb_inspect::EndpointInspect notification_inspect_;
+  std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
 };
 
 #endif  // SRC_CONNECTIVITY_ETHERNET_DRIVERS_RNDIS_FUNCTION_RNDIS_FUNCTION_H_

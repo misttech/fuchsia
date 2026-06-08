@@ -42,6 +42,7 @@ source_set("common") {
     "//src/devices/usb/lib/usb:cdc",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-inspect",
     "//src/lib/vmo_store",
     "//zircon/system/ulib/fbl",
   ]
@@ -84,6 +85,7 @@ test("rndis-function-test") {
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp_testing",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/inspect/testing/cpp",
     "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

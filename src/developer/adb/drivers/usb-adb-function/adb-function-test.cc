@@ -10,12 +10,14 @@
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fidl/cpp/wire/status.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/result.h>
 
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 #include <usb/usb-request.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
@@ -126,6 +128,13 @@ class UsbAdbTestConfig final {
 
 class UsbAdbTest : public ::testing::Test {
  public:
+  void ReadInspect(const inspect::Inspector& inspector) {
+    hierarchy_ = usb_inspect::ReadHierarchyFromInspector(inspector);
+  }
+  const inspect::Hierarchy& hierarchy() const { return *hierarchy_; }
+
+  std::optional<inspect::Hierarchy> hierarchy_;
+
   fidl::WireSyncClient<fadb::UsbAdbImpl> NormalStartAdb() {
     auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
     EXPECT_TRUE(client_->StartAdb(std::move(server_end)).ok());
@@ -438,6 +447,62 @@ TEST_F(UsbAdbTest, RecvAdbMessage) {
 
   ASSERT_NO_FATAL_FAILURE(ExpectReceiveData(kReceiveSize));
   t.join();
+
+  ASSERT_NO_FATAL_FAILURE(NormalStopDriver());
+}
+
+TEST_F(UsbAdbTest, VerifyInspect) {
+  auto usb_impl = NormalStartAdb();
+
+  // Queue some tx packets
+  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, 100));
+
+  // Receive some packets
+  std::thread t([&]() {
+    auto response = usb_impl->Receive();
+    ASSERT_EQ(ZX_OK, response.status());
+    ASSERT_EQ(response.value().value()->data.size(), 200u);
+  });
+  ASSERT_NO_FATAL_FAILURE(ExpectReceiveData(200));
+  t.join();
+
+  // Fetch inspector from driver
+  inspect::Inspector inspector;
+  driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    dev.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
+    inspector = dev.GetInspectorForTesting();
+  });
+
+  ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
+
+  // Verify adb function inspect node exists
+  auto* root_node = this->hierarchy().GetByPath({"usb-adb-function"});
+  ASSERT_NE(nullptr, root_node);
+
+  // Verify state string
+  const auto* state_prop = root_node->node().get_property<inspect::StringPropertyValue>("state");
+  ASSERT_NE(nullptr, state_prop);
+  EXPECT_EQ("kOnline", state_prop->value());
+
+  // Verify bulk_in (TX) stats using the shared helper
+  auto* bulk_in = this->hierarchy().GetByPath({"usb-adb-function", "bulk_in"});
+  ASSERT_NE(nullptr, bulk_in);
+  auto err_in =
+      usb_inspect::VerifyEndpointInspect(bulk_in, 100, std::nullopt, 0, std::nullopt, 100, 0);
+  EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
+
+  // Verify bulk_out (RX) stats using the shared helper
+  auto* bulk_out = this->hierarchy().GetByPath({"usb-adb-function", "bulk_out"});
+  ASSERT_NE(nullptr, bulk_out);
+  auto err_out =
+      usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, 200, std::nullopt, 0, 200, 0);
+  EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
+
+  // Verify events are logged
+  auto* event_history =
+      this->hierarchy().GetByPath({"usb-adb-function", "bulk_in", "event_history"});
+  ASSERT_NE(nullptr, event_history);
+  EXPECT_GT(event_history->children().size(), 0u);
 
   ASSERT_NO_FATAL_FAILURE(NormalStopDriver());
 }

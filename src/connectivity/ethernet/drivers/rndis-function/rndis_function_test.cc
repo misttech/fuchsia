@@ -21,10 +21,12 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/lib/testing/predicates/status.h"
@@ -797,6 +799,133 @@ TEST_F(RndisFunctionTest, Halt) {
     EXPECT_FALSE(env.fake_ifc_.last_online().value());
   });
   port_status_changed.Reset();
+}
+
+TEST_F(RndisFunctionTest, Inspect) {
+  fdf::Arena arena(kArenaTag);
+  StartNetworkDevice();
+
+  constexpr uint8_t kVmoId = 1;
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  zx::vmo duplicate;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+  fdf::WireUnownedResult vmo_result =
+      net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(duplicate));
+  ASSERT_TRUE(vmo_result.ok()) << vmo_result.error().FormatDescription();
+  ASSERT_OK(vmo_result.value().s);
+
+  SetPacketFilter();
+
+  uint8_t bulk_in_addr = 0;
+  uint8_t bulk_out_addr = 0;
+  driver_test_.RunInDriverContext([&](RndisFunction& driver) {
+    bulk_in_addr = driver.BulkInAddress();
+    bulk_out_addr = driver.BulkOutAddress();
+  });
+
+  // 1. Send (TX) 1 packet of size 64
+  constexpr uint64_t kRequestLength = 64;
+  fnetdev::wire::BufferRegion region = {
+      .vmo = kVmoId,
+      .offset = 0,
+      .length = kRequestLength,
+  };
+  fnetdev::wire::TxBuffer tx_buffer{
+      .id = 0,
+      .data = fidl::VectorView<fnetdev::wire::BufferRegion>::FromExternal(&region, 1),
+  };
+  libsync::Completion tx_completed;
+  driver_test_.RunInEnvironmentTypeContext([&](RndisFunctionTestEnvironment& env) {
+    env.fake_ifc_.set_on_complete_tx([&]() { tx_completed.Signal(); });
+  });
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&tx_buffer, 1))
+                .status());
+
+  RunInFunctionContext([&](FakeFunction& function) {
+    function.fake_endpoint(bulk_in_addr).RequestComplete(ZX_OK, kRequestLength);
+  });
+  tx_completed.Wait();
+
+  // 2. Receive (RX) 1 packet with payload size 16
+  constexpr size_t kPayloadSize = 16;
+  struct Payload {
+    rndis_packet_header header;
+    char data[kPayloadSize];
+  };
+  Payload payload = {};
+  payload.header.msg_type = RNDIS_PACKET_MSG;
+  payload.header.msg_length = sizeof(payload);
+  payload.header.data_offset =
+      sizeof(rndis_packet_header) - offsetof(rndis_packet_header, data_offset);
+  payload.header.data_length = sizeof(payload.data);
+
+  libsync::Completion rx_completed;
+  driver_test_.RunInEnvironmentTypeContext([&](RndisFunctionTestEnvironment& env) {
+    auto* payload_bytes = reinterpret_cast<uint8_t*>(&payload);
+    env.fake_ifc_.set_on_complete_rx([&]() { rx_completed.Signal(); });
+    env.fake_function_.fake_endpoint(bulk_out_addr)
+        .RequestComplete(ZX_OK,
+                         std::vector<uint8_t>(payload_bytes, payload_bytes + sizeof(payload)));
+  });
+
+  constexpr uint32_t kRxBufferId = 111;
+  fnetdev::wire::RxSpaceBuffer rx_buffer = {
+      .id = kRxBufferId,
+      .region =
+          {
+              .vmo = kVmoId,
+              .offset = 0,
+              .length = 4096,
+          },
+  };
+  fidl::OneWayStatus rx_result = net_impl_client_.buffer(arena)->QueueRxSpace(
+      fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1));
+  ASSERT_TRUE(rx_result.ok()) << rx_result.error().FormatDescription();
+
+  rx_completed.Wait();
+
+  // 3. Trigger throughput and verify
+  driver_test_.RunInDriverContext([](RndisFunction& driver) {
+    driver.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
+
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+
+    auto* root_node = hierarchy.GetByPath({"rndis-function"});
+    ASSERT_NE(nullptr, root_node);
+
+    auto* bulk_in = hierarchy.GetByPath({"rndis-function", "bulk_in"});
+    ASSERT_NE(nullptr, bulk_in);
+    // Expected TX: 64 bytes, tx_pending=0, max_rate=64.
+    auto err_in =
+        usb_inspect::VerifyEndpointInspect(bulk_in, 64, std::nullopt, 0, std::nullopt, 64, 0);
+    EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
+
+    auto* bulk_out = hierarchy.GetByPath({"rndis-function", "bulk_out"});
+    ASSERT_NE(nullptr, bulk_out);
+    // Expected RX: 60 bytes, rx_pending=8, max_rate=60.
+    auto err_out =
+        usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, 60, std::nullopt, 8, 60, 0);
+    EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
+
+    auto* notification = hierarchy.GetByPath({"rndis-function", "notification"});
+    ASSERT_NE(nullptr, notification);
+    // Expected Interrupt TX: 0 bytes (no notifications sent), tx_pending=std::nullopt, max_rate=0.
+    auto err_intr = usb_inspect::VerifyEndpointInspect(notification, 0, std::nullopt, std::nullopt,
+                                                       std::nullopt, 0, 0);
+    EXPECT_TRUE(err_intr.is_ok()) << err_intr.error_value();
+  });
+
+  driver_test_.RunInEnvironmentTypeContext([&](RndisFunctionTestEnvironment& env) {
+    env.fake_ifc_.set_on_complete_tx(nullptr);
+    env.fake_ifc_.set_on_complete_rx(nullptr);
+  });
+  fidl::Result deconfig_result = function_interface_client_->SetConfigured({{
+      .configured = false,
+      .speed = fdescriptor::UsbSpeed::kFull,
+  }});
+  ASSERT_TRUE(deconfig_result.is_ok()) << deconfig_result.error_value().FormatDescription();
 }
 
 TEST_F(RndisFunctionTest, Reset) {

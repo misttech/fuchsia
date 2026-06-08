@@ -38,9 +38,11 @@ source_set("overnet-usb-lib") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/logging/cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//src/devices/bind/fuchsia.google.platform.usb:fuchsia.google.platform.usb_cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-inspect",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <usb-inspect/usb-inspect-test-helper.h>
 
 #include "fbl/auto_lock.h"
 #include "fbl/mutex.h"
@@ -693,6 +694,66 @@ TEST_F(OvernetUsbTest, ResetMoreData) {
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                   test_data_d.size()));
   }
+  UnconfigureDevice();
+}
+TEST_F(OvernetUsbTest, Inspect) {
+  ConfigureDevice();
+  std::vector<zx::socket> sockets;
+  auto callback =
+      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
+  while (sockets.size() < 1u) {
+    driver_test().runtime().RunUntilIdle();
+  }
+
+  std::string_view host_to_device_data = "Host to Device (RX for driver)";
+  std::string_view device_to_host_data = "Device to Host (TX for driver)";
+
+  // 1. Host to Device (RX)
+  ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(host_to_device_data.data()),
+                     host_to_device_data.size()));
+  ASSERT_TRUE(SocketReadExpect(&sockets[0],
+                               reinterpret_cast<const uint8_t*>(host_to_device_data.data()),
+                               host_to_device_data.size()));
+
+  // 2. Device to Host (TX)
+  ASSERT_TRUE(SocketWriteAll(&sockets[0],
+                             reinterpret_cast<const uint8_t*>(device_to_host_data.data()),
+                             device_to_host_data.size()));
+  ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(device_to_host_data.data()),
+                                device_to_host_data.size()));
+
+  // 3. Wait for all in-flight USB TX requests to complete cleanly (eliminates async FIDL races!)
+  bool has_pending_tx = true;
+  while (has_pending_tx) {
+    driver_test().RunInDriverContext(
+        [&has_pending_tx](OvernetUsb& driver) { has_pending_tx = driver.HasPendingTxRequests(); });
+    if (has_pending_tx) {
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+  }
+
+  driver_test().RunInDriverContext([tx_size = device_to_host_data.size(),
+                                    rx_size = host_to_device_data.size()](OvernetUsb& driver) {
+    driver.GetThroughputTrackerForTesting().MeasureForTesting(zx::sec(1));
+
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+
+    auto* overnet_node = hierarchy.GetByPath({"overnet-usb"});
+    ASSERT_TRUE(overnet_node != nullptr);
+
+    auto* bulk_in = hierarchy.GetByPath({"overnet-usb", "bulk_in"});
+    ASSERT_TRUE(bulk_in != nullptr);
+    auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, tx_size, std::nullopt, 0,
+                                                     std::nullopt, tx_size);
+    EXPECT_TRUE(err_in.is_ok()) << err_in.error_value();
+
+    auto* bulk_out = hierarchy.GetByPath({"overnet-usb", "bulk_out"});
+    ASSERT_TRUE(bulk_out != nullptr);
+    auto err_out = usb_inspect::VerifyEndpointInspect(bulk_out, std::nullopt, rx_size, std::nullopt,
+                                                      8, rx_size);
+    EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
+  });
+
   UnconfigureDevice();
 }
 
