@@ -26,6 +26,10 @@ pub enum Error {
         /// The exit status
         code: i32,
     },
+    /// An error from general I/O. Meant mostly to handle things like write!() and such, but also
+    /// for potential issues with piping outputs of other commands into ffx. This isn't something
+    /// that's exactly common, but is a possibility.
+    IoError(#[from] std::io::Error),
     /// Something failed before ffx's configuration could be loaded (like an
     /// invalid argument, a failure to read an env config file, etc).
     ///
@@ -49,7 +53,7 @@ impl Error {
         }
 
         match self {
-            Self::Help { .. } | Self::ExitWithCode(_) => Err(self),
+            Self::Help { .. } | Self::ExitWithCode(_) | Self::IoError(_) => Err(self),
             Self::User(e) => try_downcast(e).map_err(Self::User),
             Self::Unexpected(e) => try_downcast(e).map_err(Self::Unexpected),
             Self::Config(e) => try_downcast(e).map_err(Self::Config),
@@ -62,7 +66,7 @@ impl Error {
     pub fn source(self) -> Result<anyhow::Error, Self> {
         match self {
             Self::User(e) | Self::Unexpected(e) | Self::Config(e) => Ok(e),
-            Self::Help { .. } | Self::ExitWithCode(_) => Err(self),
+            Self::Help { .. } | Self::ExitWithCode(_) | Self::IoError(_) => Err(self),
         }
     }
 }
@@ -124,6 +128,7 @@ impl std::fmt::Display for Error {
             Self::User(error) | Self::Config(error) => write_display(f, error),
             Self::Help { output, .. } => write!(f, "{output}"),
             Self::ExitWithCode(code) => write!(f, "Exiting with code {code}"),
+            Self::IoError(e) => write!(f, "I/O error: {e}"),
         }
     }
 }

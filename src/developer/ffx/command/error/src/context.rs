@@ -127,6 +127,7 @@ impl IntoExitCode for Error {
         use Error::*;
         match self {
             Help { code, .. } | ExitWithCode(code) => *code,
+            IoError(_) => 1,
             Unexpected(err) | User(err) | Config(err) => {
                 err.ffx_error().map(FfxError::exit_code).unwrap_or(1)
             }

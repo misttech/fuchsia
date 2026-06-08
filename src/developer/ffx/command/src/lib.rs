@@ -362,7 +362,7 @@ pub async fn exit(
         Err(Error::Help { output, .. }) => {
             writeln!(&mut std::io::stdout(), "{output}").unwrap();
         }
-        Err(err @ Error::Config(_)) | Err(err @ Error::User(_)) => {
+        Err(err @ Error::Config(_)) | Err(err @ Error::User(_)) | Err(err @ Error::IoError(_)) => {
             // abort hard on a failure to print the user error somehow
             if should_format {
                 let mut out = std::io::stdout();
@@ -435,6 +435,8 @@ enum SerializableError {
     Help { command: Vec<String>, output: String, code: i32 },
     #[error("{message}")]
     Config { code: i32, message: String },
+    #[error("{message}")]
+    IoError { message: String, code: i32 },
     #[error("Exiting with code {code}")]
     ExitWithCode { code: i32 },
 }
@@ -444,6 +446,9 @@ impl From<&Error> for SerializableError {
         match error {
             err @ Error::Unexpected(e) => {
                 Self::Unexpected { code: err.exit_code(), message: format!("{}", e) }
+            }
+            err @ Error::IoError(e) => {
+                Self::IoError { code: err.exit_code(), message: format!("{}", e) }
             }
             err @ Error::User(e) => Self::User { code: err.exit_code(), message: format!("{}", e) },
             err @ Error::Config(e) => {
