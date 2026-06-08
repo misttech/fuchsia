@@ -53,3 +53,6 @@ pub const VMO_FROZEN: u64 = u64::MAX - 1;
 
 /// The order of the header block.
 pub const HEADER_ORDER: u8 = 1;
+
+/// The maximum reference count for a STRING_REFERENCE block (24 bits).
+pub const MAX_REFERENCE_COUNT: u32 = 0xFFFFFF;

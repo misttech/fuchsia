@@ -646,6 +646,56 @@ impl PendingValueBlock<'_> {
     }
 }
 
+struct PendingStringReference<'a> {
+    state: &'a mut InnerState,
+    block_index: BlockIndex,
+}
+
+impl Drop for PendingStringReference<'_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.state.maybe_free_string_reference(self.block_index) {
+            log::error!("failed to maybe free pending string reference: {:?}", e);
+        }
+    }
+}
+
+impl<'a> PendingStringReference<'a> {
+    fn new<'b>(state: &'a mut InnerState, value: impl Into<Cow<'b, str>>) -> Result<Self, Error> {
+        let block_index = state.get_or_create_string_reference(value)?;
+        Ok(Self { state, block_index })
+    }
+
+    fn commit(self) -> Result<BlockIndex, Error> {
+        self.state
+            .heap
+            .container
+            .block_at_unchecked_mut::<StringRef>(self.block_index)
+            .increment_ref_count()?;
+        let index = self.block_index;
+        std::mem::forget(self);
+        Ok(index)
+    }
+}
+
+struct PendingBlock<'a> {
+    state: &'a mut InnerState,
+    block_index: BlockIndex,
+}
+
+impl Drop for PendingBlock<'_> {
+    fn drop(&mut self) {
+        let _ = self.state.heap.free_block(self.block_index);
+    }
+}
+
+impl PendingBlock<'_> {
+    fn commit(self) -> BlockIndex {
+        let index = self.block_index;
+        std::mem::forget(self);
+        index
+    }
+}
+
 impl InnerState {
     /// Creates a new inner state that performs all operations on the heap.
     pub fn new(
@@ -753,19 +803,14 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        let content_block_index = pending.state.get_or_create_string_reference(content)?;
-        pending
-            .state
-            .heap
-            .container
-            .block_at_unchecked_mut::<StringRef>(content_block_index)
-            .increment_ref_count()?;
+        let content_index = PendingStringReference::new(pending.state, content)?.commit()?;
+
         pending
             .state
             .heap
             .container
             .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_link(pending.name_block_index, parent_index, content_block_index, disposition);
+            .become_link(pending.name_block_index, parent_index, content_index, disposition);
         Ok(pending.commit())
     }
 
@@ -815,17 +860,11 @@ impl InnerState {
                 PropertyFormat::StringReference,
             );
 
-        let value_block_index = pending.state.get_or_create_string_reference(value)?;
-        pending
-            .state
-            .heap
-            .container
-            .block_at_unchecked_mut::<StringRef>(value_block_index)
-            .increment_ref_count()?;
+        let value_index = PendingStringReference::new(pending.state, value)?.commit()?;
 
         let mut block =
             pending.state.heap.container.block_at_unchecked_mut::<Buffer>(pending.block_index);
-        block.set_extent_index(value_block_index);
+        block.set_extent_index(value_index);
         block.set_total_length(0);
 
         Ok(pending.commit())
@@ -848,7 +887,11 @@ impl InnerState {
                     .container
                     .block_at_unchecked_mut::<Reserved>(block_index)
                     .become_string_reference();
-                self.write_string_reference_payload(block_index, &value)?;
+                let res = self.write_string_reference_payload(block_index, &value);
+                if let Err(err) = res {
+                    let _ = self.heap.free_block(block_index);
+                    return Err(err);
+                }
                 let owned_value = Arc::new(value.into_owned().into());
                 self.string_reference_block_indexes.insert(Arc::clone(&owned_value), block_index);
                 self.block_index_string_references.insert(block_index, owned_value);
@@ -1016,10 +1059,29 @@ impl InnerState {
         let original_parent_idx =
             self.heap.container.block_at_unchecked::<Node>(being_reparented).parent_index();
         if original_parent_idx != BlockIndex::ROOT {
-            let mut original_parent_block =
-                self.heap.container.block_at_unchecked_mut::<Node>(original_parent_idx);
-            let child_count = original_parent_block.child_count() - 1;
-            original_parent_block.set_child_count(child_count);
+            let original_parent_block = self.heap.container.block_at_mut(original_parent_idx);
+            match original_parent_block.block_type() {
+                Some(BlockType::Tombstone) => {
+                    let mut parent = original_parent_block.cast::<Tombstone>().unwrap();
+                    let child_count = parent.child_count() - 1;
+                    if child_count == 0 {
+                        self.heap.free_block(original_parent_idx).expect("Failed to free block");
+                    } else {
+                        parent.set_child_count(child_count);
+                    }
+                }
+                Some(BlockType::NodeValue) => {
+                    let mut parent = original_parent_block.cast::<Node>().unwrap();
+                    let child_count = parent.child_count() - 1;
+                    parent.set_child_count(child_count);
+                }
+                _ => {
+                    return Err(Error::InvalidBlockType(
+                        original_parent_idx,
+                        original_parent_block.block_type_raw(),
+                    ));
+                }
+            }
         }
 
         self.heap.container.block_at_unchecked_mut::<Node>(being_reparented).set_parent(new_parent);
@@ -1107,16 +1169,6 @@ impl InnerState {
         }
 
         let value = value.into();
-        let reference_index = if !value.is_empty() {
-            let reference_index = self.get_or_create_string_reference(value)?;
-            self.heap
-                .container
-                .block_at_unchecked_mut::<StringRef>(reference_index)
-                .increment_ref_count()?;
-            reference_index
-        } else {
-            BlockIndex::EMPTY
-        };
 
         let existing_index = self
             .heap
@@ -1124,8 +1176,23 @@ impl InnerState {
             .block_at_unchecked::<Array<StringRef>>(block_index)
             .get_string_index_at(slot_index)
             .ok_or(Error::InvalidArrayIndex(slot_index))?;
+
+        let reference_index = if !value.is_empty() {
+            PendingStringReference::new(self, value)?.commit()?
+        } else {
+            BlockIndex::EMPTY
+        };
+
         if existing_index != BlockIndex::EMPTY {
-            self.release_string_reference(existing_index)?;
+            match self.release_string_reference(existing_index) {
+                Ok(()) => {}
+                Err(err) => {
+                    if reference_index != BlockIndex::EMPTY {
+                        let _ = self.release_string_reference(reference_index);
+                    }
+                    return Err(err);
+                }
+            }
         }
 
         self.heap
@@ -1185,23 +1252,13 @@ impl InnerState {
         block_size: usize,
     ) -> Result<PendingValueBlock<'b>, Error> {
         let block_index = self.heap.allocate_block(block_size)?;
-        let name_block_index = match self.get_or_create_string_reference(name) {
-            Ok(b_index) => {
-                self.heap
-                    .container
-                    .block_at_unchecked_mut::<StringRef>(b_index)
-                    .increment_ref_count()?;
-                b_index
-            }
-            Err(err) => {
-                self.heap.free_block(block_index)?;
-                return Err(err);
-            }
-        };
+        let pending_block = PendingBlock { state: self, block_index };
+
+        let pending_name = PendingStringReference::new(pending_block.state, name)?;
 
         let result = {
-            // Safety: NodeValues and Tombstones always have child_count
-            let mut parent_block = self.heap.container.block_at_unchecked_mut::<Node>(parent_index);
+            let mut parent_block =
+                pending_name.state.heap.container.block_at_unchecked_mut::<Node>(parent_index);
             let parent_block_type = parent_block.block_type();
             match parent_block_type {
                 Some(BlockType::NodeValue) | Some(BlockType::Tombstone) => {
@@ -1212,16 +1269,18 @@ impl InnerState {
                 _ => Err(Error::InvalidBlockType(parent_index, parent_block.block_type_raw())),
             }
         };
-        match result {
-            Ok(()) => {
-                Ok(PendingValueBlock { state: self, block_index, name_block_index, parent_index })
-            }
-            Err(err) => {
-                self.release_string_reference(name_block_index)?;
-                self.heap.free_block(block_index)?;
-                Err(err)
-            }
-        }
+
+        result?;
+
+        let name_index = pending_name.commit()?;
+        let block_index = pending_block.commit();
+
+        Ok(PendingValueBlock {
+            state: self,
+            block_index,
+            name_block_index: name_index,
+            parent_index,
+        })
     }
 
     fn delete_value(&mut self, block_index: BlockIndex) -> Result<(), Error> {
@@ -1238,7 +1297,7 @@ impl InnerState {
                     let mut parent = parent.cast::<Tombstone>().unwrap();
                     let child_count = parent.child_count() - 1;
                     if child_count == 0 {
-                        self.heap.free_block(parent_index).expect("Failed to free block");
+                        self.heap.free_block(parent_index)?;
                     } else {
                         parent.set_child_count(child_count);
                     }
@@ -1248,10 +1307,8 @@ impl InnerState {
                     let child_count = parent.child_count() - 1;
                     parent.set_child_count(child_count);
                 }
-                other => {
-                    unreachable!(
-                        "the parent of any value is either tombstone or node. Saw: {other:?}"
-                    );
+                _ => {
+                    return Err(Error::InvalidBlockType(parent_index, parent.block_type_raw()));
                 }
             }
         }
@@ -1261,7 +1318,7 @@ impl InnerState {
             Some(BlockType::StringReference) => {
                 self.release_string_reference(name_index)?;
             }
-            _ => self.heap.free_block(name_index).expect("Failed to free block"),
+            _ => self.heap.free_block(name_index)?,
         }
 
         // If the block is a NODE and has children, make it a TOMBSTONE so that
@@ -1285,11 +1342,7 @@ impl InnerState {
     ) -> Result<(), Error> {
         let old_string_ref_idx =
             self.heap.container.block_at_unchecked::<Buffer>(block_index).extent_index();
-        let new_string_ref_idx = self.get_or_create_string_reference(value.into())?;
-        self.heap
-            .container
-            .block_at_unchecked_mut::<StringRef>(new_string_ref_idx)
-            .increment_ref_count()?;
+        let new_string_ref_idx = PendingStringReference::new(self, value.into())?.commit()?;
 
         self.heap
             .container
@@ -2825,6 +2878,109 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_reparent_tombstone_leak() {
+        use inspect_format::Free;
+
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        let parent_index = state.create_node("parent", 0.into()).unwrap();
+        let child_index = state.create_node("child", parent_index).unwrap();
+        let new_parent_index = state.create_node("new_parent", 0.into()).unwrap();
+
+        // Verify parent child count is 1
+        assert_eq!(state.get_block::<Node>(parent_index).child_count(), 1);
+
+        // Free parent. It has a child, so it must become a Tombstone.
+        state.free_value(parent_index).unwrap();
+        assert_eq!(
+            state.get_block::<Tombstone>(parent_index).block_type(),
+            Some(BlockType::Tombstone)
+        );
+
+        // Reparent child to new_parent.
+        // This decrements parent (Tombstone) child count to 0.
+        // The Tombstone parent should be freed.
+        state.reparent(child_index, new_parent_index).unwrap();
+
+        // Verify parent is now Free.
+        // Currently this will panic because parent is still a Tombstone (leaked).
+        let parent_block = state.get_block::<Free>(parent_index);
+        assert_eq!(parent_block.block_type(), Some(BlockType::Free));
+    }
+
+    #[fuchsia::test]
+    fn test_allocate_reserved_value_overflow_leak() {
+        use inspect_format::HeaderFields;
+        use inspect_format::constants::MAX_REFERENCE_COUNT;
+
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        // 1. Create a node "foo" to allocate the string reference "foo".
+        let parent_index = state.create_node("foo", 0.into()).unwrap();
+        let node_block = state.get_block::<Node>(parent_index);
+        let name_index = node_block.name_index();
+
+        // 2. Manually set its ref count to MAX_REFERENCE_COUNT.
+        {
+            let mut name_block = state.get_block_mut::<StringRef>(name_index);
+            HeaderFields::set_string_reference_count(&mut name_block, MAX_REFERENCE_COUNT);
+        }
+
+        // Record stats before the failing allocation
+        let stats_before = state.stats();
+
+        // 3. Try to create another node with the same name "foo".
+        // This will try to reuse the string reference "foo" and increment its ref count.
+        // It should fail due to overflow.
+        let result = state.create_node("foo", parent_index);
+        assert!(result.is_err());
+
+        // 4. Verify that no block was leaked.
+        let stats_after = state.stats();
+
+        let active_before = stats_before.allocated_blocks - stats_before.deallocated_blocks;
+        let active_after = stats_after.allocated_blocks - stats_after.deallocated_blocks;
+        assert_eq!(active_after, active_before);
+    }
+
+    #[fuchsia::test]
+    fn test_set_array_string_slot_release_failure_leak() {
+        use inspect_format::HeaderFields;
+
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        let array_index = state.create_string_array("array", 2, 0.into()).unwrap();
+        state.set_array_string_slot(array_index, 0, "foo").unwrap();
+
+        let foo_index =
+            state.get_block::<Array<StringRef>>(array_index).get_string_index_at(0).unwrap();
+
+        // Manually set "foo" ref count to 0 to force release_string_reference to fail.
+        {
+            let mut foo_block = state.get_block_mut::<StringRef>(foo_index);
+            HeaderFields::set_string_reference_count(&mut foo_block, 0);
+        }
+
+        let stats_before = state.stats();
+        let active_before = stats_before.allocated_blocks - stats_before.deallocated_blocks;
+
+        // Try to set slot 0 to "bar".
+        // This will allocate "bar", then fail to release "foo".
+        // It should fail and not leak "bar".
+        let result = state.set_array_string_slot(array_index, 0, "bar");
+        assert!(result.is_err());
+
+        let stats_after = state.stats();
+        let active_after = stats_after.allocated_blocks - stats_after.deallocated_blocks;
+
+        // Currently this should fail because "bar" is leaked.
+        assert_eq!(active_after, active_before);
+    }
+
+    #[fuchsia::test]
     fn test_allocate_link_cleanup_failure() {
         let core_state = get_state(4096);
         {
@@ -2865,5 +3021,41 @@ mod tests {
             assert_eq!(header.magic_number(), constants::HEADER_MAGIC_NUMBER);
             assert_eq!(header.version(), constants::HEADER_VERSION_NUMBER);
         });
+    }
+
+    #[fuchsia::test]
+    fn test_get_or_create_string_reference_payload_failure_leak() {
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        // Allocate blocks of various sizes to leave exactly one 2048-byte block free.
+        // Free lists initially have one of each: 32, 64, 128, 256, 512, 1024, 2048.
+        let mut allocated_blocks = vec![];
+        for size in &[32, 64, 128, 256, 512, 1024] {
+            allocated_blocks.push(state.inner_lock.heap.allocate_block(*size).unwrap());
+        }
+
+        let stats_before = state.stats();
+
+        // Try to create a string reference for a string that is too large to inline.
+        // A string of size 2040 needs:
+        // - StringReference block: 2048 bytes (allocated size for 2040 + 4 + 8 = 2052 -> clamped to 2048)
+        // - Extent block: 16 bytes (allocated size for 4 + 8 = 12 -> 16 bytes)
+        // The StringReference allocation will succeed (taking the last 2048 bytes).
+        // The Extent allocation will fail (0 bytes free).
+        // This should fail and return Err.
+        let result = state.inner_lock.get_or_create_string_reference("a".repeat(2040));
+        assert!(result.is_err());
+
+        // Verify that the StringReference block was NOT leaked.
+        let stats_after = state.stats();
+        let active_before = stats_before.allocated_blocks - stats_before.deallocated_blocks;
+        let active_after = stats_after.allocated_blocks - stats_after.deallocated_blocks;
+        assert_eq!(active_after, active_before);
+
+        // Clean up remaining blocks.
+        for block in allocated_blocks {
+            state.inner_lock.heap.free_block(block).unwrap();
+        }
     }
 }

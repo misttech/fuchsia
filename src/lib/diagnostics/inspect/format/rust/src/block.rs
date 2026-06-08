@@ -980,7 +980,10 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
     /// Increment the reference count by 1.
     pub fn increment_ref_count(&mut self) -> Result<(), Error> {
         let cur = HeaderFields::string_reference_count(self);
-        let new_count = cur.checked_add(1).ok_or(Error::InvalidReferenceCount)?;
+        if cur >= constants::MAX_REFERENCE_COUNT {
+            return Err(Error::InvalidReferenceCount);
+        }
+        let new_count = cur + 1;
         HeaderFields::set_string_reference_count(self, new_count);
         Ok(())
     }
