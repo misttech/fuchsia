@@ -32,3 +32,35 @@ pub fn convert_channel_band(
     use metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::*;
     if primary_channel > 14 { Band5Ghz } else { Band2Dot4Ghz }
 }
+
+pub fn convert_rssi_bucket(rssi: i8) -> metrics::ConnectivityWlanMetricDimensionRssiBucket {
+    use metrics::ConnectivityWlanMetricDimensionRssiBucket::*;
+    match rssi {
+        -128..=-90 => From128To90,
+        -89..=-86 => From89To86,
+        -85..=-83 => From85To83,
+        -82..=-80 => From82To80,
+        -79..=-77 => From79To77,
+        -76..=-74 => From76To74,
+        -73..=-71 => From73To71,
+        -70..=-66 => From70To66,
+        -65..=-61 => From65To61,
+        -60..=-51 => From60To51,
+        -50..=-35 => From50To35,
+        -34..=-28 => From34To28,
+        -27..=-1 => From27To1,
+        _ => _0,
+    }
+}
+
+pub fn convert_snr_bucket(snr: i8) -> metrics::ConnectivityWlanMetricDimensionSnrBucket {
+    use metrics::ConnectivityWlanMetricDimensionSnrBucket::*;
+    match snr {
+        1..=10 => From1To10,
+        11..=15 => From11To15,
+        16..=25 => From16To25,
+        26..=40 => From26To40,
+        41..=127 => MoreThan40,
+        _ => _0,
+    }
+}

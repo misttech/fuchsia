@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::convert::{convert_channel_band, convert_security_type};
+use crate::convert::{
+    convert_channel_band, convert_rssi_bucket, convert_security_type, convert_snr_bucket,
+};
 use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 use crate::util::cobalt_logger::log_cobalt_batch;
 use derivative::Derivative;
@@ -17,6 +19,7 @@ use fuchsia_inspect_contrib::nodes::{BoundedListNode, LruCacheNode};
 use fuchsia_inspect_derive::Unit;
 use fuchsia_sync::Mutex;
 use ieee80211::OuiFmt;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
@@ -38,6 +41,7 @@ const INSPECT_DISCONNECT_SOURCES_ID_LIMIT: usize = 32;
 const INSPECT_CONNECT_ATTEMPT_RESULTS_ID_LIMIT: usize = 32;
 const SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT: zx::BootDuration =
     zx::BootDuration::from_minutes(2);
+const DAILY_METRICS_LOG_INTERVAL: zx::BootDuration = zx::BootDuration::from_hours(24);
 
 #[derive(Clone, Debug, Display, EnumIter)]
 enum ConnectionState {
@@ -194,6 +198,7 @@ pub struct ConnectDisconnectLogger {
     successive_connect_attempt_failures: AtomicUsize,
     last_connect_failure_at: Arc<Mutex<Option<fasync::BootInstant>>>,
     last_disconnect_at: Arc<Mutex<Option<fasync::MonotonicInstant>>>,
+    daily_connect_stats: Mutex<DailyConnectStats>,
 }
 
 impl ConnectDisconnectLogger {
@@ -230,6 +235,7 @@ impl ConnectDisconnectLogger {
             successive_connect_attempt_failures: AtomicUsize::new(0),
             last_connect_failure_at: Arc::new(Mutex::new(None)),
             last_disconnect_at: Arc::new(Mutex::new(None)),
+            daily_connect_stats: Mutex::new(DailyConnectStats::new(fasync::BootInstant::now())),
         };
         this.log_connection_state();
         this
@@ -279,6 +285,23 @@ impl ConnectDisconnectLogger {
         if result == fidl_ieee80211::StatusCode::Success {
             self.log_device_connected_cobalt_metrics(bss).await;
         }
+
+        let security_type = convert_security_type(&bss.protection());
+        let primary_channel = bss.channel.primary;
+        let channel_band = convert_channel_band(primary_channel);
+        let rssi_bucket = convert_rssi_bucket(bss.rssi_dbm);
+        let snr_bucket = convert_snr_bucket(bss.snr_db);
+
+        let mut daily_stats = self.daily_connect_stats.lock();
+        daily_stats.connect_per_security_type.entry(security_type).or_default().increment(result);
+        daily_stats
+            .connect_per_primary_channel
+            .entry(primary_channel)
+            .or_default()
+            .increment(result);
+        daily_stats.connect_per_channel_band.entry(channel_band).or_default().increment(result);
+        daily_stats.connect_per_rssi_bucket.entry(rssi_bucket).or_default().increment(result);
+        daily_stats.connect_per_snr_bucket.entry(snr_bucket).or_default().increment(result);
     }
 
     fn log_connect_attempt_inspect(
@@ -514,6 +537,78 @@ impl ConnectDisconnectLogger {
                     event_codes: vec![],
                     payload: MetricEventPayload::IntegerValue(failures as i64),
                 });
+            }
+        }
+
+        {
+            let mut daily_stats = self.daily_connect_stats.lock();
+            if now - daily_stats.last_log_time >= DAILY_METRICS_LOG_INTERVAL {
+                for (security_type, counter) in daily_stats.connect_per_security_type.drain() {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SECURITY_TYPE_METRIC_ID,
+                            event_codes: vec![security_type as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                for (primary_channel, counter) in daily_stats.connect_per_primary_channel.drain() {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+                            event_codes: vec![primary_channel as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                for (channel_band, counter) in daily_stats.connect_per_channel_band.drain() {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+                            event_codes: vec![channel_band as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                for (rssi_bucket, counter) in daily_stats.connect_per_rssi_bucket.drain() {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_RSSI_BUCKET_METRIC_ID,
+                            event_codes: vec![rssi_bucket as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                for (snr_bucket, counter) in daily_stats.connect_per_snr_bucket.drain() {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SNR_BUCKET_METRIC_ID,
+                            event_codes: vec![snr_bucket as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                daily_stats.last_log_time = now;
             }
         }
 
@@ -777,6 +872,57 @@ impl DisconnectSourceExt for fidl_sme::DisconnectSource {
             fidl_sme::DisconnectSource::Mlme(..) => DS::Mlme,
         }
     }
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+struct ConnectAttemptsCounter {
+    success: u64,
+    total: u64,
+}
+
+impl ConnectAttemptsCounter {
+    fn increment(&mut self, code: fidl_ieee80211::StatusCode) {
+        self.total += 1;
+        if code == fidl_ieee80211::StatusCode::Success {
+            self.success += 1;
+        }
+    }
+}
+
+struct DailyConnectStats {
+    last_log_time: fasync::BootInstant,
+    connect_per_security_type: HashMap<
+        metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType,
+        ConnectAttemptsCounter,
+    >,
+    connect_per_primary_channel: HashMap<u8, ConnectAttemptsCounter>,
+    connect_per_channel_band: HashMap<
+        metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand,
+        ConnectAttemptsCounter,
+    >,
+    connect_per_rssi_bucket:
+        HashMap<metrics::ConnectivityWlanMetricDimensionRssiBucket, ConnectAttemptsCounter>,
+    connect_per_snr_bucket:
+        HashMap<metrics::ConnectivityWlanMetricDimensionSnrBucket, ConnectAttemptsCounter>,
+}
+
+impl DailyConnectStats {
+    fn new(now: fasync::BootInstant) -> Self {
+        Self {
+            last_log_time: now,
+            connect_per_security_type: HashMap::new(),
+            connect_per_primary_channel: HashMap::new(),
+            connect_per_channel_band: HashMap::new(),
+            connect_per_rssi_bucket: HashMap::new(),
+            connect_per_snr_bucket: HashMap::new(),
+        }
+    }
+}
+
+// Convert float to an integer in "ten thousandth" unit
+// Example: 0.02f64 (i.e. 2%) -> 200 per ten thousand
+fn float_to_ten_thousandth(value: f64) -> i64 {
+    (value * 10000f64) as i64
 }
 
 #[cfg(test)]
@@ -1242,6 +1388,127 @@ mod tests {
         let metrics =
             test_helper.get_logged_metrics(metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID);
         assert!(metrics.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_daily_connect_success_rate_breakdowns() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        let mut bss = random_bss_description!(Wpa2);
+        bss.channel = Channel::new(6, Cbw::Cbw20); // primary channel 6 -> Band2Dot4Ghz
+        bss.rssi_dbm = -50; // rssi -50 -> From50To35 (event code 11)
+        bss.snr_db = 15; // snr 15 -> From11To15 (event code 3)
+
+        // 1 success, 1 failure => 50% success rate
+        let mut test_fut =
+            pin!(logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss, false));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+            &bss,
+            false
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Before 24 hours pass, no daily metrics should be logged
+        test_helper.clear_cobalt_events();
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000 - 1));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(
+                    metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SECURITY_TYPE_METRIC_ID
+                )
+                .is_empty()
+        );
+
+        // After 24 hours pass, daily metrics should be logged
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Check security type breakdown
+        let daily_security_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SECURITY_TYPE_METRIC_ID,
+        );
+        assert_eq!(daily_security_metrics.len(), 1);
+        assert_eq!(
+            daily_security_metrics[0].event_codes,
+            vec![
+                metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType::Wpa2Personal
+                    as u32
+            ]
+        );
+        assert_eq!(daily_security_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+
+        // Check primary channel breakdown
+        let daily_channel_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        );
+        assert_eq!(daily_channel_metrics.len(), 1);
+        assert_eq!(daily_channel_metrics[0].event_codes, vec![6]);
+        assert_eq!(daily_channel_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+
+        // Check channel band breakdown
+        let daily_band_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        );
+        assert_eq!(daily_band_metrics.len(), 1);
+        assert_eq!(
+            daily_band_metrics[0].event_codes,
+            vec![
+                metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band2Dot4Ghz
+                    as u32
+            ]
+        );
+        assert_eq!(daily_band_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+
+        // Check rssi bucket breakdown
+        let daily_rssi_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_RSSI_BUCKET_METRIC_ID,
+        );
+        assert_eq!(daily_rssi_metrics.len(), 1);
+        assert_eq!(
+            daily_rssi_metrics[0].event_codes,
+            vec![metrics::ConnectivityWlanMetricDimensionRssiBucket::From50To35 as u32]
+        );
+        assert_eq!(daily_rssi_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+
+        // Check snr bucket breakdown
+        let daily_snr_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SNR_BUCKET_METRIC_ID,
+        );
+        assert_eq!(daily_snr_metrics.len(), 1);
+        assert_eq!(
+            daily_snr_metrics[0].event_codes,
+            vec![metrics::ConnectivityWlanMetricDimensionSnrBucket::From11To15 as u32]
+        );
+        assert_eq!(daily_snr_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
     }
 
     #[fuchsia::test]
