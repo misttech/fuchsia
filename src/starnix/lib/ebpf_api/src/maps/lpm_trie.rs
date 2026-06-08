@@ -59,8 +59,6 @@ use linux_uapi::{BPF_EXIST, BPF_NOEXIST};
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
-const LPM_KEY_PREFIX_SIZE: usize = 4;
-
 fn num_matching_bits(a: u32, b: u32) -> usize {
     let a = u32::from_be(a);
     let b = u32::from_be(b);
@@ -263,15 +261,39 @@ mod internal {
     }
 
     impl Layout {
+        const LPM_KEY_PREFIX_SIZE: u32 = 4;
+
+        // LPM Tries allow up to 2048 bits prefix, so total key is up to 260 bytes.
+        const LPM_MAX_KEY_LENGTH_BYTES: u32 = Self::LPM_KEY_PREFIX_SIZE + 256;
+
         pub fn new(schema: &MapSchema) -> Result<Self, MapError> {
-            if schema.key_size == 0 || schema.max_entries == 0 {
+            // Key must be at least 5 bytes: 4 bytes for the prefix, and 1 byte for the key itself.
+            if schema.key_size < (Self::LPM_KEY_PREFIX_SIZE + 1)
+                || schema.key_size > Self::LPM_MAX_KEY_LENGTH_BYTES
+                || schema.max_entries == 0
+            {
                 return Err(MapError::InvalidParam);
             }
-            Ok(Self {
+
+            let result = Self {
                 key_size: schema.key_size,
                 value_size: schema.value_size,
                 max_entries: schema.max_entries,
-            })
+            };
+
+            // Verify that all sizes are valid and we won't see any overflows.
+            if result.checked_total_size().is_none() {
+                return Err(MapError::InvalidParam);
+            }
+
+            Ok(result)
+        }
+
+        /// Returns the total size of the LPM trie in bytes, or None if it is too large.
+        pub fn checked_total_size(&self) -> Option<usize> {
+            TRIE_HEADER_SIZE
+                .checked_add(self.padded_node_size().checked_mul(self.num_nodes())?)?
+                .checked_add(self.padded_data_entry_size().checked_mul(self.max_entries as usize)?)
         }
 
         fn padded_key_size(&self) -> usize {
@@ -315,9 +337,7 @@ mod internal {
         }
 
         pub fn total_size(&self) -> usize {
-            TRIE_HEADER_SIZE
-                + self.padded_node_size() * self.num_nodes()
-                + self.padded_data_entry_size() * (self.max_entries as usize)
+            self.checked_total_size().unwrap()
         }
     }
 
@@ -768,10 +788,6 @@ fn trim_node(
 
 impl LpmTrie {
     pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
-        if schema.key_size <= LPM_KEY_PREFIX_SIZE as u32 {
-            return Err(MapError::InvalidParam);
-        }
-
         // `BPF_F_NO_PREALLOC` is required for LPM Trie.
         if !schema.flags.contains(MapFlags::NoPrealloc) {
             return Err(MapError::InvalidParam);

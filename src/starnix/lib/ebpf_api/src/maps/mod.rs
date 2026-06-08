@@ -659,6 +659,49 @@ mod test {
     }
 
     #[fuchsia::test]
+    fn test_hash_map_overflow() {
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_HASH,
+            key_size: 8,
+            value_size: u32::MAX,
+            max_entries: u32::MAX,
+            flags: MapFlags::empty(),
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+    }
+
+    #[fuchsia::test]
+    fn test_lpm_trie_overflow() {
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+            key_size: 8,
+            value_size: u32::MAX,
+            max_entries: u32::MAX,
+            flags: MapFlags::NoPrealloc,
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+    }
+
+    #[fuchsia::test]
+    fn test_lpm_trie_invalid_key_size() {
+        let make_schema = |key_size| MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+            key_size,
+            value_size: 4,
+            max_entries: 10,
+            flags: MapFlags::NoPrealloc,
+        };
+
+        // Key size must be at least 5 bytes
+        assert_eq!(Map::new(make_schema(4), "test").err(), Some(MapError::InvalidParam));
+        assert!(Map::new(make_schema(5), "test").is_ok());
+
+        // Key size must be at most 260 bytes
+        assert!(Map::new(make_schema(260), "test").is_ok());
+        assert_eq!(Map::new(make_schema(261), "test").err(), Some(MapError::InvalidParam));
+    }
+
+    #[fuchsia::test]
     fn test_hash_map_update_direct() {
         let schema = MapSchema {
             map_type: bpf_map_type_BPF_MAP_TYPE_HASH,

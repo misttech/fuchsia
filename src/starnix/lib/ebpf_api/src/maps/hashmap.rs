@@ -185,11 +185,26 @@ mod internal {
             if schema.key_size == 0 || schema.max_entries == 0 {
                 return Err(MapError::InvalidParam);
             }
-            Ok(Self {
+
+            let result = Self {
                 key_size: schema.key_size,
                 value_size: schema.value_size,
                 max_entries: schema.max_entries,
-            })
+            };
+
+            // Verify that all sizes are valid and we won't see any overflows.
+            if result.checked_total_size().is_none() {
+                return Err(MapError::InvalidParam);
+            }
+
+            Ok(result)
+        }
+
+        /// Returns the total size of the hash map in bytes, or None if it is too large.
+        pub fn checked_total_size(&self) -> Option<usize> {
+            MAP_HEADER_SIZE
+                .checked_add(BUCKET_SIZE.checked_mul(self.num_buckets() as usize)?)?
+                .checked_add(self.padded_data_entry_size().checked_mul(self.max_entries as usize)?)
         }
 
         pub fn num_buckets(&self) -> u32 {
@@ -197,35 +212,40 @@ mod internal {
         }
 
         fn bucket_offset(&self, index: u32) -> usize {
+            // Cannot overflow because checked_total_size() didn't overflow in `new()`.
             MAP_HEADER_SIZE + BUCKET_SIZE * (index as usize)
         }
 
         fn padded_key_size(&self) -> usize {
+            // Cannot overflow because key_size is 32-bit.
             MapBuffer::round_up_to_alignment(self.key_size as usize).unwrap()
         }
 
         fn padded_value_size(&self) -> usize {
+            // Cannot overflow because value_size is 32-bit.
             MapBuffer::round_up_to_alignment(self.value_size as usize).unwrap()
         }
 
         fn data_entry_size(&self) -> usize {
+            // Cannot overflow because key_size and value_size are 32-bit.
             DATA_ENTRY_HEADER_SIZE + self.padded_key_size() + self.value_size as usize
         }
 
         fn padded_data_entry_size(&self) -> usize {
+            // Cannot overflow because key_size and value_size are 32-bit.
             DATA_ENTRY_HEADER_SIZE + self.padded_key_size() + self.padded_value_size()
         }
 
         fn data_entry_offset(&self, index: u32) -> usize {
+            // Cannot overflow because `checked_total_size()` didn't overflow in `new()`.
             MAP_HEADER_SIZE
                 + BUCKET_SIZE * (self.num_buckets() as usize)
                 + self.padded_data_entry_size() * (index as usize)
         }
 
         pub fn total_size(&self) -> usize {
-            MAP_HEADER_SIZE
-                + BUCKET_SIZE * (self.num_buckets() as usize)
-                + self.padded_data_entry_size() * (self.max_entries as usize)
+            // Cannot overflow because `checked_total_size()` didn't overflow in `new()`.
+            self.checked_total_size().unwrap()
         }
     }
 
