@@ -21,7 +21,8 @@ use fxfs::log::*;
 use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{
-    HandleOptions, ObjectDescriptor, ObjectStore, Timestamp, VOLUME_DATA_KEY_ID, directory,
+    DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp, VOLUME_DATA_KEY_ID,
+    directory,
 };
 use linked_hash_map::LinkedHashMap;
 use scopeguard::ScopeGuard;
@@ -43,14 +44,144 @@ const IO_SIZE: usize = 1 << 17; // 128KiB. Needs to be a power of 2 and >= block
 
 pub static RECORDED: AtomicU64 = AtomicU64::new(0);
 
+/// A handle for recording a profile to.
+pub trait RecordingHandle: Send + Sync {
+    /// Append data to the handle.
+    fn append<'a>(
+        &'a self,
+        buf: storage_device::buffer::BufferRef<'a>,
+    ) -> futures::future::BoxFuture<'a, Result<u64, Error>>;
+
+    fn allocate_buffer(
+        &self,
+        size: usize,
+    ) -> futures::future::BoxFuture<'_, storage_device::buffer::Buffer<'_>>;
+
+    fn block_size(&self) -> usize;
+
+    /// The recording is finished being appended to the file. Commit it.
+    fn commit(self: Box<Self>) -> futures::future::BoxFuture<'static, Result<(), Error>>;
+
+    /// When the recording fails or is stopped prematurely this will be called to clean up the
+    /// resources, delete the backing data.
+    fn abort_cleanup(self: Box<Self>);
+}
+
+/// For placing the recording in the volume's internal profile directory.
+pub struct FileRecordingHandle {
+    name: String,
+    volume: Arc<FxVolume>,
+    handle: DataObjectHandle<FxVolume>,
+}
+
+impl FileRecordingHandle {
+    pub async fn new(name: &str, volume: Arc<FxVolume>) -> Result<Self, Error> {
+        let store = volume.store();
+        let fs = store.filesystem();
+        let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
+        let handle =
+            ObjectStore::create_object(&volume, &mut transaction, HandleOptions::default(), None)
+                .await?;
+        store.add_to_graveyard(&mut transaction, handle.object_id());
+        transaction.commit().await?;
+
+        Ok(Self { name: name.to_string(), volume, handle })
+    }
+
+    async fn commit_impl(&self) -> Result<(), Error> {
+        let store = self.volume.store();
+        let fs = store.filesystem();
+        let profile_dir = self.volume.get_profile_directory().await?;
+
+        let mut lock_keys =
+            lock_keys![LockKey::object(store.store_object_id(), profile_dir.object_id())];
+        let mut old_id = INVALID_OBJECT_ID;
+        let mut transaction = loop {
+            let transaction = fs.clone().new_transaction(lock_keys, Options::default()).await?;
+            if let Some((id, descriptor, _)) = profile_dir.lookup(&self.name).await? {
+                ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
+                if id == old_id {
+                    break transaction;
+                }
+                lock_keys = lock_keys![
+                    LockKey::object(store.store_object_id(), profile_dir.object_id()),
+                    LockKey::object(store.store_object_id(), id)
+                ];
+                old_id = id;
+            } else {
+                old_id = INVALID_OBJECT_ID;
+                break transaction;
+            }
+        };
+
+        store.remove_from_graveyard(&mut transaction, self.handle.object_id());
+        directory::replace_child_with_object(
+            &mut transaction,
+            Some((self.handle.object_id(), ObjectDescriptor::File)),
+            (&profile_dir, &self.name),
+            0,
+            false,
+            Timestamp::now(),
+        )
+        .await?;
+        transaction.commit().await?;
+
+        if old_id != INVALID_OBJECT_ID {
+            fs.graveyard().queue_tombstone_object(store.store_object_id(), old_id);
+        }
+
+        Ok(())
+    }
+}
+
+impl RecordingHandle for FileRecordingHandle {
+    fn append<'a>(
+        &'a self,
+        buf: storage_device::buffer::BufferRef<'a>,
+    ) -> futures::future::BoxFuture<'a, Result<u64, Error>> {
+        async move { self.handle.write_or_append(None, buf).await.map_err(Into::into) }.boxed()
+    }
+
+    fn allocate_buffer(
+        &self,
+        size: usize,
+    ) -> futures::future::BoxFuture<'_, storage_device::buffer::Buffer<'_>> {
+        self.handle.allocate_buffer(size).boxed()
+    }
+
+    fn block_size(&self) -> usize {
+        self.handle.block_size() as usize
+    }
+
+    fn commit(self: Box<Self>) -> futures::future::BoxFuture<'static, Result<(), Error>> {
+        async move {
+            let store = self.volume.store();
+            self.commit_impl().await.inspect_err(|_| {
+                store
+                    .filesystem()
+                    .graveyard()
+                    .queue_tombstone_object(store.store_object_id(), self.handle.object_id());
+            })
+        }
+        .boxed()
+    }
+
+    fn abort_cleanup(self: Box<Self>) {
+        let this = *self;
+        this.volume
+            .store()
+            .filesystem()
+            .graveyard()
+            .queue_tombstone_object(this.volume.store().store_object_id(), this.handle.object_id());
+    }
+}
+
 trait RecordedVolume: Send + Sync + Sized + Unpin {
     type IdType: std::fmt::Display + Ord + Send + Sized;
     type NodeType: PagerBacked;
     type MessageType: Message<IdType = Self::IdType>;
 
     fn new(volume: Arc<FxVolume>) -> Self;
-
-    fn volume(&self) -> &Arc<FxVolume>;
 
     fn open(
         &self,
@@ -133,9 +264,14 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
 
     fn record(
         &self,
-        name: &str,
+        recording_handle: Box<dyn RecordingHandle>,
         receiver: async_channel::Receiver<Vec<Self::MessageType>>,
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
+        // Ensure that this gets cleaned up if we cancel or fail anywhere.
+        let recording_handle = scopeguard::guard(recording_handle, |recording_handle| {
+            recording_handle.abort_cleanup();
+        });
+
         async move {
             let mut recorded_offsets = LinkedHashMap::<Self::MessageType, ()>::new();
             let mut recorded_opens = BTreeMap::<Self::IdType, bool>::new();
@@ -152,29 +288,9 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                 }
             }
 
-            // Start a recording handle. Put it in the graveyard in case we can't properly complete
-            // it.
-            let store = self.volume().store();
-            let fs = store.filesystem();
-            let mut transaction =
-                fs.clone().new_transaction(lock_keys![], Options::default()).await?;
-            let handle = ObjectStore::create_object(
-                self.volume(),
-                &mut transaction,
-                HandleOptions::default(),
-                None,
-            )
-            .await?;
-            store.add_to_graveyard(&mut transaction, handle.object_id());
-            transaction.commit().await?;
-
-            let clean_up = scopeguard::guard((), |_| {
-                fs.graveyard().queue_tombstone_object(store.store_object_id(), handle.object_id())
-            });
-
-            let block_size = handle.block_size() as usize;
+            let block_size = recording_handle.block_size();
             let mut offset = 0;
-            let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
+            let mut io_buf = recording_handle.allocate_buffer(IO_SIZE).await;
             let mut next_block = block_size;
             while let Some((message, _)) = recorded_offsets.pop_front() {
                 // If a file opening was never recorded, or it is not usable drop the message.
@@ -188,9 +304,8 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                     // resize the I/O without supporting reading/writing half messages to a buffer.
                     io_buf.as_mut_slice()[offset..next_block].fill(0);
                     if next_block >= IO_SIZE {
-                        // The buffer is full.  Write it out.
-                        handle
-                            .write_or_append(None, io_buf.as_ref())
+                        recording_handle
+                            .append(io_buf.as_ref())
                             .await
                             .context("Failed to write profile block")?;
                         offset = 0;
@@ -207,51 +322,16 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
             }
             if offset > 0 {
                 io_buf.as_mut_slice()[offset..next_block].fill(0);
-                handle
-                    .write_or_append(None, io_buf.subslice(0..next_block))
+                recording_handle
+                    .append(io_buf.subslice(0..next_block))
                     .await
                     .context("Failed to write profile block")?;
             }
 
-            let profile_dir = self.volume().get_profile_directory().await?;
-
-            let mut lock_keys =
-                lock_keys![LockKey::object(store.store_object_id(), profile_dir.object_id())];
-            let mut old_id = INVALID_OBJECT_ID;
-            let mut transaction = loop {
-                let transaction = fs.clone().new_transaction(lock_keys, Options::default()).await?;
-                if let Some((id, descriptor, _)) = profile_dir.lookup(name).await? {
-                    ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
-                    if id == old_id {
-                        break transaction;
-                    }
-                    lock_keys = lock_keys![
-                        LockKey::object(store.store_object_id(), profile_dir.object_id()),
-                        LockKey::object(store.store_object_id(), id)
-                    ];
-                    old_id = id;
-                } else {
-                    old_id = INVALID_OBJECT_ID;
-                    break transaction;
-                }
-            };
-
-            store.remove_from_graveyard(&mut transaction, handle.object_id());
-            directory::replace_child_with_object(
-                &mut transaction,
-                Some((handle.object_id(), ObjectDescriptor::File)),
-                (&profile_dir, name),
-                0,
-                false,
-                Timestamp::now(),
-            )
-            .await?;
-            transaction.commit().await?;
-
-            ScopeGuard::into_inner(clean_up);
-            if old_id != INVALID_OBJECT_ID {
-                fs.graveyard().queue_tombstone_object(store.store_object_id(), old_id);
-            }
+            std::mem::drop(io_buf);
+            // Defuse the cleanup.
+            let recording_handle = ScopeGuard::into_inner(recording_handle);
+            recording_handle.commit().await?;
 
             Ok(())
         }
@@ -272,10 +352,6 @@ impl RecordedVolume for BlobVolume {
 
     fn new(volume: Arc<FxVolume>) -> Self {
         Self { volume, root_dir: Mutex::new(None) }
-    }
-
-    fn volume(&self) -> &Arc<FxVolume> {
-        &self.volume
     }
 
     async fn open(&self, id: Self::IdType) -> Result<OpenedNode<Self::NodeType>, Error> {
@@ -319,10 +395,6 @@ impl RecordedVolume for FileVolume {
 
     fn new(volume: Arc<FxVolume>) -> Self {
         Self { volume }
-    }
-
-    fn volume(&self) -> &Arc<FxVolume> {
-        &self.volume
     }
 
     async fn open(&self, id: Self::IdType) -> Result<OpenedNode<Self::NodeType>, Error> {
@@ -635,7 +707,11 @@ pub trait ProfileState: Send + Sync {
     /// Creates a new recording and returns the `Recorder` object to record to. The recording
     /// finalizes when the associated `Recorder` is dropped.  Stops any recording currently in
     /// progress.
-    fn record_new(&mut self, volume: &Arc<FxVolume>, name: &str) -> Box<dyn Recorder>;
+    fn record_new(
+        &mut self,
+        volume: &Arc<FxVolume>,
+        recording_handle: Box<dyn RecordingHandle>,
+    ) -> Box<dyn Recorder>;
 
     /// Reads given handle to parse a profile and replay it by requesting pages via
     /// ZX_VMO_OP_PREFETCH in blocking background threads. Stops any replay currently in progress.
@@ -675,19 +751,22 @@ impl<T> ProfileStateImpl<T> {
 
 #[async_trait]
 impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
-    fn record_new(&mut self, volume: &Arc<FxVolume>, name: &str) -> Box<dyn Recorder> {
+    fn record_new(
+        &mut self,
+        volume: &Arc<FxVolume>,
+        recording_handle: Box<dyn RecordingHandle>,
+    ) -> Box<dyn Recorder> {
         let (sender, receiver) = async_channel::unbounded();
         let volume = volume.clone();
-        let name = name.to_string();
         // Cancel the previous recording (if any).
         self.recording = None;
         let scope = volume.scope().clone();
         let (task, remote_handle) = async move {
             let recording = T::new(volume);
             recording
-                .record(&name, receiver)
+                .record(recording_handle, receiver)
                 .await
-                .inspect_err(|error| warn!(error:?; "Profile recording '{name}' failed"))
+                .inspect_err(|error| warn!(error:?; "Profile recording failed"))
         }
         .remote_handle();
         self.recording = Some(remote_handle);
@@ -718,8 +797,8 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlobMessage, BlobVolume, FileMessage, FileVolume, IO_SIZE, Message, RecordedVolume,
-        Request, new_profile_state,
+        BlobMessage, BlobVolume, FileMessage, FileRecordingHandle, FileVolume, IO_SIZE, Message,
+        RecordedVolume, Request, new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::blob::FxBlob;
@@ -923,7 +1002,9 @@ mod tests {
 
             {
                 // Drop recorder when finished writing to flush data.
-                let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+                let handle =
+                    FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+                let mut recorder = state.record_new(volume, Box::new(handle));
                 recorder.record(blob.clone(), 0).unwrap();
                 recorder.record_open(blob).unwrap();
             }
@@ -952,7 +1033,9 @@ mod tests {
 
             {
                 // Drop recorder when finished writing to flush data.
-                let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+                let handle =
+                    FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+                let mut recorder = state.record_new(volume, Box::new(handle));
                 recorder.record(node.clone(), 0).unwrap();
                 recorder.record_open(node).unwrap();
             }
@@ -975,7 +1058,9 @@ mod tests {
 
             {
                 // Drop recorder when finished writing to flush data.
-                let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+                let handle =
+                    FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+                let mut recorder = state.record_new(volume, Box::new(handle));
                 recorder.record(blob.clone(), 0).unwrap();
             }
             state.wait_for_recording_to_finish().await.unwrap();
@@ -999,7 +1084,8 @@ mod tests {
             hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
             let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
             // Drop recorder when finished writing to flush data.
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             recorder.record_open(blob.clone()).unwrap();
             for i in 0..message_count {
                 recorder.record(blob.clone(), 4096 * i as u64).unwrap();
@@ -1047,7 +1133,8 @@ mod tests {
                 .await
                 .unwrap();
             // Drop recorder when finished writing to flush data.
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             recorder.record_open(node.clone()).unwrap();
             for i in 0..message_count {
                 recorder.record(node.clone(), 4096 * i as u64).unwrap();
@@ -1092,7 +1179,9 @@ mod tests {
                 hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
                 let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 // Drop recorder when finished writing to flush data.
-                let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+                let handle =
+                    FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+                let mut recorder = state.record_new(volume, Box::new(handle));
                 recorder.record_open(blob.clone()).unwrap();
                 for i in 0..message_count {
                     recorder.record(blob.clone(), 4096 * i as u64).unwrap();
@@ -1137,7 +1226,8 @@ mod tests {
             let message_count = (fixture.fs().block_size() as usize / size_of::<BlobMessage>()) + 1;
 
             let volume = fixture.volume().volume();
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             // Page in the zero offsets only to avoid readahead strangeness.
             for i in 0..message_count {
                 let hash =
@@ -1193,7 +1283,8 @@ mod tests {
             let message_count = (fixture.fs().block_size() as usize / size_of::<FileMessage>()) + 1;
 
             let volume = fixture.volume().volume();
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             // Page in the zero offsets only to avoid readahead strangeness.
             for i in 0..message_count {
                 let id = write_file(&fixture, &i.to_string(), &[88u8]).await;
@@ -1279,7 +1370,8 @@ mod tests {
 
         // First make a simple recording.
         {
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             hash = fixture.write_blob(&[0, 1, 2, 3], CompressionMode::Never).await;
             let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
             recorder.record_open(blob.clone()).unwrap();
@@ -1303,7 +1395,8 @@ mod tests {
 
             // Start recording
             let volume = fixture.volume().volume();
-            let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
+            let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
+            let mut recorder = state.record_new(volume, Box::new(handle));
             recorder.record(blob.clone(), 4096).unwrap();
 
             // Replay the original recording.

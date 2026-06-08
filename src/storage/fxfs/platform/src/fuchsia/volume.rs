@@ -307,11 +307,13 @@ impl FxVolume {
             None
         };
 
-        let mut profile_state = self.profile_state.lock();
-
         info!("Recording new profile '{name}' for volume object {}", self.store.store_object_id());
         // Begin recording first to ensure that we capture any activity from the replay.
-        self.pager.set_recorder(Some(state.record_new(self, name)));
+        let recording_handle =
+            crate::fuchsia::profile::FileRecordingHandle::new(name, self.clone()).await?;
+
+        let mut profile_state = self.profile_state.lock();
+        self.pager.set_recorder(Some(state.record_new(self, Box::new(recording_handle))));
         if let Some(handle) = replay_handle {
             if let Some(guard) = self.scope().try_active_guard() {
                 state.replay_profile(handle, self.clone(), guard);
@@ -322,6 +324,46 @@ impl FxVolume {
             }
         }
         *profile_state = Some(state);
+        Ok(())
+    }
+
+    /// Replays a profile if one exists, and only records if one does not exist.
+    pub async fn replay_xor_record_profile(
+        self: &Arc<Self>,
+        mut state: Box<dyn ProfileState>,
+        name: &str,
+    ) -> Result<(), Error> {
+        let profile_dir = self.get_profile_directory().await?;
+        let replay_handle = if let Some((id, descriptor, _)) = profile_dir.lookup(name).await? {
+            ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
+            Some(Box::new(
+                ObjectStore::open_object(self, id, HandleOptions::default(), None).await?,
+            ))
+        } else {
+            None
+        };
+
+        if let Some(handle) = replay_handle {
+            let mut profile_state = self.profile_state.lock();
+            if let Some(guard) = self.scope().try_active_guard() {
+                state.replay_profile(handle, self.clone(), guard);
+                info!(
+                    "Replaying existing profile '{name}' for volume object {}",
+                    self.store.store_object_id()
+                );
+            }
+            *profile_state = Some(state);
+        } else {
+            info!(
+                "Recording new profile '{name}' for volume object {}",
+                self.store.store_object_id()
+            );
+            let recording_handle =
+                crate::fuchsia::profile::FileRecordingHandle::new(name, self.clone()).await?;
+            let mut profile_state = self.profile_state.lock();
+            self.pager.set_recorder(Some(state.record_new(self, Box::new(recording_handle))));
+            *profile_state = Some(state);
+        }
         Ok(())
     }
 

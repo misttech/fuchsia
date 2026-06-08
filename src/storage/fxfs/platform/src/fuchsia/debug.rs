@@ -641,6 +641,14 @@ pub async fn handle_debug_request(
                     .map_err(Status::into_raw),
             )
         }
+        DebugRequest::ReplayXorRecordProfile { responder, volume, profile, duration_secs } => {
+            responder.send(
+                volumes
+                    .replay_xor_record_profile(volume, profile, duration_secs)
+                    .await
+                    .map_err(Status::into_raw),
+            )
+        }
         DebugRequest::StopProfileTasks { responder } => {
             volumes.stop_profile_tasks().await;
             responder.send(Ok(()))

@@ -54,6 +54,24 @@ pub struct RecordAndReplayProfileSubCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
+    name = "replay_xor_record_profile",
+    example = "ffx storage fxfs replay_xor_record_profile --volume data startup 60 ",
+    description = "Replays a profile for a named unlocked volume if one exists, otherwise it \
+        starts recording one. Fails during active profile recording and/or replay."
+)]
+pub struct ReplayXorRecordProfileSubCommand {
+    #[argh(positional)]
+    profile: String,
+    #[argh(positional)]
+    duration_secs: u32,
+    #[argh(option, short = 'v')]
+    /// the volume to affect.
+    volume: String,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
     name = "stop_profile",
     example = "ffx storage fxfs stop_profile",
     description = "Blocks while stopping all profile recording and/or replay activity."
@@ -66,6 +84,7 @@ pub enum FxfsSubCommand {
     Compact(CompactSubCommand),
     DeleteProfile(DeleteProfileSubCommand),
     RecordAndReplayProfile(RecordAndReplayProfileSubCommand),
+    ReplayXorRecordProfile(ReplayXorRecordProfileSubCommand),
     StopProfile(StopProfileSubCommand),
 }
 
@@ -103,6 +122,13 @@ pub async fn handle_cmd(
                     &args.profile,
                     args.duration_secs,
                 )
+                .await
+                .map_err(|e| Error::User(e.into()))?
+                .map_err(|e| Error::User(Status::from_raw(e).into()))?;
+        }
+        FxfsSubCommand::ReplayXorRecordProfile(args) => {
+            fxfs_proxy
+                .replay_xor_record_profile(&args.volume, &args.profile, args.duration_secs)
                 .await
                 .map_err(|e| Error::User(e.into()))?
                 .map_err(|e| Error::User(Status::from_raw(e).into()))?;

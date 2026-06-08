@@ -175,6 +175,28 @@ impl MountedVolumesGuard<'_> {
         Ok(volume)
     }
 
+    /// Returns the volume if it is found and unlocked, along with a bool to indicate that it is or
+    /// isn't a blob volume.
+    async fn get_unlocked_volume_by_name(
+        &self,
+        volume_name: &str,
+    ) -> Result<(FxVolumeAndRoot, bool), zx::Status> {
+        let (store_object_id, _, _) = self
+            .volumes_directory
+            .root_volume
+            .volume_directory()
+            .lookup(volume_name)
+            .await
+            .map_err(map_to_status)?
+            .ok_or(zx::Status::NOT_FOUND)?;
+        if let Some(MountedVolume { volume, .. }) = self.mounted_volumes.get(&store_object_id) {
+            let is_blob = volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
+            Ok((volume.clone(), is_blob))
+        } else {
+            Err(zx::Status::UNAVAILABLE)
+        }
+    }
+
     // Mounts the given store.  A lock *must* be held on the volume directory.
     async fn mount_store<T: From<Directory<FxVolume>> + RootDir>(
         &mut self,
@@ -460,34 +482,19 @@ impl VolumesDirectory {
         }
         match volume_name.as_ref() {
             Some(volume_name) => {
-                let (store_object_id, _, _) = volumes
-                    .volumes_directory
-                    .root_volume
-                    .volume_directory()
-                    .lookup(&volume_name)
+                let (volume, is_blob) = volumes.get_unlocked_volume_by_name(&volume_name).await?;
+                if let Err(error) = volume
+                    .volume()
+                    .record_and_replay_profile(new_profile_state(is_blob), &profile_name)
                     .await
-                    .map_err(|_| zx::Status::INTERNAL)?
-                    .ok_or(zx::Status::NOT_FOUND)?;
-                if let Some(MountedVolume { volume, .. }) =
-                    volumes.mounted_volumes.get(&store_object_id)
                 {
-                    let is_blob =
-                        volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
-                    if let Err(error) = volume
-                        .volume()
-                        .record_and_replay_profile(new_profile_state(is_blob), &profile_name)
-                        .await
-                    {
-                        error!(
-                            error:?,
-                            profile_name = profile_name.as_str(),
-                            volume_name = volume_name.as_str();
-                            "Failed to record or replay profile",
-                        );
-                        return Err(zx::Status::INTERNAL);
-                    }
-                } else {
-                    return Err(zx::Status::UNAVAILABLE);
+                    error!(
+                        error:?,
+                        profile_name = profile_name.as_str(),
+                        volume_name = volume_name.as_str();
+                        "Failed to record or replay profile",
+                    );
+                    return Err(map_to_status(error));
                 }
             }
             None => {
@@ -517,6 +524,44 @@ impl VolumesDirectory {
             this.stop_profile_tasks().await;
         });
         *state = Some(ProfileState { task, profile_name, all_volumes: volume_name.is_none() });
+        Ok(())
+    }
+
+    /// Replays a profile if one exists, and only records if one does not exist.
+    /// The given volume must be unlocked.
+    pub async fn replay_xor_record_profile(
+        self: &Arc<Self>,
+        volume_name: String,
+        profile_name: String,
+        duration_secs: u32,
+    ) -> Result<(), zx::Status> {
+        // Volumes lock is taken first to provide consistent lock ordering with mounting a volume.
+        let volumes = self.lock().await;
+        let mut state = self.profiling_state.lock().await;
+        if state.is_some() {
+            return Err(zx::Status::SHOULD_WAIT);
+        }
+        let (volume, is_blob) = volumes.get_unlocked_volume_by_name(&volume_name).await?;
+        if let Err(error) = volume
+            .volume()
+            .replay_xor_record_profile(new_profile_state(is_blob), &profile_name)
+            .await
+        {
+            error!(
+                error:?,
+                profile_name = profile_name.as_str(),
+                volume_name = volume_name.as_str();
+                "Failed to replay or record profile",
+            );
+            return Err(map_to_status(error));
+        }
+
+        let this = self.clone();
+        let task = fasync::Task::spawn(async move {
+            fasync::Timer::new(fasync::MonotonicDuration::from_seconds(duration_secs.into())).await;
+            this.stop_profile_tasks().await;
+        });
+        *state = Some(ProfileState { task, profile_name, all_volumes: false });
         Ok(())
     }
 

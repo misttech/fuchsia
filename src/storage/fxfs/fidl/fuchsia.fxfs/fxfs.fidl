@@ -310,6 +310,18 @@ closed protocol Debug {
         duration_secs uint32;
     }) -> () error zx.Status;
 
+    /// Replays a profile if one exists, and only records if one does not exist. Fails if the volume
+    /// isn't mounted or there is active profile recording or replay on the volume.
+    ///
+    /// This profile method is meant to support app launch profiling. These profiles do not filter
+    /// entries based on Open events since outside of the boot process objects may already be opened
+    /// or cached in overlays like Starnix.
+    strict ReplayXorRecordProfile(struct {
+        volume fuchsia.io.Name;
+        profile fuchsia.io.Name;
+        duration_secs uint32;
+    }) -> () error zx.Status;
+
     /// Stops all profile recording and replay activity. Ongoing recordings are completed and
     /// persisted.
     strict StopProfileTasks() -> () error zx.Status;
