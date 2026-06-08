@@ -9,6 +9,7 @@ use fuchsia_async as fasync;
 use fuchsia_runtime as fruntime;
 use starnix_c_file_buffer::CFileBuffer;
 use starnix_logging::{log_debug, log_error, log_warn};
+use std::collections::BTreeSet;
 use uuid::Uuid;
 use zx::{self, Task};
 
@@ -59,38 +60,56 @@ async fn dump_thread_backtrace<'a>(
 
 const LOCKUP_DETECTOR_INTERVAL_MINUTES: i64 = 2;
 
-async fn check_and_report_lockups(event_id: &mut Option<String>) -> Result<(), anyhow::Error> {
+#[derive(Default)]
+struct LockupDetectorContext {
+    event_id: Option<String>,
+    reported_koids: BTreeSet<zx::Koid>,
+}
+
+async fn check_and_report_lockups(
+    context: &mut LockupDetectorContext,
+) -> Result<(), anyhow::Error> {
     let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
         zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
     );
+
+    let current_koids: BTreeSet<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
+
+    // Clean up threads that are no longer locked up.
+    context.reported_koids.retain(|koid| current_koids.contains(koid));
+
     if long_running.is_empty() {
         return Ok(());
     }
 
-    let event_id_str = event_id.get_or_insert_with(|| Uuid::new_v4().to_string()).clone();
+    // Identify newly locked threads.
+    let newly_locked: Vec<_> =
+        long_running.iter().filter(|r| !context.reported_koids.contains(&r.koid)).collect();
 
-    let koids: Vec<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
-    let mut sorted_koids = koids.clone();
-    sorted_koids.sort();
-    let koids_str = format!("{:?}", sorted_koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>());
+    if newly_locked.is_empty() {
+        return Ok(());
+    }
+
+    let event_id_str = context.event_id.get_or_insert_with(|| Uuid::new_v4().to_string()).clone();
+
+    let koids_str = format!("{:?}", current_koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>());
 
     log_error!(
         "Detected threads locked up for more than {} minutes: {:?}",
         LOCKUP_DETECTOR_INTERVAL_MINUTES,
-        sorted_koids
+        current_koids
     );
 
-    let mut thread_names = vec![];
+    let mut thread_names = BTreeSet::new();
     for registered in &long_running {
         let name = if let Ok(name) = registered.thread.get_name() {
             format!("{}({})", name, registered.koid.raw_koid())
         } else {
             format!("koid-{}", registered.koid.raw_koid())
         };
-        thread_names.push(name);
+        thread_names.insert(name);
     }
-    thread_names.sort();
-    let mut names_str = thread_names.join(", ");
+    let mut names_str = thread_names.into_iter().collect::<Vec<_>>().join(", ");
     let max_annotation_len = ffeedback::MAX_ANNOTATION_VALUE_LENGTH as usize;
     if names_str.len() > max_annotation_len {
         let mut limit = max_annotation_len - 3;
@@ -108,7 +127,7 @@ async fn check_and_report_lockups(event_id: &mut Option<String>) -> Result<(), a
         fuchsia_component::client::connect_to_protocol::<ffeedback::CrashReporterMarker>()
             .context("Failed to connect to CrashReporter")?;
 
-    for registered in &long_running {
+    for registered in newly_locked {
         let bt = dump_thread_backtrace(&registered.thread, &mut file_buffer).await.with_context(
             || format!("Failed to dump backtrace for thread {}", registered.koid.raw_koid()),
         )?;
@@ -154,6 +173,7 @@ async fn check_and_report_lockups(event_id: &mut Option<String>) -> Result<(), a
         })?;
 
         log_debug!("Filed crash report for thread lockup (thread {}).", registered.koid.raw_koid());
+        context.reported_koids.insert(registered.koid);
     }
 
     Ok(())
@@ -161,14 +181,14 @@ async fn check_and_report_lockups(event_id: &mut Option<String>) -> Result<(), a
 
 pub fn start_thread_lockup_detector() -> fasync::Task<()> {
     fasync::Task::spawn(async {
-        let mut event_id = None;
+        let mut context = LockupDetectorContext::default();
         loop {
             fasync::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_minutes(
                 LOCKUP_DETECTOR_INTERVAL_MINUTES,
             )))
             .await;
             let _waiting_guard = starnix_core::task::ThreadLockupDetector::pause_tracking();
-            if let Err(e) = check_and_report_lockups(&mut event_id).await {
+            if let Err(e) = check_and_report_lockups(&mut context).await {
                 log_warn!("Error in thread lockup detector: {:?}", e);
             }
         }

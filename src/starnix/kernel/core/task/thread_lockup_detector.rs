@@ -126,7 +126,7 @@ impl ThreadLockupDetector {
     }
 
     /// Iterates over the registry, finds threads that have been running longer than the threshold,
-    /// resets their timer, and returns their `ThreadLockupInfo`.
+    /// and returns their `ThreadLockupInfo`.
     pub fn get_long_running_threads(threshold: zx::MonotonicDuration) -> Vec<ThreadLockupInfo> {
         let now = zx::MonotonicInstant::get();
         let registry = REGISTRY.read();
@@ -143,7 +143,6 @@ impl ThreadLockupDetector {
                 }
                 let start_time = zx::MonotonicInstant::from_nanos(start_nanos as i64);
                 if now - start_time > threshold {
-                    atomic.store(0, Ordering::Relaxed);
                     Some(ThreadLockupInfo {
                         thread: registered.thread.clone(),
                         koid: registered.koid,
@@ -274,8 +273,8 @@ mod tests {
             // Exceed threshold immediately with zero duration.
             assert!(get_long_running_koids().contains(&koid));
 
-            // After triggering, it resets to 0.
-            assert!(get_long_running_koids().is_empty());
+            // After triggering, it still contains it (we don't reset).
+            assert!(get_long_running_koids().contains(&koid));
         }
 
         // Guard dropped.
