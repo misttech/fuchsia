@@ -34,6 +34,8 @@ use starnix_logging::{
 };
 use std::rc::Rc;
 
+mod lockup_detector;
+
 /// Overrides the `zxio_maybe_faultable_copy` weak symbol found in zxio.
 #[unsafe(no_mangle)]
 extern "C" fn zxio_maybe_faultable_copy(
@@ -171,111 +173,7 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_wait_for_init();
     fuchsia_trace::instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
-    // We use `inspector_print_debug_info` directly instead of `backtrace_request_thread` because
-    // `backtrace_request_thread` relies on the exception mechanism (crashsvc). If we use
-    // exceptions, the exception is attributed to the main Starnix kernel process (which detects the
-    // lockup), not the process containing the locked-up thread. This would prevent crashsvc from
-    // accessing the correct thread state and stack. By holding the thread handle directly, we can
-    // inspect it regardless of its process.
-    // SAFETY: This declares external C symbols from the Zircon inspector library.
-    unsafe extern "C" {
-        fn inspector_print_debug_info(
-            out: *mut std::ffi::c_void,
-            process: zx::sys::zx_handle_t,
-            thread: zx::sys::zx_handle_t,
-        );
-        static stderr: *mut std::ffi::c_void;
-    }
-
-    async fn dump_thread_backtrace(thread: &zx::Thread) {
-        use zx::Task;
-
-        let _suspend_token = match thread.suspend() {
-            Ok(token) => token,
-            Err(e) => {
-                log_error!("Failed to suspend thread: {:?}", e);
-                return;
-            }
-        };
-
-        // Wait for suspended signal asynchronously.
-        match fuchsia_async::OnSignals::new(thread, zx::Signals::THREAD_SUSPENDED).await {
-            Ok(_signals) => (),
-            Err(e) => {
-                log_error!("Failed to wait for thread suspension: {:?}", e);
-                return;
-            }
-        }
-
-        // SAFETY: Calling FFI is safe when passing valid handles.
-        unsafe {
-            let process_self = fuchsia_runtime::process_self().raw_handle();
-            inspector_print_debug_info(stderr, process_self, thread.raw_handle());
-        }
-    }
-
-    const LOCKUP_DETECTOR_INTERVAL_MINUTES: i64 = 2;
-    let _lockup_detector_task = fasync::Task::spawn(async {
-        loop {
-            fasync::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_minutes(
-                LOCKUP_DETECTOR_INTERVAL_MINUTES,
-            )))
-            .await;
-            let _waiting_guard = starnix_core::task::ThreadLockupDetector::pause_tracking();
-            let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
-                zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
-            );
-            if !long_running.is_empty() {
-                let koids: Vec<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
-                log_error!(
-                    "Detected threads locked up for more than {} minutes: {:?}",
-                    LOCKUP_DETECTOR_INTERVAL_MINUTES,
-                    koids
-                );
-                #[cfg(all(target_os = "fuchsia", not(doc)))]
-                {
-                    for registered in &long_running {
-                        dump_thread_backtrace(&registered.thread).await;
-                    }
-
-                    let reporter = fuchsia_component::client::connect_to_protocol::<
-                        fidl_fuchsia_feedback::CrashReporterMarker,
-                    >();
-                    match reporter {
-                        Ok(reporter) => {
-                            let report = fidl_fuchsia_feedback::CrashReport {
-                                program_name: Some("starnix_kernel".to_string()),
-                                crash_signature: Some(
-                                    "fuchsia-starnix_kernel-thread-lockup".to_string(),
-                                ),
-                                is_fatal: Some(false),
-                                annotations: Some(vec![fidl_fuchsia_feedback::Annotation {
-                                    key: "starnix.lockup_koids".to_string(),
-                                    value: format!(
-                                        "{:?}",
-                                        koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>()
-                                    ),
-                                }]),
-                                ..Default::default()
-                            };
-                            match reporter.file_report(report).await {
-                                Ok(Ok(_)) => log_debug!("Filed crash report for thread lockup."),
-                                Ok(Err(e)) => {
-                                    log_warn!(e:?; "Failed to file crash report for thread lockup.")
-                                }
-                                Err(e) => {
-                                    log_warn!(e:?; "Failed to call file_report for thread lockup.")
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log_warn!(e:?; "Failed to connect to CrashReporter");
-                        }
-                    }
-                }
-            }
-        }
-    });
+    let _lockup_detector_task = lockup_detector::start_thread_lockup_detector();
 
     starnix_kernel_runner::initialize();
     let container = Rc::new(OnceCell::<Container>::new());

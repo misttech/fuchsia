@@ -43,6 +43,10 @@ pub struct CFileBuffer {
     buffer: Vec<u8>,
 }
 
+// SAFETY: CFileBuffer owns the FILE* and the buffer, and does not share them concurrently.
+// It is safe to transfer ownership of CFileBuffer to another thread.
+unsafe impl Send for CFileBuffer {}
+
 impl CFileBuffer {
     /// Create a new CFileBuffer object with a buffer of `max_size`.
     pub fn new(max_size: usize) -> Result<Self, &'static str> {

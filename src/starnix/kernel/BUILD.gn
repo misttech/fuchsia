@@ -40,6 +40,7 @@ rustc_binary("starnix_kernel_bin") {
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_rust",
@@ -57,15 +58,20 @@ rustc_binary("starnix_kernel_bin") {
     "//src/starnix/kernel/core",
     "//src/starnix/kernel/runner:starnix_kernel_runner",
     "//src/starnix/lib/extended_pstate:lib",
+    "//src/starnix/lib/starnix_c_file_buffer",
     "//src/starnix/lib/starnix_logging",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:tracing-mutex",
+    "//third_party/rust_crates:uuid",
     "//zircon/system/ulib/inspector",
   ]
 
-  sources = [ "main.rs" ]
+  sources = [
+    "lockup_detector.rs",
+    "main.rs",
+  ]
 
   configs += [
     "//build/config/rust/lints:clippy_warn_all",
