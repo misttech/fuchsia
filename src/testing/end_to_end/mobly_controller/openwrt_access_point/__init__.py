@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any, Dict, List
 
 from antlion.controllers.ap_lib import hostapd_constants
+from antlion.controllers.iperf_server import IPerfServerOverSsh
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
 from libs.ssh import connection, settings
@@ -67,6 +68,7 @@ def destroy(objects: List["OpenWrtAP"]) -> None:
         ap.stop_wifi()
         ap.reset_wifi_config()
         ap.dhcp.reset_dhcp_config()
+        ap.iperf_server.stop()
         ap.ssh.close()
 
 
@@ -138,6 +140,12 @@ class OpenWrtAP:
             _LOGGER.error("tcpdump command not found on OpenWrt AP")
 
         self.tcpdump = LinuxTcpdumpCommand(self.ssh)
+
+        self.iperf_server = IPerfServerOverSsh(
+            ssh_settings=self.ssh_settings,
+            port=5201,
+            test_interface=InterfaceName.lan,
+        )
 
     @property
     def default_subnet(self) -> str:

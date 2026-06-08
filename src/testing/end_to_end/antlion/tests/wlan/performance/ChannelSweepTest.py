@@ -29,7 +29,6 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
-from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -208,11 +207,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
 
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
-            self.iperf_server = IPerfServerOverSsh(
-                ssh_settings=self.openwrt_ap.ssh_settings,
-                port=5201,
-                test_interface=OpenWrtInterfaceName.lan,
-            )
+            self.iperf_server = self.openwrt_ap.iperf_server
             self.iperf_server.start()
         else:
             if len(self.access_points) == 0:

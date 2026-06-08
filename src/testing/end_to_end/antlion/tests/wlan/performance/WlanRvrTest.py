@@ -9,10 +9,10 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum, auto, unique
 
-from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
-from antlion.controllers.ap_lib.hostapd_constants import BandType
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.attenuator import (
     Attenuator,
@@ -27,6 +27,20 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+    SecurityOpen,
+    SecurityWpa2,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 REPORTING_SPEED_UNITS = "Mbps"
 DAD_TIMEOUT_SEC = 30
@@ -52,8 +66,9 @@ class RateByRange:
 
 @dataclass(frozen=True)
 class TestParams:
-    band: BandType
+    band: Band
     security: Security
+    password: str | None
     ip_version: IPVersion
     direction: TrafficDirection
 
@@ -86,8 +101,6 @@ class WlanRvrTest(base_test.WifiBaseTest):
     * One Linux iPerf Server
     """
 
-    access_point: AccessPoint
-
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
         self.log = logging.getLogger()
@@ -109,22 +122,34 @@ class WlanRvrTest(base_test.WifiBaseTest):
             FuchsiaDevice, AssociationMode.POLICY
         )
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+            self.iperf_server = self.openwrt_ap.iperf_server
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            if len(self.iperf_servers) == 0:
+                raise signals.TestAbortClass(
+                    "Requires at least one iperf server"
+                )
+            self.iperf_server = self.iperf_servers[0]
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
 
+        ap_controller_type = "OpenWrtAP" if self.openwrt_aps else "AccessPoint"
         self.attenuators_2g = get_attenuators_for_device(
-            self.controller_configs["AccessPoint"][0]["Attenuator"],
+            self.controller_configs[ap_controller_type][0].get(
+                "Attenuator", []
+            ),
             self.attenuators,
             "attenuator_ports_wifi_2g",
         )
         self.attenuators_5g = get_attenuators_for_device(
-            self.controller_configs["AccessPoint"][0]["Attenuator"],
+            self.controller_configs[ap_controller_type][0].get(
+                "Attenuator", []
+            ),
             self.attenuators,
             "attenuator_ports_wifi_5g",
         )
-
-        self.iperf_server = self.iperf_servers[0]
 
         if self.iperf_clients:
             self.dut_iperf_client = self.iperf_clients[0]
@@ -133,26 +158,27 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
     def pre_run(self) -> None:
         test_params: list[TestParams] = []
+        securities: list[Security] = [SecurityOpen(), SecurityWpa2()]
 
         for (
             band,
-            security_mode,
+            security,
             ip_version,
             direction,
         ) in itertools.product(
-            [e for e in BandType],
-            [SecurityMode.OPEN, SecurityMode.WPA2],
+            [e for e in Band],
+            securities,
             [e for e in IPVersion],
             [e for e in TrafficDirection],
         ):
             password: str | None = None
-            if security_mode is not SecurityMode.OPEN:
-                password = rand_ascii_str(20)
-            security = Security(security_mode, password)
+            if not isinstance(security, SecurityOpen):
+                password = AccessPointConfig.random_string(20)
             test_params.append(
                 TestParams(
                     band,
                     security,
+                    password,
                     ip_version,
                     direction,
                 )
@@ -160,10 +186,12 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
         def generate_test_name(t: TestParams) -> str:
             # TODO(http://b/303659781): Keep mode in sync with hostapd.
-            mode = "11n" if t.band is BandType.BAND_2G else "11ac"
-            frequency = "20mhz" if t.band is BandType.BAND_2G else "80mhz"
+            mode = "11n" if t.band is Band.BAND_2G else "11ac"
+            frequency = "20mhz" if t.band is Band.BAND_2G else "80mhz"
+            # Map OpenWrt security to hostapd security string to match legacy test name format
+            security = ConfigMapper.to_hostapd_security(t.security)
             return (
-                f"test_rvr_{mode}_{t.band}_{frequency}_{t.security}_"
+                f"test_rvr_{mode}_{t.band.lower()}_{frequency}_{security}_"
                 f"{t.direction}_{t.ip_version}"
             )
 
@@ -180,7 +208,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
                 ad.droid.wakeUpNow()
         self.dut.wifi_toggle_state(True)
         self.dut.disconnect()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def teardown_test(self) -> None:
         self.cleanup_tests()
@@ -204,7 +233,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
         self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
         self.dut.reset_wifi()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def _wait_for_iperf_ipv4_addr(self) -> str:
         """Wait for an IPv4 addresses to become available on the iperf server.
@@ -276,8 +306,9 @@ class WlanRvrTest(base_test.WifiBaseTest):
     def run_rvr(
         self,
         ssid: str,
-        security: Security | None,
-        band: BandType,
+        security: Security,
+        password: str | None,
+        band: Band,
         traffic_dir: TrafficDirection,
         ip_version: IPVersion,
     ) -> list[RateByRange]:
@@ -286,6 +317,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
         Args:
             ssid: The SSID for the client to associate to.
             security: Security of the AP
+            password: Password of the AP
             band: 2g or 5g
             traffic_dir: rx or tx, bi is not supported by iperf3
             ip_version: 4 or 6
@@ -294,9 +326,9 @@ class WlanRvrTest(base_test.WifiBaseTest):
             The bokeh graph data.
         """
         match band:
-            case BandType.BAND_2G:
+            case Band.BAND_2G:
                 rvr_attenuators = self.attenuators_2g
-            case BandType.BAND_5G:
+            case Band.BAND_5G:
                 rvr_attenuators = self.attenuators_5g
 
         for rvr_attenuator in rvr_attenuators:
@@ -310,28 +342,55 @@ class WlanRvrTest(base_test.WifiBaseTest):
         while associate_counter < associate_max_attempts:
             self.dut.disconnect()
 
-            self.access_point.stop_all_aps()
-            self.access_point.start_ap(
-                hostapd_config=create_ap_preset(
-                    iface_wlan_2g=self.access_point.wlan_2g,
-                    iface_wlan_5g=self.access_point.wlan_5g,
-                    profile_name="whirlwind",
-                    channel=band.default_channel(),
-                    ssid=ssid,
-                    security=security,
-                ),
-                radvd_config=(
-                    RadvdConfig() if ip_version is IPVersion.V6 else None
-                ),
-                setup_bridge=True,
-            )
+            if self.openwrt_ap:
+                channel = (
+                    DEFAULT_2G_CHANNEL
+                    if band == Band.BAND_2G
+                    else DEFAULT_5G_CHANNEL
+                )
+                config = AccessPointConfig(
+                    radios=[
+                        RadioConfig.generate(
+                            channel=channel,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    security=security,
+                                    password=password,
+                                )
+                            ],
+                        )
+                    ]
+                )
+                self.openwrt_ap.configure_wifi(config)
+                self.openwrt_ap.verify_wifi_status(band)
+            elif self.access_point:
+                self.access_point.stop_all_aps()
+                legacy_security = HostapdSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(security),
+                    password=password,
+                )
+                self.access_point.start_ap(
+                    hostapd_config=create_ap_preset(
+                        iface_wlan_2g=self.access_point.wlan_2g,
+                        iface_wlan_5g=self.access_point.wlan_5g,
+                        profile_name="whirlwind",
+                        channel=ConfigMapper.to_hostapd_band(
+                            band
+                        ).default_channel(),
+                        ssid=ssid,
+                        security=legacy_security,
+                    ),
+                    radvd_config=(
+                        RadvdConfig() if ip_version is IPVersion.V6 else None
+                    ),
+                    setup_bridge=True,
+                )
 
             if self.dut.associate(
                 ssid,
-                target_pwd=security.password if security else None,
-                target_security=(
-                    security.security_mode if security else SecurityMode.OPEN
-                ),
+                target_pwd=password,
+                target_security=ConfigMapper.to_hostapd_security(security),
                 check_connectivity=False,
             ):
                 break
@@ -360,6 +419,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
             ip_version,
             ssid,
             security=security,
+            password=password,
             reverse=False,
         )
         if self.reverse_rvr_after_forward:
@@ -370,6 +430,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
                 ip_version,
                 ssid=ssid,
                 security=security,
+                password=password,
                 reverse=True,
             )
 
@@ -382,7 +443,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
         iperf_server_ip_address: str,
         ip_version: IPVersion,
         ssid: str,
-        security: Security | None,
+        security: Security,
+        password: str | None,
         reverse: bool,
     ) -> list[RateByRange]:
         """The loop that goes through each attenuation level and runs the iperf
@@ -438,6 +500,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
                 ip_version,
                 ssid,
                 security,
+                password,
                 reverse,
             )
             self.log.info(
@@ -455,7 +518,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
         iperf_server_ip_address: str,
         ip_version: IPVersion,
         ssid: str,
-        security: Security | None,
+        security: Security,
+        password: str | None,
         reverse: bool,
     ) -> float:
         iperf_flags = self.iperf_flags
@@ -472,12 +536,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
                 self.log.info(f"Trying to associate")
                 if self.dut.associate(
                     ssid,
-                    target_pwd=security.password if security else None,
-                    target_security=(
-                        security.security_mode
-                        if security
-                        else SecurityMode.OPEN
-                    ),
+                    target_pwd=password,
+                    target_security=ConfigMapper.to_hostapd_security(security),
                     check_connectivity=False,
                 ):
                     self.log.info("Successfully associated.")
@@ -596,10 +656,12 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
     def _test_rvr(self, t: TestParams) -> None:
         ssid = rand_ascii_str(20)
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
         results = self.run_rvr(
             ssid,
             security=t.security,
+            password=t.password,
             band=t.band,
             traffic_dir=t.direction,
             ip_version=t.ip_version,
