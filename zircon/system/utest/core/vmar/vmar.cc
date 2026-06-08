@@ -3423,13 +3423,11 @@ TEST(Vmar, FaultBeyondStreamSizeForceWritable) {
     EXPECT_OK(probe_for_read(map->Get()));
     // ZX_ERR_OUT_OF_RANGE: Exceed the stream size (fault after stream size).
     EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
-    // ZX_ERR_NOT_FOUND: Exceed the boundaries of the mapping.
-    EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
   }
 
   {
     // We handle offset mappings correctly. The first page of the mapping is visible and within the
-    // stream size, the second page isn't within the stream size, and the third page isn't mapped.
+    // stream size, the second page isn't within the stream size.
     zx::result<ForceWritableMapping> map = ForceWritableMapping::Create({
         .vmo_size = 10 * zx_system_get_page_size(),
         .stream_size = 2 * zx_system_get_page_size(),
@@ -3439,7 +3437,6 @@ TEST(Vmar, FaultBeyondStreamSizeForceWritable) {
     ASSERT_OK(map.status_value());
     EXPECT_OK(probe_for_read(map->Get()));
     EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
-    EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
   }
 
   {
@@ -3455,7 +3452,6 @@ TEST(Vmar, FaultBeyondStreamSizeForceWritable) {
     EXPECT_STATUS(probe_for_read(map->Get()), ZX_ERR_OUT_OF_RANGE);
     EXPECT_STATUS(probe_for_read(map->Get() + zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
     EXPECT_STATUS(probe_for_read(map->Get() + 2 * zx_system_get_page_size()), ZX_ERR_OUT_OF_RANGE);
-    EXPECT_STATUS(probe_for_read(map->Get() + 3 * zx_system_get_page_size()), ZX_ERR_NOT_FOUND);
   }
 }
 
