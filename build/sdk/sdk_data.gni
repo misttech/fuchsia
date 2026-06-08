@@ -82,4 +82,4 @@ template("sdk_data") {
     }
   }
 }
-# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_data.bzl:idk_data)
+# LINT.ThenChange(//build/bazel/rules/idk/private/idk_data.bzl:idk_data)

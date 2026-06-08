@@ -4,8 +4,8 @@
 
 """Aspect and rules to collect FIDL JSON data."""
 
-load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 load("//build/bazel/rules/fidl:providers.bzl", "FidlLibraryInfo")
+load("//build/bazel/rules/idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 
 FidlMetadataAspectInfo = provider(
     doc = "Collects struct metadata for FIDL libraries.",

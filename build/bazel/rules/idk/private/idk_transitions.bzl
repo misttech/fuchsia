@@ -8,7 +8,7 @@ load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels", "idk_buildabl
 load("//build/bazel:fuchsia_api_level.bzl", "get_integer_for_api_level")
 
 visibility([
-    "//build/bazel/bazel_idk/tests/...",
+    "//build/bazel/rules/idk/...",
     "//sdk",
 ])
 

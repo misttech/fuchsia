@@ -9,7 +9,7 @@ def format(target):
         fx bazel cquery --config=fuchsia_platform build/bazel/bazel_idk/tests:test_molecule_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_molecule_info.cquery
     """
 
-    molecule_info = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo"]
+    molecule_info = providers(target)["//build/bazel/rules/idk:providers.bzl%FuchsiaIdkMoleculeInfo"]
 
     lines = []
 
@@ -22,12 +22,12 @@ def format(target):
     for dep in molecule_info.deps:
         p = providers(dep)
 
-        element_info = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")
+        element_info = p.get("//build/bazel/rules/idk:providers.bzl%FuchsiaIdkAtomInfo")
         if element_info:
             element_lines += ["Atom: " + element_info.label.name]
             continue
 
-        element_info = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
+        element_info = p.get("//build/bazel/rules/idk:providers.bzl%FuchsiaIdkMoleculeInfo")
         if element_info:
             element_lines += ["Molecule: " + element_info.label.name]
             continue

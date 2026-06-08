@@ -401,4 +401,4 @@ template("sdk_source_set") {
 set_defaults("sdk_source_set") {
   configs = default_common_binary_configs
 }
-# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_source_library.bzl:idk_cc_source_library)
+# LINT.ThenChange(//build/bazel/rules/idk/private/idk_cc_source_library.bzl:idk_cc_source_library)

@@ -7,7 +7,9 @@
 load(":idk_atom.bzl", "idk_atom")
 load(":idk_common.bzl", "get_atom_visibility", "json_encode_dict_values")
 
-visibility(["//build/bazel/bazel_idk/..."])
+visibility([
+    "//build/bazel/rules/idk/...",
+])
 
 # LINT.IfChange(idk_data)
 

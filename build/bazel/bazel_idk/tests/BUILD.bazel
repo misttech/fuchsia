@@ -18,15 +18,15 @@ load(
     "idk_molecule",
     "idk_noop_atom",
 )
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load(
-    "//build/bazel/bazel_idk/private:idk_molecule.bzl",
+    "//build/bazel/rules/idk:idk_molecule.bzl",
     "idk_all_api_level_and_cpu_combinations_molecule",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_transitions.bzl",
+    "//build/bazel/rules/idk:idk_transitions.bzl",
     "build_in_all_idk_api_level_and_cpu_combinations",
 )
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
 load("//build/bazel/rules/tests:rules.bzl", "build_for_host")
 load(":analysis_tests.bzl", "analysis_test_suite")

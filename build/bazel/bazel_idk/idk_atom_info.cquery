@@ -10,7 +10,7 @@ def _format(target):
         fx bazel cquery --config=fuchsia_platform build/bazel/bazel_idk/tests:test-source-library_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_atom_info.cquery
     """
 
-    atom_info = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo"]
+    atom_info = providers(target)["//build/bazel/rules/idk:providers.bzl%FuchsiaIdkAtomInfo"]
 
     lines = [
         atom_info.label.name + " definition:",

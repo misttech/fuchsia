@@ -13,7 +13,7 @@ are currently just thin wrappers around the built-in C++ rules.
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 visibility([
-    "//build/bazel/bazel_idk/private/...",  # Uses helper functions defined here.
+    "//build/bazel/rules/idk/private/...",  # Uses helper functions defined here.
     "//src/devices/...",
     "//src/firmware/lib/...",
     "//src/media/audio/...",

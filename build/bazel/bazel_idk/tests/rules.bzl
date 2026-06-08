@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
+load("//build/bazel/rules/idk:providers.bzl", "FuchsiaIdkAtomInfo")
 
 def _get_current_cpu_arch(ctx):
     """Returns the CPU architecture of the current build."""
@@ -86,7 +86,7 @@ create_test_atom_info = rule(
         "atoms_depset": attr.label_list(mandatory = False),
     },
 )
-# LINT.ThenChange(//build/bazel/bazel_idk/providers.bzl:idk_atom_info)
+# LINT.ThenChange(//build/bazel/rules/idk/private/providers.bzl:idk_atom_info)
 
 def _verify_atom_info_impl(ctx):
     atom_info = ctx.attr.atom[FuchsiaIdkAtomInfo]

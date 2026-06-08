@@ -5,9 +5,9 @@
 """Rule for declaring a FIDL library"""
 
 load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
-load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
+load("//build/bazel/rules/idk/private:idk_atom.bzl", "idk_atom")
 load(
-    "//build/bazel/bazel_idk/private:idk_common.bzl",
+    "//build/bazel/rules/idk/private:idk_common.bzl",
     "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",

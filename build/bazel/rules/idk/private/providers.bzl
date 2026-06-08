@@ -5,7 +5,7 @@
 """Defines providers related to the IDK."""
 
 # LINT.IfChange(idk_atom_info)
-# TOOD(https://fxbug.dev/417304469): `sdk_area`,  and some other
+# TOOD(https://fxbug.dev/417304469): `api_area`,  and some other
 # fields of this provider do not belong in prebuild info. `deps` may
 # also be unnecessary, but could be useful for category enforcement.
 FuchsiaIdkAtomInfo = provider(
@@ -28,7 +28,7 @@ FuchsiaIdkAtomInfo = provider(
         "additional_prebuild_info": "[dict[str,list[Any]]] A dictionary of type-specific prebuild info for the atom. All values are lists, even if there is only one value",
     },
 )
-# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_atom.bzl:idk_atom_info,//build/bazel/bazel_idk/tests/rules.bzl:idk_atom_info)
+# LINT.ThenChange(//build/bazel/rules/idk/private/idk_atom.bzl:idk_atom_info,//build/bazel/bazel_idk/tests/rules.bzl:idk_atom_info)
 
 FuchsiaIdkMoleculeInfo = provider(
     doc = "Defines an IDK molecule, or group of atoms",

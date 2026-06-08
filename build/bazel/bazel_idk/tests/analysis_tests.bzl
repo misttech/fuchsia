@@ -5,7 +5,7 @@
 """Analysis tests for IDK macros."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
-load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
+load("//build/bazel/rules/idk/private:idk_atom.bzl", "idk_atom")
 
 def _failure_test_impl(ctx):
     env = analysistest.begin(ctx)

@@ -31,7 +31,9 @@ load(
     "verify_target_is_in_allowlist",
 )
 
-visibility(["//build/bazel/bazel_idk/..."])
+visibility([
+    "//build/bazel/rules/idk/...",
+])
 
 # LINT.IfChange(idk_cc_prebuilt_library)
 

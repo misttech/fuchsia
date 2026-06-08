@@ -6,7 +6,6 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_build_info//:args.bzl", "target_cpu", "warn_on_sdk_changes")
-load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
@@ -16,6 +15,7 @@ load(
     "get_atom_visibility",
     "verify_atom_is_in_allowlist",
 )
+load(":providers.bzl", "FuchsiaIdkAtomInfo")
 
 ConfigurableInfo = provider(
     doc = "Maps of IDK destination paths to source files.",
@@ -35,7 +35,12 @@ ConfigurableInfo = provider(
     },
 )
 
-visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/...", "//build/sdk/..."])
+visibility([
+    "//build/bazel/bazel_idk/tests/...",
+    "//build/bazel/rules/idk/...",
+    "//build/bazel/rules/fidl/...",
+    "//build/sdk/...",
+])
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)
@@ -461,7 +466,7 @@ def _create_idk_atom_impl(ctx):
             atom_build_deps = ctx.attr.atom_build_deps,
             additional_prebuild_info = additional_prebuild_info,
         ),
-        # LINT.ThenChange(//build/bazel/bazel_idk/providers.bzl:idk_atom_info)
+        # LINT.ThenChange(//build/bazel/rules/idk/private/providers.bzl:idk_atom_info)
     ]
 
 _create_idk_atom = rule(

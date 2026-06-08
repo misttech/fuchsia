@@ -14,7 +14,9 @@ load(
     "verify_target_is_in_allowlist",
 )
 
-visibility(["//build/bazel/bazel_idk/..."])
+visibility([
+    "//build/bazel/rules/idk/...",
+])
 
 def _idk_host_tool_atom_impl(
         name,

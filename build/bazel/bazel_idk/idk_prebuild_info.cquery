@@ -30,7 +30,7 @@ def _files_map_to_json(files_map):
     return [{"dest": dest, "source": _get_path(src)} for dest, src in files_map.items()]
 
 def _generate_prebuild_info_for_atom(target):
-    provider = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo"]
+    provider = providers(target)["//build/bazel/rules/idk:providers.bzl%FuchsiaIdkAtomInfo"]
 
     # Decode the JSON-encoded strings from additional_prebuild_info.
     prebuild_info = {
@@ -57,11 +57,11 @@ def _generate_prebuild_info_for_all_atoms(target):
     p = providers(target)
 
     # If the `target` is an atom, include it in the output.
-    provider = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")
+    provider = p.get("//build/bazel/rules/idk:providers.bzl%FuchsiaIdkAtomInfo")
     if provider:
         atom_targets.append(target)
     else:
-        provider = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
+        provider = p.get("//build/bazel/rules/idk:providers.bzl%FuchsiaIdkMoleculeInfo")
 
     # In either case, include all atom dependencies.
     atom_targets += provider.atoms_depset.to_list()

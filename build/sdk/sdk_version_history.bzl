@@ -8,8 +8,11 @@ In practice, there will probably only be one instance of this rule, at
 //sdk:version_history, but we'll give it its own macro for tidiness.
 """
 
-load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
-load("//build/bazel/bazel_idk/private:idk_common.bzl", "json_encode_dict_values")
+load("//build/bazel/rules/idk/private:idk_atom.bzl", "idk_atom")
+load(
+    "//build/bazel/rules/idk/private:idk_common.bzl",
+    "json_encode_dict_values",
+)
 
 def _sdk_version_history_gen_impl(ctx):
     output_file = ctx.actions.declare_file(ctx.label.name + ".json")

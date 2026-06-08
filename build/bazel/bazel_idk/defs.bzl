@@ -5,33 +5,33 @@
 """Rules used to define IDK atoms."""
 
 load(
-    "//build/bazel/bazel_idk/private:idk_atom.bzl",
+    "//build/bazel/rules/idk:idk_atom.bzl",
     _idk_noop_atom = "idk_noop_atom",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_cc_prebuilt_library.bzl",
+    "//build/bazel/rules/idk:idk_cc_prebuilt_library.bzl",
     _idk_cc_shared_library = "idk_cc_shared_library",
     _idk_cc_shared_library_zx = "idk_cc_shared_library_zx",
     _idk_cc_static_library = "idk_cc_static_library",
     _idk_cc_static_library_zx = "idk_cc_static_library_zx",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_cc_source_library.bzl",
+    "//build/bazel/rules/idk:idk_cc_source_library.bzl",
     _idk_cc_source_library = "idk_cc_source_library",
     _idk_cc_source_library_zx = "idk_cc_source_library_zx",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_data.bzl",
+    "//build/bazel/rules/idk:idk_data.bzl",
     _idk_data = "idk_data",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_host_tool.bzl",
+    "//build/bazel/rules/idk:idk_host_tool.bzl",
     _idk_cc_binary_host_tool = "idk_cc_binary_host_tool",
     _idk_go_binary_host_tool = "idk_go_binary_host_tool",
     _idk_rustc_binary_host_tool = "idk_rustc_binary_host_tool",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_molecule.bzl",
+    "//build/bazel/rules/idk:idk_molecule.bzl",
     _idk_molecule = "idk_molecule",
 )
 

@@ -25,7 +25,10 @@ load(
     "PREBUILT_FIDL_LIBRARY_ATOMS_LIST",
 )
 
-visibility(["//build/bazel/rules/fidl/...", "//build/sdk/..."])
+visibility([
+    "//build/bazel/rules/fidl/...",
+    "//build/sdk/...",
+])
 
 def json_encode_dict_values(dict):
     """Returns the dictionary with each top-level value encoded as a JSON string.

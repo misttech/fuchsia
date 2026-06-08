@@ -34,8 +34,8 @@ string_flag(
     name = "fuchsia_api_level",
     build_setting_default = "PLATFORM",
     visibility = [
-        "//build/bazel/bazel_idk:__subpackages__",
         "//build/bazel/rules/fidl:__subpackages__",
+        "//build/bazel/rules/idk/private:__subpackages__",
         "//sdk/lib/async:__subpackages__",
         "//sdk/lib/fdio:__subpackages__",
         "//sdk/lib/fidl:__subpackages__",

@@ -6,11 +6,6 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_build_info//:args.bzl", "target_cpu")
-load(
-    "//build/bazel/bazel_idk:providers.bzl",
-    "FuchsiaIdkAtomInfo",
-    "FuchsiaIdkMoleculeInfo",
-)
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load(
@@ -19,9 +14,14 @@ load(
     "configured_host_cpus_transition",
     "current_host_cpu_transition",
 )
+load(
+    ":providers.bzl",
+    "FuchsiaIdkAtomInfo",
+    "FuchsiaIdkMoleculeInfo",
+)
 
 visibility([
-    "//build/bazel/bazel_idk/...",
+    "//build/bazel/rules/idk/...",
     "//sdk",
 ])
 

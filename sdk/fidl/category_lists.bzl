@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-visibility(["//build/bazel/bazel_idk/private"])
+visibility(["//build/bazel/rules/idk/private"])
 
 """Lists of FIDL libraries in each category.
 
