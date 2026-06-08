@@ -994,4 +994,28 @@ mod tests {
         const EXPECTED_VALUE: i32 = 7;
         assert_eq!(value, EXPECTED_VALUE);
     }
+
+    #[test]
+    #[serial]
+    fn ebpf_ringbuf_reserve_overflow() {
+        root_required!();
+
+        let mut maps = MapSet::new();
+        let program = LoadedProgram::new(
+            "test_ringbuf_reserve_overflow_sock",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK,
+            linux_uapi::bpf_attach_type_BPF_CGROUP_INET_SOCK_CREATE,
+            &mut maps,
+        );
+
+        let _attached = program.attach();
+
+        let _socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to create UDP socket");
+
+        let test_result = maps.get_test_result();
+
+        // The program is expected to set retval to 1, indicating that
+        // ringbuf_reserve failed as expected.
+        assert_eq!(test_result.retval, 1);
+    }
 }

@@ -428,3 +428,17 @@ int connect_sk_storage_prog(struct bpf_sock_addr* sockaddr) {
 
   return 1;
 }
+
+int test_ringbuf_reserve_overflow_sock(struct bpf_sock* sock) {
+  int zero = 0;
+  void* entry = bpf_ringbuf_reserve(&ringbuf, 0x100000008ULL, 0);
+  struct test_result result = {};
+  if (!entry) {
+    result.retval = 1;
+  } else {
+    result.retval = 2;
+    bpf_ringbuf_discard(entry, 0);
+  }
+  bpf_map_update_elem(&test_result, &zero, &result, 0);
+  return 1;
+}

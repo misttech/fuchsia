@@ -175,7 +175,9 @@ fn bpf_ringbuf_reserve<C: EbpfProgramContext>(
     // Map type is checked by the verifier.
     assert!(map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_RINGBUF);
 
-    let size = u32::from(size);
+    let Ok(size) = u32::try_from(size) else {
+        return BpfValue::default();
+    };
     let flags = u64::from(flags);
     map.ringbuf_reserve(size, flags).map(BpfValue::from).unwrap_or_else(|_| BpfValue::default())
 }
@@ -188,7 +190,7 @@ fn bpf_ringbuf_submit<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    let flags = RingBufferWakeupPolicy::from(u32::from(flags));
+    let flags = RingBufferWakeupPolicy::from(flags);
 
     // SAFETY: The safety of the operation is ensured by the bpf verifier. The data has to come from
     // the result of a reserve call.
@@ -206,7 +208,7 @@ fn bpf_ringbuf_discard<C: EbpfProgramContext>(
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    let flags = RingBufferWakeupPolicy::from(u32::from(flags));
+    let flags = RingBufferWakeupPolicy::from(flags);
 
     // SAFETY: The safety of the operation is ensured by the bpf verifier. The data has to come from
     // the result of a reserve call.
@@ -476,7 +478,7 @@ fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
     len: BpfValue,
     start_header: BpfValue,
 ) -> BpfValue {
-    let base = match start_header.as_u32() {
+    let base = match start_header.as_u64() {
         0 => LoadBytesBase::MacHeader,
         1 => LoadBytesBase::NetworkHeader,
         _ => return u64::MAX.into(),

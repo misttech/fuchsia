@@ -6,7 +6,7 @@ use super::buffer::{MapBuffer, VmoOrName};
 use super::lock::RwMapLock;
 use super::vmar::AllocatedVmar;
 use super::{MapError, MapImpl, MapKey, MapValueRef};
-use ebpf::{EbpfBufferPtr, MapSchema};
+use ebpf::{BpfValue, EbpfBufferPtr, MapSchema};
 use linux_uapi::{
     BPF_RB_FORCE_WAKEUP, BPF_RB_NO_WAKEUP, BPF_RINGBUF_BUSY_BIT, BPF_RINGBUF_DISCARD_BIT,
     BPF_RINGBUF_HDR_SZ,
@@ -430,8 +430,9 @@ pub(crate) enum RingBufferWakeupPolicy {
     ForceWakeup = BPF_RB_FORCE_WAKEUP,
 }
 
-impl From<u32> for RingBufferWakeupPolicy {
-    fn from(v: u32) -> Self {
+impl From<BpfValue> for RingBufferWakeupPolicy {
+    fn from(v: BpfValue) -> Self {
+        let v = u32::try_from(v).unwrap_or(0);
         match v {
             BPF_RB_NO_WAKEUP => Self::NoWakeup,
             BPF_RB_FORCE_WAKEUP => Self::ForceWakeup,
@@ -459,16 +460,22 @@ mod test {
 
     #[fuchsia::test]
     fn test_ring_buffer_wakeup_policy() {
-        assert_eq!(RingBufferWakeupPolicy::from(0), RingBufferWakeupPolicy::DefaultWakeup);
         assert_eq!(
-            RingBufferWakeupPolicy::from(BPF_RB_NO_WAKEUP),
+            RingBufferWakeupPolicy::from(BpfValue::from(0)),
+            RingBufferWakeupPolicy::DefaultWakeup
+        );
+        assert_eq!(
+            RingBufferWakeupPolicy::from(BpfValue::from(BPF_RB_NO_WAKEUP)),
             RingBufferWakeupPolicy::NoWakeup
         );
         assert_eq!(
-            RingBufferWakeupPolicy::from(BPF_RB_FORCE_WAKEUP),
+            RingBufferWakeupPolicy::from(BpfValue::from(BPF_RB_FORCE_WAKEUP)),
             RingBufferWakeupPolicy::ForceWakeup
         );
-        assert_eq!(RingBufferWakeupPolicy::from(42), RingBufferWakeupPolicy::DefaultWakeup);
+        assert_eq!(
+            RingBufferWakeupPolicy::from(BpfValue::from(42)),
+            RingBufferWakeupPolicy::DefaultWakeup
+        );
     }
 
     #[fuchsia::test]

@@ -338,21 +338,24 @@ impl<'a, T> From<EbpfPtr<'a, T>> for BpfValue {
     }
 }
 
-impl From<BpfValue> for u8 {
-    fn from(v: BpfValue) -> u8 {
-        v.0 as u8
+impl TryFrom<BpfValue> for u8 {
+    type Error = core::num::TryFromIntError;
+    fn try_from(v: BpfValue) -> Result<Self, Self::Error> {
+        v.0.try_into()
     }
 }
 
-impl From<BpfValue> for u16 {
-    fn from(v: BpfValue) -> u16 {
-        v.0 as u16
+impl TryFrom<BpfValue> for u16 {
+    type Error = core::num::TryFromIntError;
+    fn try_from(v: BpfValue) -> Result<Self, Self::Error> {
+        v.0.try_into()
     }
 }
 
-impl From<BpfValue> for u32 {
-    fn from(v: BpfValue) -> u32 {
-        v.0 as u32
+impl TryFrom<BpfValue> for u32 {
+    type Error = core::num::TryFromIntError;
+    fn try_from(v: BpfValue) -> Result<Self, Self::Error> {
+        v.0.try_into()
     }
 }
 
