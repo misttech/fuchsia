@@ -398,7 +398,10 @@ impl MapImpl for RingBuffer {
 
         // Total size of the message to write. This is the requested size + the header, rounded up
         // to align the next header.
-        let total_size: u32 = (size + BPF_RINGBUF_HDR_SZ + HEADER_ALIGNMENT - 1) / HEADER_ALIGNMENT
+        let total_size: u32 = size
+            .checked_add(BPF_RINGBUF_HDR_SZ + HEADER_ALIGNMENT - 1)
+            .ok_or(MapError::InvalidParam)?
+            / HEADER_ALIGNMENT
             * HEADER_ALIGNMENT;
 
         if u64::from(total_size) > available_size {
@@ -609,4 +612,23 @@ mod test {
         let result = ringbuf.can_read();
         assert_eq!(result, Some(false));
     }
+
+    #[fuchsia::test]
+    fn test_ring_buffer_overflow() {
+        let schema = MapSchema {
+            map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            flags: MapFlags::empty(),
+        };
+
+        let ringbuf = RingBuffer::new(&schema, "test_ringbuf").unwrap();
+
+        // Reserving size that is close to u32::MAX should fail.
+        assert_eq!(ringbuf.ringbuf_reserve(0xffff_ffff, 0), Err(MapError::InvalidParam));
+        assert_eq!(ringbuf.ringbuf_reserve(0xffff_fff1, 0), Err(MapError::InvalidParam));
+        assert_eq!(ringbuf.ringbuf_reserve(0x3fff_ffff, 0), Err(MapError::SizeLimit));
+    }
+
 }
