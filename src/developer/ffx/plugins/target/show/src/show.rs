@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use compat_info::CompatibilityState;
 use ffx_target_show_args::TargetShow;
 use schemars::JsonSchema;
@@ -461,7 +460,7 @@ fn output_list<W: Write>(
     showes: &Vec<ShowEntry>,
     args: &TargetShow,
     writer: &mut W,
-) -> Result<()> {
+) -> std::io::Result<()> {
     for show in showes {
         let mut label = "".to_string();
         if args.label && !show.label.is_empty() {
@@ -506,7 +505,7 @@ pub fn output_for_human<W: Write>(
     showes: &TargetShowInfo,
     args: &TargetShow,
     writer: &mut W,
-) -> Result<()> {
+) -> std::io::Result<()> {
     let entries = showes.to_show_entries();
     output_list(0, &entries, args, writer)
 }

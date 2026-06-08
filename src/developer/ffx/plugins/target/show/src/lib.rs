@@ -4,7 +4,6 @@
 
 use crate::show::TargetData;
 use addr::TargetIpAddr;
-use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
@@ -30,6 +29,7 @@ use timeout::timeout;
 mod show;
 
 #[derive(FfxTool)]
+#[main_error(ShowError)]
 pub struct ShowTool {
     #[command]
     cmd: args::TargetShow,
@@ -54,21 +54,66 @@ pub struct ShowTool {
     last_reboot_info_proxy: LastRebootInfoProviderProxy,
 }
 
-fho::embedded_plugin!(ShowTool);
+use fho::FfxError;
+use thiserror::Error;
+
+#[derive(FfxError, Error, Debug)]
+pub enum ShowError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("FDomain client error: {0}")]
+    Fdomain(#[from] fdomain_client::Error),
+
+    #[exit_with_code(1)]
+    #[error("FIDL error: {0}")]
+    FidlError(#[from] fidl::Error),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error("Failed to get ssh address from target proxy: timeout")]
+    TargetSshAddressTimeout(#[from] timeout::TimeoutError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to identify host via Remote Control Service: {0:?}")]
+    RcsHostIdentification(fdomain_fuchsia_developer_remotecontrol::IdentifyHostError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to resolve target connection resolution: {0}")]
+    TargetResolution(#[source] target_behavior::TargetResolutionError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to establish target connection: {0}")]
+    TargetConnection(#[source] ffx_target::FfxTargetCrateError),
+
+    #[transparent]
+    #[error(transparent)]
+    Fho(#[from] fho::Error),
+}
+
+fho::embedded_plugin!(ShowTool, ShowError);
 
 #[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<TargetShowInfo>;
-    type Error = ::fho::Error;
+    type Error = ShowError;
 
     /// Main entry point for the `show` subcommand.
-    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        self.show_cmd(&mut writer).await.map_err(|e| e.into())
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
+        self.show_cmd(&mut writer).await
     }
 }
 
 impl ShowTool {
-    async fn show_cmd(self, writer: &mut <ShowTool as fho::FfxMain>::Writer) -> Result<()> {
+    async fn show_cmd(
+        self,
+        writer: &mut VerifiedMachineWriter<TargetShowInfo>,
+    ) -> Result<(), ShowError> {
         // To add more show information, add a `gather_*_show(*) call to this
         // list, as well as the labels in the Ok() and vec![] just below.
         // Returns Some(dc) only if we have a direct connection
@@ -77,7 +122,7 @@ impl ShowTool {
             ConnectionBehavior::DirectConnector(ref connector) => Some(connector.clone()),
             _ => None,
         };
-        let show = match futures::try_join!(
+        let (target, board, device, product, update, build) = futures::try_join!(
             gather_target_show(
                 self.rcs_proxy,
                 &self.fho_env,
@@ -90,12 +135,8 @@ impl ShowTool {
             gather_product_show(self.product_proxy),
             gather_update_show(self.channel_provider_proxy, self.channel_control_proxy),
             gather_build_info_show(self.build_info_proxy),
-        ) {
-            Ok((target, board, device, product, update, build)) => {
-                TargetShowInfo { target, board, device, product, update, build }
-            }
-            Err(e) => bail!(e),
-        };
+        )?;
+        let show = TargetShowInfo { target, board, device, product, update, build };
         if writer.is_machine() {
             writer.machine(&show)?;
         } else {
@@ -107,7 +148,8 @@ impl ShowTool {
 
 async fn gather_target_info_direct(
     connection: &ffx_target::Connection,
-) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
+) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>), ShowError>
+{
     // If we've gotten a connection, we must have an address we connected to
     let ad = match connection.device_address() {
         Some(addr) => match ScopedSocketAddr::from_socket_addr(addr) {
@@ -127,12 +169,13 @@ async fn gather_target_info_direct(
 
 async fn gather_target_info_from_daemon(
     target_proxy: TargetProxyHolder,
-) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
+) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>), ShowError>
+{
     let addr_info = timeout(Duration::from_secs(1), target_proxy.get_ssh_address())
         .await
-        .ok()
-        .transpose()
-        .map_err(|e| anyhow!("Failed to get ssh address: {:?}", e))?;
+        .map_err(ShowError::TargetSshAddressTimeout)?
+        .ok();
+
     let ssh_address = if let Some(addr_info) = addr_info {
         let addr = TargetIpAddr::from(&addr_info);
         let port = match addr_info {
@@ -163,15 +206,18 @@ async fn gather_target_show(
     connector: Option<DirectConnector>,
     target_proxy: Deferred<TargetProxyHolder>,
     last_reboot_info_proxy: LastRebootInfoProviderProxy,
-) -> Result<TargetData> {
-    let host = rcs_proxy
-        .identify_host()
-        .await?
-        .map_err(|e| anyhow!("Failed to identify host: {:?}", e))?;
+) -> Result<TargetData, ShowError> {
+    let host = rcs_proxy.identify_host().await?.map_err(ShowError::RcsHostIdentification)?;
     let name = host.nodename;
     let (ssh_address, compat) = if let Some(connector) = connector {
         gather_target_info_direct(
-            &*connector.resolution().await?.get_connection(fho_env.environment_context()).await?,
+            &*connector
+                .resolution()
+                .await
+                .map_err(ShowError::TargetResolution)?
+                .get_connection(fho_env.environment_context())
+                .await
+                .map_err(ShowError::TargetConnection)?,
         )
         .await?
     } else {
@@ -201,7 +247,7 @@ async fn gather_target_show(
 }
 
 /// Determine the build info for the target.
-async fn gather_build_info_show(build: ProviderProxy) -> Result<BuildData> {
+async fn gather_build_info_show(build: ProviderProxy) -> Result<BuildData, ShowError> {
     let info = build.get_build_info().await?;
 
     Ok(BuildData {
@@ -221,7 +267,7 @@ fn arch_to_string(arch: Option<Architecture>) -> Option<String> {
 }
 
 /// Determine the device info for the device.
-async fn gather_board_show(board: BoardProxy) -> Result<BoardData> {
+async fn gather_board_show(board: BoardProxy) -> Result<BoardData, ShowError> {
     let info = board.get_info().await?;
     Ok(BoardData {
         name: info.name,
@@ -234,7 +280,7 @@ async fn gather_board_show(board: BoardProxy) -> Result<BoardData> {
 async fn gather_device_show(
     device: DeviceProxy,
     device_id_proxy: Deferred<DeviceIdProviderProxy>,
-) -> Result<DeviceData> {
+) -> Result<DeviceData, ShowError> {
     let info = device.get_info().await?;
     let mut device = DeviceData {
         serial_number: info.serial_number,
@@ -256,7 +302,7 @@ async fn gather_device_show(
 }
 
 /// Determine the product info for the device.
-async fn gather_product_show(product: ProductProxy) -> Result<ProductData> {
+async fn gather_product_show(product: ProductProxy) -> Result<ProductData, ShowError> {
     let info = product.get_info().await?;
 
     Ok(ProductData {
@@ -286,7 +332,7 @@ async fn gather_product_show(product: ProductProxy) -> Result<ProductData> {
 async fn gather_update_show(
     channel_provider: fupdate_channel::ProviderProxy,
     channel_control: ChannelControlProxy,
-) -> Result<UpdateData> {
+) -> Result<UpdateData, ShowError> {
     let current_channel = channel_provider.get_current().await?;
     let next_channel = match channel_control.get_target().await {
         Ok(channel) => Some(channel),
@@ -626,7 +672,7 @@ mod tests {
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let mut output =
-            <ShowTool as FfxMain>::Writer::new_test(Some(Format::JsonPretty), &buffers);
+            VerifiedMachineWriter::<TargetShowInfo>::new_test(Some(Format::JsonPretty), &buffers);
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
@@ -655,7 +701,7 @@ mod tests {
         tool.show_cmd(&mut output).await.expect("main");
         let (stdout, _stderr) = buffers.into_strings();
         let data: Value = serde_json::from_str(&stdout).expect("Valid JSON");
-        match <ShowTool as FfxMain>::Writer::verify_schema(&data) {
+        match VerifiedMachineWriter::<TargetShowInfo>::verify_schema(&data) {
             Ok(_) => (),
             Err(e) => {
                 println!("Error verifying schema: {e}");
@@ -724,5 +770,57 @@ mod tests {
         }
         let remaining: Vec<&str> = expected_iter.collect();
         assert!(remaining.is_empty(), "Missing lines from actual input: {remaining:?}");
+    }
+
+    #[fuchsia::test]
+    async fn test_show_rcs_host_identification_error() {
+        let client = fdomain_local::local_client_empty();
+        let buffers = TestBuffers::default();
+        let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
+        let fho_env = FhoEnvironment::default();
+        let target_env = target_behavior::target_interface(&fho_env);
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
+            setup_fake_resolution().await,
+        ));
+
+        let rcs_proxy = testing_lib::setup_fake_rcs(
+            Arc::clone(&client),
+            testing_lib::FakeRcsConfig {
+                identify_host_handler: Some(std::rc::Rc::new(move |responder| {
+                    responder
+                        .send(Err(
+                            fdomain_fuchsia_developer_remotecontrol::IdentifyHostError::ListInterfacesFailed,
+                        ))
+                        .unwrap();
+                })),
+                ..Default::default()
+            },
+        )
+        .into();
+
+        let tool = ShowTool {
+            cmd: args::TargetShow { ..Default::default() },
+            fho_env,
+            rcs_proxy,
+            target_proxy: setup_fake_target_server(),
+            channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
+            channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
+            board_proxy: setup_fake_board_server(Arc::clone(&client)),
+            device_proxy: setup_fake_device_server(Arc::clone(&client)),
+            product_proxy: setup_fake_product_server(Arc::clone(&client)),
+            build_info_proxy: setup_fake_build_info_server(Arc::clone(&client)),
+            device_id_proxy: Deferred::from_output(Ok(setup_fake_device_id_server(Arc::clone(
+                &client,
+            )))),
+            last_reboot_info_proxy: setup_fake_last_reboot_info_server(Arc::clone(&client)),
+        };
+        let res = tool.main(output).await;
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            ShowError::RcsHostIdentification(
+                fdomain_fuchsia_developer_remotecontrol::IdentifyHostError::ListInterfacesFailed
+            )
+        ));
     }
 }
