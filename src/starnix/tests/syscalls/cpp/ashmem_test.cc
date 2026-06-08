@@ -59,10 +59,10 @@ class AshmemTest : public ::testing::Test {
 };
 
 // Can open "/dev/ashmem"
-TEST_F(AshmemTest, Open) {
+TEST_F(AshmemTest, OpenAndClose) {
   auto fd = Open();
   ASSERT_TRUE(fd.is_valid());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
+  EXPECT_THAT(close(fd.release()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, DefaultSize) {
@@ -71,7 +71,6 @@ TEST_F(AshmemTest, DefaultSize) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_SIZE), SyscallSucceedsWithValue(0));
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_SIZE, PAGE_SIZE), SyscallSucceeds());
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_SIZE), SyscallSucceedsWithValue((int)PAGE_SIZE));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, DefaultName) {
@@ -83,7 +82,6 @@ TEST_F(AshmemTest, DefaultName) {
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, "test"), SyscallSucceeds());
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_NAME, buf), SyscallSucceeds());
   EXPECT_STREQ("test", buf);
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, DefaultProtections) {
@@ -93,7 +91,6 @@ TEST_F(AshmemTest, DefaultProtections) {
               SyscallSucceedsWithValue(PROT_READ | PROT_WRITE | PROT_EXEC));
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_READ), SyscallSucceeds());
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_PROT_MASK), SyscallSucceedsWithValue(PROT_READ));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // There must be a size associated with the region for mmap() to succeed
@@ -111,8 +108,6 @@ TEST_F(AshmemTest, NoAccessBeforeSetSize) {
   addr = mmap(nullptr, kMapSize, PROT_READ, MAP_SHARED, fd.get(), 0);
   ASSERT_TRUE(addr != MAP_FAILED && addr != nullptr);
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Setting the size to zero does not permit mmap()
@@ -123,8 +118,6 @@ TEST_F(AshmemTest, SetSizeZero) {
 
   void *addr = mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_SHARED, fd.get(), 0);
   EXPECT_TRUE(addr == MAP_FAILED && errno == EINVAL);
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Size can be impossibly large
@@ -138,7 +131,6 @@ TEST_F(AshmemTest, SetSizeOverflow) {
   EXPECT_TRUE(addr != MAP_FAILED && addr != nullptr);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Size rounds up to page boundary, but this is hidden from us
@@ -160,7 +152,6 @@ TEST_F(AshmemTest, SetSizeMisaligned) {
   }
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Once mmap() succeeds on a region, the size is set in stone
@@ -175,7 +166,6 @@ TEST_F(AshmemTest, NoChangeSizeAfterMap) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_SIZE, 3 * PAGE_SIZE), SyscallFailsWithErrno(EINVAL));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, NoChangeSizeAfterMunmap) {
@@ -189,8 +179,6 @@ TEST_F(AshmemTest, NoChangeSizeAfterMunmap) {
 
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_SIZE, PAGE_SIZE), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_SIZE, 3 * PAGE_SIZE), SyscallFailsWithErrno(EINVAL));
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Mmap() arguments must not be out of bounds
@@ -232,7 +220,6 @@ TEST_F(AshmemTest, MapOutOfBounds) {
   }
 
   ASSERT_THAT(munmap(addr, 2 * PAGE_SIZE), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Once mmap() has been called the name is set in stone
@@ -250,7 +237,6 @@ TEST_F(AshmemTest, NoChangeNameAfterMap) {
   EXPECT_STREQ("hello world!", buf);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, NoChangeNameAfterMunmap) {
@@ -266,8 +252,6 @@ TEST_F(AshmemTest, NoChangeNameAfterMunmap) {
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, "goodbye"), SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_NAME, buf), SyscallSucceeds());
   EXPECT_STREQ("hello world!", buf);
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Once mmap() has been called if there was no name before, there will never be a name
@@ -280,7 +264,6 @@ TEST_F(AshmemTest, NoSetNameAfterMap) {
 
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, "test"), SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // A bad pointer passed to set name ioctl will fail
@@ -289,7 +272,6 @@ TEST_F(AshmemTest, MalformedName) {
   ASSERT_TRUE(fd.is_valid());
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, 0), SyscallFailsWithErrno(EFAULT));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, 1234), SyscallFailsWithErrno(EFAULT));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Truncate names with length 256 or greater
@@ -304,7 +286,6 @@ TEST_F(AshmemTest, SetNameOverflow) {
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_SET_NAME, name), SyscallSucceeds());
   ASSERT_THAT(ioctl(fd.get(), ASHMEM_GET_NAME, buf), SyscallSucceeds());
   EXPECT_EQ(255, (int)strlen(buf));  // Truncated string
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // You are not allowed to increase protections
@@ -315,7 +296,6 @@ TEST_F(AshmemTest, NoIncreaseProtections) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_WRITE), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, PROT_READ | PROT_WRITE),
               SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // You are allowed to decrease protections, but changes are not retroactive
@@ -342,7 +322,6 @@ TEST_F(AshmemTest, DecreaseProtections) {
 
   ASSERT_THAT(munmap(addr_rw, kMapSize), SyscallSucceeds());
   ASSERT_THAT(munmap(addr_r, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Mapping with protections not allowed by the region will fail
@@ -369,7 +348,6 @@ TEST_F(AshmemTest, MapProtectionsAgree) {
 
   addr = mmap(nullptr, kMapSize, PROT_WRITE, MAP_SHARED, fd.get(), 0);
   EXPECT_TRUE(addr == MAP_FAILED && errno == EINVAL);
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // The set protections ioctl will fail on malformed input
@@ -381,7 +359,6 @@ TEST_F(AshmemTest, MalformedProtections) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, 1002), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, "hello"), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_PROT_MASK, -1), SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, MapPrivate) {
@@ -392,7 +369,6 @@ TEST_F(AshmemTest, MapPrivate) {
   EXPECT_TRUE(addr != MAP_FAILED && addr != nullptr);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // No fileops are allowed until after the region has been mapped
@@ -404,7 +380,6 @@ TEST_F(AshmemTest, NoFileOpBeforeMap) {
   EXPECT_THAT(write(fd.get(), in, sizeof(in)), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(read(fd.get(), out, sizeof(in)), SyscallFailsWithErrno(EBADF));
   EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallFailsWithErrno(EBADF));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Writing fails no matter what
@@ -417,7 +392,6 @@ TEST_F(AshmemTest, WriteFileOp) {
 
   EXPECT_THAT(write(fd.get(), in, sizeof(in)), SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Read() is okay after mapping
@@ -436,7 +410,6 @@ TEST_F(AshmemTest, ReadFileOp) {
   EXPECT_STREQ(out, in);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Lseek()-- adapted from android KernelLibcutilsTest
@@ -465,7 +438,6 @@ TEST_F(AshmemTest, LseekFileOp) {
               SyscallSucceedsWithValue(3 * PAGE_SIZE - 99));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Can read() without PROT_READ
@@ -487,7 +459,6 @@ TEST_F(AshmemTest, ReadFileOpProt) {
   EXPECT_STREQ(out, in);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // File offset for read and lseek is local per ashmem region
@@ -522,9 +493,6 @@ TEST_F(AshmemTest, FileOffsetLocal) {
 
   ASSERT_THAT(munmap(addr_1, kMapSize), SyscallSucceeds());
   ASSERT_THAT(munmap(addr_2, kMapSize), SyscallSucceeds());
-
-  ASSERT_THAT(close(fd_1.get()), SyscallSucceeds());
-  ASSERT_THAT(close(fd_2.get()), SyscallSucceeds());
 }
 
 // fstat() reports zero size for an ashmem region no matter what
@@ -540,7 +508,6 @@ TEST_F(AshmemTest, StSizeAlwaysZero) {
   EXPECT_EQ(0, st.st_size);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // No pinning permitted unless previously mapped
@@ -560,7 +527,6 @@ TEST_F(AshmemTest, NoPinBeforeMap) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_UNPIN, &pin), SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Ashmem regions can still be pinned & unpinned even when not mapped
@@ -576,8 +542,6 @@ TEST_F(AshmemTest, PinAfterMunmap) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_UNPIN, &pin), SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_PIN_STATUS, &pin),
               SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Ashmem regions are pinned by default
@@ -593,7 +557,6 @@ TEST_F(AshmemTest, DefaultPin) {
               SyscallSucceedsWithValue(ASHMEM_IS_PINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Create a region with two unpinned sub-regions and verify the state
@@ -621,7 +584,6 @@ TEST_F(AshmemTest, BasicPinBehavior) {
               SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fail to pin, unpin, and get the state of a region out of bounds
@@ -644,7 +606,6 @@ TEST_F(AshmemTest, NoPinOutOfBounds) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_PIN_STATUS, &pin_overflow), SyscallFailsWithErrno(EINVAL));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fail to pin, unpin, and get the state of a misaligned region
@@ -661,7 +622,6 @@ TEST_F(AshmemTest, NoPinMisaligned) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_PIN_STATUS, &pin), SyscallFailsWithErrno(EINVAL));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Overlap a bunch of pins and unpins
@@ -752,7 +712,6 @@ TEST_F(AshmemTest, MessyPinning) {
   }
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // ASHMEM_GET_PIN_STATUS is sensitive to overlap
@@ -771,7 +730,6 @@ TEST_F(AshmemTest, PinStatusOverlap) {
               SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Unsigned integer overflow with pin logic
@@ -794,14 +752,12 @@ TEST_F(AshmemTest, PinUnsignedOverflow) {
   EXPECT_EQ(EFAULT, errno);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // No purging permitted unless previously mapped
 TEST_F(AshmemTest, NoPurgeBeforeMap) {
   auto fd = CreateRegion(nullptr, PAGE_SIZE);
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PURGE_ALL_CACHES, nullptr), SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Basic memory purge functionality
@@ -818,7 +774,6 @@ TEST_F(AshmemTest, Purge) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin), SyscallSucceedsWithValue(ASHMEM_WAS_PURGED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Purge when no intervals are unpinned
@@ -835,7 +790,6 @@ TEST_F(AshmemTest, PinAndPurge) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin), SyscallSucceedsWithValue(ASHMEM_NOT_PURGED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Unpinning a purged region
@@ -852,7 +806,6 @@ TEST_F(AshmemTest, PugeAndUnpin) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_UNPIN, &pin), SyscallSucceedsWithValue(ASHMEM_IS_UNPINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Purge a region, pin it, then try to purge it again
@@ -872,7 +825,6 @@ TEST_F(AshmemTest, PurgeTwice) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin), SyscallSucceedsWithValue(ASHMEM_NOT_PURGED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Purge a region which is half unpinned
@@ -896,7 +848,6 @@ TEST_F(AshmemTest, PurgeOverlap) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin_left), SyscallSucceedsWithValue(ASHMEM_NOT_PURGED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Purged regions are zeroed out
@@ -926,7 +877,6 @@ TEST_F(AshmemTest, PurgeIsZeroed) {
   }
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Input to a getter command is ignored
@@ -956,7 +906,6 @@ TEST_F(AshmemTest, IgnoreGetterInput) {
               SyscallSucceedsWithValue(ASHMEM_IS_PINNED));
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, child writes data, parent reads
@@ -980,7 +929,6 @@ TEST_F(AshmemTest, Fork) {
   ASSERT_TRUE(helper.WaitForChildren());
   EXPECT_STREQ((char *)parent_map, input);
   ASSERT_THAT(munmap(parent_map, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, fail to set size in parent after child maps the region
@@ -1000,7 +948,6 @@ TEST_F(AshmemTest, ForkSetSize) {
 
   ASSERT_TRUE(helper.WaitForChildren());
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_SET_SIZE, 3 * PAGE_SIZE), SyscallFailsWithErrno(EINVAL));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, child purges memory, parent can see it has been purged
@@ -1025,7 +972,6 @@ TEST_F(AshmemTest, ForkPurge) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin_left), SyscallSucceedsWithValue(ASHMEM_WAS_PURGED));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_PIN, &pin_right), SyscallSucceedsWithValue(ASHMEM_NOT_PURGED));
   ASSERT_THAT(munmap(parent_map, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, child reduces permissions, parent is affected
@@ -1050,8 +996,6 @@ TEST_F(AshmemTest, ForkProt) {
   void *addr_r = mmap(nullptr, kMapSize, PROT_READ, MAP_SHARED, fd.get(), 0);
   EXPECT_TRUE(addr_r != MAP_FAILED && addr_r != nullptr);
   ASSERT_THAT(munmap(addr_r, kMapSize), SyscallSucceeds());
-
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, child lseeks, parent is affected
@@ -1074,7 +1018,6 @@ TEST_F(AshmemTest, ForkLseek) {
   EXPECT_STREQ("world", out);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Fork, child writes, parent calls read()
@@ -1095,7 +1038,6 @@ TEST_F(AshmemTest, ForkRead) {
   EXPECT_STREQ("hello", out);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Ashmem regions are backed by independent VMOs
@@ -1119,8 +1061,6 @@ TEST_F(AshmemTest, DistinctAshmemVMO) {
 
   ASSERT_THAT(munmap(addr_1, kMapSize), SyscallSucceeds());
   ASSERT_THAT(munmap(addr_2, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd_1.get()), SyscallSucceeds());
-  ASSERT_THAT(close(fd_2.get()), SyscallSucceeds());
 }
 
 // Ashmem inode number is hidden from fstat()
@@ -1135,9 +1075,6 @@ TEST_F(AshmemTest, HiddenInos) {
   ASSERT_THAT(fstat(fd_2.get(), &st_2), SyscallSucceeds());
 
   EXPECT_EQ(st_1.st_ino, st_2.st_ino);
-
-  ASSERT_THAT(close(fd_1.get()), SyscallSucceeds());
-  ASSERT_THAT(close(fd_2.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, DistinctFileIDs) {
@@ -1151,9 +1088,6 @@ TEST_F(AshmemTest, DistinctFileIDs) {
   ASSERT_THAT(ioctl(fd_2.get(), ASHMEM_GET_FILE_ID, &ino_2), SyscallSucceeds());
 
   EXPECT_NE(ino_1, ino_2);
-
-  ASSERT_THAT(close(fd_1.get()), SyscallSucceeds());
-  ASSERT_THAT(close(fd_2.get()), SyscallSucceeds());
 }
 
 TEST_F(AshmemTest, MalformedFileIDs) {
@@ -1161,7 +1095,6 @@ TEST_F(AshmemTest, MalformedFileIDs) {
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_FILE_ID, 0), SyscallFailsWithErrno(EFAULT));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_FILE_ID, 10), SyscallFailsWithErrno(EFAULT));
   EXPECT_THAT(ioctl(fd.get(), ASHMEM_GET_FILE_ID, "hello"), SyscallFailsWithErrno(EFAULT));
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
 }
 
 // Ashmem region name written as entry to /proc/<pid>/maps
@@ -1187,7 +1120,6 @@ TEST_F(AshmemTest, ProcMaps) {
   EXPECT_TRUE(has_ashmap);
 
   ASSERT_THAT(munmap(addr, kMapSize), SyscallSucceeds());
-  ASSERT_THAT(close(fd.get()), SyscallSucceeds());
   proc_maps.close();
 }
 
