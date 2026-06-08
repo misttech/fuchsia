@@ -86,7 +86,8 @@ fuchsia_package_with_single_component("sestarnix_userspace_test_container") {
   ]
 }
 
-# Makes libraries in the container's data/lib/ directory visible to the test binary.
+# Makes libraries in the container's data/lib/ directory visible to the test
+# binary.
 config("rpath_config") {
   ldflags = [ "-Wl,-rpath=/container/lib" ]
 }
@@ -298,7 +299,8 @@ foreach(test_name, test_names) {
     ]
     configs += [ ":rpath_config" ]
 
-    # LeakSanitizer fails on the test binaries from trying to clone with CLONE_UNTRACED.
+    # LeakSanitizer fails on the test binaries from trying to clone with
+    # CLONE_UNTRACED.
     exclude_toolchain_tags = [ "lsan" ]
   }
 

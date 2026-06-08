@@ -60,8 +60,8 @@ loadable_module("vdso_lib") {
   output_name = "libvdso"
   configs += [ ":vdso_config" ]
   if (is_linux) {
-    # By default, Linux host libraries statically link libc++. Since this library specifies nostdlib
-    # this option is unused and generates a warning.
+    # By default, Linux host libraries statically link libc++. Since this
+    # library specifies nostdlib this option is unused and generates a warning.
     configs -= [ "//build/config/linux:implicit-host-libs" ]
   }
 
@@ -81,7 +81,8 @@ resource("vdso_data") {
   }
   deps = [ ":vdso_lib" ]
 
-  # Use the group below to ensure the correct toolchain is in the dependency edge.
+  # Use the group below to ensure the correct toolchain is in the dependency
+  # edge.
   visibility = [ ":vdso" ]
 }
 

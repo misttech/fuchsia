@@ -16,7 +16,8 @@ python_binary("generate_container_config_shard") {
   deps = [ "//third_party/pyjson5" ]
 }
 
-# Add this config to any libraries that are only used by the Starnix kernel binary.
+# Add this config to any libraries that are only used by the Starnix kernel
+# binary.
 config("kernel_library_config") {
   configs = [ "//src/starnix/config:starnix_clippy_lints" ]
 

@@ -54,7 +54,8 @@ fuchsia_test_package("starnix_sysrq_integration_test") {
     "//src/starnix/containers/debian:debian_package",
   ]
 
-  # These tests cause the starnix kernel to panic and crash on purpose, observing error logs.
+  # These tests cause the starnix kernel to panic and crash on purpose,
+  # observing error logs.
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

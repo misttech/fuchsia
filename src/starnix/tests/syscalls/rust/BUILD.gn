@@ -15,7 +15,8 @@ group("tests") {
   deps = [ ":starnix_syscalls_rust_tests" ]
   if (host_os == "linux") {
     deps += [
-      # These are Linux tests, so we can run them as host tests on our host Linux bot.
+      # These are Linux tests, so we can run them as host tests on our host
+      # Linux bot.
       ":starnix_syscalls_rust_host_tests($host_toolchain)",
     ]
   }

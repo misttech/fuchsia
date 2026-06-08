@@ -80,8 +80,9 @@ guest_package("debian_guest") {
 
   cmdline = "root=/dev/vda rw systemd.log_target=kmsg"
 
-  # We have no need for the bounce buffer, and trying to initialize it on boot causes a ~30s delay
-  # while the Linux kernel tries to initialize all that memory.
+  # We have no need for the bounce buffer, and trying to initialize it on boot
+  # causes a ~30s delay while the Linux kernel tries to initialize all that
+  # memory.
   cmdline += " swiotlb=noforce"
 
   if (debian_guest_earlycon) {
@@ -94,8 +95,9 @@ guest_package("debian_guest") {
     }
   }
 
-  # If we're redirecting guest serial logs to the system log, we'll also increase the kernel log
-  # level verbosity. Otherwise, there's nearly zero kernel output to redirect.
+  # If we're redirecting guest serial logs to the system log, we'll also
+  # increase the kernel log level verbosity. Otherwise, there's nearly zero
+  # kernel output to redirect.
   if (redirect_guest_serial_logs) {
     cmdline += " loglevel=7"
   }

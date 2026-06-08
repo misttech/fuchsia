@@ -57,8 +57,8 @@ test_runfiles = [
   "priority_execve",
 ]
 
-# These runfiles are binaries used by the test binaries. They need to be placed in the specific
-# location that the test binaries expect them.
+# These runfiles are binaries used by the test binaries. They need to be placed
+# in the specific location that the test binaries expect them.
 foreach(resource_name, test_runfiles) {
   resource(resource_name) {
     sources = [ "${gvisor_prebuilt_directory}/stripped/${resource_name}" ]
@@ -96,7 +96,8 @@ foreach(benchmark_name, gvisor_benchmarks) {
   }
   all_benchmark_packages += [ ":${_package_label}" ]
 
-  # The "starnix_host_benchmark_gvisor_" prefix is useful for running all benchmarks with `fx test`.
+  # The "starnix_host_benchmark_gvisor_" prefix is useful for running all
+  # benchmarks with `fx test`.
   _host_label = "starnix_host_benchmark_gvisor_${benchmark_name}"
   fuchsia_component_perf_test(_host_label) {
     package = ":${_package_label}"

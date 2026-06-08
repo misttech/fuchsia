@@ -24,8 +24,8 @@ template("remotevol_test_package") {
          "kernel_base_manifest must be defined")
   _kernel_base_manifest = invoker.kernel_base_manifest
 
-  # Generate a debian container shard with or without inline encryption that will be used to build
-  # the kernel component manifest.
+  # Generate a debian container shard with or without inline encryption that
+  # will be used to build the kernel component manifest.
   _debian_container_shard_label = "${target_name}_debian_container_shard"
   _debian_container_shard_file =
       "${target_gen_dir}/${target_name}_debian_container.shard.cml"
@@ -89,7 +89,8 @@ template("remotevol_test_package") {
   }
 }
 
-# Defines a group of remotevol test packages to run with and without inline encryption.
+# Defines a group of remotevol test packages to run with and without inline
+# encryption.
 #
 # Parameters
 #   kernel_base_manifest (required)

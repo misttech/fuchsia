@@ -384,9 +384,9 @@ _starnix_core_deps = [
   "//third_party/rust_crates:zerocopy",
 ]
 
-# This is normally controlled on the starnix_logging crate, but controlling the features here also
-# allows the kernel to store debug-log-only information on structs without paying any overhead in
-# release.
+# This is normally controlled on the starnix_logging crate, but controlling the
+# features here also allows the kernel to store debug-log-only information on
+# structs without paying any overhead in release.
 _starnix_core_features = []
 if (compilation_mode != "release" ||
     starnix_enable_trace_and_debug_logs_in_release) {

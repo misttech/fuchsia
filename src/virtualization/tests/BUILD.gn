@@ -541,10 +541,11 @@ romfs_image("extras") {
 
   inputs = [ "//src/virtualization/tests/testdata/stereo_ramp_48khz_16bit.wav" ]
 
-  # We don't run the container tests on arm64, so don't provide any container images to reduce the
-  # size of the tests.
+  # We don't run the container tests on arm64, so don't provide any container
+  # images to reduce the size of the tests.
   #
-  # We also need internal_access because otherwise CIPD will not be able to resolve these files.
+  # We also need internal_access because otherwise CIPD will not be able to
+  # resolve these files.
   if (internal_access && target_cpu == "x64") {
     inputs += [
       "//prebuilt/virtualization/packages/termina_guest/container/${target_cpu}/lxd.tar.xz",

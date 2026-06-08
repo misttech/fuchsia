@@ -19,8 +19,9 @@ rustc_binary("bin") {
   source_root = "src/main.rs"
   sources = [ "src/main.rs" ]
 
-  # Disable LTO to keep compile/link times fast when linking starnix_core, and to prevent
-  # cross-crate optimizations from skewing the microbenchmark measurements.
+  # Disable LTO to keep compile/link times fast when linking starnix_core, and
+  # to prevent cross-crate optimizations from skewing the microbenchmark
+  # measurements.
   _lto_config = [ "//build/config/lto" ]
   _thinlto_config = [ "//build/config/lto:thinlto" ]
   if (configs + _lto_config - _lto_config != configs) {

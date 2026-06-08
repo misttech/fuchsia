@@ -12,8 +12,8 @@ config("args") {
 }
 
 group("bin") {
-  # Remove this once termina_guest_manager no longer sets "termina_extras_tests" to
-  # "true" by default.
+  # Remove this once termina_guest_manager no longer sets "termina_extras_tests"
+  # to "true" by default.
   testonly = true
 
   deps = [

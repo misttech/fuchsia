@@ -24,8 +24,8 @@ starnix_linux_executable("hello_starnix_bin") {
     "-nostartfiles",
     "-static",
 
-    # There are several flags that are not being used when linking a static binary.
-    # Disable the warning.
+    # There are several flags that are not being used when linking a static
+    # binary. Disable the warning.
     "-Wno-unused-command-line-argument",
   ]
 

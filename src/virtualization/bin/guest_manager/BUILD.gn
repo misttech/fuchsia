@@ -6,8 +6,8 @@ import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
 
 group("packages") {
-  # Remove this once termina_guest_manager no longer sets "termina_extras_tests" to
-  # "true" by default.
+  # Remove this once termina_guest_manager no longer sets "termina_extras_tests"
+  # to "true" by default.
   testonly = true
 
   deps = [

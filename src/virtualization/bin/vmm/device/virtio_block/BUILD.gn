@@ -81,7 +81,8 @@ fuchsia_unittest_package("virtio_block_unittests") {
     # A test qcow image used by the QcowBackend tests.
     ":qcow_test",
 
-    # Use the storage_driver_test_realm to provide access to a ramdisk driver for testing.
+    # Use the storage_driver_test_realm to provide access to a ramdisk driver
+    # for testing.
     "//src/storage/testing:storage_driver_test_realm",
     "//src/storage/testing:storage_test_includes",
   ]

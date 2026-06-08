@@ -37,9 +37,9 @@ template("syscall_test") {
     _test_name = invoker.test_name
   }
 
-  # If _test_name is not target_name, use target_name as a namespace for the binary name
-  # to ensure multiple tests can have the same test_name across different
-  # directories in the build.
+  # If _test_name is not target_name, use target_name as a namespace for the
+  # binary name to ensure multiple tests can have the same test_name across
+  # different directories in the build.
   _test_binary_name = "starnix_${target_name}_bin"
   if (_test_name != target_name) {
     _test_binary_name = "starnix_${target_name}_${_test_name}_bin"
@@ -111,8 +111,9 @@ template("syscall_test") {
       binary = "data/tests/${_test_binary_name}"
     }
 
-    # If we're targeting a different kernel, we'll add a field to the program to indicate the target
-    # kernel. This field will be consumed within the Starnix test runner to handle as appropriate.
+    # If we're targeting a different kernel, we'll add a field to the program to
+    # indicate the target kernel. This field will be consumed within the Starnix
+    # test runner to handle as appropriate.
     if (defined(invoker.test_target_kernel)) {
       _program.test_target_kernel = invoker.test_target_kernel
     }
@@ -161,11 +162,12 @@ template("syscall_test") {
       # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
       "//build/config:Wno-vla-cxx-extension",
 
-      # TODO(b/307959737): Compile syscall test on target with the bionic toolchain and then move this
-      # to the bionic toolchain.
+      # TODO(b/307959737): Compile syscall test on target with the bionic
+      # toolchain and then move this to the bionic toolchain.
       "//src/starnix/tests/syscalls/cpp:march",
 
-      # TODO(b/331282813): 'ENODATA' is deprecated in ISO C++, disable the warning for now.
+      # TODO(b/331282813): 'ENODATA' is deprecated in ISO C++, disable the
+      # warning for now.
       "//build/config:Wno-deprecated-pragma",
     ]
 

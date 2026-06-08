@@ -38,7 +38,8 @@ fuchsia_component("debian_container_with_user_volume") {
   manifest = "meta/debian_container_with_user_volume.cml"
 }
 
-# Same as `debian_container_with_user_volume` but with the `inlinecrypt` mount option.
+# Same as `debian_container_with_user_volume` but with the `inlinecrypt` mount
+# option.
 fuchsia_component("debian_container_with_user_volume_inline_encrypted") {
   manifest = "meta/debian_container_with_user_volume_inline_encrypted.cml"
 }

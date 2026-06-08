@@ -81,8 +81,9 @@ rustc_binary("starnix_kernel_bin") {
 
   if (compilation_mode == "release" || target_cpu == "riscv64" ||
       is_lto_variant) {
-    # LTO is enabled in release mode, and remote linking requires machines with more memory,
-    # particularly in the linking phase at least for riscv64 and LTO.
+    # LTO is enabled in release mode, and remote linking requires machines with
+    # more memory, particularly in the linking phase at least for riscv64 and
+    # LTO.
     _concurrent_jobs = concurrent_jobs.rust_highmem
     configs += _concurrent_jobs.configs
     forward_variables_from(_concurrent_jobs.vars, "*")

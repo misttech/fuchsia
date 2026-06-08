@@ -217,8 +217,8 @@ foreach(onfault_behavior, mlock_onfault_behaviors) {
         name = "mlock_test${onfault_str}_${pin_flavor}_pin"
         sources = [ "mlock_test.cc" ]
 
-        # Sanitizer runtimes stub out mlock() because it is incompatible with their virtual memory
-        # management.
+        # Sanitizer runtimes stub out mlock() because it is incompatible with
+        # their virtual memory management.
         disable_sanitizers_on_host = true
         container_config = {
           mlock_always_onfault = onfault_behavior
@@ -229,12 +229,14 @@ foreach(onfault_behavior, mlock_onfault_behaviors) {
   }
 }
 
-# This is a temporary list of host tests which have been fully migrated to Machina. These tests will
-# NOT be built and ran against the host. This list will be removed once migration is fully complete.
+# This is a temporary list of host tests which have been fully migrated to
+# Machina. These tests will NOT be built and ran against the host. This list
+# will be removed once migration is fully complete.
 syscall_tests_migrated_to_machina = [
-  # Note that mlock_test is fully migrated to Machina, but since the target name is dynamically
-  # generated it's not easy to filter it this way. It'll get cleaned up once the full migration is
-  # complete and host tests are completely turned down.
+  # Note that mlock_test is fully migrated to Machina, but since the target name
+  # is dynamically generated it's not easy to filter it this way. It'll get
+  # cleaned up once the full migration is complete and host tests are completely
+  # turned down.
   # go/keep-sorted start
 
   "abort_test",
@@ -317,11 +319,13 @@ foreach(test_def, syscall_tests_etc) {
 }
 
 # Build a list of tests to run against the host.
-# TODO(b/435279160): Once all tests are migrated, simplify the build target filtering logic.
+# TODO(b/435279160): Once all tests are migrated, simplify the build target
+# filtering logic.
 legacy_host_tests = all_test_names
 foreach(test_name, syscall_tests_migrated_to_machina) {
-  # If the user has set starnix_force_build_host_tests, skip any filtering and build all the
-  # tests. Otherwise, Machina is the preferred environment and we'll filter out migrated targets.
+  # If the user has set starnix_force_build_host_tests, skip any filtering and
+  # build all the tests. Otherwise, Machina is the preferred environment and
+  # we'll filter out migrated targets.
   if (!starnix_force_build_host_tests) {
     legacy_host_tests -= [ test_name ]
   }
@@ -348,7 +352,8 @@ group("tests") {
   if (host_os == "linux" && host_cpu == "x64") {
     foreach(test_name, legacy_host_tests) {
       deps += [
-        # These are Linux tests which haven't migrated to Machina, build and run them as host tests.
+        # These are Linux tests which haven't migrated to Machina, build and run
+        # them as host tests.
         ":starnix_${test_name}_baseline($host_toolchain)",
       ]
     }
@@ -476,8 +481,8 @@ if (is_linux) {
     exclude_toolchain_tags = [ "instrumented" ]
     sources = [ "extended_pstate_initial_state_child.cc" ]
 
-    # This binary does not use libc or a dynamic linker since it is testing the state
-    # presented to _start.
+    # This binary does not use libc or a dynamic linker since it is testing the
+    # state presented to _start.
     disable_syslog_backend = true
     cflags = [ "-fno-builtin" ]
     ldflags = [
@@ -491,8 +496,8 @@ if (is_linux) {
       "//build/config/linux:implicit-host-libs",
     ]
 
-    # This config is also applied by the syscall_test() template and is necessary for vector
-    # instructions to compile on riscv64.
+    # This config is also applied by the syscall_test() template and is
+    # necessary for vector instructions to compile on riscv64.
     configs += [ ":march" ]
   }
 

@@ -5,9 +5,9 @@
 import("//build/compiled_action.gni")
 import("//build/dist/distribution_manifest.gni")
 
-# Convert a container TAR image into something that can be included in a package. It can then be mounted
-# within Starnix using the remote_bundle mount type.  For example, a system image could be mounted
-# with a specification of:
+# Convert a container TAR image into something that can be included in a
+# package. It can then be mounted within Starnix using the remote_bundle mount
+# type. For example, a system image could be mounted with a specification of:
 #
 #     /:remote_bundle:data/system
 #

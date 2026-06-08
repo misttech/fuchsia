@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# The subpackages a Starnix test including `starnix_test_common.shard.cml` needs to boot a
-# container.
+# The subpackages a Starnix test including `starnix_test_common.shard.cml` needs
+# to boot a container.
 starnix_test_subpackages = [
   "//src/connectivity/network/tun/network-tun",
   "//src/devices/haptics/testing/fake_haptics_service:package",

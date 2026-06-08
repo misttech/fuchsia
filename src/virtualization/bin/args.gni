@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 
 declare_args() {
-  # If true, uses the new Rust virtio-net device instead of the legacy C++ device.
+  # If true, uses the new Rust virtio-net device instead of the legacy C++
+  # device.
   rust_virtio_net = true
 
   # If true, redirects guest serial output to the system log.

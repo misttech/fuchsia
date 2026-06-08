@@ -28,7 +28,8 @@ group("tests-involving-guests") {
 group("tests") {
   testonly = true
 
-  # Make sure we don't accidentally pull in tests that involve large guest images.
+  # Make sure we don't accidentally pull in tests that involve large guest
+  # images.
   assert_no_deps = [
     "tests",
     "//src/virtualization/packages/debian_guest",

@@ -3,9 +3,10 @@
 # found in the LICENSE file.
 import("//build/dist/resource.gni")
 
-# Generates a disk image in qcow2 format. The disk images created by this template are simple
-# regions of specific byte patterns that can be read in tests. The resultant image will be exposed
-# as a resource that can be included into a fuchsia package by simply adding it as a dependency.
+# Generates a disk image in qcow2 format. The disk images created by this
+# template are simple regions of specific byte patterns that can be read in
+# tests. The resultant image will be exposed as a resource that can be included
+# into a fuchsia package by simply adding it as a dependency.
 #
 #  disk_size (required)
 #     The size of disk to generate. This can be in bytes, or use suffixes k/M/G/T/P/E. For example,
@@ -66,11 +67,12 @@ template("qcow_test_image") {
   raw_disk_target = "gen_${target_name}_raw_image"
   qcow_disk_target = "gen_${target_name}_qcow_image"
 
-  # Generate a flat/sparse image. Despite being potentially large files these will not take up much
-  # disk space (assuming the host platform and filesystem can properly support sparse files).
+  # Generate a flat/sparse image. Despite being potentially large files these
+  # will not take up much disk space (assuming the host platform and filesystem
+  # can properly support sparse files).
   #
-  # We do this as a first step to generate the layout of the disk image, which will then be passed
-  # to `qemu-img convert` to create a qcow image.
+  # We do this as a first step to generate the layout of the disk image, which
+  # will then be passed to `qemu-img convert` to create a qcow image.
   action(raw_disk_target) {
     script = "//src/virtualization/lib/qcow/scripts/gen-sparse-image.py"
 
@@ -92,7 +94,8 @@ template("qcow_test_image") {
     outputs = [ output ]
   }
 
-  # Pass the flat image file through qemu-img to convert it into a qcow image file.
+  # Pass the flat image file through qemu-img to convert it into a qcow image
+  # file.
   action(qcow_disk_target) {
     script = "//prebuilt/third_party/qemu/${host_os}-${host_cpu}/bin/qemu-img"
     deps = [ ":${raw_disk_target}" ]
@@ -127,7 +130,8 @@ template("qcow_test_image") {
     outputs = [ "$target_gen_dir/$filename" ]
   }
 
-  # Expose the generated file as a resource so that it can be easily included into a test package.
+  # Expose the generated file as a resource so that it can be easily included
+  # into a test package.
   resource(target_name) {
     deps = [ ":${qcow_disk_target}" ]
     sources = get_target_outputs(":${qcow_disk_target}")

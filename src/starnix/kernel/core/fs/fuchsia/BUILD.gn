@@ -5,7 +5,8 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-# This is separate from the starnix core tests because it requires unified address spaces.
+# This is separate from the starnix core tests because it requires unified
+# address spaces.
 rustc_test("remote_unified_aspace_tests") {
   edition = "2024"
   source_root = "remote_unified_aspace_tests.rs"

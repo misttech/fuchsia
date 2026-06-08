@@ -23,7 +23,8 @@ group("tests-involving-guests") {
 group("tests") {
   testonly = true
 
-  # Guest interaction tests are heavyweight, so they live in the tests-involving-guests target.
+  # Guest interaction tests are heavyweight, so they live in the
+  # tests-involving-guests target.
   assert_no_deps = [ "guest_interaction:tests" ]
 
   deps = [

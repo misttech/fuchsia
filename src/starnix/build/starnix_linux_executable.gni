@@ -5,13 +5,15 @@
 import("//build/dist/resource.gni")
 import("//src/starnix/kernel/starnix.gni")
 
-# Build a C++ Linux executable so that it can be included in a Fuchsia package for use in Starnix.
+# Build a C++ Linux executable so that it can be included in a Fuchsia package
+# for use in Starnix.
 #
-# Binaries are included in packages at `data/tests/$output_name` to be compatible with typical
-# Starnix container mount layouts. Note that `output_name` defaults to the target name if it is not
-# specified.
+# Binaries are included in packages at `data/tests/$output_name` to be
+# compatible with typical Starnix container mount layouts. Note that
+# `output_name` defaults to the target name if it is not specified.
 #
-# Arguments to the template are the same as `executable()`, except `testonly = true` is forced.
+# Arguments to the template are the same as `executable()`, except `testonly =
+# true` is forced.
 template("starnix_linux_executable") {
   _output_name = target_name
   if (defined(invoker.output_name)) {
@@ -67,13 +69,15 @@ template("starnix_linux_executable") {
   }
 }
 
-# Build a 32-bit compatible C++ Linux executable so that it can be included in a Fuchsia package for use in Starnix.
+# Build a 32-bit compatible C++ Linux executable so that it can be included in a
+# Fuchsia package for use in Starnix.
 #
-# Binaries are included in packages at `data/tests/$output_name` to be compatible with typical
-# Starnix container mount layouts. Note that `output_name` defaults to the target name if it is not
-# specified.
+# Binaries are included in packages at `data/tests/$output_name` to be
+# compatible with typical Starnix container mount layouts. Note that
+# `output_name` defaults to the target name if it is not specified.
 #
-# Arguments to the template are the same as `executable()`, except `testonly = true` is forced.
+# Arguments to the template are the same as `executable()`, except `testonly =
+# true` is forced.
 template("starnix_linux_arch32_executable") {
   _output_name = target_name
   if (defined(invoker.output_name)) {

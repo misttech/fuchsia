@@ -4,7 +4,8 @@
 
 import("//build/compiled_action.gni")
 
-# Convert a docker archive into a container manifest and a default command manifest.
+# Convert a docker archive into a container manifest and a default command
+# manifest.
 #
 # Parameters
 #

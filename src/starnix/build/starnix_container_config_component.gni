@@ -6,7 +6,8 @@ import("//build/components.gni")
 
 _config_schema = "//src/starnix/containers/container_config.shard.cml"
 
-# Create a component that exposes configuration capabilities for a Starnix test container.
+# Create a component that exposes configuration capabilities for a Starnix test
+# container.
 #
 # Arguments:
 #   config (scope)
@@ -52,8 +53,8 @@ template("starnix_container_config_component") {
   }
 }
 
-# Create a CML shard that offers all the configuration capabilities for a Starnix test container
-# from `offer_from` child to `offer_to`.
+# Create a CML shard that offers all the configuration capabilities for a
+# Starnix test container from `offer_from` child to `offer_to`.
 #
 # Arguments:
 #   output (path)
