@@ -1153,6 +1153,7 @@ pub mod test {
     #[test_case(ubpf_test_data!("stxw.data"))]
     #[test_case(ubpf_test_data!("subnet.data"))]
     #[test_case(local_test_data!("access_with_check.data"))]
+    #[test_case(local_test_data!("ashr_fully_unknown_u64_stays_unbounded.data"))]
     #[test_case(local_test_data!("context_parameter.data"))]
     #[test_case(local_test_data!("div_by_range_with_zero.data"))]
     #[test_case(local_test_data!("err_context_parameter.data"))]

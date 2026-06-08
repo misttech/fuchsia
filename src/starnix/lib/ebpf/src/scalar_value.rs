@@ -435,20 +435,27 @@ impl [< $t:upper ScalarValueData>] {
             let y = y as u32;
             x.overflowing_shr(y).0.cast_unsigned()
         }
-        fn shr(x: [< $t >], y: [< $t >]) -> [< $t >] {
-            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
-            // rust operation. So, it is valid to just cast it to `u32`.
-            let y = y as u32;
-            x.overflowing_shr(y).0
-        }
         if !rhs.is_known() {
             return self.base(rhs);
         }
         if self.is_known() {
             return ashr(self.value, rhs.value).into();
         }
-        let unknown_mask = shr(self.unknown_mask, rhs.value);
-        let unwritten_mask = shr(self.unwritten_mask, rhs.value);
+        // Arithmetic right shift propagates the sign bit of the INPUT into
+        // the top bits of the output. When the input's sign bit is covered
+        // by `unknown_mask` (the invariant `value & unknown_mask == 0`
+        // forces `value`'s top bit to 0 in that case), every shifted-in bit
+        // of the output is also unknown. Both masks must therefore be
+        // shifted arithmetically so sign-extended uncertainty is preserved
+        // in the tracked state. Shifting them with a logical shr would
+        // clear the top `rhs.value` bits of the tracked masks and cause
+        // `Self::new` below to compute `urange.max = value | unknown_mask`
+        // without those bits set — the verifier would believe the result
+        // is bounded in `[0, (1 << (N - rhs.value)) - 1]` (where `N` is
+        // the width of the scalar, i.e. 32 or 64) even though the runtime
+        // value can be `0xFF..FFXX` via sign extension.
+        let unknown_mask = ashr(self.unknown_mask, rhs.value);
+        let unwritten_mask = ashr(self.unwritten_mask, rhs.value);
         let value = ashr(self.value, rhs.value) & !unknown_mask;
         let urange = [< $t:upper Range >]::max();
         Self::new(
@@ -690,5 +697,88 @@ mod tests {
         let a = U64Range::new(3, 3);
         let b = U64Range::new(0, 5);
         assert!(a.checked_sub(b).is_none());
+    }
+
+    // Regression test: arsh of a fully-unknown u64 by K bits must leave the
+    // result unbounded, because at runtime the sign bit can be 0 or 1 and
+    // therefore every shifted-in bit of the output can be 0 or 1.
+    //
+    // Before the fix, `unknown_mask` was shifted with a logical shr, which
+    // cleared the top K bits of the tracked mask. `Self::new` then computed
+    // `urange.max = value | unknown_mask` with zeros in the top bits,
+    // collapsing the tracked range to `[0, (1 << (64-K)) - 1]`. The verifier
+    // would subsequently accept pointer arithmetic that the runtime resolved
+    // to a pointer outside the allocated buffer.
+    #[test]
+    fn ashr_fully_unknown_u64_stays_unbounded() {
+        let x = U64ScalarValueData::UNKNOWN_WRITTEN;
+        assert!(!x.is_known());
+        assert_eq!(x.unknown_mask, u64::MAX);
+        let shifted = x.ashr(60u64.into());
+        // Tracked range must cover the full u64 domain because the runtime
+        // can produce values in {0..15} ∪ {u64::MAX - 15 ..= u64::MAX}.
+        assert_eq!(
+            shifted.max(),
+            u64::MAX,
+            "ashr of fully-unknown u64 must leave urange.max = u64::MAX"
+        );
+        assert_eq!(shifted.unknown_mask, u64::MAX);
+    }
+
+    #[test]
+    fn ashr_fully_unknown_u32_stays_unbounded() {
+        let x = U32ScalarValueData::UNKNOWN_WRITTEN;
+        assert!(!x.is_known());
+        assert_eq!(x.unknown_mask, u32::MAX);
+        let shifted = x.ashr(16u32.into());
+        assert_eq!(
+            shifted.max(),
+            u32::MAX,
+            "ashr of fully-unknown u32 must leave urange.max = u32::MAX"
+        );
+        assert_eq!(shifted.unknown_mask, u32::MAX);
+    }
+
+    // Known-nonnegative inputs should still produce a bounded tracked range —
+    // the fix must not regress programs that depend on correct narrowing when
+    // the sign bit is known to be zero.
+    #[test]
+    fn ashr_partial_unknown_with_known_zero_msb_narrows_correctly() {
+        // value = 0, unknown_mask = 0x0000_0000_0000_00FF (bottom byte unknown,
+        // top 56 bits known zero). A real runtime input with this shape can be
+        // any u64 in [0, 0xFF]. After arsh 4, the output can be any u64 in
+        // [0, 0xF] — arithmetic shr with a clear sign bit is identical to
+        // logical shr.
+        let x = U64ScalarValueData::new(
+            /*value=*/ 0,
+            /*unknown_mask=*/ 0x00FF,
+            /*unwritten_mask=*/ 0,
+            U64Range::new(0, 0xFF),
+        );
+        let shifted = x.ashr(4u64.into());
+        assert_eq!(shifted.max(), 0xF);
+        assert_eq!(shifted.min(), 0);
+        assert_eq!(shifted.unknown_mask, 0xF);
+    }
+
+    // Input with the MSB known to be 1 (i.e., known-negative when interpreted
+    // as signed) must sign-extend correctly and leave all shifted-in bits as
+    // 1s in the tracked `value`.
+    #[test]
+    fn ashr_known_negative_msb_sign_extends() {
+        // value = 0x8000_0000_0000_0000, unknown_mask = 0x0000_0000_0000_00FF
+        // (top bit known to be 1, bottom byte unknown). Invariant
+        // `value & unknown_mask == 0` holds.
+        let x = U64ScalarValueData::new(
+            /*value=*/ 0x8000_0000_0000_0000,
+            /*unknown_mask=*/ 0x00FF,
+            /*unwritten_mask=*/ 0,
+            U64Range::max(),
+        );
+        let shifted = x.ashr(4u64.into());
+        // Top nibbles must sign-extend to 0xF8_00..._0 and retain the unknown
+        // bottom bits after the shift.
+        assert_eq!(shifted.value & 0xFFFF_FFFF_FFFF_FF00, 0xF800_0000_0000_0000);
+        assert_eq!(shifted.unknown_mask, 0x0F);
     }
 }

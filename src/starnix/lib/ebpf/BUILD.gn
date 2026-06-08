@@ -60,6 +60,7 @@ rustc_library("ebpf") {
   inputs = [
     "src/test_grammar.pest",
     "src/tests/access_with_check.data",
+    "src/tests/ashr_fully_unknown_u64_stays_unbounded.data",
     "src/tests/context_parameter.data",
     "src/tests/mem_oob_underflow.data",
     "src/tests/div_by_range_with_zero.data",
