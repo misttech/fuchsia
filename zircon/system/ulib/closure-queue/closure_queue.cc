@@ -7,19 +7,18 @@
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <zircon/assert.h>
+#include <zircon/status.h>
 
-ClosureQueue::ClosureQueue(async_dispatcher_t* dispatcher, thrd_t dispatcher_thread) {
-  SetDispatcher(dispatcher, dispatcher_thread);
-}
+ClosureQueue::ClosureQueue(async_dispatcher_t* dispatcher) { SetDispatcher(dispatcher); }
 
 ClosureQueue::ClosureQueue() {
   // nothing to do here - the SetDispatcher() call takes care of setting up impl_.
 }
 
-void ClosureQueue::SetDispatcher(async_dispatcher_t* dispatcher, thrd_t dispatcher_thread) {
+void ClosureQueue::SetDispatcher(async_dispatcher_t* dispatcher) {
   // Max 1 call to SetDispatcher() permitted.
   ZX_DEBUG_ASSERT(!impl_);
-  impl_ = ClosureQueue::Impl::Create(dispatcher, dispatcher_thread);
+  impl_ = ClosureQueue::Impl::Create(dispatcher);
 }
 
 ClosureQueue::~ClosureQueue() {
@@ -49,19 +48,23 @@ bool ClosureQueue::is_stopped() {
   return impl_->is_stopped();
 }
 
-thrd_t ClosureQueue::dispatcher_thread() {
-  ZX_DEBUG_ASSERT(impl_);
-  return impl_->dispatcher_thread();
+bool ClosureQueue::IsSynchronized() {
+  if (!impl_) {
+    // Can't be on the set dispatcher if the dispatcher hasn't been set yet.
+    return false;
+  }
+  return impl_->IsSynchronized();
 }
 
-std::shared_ptr<ClosureQueue::Impl> ClosureQueue::Impl::Create(async_dispatcher_t* dispatcher,
-                                                               thrd_t dispatcher_thread) {
-  return std::shared_ptr<ClosureQueue::Impl>(new ClosureQueue::Impl(dispatcher, dispatcher_thread));
+std::shared_ptr<ClosureQueue::Impl> ClosureQueue::Impl::Create(async_dispatcher_t* dispatcher) {
+  return std::shared_ptr<ClosureQueue::Impl>(new ClosureQueue::Impl(dispatcher));
 }
 
-ClosureQueue::Impl::Impl(async_dispatcher_t* dispatcher, thrd_t dispatcher_thread)
-    : dispatcher_(dispatcher), dispatcher_thread_(dispatcher_thread) {
+ClosureQueue::Impl::Impl(async_dispatcher_t* dispatcher)
+    : dispatcher_(dispatcher), checker_(dispatcher) {
   ZX_DEBUG_ASSERT(dispatcher_);
+  // if this asserts, may not be calling on a thread managed by dispatcher, which is required
+  ZX_ASSERT(IsSynchronized());
 }
 
 ClosureQueue::Impl::~Impl() {
@@ -97,34 +100,31 @@ void ClosureQueue::Impl::Enqueue(std::shared_ptr<Impl> self_shared, fit::closure
       self_shared->TryRunAll();
       // ~self_shared, which may run ~Impl if StopAndClear() has run.
     });
-    ZX_ASSERT(result == ZX_OK);
+    ZX_ASSERT_MSG(result == ZX_OK, "async::PostTask() failed: %s", zx_status_get_string(result));
   }
   // ~lock
 }
 
 void ClosureQueue::Impl::StopAndClear() {
   std::queue<fit::closure> local_pending;
-  std::queue<fit::closure> local_pending_on_dispatcher_thread;
+  std::queue<fit::closure> local_pending_on_dispatcher;
   std::lock_guard<std::mutex> lock(lock_);
   if (!dispatcher_) {
     // Idempotent; already stopped and cleared.
     return;
   }
   // We only enforce that the first call to StopAndClear() that actually stops
-  // is on the dispatcher_thread_.  It's fine to ~ClosureQueue on a different
-  // thread as long as we've previously run StopAndClear() on
-  // dispatcher_thread_.
-  if (dispatcher_thread_) {
-    ZX_DEBUG_ASSERT(thrd_current() == dispatcher_thread_);
-  }
+  // is on dispatcher_.  It's fine to ~ClosureQueue on a different thread as
+  // long as we've previously run StopAndClear() on dispatcher_.
+  ZX_ASSERT(IsSynchronized());
   local_pending.swap(pending_);
-  local_pending_on_dispatcher_thread.swap(pending_on_dispatcher_thread_);
+  local_pending_on_dispatcher.swap(pending_on_dispatcher_);
   dispatcher_ = nullptr;
   // The order of these destructors is intentional, as we don't want to be
   // holding the lock while calling or deleting to_run(s):
   //
   // ~lock
-  // ~local_pending_on_dispatcher_thread
+  // ~local_pending_on_dispatcher
   // ~local_pending
 }
 
@@ -138,41 +138,40 @@ bool ClosureQueue::Impl::is_stopped() {
 // unrelated tasks/work that needs to run on the current thread has a chance to
 // run.
 void ClosureQueue::Impl::TryRunAll() {
-  if (dispatcher_thread_) {
-    ZX_DEBUG_ASSERT(thrd_current() == dispatcher_thread_);
-  }
   {  // scope lock
     std::lock_guard<std::mutex> lock(lock_);
-    // StopAndClear() can only be called on the dispatcher_thread_, so we're
-    // actually safe from that method's actions (even without holding lock_),
-    // but to make FXL_GUARDED_BY() happy we check dispatcher_ while holding
-    // lock_.
+    // StopAndClear() can only be called on the dispatcher_, so we're actually
+    // safe from that method's actions (even without holding lock_), but to make
+    // FXL_GUARDED_BY() happy we check dispatcher_ while holding lock_.
     if (!dispatcher_) {
       return;
     }
+    ZX_DEBUG_ASSERT(IsSynchronized());
     ZX_DEBUG_ASSERT(dispatcher_);
-    ZX_DEBUG_ASSERT(pending_on_dispatcher_thread_.empty());
-    pending_on_dispatcher_thread_.swap(pending_);
+    ZX_DEBUG_ASSERT(pending_on_dispatcher_.empty());
+    pending_on_dispatcher_.swap(pending_);
     // local_pending can be empty at this point, but only if RunOneHere() was
     // used.
   }  // ~lock
-  while (!pending_on_dispatcher_thread_.empty()) {
-    fit::closure local_to_run = std::move(pending_on_dispatcher_thread_.front());
-    pending_on_dispatcher_thread_.pop();
-    local_to_run();
+  while (!pending_on_dispatcher_.empty()) {
+    fit::closure local_to_run = std::move(pending_on_dispatcher_.front());
+    pending_on_dispatcher_.pop();
+    std::move(local_to_run)();
     // local_to_run() may have run StopAndClear().
     if (is_stopped()) {
-      // StopAndClear() clears both pending_ and pending_on_dispatcher_thread_.
-      ZX_DEBUG_ASSERT(pending_on_dispatcher_thread_.empty());
+      // StopAndClear() clears both pending_ and pending_on_dispatcher_.
+      ZX_DEBUG_ASSERT(pending_on_dispatcher_.empty());
       break;
     }
   }
 }
 
+bool ClosureQueue::Impl::IsSynchronized() {
+  return std::holds_alternative<std::monostate>(checker_.is_synchronized());
+}
+
 void ClosureQueue::Impl::RunOneHere() {
-  if (dispatcher_thread_) {
-    ZX_DEBUG_ASSERT(thrd_current() == dispatcher_thread_);
-  }
+  ZX_DEBUG_ASSERT(IsSynchronized());
   fit::closure local_to_run;
   {  // scope lock
     std::unique_lock<std::mutex> lock(lock_);
@@ -184,9 +183,4 @@ void ClosureQueue::Impl::RunOneHere() {
     pending_.pop();
   }  // ~lock
   local_to_run();
-}
-
-thrd_t ClosureQueue::Impl::dispatcher_thread() {
-  ZX_DEBUG_ASSERT(dispatcher_thread_);
-  return dispatcher_thread_;
 }

@@ -156,8 +156,7 @@ CodecAdapterVp9::CodecAdapterVp9(std::mutex& lock, CodecAdapterEvents* codec_ada
       video_(device_->video()),
       input_processing_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
       shared_fidl_thread_closure_queue_(std::in_place,
-                                        device->driver()->shared_fidl_loop()->dispatcher(),
-                                        device->driver()->shared_fidl_thread()) {
+                                        device->driver()->shared_fidl_loop()->dispatcher()) {
   ZX_DEBUG_ASSERT(device_);
   ZX_DEBUG_ASSERT(video_);
 }

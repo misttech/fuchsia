@@ -12,6 +12,7 @@
 #include <lib/media/codec_impl/codec_impl.h>
 #include <lib/media/codec_impl/codec_vmo_range.h>
 #include <lib/media/codec_impl/log.h>
+#include <lib/sync/cpp/completion.h>
 #include <threads.h>
 #include <zircon/compiler.h>
 #include <zircon/threads.h>
@@ -132,7 +133,7 @@ CodecImpl::CodecImpl(fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem,
       codec_admission_(std::move(codec_admission)),
       shared_fidl_dispatcher_(shared_fidl_dispatcher),
       shared_fidl_thread_(shared_fidl_thread),
-      shared_fidl_queue_(shared_fidl_dispatcher, shared_fidl_thread),
+      shared_fidl_queue_(shared_fidl_dispatcher),
       params_(std::move(params)),
       tmp_sysmem_(std::move(sysmem)),
       tmp_interface_request_(std::move(request)),
@@ -281,7 +282,16 @@ void CodecImpl::BindAsync(fit::closure error_handler) {
   }
   // Give CodecAdapter a chance to set a scheduler profile.
   CoreCodecSetStreamControlProfile(zx::unowned_thread(thrd_get_zx_handle(stream_control_thread_)));
-  stream_control_queue_.SetDispatcher(stream_control_loop_.dispatcher(), stream_control_thread_);
+
+  libsync::Completion set_dispatcher_done;
+  zx_status_t post_status =
+      async::PostTask(stream_control_loop_.dispatcher(), [this, &set_dispatcher_done] {
+        // must be called on stream_control_dispatcher_
+        stream_control_queue_.SetDispatcher(stream_control_loop_.dispatcher());
+        set_dispatcher_done.Signal();
+      });
+  ZX_ASSERT(post_status == ZX_OK);
+  set_dispatcher_done.Wait();
 
   // From here on, we'll only fail the CodecImpl via UnbindLocked(), or by
   // just calling ~CodecImpl on the FIDL thread.

@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef LIB_THREAD_SAFE_DELETER_THREAD_SAFE_DELETER_H_
+#define LIB_THREAD_SAFE_DELETER_THREAD_SAFE_DELETER_H_
 
 #include <lib/closure-queue/closure_queue.h>
 #include <zircon/assert.h>
@@ -24,7 +25,7 @@
 // it's convenient to curry a FIDL callback to another thread, then back to the FIDL thread to get
 // called and deleted.  However, when shutting down, the currying can be cut short and the lambda
 // currying the callback can be deleted on the wrong thread.
-template<typename Held>
+template <typename Held>
 class ThreadSafeDeleter {
  public:
   // closure_queue - a ClosureQueue that'll out-last the ThreadSafeDeleter, which can be used to
@@ -41,6 +42,7 @@ class ThreadSafeDeleter {
 
   [[nodiscard]]
   Held& held();
+
  private:
   void DeleteHeld();
 
@@ -51,30 +53,27 @@ class ThreadSafeDeleter {
   bool is_moved_out_ = false;
 };
 
-template<typename Held>
+template <typename Held>
 ThreadSafeDeleter<Held>::ThreadSafeDeleter(ClosureQueue* closure_queue, Held&& held)
-  : closure_queue_(closure_queue),
-    held_(std::move(held)) {
+    : closure_queue_(closure_queue), held_(std::move(held)) {
   ZX_DEBUG_ASSERT(closure_queue_);
   ZX_DEBUG_ASSERT(!is_moved_out_);
 }
 
-template<typename Held>
+template <typename Held>
 ThreadSafeDeleter<Held>::~ThreadSafeDeleter() {
   DeleteHeld();
 }
 
-template<typename Held>
+template <typename Held>
 ThreadSafeDeleter<Held>::ThreadSafeDeleter(ThreadSafeDeleter&& other)
-  : closure_queue_(other.closure_queue_),
-    held_(std::move(other.held_))
-{
+    : closure_queue_(other.closure_queue_), held_(std::move(other.held_)) {
   ZX_DEBUG_ASSERT(!other.is_moved_out_);
   other.is_moved_out_ = true;
   ZX_DEBUG_ASSERT(!is_moved_out_);
 }
 
-template<typename Held>
+template <typename Held>
 ThreadSafeDeleter<Held>& ThreadSafeDeleter<Held>::operator=(ThreadSafeDeleter&& other) {
   ZX_DEBUG_ASSERT(!other.is_moved_out_);
   // Prevent this for now since we don't need it.  Not fundamentally invalid, but also not great
@@ -86,22 +85,29 @@ ThreadSafeDeleter<Held>& ThreadSafeDeleter<Held>::operator=(ThreadSafeDeleter&& 
   other.is_moved_out_ = true;
 }
 
-template<typename Held>
+template <typename Held>
 Held& ThreadSafeDeleter<Held>::held() {
   ZX_DEBUG_ASSERT(!is_moved_out_);
   return held_;
 }
 
-template<typename Held>
+template <typename Held>
 void ThreadSafeDeleter<Held>::DeleteHeld() {
   if (is_moved_out_) {
     return;
   }
-  if (thrd_current() != closure_queue_->dispatcher_thread()) {
-    closure_queue_->Enqueue([target_thread = closure_queue_->dispatcher_thread(),
-                            held = std::move(held_)]{
-      ZX_DEBUG_ASSERT(thrd_current() == target_thread);
+  if (!closure_queue_->IsSynchronized()) {
+    closure_queue_->Enqueue([held = std::move(held_)] {
       // ~held, on correct thread
     });
+  } else {
+    // Given current callers, this block is unnecessary because all callers will shortly delete
+    // held_ on the current thread anyway, but to make it easier to reason about what DeleteHeld
+    // does, go ahead and move held_ out and delete the moved instance here. This way DeleteHeld
+    // moves out held_ and ensures deletion whether IsSynchronized() or not.
+    Held held = std::move(held_);
+    // ~held
   }
 }
+
+#endif  // LIB_THREAD_SAFE_DELETER_THREAD_SAFE_DELETER_H_

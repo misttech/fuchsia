@@ -15,18 +15,15 @@ namespace {
 class ClosureQueueTest : public zxtest::Test {
  protected:
   ClosureQueueTest();
+  // deprecated; to be removed
+  ClosureQueueTest(bool deprecated_construction);
   async::Loop loop_;
   ClosureQueue queue_;
 };
 
 ClosureQueueTest::ClosureQueueTest()
-    : loop_(&kAsyncLoopConfigAttachToCurrentThread), queue_(loop_.dispatcher(), thrd_current()) {
+    : loop_(&kAsyncLoopConfigAttachToCurrentThread), queue_(loop_.dispatcher()) {
   // nothing else to do here
-}
-
-TEST_F(ClosureQueueTest, ThrdTDefaultZero) {
-  // The ClosureQueue implementation relies on this currently, so check here.
-  EXPECT_FALSE(thrd_t{});
 }
 
 TEST_F(ClosureQueueTest, StopAndClearDoesNotRunMoreTasks) {
@@ -44,7 +41,7 @@ TEST_F(ClosureQueueTest, StopAndClearDoesNotRunMoreTasks) {
 
 TEST_F(ClosureQueueTest, SetDispatcher) {
   ClosureQueue queue;
-  queue.SetDispatcher(loop_.dispatcher(), thrd_current());
+  queue.SetDispatcher(loop_.dispatcher());
   bool closure_ran = false;
   queue.Enqueue([&closure_ran] { closure_ran = true; });
   loop_.RunUntilIdle();
@@ -68,18 +65,6 @@ TEST_F(ClosureQueueTest, StopAndClearDuringTask) {
   EXPECT_TRUE(task_1_deleted);
   EXPECT_FALSE(task_2_ran);
   EXPECT_TRUE(task_2_deleted);
-}
-
-TEST_F(ClosureQueueTest, DispatcherThread) {
-  // Constructed with a dispatcher already.
-  EXPECT_TRUE(queue_.dispatcher_thread());
-  EXPECT_EQ(queue_.dispatcher_thread(), thrd_current());
-
-  // Default constructed then SetDispatcher().
-  ClosureQueue queue;
-  queue.SetDispatcher(loop_.dispatcher(), thrd_current());
-  EXPECT_TRUE(queue.dispatcher_thread());
-  EXPECT_EQ(queue.dispatcher_thread(), thrd_current());
 }
 
 }  // namespace

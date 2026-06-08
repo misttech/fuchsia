@@ -62,6 +62,7 @@ source_set("codec_impl") {
     "//zircon/system/ulib/closure-queue",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/sysmem-version",
     "//zircon/system/ulib/thread-safe-deleter",
     "//zircon/system/ulib/trace",

@@ -111,8 +111,7 @@ CodecAdapterH264Multi::CodecAdapterH264Multi(std::mutex& lock,
       video_(device_->video()),
       core_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
       shared_fidl_thread_closure_queue_(std::in_place,
-                                        device->driver()->shared_fidl_loop()->dispatcher(),
-                                        device->driver()->shared_fidl_thread()) {
+                                        device->driver()->shared_fidl_loop()->dispatcher()) {
   ZX_DEBUG_ASSERT(device_);
   ZX_DEBUG_ASSERT(video_);
   ZX_DEBUG_ASSERT(secure_memory_mode_[kInputPort] == fuchsia::mediacodec::SecureMemoryMode::OFF);
