@@ -102,7 +102,7 @@ async fn main() -> Result<(), Error> {
     formatter.set_boot_timestamp(boot_ts);
     match cmd.encoding {
         log_utils::LogEncoding::Json => {
-            if let Err(e) = log_utils::dump_logs_from_socket(
+            match log_utils::dump_logs_from_socket(
                 flex_client::socket_to_async(receiver),
                 &mut formatter,
                 &Symbolizer::new(),
@@ -110,12 +110,15 @@ async fn main() -> Result<(), Error> {
             )
             .await
             {
-                eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
-                return Err(e.into());
+                Err(e) if !e.is_broken_pipe() => {
+                    eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
+                    return Err(e.into());
+                }
+                _ => {}
             }
         }
         log_utils::LogEncoding::Fxt => {
-            if let Err(e) = log_utils::dump_fxt_logs_from_socket(
+            match log_utils::dump_fxt_logs_from_socket(
                 flex_client::socket_to_async(receiver),
                 &mut formatter,
                 &Symbolizer::new(),
@@ -123,16 +126,22 @@ async fn main() -> Result<(), Error> {
             )
             .await
             {
-                eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
-                return Err(e.into());
+                Err(e) if !e.is_broken_pipe() => {
+                    eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
+                    return Err(e.into());
+                }
+                _ => {}
             }
         }
     }
 
-    if let Err(e) = std::io::stdout().flush() {
-        eprintln!("Error in log_listener flushing stdout: {e:?}");
-        return Err(e.into());
-    };
+    match std::io::stdout().flush() {
+        Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+            eprintln!("Error in log_listener flushing stdout: {e:?}");
+            return Err(e.into());
+        }
+        _ => {}
+    }
 
     Ok(())
 }

@@ -61,10 +61,18 @@ cc_test_executable("log_listener_return_code_test") {
   sources = [ "log_listener_return_code_test.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_cpp",
+    "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//src/zircon/lib/zircon",
+    "//zircon/system/ulib/zx",
   ]
 }
 
