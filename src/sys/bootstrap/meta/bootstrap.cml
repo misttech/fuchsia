@@ -112,7 +112,10 @@
             target_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.diagnostics.LogSettings" ],
+            protocol: [
+                "fuchsia.diagnostics.LogSettings",
+                "fuchsia.logger.LogSink",
+            ],
             from: "#archivist",
             to: "self/toolbox",
             target_availability: "unknown",
