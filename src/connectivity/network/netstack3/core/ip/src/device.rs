@@ -1385,7 +1385,10 @@ fn enable_ipv4_device_with_config<
 
 fn disable_ipv4_device_with_config<
     BC: IpDeviceBindingsContext<Ipv4, CC::DeviceId>,
-    CC: IpDeviceStateContext<Ipv4, BC> + GmpHandler<Ipv4, BC> + NudIpHandler<Ipv4, BC>,
+    CC: IpDeviceStateContext<Ipv4, BC>
+        + GmpHandler<Ipv4, BC>
+        + DadHandler<Ipv4, BC>
+        + NudIpHandler<Ipv4, BC>,
 >(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
@@ -1401,15 +1404,22 @@ fn disable_ipv4_device_with_config<
         Ipv4::ALL_SYSTEMS_MULTICAST_ADDRESS,
         config,
     );
-    core_ctx.with_address_ids(device_id, |addrs, _core_ctx| {
-        addrs.for_each(|addr| {
+    core_ctx
+        .with_address_ids(device_id, |addrs, _core_ctx| addrs.collect::<Vec<_>>())
+        .into_iter()
+        .for_each(|addr_id| {
+            DadHandler::stop_duplicate_address_detection(
+                core_ctx,
+                bindings_ctx,
+                device_id,
+                &addr_id,
+            );
             bindings_ctx.on_event(IpDeviceEvent::AddressStateChanged {
                 device: device_id.clone(),
-                addr: addr.addr().into(),
+                addr: addr_id.addr().into(),
                 state: IpAddressState::Unavailable,
             });
-        })
-    })
+        });
 }
 
 /// Gets a single IPv4 address and subnet for a device.

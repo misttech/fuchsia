@@ -13,20 +13,29 @@ use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::{FutureExt as _, StreamExt as _};
 use net_declare::{net_ip_v4, std_ip_v4};
 use net_types::MulticastAddress as _;
+use net_types::ethernet::Mac;
 use net_types::ip::{self as net_types_ip, Ipv4, Ipv4Addr};
 use netemul::RealmUdpSocket;
 use netstack_testing_common::interfaces::{self, TestInterfaceExt};
-use netstack_testing_common::realms::{Netstack, NetstackVersion, TestSandboxExt};
-use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, setup_network};
+use netstack_testing_common::realms::{Netstack, Netstack3, NetstackVersion, TestSandboxExt};
+use netstack_testing_common::{
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, setup_network,
+};
 use netstack_testing_macros::netstack_test;
-use packet::ParsablePacket as _;
-use packet_formats::ethernet::{EtherType, EthernetFrame, EthernetFrameLengthCheck};
+use packet::{
+    NestableSerializer as _, NoOpSerializationContext, ParsablePacket as _, Serializer as _,
+};
+use packet_formats::ethernet::{
+    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
+};
 use packet_formats::igmp::messages::{
     IgmpGroupRecordType, IgmpMembershipReportV1, IgmpMembershipReportV2, IgmpMembershipReportV3,
 };
 use packet_formats::igmp::{IgmpMessage, MessageType};
-use packet_formats::ip::Ipv4Proto;
+use packet_formats::ip::{IpProto, Ipv4Proto};
+use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::testutil::parse_ip_packet;
+use packet_formats::udp::UdpPacketBuilder;
 use std::pin::pin;
 use test_case::test_case;
 
@@ -395,4 +404,135 @@ async fn all_ones_broadcast<N: Netstack>(name: &str) {
         assert_eq!(&buf[..n], PAYLOAD.as_bytes());
         assert_eq!(received_from, std::net::SocketAddr::new(SENDER_IP, PORT));
     }
+}
+
+// Regression test for https://fxbug.dev/517511945: if an IPv4 interface is
+// disabled, another interface acting as a weak host should not forward packets
+// destined to the IP address assigned to the disabled interface.
+#[fuchsia::test]
+async fn disabled_interface_ipv4_addr_ghosting() {
+    let sandbox = netemul::TestSandbox::new().expect("error creating sandbox");
+    let realm = sandbox
+        .create_netstack_realm::<Netstack3, _>("disabled_interface_ipv4_addr_ghosting")
+        .expect("create realm");
+
+    let network1 = sandbox.create_network("net1").await.expect("create network 1");
+    let network2 = sandbox.create_network("net2").await.expect("create network 2");
+
+    let fake_ep1 = network1.create_fake_endpoint().expect("create fake endpoint 1");
+
+    let iface1 = realm.join_network(&network1, "iface1").await.expect("join iface1");
+    let iface2 = realm.join_network(&network2, "iface2").await.expect("join iface2");
+
+    const IFACE1_IP: std::net::Ipv4Addr = std_ip_v4!("192.168.0.1");
+    const IFACE2_IP: std::net::Ipv4Addr = std_ip_v4!("10.0.0.1");
+
+    let _asp1 = interfaces::add_address_wait_assigned(
+        iface1.control(),
+        fnet::Subnet {
+            addr: fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: IFACE1_IP.octets() }),
+            prefix_len: 24,
+        },
+        fidl_fuchsia_net_interfaces_admin::AddressParameters {
+            add_subnet_route: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("add iface1 IP");
+
+    let _asp2 = interfaces::add_address_wait_assigned(
+        iface2.control(),
+        fnet::Subnet {
+            addr: fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: IFACE2_IP.octets() }),
+            prefix_len: 24,
+        },
+        fidl_fuchsia_net_interfaces_admin::AddressParameters {
+            add_subnet_route: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("add iface2 IP");
+
+    // Enable forwarding on iface1.
+    let control1 = iface1.control();
+    let config = fnet_interfaces_admin::Configuration {
+        ipv4: Some(fnet_interfaces_admin::Ipv4Configuration {
+            unicast_forwarding: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let _old_config = control1
+        .set_configuration(&config)
+        .await
+        .expect("set_configuration fidl error")
+        .expect("failed to set interface configuration");
+
+    // Bind UDP socket to iface2's IP.
+    let port = 12345;
+    let sock = fuchsia_async::net::UdpSocket::bind_in_realm(
+        &realm,
+        std::net::SocketAddr::new(std::net::IpAddr::V4(IFACE2_IP), port),
+    )
+    .await
+    .expect("bind in realm");
+
+    // Prior to disabling iface2, inject packet into iface1 destined to iface2's
+    // IP address and check that the socket receives the packet.
+    let src_ip = net_declare::net_ip_v4!("192.168.0.2");
+    let dst_ip = net_declare::net_ip_v4!("10.0.0.1");
+    let src_mac = Mac::new([2, 0, 0, 0, 0, 1]);
+    let dst_mac = Mac::new(iface1.mac().await.octets);
+
+    let mut payload = b"asdf".to_vec();
+    let packet = packet::Buf::new(&mut payload, ..)
+        .wrap_in(UdpPacketBuilder::new(
+            src_ip,
+            dst_ip,
+            Some(std::num::NonZeroU16::new(54321).unwrap()),
+            std::num::NonZeroU16::new(port).unwrap(),
+        ))
+        .wrap_in(Ipv4PacketBuilder::new(src_ip, dst_ip, 64, IpProto::Udp.into()))
+        .wrap_in(EthernetFrameBuilder::new(src_mac, dst_mac, EtherType::Ipv4, 0))
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("failed to serialize UDP packet")
+        .unwrap_b();
+
+    fake_ep1.write(packet.as_ref()).await.expect("failed to write packet");
+
+    let mut buf = [0u8; 1024];
+    let recv_result = sock
+        .recv_from(&mut buf)
+        .map(Some)
+        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, || None)
+        .await;
+
+    assert!(
+        recv_result.is_some(),
+        "packet should have been received prior to disabling iface2, but got: {:?}",
+        recv_result
+    );
+
+    // Disable iface2.
+    let did_disable = iface2.control().disable().await.expect("send disable").expect("disable");
+    assert!(did_disable);
+
+    // Inject packet into iface1 destined to iface2's IP and verify that the
+    // packet is not received.
+    fake_ep1.write(packet.as_ref()).await.expect("failed to write packet");
+
+    let mut buf = [0u8; 1024];
+    let recv_result = sock
+        .recv_from(&mut buf)
+        .map(Some)
+        .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || None)
+        .await;
+
+    assert!(
+        recv_result.is_none(),
+        "packet should not have been received on disabled interface, but got: {:?}",
+        recv_result
+    );
 }
