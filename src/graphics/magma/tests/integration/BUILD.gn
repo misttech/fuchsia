@@ -258,8 +258,8 @@ fuchsia_component("magma-conformance-tests-child-hermetic-component") {
 }
 
 #
-# This package is included as a subpackage for vendor-specific conformance tests,
-# similarly to how its included here for :magma-conformance-tests-generic
+# This package is included as a subpackage for vendor-specific conformance
+# tests, similarly to how its included here for :magma-conformance-tests-generic
 #
 fuchsia_package("magma-conformance-tests-child") {
   testonly = true

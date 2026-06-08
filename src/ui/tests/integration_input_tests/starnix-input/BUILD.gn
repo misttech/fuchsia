@@ -115,7 +115,8 @@ fuchsia_test_package("starnix-input-integration-tests") {
     "//src/testing/fidl/intl_property_manager:intl_property_manager_component",
     "//src/ui/bin/text:text_manager_comp",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
 
     # Remains deps are unrelated to the previous comment.

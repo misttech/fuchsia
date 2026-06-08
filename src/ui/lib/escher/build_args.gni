@@ -6,7 +6,8 @@ declare_args() {
   # Determines whether or not escher will build with the glslang and shaderc
   # libraries. When false, these libraries will not be included in the scenic/
   # escher binary and as a result shaders will not be able to be compiled at
-  # runtime. Precompiled spirv code will be loaded into memory from disk instead.
+  # runtime. Precompiled spirv code will be loaded into memory from disk
+  # instead.
   escher_use_runtime_glsl = false
 
   # If true, this enables the |SpirvNotChangedTest| to check if the precompiled

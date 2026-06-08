@@ -63,7 +63,8 @@ source_set("thread") {
 }
 
 source_set("short_macros") {
-  # The short macros should only be used in leaf code that isn't included into other consumers.
+  # The short macros should only be used in leaf code that isn't included into
+  # other consumers.
   visibility = [
     "//src/graphics/drivers/*",
     "//src/graphics/lib/magma/src/libmagma:*",

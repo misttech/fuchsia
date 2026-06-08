@@ -110,8 +110,8 @@ fuchsia_unittest_package("flatland_display_compositor_pixeltests") {
       max_severity = "ERROR"
     }
 
-    # Ensures that only devices that have access to display controller image capture features
-    # can run this test suite.
+    # Ensures that only devices that have access to display controller image
+    # capture features can run this test suite.
     environments = with_display_capture_envs
   }
   test_type = "system"
@@ -130,8 +130,8 @@ fuchsia_unittest_package(
       max_severity = "ERROR"
     }
 
-    # Force these tests to run on flatland_display_compositor_pixeltests envs + NUC + basic_envs in
-    # CQ. Do not remove.
+    # Force these tests to run on flatland_display_compositor_pixeltests envs +
+    # NUC + basic_envs in CQ. Do not remove.
     environments = with_display_capture_envs + [
                      nuc7_env,
                      nuc11_env,

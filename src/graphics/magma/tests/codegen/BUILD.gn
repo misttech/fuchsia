@@ -24,7 +24,8 @@ action("magma_header_compare") {
 }
 
 action_foreach("magma_ordinal_error_tests") {
-  # This target validates that the virtio_magma_h_generation script catches ordinal errors.
+  # This target validates that the virtio_magma_h_generation script catches
+  # ordinal errors.
   testonly = true
   sources = [
     "magma_bad-next-free.json",

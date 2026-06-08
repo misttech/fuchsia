@@ -66,7 +66,8 @@ fuchsia_test_component("web_runner_pixel_test_component") {
     "//src/testing/fidl/intl_property_manager:intl_property_manager_component",
     "//src/ui/bin/text:text_manager_comp",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
     "//src/ui/tests/integration_graphics_tests/web-pixel-tests/chromium_pixel_client:chromium_pixel_client_component",

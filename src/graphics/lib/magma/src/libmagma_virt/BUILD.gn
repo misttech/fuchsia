@@ -34,7 +34,8 @@ static_library("libmagma_virt") {
     "magma.cc",
   ]
 
-  # All functions should be declared in magma.h, so warn about unnecessary functions.
+  # All functions should be declared in magma.h, so warn about unnecessary
+  # functions.
   cflags = [ "-Wmissing-prototypes" ]
 
   # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings

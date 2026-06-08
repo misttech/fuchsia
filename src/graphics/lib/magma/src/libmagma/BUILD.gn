@@ -12,20 +12,23 @@ group("libmagma") {
   public_deps = [ ":libmagma_static" ]
 }
 
-# Magma ICDs are only allowed to depend on (parts of) libc and libzircon, and no other shared libraries.
+# Magma ICDs are only allowed to depend on (parts of) libc and libzircon, and no
+# other shared libraries.
 disallowed_dependencies = [
   "//sdk/lib/fdio",
   "//sdk/lib/async-default",
 ]
 
 config("static_lib_config") {
-  # All functions should be declared in magma.h or magma_sysmem.h, so warn about unnecessary functions.
+  # All functions should be declared in magma.h or magma_sysmem.h, so warn about
+  # unnecessary functions.
   cflags = [ "-Wmissing-prototypes" ]
 
   # TODO(https://fxbug.dev/450424760): TUs which would be part of a hermetic static library for magma
-  # should not be instrumented, hence we disable ASan here. Ideally, we should have build rules that
-  # ensure these sources and anything which link in libmagma_static would be excluded from instrumented
-  # builds. This is not a stable solution, but it prevents libmagma_static from having a mix of ASan-
+  # should not be instrumented, hence we disable ASan here. Ideally, we should
+  # have build rules that ensure these sources and anything which link in
+  # libmagma_static would be excluded from instrumented builds. This is not a
+  # stable solution, but it prevents libmagma_static from having a mix of ASan-
   # instrumented and non-asan instrumented libc++ functions.
   cflags += [ "-fno-sanitize=address" ]
 
@@ -68,7 +71,8 @@ static_library("libmagma_static") {
   assert_no_deps = disallowed_dependencies
 }
 
-# Factored out from ":libmagma_static" in order to support Lavapipe.  See "visibility" labels.
+# Factored out from ":libmagma_static" in order to support Lavapipe. See
+# "visibility" labels.
 source_set("magma_sysmem") {
   visibility = [
     "./*",
@@ -138,7 +142,8 @@ group("magma_deps") {
 }
 
 shared_library("magma_shared") {
-  # This library is only used to generate a .ifs file, so it shouldn't be used anywhere outside this file.
+  # This library is only used to generate a .ifs file, so it shouldn't be used
+  # anywhere outside this file.
   visibility = [ ":*" ]
   deps = [ ":magma_client" ]
   inputs = [ "$target_out_dir/libmagma_client.a" ]

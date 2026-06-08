@@ -72,7 +72,8 @@ fuchsia_test_package("touch-input-test") {
     "//src/testing/fidl/intl_property_manager:intl_property_manager_component",
     "//src/ui/bin/text:text_manager_comp",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
     "//src/ui/tests/integration_input_tests/touch/touch-flatland-client:component",
@@ -132,7 +133,8 @@ fuchsia_test_package("pointerinjector-config-test") {
   deps = [
     "//src/ui/tests/integration_input_tests/touch/touch-flatland-client:component",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
   ]

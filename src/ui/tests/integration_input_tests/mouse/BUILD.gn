@@ -88,7 +88,8 @@ fuchsia_test_package("mouse-input-test") {
     "//src/developer/memory/pressure_signaler:component",
     "//src/fonts:font_provider_hermetic_for_test",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
   ]

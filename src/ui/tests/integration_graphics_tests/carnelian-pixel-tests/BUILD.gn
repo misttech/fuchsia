@@ -38,7 +38,8 @@ fuchsia_test_component("carnelian_pixel_test_component") {
     ":carnelian_pixel_test_bin",
     "carnelian_pixel_client:static_square_component",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
   ]

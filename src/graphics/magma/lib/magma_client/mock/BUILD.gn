@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 
 source_set("magma_system") {
-  # All functions should be declared in magma.h or magma_sysmem.h, so warn about unnecessary functions.
+  # All functions should be declared in magma.h or magma_sysmem.h, so warn about
+  # unnecessary functions.
   cflags = [ "-Wmissing-prototypes" ]
   sources = [ "mock_magma_system.cc" ]
   deps = [

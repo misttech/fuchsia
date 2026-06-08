@@ -6,9 +6,10 @@ import("//build/config/clang/clang.gni")
 import("//build/config/current_target_tuple.gni")
 import("//build/zircon/c_utils.gni")
 
-# A static library that links hermetically against the C++ standard library and won't accidentally
-# expose any C++ library implementations to clients. Only exported symbols and symbols listed in
-# globalize_symbols_file will be available to external code.
+# A static library that links hermetically against the C++ standard library and
+# won't accidentally expose any C++ library implementations to clients. Only
+# exported symbols and symbols listed in globalize_symbols_file will be
+# available to external code.
 #
 # Parameters
 #
@@ -61,8 +62,9 @@ template("hermetic_static_library") {
     ]
     outputs = [ "$target_out_dir/${output_target}_temp.o" ]
 
-    # The build seems to write the output to a temp file, which the action tracer complains about.
-    # So tell the action tracer to expect (and ignore) it
+    # The build seems to write the output to a temp file, which the action
+    # tracer complains about. So tell the action tracer to expect (and ignore)
+    # it
     hermetic_action_ignored_prefixes =
         [ "$target_out_dir/${output_target}_temp.o.tmp" ]
 

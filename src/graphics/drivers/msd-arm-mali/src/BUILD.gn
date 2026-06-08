@@ -12,14 +12,15 @@ declare_args() {
   # GPU supports it.
   msd_arm_enable_cache_coherency = true
 
-  # In protected mode, faults don't return as much information so they're much harder to debug. To
-  # work around that, add a mode where protected atoms are executed in non-protected mode and
-  # vice-versa.
+  # In protected mode, faults don't return as much information so they're much
+  # harder to debug. To work around that, add a mode where protected atoms are
+  # executed in non-protected mode and vice-versa.
   #
-  # NOTE: The memory security ranges should also be set (in TrustZone) to the opposite of normal, so
-  # that non-protected mode accesses can only access protected memory and vice versa.  Also,
-  # growable memory faults won't work in this mode, so larger portions of growable memory should
-  # precommitted (which is not done by default).
+  # NOTE: The memory security ranges should also be set (in TrustZone) to the
+  # opposite of normal, so that non-protected mode accesses can only access
+  # protected memory and vice versa. Also, growable memory faults won't work in
+  # this mode, so larger portions of growable memory should precommitted (which
+  # is not done by default).
   msd_arm_enable_protected_debug_swap_mode = false
 }
 

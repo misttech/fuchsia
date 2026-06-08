@@ -82,7 +82,8 @@ fuchsia_test_package("virtual-keyboard-test") {
     "//src/testing/fidl/intl_property_manager:intl_property_manager_component",
     "//src/ui/tests/integration_input_tests/virtual-keyboard/web-virtual-keyboard-client:component",
 
-    # Include some default config (it doesn't matter which, since we're going to override it).
+    # Include some default config (it doesn't matter which, since we're going to
+    # override it).
     "//src/ui/testing/test_ui_stack:flatland_scene_manager_config",
     "//src/ui/testing/test_ui_stack:test-ui-stack-component",
   ]
@@ -119,8 +120,8 @@ group("tests") {
   ]
 }
 
-# A variant which excludes `web_engine`, so that it can be built on products which
-# include `web_engine` in `base`.
+# A variant which excludes `web_engine`, so that it can be built on products
+# which include `web_engine` in `base`.
 group("tests-product-webengine") {
   testonly = true
   deps = [

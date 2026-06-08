@@ -33,7 +33,8 @@ source_set("common") {
 }
 
 if (is_fuchsia) {
-  # This target can set the gpu vendor ID from a config exactly matching the one in meta/config.shard.cml.
+  # This target can set the gpu vendor ID from a config exactly matching the one
+  # in meta/config.shard.cml.
   source_set("config_query") {
     sources = [ "config_query.cc" ]
     deps = [
