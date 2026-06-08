@@ -110,11 +110,12 @@ From //build/images/args.gni:70
 
 ### amlogic_decoder_firmware_path
 
-Path to the amlogic decoder firmware file. Overrides the default in the build.
+Path to the amlogic decoder firmware file. Overrides the default in the
+build.
 
 **Current value (from the default):** `""`
 
-From //src/media/drivers/amlogic_decoder/BUILD.gn:12
+From //src/media/drivers/amlogic_decoder/BUILD.gn:13
 
 ### archivist_max_cached_logs_bytes
 
@@ -393,7 +394,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:228
+From //build/bazel/bazel_root_targets_list.gni:232
 
 ### bazel_upload_build_events
 
@@ -2229,6 +2230,9 @@ From //build/config/compiler.gni:82
   install_host_tool = true
 }, {
   bazel_label = "//tools/rust_extract"
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/fidl/fidldoc:fidldoc"
   install_host_tool = true
 }, {
   bazel_label = "//tools/check-licenses:tests"
@@ -4152,18 +4156,19 @@ written to disk. Other teams and CQ do not need to worry about this flag.
 
 **Current value (from the default):** `false`
 
-From //src/ui/lib/escher/build_args.gni:18
+From //src/ui/lib/escher/build_args.gni:19
 
 ### escher_use_runtime_glsl
 
 Determines whether or not escher will build with the glslang and shaderc
 libraries. When false, these libraries will not be included in the scenic/
 escher binary and as a result shaders will not be able to be compiled at
-runtime. Precompiled spirv code will be loaded into memory from disk instead.
+runtime. Precompiled spirv code will be loaded into memory from disk
+instead.
 
 **Current value (from the default):** `false`
 
-From //src/ui/lib/escher/build_args.gni:10
+From //src/ui/lib/escher/build_args.gni:11
 
 ### exclude_testonly_syscalls
 
@@ -5726,18 +5731,19 @@ From //src/graphics/drivers/msd-arm-mali/src/BUILD.gn:13
 
 ### msd_arm_enable_protected_debug_swap_mode
 
-In protected mode, faults don't return as much information so they're much harder to debug. To
-work around that, add a mode where protected atoms are executed in non-protected mode and
-vice-versa.
+In protected mode, faults don't return as much information so they're much
+harder to debug. To work around that, add a mode where protected atoms are
+executed in non-protected mode and vice-versa.
 
-NOTE: The memory security ranges should also be set (in TrustZone) to the opposite of normal, so
-that non-protected mode accesses can only access protected memory and vice versa.  Also,
-growable memory faults won't work in this mode, so larger portions of growable memory should
-precommitted (which is not done by default).
+NOTE: The memory security ranges should also be set (in TrustZone) to the
+opposite of normal, so that non-protected mode accesses can only access
+protected memory and vice versa. Also, growable memory faults won't work in
+this mode, so larger portions of growable memory should precommitted (which
+is not done by default).
 
 **Current value (from the default):** `false`
 
-From //src/graphics/drivers/msd-arm-mali/src/BUILD.gn:23
+From //src/graphics/drivers/msd-arm-mali/src/BUILD.gn:24
 
 ### msd_arm_mali_csf_firmware_label
 
