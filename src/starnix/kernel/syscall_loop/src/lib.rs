@@ -5,7 +5,7 @@
 use anyhow::{Error, format_err};
 use extended_pstate::ExtendedPstatePointer;
 use starnix_core::arch::execution::new_syscall;
-use starnix_core::ptrace::{PtraceStatus, StopState, ptrace_syscall_enter, ptrace_syscall_exit};
+use starnix_core::ptrace::{StopState, ptrace_syscall_enter, ptrace_syscall_exit};
 use starnix_core::signals::{
     SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall,
 };
@@ -432,23 +432,14 @@ pub fn process_completed_restricted_exit(
         } else {
             // Block a stopped process after it's had a chance to handle signals, since a signal might
             // cause it to stop.
-            current_task.block_while_stopped(locked);
-            // If ptrace_cont has sent a signal, process it immediately.  This
-            // seems to match Linux behavior.
-
-            let mut task_state = current_task.write();
-            if task_state
-                .ptrace
-                .as_ref()
-                .is_some_and(|ptrace| ptrace.stop_status == PtraceStatus::Continuing)
-                && task_state.is_any_signal_pending()
-                && !current_task.is_exitted()
-            {
+            if current_task.block_if_stopped(locked) {
+                // If the task was stopped and has now woken up (e.g., via SIGCONT or PTRACE_CONT),
+                // loop back to process any pending signals before returning to userspace.
                 continue;
             }
             result = None;
             // Always restore signal mask before returning to userspace.
-            task_state.restore_signal_mask();
+            current_task.write().restore_signal_mask();
             break;
         }
     }

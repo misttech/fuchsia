@@ -1305,7 +1305,7 @@ pub fn ptrace_syscall_enter(locked: &mut Locked<Unlocked>, current_task: &mut Cu
         }
     };
     if block {
-        current_task.block_while_stopped(locked);
+        current_task.block_if_stopped(locked);
     }
 }
 
@@ -1342,7 +1342,7 @@ pub fn ptrace_syscall_exit(
         }
     };
     if block {
-        current_task.block_while_stopped(locked);
+        current_task.block_if_stopped(locked);
     }
 }
 

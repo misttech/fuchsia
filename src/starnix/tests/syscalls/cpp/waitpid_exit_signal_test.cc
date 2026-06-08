@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdint.h>
@@ -223,6 +224,71 @@ TEST(WaitpidExitSignalTest, SubreaperCloneExitSignal) {
     std::cout << "Waiting for SIGCHLD" << std::endl;
     EXPECT_EQ(sigwait(&signal_set, &received_signal), 0);
     EXPECT_EQ(received_signal, SIGCHLD);
+  });
+  EXPECT_TRUE(fork_helper.WaitForChildren());
+}
+
+// Verifies that a stopped child process in an orphaned process group receives SIGHUP and SIGCONT
+// when its parent exits.
+//
+// 1. Child moves to a new process group.
+// 2. Child forks Grandchild, which moves to a new process group.
+// 3. Grandchild stops itself (SIGSTOP).
+// 4. Child exits, making Grandchild's process group orphaned because its parent Child is dead, and
+//    the reparented parent is in a different session, which doesn't prevent orphaning.
+// 5. Grandchild is reparented to the outer forked process (subreaper).
+// 6. Subreaper waits for Grandchild and verifies it died from SIGHUP.
+TEST(WaitpidExitSignalTest, StoppedChildInOrphanedGroup) {
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([] {
+    // This is the grandparent process.
+    // Mark ourselves as a subreaper so we inherit orphaned grandchildren.
+    ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+
+    test_helper::ForkHelper fork_helper;
+    fork_helper.OnlyWaitForForkedChildren();
+    test_helper::ScopedPipe pipe;
+    fork_helper.RunInForkedProcess([&] {
+      // This is the child process.
+      pipe.ReadSide().reset();
+      ASSERT_THAT(setsid(), SyscallSucceeds());
+
+      pid_t grandchild_pid = fork();
+      ASSERT_THAT(grandchild_pid, SyscallSucceeds());
+      if (grandchild_pid == 0) {
+        // This is the grandchild process.
+        ASSERT_THAT(setpgid(0, 0), SyscallSucceeds());
+        raise(SIGSTOP);
+        _exit(0);
+      }
+
+      ASSERT_EQ(write(pipe.WriteSide().get(), &grandchild_pid, sizeof(grandchild_pid)),
+                static_cast<ssize_t>(sizeof(grandchild_pid)));
+      pipe.WriteSide().reset();
+
+      int status;
+      ASSERT_THAT(waitpid(grandchild_pid, &status, WUNTRACED),
+                  SyscallSucceedsWithValue(grandchild_pid));
+      ASSERT_TRUE(WIFSTOPPED(status));
+
+      // Grandchild is stopped. Child exit causes grandchild to become orphaned.
+      _exit(0);
+    });
+
+    pid_t grandchild_pid = -1;
+    ASSERT_EQ(read(pipe.ReadSide().get(), &grandchild_pid, sizeof(grandchild_pid)),
+              static_cast<ssize_t>(sizeof(grandchild_pid)));
+    pipe.ReadSide().reset();
+    pipe.WriteSide().reset();
+
+    EXPECT_TRUE(fork_helper.WaitForChildren());
+
+    // Grandchild is now reparented to us. Since its process group is orphaned, and it was stopped,
+    // it should have received SIGHUP and SIGCONT, and exited.
+    int status;
+    ASSERT_THAT(waitpid(grandchild_pid, &status, 0), SyscallSucceedsWithValue(grandchild_pid));
+    ASSERT_TRUE(WIFSIGNALED(status));
+    EXPECT_EQ(WTERMSIG(status), SIGHUP);
   });
   EXPECT_TRUE(fork_helper.WaitForChildren());
 }

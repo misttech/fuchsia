@@ -1913,9 +1913,24 @@ impl CurrentTask {
         }
     }
 
+    /// Finalizes the stop state of the task, and if the task should be stopped,
+    /// blocks the execution of `current_task` as long as the task is stopped and
+    /// not terminated.
+    ///
+    /// Returns true if the task was stopped and blocked (and has now woken up),
+    /// or false if it was not stopped and returned immediately.
+    pub fn block_if_stopped(&mut self, locked: &mut Locked<Unlocked>) -> bool {
+        if self.finalize_stop_state() {
+            self.block_while_stopped(locked);
+            true
+        } else {
+            false
+        }
+    }
+
     /// If the task is stopping, set it as stopped. return whether the caller
     /// should stop.  The task might also be waking up.
-    pub fn finalize_stop_state(&mut self) -> bool {
+    fn finalize_stop_state(&mut self) -> bool {
         let stopped = self.load_stopped();
 
         if !stopped.is_stopping_or_stopped() {
@@ -1953,13 +1968,7 @@ impl CurrentTask {
 
     /// Block the execution of `current_task` as long as the task is stopped and
     /// not terminated.
-    pub fn block_while_stopped(&mut self, locked: &mut Locked<Unlocked>) {
-        // Upgrade the state from stopping to stopped if needed. Return if the task
-        // should not be stopped.
-        if !self.finalize_stop_state() {
-            return;
-        }
-
+    fn block_while_stopped(&mut self, locked: &mut Locked<Unlocked>) {
         let waiter = Waiter::with_options(WaiterOptions::IGNORE_SIGNALS);
         loop {
             // If we've exited, unstop the threads and return without notifying
@@ -2040,7 +2049,7 @@ impl CurrentTask {
                     return;
                 }
             }
-            self.block_while_stopped(locked);
+            self.block_if_stopped(locked);
         }
     }
 
