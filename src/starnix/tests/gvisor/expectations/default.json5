@@ -1305,6 +1305,9 @@
 
                 // TODO(https://fxbug.dev/508242242): Fails on arm64 only.
                 "SetpriorityTest.OtherUidRequiresCapSysNice",
+
+                // TODO(https://fxbug.dev/521352271): Fix and re-enable.
+                "JobControlTest.SigwinchOnWindowSizeChange",
             ],
         },
     ],
