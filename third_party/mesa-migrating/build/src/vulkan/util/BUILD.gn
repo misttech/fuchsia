@@ -86,8 +86,12 @@ mesa_python_action("gen_enum_to_str") {
     "--xml",
     rebase_path("$mesa_source_root", root_build_dir) +
         "/src/vulkan/registry/vk.xml",
-    "--outdir",
-    rebase_path("$target_gen_dir", root_build_dir),
+    "--out-h",
+    rebase_path(outputs[0], root_build_dir),
+    "--out-c",
+    rebase_path(outputs[1], root_build_dir),
+    "--out-d",
+    rebase_path(outputs[2], root_build_dir),
   ]
 }
 
@@ -150,8 +154,8 @@ mesa_python_action("vk_struct_type_cast") {
   args = [
     "--xml",
     rebase_path(inputs[0], root_build_dir),
-    "--outdir",
-    rebase_path(target_gen_dir, root_build_dir),
+    "--out",
+    rebase_path(outputs[0], root_build_dir),
     "--beta",
     "false",
   ]

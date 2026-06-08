@@ -27,6 +27,7 @@ config("common_config") {
   defines = [
     "STDC_HEADERS=1",
     "HAVE_ENDIAN_H=1",
+    "HAVE_SYSCONF=1",
     "HAVE_SYS_TYPES_H=1",
     "HAVE_SYS_STAT_H=1",
     "HAVE_STDLIB_H=1",

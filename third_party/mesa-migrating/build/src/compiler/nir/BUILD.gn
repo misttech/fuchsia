@@ -70,6 +70,7 @@ mesa_source_set("nir") {
     "$src_dir/nir_deref.h",
     "$src_dir/nir_divergence_analysis.c",
     "$src_dir/nir_dominance.c",
+    "$src_dir/nir_dominance_lca.c",
     "$src_dir/nir_format_convert.c",
     "$src_dir/nir_format_convert.h",
     "$src_dir/nir_from_ssa.c",
@@ -77,8 +78,8 @@ mesa_source_set("nir") {
     "$src_dir/nir_gather_info.c",
     "$src_dir/nir_gather_types.c",
     "$src_dir/nir_gather_xfb_info.c",
-    "$src_dir/nir_group_loads.c",
     "$src_dir/nir_gs_count_vertices.c",
+    "$src_dir/nir_inline_sysval.c",
     "$src_dir/nir_inline_uniforms.c",
     "$src_dir/nir_instr_set.c",
     "$src_dir/nir_instr_set.h",
@@ -87,7 +88,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_liveness.c",
     "$src_dir/nir_loop_analyze.c",
     "$src_dir/nir_loop_analyze.h",
-    "$src_dir/nir_lower_alpha_test.c",
     "$src_dir/nir_lower_alu.c",
     "$src_dir/nir_lower_alu_width.c",
     "$src_dir/nir_lower_amul.c",
@@ -110,7 +110,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_convert_alu_types.c",
     "$src_dir/nir_lower_discard_if.c",
     "$src_dir/nir_lower_double_ops.c",
-    "$src_dir/nir_lower_drawpixels.c",
     "$src_dir/nir_lower_explicit_io.c",
     "$src_dir/nir_lower_fb_read.c",
     "$src_dir/nir_lower_flatshade.c",
@@ -148,7 +147,6 @@ mesa_source_set("nir") {
     "$src_dir/nir_lower_phis_to_scalar.c",
     "$src_dir/nir_lower_pntc_ytransform.c",
     "$src_dir/nir_lower_point_size.c",
-    "$src_dir/nir_lower_point_size_mov.c",
     "$src_dir/nir_lower_point_smooth.c",
     "$src_dir/nir_lower_poly_line_smooth.c",
     "$src_dir/nir_lower_printf.c",
@@ -340,8 +338,8 @@ mesa_python_action("nir_intrinsics_h") {
   inputs = [ "$src_dir/nir_intrinsics.py" ]
 
   args = [
-    "--outdir",
-    rebase_path(target_gen_dir, root_build_dir),
+    "--out",
+    rebase_path(outputs[0], root_build_dir),
   ]
 }
 
@@ -354,8 +352,8 @@ mesa_python_action("nir_intrinsics_c") {
   inputs = [ "$src_dir/nir_intrinsics.py" ]
 
   args = [
-    "--outdir",
-    rebase_path(target_gen_dir, root_build_dir),
+    "--out",
+    rebase_path(outputs[0], root_build_dir),
   ]
 }
 
@@ -371,8 +369,8 @@ mesa_python_action("nir_intrinsics_indices_h") {
   ]
 
   args = [
-    "--outdir",
-    rebase_path(target_gen_dir, root_build_dir),
+    "--out",
+    rebase_path(outputs[0], root_build_dir),
   ]
 }
 
