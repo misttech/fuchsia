@@ -20,7 +20,7 @@ namespace driver_runtime {
 namespace {
 
 const async_ops_t g_dispatcher_ops = {
-    .version = ASYNC_OPS_V3,
+    .version = ASYNC_OPS_V4,
     .reserved = 0,
     .v1 = {
         .now =
@@ -80,12 +80,25 @@ const async_ops_t g_dispatcher_ops = {
               return static_cast<Dispatcher*>(dispatcher)->CheckSequenceId(sequence_id, out_error);
             },
     },
+    .v4 = {
+        .acquire_shared_ref =
+            [](async_dispatcher_t* dispatcher) {
+              static_cast<Dispatcher*>(dispatcher)->AddRef();
+              return ZX_OK;
+            },
+        .release_shared_ref =
+            [](async_dispatcher_t* dispatcher) {
+              // adopt a reference and let its destructor release it.
+              fbl::ImportFromRawPtr(static_cast<Dispatcher*>(dispatcher));
+              return ZX_OK;
+            },
+    },
 };
 
 }  // namespace
 
 extern const async_ops_t g_veneer_ops = {
-    .version = ASYNC_OPS_V3,
+    .version = ASYNC_OPS_V4,
     .reserved = 0,
     .v1 = {
         .now =
@@ -152,6 +165,20 @@ extern const async_ops_t g_veneer_ops = {
                const char** out_error) {
               auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
               return veneer->dispatcher->CheckSequenceId(sequence_id, out_error);
+            },
+    },
+    .v4 = {
+        .acquire_shared_ref =
+            [](async_dispatcher_t* dispatcher) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              veneer->dispatcher->AddRef();
+              return ZX_OK;
+            },
+        .release_shared_ref =
+            [](async_dispatcher_t* dispatcher) {
+              auto veneer = reinterpret_cast<Dispatcher::Veneer*>(dispatcher);
+              fbl::ImportFromRawPtr(veneer->dispatcher);
+              return ZX_OK;
             },
     },
 };
