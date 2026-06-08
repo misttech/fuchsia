@@ -222,7 +222,8 @@ fuchsia_unittest_package("intel-dsp-stream-test") {
 
 # Fuzz testing for NHLT parsing.
 #
-# Name needs to end with "-fuzzer" to be included in the Zircon fuzz test package.
+# Name needs to end with "-fuzzer" to be included in the Zircon fuzz test
+# package.
 fuchsia_library_fuzzer("nhlt-fuzzer") {
   sources = [ "nhlt_fuzzer.cc" ]
   deps = [

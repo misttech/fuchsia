@@ -45,9 +45,8 @@ fuchsia_unittest_package("audio_services_device_registry_warning_unittests") {
   }
 }
 
-## Components
-# All components that use structured configuration must declare the manifest separately
-# to avoid a circular dependency.
+# ## Components All components that use structured configuration must declare
+# the manifest separately to avoid a circular dependency.
 fuchsia_component_manifest("device_registry_manifest") {
   component_name = "audio_device_registry"
   manifest = "//src/media/audio/services/device_registry/meta/audio_device_registry.cml"

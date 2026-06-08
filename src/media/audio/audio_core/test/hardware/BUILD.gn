@@ -6,7 +6,8 @@ import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
 import("//src/media/audio/hardware.gni")
 
-# This suite has real-time requirements and must run in release builds (debug builds are too slow).
+# This suite has real-time requirements and must run in release builds (debug
+# builds are too slow).
 group("hardware") {
   testonly = true
 
@@ -20,7 +21,8 @@ fuchsia_unittest_package("audio_core_hardware_tests") {
   manifest = "meta/audio_core_hardware_tests.cml"
   deps = [ ":audio_core_hardware_tests_bin" ]
   test_specs = {
-    # By definition this validates software that requires real audio input hardware.
+    # By definition this validates software that requires real audio input
+    # hardware.
     environments = built_in_input_hardware_envs
   }
   test_type = "system"

@@ -103,7 +103,8 @@ template("audio_core_test_component") {
     testonly = true
 
     # Tests run faster with prebuilt tables and don't have tight executable size
-    # requirements, so default to using prebuilt tables unless otherwise requested.
+    # requirements, so default to using prebuilt tables unless otherwise
+    # requested.
     if (!defined(invoker.use_prebuilt_coefficient_tables)) {
       use_prebuilt_coefficient_tables = true
     }
@@ -223,8 +224,9 @@ template("audio_core_test_package") {
                            ])
 
     # The set of components needed to start a hermetic audio test environment.
-    # Note: If the `test_components` use audio_core/testing/integration, then a test
-    # driver realm is automatically included along with the virtual audio driver.
+    # Note: If the `test_components` use audio_core/testing/integration, then a
+    # test driver realm is automatically included along with the virtual audio
+    # driver.
     deps = [
       ":${component_target}",
       "//src/cobalt/bin/testing/fake_cobalt:component_v2",

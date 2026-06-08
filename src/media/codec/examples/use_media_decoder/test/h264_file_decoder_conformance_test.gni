@@ -5,10 +5,10 @@
 import("//build/components.gni")
 import("//build/testing/environments.gni")
 
-# Defines a component that runs a H.264 conformance test using local files. The output of
-# the H.264 stream will be decoded into a YUV 4:2:0 stream. Once the decoding is complete
-# the outputted stream's md5 hash will be checked against the truth located in the
-# md5_file parameter.
+# Defines a component that runs a H.264 conformance test using local files. The
+# output of the H.264 stream will be decoded into a YUV 4:2:0 stream. Once the
+# decoding is complete the outputted stream's md5 hash will be checked against
+# the truth located in the md5_file parameter.
 #
 # Parameters
 #

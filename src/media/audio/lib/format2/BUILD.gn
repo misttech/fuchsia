@@ -37,9 +37,10 @@ source_set("format2") {
 
   deps = [ "//sdk/lib/syslog/cpp" ]
 
-  # Building without optimizations causes significant slowdowns for these components; the additional
-  # CPU load may lead to audio glitches on debug builds. These config settings enable the needed
-  # code optimization while maintaining other 'debug' aspects (e.g. DCHECK is still enabled).
+  # Building without optimizations causes significant slowdowns for these
+  # components; the additional CPU load may lead to audio glitches on debug
+  # builds. These config settings enable the needed code optimization while
+  # maintaining other 'debug' aspects (e.g. DCHECK is still enabled).
   configs += [ "//build/config:optimize_speed" ]
 
   # Allow some of our loops to be vectorized by the compiler.

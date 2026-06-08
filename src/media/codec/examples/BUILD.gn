@@ -113,9 +113,9 @@ fuchsia_test_component("use_h264_decoder_tiled_output_test_comp") {
   test_type = "system"
 }
 
-# Gaps in frame_num are often handled specially.  We need to at least verify this doesn't get stuck
-# or crash.  At the moment we also verify that the decoder outputs at least a few output frames
-# beyond the first missing input frame.
+# Gaps in frame_num are often handled specially. We need to at least verify this
+# doesn't get stuck or crash. At the moment we also verify that the decoder
+# outputs at least a few output frames beyond the first missing input frame.
 fuchsia_unittest_component("use_h264_decoder_frame_num_gaps_test_comp") {
   restricted_features = [ "allow_non_hermetic_packages" ]
   manifest = "use_media_decoder/meta/use_h264_decoder_frame_num_gaps_test.cml"

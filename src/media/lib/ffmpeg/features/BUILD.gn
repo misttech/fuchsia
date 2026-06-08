@@ -5,12 +5,12 @@
 #
 # DECODERS
 #
-# The following targets enable ffmpeg decoders when referenced from the 'deps' list of an
-# ffmpeg_profile target.
+# The following targets enable ffmpeg decoders when referenced from the 'deps'
+# list of an ffmpeg_profile target.
 #
-# A subset of the ~760 supported decoders are represented here. Decoders not listed here may be
-# added. If //third_party/ffmpeg/src is populated, a list of available decoders can be produced
-# with the following command:
+# A subset of the ~760 supported decoders are represented here. Decoders not
+# listed here may be added. If //third_party/ffmpeg/src is populated, a list of
+# available decoders can be produced with the following command:
 #
 #     ./third_party/ffmpeg/src/configure --list-decoders
 #
@@ -168,12 +168,12 @@ group("enable_decoder_vp9") {
 #
 # ENCODERS
 #
-# The following targets enable ffmpeg encoders when referenced from the 'deps' list of an
-# ffmpeg_profile target.
+# The following targets enable ffmpeg encoders when referenced from the 'deps'
+# list of an ffmpeg_profile target.
 #
-# A subset of the ~332 supported encoders are represented here. Encoders not listed here may be
-# added. If //third_party/ffmpeg/src is populated, a list of available encoders can be produced
-# with the following command:
+# A subset of the ~332 supported encoders are represented here. Encoders not
+# listed here may be added. If //third_party/ffmpeg/src is populated, a list of
+# available encoders can be produced with the following command:
 #
 #     ./third_party/ffmpeg/src/configure --list-encoders
 #
@@ -187,12 +187,12 @@ group("enable_encoder_sbc") {
 #
 # DEMUXERS
 #
-# The following targets enable ffmpeg demuxers when referenced from the 'deps' list of an
-# ffmpeg_profile target.
+# The following targets enable ffmpeg demuxers when referenced from the 'deps'
+# list of an ffmpeg_profile target.
 #
-# A subset of the ~460 supported demuxers are represented here. Demuxers not listed here may be
-# added. If //third_party/ffmpeg/src is populated, a list of available demuxers can be produced
-# with the following command:
+# A subset of the ~460 supported demuxers are represented here. Demuxers not
+# listed here may be added. If //third_party/ffmpeg/src is populated, a list of
+# available demuxers can be produced with the following command:
 #
 #     ./third_party/ffmpeg/src/configure --list-demuxers
 #
@@ -260,12 +260,12 @@ group("enable_demuxer_wav") {
 #
 # MUXERS
 #
-# The following targets enable ffmpeg muxers when referenced from the 'deps' list of an
-# ffmpeg_profile target.
+# The following targets enable ffmpeg muxers when referenced from the 'deps'
+# list of an ffmpeg_profile target.
 #
-# A subset of the ~236 supported muxers are represented here. Muxers not listed here may be
-# added. If //third_party/ffmpeg/src is populated, a list of available muxers can be produced
-# with the following command:
+# A subset of the ~236 supported muxers are represented here. Muxers not listed
+# here may be added. If //third_party/ffmpeg/src is populated, a list of
+# available muxers can be produced with the following command:
 #
 #     ./third_party/ffmpeg/src/configure --list-muxers
 #
@@ -279,12 +279,12 @@ group("enable_muxer_matroska") {
 #
 # PARSERS
 #
-# The following targets enable ffmpeg parsers when referenced from the 'deps' list of an
-# ffmpeg_profile target.
+# The following targets enable ffmpeg parsers when referenced from the 'deps'
+# list of an ffmpeg_profile target.
 #
-# A subset of the ~232 supported parsers are represented here. Parsers not listed here may be
-# added. If //third_party/ffmpeg/src is populated, a list of available parsers can be produced
-# with the following command:
+# A subset of the ~232 supported parsers are represented here. Parsers not
+# listed here may be added. If //third_party/ffmpeg/src is populated, a list of
+# available parsers can be produced with the following command:
 #
 #     ./third_party/ffmpeg/src/configure --list-parsers
 #

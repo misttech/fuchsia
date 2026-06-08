@@ -53,9 +53,10 @@ source_set("processing") {
     "//zircon/system/ulib/trace",
   ]
 
-  # Building without optimizations causes significant slowdowns for these components; the additional
-  # CPU load may lead to audio glitches on debug builds. These config settings enable the needed
-  # code optimization while maintaining other 'debug' aspects (e.g. DCHECK is still enabled).
+  # Building without optimizations causes significant slowdowns for these
+  # components; the additional CPU load may lead to audio glitches on debug
+  # builds. These config settings enable the needed code optimization while
+  # maintaining other 'debug' aspects (e.g. DCHECK is still enabled).
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
 
@@ -63,10 +64,11 @@ source_set("processing") {
   configs += [ "//build/config:fast-math" ]
 }
 
-# Any executable which uses `processing` (either directly or transitively) must also include either
-# `prebuilt_coefficient_tables` or `empty_coefficient_tables` below. The decision of which tables to
-# include is usually left to the top-most build rule (i.e., the executable), since that rule often
-# has the most insight into system constraints, such as code size.
+# Any executable which uses `processing` (either directly or transitively) must
+# also include either `prebuilt_coefficient_tables` or
+# `empty_coefficient_tables` below. The decision of which tables to include is
+# usually left to the top-most build rule (i.e., the executable), since that
+# rule often has the most insight into system constraints, such as code size.
 shared_library("prebuilt_coefficient_tables") {
   sources = [ "$target_gen_dir/coefficient_table_data_prebuilt.cc" ]
   deps = [
@@ -80,8 +82,9 @@ shared_library("empty_coefficient_tables") {
   deps = [ ":coefficient_table" ]
 }
 
-# This executable is run automatically as part of the build deps for `prebuilt_coefficient_tables`.
-# It can also be run manually - the binary can be found adjacent to other host tools.
+# This executable is run automatically as part of the build deps for
+# `prebuilt_coefficient_tables`. It can also be run manually - the binary can be
+# found adjacent to other host tools.
 executable("gen_audio_filter_coefficient_tables") {
   sources = [
     "coefficient_table.cc",

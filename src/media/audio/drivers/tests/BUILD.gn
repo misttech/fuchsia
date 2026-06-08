@@ -22,8 +22,9 @@ group("all") {
     ":basic",
   ]
 
-  # Certain test cases (e.g. position accuracy) are disabled by default (enabled by cmdline flag).
-  # They have hard realtime constraints; debug builds are too slow.
+  # Certain test cases (e.g. position accuracy) are disabled by default (enabled
+  # by cmdline flag). They have hard realtime constraints; debug builds are too
+  # slow.
   if (!is_debug) {
     deps += [ ":realtime" ]
   }
@@ -37,14 +38,14 @@ fuchsia_unittest_package("basic") {
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
   ]
 
-  # This test can run on any board and product build: release, debug, asan, etc. -- regardless of
-  # whether an audio service is already running.
+  # This test can run on any board and product build: release, debug, asan, etc.
+  # -- regardless of whether an audio service is already running.
   test_specs = {
     environments = hardware_envs + basic_envs
   }
 
-  # This non-hermetic suite tests all audio drivers detected on this device, as well as
-  # virtual_audio instances and the Bluetooth audio driver library.
+  # This non-hermetic suite tests all audio drivers detected on this device, as
+  # well as virtual_audio instances and the Bluetooth audio driver library.
   test_type = "device"
 }
 
@@ -56,14 +57,15 @@ fuchsia_unittest_package("admin") {
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
   ]
 
-  # This test runs on real hardware (debug) or emulators, WITHOUT audio_core/audio_device_registry.
-  # It tests real drivers, virtual_audio instances and a virtualized Bluetooth audio driver.
+  # This test runs on real hardware (debug) or emulators, WITHOUT
+  # audio_core/audio_device_registry. It tests real drivers, virtual_audio
+  # instances and a virtualized Bluetooth audio driver.
   test_specs = {
     environments = hardware_envs + basic_envs
   }
 
-  # This non-hermetic suite tests all audio drivers detected on this device, as well as
-  # virtual_audio instances and the Bluetooth audio driver library.
+  # This non-hermetic suite tests all audio drivers detected on this device, as
+  # well as virtual_audio instances and the Bluetooth audio driver library.
   test_type = "device"
 }
 
@@ -75,14 +77,15 @@ fuchsia_unittest_package("realtime") {
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
   ]
 
-  # This test runs on real hardware, release-only, WITHOUT audio_core or audio_device_registry.
-  # It tests real drivers, virtual_audio instances and a virtualized Bluetooth audio driver.
+  # This test runs on real hardware, release-only, WITHOUT audio_core or
+  # audio_device_registry. It tests real drivers, virtual_audio instances and a
+  # virtualized Bluetooth audio driver.
   test_specs = {
     environments = hardware_envs
   }
 
-  # This non-hermetic suite tests all audio drivers detected on this device, as well as
-  # virtual_audio instances and the Bluetooth audio driver library.
+  # This non-hermetic suite tests all audio drivers detected on this device, as
+  # well as virtual_audio instances and the Bluetooth audio driver library.
   test_type = "device"
 }
 

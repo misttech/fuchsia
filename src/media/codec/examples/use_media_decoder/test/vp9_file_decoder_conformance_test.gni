@@ -5,10 +5,10 @@
 import("//build/components.gni")
 import("//build/testing/environments.gni")
 
-# Defines a component that runs a VP9 conformance test using local files. The output of
-# the VP9 stream will be decoded into a YUV 4:2:0 stream. Once the decoding is complete
-# the outputted stream's md5 hash will be checked against the truth located in the
-# md5_file parameter.
+# Defines a component that runs a VP9 conformance test using local files. The
+# output of the VP9 stream will be decoded into a YUV 4:2:0 stream. Once the
+# decoding is complete the outputted stream's md5 hash will be checked against
+# the truth located in the md5_file parameter.
 #
 # Parameters
 #
@@ -46,13 +46,13 @@ template("vp9_file_decoder_conformance_test") {
     restricted_features = [ "allow_non_hermetic_packages" ]
     forward_variables_from(invoker, [ "test_specs" ])
 
-    # Currently there is no way of changing the command line arguments of a device
-    # test programmatically besides changing them in the manifest file. If a new
-    # way becomes available then this should be changed and the tiled manifest
-    # deleted but since we really only have two variants of this test (tiled
-    # vs linear), it isn’t too hard to manage. And since the resources will be
-    # shared between the packages, there isn't an additional cost to doing it
-    # this way besides the mild code smell.
+    # Currently there is no way of changing the command line arguments of a
+    # device test programmatically besides changing them in the manifest file.
+    # If a new way becomes available then this should be changed and the tiled
+    # manifest deleted but since we really only have two variants of this test
+    # (tiled vs linear), it isn’t too hard to manage. And since the resources
+    # will be shared between the packages, there isn't an additional cost to
+    # doing it this way besides the mild code smell.
     if (defined(invoker.y_tiled) && invoker.y_tiled) {
       manifest = "//src/media/codec/examples/use_media_decoder/meta/vp9_decoder_tiled_conformance_test.cml"
     } else {

@@ -141,7 +141,8 @@ source_set("aml-g12-tdm-dai-source") {
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
 
-    # TODO(andresoportus): Remove dependency on TLS (maybe done by C++ bindings unification).
+    # TODO(andresoportus): Remove dependency on TLS (maybe done by C++ bindings
+    # unification).
     "//sdk/lib/async-loop:async-loop-default",
   ]
 }

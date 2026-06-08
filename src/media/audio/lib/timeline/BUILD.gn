@@ -39,7 +39,8 @@ fuchsia_unittest_package("audio_lib_timeline_unittests") {
   deps = [ ":unittest_bin" ]
 
   test_specs = {
-    # This test does not require, nor behave differently on, a non-virtualized target
+    # This test does not require, nor behave differently on, a non-virtualized
+    # target
     environments = basic_envs
   }
 }
