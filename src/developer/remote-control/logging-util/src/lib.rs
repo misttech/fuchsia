@@ -11,7 +11,7 @@ pub struct FfxLogGuard<'a> {
 impl<'a> FfxLogGuard<'a> {
     pub fn new(log_id: &'a Option<String>) -> Self {
         if let Some(log_id) = log_id {
-            log::info!("====> Starting ffx session: {}", log_id);
+            log::debug!("====> Starting ffx session: {}", log_id);
         }
         Self { log_id }
     }
@@ -20,7 +20,7 @@ impl<'a> FfxLogGuard<'a> {
 impl Drop for FfxLogGuard<'_> {
     fn drop(&mut self) {
         if let Some(log_id) = self.log_id {
-            log::info!("====> Ending ffx session: {}", log_id);
+            log::debug!("====> Ending ffx session: {}", log_id);
         }
     }
 }
