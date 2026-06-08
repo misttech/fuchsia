@@ -1217,23 +1217,31 @@ mod test {
 
     #[test]
     fn direct_updates_runtime_config() {
+        let isolate_dir = tempdir().expect("isolate dir");
+
         // Defaults to unset
         let args = ["ffx"].map(String::from);
-        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct.is_none());
 
         // Gets overridden to true
         let args = ["ffx", "--direct"].map(String::from);
-        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
 
         // Gets overridden to true even with command line.
         let args = ["ffx", "--direct", "-c", "connectivity.direct=false"].map(String::from);
-        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
@@ -1248,7 +1256,9 @@ mod test {
             "connectivity.teletechternacon=false",
         ]
         .map(String::from);
-        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let mut cmd_line =
+            FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        cmd_line.global.isolate_dir = Some(isolate_dir.path().to_owned());
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
