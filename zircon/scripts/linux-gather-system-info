@@ -84,6 +84,7 @@ fi
 MACHINE_NAME="$1"
 BUNDLE_DIR="system_info.${MACHINE_NAME}"
 BUNDLE_TAR="${BUNDLE_DIR}.tar.bz2"
+ARCH="$(uname -m)"
 
 if [ -e "$BUNDLE_TAR" ]; then
   echo "$BUNDLE_TAR already exists.  Please delete before running."
@@ -92,16 +93,20 @@ fi
 
 check_utility lspci pciutils
 check_utility lsusb usbutils
-check_utility acpidump acpica-tools
-check_utility cpuid cpuid
-check_utility rdmsr msr-tools
+if [ "$ARCH" == "x86_64" ]; then
+  check_utility acpidump acpica-tools
+  check_utility cpuid cpuid
+  check_utility rdmsr msr-tools
+fi
 
 TMPDIR="$(mktemp -d)"
 function on_exit() {
   rm -rf "$TMPDIR"
-  if [ "$UNLOAD_MSR_MOD" -ne 0 ]; then
-    echo "Unloading MSR kmod..."
-    sudo modprobe -r msr || echo "Failed to unload msr kmod!"
+  if [ "$ARCH" == "x86_64" ]; then
+    if [ "$UNLOAD_MSR_MOD" -ne 0 ]; then
+      echo "Unloading MSR kmod..."
+      sudo modprobe -r msr || echo "Failed to unload msr kmod!"
+    fi
   fi
 }
 trap on_exit EXIT
@@ -111,9 +116,12 @@ mkdir "$DIR"
 
 dump_pci
 dump_usb
-dump_acpi
 dump_cpuinfo
-dump_cpuid
-dump_msrs
+if [ "$ARCH" == "x86_64" ]; then
+  dump_acpi
+  dump_cpuid
+  dump_msrs
+fi
+
 tar -C "$TMPDIR" -cjf "$BUNDLE_TAR" "$BUNDLE_DIR"
 echo "Finished building $BUNDLE_TAR"
