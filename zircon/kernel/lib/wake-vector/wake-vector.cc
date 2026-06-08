@@ -119,6 +119,44 @@ WakeResult WakeEvent::TriggerLocked(zx_instant_boot_t trigger_time) {
   // report only one trigger to the IdlePowerThread level.
   if (!is_signaled()) {
     AssignSignaled(true);
+
+    // WakeEvent triggering can happen starting from one of two places.
+    //
+    // 1) In a hard IRQ handler because a physical interrupt wake source was triggered.
+    // 2) During a user's call to zx_interrupt_trigger for a virtual interrupt.
+    //
+    // When we call TriggerSystemWakeEvent, if it needs to wake the boot CPU, it
+    // is going to eventually call PreemptSetPending for the boot CPU in order
+    // to make sure that it gets scheduled instead of simply returning to the
+    // idle thread.  This function is going to demand that the per-cpu "blocking
+    // disallowed" flag has been set.
+    //
+    // In the case of #1, this will always be the case.  We are in an IRQ
+    // handler, and the flag is going to be automatically set/cleared at the
+    // start of the handler (you are not allowed to block during an IRQ
+    // handler).
+    //
+    // In the case of #2, this is _effectively_ true, but the per-cpu flag will
+    // not have been set.  By the time we make it to this point (in
+    // TriggerLocked) we will have interrupts off, and will be holding the wake
+    // event pending list spinlock, both of which are Very Good Reasons to
+    // disallow blocking.  This said, disabling interrupts and obtaining a
+    // spinlock does _not_ automatically set the blocking-disallowed flag.  Why?
+    // Because when a thread actually blocks, it needs to hold (among other
+    // things) its scheduler's spinlock as it re-schedules after joining its
+    // WaitQueue.
+    //
+    // We already have interrupts off, are holding a spinlock, and are not going
+    // to call Scheduler::Block here.  So go ahead and set the blocking
+    // disallowed flag while we call TriggerSystemWakeEvent, restoring the state
+    // to its previous value at the end of the sequence.
+    //
+    DEBUG_ASSERT(arch_ints_disabled());
+    const bool was_blocking_disallowed = arch_blocking_disallowed();
+    arch_set_blocking_disallowed(true);
+    auto cleanup = fit::defer(
+        [was_blocking_disallowed]() { arch_set_blocking_disallowed(was_blocking_disallowed); });
+
     return IdlePowerThread::TriggerSystemWakeEvent();
   }
 

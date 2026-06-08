@@ -7,12 +7,15 @@
 #include <lib/sync/completion.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
+#include <lib/zx/interrupt.h>
+#include <lib/zx/port.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/syscalls/system.h>
 #include <zircon/time.h>
@@ -254,6 +257,96 @@ TEST(SystemSuspend, FailureToEnterSuspendRegressionTest) {
     // failure as a result.
     ASSERT_EQ(ZX_OK, suspend_result);
   }
+}
+
+// This is a regression test for https://fxbug.dev/511517231
+TEST(SystemSuspend, VirtualWakeEventRacingWithSuspendOpPanicRepro) {
+  NEEDS_NEXT_SKIP(zx_system_suspend_enter);
+
+  const zx::result resource_result = GetSystemCpuResource();
+  ASSERT_OK(resource_result.status_value());
+
+  // Create a virtual wake-vector interrupt, and a port, then bind the two
+  // together.  Using a port makes it much easier to explicitly acknowledge the
+  // interrupt when setting up the sequences of races to follow.
+  zx::interrupt irq;
+  constexpr uint32_t options = ZX_INTERRUPT_VIRTUAL | ZX_INTERRUPT_WAKE_VECTOR;
+  ASSERT_OK(zx::interrupt::create(*standalone::GetIrqResource(), 0, options, &irq));
+
+  zx::port port;
+  constexpr uint32_t port_options = ZX_PORT_BIND_TO_INTERRUPT;
+  ASSERT_OK(zx::port::create(port_options, &port));
+  ASSERT_OK(irq.bind(port, 0, ZX_INTERRUPT_BIND));
+
+  enum class State {
+    Initial = 0,
+    Go,
+    Triggered,
+    DoReset,
+    TriggerThreadReady,
+    Shutdown,
+  };
+  std::atomic<State> state{State::Initial};
+
+  enum class WaitResult { Ok, StopTest };
+  auto WaitState = [&state](State expected) -> WaitResult {
+    while (true) {
+      const State observed = state.load();
+      if (observed == State::Shutdown) {
+        return WaitResult::StopTest;
+      }
+
+      if (observed == expected) {
+        return WaitResult::Ok;
+      }
+    }
+  };
+
+  std::thread t1([&]() {
+    while (true) {
+      // Let the coordinator know we are ready to start another cycle, then wait
+      // for them to tell us to Go.
+      state.store(State::TriggerThreadReady);
+      if (WaitState(State::Go) == WaitResult::StopTest) {
+        break;
+      }
+      irq.trigger(0, zx::clock::get_monotonic());
+
+      // Let the coordinator know that we have triggered the interrupt, and we
+      // are ready to reset and start again.
+      state.store(State::Triggered);
+      if (WaitState(State::DoReset) == WaitResult::StopTest) {
+        break;
+      }
+
+      // Perform the actual reset (reading our packet and acking our interrupt),
+      // then start a new cycle.
+      zx_port_packet_t irq_packet;
+      port.wait(zx::time::infinite(), &irq_packet);
+      irq.ack();
+    }
+  });
+
+  for (int i = 0; i < 10; i++) {
+    // Wait for the trigger thread to be ready, then tell it to Go and start the
+    // race by calling suspend.
+    WaitState(State::TriggerThreadReady);
+    const zx_instant_boot_t deadline = zx_clock_get_boot() + ZX_MSEC(10);
+    state.store(State::Go);
+    zx_system_suspend_enter(resource_result->get(), deadline, ZX_SYSTEM_SUSPEND_OPTION_DISCARD,
+                            nullptr, nullptr, 0, nullptr);
+
+    // Wait until we know that the interrupt was triggered, then tell the
+    // trigger thread that we are ready to start the next cycle.
+    WaitState(State::Triggered);
+    state.store(State::DoReset);
+  }
+
+  // Make sure that the trigger thread is parked and waiting for the race to
+  // start before telling it to shutdown.
+  WaitState(State::TriggerThreadReady);
+  state.store(State::Shutdown);
+  t1.join();
 }
 
 }  // anonymous namespace
