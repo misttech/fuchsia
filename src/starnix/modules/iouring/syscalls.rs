@@ -21,6 +21,7 @@ use starnix_uapi::{
     io_uring_register_op_IORING_REGISTER_IOWQ_MAX_WORKERS as IORING_REGISTER_IOWQ_MAX_WORKERS,
     io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
     io_uring_register_op_IORING_REGISTER_PBUF_STATUS as IORING_REGISTER_PBUF_STATUS,
+    io_uring_register_op_IORING_REGISTER_PERSONALITY as IORING_REGISTER_PERSONALITY,
     io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
     io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS,
     io_uring_register_op_IORING_UNREGISTER_PBUF_RING as IORING_UNREGISTER_PBUF_RING,
@@ -205,7 +206,16 @@ pub fn sys_io_uring_register(
             current_task.write_object(buffer_status_addr, &buffer_status)?;
             return Ok(SUCCESS);
         }
-
+        IORING_REGISTER_PERSONALITY => {
+            // TODO(https://fxbug.dev/505326006) If registering personality is implemented,
+            // then implement the uring_override_creds security hook.
+            track_stub!(
+                TODO("https://fxbug.dev/297431387"),
+                "io_uring_register unknown op",
+                opcode
+            );
+            return error!(EINVAL);
+        }
         _ => {
             track_stub!(
                 TODO("https://fxbug.dev/297431387"),
