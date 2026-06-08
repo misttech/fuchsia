@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 import("//build/dist/packaged_shared_library.gni")
 
@@ -86,4 +87,8 @@ fuchsia_package_with_single_component("lavapipe_pkg") {
     ":vulkan_metadata",
   ]
   manifest = "meta/vulkan.cml"
+}
+
+export_fuchsia_package_to_bazel("lavapipe_pkg_for_bazel") {
+  package = ":lavapipe_pkg"
 }
