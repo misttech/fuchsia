@@ -93,7 +93,7 @@ def generate_tests_json(
             ],
             "expects_ssh": False,
             "test": {
-                "name": label,
+                "name": _normalize_label(label),
                 "label": label,
                 # The source label indicates the location in the tree of the
                 # source code. For labels in the main workspace, ensure they

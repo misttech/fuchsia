@@ -223,7 +223,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 ],
                 "expects_ssh": False,
                 "test": {
-                    "name": "@@//t1",
+                    "name": "//t1",
                     "label": "@@//t1",
                     "source_label": "//t1",
                     "path": f"{self.execroot_path}/p1",
@@ -244,7 +244,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 ],
                 "expects_ssh": False,
                 "test": {
-                    "name": "@@//t2",
+                    "name": "//t2",
                     "label": "@@//t2",
                     "source_label": "//t2",
                     "path": f"{self.execroot_path}/p2",
@@ -329,7 +329,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 ],
                 "expects_ssh": False,
                 "test": {
-                    "name": "@@//t1",
+                    "name": "//t1",
                     "label": "@@//t1",
                     "source_label": "//t1",
                     "path": f"{self.execroot_path}/p1",
