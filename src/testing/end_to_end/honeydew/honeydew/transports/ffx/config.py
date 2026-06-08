@@ -139,7 +139,7 @@ class FfxConfig:
         isolate_dir: str | None,
         logs_dir: str,
         logs_level: str | None,
-        enable_mdns: bool,
+        enable_mdns: bool,  # pylint: disable=unused-argument
         enable_usb: bool,
         subtools_search_path: str | None = None,
         proxy_timeout_secs: int | None = None,
@@ -160,6 +160,9 @@ class FfxConfig:
                 arg of FFX
             logs_level: logs level that will be passed to `--config log.level`
                 arg of FFX
+            enable_mdns: Whether or not mdns need to be enabled. This will be
+                passed to `--config discovery.mdns.enabled` arg of FFX
+            enable_usb: Whether to use FFX's USB protocol to communicate.
             subtools_search_path: A path of where ffx should look for plugins.
                 Default value is None which means, it will not update
                 proxy_timeout_secs
@@ -167,8 +170,12 @@ class FfxConfig:
                 which means, it will not update proxy_timeout_secs
             ssh_keepalive_timeout: SSH keep-alive timeout in secs.
                 Default value is None which means, it will not update
-                ssh_keepalive_timeout
+                ssh_keepalive_timeout.
             emu_instance_dir: Directory where emulators are stored.
+            usb_socket_path: Path to socket used to communicate with the USB
+                protocol driver.
+            usb_driver_autostart: Whether to start the USB protocol driver if it
+                isn't running.
             ssh_private_keys: Explicit list of SSH private keys from the environment to
                 provide to FFX. If left empty, setup will search the os.environ for fallback
                 keys instead of relying on the strict-mode suppressed default ffx configurations.

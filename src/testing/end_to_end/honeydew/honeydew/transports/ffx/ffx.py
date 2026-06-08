@@ -361,7 +361,7 @@ class FFX:
         """
         if self._use_monitor:
             target = self._get_target_status()
-            return target.target_type.split(".")[0]
+            return target.target_type.split(".", maxsplit=1)[0]
 
         target_show_info: TargetInfoData = self.get_target_information()
         return (
@@ -448,6 +448,7 @@ class FFX:
                 to "json")
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
                 if the command fails or times out. Defaults to True.
+            disable_controlmaster: boolean value of controlmaster.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
@@ -755,6 +756,7 @@ class FFX:
                 Otherwise, `ffx -t {target-address} {cmd}` will be run.
             machine: Specifies the machine format used for the ffx command (defaults
                 to "json")
+            disable_controlmaster: boolean value of controlmaster.
 
         Returns:
             FFX command to be run as list of string.

@@ -13,10 +13,10 @@ import stat
 import tempfile
 import time
 import typing
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from importlib import resources
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -87,13 +87,12 @@ T = TypeVar("T")
 async def _poll_until(
     func: Callable[..., T | Awaitable[T]],
     target_value: T,
+    *args: Any,
     interval: timedelta = timedelta(seconds=1),
     timeout: timedelta | None = None,
-    *args: Any,
     **kwargs: Any,
 ) -> T:
-    """
-    Polls func(*args, **kwargs) every 'interval' seconds until
+    """Polls func(*args, **kwargs) every 'interval' seconds until
     it returns 'target_value'.
     """
 
@@ -101,25 +100,27 @@ async def _poll_until(
 
     async def _poll() -> T:
         while True:
-            _LOGGER.debug(f"calling {func_name}")
+            _LOGGER.debug("calling %s", func_name)
             try:
                 result_or_awaitable = func(*args, **kwargs)
                 if inspect.isawaitable(result_or_awaitable):
                     result = await result_or_awaitable
                 else:
                     result = typing.cast(T, result_or_awaitable)
-                _LOGGER.debug(f"{func_name} returned {result}")
+                _LOGGER.debug("%s returned %s", func_name, result)
                 if result == target_value:
                     return result
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.debug(err)
 
             await asyncio.sleep(interval.total_seconds())
 
     if timeout:
         _LOGGER.info(
-            f"Waiting for {timeout.total_seconds()} sec for {func_name} "
-            f"to return {target_value}..."
+            "Waiting for %s sec for %s to return %s...",
+            timeout.total_seconds(),
+            func_name,
+            target_value,
         )
         try:
             return await asyncio.wait_for(
