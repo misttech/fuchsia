@@ -158,13 +158,13 @@ impl<'c> PProfProfileBuilder<'c> {
                     {
                         match symbolizer.resolve_addr(*address) {
                             Ok(resolved_locations) => {
-                                let mut result = Vec::new();
+                                let mut result = Vec::with_capacity(resolved_locations.len());
                                 for resolved_location in resolved_locations {
                                     let function_name = &resolved_location.function;
                                     let (file_name, line) =
                                         match resolved_location.file_and_line.as_ref() {
                                             Some((file_name, line)) => {
-                                                (file_name.as_str(), i64::try_from(*line).unwrap())
+                                                (file_name.as_str(), i64::from(*line))
                                             }
                                             None => ("", 0),
                                         };
@@ -204,7 +204,7 @@ impl<'c> PProfProfileBuilder<'c> {
                     e.insert(self.insert_location(
                         mapping_id,
                         *address,
-                        symbolized_lines.unwrap_or_else(|| vec![]),
+                        symbolized_lines.unwrap_or_else(Vec::new),
                     ));
                 }
             }
