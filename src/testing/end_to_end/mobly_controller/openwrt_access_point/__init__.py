@@ -547,6 +547,11 @@ class OpenWrtAP:
     def set_txpower(self, interface: str, dbm: int) -> None:
         """Sets the transmit power for the radio device associated with the interface.
 
+        Note: the txpower value is only persisted during the phy's lifetime. If
+        the phy is disabled and re-enabled (e.g. via `wifi reload`, which
+        happens during `configure_wifi()`), the txpower will be reset to the
+        default.
+
         Args:
             interface: The interface name (e.g. wlan_2g_interface, wlan_5g_interface).
             dbm: The power level in dBm
