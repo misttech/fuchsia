@@ -75,6 +75,7 @@ rustc_library("ebpf") {
     "src/tests/forget_release.data",
     "src/tests/malloc_double_free.data",
     "src/tests/malloc_use_free.data",
+    "src/tests/min_max_known.data",
     "src/tests/map_type_allowed.data",
     "src/tests/map_type_prohibited.data",
     "src/tests/null_checks_multiple.data",

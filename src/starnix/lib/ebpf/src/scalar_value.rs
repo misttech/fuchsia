@@ -360,6 +360,16 @@ impl [< $t:upper ScalarValueData>] {
         debug_assert!(value <= urange.max);
         debug_assert!(unknown_mask & unwritten_mask == unwritten_mask);
         debug_assert!(value & unknown_mask == 0);
+
+        let diff = urange.min ^ urange.max;
+        let mut common_mask = !0;
+        while diff & common_mask != 0 {
+            common_mask <<= 1;
+        }
+
+        let unknown_mask = unknown_mask & !common_mask;
+        let value = (value & !common_mask) | (urange.min & common_mask);
+
         let urange = if unknown_mask == 0 {
             [< $t:upper Range >]::new(value, value)
         } else {
@@ -664,7 +674,6 @@ impl From<U32ScalarValueData> for U64ScalarValueData {
         )
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,5 +763,45 @@ mod tests {
         // Result must be sign-extended and retain unknown bottom bits.
         assert_eq!(shifted.value & 0xFFFF_FFFF_FFFF_FF00, 0xF800_0000_0000_0000);
         assert_eq!(shifted.unknown_mask, 0x0F);
+    }
+
+    #[test]
+    fn test_min_max_known() {
+        // Range min == max, should clear unknown mask completely
+        let data = U64ScalarValueData::new(0, u64::MAX, 0, U64Range::new(8, 8));
+        assert_eq!(data.is_known(), true);
+        assert_eq!(data.value, 8);
+        assert_eq!(data.unknown_mask, 0);
+    }
+
+    #[test]
+    fn test_min_max_leading_bits() {
+        // Leading common bits: min=4 (0b0100), max=5 (0b0101)
+        // Common leading mask: 0b1100
+        // bit 2 is 1, bit 1 is 0
+        let data = U64ScalarValueData::new(0, u64::MAX, 0, U64Range::new(4, 5));
+        assert_eq!(data.unknown_mask & 0b1100, 0);
+        assert_eq!(data.value & 0b1100, 0b0100);
+        assert_eq!(data.is_known(), false);
+    }
+
+    #[test]
+    fn test_min_max_no_common_bits() {
+        // No common bits: min=0, max=15
+        let data = U64ScalarValueData::new(0, u64::MAX, 0, U64Range::new(0, 15));
+        assert_eq!(data.unknown_mask, 0xf);
+        assert_eq!(data.value, 0);
+    }
+
+    #[test]
+    fn test_min_max_retains_known_bits() {
+        // Initially, bit 3 is known to be 0 (value=0, unknown_mask=0b0111).
+        // Range is [4, 5] (0b0100 to 0b0101).
+        // Common leading bits for [4, 5] are bits 1..63.
+        // Bits 1 and 2 should become known (0 and 1 respectively).
+        // Bit 3 should remain known (0).
+        let data = U64ScalarValueData::new(0, 0b0111, 0, U64Range::new(4, 5));
+        assert_eq!(data.unknown_mask, 0b0001);
+        assert_eq!(data.value, 4);
     }
 }

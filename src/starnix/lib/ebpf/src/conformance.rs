@@ -1170,6 +1170,7 @@ pub mod test {
     #[test_case(local_test_data!("map_type_allowed.data"))]
     #[test_case(local_test_data!("map_type_prohibited.data"))]
     #[test_case(local_test_data!("mem_oob_underflow.data"))]
+    #[test_case(local_test_data!("min_max_known.data"))]
     #[test_case(local_test_data!("null_checks_multiple.data"))]
     #[test_case(local_test_data!("null_checks_propagated.data"))]
     #[test_case(local_test_data!("packet_access.data"))]
