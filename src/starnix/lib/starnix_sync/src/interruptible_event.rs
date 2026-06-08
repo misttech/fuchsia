@@ -88,9 +88,15 @@ pub enum WakeReason {
     DeadlineExpired,
 }
 
+impl Default for InterruptibleEvent {
+    fn default() -> Self {
+        InterruptibleEvent { futex: zx::Futex::new(0) }
+    }
+}
+
 impl InterruptibleEvent {
     pub fn new() -> Arc<Self> {
-        Arc::new(InterruptibleEvent { futex: zx::Futex::new(0) })
+        Arc::new(Self::default())
     }
 
     /// Returns the owner of the underlying futex, if any.
