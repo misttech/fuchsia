@@ -84,6 +84,8 @@ rustc_library("ebpf") {
     "src/tests/repro_bpf_mod_mismatch.data",
     "src/tests/shifts.data",
     "src/tests/stack_access.data",
+    "src/tests/stack_boundary_valid.data",
+    "src/tests/stack_oob_off_by_one.data",
     "src/tests/write_only_helper.data",
     "//third_party/ubpf/src/tests/add64.data",
     "//third_party/ubpf/src/tests/add.data",

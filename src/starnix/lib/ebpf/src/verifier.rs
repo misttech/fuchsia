@@ -719,7 +719,7 @@ impl Type {
             (Type::MemoryParameter { size, input, output }, Type::PtrToStack { offset }) => {
                 let size = size.size(context)?;
                 let buffer_end = offset.add(size);
-                if !buffer_end.is_valid() {
+                if !buffer_end.is_within_stack() {
                     Err("out of bound access".to_string())
                 } else {
                     if *output {
@@ -1069,7 +1069,6 @@ impl<'a> VerificationContext<'a> {
 }
 
 const STACK_ELEMENT_SIZE: usize = std::mem::size_of::<u64>();
-const STACK_MAX_INDEX: usize = BPF_STACK_SIZE / STACK_ELEMENT_SIZE;
 
 /// An offset inside the stack. The offset is from the end of the stack.
 /// downward.
@@ -1083,8 +1082,13 @@ impl Default for StackOffset {
 }
 
 impl StackOffset {
-    /// Whether the current offset is valid.
-    fn is_valid(&self) -> bool {
+    /// Whether the current offset is valid for element access.
+    fn is_valid_offset(&self) -> bool {
+        self.0.is_known() && self.0.value < (BPF_STACK_SIZE as u64)
+    }
+
+    /// Whether the current offset is within the stack bounds, inclusive of `BPF_STACK_SIZE`.
+    fn is_within_stack(&self) -> bool {
         self.0.is_known() && self.0.value <= (BPF_STACK_SIZE as u64)
     }
 
@@ -1093,16 +1097,16 @@ impl StackOffset {
         self.0
     }
 
-    /// The index into the stack array this offset points to. Can be called only if `is_valid()`
-    /// is true.
+    /// The index into the stack array this offset points to. Can be called only if
+    /// `is_within_stack()` is true.
     fn array_index(&self) -> usize {
-        debug_assert!(self.is_valid());
+        debug_assert!(self.is_within_stack());
         usize::try_from(self.0.value).unwrap() / STACK_ELEMENT_SIZE
     }
 
     /// The offset inside the aligned u64 in the stack.
     fn sub_index(&self) -> usize {
-        debug_assert!(self.is_valid());
+        debug_assert!(self.is_within_stack());
         usize::try_from(self.0.value).unwrap() % STACK_ELEMENT_SIZE
     }
 
@@ -1196,12 +1200,12 @@ impl Stack {
             return Err("stack overflow".to_string());
         }
 
-        if !offset.is_valid() {
+        if !offset.is_valid_offset() {
             return Err("invalid stack offset".to_string());
         }
 
         let end_offset = offset.add(bytes);
-        if !end_offset.is_valid() {
+        if !end_offset.is_within_stack() {
             return Err("stack overflow".to_string())?;
         }
 
@@ -1229,7 +1233,7 @@ impl Stack {
     }
 
     fn store(&mut self, offset: StackOffset, value: Type, width: DataWidth) -> Result<(), String> {
-        if !offset.is_valid() {
+        if !offset.is_valid_offset() {
             return Err("out of bounds store".to_string());
         }
         if offset.sub_index() % width.bytes() != 0 {
@@ -1291,10 +1295,7 @@ impl Stack {
     }
 
     fn load(&self, offset: StackOffset, width: DataWidth) -> Result<Type, String> {
-        if !offset.is_valid() {
-            return Err("out of bounds load".to_string());
-        }
-        if offset.array_index() >= STACK_MAX_INDEX {
+        if !offset.is_valid_offset() {
             return Err("out of bounds load".to_string());
         }
         if offset.sub_index() % width.bytes() != 0 {
@@ -2269,7 +2270,7 @@ impl DataDependencies {
         let addr = context.reg(dst)?;
         if let Type::PtrToStack { offset: stack_offset } = addr {
             let stack_offset = stack_offset.add(offset);
-            if !stack_offset.is_valid() {
+            if !stack_offset.is_valid_offset() {
                 return Err(format!("Invalid stack offset at {}", context.pc));
             }
             if is_read || self.stack.contains(&stack_offset.array_index()) {
@@ -2899,7 +2900,7 @@ impl BpfVisitor for DataDependencies {
             let addr = context.reg(src)?;
             if let Type::PtrToStack { offset: stack_offset } = addr {
                 let stack_offset = stack_offset.add(offset);
-                if !stack_offset.is_valid() {
+                if !stack_offset.is_valid_offset() {
                     return Err(format!("Invalid stack offset at {}", context.pc));
                 }
                 self.stack.insert(stack_offset.array_index());
@@ -2955,7 +2956,7 @@ impl BpfVisitor for DataDependencies {
         let addr = context.reg(dst)?;
         if let Type::PtrToStack { offset: stack_offset } = addr {
             let stack_offset = stack_offset.add(offset);
-            if !stack_offset.is_valid() {
+            if !stack_offset.is_valid_offset() {
                 return Err(format!("Invalid stack offset at {}", context.pc));
             }
             if self.stack.remove(&stack_offset.array_index()) {

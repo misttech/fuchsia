@@ -1177,6 +1177,8 @@ pub mod test {
     #[test_case(local_test_data!("repro_bpf_mod_mismatch.data"))]
     #[test_case(local_test_data!("shifts.data"))]
     #[test_case(local_test_data!("stack_access.data"))]
+    #[test_case(local_test_data!("stack_boundary_valid.data"))]
+    #[test_case(local_test_data!("stack_oob_off_by_one.data"))]
     #[test_case(local_test_data!("write_only_helper.data"))]
     fn test_ebpf_conformance(content: &str) {
         let Some(mut test_case) = TestCase::parse(content) else {
