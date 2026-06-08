@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -24,14 +25,14 @@ int g_received_signal[64] = {};
 void RecordSignalHandler(int signo) { g_received_signal[signo]++; }
 
 void IgnoreSignal(int signal) {
-  struct sigaction action;
+  struct sigaction action = {};
   action.sa_handler = SIG_IGN;
   SAFE_SYSCALL(sigaction(signal, &action, nullptr));
 }
 
 void RecordSignal(int signal) {
   g_received_signal[signal] = 0;
-  struct sigaction action;
+  struct sigaction action = {};
   action.sa_handler = RecordSignalHandler;
   SAFE_SYSCALL(sigaction(signal, &action, nullptr));
 }
@@ -583,6 +584,88 @@ TEST_F(Pty, NewInstance) {
 
     ASSERT_EQ(0, stat(pts2_0_path.c_str(), &stat_buf));
   });
+}
+
+TEST_F(Pty, SessionLeaderExitSendsSighup) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal();
+    int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
+
+    // Ignore SIGTTOU so the child inherits it ignored and doesn't stop on tcsetpgrp.
+    IgnoreSignal(SIGTTOU);
+
+    // Block SIGHUP in the session leader so the child inherits the mask.
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGHUP);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &mask, nullptr));
+
+    pid_t child_pid = SAFE_SYSCALL(fork());
+    if (child_pid == 0) {
+      ready.holder = {};
+
+      SAFE_SYSCALL(setpgid(0, 0));
+      SAFE_SYSCALL(tcsetpgrp(replica_terminal, getpid()));
+
+      RecordSignal(SIGHUP);
+      ready.poker.poke();
+
+      sigset_t wait_mask;
+      sigemptyset(&wait_mask);
+      sigsuspend(&wait_mask);
+      EXPECT_EQ(g_received_signal[SIGHUP], 1);
+      exit(0);
+    }
+
+    ready.poker = {};
+
+    ready.holder.hold();
+    exit(0);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(Pty, SessionLeaderAndChildExitConcurrently) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous finished = test_helper::MakeRendezvous();
+
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal();
+    int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
+
+    // Ignore SIGTTOU so the child inherits it ignored and doesn't stop on tcsetpgrp.
+    IgnoreSignal(SIGTTOU);
+
+    pid_t child_pid = SAFE_SYSCALL(fork());
+    if (child_pid == 0) {
+      ready.holder = {};
+      finished.poker = {};
+
+      SAFE_SYSCALL(setpgid(0, 0));
+      SAFE_SYSCALL(tcsetpgrp(replica_terminal, getpid()));
+
+      IgnoreSignal(SIGHUP);
+      ready.poker.poke();
+
+      finished.holder.hold();
+      exit(0);
+    }
+
+    ready.poker = {};
+    finished.holder = {};
+
+    ready.holder.hold();
+    finished.poker.poke();
+    exit(0);
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 }  // namespace

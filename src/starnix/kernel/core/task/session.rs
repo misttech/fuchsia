@@ -75,31 +75,38 @@ impl Session {
     where
         L: LockBefore<ProcessGroupState>,
     {
-        // Read the controlling terminal. We must drop the read lock on the session
-        // before acquiring the write lock on the terminal to respect the lock ordering
-        // (Terminal before Session).
-        let controlling_terminal = {
-            let session_reader = self.read();
-            session_reader.controlling_terminal.clone()
-        };
+        loop {
+            // THREAD SAFETY: The controlling terminal must be extracted from the Session state
+            // lock. Respect Terminal => Session lock ordering by dropping the Session lock before
+            // acquiring the Terminal lock. The controlling terminal may change while reacquiring
+            // locks.
+            let Some(controlling_terminal) = self.read().controlling_terminal.clone() else {
+                return;
+            };
+            let mut terminal_state = controlling_terminal.terminal.write();
+            let mut state = self.write();
 
-        if let Some(ct) = controlling_terminal {
-            let mut terminal_state = ct.terminal.write();
-            let mut session_writer = self.write();
-
-            // Verify it is still the same terminal
-            if session_writer
-                .controlling_terminal
-                .as_ref()
-                .map_or(false, |current_ct| current_ct.matches(&ct.terminal, ct.is_main))
-            {
-                session_writer.controlling_terminal = None;
-                terminal_state.controller = None;
-
-                if let Some(pg) = session_writer.get_foreground_process_group() {
-                    pg.send_signals(locked, &[SIGHUP, SIGCONT]);
-                }
+            // THREAD SAFETY: Check whether the controlling terminal changed while the Session lock
+            // was dropped.
+            if !state.controlling_terminal.as_ref().map_or(false, |current_ct| {
+                current_ct.matches(&controlling_terminal.terminal, controlling_terminal.is_main)
+            }) {
+                // Drop the lock for the old terminal and try again.
+                continue;
             }
+
+            state.controlling_terminal = None;
+            terminal_state.controller = None;
+
+            // THREAD SAFETY: Respect ThreadGroup => Terminal => Session lock ordering by dropping
+            // the Terminal and Session locks before signaling.
+            let process_group = state.get_foreground_process_group();
+            drop(state);
+            drop(terminal_state);
+            if let Some(pg) = process_group {
+                pg.send_signals(locked, &[SIGHUP, SIGCONT]);
+            }
+            return;
         }
     }
 
