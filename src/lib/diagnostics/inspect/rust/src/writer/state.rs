@@ -1058,6 +1058,9 @@ impl InnerState {
         self.check_lineage(being_reparented, new_parent)?;
         let original_parent_idx =
             self.heap.container.block_at_unchecked::<Node>(being_reparented).parent_index();
+        if original_parent_idx == new_parent {
+            return Ok(());
+        }
         if original_parent_idx != BlockIndex::ROOT {
             let original_parent_block = self.heap.container.block_at_mut(original_parent_idx);
             match original_parent_block.block_type() {
@@ -3057,5 +3060,37 @@ mod tests {
         for block in allocated_blocks {
             state.inner_lock.heap.free_block(block).unwrap();
         }
+    }
+
+    #[fuchsia::test]
+    fn test_reparent_to_self_tombstone() {
+        use inspect_format::Free;
+
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        let parent_index = state.create_node("parent", 0.into()).unwrap();
+        let child_index = state.create_node("child", parent_index).unwrap();
+
+        // Free parent. It has a child, so it must become a Tombstone.
+        state.free_value(parent_index).unwrap();
+        assert_eq!(
+            state.get_block::<Tombstone>(parent_index).block_type(),
+            Some(BlockType::Tombstone)
+        );
+
+        // Reparent child to parent (itself).
+        state.reparent(child_index, parent_index).unwrap();
+
+        // Verify parent is still Tombstone (since it was a no-op).
+        let parent_block = state.get_block::<Tombstone>(parent_index);
+        assert_eq!(parent_block.block_type(), Some(BlockType::Tombstone));
+
+        // Verify that trying to free the child now succeeds.
+        state.free_value(child_index).unwrap();
+
+        // Verify parent is now Free (freed when child count became 0).
+        let parent_block = state.get_block::<Free>(parent_index);
+        assert_eq!(parent_block.block_type(), Some(BlockType::Free));
     }
 }
