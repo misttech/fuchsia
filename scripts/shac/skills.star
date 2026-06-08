@@ -14,6 +14,7 @@ def _skill_format(ctx):
 
     skill_files = ctx.scm.affected_files(glob = [
         ".agents/skills/**/SKILL.md",
+        "docs/skills/**/SKILL.md",
         "zircon/skills/**/SKILL.md",
         "src/devices/skills/**/SKILL.md",
         "src/developer/debug/skills/**/SKILL.md",
