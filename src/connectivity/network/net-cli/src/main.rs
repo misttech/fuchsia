@@ -192,6 +192,20 @@ impl net_cli::ServiceConnector<froutes::StateV6Marker> for Connector {
 }
 
 #[async_trait::async_trait]
+impl net_cli::ServiceConnector<froot::RoutesV4Marker> for Connector {
+    async fn connect(&self) -> Result<<froot::RoutesV4Marker as ProtocolMarker>::Proxy, Error> {
+        self.connect_to_exposed_protocol::<froot::RoutesV4Marker>(NETSTACK_MONIKER).await
+    }
+}
+
+#[async_trait::async_trait]
+impl net_cli::ServiceConnector<froot::RoutesV6Marker> for Connector {
+    async fn connect(&self) -> Result<<froot::RoutesV6Marker as ProtocolMarker>::Proxy, Error> {
+        self.connect_to_exposed_protocol::<froot::RoutesV6Marker>(NETSTACK_MONIKER).await
+    }
+}
+
+#[async_trait::async_trait]
 impl net_cli::ServiceConnector<fname::LookupMarker> for Connector {
     async fn connect(&self) -> Result<<fname::LookupMarker as ProtocolMarker>::Proxy, Error> {
         self.connect_to_exposed_protocol::<fname::LookupMarker>(DNS_RESOLVER_MONIKER).await

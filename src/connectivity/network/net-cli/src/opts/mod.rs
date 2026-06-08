@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context as _;
 use argh::{ArgsInfo, FromArgs};
 use fidl_fuchsia_net_ext as fnet_ext;
 #[cfg(not(feature = "fdomain"))]
@@ -12,10 +11,9 @@ use fidl_fuchsia_net_interfaces_ext_fdomain as finterfaces_ext;
 use flex_fuchsia_net as fnet;
 use flex_fuchsia_net_interfaces as finterfaces;
 use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
-use flex_fuchsia_net_stack as fnet_stack;
 use flex_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use std::collections::HashMap;
-use std::convert::{TryFrom as _, TryInto as _};
+use std::convert::TryInto as _;
 use std::num::NonZeroU64;
 
 pub(crate) mod dhcpd;
@@ -152,12 +150,12 @@ pub enum IfEnum {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum InterfaceIdentifier {
-    Id(u64),
+    Id(NonZeroU64),
     Name(String),
 }
 
 impl InterfaceIdentifier {
-    pub async fn find_nicid<C>(&self, connector: &C) -> Result<u64, anyhow::Error>
+    pub async fn find_nicid<C>(&self, connector: &C) -> Result<NonZeroU64, anyhow::Error>
     where
         C: crate::ServiceConnector<finterfaces::StateMarker>,
     {
@@ -177,19 +175,11 @@ impl InterfaceIdentifier {
                     .values()
                     .find_map(|properties_and_state| {
                         (&properties_and_state.properties.name == name)
-                            .then(|| properties_and_state.properties.id.get())
+                            .then_some(properties_and_state.properties.id)
                     })
                     .ok_or_else(|| user_facing_error(format!("No interface with name {}", name)))
             }
         }
-    }
-
-    pub async fn find_u32_nicid<C>(&self, connector: &C) -> Result<u32, anyhow::Error>
-    where
-        C: crate::ServiceConnector<finterfaces::StateMarker>,
-    {
-        let id = self.find_nicid(connector).await?;
-        u32::try_from(id).with_context(|| format!("nicid {} does not fit in u32", id))
     }
 }
 
@@ -197,7 +187,7 @@ impl core::str::FromStr for InterfaceIdentifier {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let nicid_parse_result = s.parse::<u64>();
+        let nicid_parse_result = s.parse::<NonZeroU64>();
         nicid_parse_result.map_or_else(
             |nicid_parse_error| {
                 if !s.starts_with("name:") {
@@ -216,8 +206,8 @@ impl core::str::FromStr for InterfaceIdentifier {
     }
 }
 
-impl From<u64> for InterfaceIdentifier {
-    fn from(nicid: u64) -> InterfaceIdentifier {
+impl From<NonZeroU64> for InterfaceIdentifier {
+    fn from(nicid: NonZeroU64) -> InterfaceIdentifier {
         InterfaceIdentifier::Id(nicid)
     }
 }
@@ -731,32 +721,12 @@ macro_rules! route_struct {
             #[argh(option)]
             /// the ip address of the first hop router
             pub gateway: Option<std::net::IpAddr>,
-            #[argh(
-                option,
-                arg_name = "nicid or name:ifname",
-                default = "InterfaceIdentifier::Id(0)",
-                long = "nicid"
-            )]
+            #[argh(option, arg_name = "nicid or name:ifname", long = "nicid")]
             /// the outgoing network interface of the route
             pub interface: InterfaceIdentifier,
-            #[argh(option, default = "0")]
+            #[argh(option)]
             /// the metric for the route
-            pub metric: u32,
-        }
-
-        impl $ty_name {
-            pub fn into_route_table_entry(self, nicid: u32) -> fnet_stack::ForwardingEntry {
-                let Self { destination, prefix_len, gateway, interface: _, metric } = self;
-                fnet_stack::ForwardingEntry {
-                    subnet: fnet_ext::apply_subnet_mask(fnet::Subnet {
-                        addr: fnet_ext::IpAddress(destination).into(),
-                        prefix_len,
-                    }),
-                    device_id: nicid.into(),
-                    next_hop: gateway.map(|gateway| Box::new(fnet_ext::IpAddress(gateway).into())),
-                    metric,
-                }
-            }
+            pub metric: Option<u32>,
         }
     };
 }
@@ -883,7 +853,7 @@ mod tests {
         }
     }
 
-    #[test_case("1", InterfaceIdentifier::Id(1) ; "as nicid")]
+    #[test_case("1", InterfaceIdentifier::Id(NonZeroU64::new(1).unwrap()) ; "as nicid")]
     #[test_case("name:lo", InterfaceIdentifier::Name("lo".to_string()) ; "as ifname")]
     #[test_case("name:name:lo", InterfaceIdentifier::Name("name:lo".to_string()) ; "as ifname with 'name:' as part of name")]
     #[test_case("name:1", InterfaceIdentifier::Name("1".to_string()) ; "as numerical ifname")]
@@ -898,34 +868,8 @@ mod tests {
     }
 
     #[test]
-    fn into_route_table_entry_applies_subnet_mask() {
-        // Leave off last two 16-bit segments.
-        const PREFIX_LEN: u8 = 128 - 32;
-        const ORIGINAL_NICID: u32 = 1;
-        const NICID_TO_OVERWRITE_WITH: u32 = 2;
-        assert_eq!(
-            RouteAdd {
-                destination: std::net::IpAddr::V6(std::net::Ipv6Addr::new(
-                    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
-                )),
-                prefix_len: PREFIX_LEN,
-                gateway: None,
-                interface: u64::from(ORIGINAL_NICID).into(),
-                metric: 100,
-            }
-            .into_route_table_entry(NICID_TO_OVERWRITE_WITH),
-            fnet_stack::ForwardingEntry {
-                subnet: fnet::Subnet {
-                    addr: net_declare::fidl_ip!("ffff:ffff:ffff:ffff:ffff:ffff:0:0"),
-                    prefix_len: PREFIX_LEN,
-                },
-                // The interface ID in the RouteAdd struct should be overwritten by the NICID
-                // parameter passed to `into_route_table_entry`.
-                device_id: NICID_TO_OVERWRITE_WITH.into(),
-                next_hop: None,
-                metric: 100,
-            }
-        )
+    fn parse_interface_zero_fails() {
+        assert_matches!("0".parse::<InterfaceIdentifier>(), Err(_))
     }
 
     #[test_case("0", Err("Invalid IGMP version (0). Valid values: 1, 2, 3".to_string()); "input_0")]
