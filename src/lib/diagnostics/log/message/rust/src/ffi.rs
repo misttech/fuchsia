@@ -117,7 +117,7 @@ pub struct CPPLogMessageBuilder<'a> {
 // Escape quotes in a string per the Feedback format
 fn escape_quotes(input: &str, output: &mut String) {
     for ch in input.chars() {
-        if ch == '"' {
+        if ch == '"' || ch == '\\' {
             output.push('\\');
         }
         output.push(ch);
@@ -432,6 +432,37 @@ mod test {
         assert_eq!(unsafe { log_message.message.as_utf8_str() }, "hello world");
         assert_eq!(log_message.timestamp, 72);
         assert_eq!(log_message.severity, 0x30);
+    }
+
+    #[fuchsia::test]
+    fn test_escaping_in_kvp() {
+        let mut parser = MessageParser::default();
+        let allocator = Bump::new();
+        let formatter = CPPMessageFormatter(&allocator);
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(72),
+            severity: 0x30,
+            arguments: vec![
+                Argument::message("hello world"),
+                Argument::new("key", r#"val"with\escapes"#),
+            ],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        let res = parser.parse_next(&bytes, &formatter).unwrap();
+        assert!(res.0.is_some());
+        let log_message = &res.0.unwrap();
+        assert_eq!(
+            unsafe { log_message.message.as_utf8_str() },
+            r#"hello world key="val\"with\\escapes""#
+        );
     }
 
     #[fuchsia::test]
