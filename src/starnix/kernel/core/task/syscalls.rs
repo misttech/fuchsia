@@ -480,8 +480,8 @@ pub fn sys_setuid(
         return error!(EPERM);
     }
 
-    let mut creds = Credentials::clone(&current_task.current_creds());
-    let prev = creds.copy_user_credentials();
+    let prev = current_task.current_creds();
+    let mut creds = Credentials::clone(&prev);
     creds.euid = uid;
     creds.fsuid = uid;
     if security::is_task_capable_noaudit(current_task, CAP_SETUID) {
@@ -489,7 +489,8 @@ pub fn sys_setuid(
         creds.saved_uid = uid;
     }
 
-    creds.update_capabilities(prev);
+    creds.update_capabilities(&prev);
+    std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
 }
@@ -536,15 +537,17 @@ pub fn sys_setfsuid(
     current_task: &CurrentTask,
     fsuid: uid_t,
 ) -> Result<uid_t, Errno> {
-    let mut creds = Credentials::clone(&current_task.current_creds());
-    let prev = creds.copy_user_credentials();
+    let prev = current_task.current_creds();
+    let prev_fsuid = prev.fsuid;
     if fsuid != u32::MAX && new_uid_allowed(&current_task, fsuid) {
+        let mut creds = Credentials::clone(&prev);
         creds.fsuid = fsuid;
-        creds.update_capabilities(prev);
+        creds.update_capabilities(&prev);
+        std::mem::drop(prev);
         current_task.set_creds(creds);
     }
 
-    Ok(prev.fsuid)
+    Ok(prev_fsuid)
 }
 
 pub fn sys_setfsgid(
@@ -552,13 +555,14 @@ pub fn sys_setfsgid(
     current_task: &CurrentTask,
     fsgid: gid_t,
 ) -> Result<gid_t, Errno> {
-    let mut creds = Credentials::clone(&current_task.current_creds());
-    let prev = creds.copy_user_credentials();
-    let prev_fsgid = creds.fsgid;
+    let prev = current_task.current_creds();
+    let prev_fsgid = prev.fsgid;
 
     if fsgid != u32::MAX && new_gid_allowed(&current_task, fsgid) {
+        let mut creds = Credentials::clone(&prev);
         creds.fsgid = fsgid;
-        creds.update_capabilities(prev);
+        creds.update_capabilities(&prev);
+        std::mem::drop(prev);
         current_task.set_creds(creds);
     }
 
@@ -621,8 +625,8 @@ pub fn sys_setreuid(
         return error!(EPERM);
     }
 
-    let mut creds = Credentials::clone(&current_task.current_creds());
-    let prev = creds.copy_user_credentials();
+    let prev = current_task.current_creds();
+    let mut creds = Credentials::clone(&prev);
     let is_ruid_set = ruid != u32::MAX;
     if is_ruid_set {
         creds.uid = ruid;
@@ -640,7 +644,8 @@ pub fn sys_setreuid(
         creds.saved_uid = creds.euid;
     }
 
-    creds.update_capabilities(prev);
+    creds.update_capabilities(&prev);
+    std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
 }
@@ -706,8 +711,8 @@ pub fn sys_setresuid(
         return error!(EPERM);
     }
 
-    let mut creds = Credentials::clone(&current_task.current_creds());
-    let prev = creds.copy_user_credentials();
+    let prev = current_task.current_creds();
+    let mut creds = Credentials::clone(&prev);
     if ruid != u32::MAX {
         creds.uid = ruid;
     }
@@ -718,7 +723,8 @@ pub fn sys_setresuid(
     if suid != u32::MAX {
         creds.saved_uid = suid;
     }
-    creds.update_capabilities(prev);
+    creds.update_capabilities(&prev);
+    std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
 }

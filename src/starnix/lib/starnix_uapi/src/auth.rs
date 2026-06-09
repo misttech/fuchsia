@@ -421,7 +421,7 @@ impl Credentials {
             return;
         }
 
-        let prev = self.copy_user_credentials();
+        let prev = self.clone();
 
         if let Some(uid) = maybe_set.uid {
             self.euid = uid;
@@ -433,7 +433,7 @@ impl Credentials {
             self.fsgid = gid;
         }
 
-        self.update_capabilities(prev);
+        self.update_capabilities(&prev);
     }
 
     pub fn exec(&mut self, maybe_set: UserAndOrGroupId) {
@@ -534,16 +534,15 @@ impl Credentials {
         FsCred { uid: self.uid, gid: self.gid }
     }
 
-    pub fn copy_user_credentials(&self) -> UserCredentials {
-        UserCredentials {
-            uid: self.uid,
-            euid: self.euid,
-            fsuid: self.fsuid,
-            saved_uid: self.saved_uid,
-        }
-    }
-
-    pub fn update_capabilities(&mut self, prev: UserCredentials) {
+    /// Adjusts the capability sets (permitted, effective, and ambient) of these credentials
+    /// to reflect changes in user IDs (UID, EUID, Saved UID, or FSUID) from a previous state.
+    ///
+    /// This method compares the current state of these credentials against the `prev`
+    /// credentials to implement the Linux security model rules for UID transitions (as described
+    /// in `capabilities(7)` under "Effect of user ID changes on capabilities"). It is typically
+    /// called when preparing a new set of `Credentials` during `setuid()` family syscalls or
+    /// during `exec` after UID/GID bits have been applied.
+    pub fn update_capabilities(&mut self, prev: &Credentials) {
         // https://man7.org/linux/man-pages/man7/capabilities.7.html
         // If one or more of the real, effective, or saved set user IDs
         // was previously 0, and as a result of the UID changes all of
@@ -625,14 +624,6 @@ impl From<Credentials> for FsCred {
     fn from(c: Credentials) -> Self {
         c.as_fscred()
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct UserCredentials {
-    pub uid: uid_t,
-    pub euid: uid_t,
-    pub saved_uid: uid_t,
-    pub fsuid: uid_t,
 }
 
 #[derive(Debug, Default, Clone)]
