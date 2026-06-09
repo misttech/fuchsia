@@ -14,6 +14,7 @@ rustc_test("test_bin") {
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:futures",
   ]
 
   sources = [ "src/lib.rs" ]

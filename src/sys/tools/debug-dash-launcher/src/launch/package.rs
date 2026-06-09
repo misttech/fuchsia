@@ -4,7 +4,8 @@
 
 use crate::{layout, socket};
 use fidl::endpoints::ClientEnd;
-use {fidl_fuchsia_dash as fdash, fidl_fuchsia_hardware_pty as pty};
+use fidl_fuchsia_dash as fdash;
+use fidl_fuchsia_hardware_pty as pty;
 
 pub async fn explore_over_socket(
     fuchsia_pkg_resolver: fdash::FuchsiaPkgResolver,
@@ -13,7 +14,7 @@ pub async fn explore_over_socket(
     socket: zx::Socket,
     tool_urls: Vec<String>,
     command: Option<String>,
-) -> Result<zx::Process, fdash::LauncherError> {
+) -> Result<(zx::Process, zx::Job), fdash::LauncherError> {
     let pty = socket::spawn_pty_forwarder(socket).await?;
     explore_over_pty(fuchsia_pkg_resolver, url, subpackages, pty, tool_urls, command).await
 }
@@ -25,7 +26,7 @@ async fn explore_over_pty(
     pty: ClientEnd<pty::DeviceMarker>,
     tool_urls: Vec<String>,
     command: Option<String>,
-) -> Result<zx::Process, fdash::LauncherError> {
+) -> Result<(zx::Process, zx::Job), fdash::LauncherError> {
     let (stdin, stdout, stderr) = super::split_pty_into_handles(pty)?;
     explore_over_handles(
         fuchsia_pkg_resolver,
@@ -49,7 +50,7 @@ pub async fn explore_over_handles(
     stderr: zx::NullableHandle,
     tool_urls: Vec<String>,
     command: Option<String>,
-) -> Result<zx::Process, fdash::LauncherError> {
+) -> Result<(zx::Process, zx::Job), fdash::LauncherError> {
     let mut package_resolver = crate::package_resolver::PackageResolver::new(fuchsia_pkg_resolver);
     let dir = package_resolver
         .resolve_subpackage(url, subpackages)

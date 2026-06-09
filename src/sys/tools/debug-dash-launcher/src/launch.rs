@@ -33,7 +33,9 @@ pub struct ExploreArgs<'a> {
     pub moniker: Option<String>,
 }
 
-async fn explore_over_handles(args: ExploreArgs<'_>) -> Result<zx::Process, LauncherError> {
+async fn explore_over_handles(
+    args: ExploreArgs<'_>,
+) -> Result<(zx::Process, zx::Job), LauncherError> {
     let ExploreArgs {
         stdin,
         stdout,
@@ -103,11 +105,7 @@ async fn explore_over_handles(args: ExploreArgs<'_>) -> Result<zx::Process, Laun
     zx::Status::ok(status).map_err(|_| LauncherError::ProcessLauncher)?;
     let process = process.ok_or(LauncherError::ProcessLauncher)?;
 
-    // The job should be terminated when the dash process dies.
-    job.set_critical(zx::JobCriticalOptions::empty(), &process)
-        .map_err(|_| LauncherError::Internal)?;
-
-    Ok(process)
+    Ok((process, job))
 }
 
 fn split_pty_into_handles(

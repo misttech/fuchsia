@@ -20,7 +20,7 @@ pub async fn explore_over_socket(
     tool_urls: Vec<String>,
     command: Option<String>,
     ns_layout: fdash::DashNamespaceLayout,
-) -> Result<zx::Process, LauncherError> {
+) -> Result<(zx::Process, zx::Job), LauncherError> {
     let pty = socket::spawn_pty_forwarder(socket).await?;
     explore_over_pty(moniker, pty, tool_urls, command, ns_layout).await
 }
@@ -31,7 +31,7 @@ pub async fn explore_over_pty(
     tool_urls: Vec<String>,
     command: Option<String>,
     ns_layout: fdash::DashNamespaceLayout,
-) -> Result<zx::Process, LauncherError> {
+) -> Result<(zx::Process, zx::Job), LauncherError> {
     let (stdin, stdout, stderr) = super::split_pty_into_handles(pty)?;
     explore_over_handles(moniker, stdin, stdout, stderr, tool_urls, command, ns_layout).await
 }
@@ -44,7 +44,7 @@ async fn explore_over_handles(
     tool_urls: Vec<String>,
     command: Option<String>,
     ns_layout: fdash::DashNamespaceLayout,
-) -> Result<zx::Process, LauncherError> {
+) -> Result<(zx::Process, zx::Job), LauncherError> {
     // Get all directories needed to launch dash successfully.
     let query =
         connect_to_protocol::<fsys::RealmQueryMarker>().map_err(|_| LauncherError::RealmQuery)?;

@@ -4,6 +4,7 @@
 
 use fidl_fuchsia_dash as fdash;
 use fuchsia_component::client::connect_to_protocol;
+use futures::StreamExt;
 
 #[fuchsia::test]
 pub async fn unknown_tools_package() {
@@ -101,4 +102,63 @@ pub async fn bad_url() {
 
     assert!(output.contains("Failed to load at least one tool package"));
     assert!(output.contains("while parsing tool url #"));
+}
+
+#[fuchsia::test]
+pub async fn exit_with_no_error() {
+    let (_stdio, stdio_server) = zx::Socket::create_stream();
+
+    let launcher = connect_to_protocol::<fdash::LauncherMarker>().unwrap();
+
+    let result = launcher
+        .explore_component_over_socket(
+            ".",
+            stdio_server,
+            &[],
+            None, // Interactive
+            fdash::DashNamespaceLayout::NestAllInstanceDirs,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_ok());
+
+    // Send exit.
+    _stdio.write(b"exit\n").unwrap();
+
+    // Wait for the socket to close.
+    match _stdio.wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE) {
+        zx::WaitResult::Ok(_) => {}
+        zx::WaitResult::TimedOut(_) => {}
+        zx::WaitResult::Canceled(_) => {}
+        zx::WaitResult::Err(status) => panic!("Wait failed: {:?}", status),
+    }
+
+    // Read any remaining data.
+    let mut output = String::new();
+    let mut buf = [0u8; 1024];
+    while let Ok(bytes_read) = _stdio.read(&mut buf) {
+        if bytes_read == 0 {
+            break;
+        }
+        output.push_str(std::str::from_utf8(&buf[..bytes_read]).unwrap());
+    }
+
+    // Verify there are no error logs in the output (ignoring the expected tools package resolution warning).
+    let expected_warning = "Failed to load at least one tool package: while resolving tool package fuchsia-pkg://fuchsia.com/debug-dash-launcher-test: fuchsia.pkg/PackageResolver application error: PackageNotFound";
+    let cleaned_output = output.replace(expected_warning, "");
+    let lower_output = cleaned_output.to_lowercase();
+    assert!(!lower_output.contains("error"), "Output contained 'error': {}", output);
+    assert!(!lower_output.contains("fail"), "Output contained 'fail': {}", output);
+
+    // Verify the launcher reports a clean exit (return code 0).
+    let mut event_stream = launcher.take_event_stream();
+    match event_stream.next().await {
+        Some(Ok(fdash::LauncherEvent::OnTerminated { return_code })) => {
+            assert_eq!(return_code, 0);
+        }
+        other => {
+            panic!("Expected OnTerminated event with return code, got {:?}", other);
+        }
+    }
 }

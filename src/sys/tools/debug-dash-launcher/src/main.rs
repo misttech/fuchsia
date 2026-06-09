@@ -5,12 +5,14 @@
 use anyhow::Context;
 use debug_dash_launcher_config::Config;
 use fidl::endpoints::{ControlHandle, Responder};
+use fidl_fuchsia_dash as fdash;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
 use futures::prelude::*;
 use log::*;
-use {fidl_fuchsia_dash as fdash, fuchsia_async as fasync};
+use zx::Task;
 
 mod launch;
 mod layout;
@@ -59,9 +61,9 @@ async fn main() -> Result<(), anyhow::Error> {
                             &moniker, pty, tool_urls, command, ns_layout,
                         )
                         .await
-                        .map(|p| {
+                        .map(|(p, j)| {
                             info!("launched Dash for instance {}", moniker);
-                            notify_on_process_exit(p, responder.control_handle().clone());
+                            notify_on_process_exit(p, j, responder.control_handle().clone());
                         });
                         let _ = responder.send(result);
                     }
@@ -78,9 +80,9 @@ async fn main() -> Result<(), anyhow::Error> {
                             &moniker, socket, tool_urls, command, ns_layout,
                         )
                         .await
-                        .map(|p| {
+                        .map(|(p, j)| {
                             info!("launched Dash for instance {}", moniker);
-                            notify_on_process_exit(p, responder.control_handle().clone());
+                            notify_on_process_exit(p, j, responder.control_handle().clone());
                         });
                         let _ = responder.send(result);
                     }
@@ -102,9 +104,9 @@ async fn main() -> Result<(), anyhow::Error> {
                             command,
                         )
                         .await
-                        .map(|p| {
+                        .map(|(p, j)| {
                             info!("launched Dash for package {} {}", url, subpackages.join(" "));
-                            notify_on_process_exit(p, responder.control_handle().clone());
+                            notify_on_process_exit(p, j, responder.control_handle().clone());
                         });
                         let _ = responder.send(result);
                     }
@@ -127,9 +129,9 @@ async fn main() -> Result<(), anyhow::Error> {
                             command,
                         )
                         .await
-                        .map(|p| {
+                        .map(|(p, j)| {
                             info!("launched Dash for package {} {}", url, subpackages.join(" "));
-                            notify_on_process_exit(p, responder.control_handle().clone());
+                            notify_on_process_exit(p, j, responder.control_handle().clone());
                         });
                         let _ = responder.send(result);
                     }
@@ -141,9 +143,15 @@ async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn notify_on_process_exit(process: zx::Process, control_handle: fdash::LauncherControlHandle) {
+fn notify_on_process_exit(
+    process: zx::Process,
+    job: zx::Job,
+    control_handle: fdash::LauncherControlHandle,
+) {
     fasync::Task::spawn(async move {
         let _ = fasync::OnSignals::new(&process, zx::Signals::PROCESS_TERMINATED).await;
+        // Kill the job to ensure all descendants are cleaned up.
+        let _ = job.kill();
         match process.info() {
             Ok(info) => {
                 let _ = control_handle
