@@ -1006,7 +1006,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -1016,7 +1016,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -3622,15 +3622,6 @@ TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
 
 From //build/testing/boot_tests/boot_test.gni:15
 
-### disable_cuckoo_tests
-
-Default value for `disabled` parameter for generated `cuckoo_test()`.
-TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
-
-**Current value (from the default):** `false`
-
-From //build/testing/boot_tests/kernel_zbi_test.gni:23
-
 ### disable_xattr_for_rbe
 
 By default our RBE wrappers record the digest of remote action outputs
@@ -4137,13 +4128,13 @@ From //zircon/kernel/params.gni:115
 
 ### enable_sestarnix_userspace_tests_on_linux
 
-Enable SEStarnix userspace tests on Linux.
-On CI/CQ this requires internal prebuilts only available in internal checkouts.
+Enable SEStarnix userspace tests on Linux. On CI/CQ this requires internal
+prebuilts only available in internal checkouts.
 TODO(https://fxbug.dev/510724670): Remove this flag when the prebuilts are available publicly.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:13
+From //src/starnix/build/args.gni:14
 
 ### escher_test_for_glsl_spirv_mismatch
 
@@ -4327,7 +4318,7 @@ graph without affecting gen times by default.
 
 **Current value (from the default):** `[]`
 
-From //build/testing/boot_tests/kernel_zbi_test.gni:29
+From //build/testing/boot_tests/kernel_zbi_test.gni:25
 
 ### extra_package_labels
 
@@ -8598,7 +8589,7 @@ If true, redirects guest serial output to the system log.
 
 **Current value (from the default):** `false`
 
-From //src/virtualization/bin/args.gni:10
+From //src/virtualization/bin/args.gni:11
 
 ### remove_default_configs
 
@@ -8828,11 +8819,12 @@ From //build/config/rust/BUILD.gn:26
 
 ### rust_virtio_net
 
-If true, uses the new Rust virtio-net device instead of the legacy C++ device.
+If true, uses the new Rust virtio-net device instead of the legacy C++
+device.
 
 **Current value (from the default):** `true`
 
-From //src/virtualization/bin/args.gni:7
+From //src/virtualization/bin/args.gni:8
 
 ### rustc_prefix
 
@@ -9292,12 +9284,13 @@ From //src/developer/ffx/tools/starnix/BUILD.gn:13
 
 ### starnix_enable_rust_backtrace
 
-Whether to default the RUST_BACKTRACE environment variable to 1 for the Starnix kernel. This is
-useful for identifying the stacks that acquired a lock in a deadlock cycle.
+Whether to default the RUST_BACKTRACE environment variable to 1 for the
+Starnix kernel. This is useful for identifying the stacks that acquired a
+lock in a deadlock cycle.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:27
+From //src/starnix/build/args.gni:29
 
 ### starnix_enable_trace_and_debug_logs_in_release
 
@@ -9312,24 +9305,26 @@ https://fuchsia-review.googlesource.com/c/fuchsia/+/929995.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:23
+From //src/starnix/build/args.gni:24
 
 ### starnix_force_build_host_tests
 
-Whether or not to force the build of x64 ELF executables for the syscall tests, colliqually
-known as "host tests." The default preference is to build and run tests against Machina instead.
+Whether or not to force the build of x64 ELF executables for the syscall
+tests, colliqually known as "host tests." The default preference is to build
+and run tests against Machina instead.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:8
+From //src/starnix/build/args.gni:9
 
 ### starnix_host_linux_toolchain
 
-We want to use a newer sysroot than is available by default in $host_toolchain.
+We want to use a newer sysroot than is available by default in
+$host_toolchain.
 
 **Current value (from the default):** `"//build/toolchain:linux_x64"`
 
-From //src/starnix/build/args.gni:30
+From //src/starnix/build/args.gni:33
 
 ### starnix_kgsl_debug
 
@@ -9341,9 +9336,9 @@ From //src/starnix/modules/kgsl/BUILD.gn:15
 
 ### starnix_kgsl_enable
 
-This flag affects the return value of a signal ioctl used by certain container
-binaries to direct them to use kgsl-based or magma-based drivers. It does not
-affect the availability of the kgsl device within the container.
+This flag affects the return value of a signal ioctl used by certain
+container binaries to direct them to use kgsl-based or magma-based drivers.
+It does not affect the availability of the kgsl device within the container.
 
 **Current value (from the default):** `false`
 
@@ -10058,7 +10053,7 @@ From //src/lib/vulkan/build/config.gni:17
 
 **Current value (from the default):** `true`
 
-From //src/graphics/bin/vulkan_loader/BUILD.gn:8
+From //src/graphics/bin/vulkan_loader/BUILD.gn:9
 
 ### vulkan_sdk
 
