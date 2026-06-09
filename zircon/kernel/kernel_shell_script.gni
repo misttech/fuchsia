@@ -71,6 +71,7 @@ template("kernel_shell_script_test") {
                            [
                              "disabled",
                              "environments",
+                             "timeout",
                              "visibility",
                            ])
 

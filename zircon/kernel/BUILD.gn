@@ -66,6 +66,7 @@ if (!is_efi_toolchain) {
   template("kernel_unittests_boot_test") {
     kernel_shell_script_test(target_name) {
       environments = kernel_test_environments
+      forward_variables_from(invoker, [ "timeout" ])
       deps = [ "//zircon/kernel/image/${default_kernel_test_image}" ]
       script = [
         "ut all",
@@ -84,9 +85,13 @@ if (!is_efi_toolchain) {
 
   # In strange failure modes, the bypass-debuglog version may get more useful
   # logging out than the normal one, though it may also greatly perturb the
-  # timing and hardware interactions of the test.  Running both versions in
+  # timing and hardware interactions of the test. Running both versions in
   # automation gives the best chance of logs from one of them being helpful.
+  #
+  # TODO(b/520448230): Consider whether maintaining this separate
+  # bypass-debuglog test is still necessary or the best approach going forward.
   kernel_unittests_boot_test("kernel-unittests-boot-test-bypass-debuglog") {
+    timeout = 1800
     deps = [ ":bypass-debuglog" ]
   }
 }
