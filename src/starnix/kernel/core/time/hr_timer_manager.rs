@@ -20,7 +20,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::{LockDepMutex, Mutex, MutexGuard, TerminalLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
@@ -1201,7 +1201,7 @@ pub struct HrTimer {
     /// until the next timer request has been sent to the driver. This prevents
     /// lost wake ups where the container happens to suspend between two instances
     /// of an interval timer triggering.
-    pub is_interval: Mutex<bool>,
+    pub is_interval: LockDepMutex<bool, TerminalLock>,
 }
 pub type HrTimerHandle = Arc<HrTimer>;
 
@@ -1215,7 +1215,8 @@ impl Drop for HrTimer {
 
 impl HrTimer {
     pub fn new() -> HrTimerHandle {
-        let ret = Arc::new(Self { event: zx::Event::create(), is_interval: Mutex::new(false) });
+        let ret =
+            Arc::new(Self { event: zx::Event::create(), is_interval: LockDepMutex::new(false) });
         let wake_alarm_id = ret.wake_alarm_id();
         ftrace::duration!("alarms", "hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
         ftrace::flow_begin!("alarms", "hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);

@@ -11,7 +11,7 @@ use derivative::Derivative;
 use macro_rules_attribute::apply;
 
 use line_discipline::{LineDiscipline, PendingSignals};
-use starnix_sync::{LockBefore, Locked, Mutex, ProcessGroupState, RwLock};
+use starnix_sync::{LockBefore, LockDepMutex, Locked, ProcessGroupState, RwLock, TerminalLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -26,7 +26,7 @@ pub struct TtyState {
     pub terminals: RwLock<HashMap<u32, Weak<Terminal>>>,
 
     /// The set of available terminal identifier.
-    pts_ids_set: Mutex<PtsIdsSet>,
+    pts_ids_set: LockDepMutex<PtsIdsSet, TerminalLock>,
 }
 
 impl TtyState {
@@ -57,7 +57,7 @@ impl Default for TtyState {
     fn default() -> Self {
         Self {
             terminals: RwLock::new(HashMap::new()),
-            pts_ids_set: Mutex::new(PtsIdsSet::new(DEVPTS_COUNT)),
+            pts_ids_set: LockDepMutex::new(PtsIdsSet::new(DEVPTS_COUNT)),
         }
     }
 }

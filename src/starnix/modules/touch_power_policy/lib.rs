@@ -11,7 +11,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TerminalLock, Unlocked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -92,14 +92,17 @@ impl DeviceOps for TouchPowerPolicyDevice {
 
 pub struct TouchPowerPolicyFile {
     // When false, Input Pipeline suspends processing of all touch events.
-    touch_enabled: Mutex<bool>,
+    touch_enabled: LockDepMutex<bool, TerminalLock>,
     // Sender used to send changes to `touch_standby` to the device relay
     touch_standby_sender: Sender<bool>,
 }
 
 impl TouchPowerPolicyFile {
     pub fn new(touch_standby_sender: Sender<bool>) -> Arc<Self> {
-        Arc::new(TouchPowerPolicyFile { touch_enabled: Mutex::new(true), touch_standby_sender })
+        Arc::new(TouchPowerPolicyFile {
+            touch_enabled: LockDepMutex::new(true),
+            touch_standby_sender,
+        })
     }
 }
 
