@@ -83,7 +83,7 @@ impl FakeCqhci {
                 &mut service_fs,
                 "default",
                 Service {
-                    dispatcher: FidlExecutor::from(harness.dispatcher().clone()),
+                    dispatcher: FidlExecutor::from(harness.dispatcher()),
                     rpmb_request_sender,
                     state: host.task_handler.state.clone(),
                 },
@@ -346,7 +346,7 @@ impl CommandQueueHost for TestCommandQueueHost {
 }
 
 struct Service {
-    dispatcher: FidlExecutor<fdf::WeakDispatcher>,
+    dispatcher: FidlExecutor<fdf::AsyncDispatcher>,
     rpmb_request_sender: mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>,
     state: Arc<Mutex<FakeHardwareState>>,
 }

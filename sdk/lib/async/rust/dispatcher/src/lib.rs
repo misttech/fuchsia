@@ -4,6 +4,8 @@
 
 //! Safe bindings for the C libasync async dispatcher library
 
+#![deny(missing_docs, clippy::undocumented_unsafe_blocks)]
+
 use libasync_sys::*;
 
 use core::cell::UnsafeCell;
@@ -22,13 +24,73 @@ mod weak_dispatcher;
 pub use task::*;
 pub use weak_dispatcher::*;
 
+/// A reference to a dispatcher that supports the v4 async api's reference counting operations,
+/// and so can be held safely without a lifetime.
+#[derive(Debug)]
+pub struct AsyncDispatcher(NonNull<async_dispatcher_t>);
+
+// SAFETY: It is safe to access an `async_dispatcher_t` from any thread per the libasync C api.
+unsafe impl Send for AsyncDispatcher {}
+// SAFETY: It is safe to access an `async_dispatcher_t` from any thread per the libasync C api.
+unsafe impl Sync for AsyncDispatcher {}
+
+impl AsyncDispatcher {
+    /// Converts from something that implements [`AsAsyncDispatcherRef`] to an [`AsyncDispatcher`]
+    /// if it implements the v4 async api's reference counting.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the implementation does not support reference counting. If you need to be
+    /// able to deal with a dispatcher that might not implement this api, you can use
+    /// [`AsyncDispatcher::new`].
+    pub fn new(dispatcher: &impl AsAsyncDispatcherRef) -> Self {
+        Self::try_new(dispatcher).expect("Dispatcher does not implement reference counting")
+    }
+
+    /// Converts from something that implements [`AsAsyncDispatcherRef`] to an [`AsyncDispatcher`]
+    /// if it implements the v4 async api's reference counting.
+    ///
+    /// Returns [`Status::UNSUPPORTED`] if the dispatcher does not support refcounting.
+    pub fn try_new(dispatcher: &impl AsAsyncDispatcherRef) -> Result<Self, Status> {
+        let dispatcher = dispatcher.as_async_dispatcher_ref();
+        // SAFETY: The dispatcher is a valid reference to a live dispatcher by construction, and
+        // we will only return a new Self if the call succeeds, so we will not release an invalid
+        // reference.
+        Status::ok(unsafe { libasync_sys::async_acquire_shared_ref(dispatcher.0.as_ptr()) })?;
+        Ok(Self(dispatcher.0))
+    }
+}
+
+impl Clone for AsyncDispatcher {
+    fn clone(&self) -> Self {
+        Self::new(self)
+    }
+}
+
+impl Drop for AsyncDispatcher {
+    fn drop(&mut self) {
+        // SAFETY: The dispatcher is a valid reference to a live dispatcher by construction, and
+        // we have already successfully acquired the shared reference to it in [`Self::try_new`].
+        Status::ok(unsafe { libasync_sys::async_release_shared_ref(self.0.as_ptr()) })
+            .expect("attempted to release shared dispatcher ref that doesn't support refcounting");
+    }
+}
+
+impl AsAsyncDispatcherRef for AsyncDispatcher {
+    fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
+        AsyncDispatcherRef(self.0, PhantomData)
+    }
+}
+
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
 /// [`AsyncDispatcher::release`]. When this object goes out of scope it won't shut down the dispatcher,
 /// leaving that up to the driver runtime or another owner.
 #[derive(Debug, Copy, Clone)]
 pub struct AsyncDispatcherRef<'a>(NonNull<async_dispatcher_t>, PhantomData<&'a async_dispatcher_t>);
 
+// SAFETY: It is safe to access an `async_dispatcher_t` from any thread per the libasync C api.
 unsafe impl<'a> Send for AsyncDispatcherRef<'a> {}
+// SAFETY: It is safe to access an `async_dispatcher_t` from any thread per the libasync C api.
 unsafe impl<'a> Sync for AsyncDispatcherRef<'a> {}
 
 impl<'a> AsyncDispatcherRef<'a> {
@@ -50,7 +112,7 @@ impl<'a> AsyncDispatcherRef<'a> {
 }
 
 /// A trait for things that can be represented as an [`AsyncDispatcherRef`].
-pub trait AsyncDispatcher: Send + Sync {
+pub trait AsAsyncDispatcherRef: Send + Sync {
     /// Gets an [`AsyncDispatcherRef`] corresponding to this object.
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_>;
 
@@ -84,11 +146,13 @@ pub trait AsyncDispatcher: Send + Sync {
     /// Returns the current time on the dispatcher's timeline
     fn now(&self) -> zx_time_t {
         let async_dispatcher = self.as_async_dispatcher_ref().0.as_ptr();
+        // SAFETY: The dispatcher returned from self.as_async_dispatcher_ref() is valid by
+        // construction.
         unsafe { async_now(async_dispatcher) }
     }
 }
 
-impl<'a> AsyncDispatcher for AsyncDispatcherRef<'a> {
+impl<'a> AsAsyncDispatcherRef for AsyncDispatcherRef<'a> {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         *self
     }
@@ -152,25 +216,19 @@ pub trait OnDispatcher: Clone + Send + Sync {
     }
 }
 
-impl<D: AsyncDispatcher> OnDispatcher for &D {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(D::as_async_dispatcher_ref(*self)))
-    }
-}
-
-impl<'a> OnDispatcher for AsyncDispatcherRef<'a> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(*self))
-    }
-}
-
-impl<T: AsyncDispatcher> OnDispatcher for Arc<T> {
+impl<T: AsAsyncDispatcherRef + Clone> OnDispatcher for T {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
         f(Some(self.as_async_dispatcher_ref()))
     }
 }
 
-impl<T: AsyncDispatcher> OnDispatcher for Weak<T> {
+impl<T: AsAsyncDispatcherRef> OnDispatcher for Arc<T> {
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
+        f(Some(self.as_async_dispatcher_ref()))
+    }
+}
+
+impl<T: AsAsyncDispatcherRef> OnDispatcher for Weak<T> {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
         let dispatcher = Weak::upgrade(self);
         match dispatcher {

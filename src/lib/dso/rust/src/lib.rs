@@ -35,7 +35,7 @@ pub struct DsoAsyncArgs {
     /// The component's outgoing directory. This is an [`Option`] but should typically be present.
     pub outgoing_dir: Option<fidl::endpoints::ServerEnd<::fidl_fuchsia_io::DirectoryMarker>>,
     /// A reference to the dispatcher used to dispatch the component's tasks.
-    pub dispatcher: fdf::DispatcherRef<'static>,
+    pub dispatcher: fdf::DriverDispatcherRef<'static>,
     /// The component's lifecycle server handle. It can close this channel to signal component
     /// exit.
     pub lifecycle: ServerEnd<LifecycleMarker>,
@@ -98,7 +98,7 @@ pub fn dso_init_async(payload: DsoStartAsyncPayload) -> DsoAsyncArgs {
     );
     // SAFETY: dso_runner guarantees `dispatcher` is an `fdf_dispatcher_t` so this is a valid cast.
     let dispatcher = unsafe {
-        fdf::DispatcherRef::from_raw(ptr::NonNull::new(dispatcher).expect("null dispatcher"))
+        fdf::DriverDispatcherRef::from_raw(ptr::NonNull::new(dispatcher).expect("null dispatcher"))
     };
     struct HandleInfo {
         handle: zx::NullableHandle,

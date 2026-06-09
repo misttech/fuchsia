@@ -9,7 +9,7 @@ use crate::testing::logsink_connector;
 use crate::testing::node::NodeManager;
 use crate::{Driver, Incoming};
 use anyhow::Result;
-use fdf::{AutoReleaseDispatcher, DispatcherBuilder, WeakDispatcher};
+use fdf::{AsyncDispatcher, DispatcherBuilder};
 use fdf_env::Environment;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_driver_framework::Offer;
@@ -31,7 +31,7 @@ pub struct TestHarness<D> {
     fdf_env_environment: Arc<Environment>,
     node_manager: Arc<NodeManager>,
     driver: Option<fdf_env::Driver<u32>>,
-    dispatcher: AutoReleaseDispatcher,
+    dispatcher: AsyncDispatcher,
     driver_incoming_dir: ClientEnd<fio::DirectoryMarker>,
     config_vmo: Option<zx::Vmo>,
     url: Option<String>,
@@ -76,7 +76,7 @@ impl<D: Driver> TestHarness<D> {
                 assert!(!env_clone.dispatcher_has_queued_tasks(dispatcher.as_dispatcher_ref()));
             });
         let dispatcher =
-            AutoReleaseDispatcher::from(driver.new_dispatcher(dispatcher_builder).unwrap());
+            AsyncDispatcher::new(&driver.new_dispatcher(dispatcher_builder).unwrap().release());
         let driver = Some(driver);
 
         Self {
@@ -147,8 +147,8 @@ impl<D: Driver> TestHarness<D> {
     }
 
     /// Gets a driver dispatcher that can be used to run test side driver transport client/servers.
-    pub fn dispatcher(&self) -> WeakDispatcher {
-        self.dispatcher.as_weak()
+    pub fn dispatcher(&self) -> AsyncDispatcher {
+        self.dispatcher.clone()
     }
 
     pub(crate) fn node_manager(&self) -> Weak<NodeManager> {

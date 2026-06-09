@@ -11,7 +11,7 @@ pub mod shutdown_observer;
 
 /// Gets the inner pointer of a dispatcher ref
 pub fn dispatcher_ptr<'a>(
-    dispatcher: &'a dispatcher::DispatcherRef<'a>,
+    dispatcher: &'a dispatcher::DriverDispatcherRef<'a>,
 ) -> &'a core::ptr::NonNull<fdf_sys::fdf_dispatcher_t> {
     &dispatcher.0
 }
@@ -19,7 +19,7 @@ pub fn dispatcher_ptr<'a>(
 /// Overrides the current dispatcher used by [`dispatcher::CurrentDispatcher::on_dispatcher`] while
 /// the callback is being called.
 pub fn override_current_dispatcher<R>(
-    dispatcher: dispatcher::DispatcherRef<'_>,
+    dispatcher: dispatcher::DriverDispatcherRef<'_>,
     f: impl FnOnce() -> R,
 ) -> R {
     dispatcher::OVERRIDE_DISPATCHER.with(|global| {

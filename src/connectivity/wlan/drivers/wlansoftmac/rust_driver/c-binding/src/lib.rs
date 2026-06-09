@@ -6,6 +6,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use driver_diagnostics_log::PublishOptions;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fuchsia_async::LocalExecutor;
 use log::{error, info};
 use std::ffi::c_void;
@@ -13,9 +14,9 @@ use std::sync::Once;
 use wlan_ffi_transport::completers::Completer;
 use wlan_ffi_transport::{EthernetRx, FfiEthernetRx, FfiWlanTx, WlanTx};
 use wlan_mlme::device::Device;
-use {fidl_fuchsia_wlan_softmac as fidl_softmac, wlan_trace as wtrace};
+use wlan_trace as wtrace;
 
-use fdf::{AsyncDispatcher, DispatcherBuilder};
+use fdf::{AsAsyncDispatcherRef, DispatcherBuilder};
 
 static LOGGER_ONCE: Once = Once::new();
 

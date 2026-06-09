@@ -7,9 +7,7 @@ use crate::testing::get_driver_from_token;
 use crate::testing::harness::TestHarness;
 use crate::testing::node::NodeHandle;
 use crate::{Driver, Incoming};
-use fdf::{
-    AsyncDispatcher, AutoReleaseDispatcher, DispatcherBuilder, OnDispatcher, WeakDispatcher,
-};
+use fdf::{AsAsyncDispatcherRef, AsyncDispatcher, DispatcherBuilder, OnDispatcher};
 use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
@@ -24,7 +22,7 @@ use zx::Status;
 pub struct DriverUnderTest<'a, D> {
     driver_outgoing: Incoming,
     driver: Option<fdf_env::Driver<u32>>,
-    dispatcher: AutoReleaseDispatcher,
+    dispatcher: AsyncDispatcher,
     registration: DriverRegistration,
     token: usize,
     client: NextClient<NextDriver, DriverChannel>,
@@ -90,7 +88,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
 
         let registration = make_driver_registration::<D>();
         let dispatcher =
-            AutoReleaseDispatcher::from(driver.new_dispatcher(dispatcher_builder).unwrap());
+            AsyncDispatcher::new(&driver.new_dispatcher(dispatcher_builder).unwrap().release());
         let (server_chan, client_chan) = fdf::Channel::<[fidl_next::Chunk]>::create();
         let channel_handle = server_chan.into_driver_handle().into_raw().get();
         let (client_exit_tx, client_exit_rx) = mpsc::channel();
@@ -110,7 +108,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));
         let client_dispatcher = ClientDispatcher::new(client_end);
         let client = client_dispatcher.client();
-        dispatcher.as_weak().spawn(async move {
+        dispatcher.spawn(async move {
             // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
             // At that point the driver has closed its server which signifies it has
             // completed its stop or has failed to start.
@@ -154,8 +152,8 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
     }
 
     /// Gets the driver's initial dispatcher.
-    pub fn dispatcher(&self) -> WeakDispatcher {
-        self.dispatcher.as_weak()
+    pub fn dispatcher(&self) -> AsyncDispatcher {
+        self.dispatcher.clone()
     }
 
     /// Gets the TestNode that the driver-under-test is bound to.

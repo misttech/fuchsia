@@ -9,9 +9,9 @@ use fdf_sys::*;
 use core::ptr::NonNull;
 
 pub use fdf_sys::fdf_dispatcher_t;
-pub use libasync::{AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, OnDispatcher};
+pub use libasync::{AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcherRef, OnDispatcher};
 
-use crate::dispatcher::{DispatcherRef, ShutdownObserverFn};
+use crate::dispatcher::{DriverDispatcherRef, ShutdownObserverFn};
 
 /// A shutdown observer for [`fdf_dispatcher_create`] that can call any kind of callback instead of
 /// just a C-compatible function when a dispatcher is shutdown.
@@ -64,7 +64,8 @@ impl ShutdownObserver {
         // safely take ownership of the [`Box`] and deallocate it when this function ends.
         let observer = unsafe { Box::from_raw(observer as *mut ShutdownObserver) };
         // SAFETY: `dispatcher` is the dispatcher being shut down, so it can't be non-null.
-        let dispatcher_ref = unsafe { DispatcherRef::from_raw(NonNull::new_unchecked(dispatcher)) };
+        let dispatcher_ref =
+            unsafe { DriverDispatcherRef::from_raw(NonNull::new_unchecked(dispatcher)) };
         (observer.shutdown_fn)(dispatcher_ref);
         // SAFETY: we only shutdown the dispatcher when the dispatcher is dropped, and we only ever
         // instantiate one owned copy of `Dispatcher` for a given dispatcher.

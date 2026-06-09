@@ -15,7 +15,7 @@ use zx::Status;
 use zx::sys::{ZX_ERR_CANCELED, ZX_OK};
 
 use crate::callback_state::CallbackSharedState;
-use crate::{AsyncDispatcher, OnDispatcher};
+use crate::{AsAsyncDispatcherRef, OnDispatcher};
 
 type SharedState = CallbackSharedState<async_task, AfterDeadlineState>;
 

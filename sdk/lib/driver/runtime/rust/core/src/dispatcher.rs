@@ -11,7 +11,6 @@ use core::ffi;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::{NonNull, null_mut};
-use std::sync::{Arc, Weak};
 
 use zx::Status;
 
@@ -19,13 +18,13 @@ use crate::shutdown_observer::ShutdownObserver;
 
 pub use fdf_sys::fdf_dispatcher_t;
 pub use libasync::{
-    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt, JoinHandle,
-    OnDispatcher, Task, WeakDispatcher,
+    AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt,
+    JoinHandle, OnDispatcher, Task, WeakDispatcher,
 };
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
-pub trait ShutdownObserverFn: FnOnce(DispatcherRef<'_>) + Send + 'static {}
-impl<T> ShutdownObserverFn for T where T: FnOnce(DispatcherRef<'_>) + Send + 'static {}
+pub trait ShutdownObserverFn: FnOnce(DriverDispatcherRef<'_>) + Send + 'static {}
+impl<T> ShutdownObserverFn for T where T: FnOnce(DriverDispatcherRef<'_>) + Send + 'static {}
 
 /// A builder for [`Dispatcher`]s
 #[derive(Default)]
@@ -166,7 +165,7 @@ impl DispatcherBuilder {
     /// As with [`Self::create`], this creates a new dispatcher as configured by this object, but
     /// instead of returning an owned reference it immediately releases the reference to be
     /// managed by the driver runtime.
-    pub fn create_released(self) -> Result<DispatcherRef<'static>, Status> {
+    pub fn create_released(self) -> Result<DriverDispatcherRef<'static>, Status> {
         self.create().map(Dispatcher::release)
     }
 }
@@ -226,18 +225,18 @@ impl Dispatcher {
     /// that can be used to access it. The lifetime of this reference is static because it will
     /// exist so long as this current driver is loaded, but the driver runtime will shut it down
     /// when the driver is unloaded.
-    pub fn release(self) -> DispatcherRef<'static> {
-        DispatcherRef(ManuallyDrop::new(self), PhantomData)
+    pub fn release(self) -> DriverDispatcherRef<'static> {
+        DriverDispatcherRef(ManuallyDrop::new(self), PhantomData)
     }
 
     /// Returns a [`DispatcherRef`] that references this dispatcher with a lifetime constrained by
     /// `self`.
-    pub fn as_dispatcher_ref(&self) -> DispatcherRef<'_> {
-        DispatcherRef(ManuallyDrop::new(Dispatcher(self.0)), PhantomData)
+    pub fn as_dispatcher_ref(&self) -> DriverDispatcherRef<'_> {
+        DriverDispatcherRef(ManuallyDrop::new(Dispatcher(self.0)), PhantomData)
     }
 }
 
-impl AsyncDispatcher for Dispatcher {
+impl AsAsyncDispatcherRef for Dispatcher {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         let async_dispatcher =
             NonNull::new(unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) })
@@ -281,7 +280,7 @@ impl AutoReleaseDispatcher {
     pub fn always_on_dispatcher(&self) -> AutoReleaseDispatcher {
         // SAFETY: `self.dispatcher.0` is a valid, active `fdf_dispatcher_t` pointer owned by this
         // `AutoReleaseDispatcher`.
-        let dispatcher_ref = unsafe { DispatcherRef::from_raw(self.dispatcher.0) };
+        let dispatcher_ref = unsafe { DriverDispatcherRef::from_raw(self.dispatcher.0) };
         // SAFETY: The always-on dispatcher pointer returned by the runtime is guaranteed to remain
         // valid for at least as long as the parent dispatcher is alive. Since this is an
         // `AutoReleaseDispatcher`, the underlying dispatcher will not be shut down when dropped,
@@ -291,7 +290,7 @@ impl AutoReleaseDispatcher {
     }
 }
 
-impl AsyncDispatcher for AutoReleaseDispatcher {
+impl AsAsyncDispatcherRef for AutoReleaseDispatcher {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         self.dispatcher.as_async_dispatcher_ref()
     }
@@ -307,9 +306,9 @@ impl From<Dispatcher> for AutoReleaseDispatcher {
 /// [`Dispatcher::release`]. When this object goes out of scope it won't shut down the dispatcher,
 /// leaving that up to the driver runtime or another owner.
 #[derive(Debug)]
-pub struct DispatcherRef<'a>(ManuallyDrop<Dispatcher>, PhantomData<&'a Dispatcher>);
+pub struct DriverDispatcherRef<'a>(ManuallyDrop<Dispatcher>, PhantomData<&'a Dispatcher>);
 
-impl<'a> DispatcherRef<'a> {
+impl<'a> DriverDispatcherRef<'a> {
     /// Creates a dispatcher ref from a raw handle.
     ///
     /// # Safety
@@ -346,10 +345,10 @@ impl<'a> DispatcherRef<'a> {
 
     /// Returns a [`DispatcherRef`] for the always-on dispatcher associated with this dispatcher,
     /// preserving the lifetime parameter of the parent dispatcher.
-    pub fn always_on_dispatcher(&self) -> DispatcherRef<'a> {
+    pub fn always_on_dispatcher(&self) -> DriverDispatcherRef<'a> {
         // SAFETY: The pointer being passed in is valid as its coming from a DispatcherRef.
         let ptr = unsafe { fdf_dispatcher_get_always_on_dispatcher(self.0.0.as_ptr()) };
-        DispatcherRef(
+        DriverDispatcherRef(
             ManuallyDrop::new(Dispatcher(NonNull::new(ptr).expect("Always-on dispatcher is NULL"))),
             PhantomData,
         )
@@ -406,7 +405,7 @@ pub trait OnDriverDispatcher: OnDispatcher {
         Self: 'static,
     {
         self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
+            let dispatcher = DriverDispatcherRef::from_async_dispatcher(dispatcher);
             if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
                 Ok(OnDispatcher::spawn(self, AddSendFuture(future)))
             } else {
@@ -437,7 +436,7 @@ pub trait OnDriverDispatcher: OnDispatcher {
         Self: 'static,
     {
         self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
+            let dispatcher = DriverDispatcherRef::from_async_dispatcher(dispatcher);
             if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
                 Ok(OnDispatcher::compute(self, AddSendFuture(future)))
             } else {
@@ -447,41 +446,34 @@ pub trait OnDriverDispatcher: OnDispatcher {
     }
 }
 
-impl OnDriverDispatcher for Arc<Dispatcher> {}
-impl OnDriverDispatcher for Weak<Dispatcher> {}
-
-impl<'a> AsyncDispatcher for DispatcherRef<'a> {
+impl<'a> AsAsyncDispatcherRef for DriverDispatcherRef<'a> {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         self.0.as_async_dispatcher_ref()
     }
 }
 
-impl<'a> Clone for DispatcherRef<'a> {
+impl<'a> Clone for DriverDispatcherRef<'a> {
     fn clone(&self) -> Self {
         Self(ManuallyDrop::new(Dispatcher(self.0.0)), PhantomData)
     }
 }
 
-impl<'a> core::ops::Deref for DispatcherRef<'a> {
+impl<'a> core::ops::Deref for DriverDispatcherRef<'a> {
     type Target = Dispatcher;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'a> core::ops::DerefMut for DispatcherRef<'a> {
+impl<'a> core::ops::DerefMut for DriverDispatcherRef<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<'a> OnDispatcher for DispatcherRef<'a> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_async_dispatcher_ref()))
-    }
-}
-
-impl<'a> OnDriverDispatcher for DispatcherRef<'a> {}
+/// Note: This may panic (or assert in C++) if its methods are run on a dispatcher that is not
+/// a driver dispatcher.
+impl<T> OnDriverDispatcher for T where T: AsAsyncDispatcherRef + Clone {}
 
 /// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
 /// access it when needed.
@@ -518,7 +510,7 @@ impl OnDriverDispatcher for CurrentDispatcher {}
 mod tests {
     use super::*;
 
-    use std::sync::{Arc, Once, Weak, mpsc};
+    use std::sync::{Once, mpsc};
 
     use futures::channel::mpsc as async_mpsc;
     use futures::{SinkExt, StreamExt};
@@ -547,7 +539,7 @@ mod tests {
             }
         });
     }
-    pub fn with_raw_dispatcher<T>(name: &str, p: impl for<'a> FnOnce(Weak<Dispatcher>) -> T) -> T {
+    pub fn with_raw_dispatcher<T>(name: &str, p: impl for<'a> FnOnce(AsyncDispatcher) -> T) -> T {
         with_raw_dispatcher_flags(name, DispatcherBuilder::ALLOW_THREAD_BLOCKING, "", p)
     }
 
@@ -555,7 +547,7 @@ mod tests {
         name: &str,
         flags: u32,
         scheduler_role: &str,
-        p: impl for<'a> FnOnce(Weak<Dispatcher>) -> T,
+        p: impl for<'a> FnOnce(AsyncDispatcher) -> T,
     ) -> T {
         ensure_driver_env();
 
@@ -586,21 +578,12 @@ mod tests {
             )
         };
         assert_eq!(res, ZX_OK);
-        let dispatcher = Arc::new(Dispatcher(NonNull::new(dispatcher).unwrap()));
+        let dispatcher = Dispatcher(NonNull::new(dispatcher).unwrap());
 
-        let res = p(Arc::downgrade(&dispatcher));
+        let res = p(AsyncDispatcher::new(&dispatcher));
 
-        // this initiates the dispatcher shutdown on a driver runtime
-        // thread. When all tasks on the dispatcher have completed, the wait
-        // on the shutdown_rx below will end and we can tear it down.
-        let weak_dispatcher = Arc::downgrade(&dispatcher);
         drop(dispatcher);
         shutdown_rx.recv().unwrap();
-        assert_eq!(
-            0,
-            weak_dispatcher.strong_count(),
-            "a dispatcher reference escaped the test body"
-        );
 
         res
     }
@@ -616,7 +599,6 @@ mod tests {
     fn post_task_on_dispatcher() {
         with_raw_dispatcher("testing task", |dispatcher| {
             let (tx, rx) = mpsc::channel();
-            let dispatcher = Weak::upgrade(&dispatcher).unwrap();
             dispatcher
                 .post_task_sync(move |status| {
                     assert_eq!(status, Status::from_raw(ZX_OK));
@@ -633,7 +615,6 @@ mod tests {
         with_raw_dispatcher("testing task top level", move |dispatcher| {
             let (tx, rx) = mpsc::channel();
             let (inner_tx, inner_rx) = mpsc::channel();
-            let dispatcher = Weak::upgrade(&dispatcher).unwrap();
             dispatcher
                 .post_task_sync(move |status| {
                     assert_eq!(status, Status::from_raw(ZX_OK));

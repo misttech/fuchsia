@@ -70,7 +70,7 @@ fn get_i2cimpl_device(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fdf::WeakDispatcher;
+    use fdf::AsyncDispatcher;
     use fdf_component::ServiceOffer;
     use fdf_component::testing::harness::TestHarness;
     use fuchsia_component::server::ServiceFs;
@@ -114,7 +114,7 @@ mod tests {
     }
 
     struct Service {
-        dispatcher: WeakDispatcher,
+        dispatcher: AsyncDispatcher,
         bitrate: Arc<Mutex<u32>>,
     }
 

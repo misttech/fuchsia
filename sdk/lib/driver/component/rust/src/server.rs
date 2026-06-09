@@ -11,10 +11,10 @@ use std::sync::OnceLock;
 use log::{debug, warn};
 use zx::Status;
 
-use fdf::{Channel, DispatcherBuilder, DispatcherRef};
+use fdf::{Channel, DispatcherBuilder, DriverDispatcherRef};
 use fidl_fuchsia_driver_framework::DriverRequest;
 
-use fdf::{AsyncDispatcher, DriverHandle, Message, fdf_handle_t};
+use fdf::{AsAsyncDispatcherRef, DriverHandle, Message, fdf_handle_t};
 
 use crate::{Driver, DriverContext, DriverError};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;
@@ -26,7 +26,7 @@ use fuchsia_async::LocalExecutorBuilder;
 /// message loop for the driver start and stop messages.
 pub struct DriverServer<T> {
     server_handle: OnceLock<Channel<[u8]>>,
-    root_dispatcher: DispatcherRef<'static>,
+    root_dispatcher: DriverDispatcherRef<'static>,
     driver: OnceLock<T>,
 }
 
@@ -52,7 +52,7 @@ impl<T: Driver> DriverServer<T> {
         });
 
         // SAFETY: the root dispatcher is expected to live as long as this driver is loaded.
-        let root_dispatcher = unsafe { DispatcherRef::from_raw(root_dispatcher) };
+        let root_dispatcher = unsafe { DriverDispatcherRef::from_raw(root_dispatcher) };
         // We leak the box holding the server so that the driver runtime can take control over the
         // lifetime of the server object.
         let server_ptr = Box::into_raw(Box::new(Self {
@@ -124,7 +124,7 @@ impl<T: Driver> DriverServer<T> {
 
     /// Implements the main message loop for handling start and stop messages from rust
     /// driver host and passing them on to the implementation of [`Driver`] we contain.
-    async fn message_loop(&mut self, dispatcher: DispatcherRef<'_>) {
+    async fn message_loop(&mut self, dispatcher: DriverDispatcherRef<'_>) {
         loop {
             let server_handle_lock = self.server_handle.get_mut();
             let Some(server_handle) = server_handle_lock else {

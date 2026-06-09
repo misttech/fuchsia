@@ -374,7 +374,8 @@ mod tests {
     use std::sync::{Arc, mpsc};
 
     use fdf_core::dispatcher::{
-        AsyncDispatcher, CurrentDispatcher, DispatcherBuilder, DispatcherRef, OnDispatcher,
+        AsAsyncDispatcherRef, CurrentDispatcher, DispatcherBuilder, DriverDispatcherRef,
+        OnDispatcher,
     };
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;
@@ -597,7 +598,9 @@ mod tests {
         fin_rx.await.unwrap();
     }
 
-    async fn send_and_recv_lots_of_bytes_with_cancellations(dispatcher: DispatcherRef<'static>) {
+    async fn send_and_recv_lots_of_bytes_with_cancellations(
+        dispatcher: DriverDispatcherRef<'static>,
+    ) {
         let (tx, rx) = Channel::create();
         let (fin_tx, fin_rx) = oneshot::channel();
         let pending_count = Arc::new(AtomicU64::new(0));

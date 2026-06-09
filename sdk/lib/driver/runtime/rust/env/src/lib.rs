@@ -15,7 +15,7 @@ use core::ptr::{NonNull, null_mut};
 
 use zx::Status;
 
-use fdf_core::dispatcher::{Dispatcher, DispatcherBuilder, DispatcherRef};
+use fdf_core::dispatcher::{Dispatcher, DispatcherBuilder, DriverDispatcherRef};
 use fdf_core::shutdown_observer::ShutdownObserver;
 
 pub mod test;
@@ -495,7 +495,7 @@ impl Environment {
     }
 
     /// Returns whether the dispatcher has any queued tasks.
-    pub fn dispatcher_has_queued_tasks(&self, dispatcher: DispatcherRef<'_>) -> bool {
+    pub fn dispatcher_has_queued_tasks(&self, dispatcher: DriverDispatcherRef<'_>) -> bool {
         unsafe {
             fdf_env_dispatcher_has_queued_tasks(fdf_core::dispatcher_ptr(&dispatcher).as_ptr())
         }

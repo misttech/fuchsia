@@ -18,7 +18,7 @@ use zx_status::Status;
 use futures::future::{BoxFuture, FutureExt};
 use futures::task::AtomicWaker;
 
-use crate::{AsyncDispatcher, OnDispatcher};
+use crate::{AsAsyncDispatcherRef, OnDispatcher};
 
 /// The future returned by [`OnDispatcher::compute`] or [`OnDispatcher::try_compute`]. If this is
 /// dropped, the task will be cancelled.

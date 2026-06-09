@@ -313,7 +313,7 @@ impl Hooks {
         names: CArray<*const ::libc::c_char>,
         argv: CArray<*const ::libc::c_char>,
         envp: CArray<*const ::libc::c_char>,
-        mut dispatcher: fdf::DispatcherRef<'static>,
+        mut dispatcher: fdf::DriverDispatcherRef<'static>,
     ) -> ::core::ffi::c_int {
         match self {
             Self::Sync(_) => unreachable!(),
