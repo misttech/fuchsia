@@ -9,9 +9,7 @@ use fidl_fuchsia_hardware_adb as fadb;
 use fuchsia_async as fasync;
 use futures_util::StreamExt;
 use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_message_handled};
-use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, ThreadLockupDetector, WaitCanceler, WaitQueue, Waiter,
-};
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     CacheMode, DirectoryEntryType, FileObject, FileObjectState, FileOps, FileSystem,
@@ -19,8 +17,8 @@ use starnix_core::vfs::{
     InputBuffer, OutputBuffer, fileops_impl_noop_sync, fileops_impl_seekless, fs_args,
     fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
-use starnix_logging::{log_error, log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
+use starnix_logging::{log_warn, track_stub};
+use starnix_sync::{FileOpsCore, InterruptibleEvent, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
@@ -34,7 +32,7 @@ use starnix_uapi::{
 };
 use std::collections::VecDeque;
 use std::ops::Deref;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 use zerocopy::IntoBytes;
 
 // The node identifiers of different nodes in FunctionFS.
@@ -60,13 +58,29 @@ const ADB_DIRECTORY: &str = "/svc/fuchsia.hardware.adb.Service";
 // writes occur within this time period, Starnix will be allowed to suspend.
 const ADB_INTERACTION_TIMEOUT: zx::Duration<zx::MonotonicTimeline> = zx::Duration::from_seconds(2);
 
+#[derive(Default)]
+struct PendingResult<T: Default> {
+    event: Arc<InterruptibleEvent>,
+    result: Mutex<Option<Result<T, Errno>>>,
+}
+
+impl<T: Default> PendingResult<T> {
+    fn set_result(&self, res: Result<T, Errno>) {
+        let mut result = self.result.lock();
+        debug_assert!(result.is_none(), "PendingResult set more than once");
+
+        result.replace(res);
+        self.event.notify();
+    }
+}
+
 struct ReadCommand {
-    response_sender: mpsc::Sender<Result<Vec<u8>, Errno>>,
+    pending: Arc<PendingResult<Vec<u8>>>,
 }
 
 struct WriteCommand {
     data: Vec<u8>,
-    response_sender: mpsc::Sender<Result<usize, Errno>>,
+    pending: Arc<PendingResult<usize>>,
 }
 
 /// Handle all of the ADB messages in an async context.
@@ -170,7 +184,7 @@ async fn handle_adb(
     ) {
         let timeouts_sender = &timeouts_sender;
         commands
-            .for_each(|ReadCommand { response_sender }| async move {
+            .for_each(|ReadCommand { pending }| async move {
                 // Queue up our receive future. We want to do this before we decrement the counter,
                 // which potentially allows the container to suspend.
                 let receive_future = proxy.receive();
@@ -196,10 +210,7 @@ async fn handle_adb(
                     Ok(Ok(payload)) => Ok(payload),
                 };
 
-                response_sender
-                    .send(response)
-                    .map_err(|e| log_error!("Failed to send to main thread: {:#?}", e))
-                    .ok();
+                pending.set_result(response);
             })
             .await;
     }
@@ -212,7 +223,7 @@ async fn handle_adb(
     ) {
         let timeouts_sender = &timeouts_sender;
         commands
-            .for_each(|WriteCommand { data, response_sender }| async move {
+            .for_each(|WriteCommand { data, pending }| async move {
                 let response = match proxy.queue_tx(&data).await {
                     Err(err) => {
                         log_warn!("Failed to call UsbAdbImpl.QueueTx: {err}");
@@ -233,10 +244,7 @@ async fn handle_adb(
                     .await
                     .expect("Should be able to send timeout");
 
-                response_sender
-                    .send(response)
-                    .map_err(|e| log_error!("Failed to send to main thread: {:#?}", e))
-                    .ok();
+                pending.set_result(response);
             })
             .await;
     }
@@ -510,15 +518,21 @@ impl FunctionFsRootDir {
         self.wait_until_online(locked, current_task, file)?;
 
         let data = Vec::from(bytes);
-        let (response_sender, receiver) = std::sync::mpsc::channel();
+        let pending = Arc::<PendingResult<usize>>::default();
+        let guard = pending.event.begin_wait();
+
         if let Some(channel) = self.state.lock().adb_write_channel.as_ref() {
             channel
-                .send_blocking(WriteCommand { data, response_sender })
+                .send_blocking(WriteCommand { data, pending: pending.clone() })
                 .map_err(|_| errno!(EINVAL))?;
         } else {
             return error!(ENODEV);
         }
-        receiver.recv().map_err(|_| errno!(EINVAL))?
+
+        current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
+
+        let mut result = pending.result.lock();
+        result.take().ok_or_else(|| errno!(EINTR))?
     }
 
     fn read(
@@ -529,13 +543,20 @@ impl FunctionFsRootDir {
     ) -> Result<Vec<u8>, Errno> {
         self.wait_until_online(locked, current_task, file)?;
 
-        let (response_sender, receiver) = ThreadLockupDetector::tracked_channel();
+        let pending = Arc::<PendingResult<Vec<u8>>>::default();
+        let guard = pending.event.begin_wait();
         if let Some(channel) = self.state.lock().adb_read_channel.as_ref() {
-            channel.send_blocking(ReadCommand { response_sender }).map_err(|_| errno!(EINVAL))?;
+            channel
+                .send_blocking(ReadCommand { pending: pending.clone() })
+                .map_err(|_| errno!(EINVAL))?;
         } else {
             return error!(ENODEV);
         }
-        receiver.recv().map_err(|_| errno!(EINVAL))?
+
+        current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
+
+        let mut result = pending.result.lock();
+        result.take().ok_or_else(|| errno!(EINTR))?
     }
 }
 
