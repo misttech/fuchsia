@@ -117,7 +117,19 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::DataOut: {
-      ZX_ASSERT(ep_num == kEp0Out);
+      if (ep_num != kEp0Out) {
+        // This indicates a disagreement between the host and controller about the directionality of
+        // the data exchange. In this case, the setup packet indicated a control-write (OUT-type
+        // transfer), which would involve a DataOut packet. The controller actually received an
+        // unexpected DataIn packet from the host. To recover, gracefully stall and reset the
+        // transfer.
+
+        fdf::warn("host/target data direction disagreement, expected data-out, got data-in");
+        Ep0EndAndStall(ep0_.out);
+        Ep0QueueSetup();
+        break;
+      }
+
       zx_off_t received = ep0_.cur_transfer_len - TRB_BUFSIZ(trb.status);
       ep0_.out.total_transfers++;
       ep0_.out.total_bytes += received;
@@ -126,7 +138,13 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::DataIn: {
-      ZX_ASSERT(ep_num == kEp0In);
+      if (ep_num != kEp0In) {
+        // See above, but reverse the directionality for a control-read.
+        fdf::warn("host/target data direction disagreement, expected data-in, got data-out");
+        Ep0EndAndStall(ep0_.in);
+        Ep0QueueSetup();
+        break;
+      }
       zx_off_t transferred = ep0_.cur_transfer_len - TRB_BUFSIZ(trb.status);
       ep0_.in.total_transfers++;
       ep0_.in.total_bytes += transferred;
@@ -182,18 +200,14 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
     case Ep0::State::DataOut:
       if ((ep_num == kEp0In) && (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA)) {
         // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
-        ep0_.shared_fifo.Clear();
-        CmdEpEndTransfer(ep0_.out);
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.out);
         Ep0QueueSetup();
       }
       break;
     case Ep0::State::DataIn:
       if ((ep_num == kEp0Out) && (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA)) {
         // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
-        ep0_.shared_fifo.Clear();
-        CmdEpEndTransfer(ep0_.in);
-        EpSetStall(ep0_.out, true);
+        Ep0EndAndStall(ep0_.in);
         Ep0QueueSetup();
       }
       break;
@@ -214,6 +228,12 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       fdf::error("ready unhandled state {}", ep0_.state);
       break;
   }
+}
+
+void Dwc3::Ep0EndAndStall(Endpoint& ep) {
+  ep0_.shared_fifo.Clear();
+  CmdEpEndTransfer(ep);
+  EpSetStall(ep, true);
 }
 
 void Dwc3::HandleEp0Setup(size_t length) {

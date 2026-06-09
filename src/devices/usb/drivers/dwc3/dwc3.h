@@ -393,6 +393,9 @@ class Dwc3 : public fdf::DriverBase2,
   void HandleEp0Setup(size_t length);
   void HandleEp0TransferCompleteEvent(uint8_t ep_num);
   void HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage);
+  // This method clears the fifo, ends any ongoing transfers, and stalls the endpoint.
+  // It's used in preparation of gracefully restarting a failed control transfer.
+  void Ep0EndAndStall(Endpoint& ep);
 
   // General EP stuff
   void EpEnable(Endpoint& ep, bool enable);
