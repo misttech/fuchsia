@@ -61,6 +61,7 @@ using fuchsia::feedback::FilingSuccess;
 using fuchsia::feedback::NativeCrashReport;
 using fuchsia::feedback::RuntimeCrashReport;
 using fuchsia::feedback::SpecificCrashReport;
+using fuchsia::feedback::TextBacktraceCrashReport;
 using fuchsia::settings::PrivacySettings;
 using inspect::testing::ChildrenMatch;
 using inspect::testing::NameMatches;
@@ -405,6 +406,33 @@ class CrashReporterTest : public UnitTestFixture {
     return FileOneCrashReport(std::move(report));
   }
 
+  // Files one Fuchsia text backtrace crash report.
+  CrashReporter_FileReport_Result FileOneFuchsiaTextBacktraceCrashReport(
+      std::optional<fuchsia::mem::Buffer> backtrace,
+      const std::optional<std::string>& crash_signature) {
+    TextBacktraceCrashReport text_backtrace_report;
+    if (backtrace.has_value()) {
+      text_backtrace_report.set_fuchsia_backtrace(std::move(backtrace.value()));
+    }
+    text_backtrace_report.set_process_name("crashing_process");
+    text_backtrace_report.set_process_koid(123u);
+    text_backtrace_report.set_thread_name("crashing_thread");
+    text_backtrace_report.set_thread_koid(1234u);
+
+    SpecificCrashReport specific_report;
+    specific_report.set_text_backtrace(std::move(text_backtrace_report));
+
+    CrashReport report;
+    report.set_program_name("crashing_program_text_backtrace");
+    report.set_specific_report(std::move(specific_report));
+
+    if (crash_signature.has_value()) {
+      report.set_crash_signature(crash_signature.value());
+    }
+
+    return FileOneCrashReport(std::move(report));
+  }
+
   // Files one empty crash report.
   CrashReporter_FileReport_Result FileOneEmptyCrashReport() {
     CrashReport report;
@@ -688,6 +716,41 @@ TEST_F(CrashReporterTest, Succeed_OnDartInputCrashReportWithoutExceptionData) {
   CheckAnnotationsOnServer({
       {"type", "DartError"},
       {"signature", "fuchsia-no-dart-stack-trace"},
+  });
+  CheckAttachmentsOnServer({kDefaultAttachmentBundleKey});
+}
+
+TEST_F(CrashReporterTest, Succeed_OnFuchsiaTextBacktraceInputCrashReport) {
+  SetUpDataProviderServer(
+      std::make_unique<stubs::DataProvider>(kFeedbackAnnotations, kEmptyAttachmentBundleKey));
+  SetUpCrashReporterDefaultConfig({kUploadSuccessful});
+
+  fuchsia::mem::Buffer backtrace;
+  fsl::VmoFromString("#0", &backtrace);
+
+  ASSERT_TRUE(
+      FileOneFuchsiaTextBacktraceCrashReport(std::move(backtrace), std::nullopt).is_response());
+  CheckAnnotationsOnServer({
+      {"crash.process.name", "crashing_process"},
+      {"crash.process.koid", "123"},
+      {"crash.thread.name", "crashing_thread"},
+      {"crash.thread.koid", "1234"},
+  });
+  CheckAttachmentsOnServer({"backtrace.txt", kEmptyAttachmentBundleKey});
+}
+
+TEST_F(CrashReporterTest, Succeed_OnFuchsiaTextBacktraceInputCrashReportWithoutBacktrace) {
+  SetUpDataProviderServer(
+      std::make_unique<stubs::DataProvider>(kFeedbackAnnotations, kDefaultAttachmentBundleKey));
+  SetUpCrashReporterDefaultConfig({kUploadSuccessful});
+
+  ASSERT_TRUE(FileOneFuchsiaTextBacktraceCrashReport(std::nullopt, std::nullopt).is_response());
+  CheckAnnotationsOnServer({
+      {"crash.process.name", "crashing_process"},
+      {"crash.process.koid", "123"},
+      {"crash.thread.name", "crashing_thread"},
+      {"crash.thread.koid", "1234"},
+      {"signature", "fuchsia-no-fuchsia-text-backtrace"},
   });
   CheckAttachmentsOnServer({kDefaultAttachmentBundleKey});
 }

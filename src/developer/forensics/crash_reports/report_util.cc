@@ -42,6 +42,7 @@ const char kIsFatalKey[] = "isFatal";
 const char kProcessNameKey[] = "crash.process.name";
 const char kThreadNameKey[] = "crash.thread.name";
 const char kWeightKey[] = "weight";
+const char kBacktraceFilenameKey[] = "backtrace.txt";
 
 // Extra keys that the crash server does *not* have a dependency on.
 const char kProcessKoidKey[] = "crash.process.koid";
@@ -120,6 +121,24 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
     }
   }
 
+  // FuchsiaTextBacktrace-specific annotations.
+  if (report.has_specific_report() && report.specific_report().is_text_backtrace()) {
+    const ::fuchsia::feedback::TextBacktraceCrashReport& text_backtrace_report =
+        report.specific_report().text_backtrace();
+    if (text_backtrace_report.has_process_name()) {
+      annotations->Set(kProcessNameKey, text_backtrace_report.process_name());
+    }
+    if (text_backtrace_report.has_process_koid()) {
+      annotations->Set(kProcessKoidKey, text_backtrace_report.process_koid());
+    }
+    if (text_backtrace_report.has_thread_name()) {
+      annotations->Set(kThreadNameKey, text_backtrace_report.thread_name());
+    }
+    if (text_backtrace_report.has_thread_koid()) {
+      annotations->Set(kThreadKoidKey, text_backtrace_report.thread_koid());
+    }
+  }
+
   // Native-specific annotations.
   if (report.has_specific_report() && report.specific_report().is_native()) {
     const ::fuchsia::feedback::NativeCrashReport& native_report = report.specific_report().native();
@@ -169,6 +188,19 @@ void ExtractAnnotationsAndAttachments(fuchsia::feedback::CrashReport report,
     } else {
       FX_LOGS(WARNING) << "no Dart exception stack trace to attach to crash report";
       annotations->Set(kCrashSignatureKey, "fuchsia-no-dart-stack-trace");
+    }
+  }
+
+  // FuchsiaTextBacktrace-specific attachment.
+  if (report.has_specific_report() && report.specific_report().is_text_backtrace()) {
+    ::fuchsia::feedback::TextBacktraceCrashReport& text_backtrace_report =
+        report.mutable_specific_report()->text_backtrace();
+    if (text_backtrace_report.has_fuchsia_backtrace()) {
+      (*attachments)[kBacktraceFilenameKey] =
+          std::move(*text_backtrace_report.mutable_fuchsia_backtrace());
+    } else {
+      FX_LOGS(WARNING) << "no text backtrace to attach to crash report";
+      annotations->Set(kCrashSignatureKey, "fuchsia-no-fuchsia-text-backtrace");
     }
   }
 }

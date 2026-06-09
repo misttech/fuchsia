@@ -137,6 +137,10 @@ type SpecificCrashReport = flexible resource union {
 
     /// Intended for a Dart exception.
     3: dart RuntimeCrashReport;
+
+    /// Intended for a text stack trace in Fuchsia's symbolization markup format.
+    @available(added=HEAD)
+    4: text_backtrace TextBacktraceCrashReport;
 };
 
 const MAX_PROCESS_NAME_LENGTH uint32 = 64;
@@ -176,6 +180,25 @@ type RuntimeCrashReport = resource table {
 
     /// The text representation of the exception stack trace.
     3: exception_stack_trace fuchsia.mem.Buffer;
+};
+
+/// Represents a crash report with a text stack trace.
+@available(added=HEAD)
+type TextBacktraceCrashReport = resource table {
+    /// The text representation of the backtrace in Fuchsia's symbolization markup format.
+    1: fuchsia_backtrace fuchsia.mem.Buffer;
+
+    /// The name of the crashed process.
+    2: process_name string:MAX_PROCESS_NAME_LENGTH;
+
+    /// The kernel object id of the crashed process.
+    3: process_koid zx.Koid;
+
+    /// The name of the crashed thread.
+    4: thread_name string:MAX_THREAD_NAME_LENGTH;
+
+    /// The kernel object id of the crashed thread.
+    5: thread_koid zx.Koid;
 };
 
 @available(added=11)
