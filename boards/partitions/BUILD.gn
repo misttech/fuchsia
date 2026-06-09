@@ -22,9 +22,22 @@ _standard_names = {
   fvm = "fvm"
 }
 
+# Baseline partition sizes that represent the default/minimum sizes
+# required to support booting Fuchsia on standard emulator/virtual
+# targets.
 generated_partitions_config("default") {
   hw_revision = ""
   forward_variables_from(_standard_names, "*")
+
+  zbi_a_size = 33554432  # 32 MiB
+  zbi_b_size = 33554432  # 32 MiB
+  zbi_r_size = 33554432  # 32 MiB
+
+  vbmeta_a_size = 65536  # 64 KiB
+  vbmeta_b_size = 65536  # 64 KiB
+  vbmeta_r_size = 65536  # 64 KiB
+
+  fvm_size = 17179869184  # 16 GiB
 }
 
 if (target_cpu == "x64") {
@@ -36,6 +49,14 @@ if (target_cpu == "x64") {
   generated_partitions_config("x64") {
     testonly = true
     forward_variables_from(_standard_names, "*")
+
+    zbi_a_size = 134217728  # 128 MiB
+    zbi_b_size = 134217728  # 128 MiB
+    zbi_r_size = 205520896  # 196 MiB
+
+    vbmeta_a_size = 65536  # 64 KiB
+    vbmeta_b_size = 65536  # 64 KiB
+    vbmeta_r_size = 65536  # 64 KiB
 
     # Gigaboot bootloader that is put to `bootloader` partition.
     # TODO(b/399522436): This should be moved to platform specific build files.
@@ -54,6 +75,9 @@ if (target_cpu == "x64") {
     # supports either configuration.
     fvm = "fvm"
     fxfs = "fvm"
+
+    fvm_size = 60129542144  # 56 GiB
+    fxfs_size = 60129542144  # 56 GiB
   }
 }
 
@@ -70,6 +94,14 @@ if (target_cpu == "arm64") {
     testonly = true
     forward_variables_from(_standard_names, "*")
 
+    zbi_a_size = 33554432  # 32 MiB
+    zbi_b_size = 33554432  # 32 MiB
+    zbi_r_size = 33554432  # 32 MiB
+
+    vbmeta_a_size = 65536  # 64 KiB
+    vbmeta_b_size = 65536  # 64 KiB
+    vbmeta_r_size = 65536  # 64 KiB
+
     # Gigaboot bootloader that is put to legacy `fuchsia-esp` partition
     # TODO(b/399522436): This should be moved to platform specific build files.
     bootloader_partitions = [
@@ -81,11 +113,14 @@ if (target_cpu == "arm64") {
     ]
     deps = [ "//src/firmware/gigaboot/cpp:fuchsia" ]
     hw_revision = "arm64"
+
+    fvm_size = 17179869184  # 16 GiB
   }
 
   generated_partitions_config("qemu-arm64") {
     hw_revision = ""
     zbi_r = "zircon_r"
+    zbi_r_size = 33554432  # 32 MiB
   }
 }
 
@@ -98,6 +133,7 @@ if (target_cpu == "riscv64") {
   generated_partitions_config("riscv64") {
     hw_revision = "riscv64"
     zbi_r = "zircon_r"
+    zbi_r_size = 33554432  # 32 MiB
   }
 
   not_needed([ "_standard_names" ])
