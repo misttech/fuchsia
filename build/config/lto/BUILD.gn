@@ -75,20 +75,27 @@ config("no-fat-lto-objects") {
   ]
 }
 
-config("lto-workarounds") {
-  # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code generation
-  # switches, since we default to PIC, specify that to LTO links outside of
-  # x86_32 and EFI.
+linker_config("lto-workarounds") {
+  linker_flags = []
+
   if (toolchain_environment != "kernel.phys32" &&
       toolchain_environment != "kernel.efi") {
-    ldflags = [ "-Wl,-mllvm,-relocation-model=pic" ]
+    # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code generation
+    # switches, since we default to PIC, specify that to LTO links outside of
+    # x86_32 and EFI.
+    linker_flags += [ "-mllvm=-relocation-model=pic" ]
+
+    # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
+    # toolchain propagates the target information correctly in LTO builds.
+    linker_flags += [ "-mllvm=--enable-tlsdesc" ]
   }
 
-  # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
-  # toolchain propagates the target information correctly in LTO builds.
-  if (toolchain_environment != "kernel.phys32" &&
-      toolchain_environment != "kernel.efi") {
-    ldflags += [ "-Wl,-mllvm,--enable-tlsdesc" ]
+  # TODO(https://fxbug.dev/42061844): Temporarily disable branch funneling on lto. Branch
+  # funneling likely generates bad code involving return values not propagated
+  # correctly to other functions. Once this is resolved, come back and remove
+  # this.
+  if (is_fuchsia) {
+    linker_flags += [ "-mllvm=-wholeprogramdevirt-branch-funnel-threshold=0" ]
   }
 
   # TODO(https://fxbug.dev/42086180): The workarounds below are required to
@@ -115,19 +122,6 @@ config("lto-clang") {
 
   asmflags = cflags
   ldflags = cflags
-
-  # TODO(https://fxbug.dev/42061844): Temporarily disable branch funneling on lto. Branch
-  # funneling likely generates bad code involving return values not propagated
-  # correctly to other functions. Once this is resolved, come back and remove
-  # this.
-  if (is_fuchsia) {
-    disable_branch_funneling = "-wholeprogramdevirt-branch-funnel-threshold=0"
-    cflags += [
-      "-mllvm",
-      "$disable_branch_funneling",
-    ]
-    ldflags += [ "-Wl,-mllvm,$disable_branch_funneling" ]
-  }
 }
 
 # This enables whole program devirtualization when LTO is enabled. Individual
@@ -174,15 +168,6 @@ config("lto-rust") {
     "-Clto=fat",
     "-Zdylib-lto",
   ]
-
-  # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
-  # toolchain propagates the target information correctly in LTO builds.
-  rust_linkarg = "-Clink-args="
-  if (!is_fuchsia) {
-    # On non-Fuchsia platforms, rustc calls clang, which calls lld.
-    rust_linkarg += "-Wl,"
-  }
-  rustflags += [ "${rust_linkarg}--mllvm=--enable-tlsdesc" ]
 
   configs = [
     ":lto-rust-linker-plugin",
