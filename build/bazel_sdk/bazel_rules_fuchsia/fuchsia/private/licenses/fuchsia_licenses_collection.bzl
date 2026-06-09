@@ -104,7 +104,7 @@ def _visit_target(target, ctx):
             license_infos.append(license_dep[LicenseInfo])
         else:
             # applicable_licenses must reference a `license` target, which is a provider of LicenseInfo.
-            fail("No LicenseInfo provided for %s. Is this target a `license` target?" + license_dep)
+            fail("No LicenseInfo provided for %s. Is this target a `license` target?" % license_dep)
 
     target_needs_license = not has_applicable_licenses and _does_target_need_license(target, optional_rule = ctx.rule)
 
