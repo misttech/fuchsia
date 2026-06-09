@@ -47,6 +47,12 @@ impl Status {
     }
 }
 
+impl From<zx::Status> for Status {
+    fn from(value: zx::Status) -> Self {
+        Self { inner: wire::Int32(value.into_raw()) }
+    }
+}
+
 impl fmt::Debug for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_status().fmt(f)

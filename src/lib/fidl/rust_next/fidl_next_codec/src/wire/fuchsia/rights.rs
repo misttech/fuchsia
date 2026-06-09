@@ -45,6 +45,12 @@ impl Rights {
     }
 }
 
+impl From<zx::Rights> for Rights {
+    fn from(value: zx::Rights) -> Self {
+        Self { inner: wire::Uint32(value.bits()) }
+    }
+}
+
 impl fmt::Debug for Rights {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_rights().fmt(f)

@@ -45,6 +45,12 @@ impl ObjectType {
     }
 }
 
+impl From<zx::ObjectType> for ObjectType {
+    fn from(value: zx::ObjectType) -> Self {
+        Self { inner: wire::Uint32(value.into_raw()) }
+    }
+}
+
 impl fmt::Debug for ObjectType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_object_type().fmt(f)
