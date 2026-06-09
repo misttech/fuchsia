@@ -38,6 +38,15 @@ pub struct ReplaceContext<'a> {
     pub transaction: Transaction<'a>,
     pub src_id_and_descriptor: Option<(u64, ObjectDescriptor)>,
     pub dst_id_and_descriptor: Option<(u64, ObjectDescriptor)>,
+    pub src_name: Option<String>,
+    pub dst_name: Option<String>,
+}
+
+pub struct LookupEntry {
+    pub object_id: u64,
+    pub descriptor: ObjectDescriptor,
+    pub key: ObjectKey,
+    pub locked: bool,
 }
 
 /// A directory stores name to child object mappings.
@@ -103,6 +112,37 @@ impl<S: HandleOwner> Directory<S> {
             ),
             is_deleted: AtomicBool::new(false),
             dir_type: Mutex::new(dir_type),
+        }
+    }
+
+    /// Returns `Some(name)` for a given object (assumed to be child object of Directory).
+    /// If the object is encrypted and is not unlocked, we will return `None`.
+    /// The caller should ensure that `None` is handled correctly -- for example by using the
+    /// `ProxyFilename` for things like `did_remove()` and readdir entry fields.
+    pub async fn get_case_preserved_name(&self, key: ObjectKey) -> Result<Option<String>, Error> {
+        match key.data {
+            ObjectKeyData::Child { name } => Ok(Some(name)),
+            ObjectKeyData::CasefoldChild { name, .. } => Ok(Some(name)),
+            ObjectKeyData::LegacyCasefoldChild(name) => Ok(Some(name.to_string())),
+            ObjectKeyData::EncryptedChild(crate::object_store::object_record::EncryptedChild(
+                name,
+            )) => {
+                if let CipherHolder::Cipher(cipher) = self.get_fscrypt_key().await? {
+                    Ok(Some(decrypt_filename(cipher.as_ref(), self.object_id(), &name)?))
+                } else {
+                    Ok(None)
+                }
+            }
+            ObjectKeyData::EncryptedCasefoldChild(
+                crate::object_store::object_record::EncryptedCasefoldChild { name, .. },
+            ) => {
+                if let CipherHolder::Cipher(cipher) = self.get_fscrypt_key().await? {
+                    Ok(Some(decrypt_filename(cipher.as_ref(), self.object_id(), &name)?))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
         }
     }
 
@@ -401,17 +441,25 @@ impl<S: HandleOwner> Directory<S> {
 
             let mut have_required_locks = true;
             let mut src_id_and_descriptor = None;
+            let mut src_name_out = None;
+            let mut dst_name_out = None;
             if let Some((src_dir, src_name)) = src {
-                match src_dir.lookup(src_name).await? {
-                    Some((object_id, object_descriptor, _)) => match object_descriptor {
+                match src_dir.lookup_ext(src_name).await? {
+                    Some(entry) => match entry.descriptor {
                         ObjectDescriptor::File
                         | ObjectDescriptor::Directory
                         | ObjectDescriptor::Symlink => {
-                            if src_object_id != Some(object_id) {
+                            if src_object_id != Some(entry.object_id) {
                                 have_required_locks = false;
-                                src_object_id = Some(object_id);
+                                src_object_id = Some(entry.object_id);
                             }
-                            src_id_and_descriptor = Some((object_id, object_descriptor));
+                            src_id_and_descriptor = Some((entry.object_id, entry.descriptor));
+                            src_name_out = Some(
+                                src_dir
+                                    .get_case_preserved_name(entry.key)
+                                    .await?
+                                    .unwrap_or_else(|| src_name.to_string()),
+                            );
                         }
                         _ => bail!(FxfsError::Inconsistent),
                     },
@@ -421,16 +469,22 @@ impl<S: HandleOwner> Directory<S> {
                     }
                 }
             };
-            let dst_id_and_descriptor = match self.lookup(dst).await? {
-                Some((object_id, object_descriptor, _)) => match object_descriptor {
+            let dst_entry = self.lookup_ext(dst).await?;
+            let dst_id_and_descriptor = match dst_entry {
+                Some(entry) => match entry.descriptor {
                     ObjectDescriptor::File
                     | ObjectDescriptor::Directory
                     | ObjectDescriptor::Symlink => {
-                        if child_object_id != object_id {
+                        if child_object_id != entry.object_id {
                             have_required_locks = false;
-                            child_object_id = object_id
+                            child_object_id = entry.object_id
                         }
-                        Some((object_id, object_descriptor))
+                        dst_name_out = Some(
+                            self.get_case_preserved_name(entry.key)
+                                .await?
+                                .unwrap_or_else(|| dst.to_string()),
+                        );
+                        Some((entry.object_id, entry.descriptor.clone()))
                     }
                     _ => bail!(FxfsError::Inconsistent),
                 },
@@ -447,6 +501,8 @@ impl<S: HandleOwner> Directory<S> {
                     transaction,
                     src_id_and_descriptor,
                     dst_id_and_descriptor,
+                    src_name: src_name_out,
+                    dst_name: dst_name_out,
                 });
             }
         }
@@ -466,6 +522,15 @@ impl<S: HandleOwner> Directory<S> {
     /// lookup.
     #[trace]
     pub async fn lookup(&self, name: &str) -> Result<Option<(u64, ObjectDescriptor, bool)>, Error> {
+        Ok(self
+            .lookup_ext(name)
+            .await?
+            .map(|entry| (entry.object_id, entry.descriptor, entry.locked)))
+    }
+
+    /// Like lookup, but also returns the key that was found.
+    #[trace]
+    pub async fn lookup_ext(&self, name: &str) -> Result<Option<LookupEntry>, Error> {
         let _measure =
             crate::metrics::DurationMeasureScope::new(&crate::metrics::directory_metrics().lookup);
         if self.is_deleted() {
@@ -576,7 +641,12 @@ impl<S: HandleOwner> Directory<S> {
             let item = iter.get().unwrap();
             match item.value {
                 ObjectValue::Child(ChildValue { object_id, object_descriptor }) => {
-                    Ok(Some((*object_id, object_descriptor.clone(), locked)))
+                    Ok(Some(LookupEntry {
+                        object_id: *object_id,
+                        descriptor: object_descriptor.clone(),
+                        key: item.key.clone(),
+                        locked,
+                    }))
                 }
                 _ => Err(anyhow!(FxfsError::Inconsistent)
                     .context(format!("Unexpected item in lookup: {item:?}"))),
@@ -586,9 +656,15 @@ impl<S: HandleOwner> Directory<S> {
             match item {
                 None => Ok(None),
                 Some(ObjectItem {
+                    key: found_key,
                     value: ObjectValue::Child(ChildValue { object_id, object_descriptor }),
                     ..
-                }) => Ok(Some((object_id, object_descriptor, false))),
+                }) => Ok(Some(LookupEntry {
+                    object_id,
+                    descriptor: object_descriptor,
+                    key: found_key,
+                    locked: false,
+                })),
                 _ => Err(anyhow!(FxfsError::Inconsistent)
                     .context(format!("Unexpected item in lookup: {item:?}",))),
             }
@@ -1667,6 +1743,10 @@ pub async fn replace_child<'a, S: HandleOwner>(
     let src = if let Some((src_dir, src_name)) = src {
         let store_id = dst.0.store().store_object_id();
         assert_eq!(store_id, src_dir.store().store_object_id());
+
+        let src_entry = src_dir.lookup_ext(src_name).await?.ok_or(FxfsError::NotFound)?;
+        let LookupEntry { object_id: id, descriptor, key: src_key, .. } = src_entry;
+
         match (src_dir.dir_type(), dst.0.dir_type()) {
             (
                 DirType::Encrypted(src_id) | DirType::EncryptedCasefold(src_id),
@@ -1675,38 +1755,15 @@ pub async fn replace_child<'a, S: HandleOwner>(
                 ensure!(src_id == dst_id, FxfsError::NotSupported);
                 // Renames only work on unlocked encrypted directories. Fail rename if src is
                 // locked.
-                let key = src_dir.get_fscrypt_key().await?.into_cipher().ok_or(FxfsError::NoKey)?;
-                let encrypted_src_name = encrypt_filename(&*key, src_dir.object_id(), src_name)?;
-                let src_hash_code = if src_dir.dir_type().is_casefold() {
-                    Some(key.hash_code_casefold(src_name))
-                } else {
-                    key.hash_code(encrypted_src_name.as_bytes(), src_name)
-                };
-                transaction.add(
-                    store_id,
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::encrypted_child(
-                            src_dir.object_id(),
-                            encrypted_src_name,
-                            src_hash_code,
-                        ),
-                        ObjectValue::None,
-                    ),
-                );
+                let _ = src_dir.get_fscrypt_key().await?.into_cipher().ok_or(FxfsError::NoKey)?;
             }
-            (DirType::Normal | DirType::Casefold | DirType::LegacyCasefold, _) => {
-                transaction.add(
-                    store_id,
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::child(src_dir.object_id(), src_name, src_dir.dir_type()),
-                        ObjectValue::None,
-                    ),
-                );
-            }
+            (DirType::Normal | DirType::Casefold | DirType::LegacyCasefold, _) => {}
             // TODO: https://fxbug.dev/360172175: Support renames out of encrypted directories.
             _ => bail!(FxfsError::NotSupported),
         }
-        let (id, descriptor, _) = src_dir.lookup(src_name).await?.ok_or(FxfsError::NotFound)?;
+
+        transaction.add(store_id, Mutation::replace_or_insert_object(src_key, ObjectValue::None));
+
         src_dir.store().update_attributes(transaction, id, None, Some(now)).await?;
         if src_dir.object_id() != dst.0.object_id() {
             sub_dirs_delta = if descriptor == ObjectDescriptor::Directory { 1 } else { 0 };
@@ -1755,16 +1812,17 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
     is_same_dir_casefold_rename: bool,
     timestamp: Timestamp,
 ) -> Result<ReplacedChild, Error> {
-    let deleted_id_and_descriptor = if is_same_dir_casefold_rename {
-        None
-    } else {
-        dst.0.lookup(dst.1).await?
+    let deleted_info =
+        if is_same_dir_casefold_rename { None } else { dst.0.lookup_ext(dst.1).await? };
+    let (deleted_id_and_descriptor, dst_key) = match deleted_info {
+        Some(entry) => (Some((entry.object_id, entry.descriptor.clone())), Some(entry.key)),
+        None => (None, None),
     };
     let store_id = dst.0.store().store_object_id();
     // There might be optimizations here that allow us to skip the graveyard where we can delete an
     // object in a single transaction (which should be the common case).
     let result = match deleted_id_and_descriptor {
-        Some((old_id, ObjectDescriptor::File | ObjectDescriptor::Symlink, _)) => {
+        Some((old_id, ObjectDescriptor::File | ObjectDescriptor::Symlink)) => {
             let was_last_ref = dst.0.store().adjust_refs(transaction, old_id, -1).await?;
             dst.0.store().update_attributes(transaction, old_id, None, Some(timestamp)).await?;
             if was_last_ref {
@@ -1773,7 +1831,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
                 ReplacedChild::ObjectWithRemainingLinks(old_id)
             }
         }
-        Some((old_id, ObjectDescriptor::Directory, _)) => {
+        Some((old_id, ObjectDescriptor::Directory)) => {
             let dir = Directory::open(&dst.0.owner(), old_id).await?;
             if dir.has_children().await? {
                 bail!(FxfsError::NotEmpty);
@@ -1784,7 +1842,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
             sub_dirs_delta -= 1;
             ReplacedChild::Directory(old_id)
         }
-        Some((_, ObjectDescriptor::Volume, _)) => {
+        Some((_, ObjectDescriptor::Volume)) => {
             bail!(anyhow!(FxfsError::Inconsistent).context("Unexpected volume child"))
         }
         None => {
@@ -1799,66 +1857,41 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
         Some((id, descriptor)) => ObjectValue::child(id, descriptor),
         None => ObjectValue::None,
     };
-    if dst.0.dir_type().is_encrypted() {
-        match dst.0.get_fscrypt_key().await? {
-            CipherHolder::Cipher(cipher) => {
-                let encrypted_dst_name = encrypt_filename(&*cipher, dst.0.object_id(), dst.1)?;
-                let dst_hash_code = if dst.0.dir_type().is_casefold() {
-                    Some(cipher.hash_code_casefold(dst.1))
-                } else {
-                    cipher.hash_code(encrypted_dst_name.as_bytes(), dst.1)
-                };
-                transaction.add(
-                    store_id,
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::encrypted_child(
-                            dst.0.object_id(),
-                            encrypted_dst_name,
-                            dst_hash_code,
-                        ),
-                        new_value,
-                    ),
-                );
-            }
-            CipherHolder::Unavailable => {
-                if !matches!(new_value, ObjectValue::None) {
-                    // unlinks are permitted but renames are not allowed for locked directories.
+    let new_key = if matches!(new_value, ObjectValue::None) {
+        None
+    } else {
+        if dst.0.dir_type().is_encrypted() {
+            match dst.0.get_fscrypt_key().await? {
+                CipherHolder::Cipher(cipher) => {
+                    let encrypted_dst_name = encrypt_filename(&*cipher, dst.0.object_id(), dst.1)?;
+                    let dst_hash_code = if dst.0.dir_type().is_casefold() {
+                        Some(cipher.hash_code_casefold(dst.1))
+                    } else {
+                        cipher.hash_code(encrypted_dst_name.as_bytes(), dst.1)
+                    };
+                    Some(ObjectKey::encrypted_child(
+                        dst.0.object_id(),
+                        encrypted_dst_name,
+                        dst_hash_code,
+                    ))
+                }
+                CipherHolder::Unavailable => {
                     bail!(FxfsError::NoKey);
                 }
-
-                let proxy_filename: ProxyFilename = dst.1.try_into().unwrap_or_default();
-
-                let layer_set = dst.0.store().tree().layer_set();
-                let mut merger = layer_set.merger();
-                let (key, predicate) =
-                    dst.0.get_key_and_predicate_for_unavailable_cipher(&proxy_filename);
-                let mut iter = merger.query(Query::FullRange(&key)).await?;
-
-                if let Some(predicate) = predicate {
-                    if !dst.0.advance_until(&mut iter, predicate).await? {
-                        bail!(FxfsError::NotFound);
-                    }
-                } else if iter
-                    .get()
-                    .is_none_or(|item| item.key != &key || item.value == &ObjectValue::None)
-                {
-                    bail!(FxfsError::NotFound);
-                }
-
-                transaction.add(
-                    store_id,
-                    Mutation::replace_or_insert_object(iter.get().unwrap().key.clone(), new_value),
-                );
             }
+        } else {
+            Some(ObjectKey::child(dst.0.object_id(), dst.1, dst.0.dir_type()))
         }
-    } else {
-        transaction.add(
-            store_id,
-            Mutation::replace_or_insert_object(
-                ObjectKey::child(dst.0.object_id(), dst.1, dst.0.dir_type()),
-                new_value,
-            ),
-        );
+    };
+
+    if let Some(dst_key) = dst_key
+        && new_key.as_ref() != Some(&dst_key)
+    {
+        transaction.add(store_id, Mutation::replace_or_insert_object(dst_key, ObjectValue::None));
+    }
+
+    if let Some(new_key) = new_key {
+        transaction.add(store_id, Mutation::replace_or_insert_object(new_key, new_value));
     }
     dst.0
         .update_dir_attributes_internal(
@@ -5030,6 +5063,81 @@ mod tests {
         }
         assert_eq!(count, 1);
         assert_eq!(found_casing, "foo"); // mapping has successfully changed from "FOO" to "foo".
+
+        fs.close().await.expect("Close failed");
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_rename_mismatched_casing() -> Result<(), Error> {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume.new_volume("vol", NewChildStoreOptions::default()).await.unwrap();
+
+        let dir = {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            let dir =
+                Directory::create(&mut transaction, &store, None).await.expect("create failed");
+            transaction.commit().await.expect("commit");
+            dir
+        };
+
+        dir.set_casefold(true).await.expect("set casefold");
+
+        // Create "foo" (lowercase)
+        let file_id = {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file =
+                dir.create_child_file(&mut transaction, "foo").await.expect("create file failed");
+            transaction.commit().await.expect("commit failed");
+            file.object_id()
+        };
+
+        // Rename "FOO" (uppercase) to "bar"
+        {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store.store_object_id(), dir.object_id()),
+                        LockKey::object(store.store_object_id(), file_id),
+                    ],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+
+            replace_child(&mut transaction, Some((&dir, "FOO")), (&dir, "bar"))
+                .await
+                .expect("rename failed");
+
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // Check if "foo" (or "FOO") is gone.
+        let lookup_foo = dir.lookup("foo").await.unwrap();
+        assert!(
+            lookup_foo.is_none(),
+            "Old name 'foo' still exists! Lookup returned: {:?}",
+            lookup_foo
+        );
+
+        // Check if "bar" exists.
+        let (lookup_id_bar, _, _) = dir.lookup("bar").await.unwrap().expect("bar not found");
+        assert_eq!(lookup_id_bar, file_id);
 
         fs.close().await.expect("Close failed");
         Ok(())

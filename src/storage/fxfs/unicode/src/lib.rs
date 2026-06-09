@@ -4,6 +4,7 @@
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 
 mod lookup;
 mod nfd;
@@ -92,17 +93,20 @@ impl std::cmp::PartialOrd for CasefoldString {
     }
 }
 
+pub fn casefold_hash(s: &str, state: &mut impl Hasher) {
+    let normalized_chars = nfd::nfd(casefold(s.chars()).filter(|x| !lookup::default_ignorable(*x)));
+    for ch in normalized_chars {
+        ch.hash(state);
+    }
+}
+
 // Nb: This trait is provided for completeness but is NOT intended to be performant.
-impl std::hash::Hash for CasefoldString {
+impl Hash for CasefoldString {
     fn hash<H>(&self, state: &mut H)
     where
         H: std::hash::Hasher,
     {
-        let normalized_chars =
-            nfd::nfd(casefold(self.0.chars()).filter(|x| !lookup::default_ignorable(*x)));
-        for ch in normalized_chars {
-            ch.hash(state);
-        }
+        casefold_hash(&self.0, state);
     }
 }
 

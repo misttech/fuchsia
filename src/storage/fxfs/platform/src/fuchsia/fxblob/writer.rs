@@ -400,9 +400,11 @@ impl DeliveryBlobWriter {
         transaction
             .commit_with_callback(|_| {
                 let handle = self.stage.complete();
+                if replacing.is_some() {
+                    self.parent.did_remove(&name);
+                }
                 self.parent.did_add(&name, None);
                 if let Some((old_id, reservation)) = replacing {
-                    self.parent.did_remove(&name);
                     // If the blob is in the cache, then we need to swap it.
                     match handle.owner().cache().get(old_id) {
                         Some(old_blob) => {

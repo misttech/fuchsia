@@ -7,6 +7,7 @@
 
 use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
+use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
@@ -157,13 +158,11 @@ impl BlobDirectory {
         self: &Arc<Self>,
         id: &Identifier,
     ) -> Result<Option<OpenedNode<FxBlob>>, Error> {
-        let node = match self
-            .directory
-            .directory()
-            .owner()
-            .dirent_cache()
-            .lookup(&(self.directory.object_id(), &id.string))
-        {
+        let node = match self.directory.directory().owner().dirent_cache().lookup(&(
+            self.directory.object_id(),
+            &id.string,
+            false,
+        )) {
             Some(node) => Some(node),
             None => {
                 if let Some((object_id, _, _)) =
@@ -171,8 +170,7 @@ impl BlobDirectory {
                 {
                     let node = self.get_or_load_node(object_id, &id).await?;
                     self.directory.directory().owner().dirent_cache().insert(
-                        self.directory.object_id(),
-                        id.string.clone(),
+                        DirentCacheKey::new(self.directory.object_id(), id.string.clone(), false),
                         node.clone(),
                     );
                     Some(node)
@@ -271,7 +269,12 @@ impl BlobDirectory {
         // We don't take a lock here because this will only look up existence for now. If we
         // actually start fetching the blob or info about it after looking it up this will need to
         // take a reader lock on the directory and maybe also the object.
-        if self.volume().dirent_cache().lookup(&(self.object_id(), &blob_hash.string)).is_some() {
+        if self
+            .volume()
+            .dirent_cache()
+            .lookup(&(self.object_id(), &blob_hash.string, false))
+            .is_some()
+        {
             return Ok(false);
         }
         match self.directory.directory().lookup(&blob_hash.string).await? {

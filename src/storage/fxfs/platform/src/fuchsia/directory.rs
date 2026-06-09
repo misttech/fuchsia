@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fuchsia::device::BlockServer;
+use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::file::FxFile;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
@@ -137,9 +138,13 @@ impl FxDirectory {
                 Right(fs.lock_manager().read_lock(keys).await)
             };
 
+            let is_casefold = current_dir.directory.dir_type().is_casefold();
             let child_descriptor = {
-                match self.directory.owner().dirent_cache().lookup(&(current_dir.object_id(), name))
-                {
+                match self.directory.owner().dirent_cache().lookup(&(
+                    current_dir.object_id(),
+                    name,
+                    is_casefold,
+                )) {
                     Some(node) => {
                         let desc = node.object_descriptor();
                         Some((node, desc))
@@ -161,8 +166,11 @@ impl FxDirectory {
                             // reopens the directory, fxfs does not return the cached locked node.
                             if !locked {
                                 self.directory.owner().dirent_cache().insert(
-                                    current_dir.object_id(),
-                                    name.to_owned(),
+                                    DirentCacheKey::new(
+                                        current_dir.object_id(),
+                                        name.to_owned(),
+                                        is_casefold,
+                                    ),
                                     child_node.clone(),
                                 );
                             }
@@ -326,16 +334,21 @@ impl FxDirectory {
 
     /// Called to indicate a file or directory was removed from this directory.
     pub(crate) fn did_remove(&self, name: &str) {
-        self.directory.owner().dirent_cache().remove(&(self.directory.object_id(), name));
+        let is_casefold = self.directory.dir_type().is_casefold();
+        self.directory.owner().dirent_cache().remove(&(
+            self.directory.object_id(),
+            name,
+            is_casefold,
+        ));
         self.watchers.lock().send_event(&mut SingleNameEventProducer::removed(name));
     }
 
     /// Called to indicate a file or directory was added to this directory.
     pub(crate) fn did_add(&self, name: &str, node: Option<Arc<dyn FxNode>>) {
         if let Some(node) = node {
+            let is_casefold = self.directory.dir_type().is_casefold();
             self.directory.owner().dirent_cache().insert(
-                self.directory.object_id(),
-                name.to_owned(),
+                DirentCacheKey::new(self.directory.object_id(), name.to_owned(), is_casefold),
                 node,
             );
         }
@@ -499,7 +512,7 @@ impl FxDirectory {
         }
 
         let (moved_id, moved_descriptor) =
-            replace_context.src_id_and_descriptor.ok_or(zx::Status::NOT_FOUND)?;
+            replace_context.src_id_and_descriptor.clone().ok_or(zx::Status::NOT_FOUND)?;
 
         // Make sure the dst path is compatible with the moved node.
         if let ObjectDescriptor::File = moved_descriptor {
@@ -555,15 +568,20 @@ impl FxDirectory {
         .await
         .map_err(map_to_status)?;
 
+        // Use name from the replace_context if available (which preserves case-folding info).
+        // `src` comes from user supplied name which may have different case.
+        let actual_src_name = replace_context.src_name.as_deref().unwrap_or(src);
+        let actual_dst_name = replace_context.dst_name.as_deref().unwrap_or(dst);
+
         transaction
             .commit_with_callback(|_| {
                 moved_node.set_parent(self.clone());
-                src_dir.did_remove(src);
+                src_dir.did_remove(actual_src_name);
 
                 match replace_result {
                     ReplacedChild::None => {}
                     ReplacedChild::ObjectWithRemainingLinks(..) | ReplacedChild::Object(_) => {
-                        self.did_remove(dst);
+                        self.did_remove(actual_dst_name);
                     }
                     ReplacedChild::Directory(id) => {
                         let store = self.store();
@@ -571,7 +589,7 @@ impl FxDirectory {
                             .filesystem()
                             .graveyard()
                             .queue_tombstone_object(store.store_object_id(), id);
-                        self.did_remove(dst);
+                        self.did_remove(actual_dst_name);
                         self.volume().mark_directory_deleted(id);
                     }
                 }
@@ -675,11 +693,12 @@ impl MutableDirectory for FxDirectory {
             .acquire_context_for_replace(None, name, true)
             .await
             .map_err(map_to_status)?;
+        // Use name from the replace_context if available (which preserves case-folding info).
+        // `name` is user supplied name and may have different case.
+        let actual_dst_name = replace_context.dst_name.as_deref().unwrap_or(name);
         let mut transaction = replace_context.transaction;
-        let object_descriptor = match replace_context.dst_id_and_descriptor {
-            Some((_, object_descriptor)) => object_descriptor,
-            None => return Err(zx::Status::NOT_FOUND),
-        };
+        let (_, object_descriptor) =
+            replace_context.dst_id_and_descriptor.ok_or(zx::Status::NOT_FOUND)?;
         if let ObjectDescriptor::Directory = object_descriptor {
         } else if must_be_directory {
             return Err(zx::Status::NOT_DIR);
@@ -691,13 +710,13 @@ impl MutableDirectory for FxDirectory {
             ReplacedChild::None => return Err(zx::Status::NOT_FOUND),
             ReplacedChild::ObjectWithRemainingLinks(..) => {
                 transaction
-                    .commit_with_callback(|_| self.did_remove(name))
+                    .commit_with_callback(|_| self.did_remove(actual_dst_name))
                     .await
                     .map_err(map_to_status)?;
             }
             ReplacedChild::Object(id) => {
                 transaction
-                    .commit_with_callback(|_| self.did_remove(name))
+                    .commit_with_callback(|_| self.did_remove(actual_dst_name))
                     .await
                     .map_err(map_to_status)?;
                 // If purging fails, we should still return success, since the file will appear
@@ -714,7 +733,7 @@ impl MutableDirectory for FxDirectory {
                             .filesystem()
                             .graveyard()
                             .queue_tombstone_object(store.store_object_id(), id);
-                        self.did_remove(name);
+                        self.did_remove(actual_dst_name);
                         self.volume().mark_directory_deleted(id);
                     })
                     .await
@@ -1150,7 +1169,7 @@ mod tests {
     use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
-    use fuchsia_fs::directory::{DirEntry, DirentKind};
+    use fuchsia_fs::directory::{DirEntry, DirentKind, WatchEvent, WatchMessage, Watcher};
     use fuchsia_fs::file;
     use futures::{StreamExt, join};
     use fxfs::lsm_tree::Query;
@@ -2639,6 +2658,147 @@ mod tests {
                 .await
                 .expect("FIDL transport error"),
             zx::Status::ACCESS_DENIED.into_raw()
+        );
+
+        close_dir_checked(Arc::try_unwrap(parent_1).unwrap()).await;
+        close_dir_checked(Arc::try_unwrap(parent_2).unwrap()).await;
+        new_fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_rename_in_locked_directory_fails() {
+        let fixture = TestFixture::new().await;
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
+        let root = fixture.root();
+        let open_dir_1 = || {
+            open_dir_checked(
+                &root,
+                "foo",
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_DIRECTORY,
+                Default::default(),
+            )
+        };
+
+        let parent_1: Arc<fio::DirectoryProxy> = Arc::new(open_dir_1().await);
+
+        let open_dir_2 = || {
+            open_dir_checked(
+                &root,
+                "foo_2",
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_DIRECTORY,
+                Default::default(),
+            )
+        };
+        let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
+
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
+        parent_1
+            .update_attributes(&fio::MutableNodeAttributes {
+                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                ..Default::default()
+            })
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::ok)
+            .expect("update_attributes failed");
+        parent_2
+            .update_attributes(&fio::MutableNodeAttributes {
+                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                ..Default::default()
+            })
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::ok)
+            .expect("update_attributes failed");
+        let file = open_file_checked(
+            parent_1.as_ref(),
+            "fee",
+            fio::Flags::FLAG_MAYBE_CREATE,
+            &Default::default(),
+        )
+        .await;
+
+        close_file_checked(file).await;
+        close_dir_checked(Arc::try_unwrap(parent_1).unwrap()).await;
+        close_dir_checked(Arc::try_unwrap(parent_2).unwrap()).await;
+
+        let device = fixture.close().await;
+        let new_fixture = TestFixture::new_with_device(device).await;
+        let root = new_fixture.root();
+        let open_dir_1 = || {
+            open_dir_checked(
+                &root,
+                "foo",
+                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY,
+                Default::default(),
+            )
+        };
+        let parent_1: Arc<fio::DirectoryProxy> = Arc::new(open_dir_1().await);
+
+        let open_dir_2 = || {
+            open_dir_checked(
+                &root,
+                "foo_2",
+                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY,
+                Default::default(),
+            )
+        };
+        let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
+
+        let readdir = |dir: Arc<fio::DirectoryProxy>| async move {
+            let status = dir.rewind().await.expect("FIDL call failed");
+            zx::Status::ok(status).expect("rewind failed");
+            let (status, buf) = dir.read_dirents(fio::MAX_BUF).await.expect("FIDL call failed");
+            zx::Status::ok(status).expect("read_dirents failed");
+            let mut entries = vec![];
+            for res in fuchsia_fs::directory::parse_dir_entries(&buf) {
+                entries.push(res.expect("Failed to parse entry"));
+            }
+            entries
+        };
+
+        let encrypted_entries = readdir(Arc::clone(&parent_1)).await;
+        let mut encrypted_name = String::new();
+        for entry in encrypted_entries {
+            if entry.name == ".".to_owned() {
+                continue;
+            } else {
+                assert!(entry.name.len() >= FSCRYPT_PADDING);
+                encrypted_name = entry.name;
+                assert!(entry.kind == DirentKind::File)
+            }
+        }
+
+        let (status, parent_2_token) = parent_2.get_token().await.expect("get token failed");
+        zx::Status::ok(status).unwrap();
+
+        // Rename cross-directory when locked should fail.
+        assert_eq!(
+            parent_1
+                .rename(&encrypted_name, parent_2_token.unwrap().into(), "file_2")
+                .await
+                .expect("FIDL transport error"),
+            Err(zx::Status::ACCESS_DENIED.into_raw())
+        );
+
+        let (status, parent_1_token) = parent_1.get_token().await.expect("get token failed");
+        zx::Status::ok(status).unwrap();
+
+        // Rename same-directory when locked should fail.
+        assert_eq!(
+            parent_1
+                .rename(&encrypted_name, parent_1_token.unwrap().into(), "file_2")
+                .await
+                .expect("FIDL transport error"),
+            Err(zx::Status::ACCESS_DENIED.into_raw())
         );
 
         close_dir_checked(Arc::try_unwrap(parent_1).unwrap()).await;
@@ -5109,6 +5269,385 @@ mod tests {
             .await
             .expect("FIDL call failed")
             .expect("get_attributes failed");
+
+        fixture.close().await;
+    }
+
+    async fn enable_casefold(dir: &fio::DirectoryProxy) {
+        dir.update_attributes(&fio::MutableNodeAttributes {
+            casefold: Some(true),
+            ..Default::default()
+        })
+        .await
+        .expect("update_attributes FIDL call failed")
+        .map_err(zx::ok)
+        .expect("update_attributes failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_cache_lookup_no_duplicates() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let dir = open_dir_checked(
+            &root,
+            "dir",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        enable_casefold(&dir).await;
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        let cache = fixture.volume().volume().dirent_cache();
+        cache.clear();
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        let len_after_first_lookup = cache.len();
+        assert!(len_after_first_lookup >= 1, "Cache should contain at least the looked up file");
+
+        let file = open_file_checked(
+            &dir,
+            "FOO",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        assert_eq!(
+            cache.len(),
+            len_after_first_lookup,
+            "Cache size increased (duplicate entries found)"
+        );
+
+        let file = open_file_checked(
+            &dir,
+            "Foo",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        assert_eq!(
+            cache.len(),
+            len_after_first_lookup,
+            "Cache size increased (duplicate entries found)"
+        );
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_cache_rename_invalidation() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let dir = open_dir_checked(
+            &root,
+            "dir",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        enable_casefold(&dir).await;
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
+        zx::Status::ok(status).expect("get_token failed");
+        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "bar")
+            .await
+            .expect("Rename FIDL call failed")
+            .expect("rename failed");
+
+        assert_matches!(
+            open_file(
+                &dir,
+                "foo",
+                fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+                &Default::default()
+            )
+            .await
+            .expect_err("Open \"foo\" succeeded after rename")
+            .root_cause()
+            .downcast_ref::<zx::Status>(),
+            Some(&zx::Status::NOT_FOUND)
+        );
+
+        let file = open_file_checked(
+            &dir,
+            "bar",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_cache_unlink_invalidation() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let dir = open_dir_checked(
+            &root,
+            "dir",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        enable_casefold(&dir).await;
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        let file = open_file_checked(
+            &dir,
+            "foo",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        close_file_checked(file).await;
+
+        dir.unlink("FOO", &fio::UnlinkOptions::default())
+            .await
+            .expect("Unlink FIDL call failed")
+            .expect("Unlink failed");
+
+        assert_matches!(
+            open_file(
+                &dir,
+                "foo",
+                fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+                &Default::default()
+            )
+            .await
+            .expect_err("Open \"foo\" succeeded after unlink")
+            .root_cause()
+            .downcast_ref::<zx::Status>(),
+            Some(&zx::Status::NOT_FOUND)
+        );
+
+        fixture.close().await;
+    }
+
+    async fn assert_watch_event(
+        watcher: &mut Watcher,
+        expected_event: WatchEvent,
+        expected_name: &str,
+    ) {
+        assert_eq!(
+            watcher.next().await.unwrap().unwrap(),
+            WatchMessage { event: expected_event, filename: expected_name.into() }
+        );
+    }
+
+    async fn set_up_casefold_dir_with_files(
+        fixture: &TestFixture,
+        dir_name: &str,
+        files: &[&str],
+    ) -> (fio::DirectoryProxy, Watcher) {
+        let root = fixture.root();
+        let dir = open_dir_checked(
+            root,
+            dir_name,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        enable_casefold(&dir).await;
+
+        for &file_name in files {
+            let file = open_file_checked(
+                &dir,
+                file_name,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            close_file_checked(file).await;
+        }
+
+        let mut watcher = Watcher::new(&dir).await.unwrap();
+        assert_watch_event(&mut watcher, WatchEvent::EXISTING, ".").await;
+
+        let mut existing_files = files
+            .iter()
+            .map(|s| std::path::PathBuf::from(*s))
+            .collect::<std::collections::HashSet<_>>();
+        while !existing_files.is_empty() {
+            let msg = watcher.next().await.unwrap().unwrap();
+            assert_eq!(msg.event, WatchEvent::EXISTING);
+            assert!(
+                existing_files.remove(&msg.filename),
+                "Unexpected existing file: {:?}",
+                msg.filename
+            );
+        }
+
+        assert_watch_event(&mut watcher, WatchEvent::IDLE, "").await;
+
+        (dir, watcher)
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_rename_watcher_events() {
+        let fixture = TestFixture::new().await;
+        let (dir, mut watcher) = set_up_casefold_dir_with_files(&fixture, "dir", &["foo"]).await;
+
+        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
+        zx::Status::ok(status).expect("get_token failed");
+        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+            .await
+            .expect("Rename FIDL call failed")
+            .expect("rename failed");
+
+        assert_watch_event(&mut watcher, WatchEvent::REMOVE_FILE, "foo").await;
+        assert_watch_event(&mut watcher, WatchEvent::ADD_FILE, "BAR").await;
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_rename_overwrite_watcher_events() {
+        let fixture = TestFixture::new().await;
+        let (dir, mut watcher) =
+            set_up_casefold_dir_with_files(&fixture, "dir", &["foo", "bar"]).await;
+
+        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
+        zx::Status::ok(status).expect("get_token failed");
+        dir.rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+            .await
+            .expect("Rename FIDL call failed")
+            .expect("rename failed");
+
+        assert_watch_event(&mut watcher, WatchEvent::REMOVE_FILE, "foo").await;
+        assert_watch_event(&mut watcher, WatchEvent::REMOVE_FILE, "bar").await;
+        assert_watch_event(&mut watcher, WatchEvent::ADD_FILE, "BAR").await;
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_rename_cross_dir_overwrite_watcher_events() {
+        let fixture = TestFixture::new().await;
+        let (src_dir, mut src_watcher) =
+            set_up_casefold_dir_with_files(&fixture, "src_dir", &["foo"]).await;
+        let (dst_dir, mut dst_watcher) =
+            set_up_casefold_dir_with_files(&fixture, "dst_dir", &["bar"]).await;
+
+        let (status, dst_token) = dst_dir.get_token().await.expect("FIDL call failed");
+        zx::Status::ok(status).expect("get_token failed");
+        src_dir
+            .rename("FOO", zx::Event::from(dst_token.unwrap()), "BAR")
+            .await
+            .expect("Rename FIDL call failed")
+            .expect("rename failed");
+
+        assert_watch_event(&mut src_watcher, WatchEvent::REMOVE_FILE, "foo").await;
+
+        assert_watch_event(&mut dst_watcher, WatchEvent::REMOVE_FILE, "bar").await;
+        assert_watch_event(&mut dst_watcher, WatchEvent::ADD_FILE, "BAR").await;
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_unlink_watcher_events() {
+        let fixture = TestFixture::new().await;
+        let (dir, mut watcher) = set_up_casefold_dir_with_files(&fixture, "dir", &["foo"]).await;
+
+        dir.unlink("FOO", &fio::UnlinkOptions::default())
+            .await
+            .expect("Unlink FIDL call failed")
+            .expect("Unlink failed");
+
+        assert_watch_event(&mut watcher, WatchEvent::REMOVE_FILE, "foo").await;
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_casefold_rename_case_only_watcher_events() {
+        let fixture = TestFixture::new().await;
+        let (dir, mut watcher) = set_up_casefold_dir_with_files(&fixture, "dir", &["Foo"]).await;
+
+        let (status, dst_token) = dir.get_token().await.expect("FIDL call failed");
+        zx::Status::ok(status).expect("get_token failed");
+        dir.rename("Foo", zx::Event::from(dst_token.unwrap()), "FOO")
+            .await
+            .expect("Rename FIDL call failed")
+            .expect("rename failed");
+
+        assert_watch_event(&mut watcher, WatchEvent::REMOVE_FILE, "Foo").await;
+        assert_watch_event(&mut watcher, WatchEvent::ADD_FILE, "FOO").await;
 
         fixture.close().await;
     }

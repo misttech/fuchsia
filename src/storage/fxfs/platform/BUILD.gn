@@ -81,6 +81,7 @@ template("fxfs_platform_library") {
       "//src/storage/fxfs/crypto",
       "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
       "//src/storage/fxfs/trace",
+      "//src/storage/fxfs/unicode",
       "//src/storage/lib/block_client/rust",
       "//src/storage/lib/delivery_blob",
       "//src/storage/lib/fs_inspect",
