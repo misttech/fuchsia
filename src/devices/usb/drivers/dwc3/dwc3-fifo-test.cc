@@ -54,7 +54,7 @@ TEST_F(FifoTestU32, WriteAndRead) {
   fifo_.Advance(fifo_.write_);
 
   std::vector<uint32_t> values = fifo_.Read(fifo_.read_, 1);
-  ASSERT_EQ(values.size(), 1);
+  ASSERT_EQ(values.size(), 1u);
   fifo_.Advance(fifo_.read_);
 
   ASSERT_EQ(fifo_.write_, fifo_.read_);
@@ -116,7 +116,7 @@ TEST_F(FifoTestU8, WriteAndRead) {
   fifo_.Advance(fifo_.write_);
 
   std::vector<uint8_t> values = fifo_.Read(fifo_.read_, 1);
-  ASSERT_EQ(values.size(), 1);
+  ASSERT_EQ(values.size(), 1u);
   fifo_.Advance(fifo_.read_);
 
   ASSERT_EQ(fifo_.write_, fifo_.read_);

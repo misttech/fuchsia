@@ -130,7 +130,7 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
 
   auto* mmio = get_mmio();
 
-  const uint32_t ep_num = ep.ep_num;
+  const uint8_t ep_num = ep.ep_num;
   const uint32_t rsrc_id = ep.rsrc_id;
 
   ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
@@ -165,7 +165,7 @@ void Dwc3::CmdEpSetStall(const Endpoint& ep) {
   TRACE_DURATION("dwc3", "Dwc3::CmdEpSetStall", "ep_num", ep.ep_num);
   auto* mmio = get_mmio();
 
-  const uint32_t ep_num = ep.ep_num;
+  const uint8_t ep_num = ep.ep_num;
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);
@@ -184,7 +184,7 @@ void Dwc3::CmdEpClearStall(const Endpoint& ep) {
   TRACE_DURATION("dwc3", "Dwc3::CmdEpClearStall", "ep_num", ep.ep_num);
   auto* mmio = get_mmio();
 
-  const uint32_t ep_num = ep.ep_num;
+  const uint8_t ep_num = ep.ep_num;
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);

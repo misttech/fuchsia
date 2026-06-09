@@ -301,7 +301,8 @@ class TestFixture : public gtest_base {
 
       hwparams3.SetReadCallback([this]() -> uint32_t { return Read_GHWPARAMS3(); });
       dctl_reg.SetReadCallback([this]() -> uint32_t { return Read_DCTL(); });
-      dctl_reg.SetWriteCallback([this](uint32_t val) { return Write_DCTL(val); });
+      dctl_reg.SetWriteCallback(
+          [this](uint64_t val) { return Write_DCTL(static_cast<uint32_t>(val)); });
       gsnpsid_reg.SetReadCallback([this]() -> uint32_t { return Read_GSNPSID(); });
     });
 
@@ -594,7 +595,7 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
 
   const auto* type = ep2_out->node().get_property<inspect::UintPropertyValue>("type");
   ASSERT_NE(nullptr, type) << "Endpoint 'type' property was not found!";
-  EXPECT_EQ(USB_ENDPOINT_BULK, type->value());
+  EXPECT_EQ(static_cast<uint64_t>(USB_ENDPOINT_BULK), type->value());
 
   const auto* enabled = ep2_out->node().get_property<inspect::BoolPropertyValue>("enabled");
   ASSERT_NE(nullptr, enabled) << "Endpoint 'enabled' property was not found!";

@@ -777,7 +777,7 @@ zx_status_t Dwc3::CheckHwVersion() {
   auto* mmio = get_mmio();
   auto gsnpsid = GSNPSID::Get().ReadFrom(mmio);
 
-  const uint16_t core_id = gsnpsid.core_id();
+  auto core_id = static_cast<uint16_t>(gsnpsid.core_id());
 
   if (core_id == 0x5533) {
     // Major and minor versioning is in nibble-packed binary-coded-decimal format with the revision

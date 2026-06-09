@@ -38,8 +38,8 @@ class TrbFifoTest : public testing::Test {
     zx_paddr_t first_phys = fifo_.GetPhys(fifo_.first_);
     EXPECT_EQ(fifo_.last_->ptr_low, (uint32_t)first_phys);
     EXPECT_EQ(fifo_.last_->ptr_high, (uint32_t)(first_phys >> 32));
-    EXPECT_EQ(fifo_.last_->status, 0);
-    EXPECT_EQ(fifo_.last_->control, TRB_TRBCTL_LINK | TRB_HWO);
+    EXPECT_EQ(fifo_.last_->status, 0u);
+    EXPECT_EQ(fifo_.last_->control, static_cast<uint32_t>(TRB_TRBCTL_LINK | TRB_HWO));
   }
 
  protected:
@@ -67,10 +67,10 @@ TEST_F(TrbFifoTest, WriteAndRead) {
   fifo_.AdvanceWrite();
 
   dwc3_trb_t read_trb = fifo_.Read();
-  EXPECT_EQ(read_trb.ptr_low, 0x1234);
-  EXPECT_EQ(read_trb.ptr_high, 0x5678);
-  EXPECT_EQ(read_trb.status, 0xabcd);
-  EXPECT_EQ(read_trb.control, 0xef);
+  EXPECT_EQ(read_trb.ptr_low, 0x1234u);
+  EXPECT_EQ(read_trb.ptr_high, 0x5678u);
+  EXPECT_EQ(read_trb.status, 0xabcdu);
+  EXPECT_EQ(read_trb.control, 0xefu);
 
   fifo_.AdvanceRead();
   EXPECT_EQ(fifo_.read_, fifo_.write_);
@@ -94,10 +94,10 @@ TEST_F(TrbFifoTest, AvailableSlots) {
   for (size_t i = 0; i < size - 3; i++) {
     fifo_.AdvanceWrite();
   }
-  EXPECT_EQ(fifo_.AvailableSlots(), 0);
+  EXPECT_EQ(fifo_.AvailableSlots(), 0u);
 
   fifo_.AdvanceRead();
-  EXPECT_EQ(fifo_.AvailableSlots(), 1);
+  EXPECT_EQ(fifo_.AvailableSlots(), 1u);
 }
 
 TEST_F(TrbFifoTest, ReInitTest) {
