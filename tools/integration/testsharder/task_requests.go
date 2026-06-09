@@ -192,6 +192,17 @@ func addEnvPrefixes(shard *Shard, tools build.Tools) error {
 		}
 		// Add ssh to $PATH. This is relied on by botanist.
 		envPrefixes["PATH"] = []string{filepath.Clean(filepath.Join(shard.RelativeCWD, filepath.Dir(sshPath)))}
+
+		if shard.Env.Dimensions.DeviceType() == "Iris" {
+			fastbootPath, err := registerTool(shard, tools, "fastboot")
+			if err != nil {
+				return fmt.Errorf("failed to get path to fastboot tool: %w", err)
+			}
+			fastbootDir := filepath.Clean(filepath.Join(shard.RelativeCWD, filepath.Dir(fastbootPath)))
+			if !slices.Contains(envPrefixes["PATH"], fastbootDir) {
+				envPrefixes["PATH"] = append(envPrefixes["PATH"], fastbootDir)
+			}
+		}
 	}
 	shard.EnvPrefixes = envPrefixes
 	return nil

@@ -39,6 +39,9 @@ var gceEnv = build.Environment{
 var macEnv = build.Environment{
 	Dimensions: build.DimensionSet{"os": "Mac", "cpu": "x64"},
 }
+var irisEnv = build.Environment{
+	Dimensions: build.DimensionSet{"device_type": "Iris"},
+}
 
 func TestGetBotanistConfig(t *testing.T) {
 	toolNames := []string{"fvm", "zbi"}
@@ -424,7 +427,7 @@ func TestGetEnabledExperiments(t *testing.T) {
 }
 
 func TestConstructBaseCommand(t *testing.T) {
-	toolNames := []string{"botanist", "ffx", "llvm-profdata", "ssh"}
+	toolNames := []string{"botanist", "fastboot", "ffx", "llvm-profdata", "ssh"}
 	tools := build.Tools{}
 	for _, name := range toolNames {
 		for _, cpu := range []string{"x64", "arm64"} {
@@ -551,6 +554,19 @@ func TestConstructBaseCommand(t *testing.T) {
 				"-ffx", "./host_x64/ffx", "-experiment", "exp1", "-experiment", "exp2", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.vim3", "-expects-ssh", "-zircon-args", "arg1", "-zircon-args", "arg2"},
 			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
+		},
+		{
+			name: "iris shard",
+			shard: &Shard{
+				Env:           irisEnv,
+				ProductBundle: "core.iris",
+				ExpectsSSH:    true,
+			},
+			targetCPU: "x64",
+			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
+				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json",
+				"-product-bundle-name", "core.iris", "-expects-ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/fastboot", "host_x64/ffx", "host_x64/ssh"},
 		},
 		{
 			name: "missing product bundle",
