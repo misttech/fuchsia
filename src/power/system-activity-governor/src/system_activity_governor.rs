@@ -787,12 +787,11 @@ impl NoSuspendDetector {
         let mut action = ReportAction::DoNotReport;
         let active = self.active_count.get();
         if active == 0 {
-            let cycles = self.cycle_count.get() + 1;
-            self.cycle_count.set(cycles);
-
+            let cycles = self.cycle_count.get();
             if cycles == Self::CYCLE_THRESHOLD {
                 action = ReportAction::ShouldReport;
             }
+            self.cycle_count.set(cycles + 1);
         }
         self.active_count.set(active + 1);
         action
@@ -2128,6 +2127,24 @@ mod tests {
         detector.on_suspend_attempt();
         detector.on_suspend_attempt(); // count=3
         assert_eq!(detector.should_report(), ReportAction::ShouldReport);
+    }
+
+    #[fuchsia::test]
+    fn test_no_suspend_detector() {
+        let detector = NoSuspendDetector::new();
+
+        // Cycles from 0 to CYCLE_THRESHOLD - 1 should not file a report.
+        for _ in 0..NoSuspendDetector::CYCLE_THRESHOLD {
+            assert_eq!(detector.on_lease_taken(), ReportAction::DoNotReport);
+            detector.on_lease_dropped();
+        }
+
+        // The next cycle start (representing the CYCLE_THRESHOLD + 1 lease taken) triggers the report.
+        assert_eq!(detector.on_lease_taken(), ReportAction::ShouldReport);
+        detector.on_lease_dropped();
+
+        // Subsequent cycles do not trigger the report.
+        assert_eq!(detector.on_lease_taken(), ReportAction::DoNotReport);
     }
 
     #[fuchsia::test]

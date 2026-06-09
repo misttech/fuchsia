@@ -4820,8 +4820,10 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
     let prevent_suspend_koid_str = prevent_suspend_koid.as_str();
 
-    // Cycle Application Activity 5 times.
-    for _ in 0..5 {
+    // Cycle Application Activity 6 times.
+    // This is because a crash report is filed on the 6th lease taken after a resume, which
+    // corresponds to 5 complete cycles of dropping and retaking the application activity lease.
+    for _ in 0..6 {
         let lease = activity_governor.take_application_activity_lease("cycle-lease").await?;
 
         // Wait for Active
