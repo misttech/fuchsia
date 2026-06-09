@@ -675,7 +675,9 @@ def _idk_atom_impl(
         target_compatible_with = select({
             "//build/bazel/platforms:is_fuchsia_platform": target_compatible_with,
             "//build/bazel/platforms:is_host_os": target_compatible_with,
-            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": ["@platforms//:incompatible"],
+            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": [
+                "//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules",
+            ],
         }),
         **kwargs
     )
@@ -754,7 +756,9 @@ def _idk_noop_atom_impl(name, target_compatible_with, visibility, **kwargs):
         target_compatible_with = select({
             "//build/bazel/platforms:is_fuchsia_platform": target_compatible_with,
             "//build/bazel/platforms:is_host_os": target_compatible_with,
-            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": ["@platforms//:incompatible"],
+            "//build/bazel/platforms:is_fuchsia_with_sdk_rules": [
+                "//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules",
+            ],
         }),
         visibility = get_atom_visibility(visibility),
         **kwargs
