@@ -46,11 +46,7 @@ fn get_hfp_audio_config(
         profiles.hfp.codecs_supported.clone()
     };
 
-    let controller_encodes = if profiles.hfp.controller_encodes.is_empty() {
-        vec![HfpCodecId::Cvsd, HfpCodecId::Msbc]
-    } else {
-        profiles.hfp.controller_encodes.clone()
-    };
+    let controller_encodes = profiles.hfp.controller_encodes.codecs();
 
     let offload_type = match media_config.audio {
         Some(AudioConfig::FullStack(_)) => String::from("dai"),

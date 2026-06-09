@@ -189,6 +189,66 @@ pub enum HfpCodecId {
     Lc3Swb,
 }
 
+/// Specifies which codecs can be encoded by the Bluetooth controller.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum ControllerCodecs {
+    /// The controller supports the default set of known codecs (tyically CVSD & MSBC).
+    #[default]
+    Default,
+    /// The controller does not support the encoding/decoding of any codecs.
+    None,
+    /// The specified codecs are supported by the controller.
+    Codecs(Vec<HfpCodecId>),
+}
+
+impl ControllerCodecs {
+    /// Returns the set of codecs encoded by the controller.
+    pub fn codecs(&self) -> Vec<HfpCodecId> {
+        match self {
+            Self::Default => vec![HfpCodecId::Cvsd, HfpCodecId::Msbc],
+            Self::None => Vec::new(),
+            Self::Codecs(codecs) => codecs.clone(),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ControllerCodecs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let opt = Option::<Vec<HfpCodecId>>::deserialize(deserializer)?;
+        match opt {
+            None => Ok(Self::Default),
+            Some(codecs) if codecs.is_empty() => Ok(Self::None),
+            Some(codecs) => Ok(Self::Codecs(codecs)),
+        }
+    }
+}
+
+impl serde::Serialize for ControllerCodecs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Default => Option::<Vec<HfpCodecId>>::None.serialize(serializer),
+            Self::None => Some(Vec::<HfpCodecId>::new()).serialize(serializer),
+            Self::Codecs(codecs) => Some(codecs).serialize(serializer),
+        }
+    }
+}
+
+impl JsonSchema for ControllerCodecs {
+    fn schema_name() -> String {
+        "ControllerCodecs".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        <Option<Vec<HfpCodecId>>>::json_schema(generator)
+    }
+}
+
 /// Tri-state representation of a Bluetooth profile with optional features.
 /// Allows product integrators to enable a profile without specifying any optional feature values.
 #[derive(Deserialize, Default, PartialEq, Debug)]
@@ -335,15 +395,16 @@ pub struct HfpConfig {
     /// The set of codecs that are enabled to use.
     /// If MSBC is enabled, Wide Band Speech will be enabled
     /// If LC3 is enabled, Super Wide Band will be enabled
-    /// By default, all codecs supported (either by the controller as specified below) will be enabled.
+    /// By default, all codecs supported (either by the controller as specified below) will be
+    /// enabled.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub codecs_supported: Vec<HfpCodecId>,
 
     /// Set of codec ids that the Bluetooth controller can encode.
     /// Codecs not supported will be ignored.
     /// Codecs not in this list but in codecs_supported will be encoded locally and sent inband.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub controller_encodes: Vec<HfpCodecId>,
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub controller_encodes: ControllerCodecs,
 }
 
 /// Configuration options for Bluetooth message access profile (bt-map)
@@ -733,7 +794,11 @@ mod tests {
                     voice_recognition_text: true,
                 }),
                 codecs_supported: vec![HfpCodecId::Cvsd, HfpCodecId::Msbc, HfpCodecId::Lc3Swb],
-                controller_encodes: vec![HfpCodecId::Cvsd, HfpCodecId::Msbc, HfpCodecId::Lc3Swb],
+                controller_encodes: ControllerCodecs::Codecs(vec![
+                    HfpCodecId::Cvsd,
+                    HfpCodecId::Msbc,
+                    HfpCodecId::Lc3Swb,
+                ]),
             },
             map: MapConfig { mce_enabled: false },
             rfcomm: RfcommConfig::Enabled(RfcommEnabledConfig::default()),
@@ -944,5 +1009,58 @@ mod tests {
             snoop: Snoop::Lazy,
         };
         assert_eq!(parsed, expected_config);
+    }
+
+    #[test]
+    fn test_deserialize_hfp_controller_encodes() {
+        // Omitted case
+        let json_none = serde_json::json!({
+            "type": "standard",
+            "profiles": {
+                "hfp": {
+                    "hands_free": "enabled",
+                }
+            }
+        });
+        let parsed_none: BluetoothConfig = serde_json::from_value(json_none).unwrap();
+        let BluetoothConfig::Standard { profiles, .. } = parsed_none else {
+            panic!("expected standard config");
+        };
+        assert_eq!(profiles.hfp.controller_encodes, ControllerCodecs::Default);
+
+        // Empty list case
+        let json_empty = serde_json::json!({
+            "type": "standard",
+            "profiles": {
+                "hfp": {
+                    "hands_free": "enabled",
+                    "controller_encodes": [],
+                }
+            }
+        });
+        let parsed_empty: BluetoothConfig = serde_json::from_value(json_empty).unwrap();
+        let BluetoothConfig::Standard { profiles, .. } = parsed_empty else {
+            panic!("expected standard config");
+        };
+        assert_eq!(profiles.hfp.controller_encodes, ControllerCodecs::None);
+
+        // Populated list case
+        let json_populated = serde_json::json!({
+            "type": "standard",
+            "profiles": {
+                "hfp": {
+                    "hands_free": "enabled",
+                    "controller_encodes": ["cvsd"],
+                }
+            }
+        });
+        let parsed_populated: BluetoothConfig = serde_json::from_value(json_populated).unwrap();
+        let BluetoothConfig::Standard { profiles, .. } = parsed_populated else {
+            panic!("expected standard config");
+        };
+        assert_eq!(
+            profiles.hfp.controller_encodes,
+            ControllerCodecs::Codecs(vec![HfpCodecId::Cvsd])
+        );
     }
 }
