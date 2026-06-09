@@ -4,7 +4,8 @@
 
 import("//src/microfuchsia/tee/ta/ta.gni")
 
-# This is a Trusted App that links against all of the entry points exposed by the runtime.
+# This is a Trusted App that links against all of the entry points exposed by
+# the runtime.
 fuchsia_ta_package("tee-internal-api-entry-points") {
   sources = [ "entry_points.cc" ]
 }

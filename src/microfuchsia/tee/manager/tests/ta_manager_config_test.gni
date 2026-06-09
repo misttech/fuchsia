@@ -8,8 +8,8 @@ import("//build/components/fuchsia_test_package.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/microfuchsia/tee/manager/ta_manager_config.gni")
 
-# This sets up a hermetic test package containing a test TA manager along with a test configuration
-# and subpackages containing TAs or other test components.
+# This sets up a hermetic test package containing a test TA manager along with a
+# test configuration and subpackages containing TAs or other test components.
 #
 # Parameters:
 #

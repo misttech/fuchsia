@@ -16,7 +16,8 @@ group("tests") {
   deps = [ "test:paver-fuzzers" ]
 
   # TODO(https://fxbug.dev/42165433): Paver tests are disabled on coverage builds due to flakiness.
-  # TODO(b/301283466): Paver tests cannot run on RISCV64 builds due to Sv39 address space limits.
+  # TODO(b/301283466): Paver tests cannot run on RISCV64 builds due to Sv39
+  # address space limits.
   if (!is_coverage && current_cpu != "riscv64") {
     deps += [ "test:paver-tests" ]
   }
@@ -195,8 +196,8 @@ source_set("iris") {
   ]
 }
 
-# Glob together all paver implementations into a single library until we can compose ZBI via
-# packages.
+# Glob together all paver implementations into a single library until we can
+# compose ZBI via packages.
 source_set("paver") {
   public_deps = [
     ":android",

@@ -41,7 +41,8 @@ rustc_library("recovery-ui") {
   inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
   test_deps = [ "//third_party/rust_crates:mockall" ]
   features = [
-    # b/255342472 Always enable debug_console until proxy_view_assistant supports a generic overlay ViewAssistantPtr
+    # b/255342472 Always enable debug_console until proxy_view_assistant
+    # supports a generic overlay ViewAssistantPtr
     "debug_console",
   ]
   features += [ "ota_ui" ]

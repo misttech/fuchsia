@@ -78,8 +78,8 @@ template("fuchsia_ta_package") {
     # TODO(https://fxbug.dev/375092974): Consider defensively filtering for only `TA_*` namespaced
     # symbols once --include is a valid llvm-ifs flag.
 
-    # TODO(joshuaseaton): Remove once loadable_modules() are no longer linked with
-    # `-Wl,-soname=...`
+    # TODO(joshuaseaton): Remove once loadable_modules() are no longer linked
+    # with `-Wl,-soname=...`
     ifs_args = [ "--soname=reference-ta" ]
     deps = [ ":${ifs_target}" ]
   }
@@ -99,8 +99,8 @@ template("fuchsia_ta_package") {
     outputs = [ "data/ta_name" ]
   }
 
-  # This file describes TA-specific properties, whose values may be queried by the
-  # Property set of internal core APIs.
+  # This file describes TA-specific properties, whose values may be queried by
+  # the Property set of internal core APIs.
   # TODO(b/366486931): Build-time validation for this TA properties file.
   resource(ta_props_resource_target) {
     forward_variables_from(invoker, [ "testonly" ])

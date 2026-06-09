@@ -93,12 +93,14 @@ test("usb-fastboot-function-test-bin") {
 fuchsia_unittest_package("usb-fastboot-function-test") {
   test_specs = {
     log_settings = {
-      # VMO fails to be unregistered during test fixture destruction due to the error:
+      # VMO fails to be unregistered during test fixture destruction due to the
+      # error:
       #
       #   "Failed to unregister vmo FIDL operation failed due to dispatcher error,
       #   status: ZX_ERR_CANCELED (-23)".
       #
-      # Ignore this error for now since it doesn't seem to be the issue of the driver.
+      # Ignore this error for now since it doesn't seem to be the issue of the
+      # driver.
       max_severity = "ERROR"
     }
   }

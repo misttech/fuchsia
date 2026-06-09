@@ -80,8 +80,8 @@ template("gki_pkvm_boot_test") {
         }
 
         emulator = {
-          # In order to use GKI's pKVM, we need pure emulation and cannot rely on
-          # nested virtualization.
+          # In order to use GKI's pKVM, we need pure emulation and cannot rely
+          # on nested virtualization.
           name = "TCG"
           accel = "none"
 
@@ -94,7 +94,8 @@ template("gki_pkvm_boot_test") {
             # Enables pKVM.
             "kvm-arm.mode=protected",
 
-            # Prevents the system from boot-looping once a boot test is finished.
+            # Prevents the system from boot-looping once a boot test is
+            # finished.
             "panic=0",
           ]
         }

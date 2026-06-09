@@ -20,7 +20,8 @@ group("tests") {
 
   _is_thinlto = select_variant + [ "thinlto" ] - [ "thinlto" ] != select_variant
 
-  # TODO(b/318877902): fastboot-tcp-unittests failed in core.x64-thinlto builder.
+  # TODO(b/318877902): fastboot-tcp-unittests failed in core.x64-thinlto
+  # builder.
   if (!_is_thinlto) {
     deps += [ ":fastboot-tcp-unittests" ]
   }

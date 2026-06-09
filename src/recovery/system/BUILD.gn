@@ -11,8 +11,8 @@ import("//build/testing/environments.gni")
 
 # Generate rust library for the config
 fuchsia_component_manifest("ui_config_manifest") {
-  # Note: This component name is unused since this manifest target is only added to
-  # generate the rust config library
+  # Note: This component name is unused since this manifest target is only added
+  # to generate the rust config library
   component_name = "config_system_recovery"
 
   # Config structure is currently defined in this shard

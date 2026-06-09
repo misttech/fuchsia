@@ -16,7 +16,8 @@ source_set("lib") {
     # <factory_reset.h> has #include <fidl/fuchsia.fshost/cpp.wire.h>
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
 
-    # <factory_reset.h> has #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
+    # <factory_reset.h> has
+    # #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
 
     # <factory_reset.h> has #include <fidl/fuchsia.recovery/cpp/wire.h>

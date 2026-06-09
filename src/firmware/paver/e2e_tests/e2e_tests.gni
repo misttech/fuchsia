@@ -4,8 +4,9 @@
 
 import("//build/testing/host_test.gni")
 
-# A template that configures a System Test pave test against a given release builder.  The SSH key,
-# upgrade build ID and target device must come environment variables.
+# A template that configures a System Test pave test against a given release
+# builder. The SSH key, upgrade build ID and target device must come environment
+# variables.
 #
 # Parameters
 #

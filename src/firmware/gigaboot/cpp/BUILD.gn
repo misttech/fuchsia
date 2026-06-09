@@ -187,8 +187,9 @@ template("gigaboot_esp") {
 
     defines = []
 
-    # TODO(b/368647237): This is a temporary switch for enabling GBL boot in Gigaboot for test
-    # and development. It will be removed once we fully migrate to GBL.
+    # TODO(b/368647237): This is a temporary switch for enabling GBL boot in
+    # Gigaboot for test and development. It will be removed once we fully
+    # migrate to GBL.
     if (gbl != "") {
       defines += [ "GIGABOOT_BOOT_GBL" ]
       if (_stop_in_fastboot) {
