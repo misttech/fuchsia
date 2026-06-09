@@ -21,8 +21,8 @@ use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
-    EbpfSuspendLock, FileOpsCore, LockBefore, LockDepReadGuard, Locked, Mutex, MutexGuard,
-    OrderedRwLock,
+    EbpfSuspendLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockDepReadGuard, Locked,
+    OrderedRwLock, TerminalLock,
 };
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -99,11 +99,11 @@ impl std::string::ToString for WakeupSourceOrigin {
 /// Manager for suspend and resume.
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
-    inner: Arc<Mutex<SuspendResumeManagerInner>>,
+    inner: Arc<LockDepMutex<SuspendResumeManagerInner, TerminalLock>>,
 
     /// The currently registered message counters in the system whose values are exposed to inspect
     /// via a lazy node.
-    message_counters: Arc<Mutex<HashSet<WeakKey<OwnedMessageCounter>>>>,
+    message_counters: Arc<LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, TerminalLock>>,
 
     /// The lock used to to avoid suspension while holding eBPF locks.
     ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
@@ -362,8 +362,9 @@ pub type SuspendResumeManagerHandle = Arc<SuspendResumeManager>;
 
 impl Default for SuspendResumeManager {
     fn default() -> Self {
-        let message_counters: Arc<Mutex<HashSet<WeakKey<OwnedMessageCounter>>>> =
-            Default::default();
+        let message_counters: Arc<
+            LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, TerminalLock>,
+        > = Default::default();
         let message_counters_clone = message_counters.clone();
         let root = inspect::component::inspector().root();
         root.record_lazy_values("message_counters", move || {
@@ -387,7 +388,7 @@ impl Default for SuspendResumeManager {
             }
             .boxed()
         });
-        let inner = Arc::new(Mutex::new(SuspendResumeManagerInner::default()));
+        let inner = Arc::new(LockDepMutex::new(SuspendResumeManagerInner::default()));
         let inner_clone = inner.clone();
         root.record_lazy_child("wakeup_sources", move || {
             let inner = inner_clone.clone();
@@ -409,7 +410,7 @@ impl Default for SuspendResumeManager {
 
 impl SuspendResumeManager {
     /// Locks and returns the inner state of the manager.
-    pub fn lock(&self) -> MutexGuard<'_, SuspendResumeManagerInner> {
+    pub fn lock(&self) -> LockDepGuard<'_, SuspendResumeManagerInner> {
         self.inner.lock()
     }
 
@@ -658,7 +659,7 @@ impl SuspendResumeManager {
 
     fn report_failed_suspension(
         &self,
-        mut state: MutexGuard<'_, SuspendResumeManagerInner>,
+        mut state: LockDepGuard<'_, SuspendResumeManagerInner>,
         failure_reason: &str,
     ) {
         let wake_time = zx::BootInstant::get();
