@@ -23,11 +23,6 @@ array_type!(ExtensibleBitmap, Metadata, MapItem);
 array_type_validate_deref_both!(ExtensibleBitmap);
 
 impl ExtensibleBitmap {
-    /// Returns the number of bits described by this [`ExtensibleBitmap`].
-    pub fn num_elements(&self) -> u32 {
-        self.high_bit()
-    }
-
     /// Returns whether the `index`'th bit in this bitmap is a 1-bit.
     pub fn is_set(&self, index: u32) -> bool {
         if index > self.high_bit() {
@@ -46,14 +41,14 @@ impl ExtensibleBitmap {
 
     /// Returns an iterator that yields the indices of this [`ExtensibleBitmap`]'s set bits.
     pub fn indices_of_set_bits<'a>(&'a self) -> impl Iterator<Item = u32> + Clone {
-        ExtensibleBitmapSpansIterator::<'a> { bitmap: self, map_item: 0, next_bit: 0 }
+        ExtensibleBitmapSpansIterator::<'a> { bitmap: self, next_map_item: 0, map: 0, start_bit: 0 }
             .flat_map(|span| span.low..=span.high)
     }
 
     /// Returns an iterator that returns a set of spans of continuous set bits.
     /// Each span consists of inclusive low and high bit indexes (i.e. zero-based).
     pub fn spans<'a>(&'a self) -> ExtensibleBitmapSpansIterator<'a> {
-        ExtensibleBitmapSpansIterator::<'a> { bitmap: self, map_item: 0, next_bit: 0 }
+        ExtensibleBitmapSpansIterator::<'a> { bitmap: self, next_map_item: 0, map: 0, start_bit: 0 }
     }
 
     /// Returns the next bit after the bits in this [`ExtensibleBitmap`]. That is, the bits in this
@@ -87,49 +82,12 @@ pub(super) struct ExtensibleBitmapSpan {
 #[derive(Clone)]
 pub(super) struct ExtensibleBitmapSpansIterator<'a> {
     bitmap: &'a ExtensibleBitmap,
-    map_item: usize, // Zero-based `Vec<MapItem>` index.
-    next_bit: u32,   // Zero-based bit index within the bitmap.
-}
-
-impl ExtensibleBitmapSpansIterator<'_> {
-    /// Returns the zero-based index of the next bit with the specified value, if any.
-    fn next_bit_with_value(&mut self, is_set: bool) -> Option<u32> {
-        let map_item_size_bits = self.bitmap.metadata.map_item_size_bits.get();
-        let num_elements = self.bitmap.num_elements();
-
-        while self.next_bit < num_elements {
-            let (start_bit, map) = self
-                .bitmap
-                .data
-                .get(self.map_item)
-                .map_or((num_elements, 0), |item| (item.start_bit.get(), item.map.get()));
-
-            if start_bit > self.next_bit {
-                if is_set {
-                    // Skip the implicit "false" bits, to the next `MapItem`.
-                    self.next_bit = start_bit
-                } else {
-                    return Some(self.next_bit);
-                }
-            } else {
-                // Scan the `MapItem` for the next matching bit.
-                let next_map_item_bit = self.next_bit - start_bit;
-                for map_bit in next_map_item_bit..map_item_size_bits {
-                    if ((map & (1 << map_bit)) != 0) == is_set {
-                        self.next_bit = start_bit + map_bit;
-                        return Some(self.next_bit);
-                    }
-                }
-
-                // Move on to the next `MapItem`, which may not be contiguous with
-                // this one.
-                self.next_bit = start_bit + map_item_size_bits;
-                self.map_item += 1;
-            }
-        }
-
-        None
-    }
+    // Zero-based `Vec<MapItem>` index of the next MapItem to read.
+    next_map_item: usize,
+    // The not yet iterated bits of the most recently read MapItem.
+    map: u64,
+    // The index of the LSB of map.
+    start_bit: u32,
 }
 
 impl Iterator for ExtensibleBitmapSpansIterator<'_> {
@@ -137,11 +95,48 @@ impl Iterator for ExtensibleBitmapSpansIterator<'_> {
 
     /// Returns the next span of at least one bit set in the bitmap.
     fn next(&mut self) -> Option<Self::Item> {
-        let low = self.next_bit_with_value(true)?;
-        // End the span at the bit preceding either the next false bit, or the end of the bitmap.
-        let high =
-            self.next_bit_with_value(false).unwrap_or_else(|| self.bitmap.num_elements()) - 1;
-        Some(Self::Item { low, high })
+        // If we've finished our current MapItem, move onto the next one.
+        if self.map == 0 {
+            let Some(&MapItem { start_bit, map }) = self.bitmap.data.get(self.next_map_item) else {
+                return None;
+            };
+            self.start_bit = start_bit.get();
+            self.map = map.get();
+            self.next_map_item += 1;
+        }
+
+        // Shift away any zeros and begin our span.
+        let zero_bits = self.map.trailing_zeros();
+        self.map >>= zero_bits;
+        self.start_bit += zero_bits;
+        let low = self.start_bit;
+
+        // A span may bridge multiple MapItems. Continue to read 1s until either we don't reach the
+        // end of the current MapItem, or the next MapItem isn't contiguous.
+        loop {
+            let one_bits = self.map.trailing_ones();
+            // This map could be all 1s, in which case a shift by 64 would overflow. That's fine,
+            // we want to shift away all the bits anyways in that case.
+            self.map = self.map.checked_shr(one_bits).unwrap_or(0);
+            self.start_bit += one_bits;
+
+            if self.start_bit % 64 != 0 {
+                // We didn't reach the end of the current MapItem.
+                break;
+            }
+
+            if let Some(&MapItem { start_bit, map }) = self.bitmap.data.get(self.next_map_item)
+                && start_bit == self.start_bit
+                && (map & 1) == 1
+            {
+                self.map = map.get();
+                self.next_map_item += 1;
+            } else {
+                break;
+            };
+        }
+
+        Some(Self::Item { low, high: self.start_bit - 1 })
     }
 }
 
@@ -221,6 +216,9 @@ impl Validate for MapItem {
     /// All [`MapItem`] validation requires access to [`Metadata`]; validation performed in
     /// `ExtensibleBitmap<PS>::validate()`.
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        if self.map == 0 {
+            return Err(ValidateError::InvalidExtensibleBitmapItem.into());
+        }
         Ok(())
     }
 }

@@ -49,6 +49,8 @@ pub enum ValidateError {
         "expected policy version in range [{POLICYDB_VERSION_MIN}, {POLICYDB_VERSION_MAX}], but found {found_policy_version}"
     )]
     InvalidPolicyVersion { found_policy_version: u32 },
+    #[error("expected extensible bitmap items to have at least one bit set")]
+    InvalidExtensibleBitmapItem,
     #[error(
         "expected extensible bitmap item size to be exactly {MAP_NODE_BITS}, but found {found_size}"
     )]
