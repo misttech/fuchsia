@@ -57,7 +57,8 @@ impl InternedString {
 /// ```
 #[macro_export]
 macro_rules! declare_interned_string {
-    ($var_name:ident, $str_lit:expr) => {
+    ($var_name:ident, $str_lit:literal) => {
+        #[$crate::interned_string_export_name($str_lit)]
         #[unsafe(link_section = "__fxt_interned_string_table")]
         #[used]
         pub static $var_name: $crate::interned_string::InternedString = unsafe {
@@ -136,5 +137,19 @@ mod tests {
             p2 >= start_ptr && p2 < stop_ptr,
             "TEST_STR_2 pointer {p2:p} is outside bounds [{start_ptr:p}, {stop_ptr:p})"
         );
+    }
+
+    #[test]
+    fn test_symbol_name_matching() {
+        // "hello" should mangle to the exact C++ symbol name:
+        // _ZN3fxt8internal21InternedStringStorageIJLc104ELc101ELc108ELc108ELc111EEE15interned_stringE
+        unsafe extern "C" {
+            #[link_name = "_ZN3fxt8internal21InternedStringStorageIJLc104ELc101ELc108ELc108ELc111EEE15interned_stringE"]
+            static EXPECTED_SYMBOL: InternedString;
+        }
+
+        let p_expected = unsafe { &EXPECTED_SYMBOL as *const InternedString };
+        let p_actual = &TEST_STR_1 as *const InternedString;
+        assert_eq!(p_actual, p_expected);
     }
 }
