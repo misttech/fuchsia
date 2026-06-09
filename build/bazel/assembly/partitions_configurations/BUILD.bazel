@@ -13,16 +13,9 @@ load(
 
 package(default_visibility = ["//visibility:public"])
 
-_KIB = 1
-
-_MIB = 1024 * _KIB
-
-_GIB = 1024 * _MIB
-
 fuchsia_partition(
     name = "zircon_a",
     partition_name = "zircon_a",
-    size_kib = 32 * _MIB,
     slot = SLOT.A,
     type = PARTITION_TYPE.ZBI,
 )
@@ -30,7 +23,6 @@ fuchsia_partition(
 fuchsia_partition(
     name = "zircon_b",
     partition_name = "zircon_b",
-    size_kib = 32 * _MIB,
     slot = SLOT.B,
     type = PARTITION_TYPE.ZBI,
 )
@@ -38,7 +30,6 @@ fuchsia_partition(
 fuchsia_partition(
     name = "zircon_r",
     partition_name = "zircon_r",
-    size_kib = 32 * _MIB,
     slot = SLOT.R,
     type = PARTITION_TYPE.ZBI,
 )
@@ -46,7 +37,6 @@ fuchsia_partition(
 fuchsia_partition(
     name = "vbmeta_a",
     partition_name = "vbmeta_a",
-    size_kib = 64 * _KIB,
     slot = SLOT.A,
     type = PARTITION_TYPE.VBMETA,
 )
@@ -54,7 +44,6 @@ fuchsia_partition(
 fuchsia_partition(
     name = "vbmeta_b",
     partition_name = "vbmeta_b",
-    size_kib = 64 * _KIB,
     slot = SLOT.B,
     type = PARTITION_TYPE.VBMETA,
 )
@@ -62,7 +51,6 @@ fuchsia_partition(
 fuchsia_partition(
     name = "vbmeta_r",
     partition_name = "vbmeta_r",
-    size_kib = 64 * _KIB,
     slot = SLOT.R,
     type = PARTITION_TYPE.VBMETA,
 )
@@ -70,14 +58,12 @@ fuchsia_partition(
 fuchsia_partition(
     name = "fvm",
     partition_name = "fvm",
-    size_kib = 16 * _GIB,
     type = PARTITION_TYPE.FVM,
 )
 
 fuchsia_partition(
     name = "fxfs",
     partition_name = "fvm",
-    size_kib = 16 * _GIB,
     type = PARTITION_TYPE.FXFS,
 )
 
@@ -101,45 +87,6 @@ fuchsia_bootloader_partition(
     type = "",
 )
 
-# --- x64 Partition Targets ---
-fuchsia_partition(
-    name = "x64_zircon_a",
-    partition_name = "zircon_a",
-    size_kib = 128 * _MIB,
-    slot = SLOT.A,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "x64_zircon_b",
-    partition_name = "zircon_b",
-    size_kib = 128 * _MIB,
-    slot = SLOT.B,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "x64_zircon_r",
-    partition_name = "zircon_r",
-    size_kib = 196 * _MIB,
-    slot = SLOT.R,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "x64_fvm",
-    partition_name = "fvm",
-    size_kib = 56 * _GIB,
-    type = PARTITION_TYPE.FVM,
-)
-
-fuchsia_partition(
-    name = "x64_fxfs",
-    partition_name = "fvm",
-    size_kib = 56 * _GIB,
-    type = PARTITION_TYPE.FXFS,
-)
-
 fuchsia_partitions_configuration(
     name = "x64",
     bootloader_partitions = [
@@ -147,14 +94,14 @@ fuchsia_partitions_configuration(
     ],
     hardware_revision = "x64",
     partitions = [
-        ":x64_zircon_a",
-        ":x64_zircon_b",
-        ":x64_zircon_r",
+        ":zircon_a",
+        ":zircon_b",
+        ":zircon_r",
         ":vbmeta_a",
         ":vbmeta_b",
         ":vbmeta_r",
-        ":x64_fvm",
-        ":x64_fxfs",
+        ":fvm",
+        ":fxfs",
     ],
 )
 
