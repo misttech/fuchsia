@@ -320,11 +320,11 @@ IpAddress::IpAddress(const sockaddr& addr) {
   switch (addr.sa_family) {
     case AF_INET:
       family_ = AF_INET;
-      v4_ = *reinterpret_cast<const in_addr*>(addr.sa_data);
+      std::memcpy(&v4_, addr.sa_data, sizeof(v4_));
       break;
     case AF_INET6:
       family_ = AF_INET6;
-      v6_ = *reinterpret_cast<const in6_addr*>(addr.sa_data);
+      std::memcpy(&v6_, addr.sa_data, sizeof(v6_));
       break;
     default:
       family_ = AF_UNSPEC;
@@ -337,13 +337,11 @@ IpAddress::IpAddress(const sockaddr_storage& addr) {
   switch (addr.ss_family) {
     case AF_INET:
       family_ = AF_INET;
-      v4_ = *reinterpret_cast<const in_addr*>(reinterpret_cast<const uint8_t*>(&addr) +
-                                              sizeof(sa_family_t));
+      std::memcpy(&v4_, reinterpret_cast<const uint8_t*>(&addr) + sizeof(sa_family_t), sizeof(v4_));
       break;
     case AF_INET6:
       family_ = AF_INET6;
-      v6_ = *reinterpret_cast<const in6_addr*>(reinterpret_cast<const uint8_t*>(&addr) +
-                                               sizeof(sa_family_t));
+      std::memcpy(&v6_, reinterpret_cast<const uint8_t*>(&addr) + sizeof(sa_family_t), sizeof(v6_));
       break;
     default:
       family_ = AF_UNSPEC;
