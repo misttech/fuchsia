@@ -40,6 +40,78 @@ struct VdirCookie {
   void* p = nullptr;
 };
 
+// A wrapper around a Vnode that may or may not be open (e.g. Vnode returned from `CreateOrLookup`),
+// ensuring it is closed on destruction unless explicitly taken. This is used by `Vfs::Open` and
+// `Vfs::DeprecatedOpen` to clean up safely when returning early due to validation failures.
+class MaybeOpenedVnode {
+ public:
+  MaybeOpenedVnode() = default;
+  MaybeOpenedVnode(fbl::RefPtr<Vnode> vn, bool is_open) : vn_(std::move(vn)), is_open_(is_open) {}
+  ~MaybeOpenedVnode() {
+    if (vn_ && is_open_) {
+      vn_->Close();
+    }
+  }
+
+  // Copying is not allowed to prevent double-closing the vnode.
+  MaybeOpenedVnode(const MaybeOpenedVnode&) = delete;
+  MaybeOpenedVnode& operator=(const MaybeOpenedVnode&) = delete;
+
+  // Move semantics to transfer ownership of the vnode and its open state.
+  MaybeOpenedVnode(MaybeOpenedVnode&& other) noexcept
+      : vn_(std::move(other.vn_)), is_open_(other.is_open_) {
+    other.is_open_ = false;
+  }
+  MaybeOpenedVnode& operator=(MaybeOpenedVnode&& other) noexcept {
+    if (this != &other) {
+      if (vn_ && is_open_) {
+        vn_->Close();
+      }
+      vn_ = std::move(other.vn_);
+      is_open_ = other.is_open_;
+      other.is_open_ = false;
+    }
+    return *this;
+  }
+
+  Vnode* operator->() const { return vn_.get(); }
+  bool is_open() const { return is_open_; }
+
+  zx::result<> Open() {
+    if (is_open_) {
+      return zx::ok();
+    }
+    if (zx_status_t status = OpenVnode(&vn_); status != ZX_OK) {
+      return zx::error(status);
+    }
+    is_open_ = true;
+    return zx::ok();
+  }
+
+  // Takes the vnode. The caller assumes responsibility for closing it. For example, when returning
+  // a successfully opened local node.
+  fbl::RefPtr<Vnode> TakeAsOpened() {
+    ZX_ASSERT(is_open_);
+    is_open_ = false;
+    return std::move(vn_);
+  }
+
+  // Closes the vnode if it is open, and returns it. This can be used, e.g., when forwarding a node
+  // to a remote filesystem or transferring it to OpenResult, which expects to manage the open state
+  // itself.
+  fbl::RefPtr<Vnode> CloseAndTake() {
+    if (is_open_) {
+      vn_->Close();
+      is_open_ = false;
+    }
+    return std::move(vn_);
+  }
+
+ private:
+  fbl::RefPtr<Vnode> vn_;
+  bool is_open_ = false;
+};
+
 // The Vfs object contains global per-filesystem state, which may be valid across a collection of
 // Vnodes. It dispatches requests to per-file/directory Vnode objects.
 //
@@ -105,11 +177,10 @@ class Vfs {
   // directory.
   static zx::result<bool> TrimName(std::string_view& name);
 
-  // Create or lookup an entry with |name| inside of |vndir|. Returns a tuple of the resulting node,
-  // and a boolean indicating if the returned vnode is open or not.
-  zx::result<std::tuple<fbl::RefPtr<Vnode>, /*vnode_is_open*/ bool>> CreateOrLookup(
-      fbl::RefPtr<fs::Vnode> vndir, std::string_view name, CreationMode mode,
-      std::optional<CreationType> type, fuchsia_io::Rights connection_rights)
+  // Create or lookup an entry with |name| inside of |vndir|.
+  zx::result<MaybeOpenedVnode> CreateOrLookup(fbl::RefPtr<fs::Vnode> vndir, std::string_view name,
+                                              CreationMode mode, std::optional<CreationType> type,
+                                              fuchsia_io::Rights connection_rights)
       __TA_REQUIRES(vfs_lock_);
 
   // A lock which should be used to protect lookup and walk operations

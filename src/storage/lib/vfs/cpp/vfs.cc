@@ -134,8 +134,7 @@ Vfs::DeprecatedOpenResult Vfs::DeprecatedOpen(fbl::RefPtr<Vnode> vndir, std::str
   // |Traverse()| should guarantee |path| is only a single and valid component.
   ZX_DEBUG_ASSERT(!path.empty() && !cpp23::contains(path, '/') && path != "..");
 
-  fbl::RefPtr<Vnode> vn;
-  bool vn_is_open;
+  MaybeOpenedVnode vn;
   {
     CreationMode mode = internal::CreationModeFromFidl(options.flags);
     std::optional<CreationType> type = std::nullopt;
@@ -147,12 +146,13 @@ Vfs::DeprecatedOpenResult Vfs::DeprecatedOpen(fbl::RefPtr<Vnode> vndir, std::str
     if (result.is_error()) {
       return result.error_value();
     }
-    std::tie(vn, vn_is_open) = *std::move(result);
+    vn = *std::move(result);
   }
 
   if (vn->IsRemote()) {
     // Opening a mount point: Traverse across remote.
-    return DeprecatedOpenResult::Remote{.vnode = std::move(vn), .path = "."};
+    // Remote nodes are passed to the remote filesystem, so the local Vnode should not be opened.
+    return DeprecatedOpenResult::Remote{.vnode = vn.CloseAndTake(), .path = "."};
   }
 
   if (ReadonlyLocked() && (options.rights & fio::Rights::kWriteBytes) &&
@@ -182,25 +182,25 @@ Vfs::DeprecatedOpenResult Vfs::DeprecatedOpen(fbl::RefPtr<Vnode> vndir, std::str
 
   // |node_reference| requests that we don't actually open the underlying Vnode, but use the
   // connection as a reference to the Vnode.
-  if (!(options.flags & fuchsia_io::OpenFlags::kNodeReference) && !vn_is_open) {
-    if (zx_status_t status = OpenVnode(&vn); status != ZX_OK) {
-      return status;
+  if (!(options.flags & fuchsia_io::OpenFlags::kNodeReference) && !vn.is_open()) {
+    if (zx::result result = vn.Open(); result.is_error()) {
+      return result.error_value();
     }
 
     if (vn->IsRemote()) {
-      // |OpenVnode| redirected us to a remote vnode; traverse across mount point.
-      return DeprecatedOpenResult::Remote{.vnode = std::move(vn), .path = "."};
+      // |OpenVnode| redirected us to a remote vnode; traverse across mount point. Remote nodes are
+      // passed to the remote filesystem, so the local Vnode should not be opened.
+      return DeprecatedOpenResult::Remote{.vnode = vn.CloseAndTake(), .path = "."};
     }
 
     if (options.flags & fuchsia_io::OpenFlags::kTruncate) {
       if (zx_status_t status = vn->Truncate(0); status != ZX_OK) {
-        vn->Close();
         return status;
       }
     }
   }
 
-  return DeprecatedOpenResult::Ok{.vnode = std::move(vn), .options = options};
+  return DeprecatedOpenResult::Ok{.vnode = vn.TakeAsOpened(), .options = options};
 }
 #endif
 
@@ -230,8 +230,7 @@ zx::result<Vfs::OpenResult> Vfs::Open(fbl::RefPtr<Vnode> vndir, std::string_view
   ZX_DEBUG_ASSERT(!path.empty() && !cpp23::contains(path, '/') && path != "..");
 
   // Try to open or create the object at |path| inside |vndir|.
-  fbl::RefPtr<Vnode> vn;
-  bool vn_is_open;
+  MaybeOpenedVnode vn;
   {
     const CreationMode mode = internal::CreationModeFromFidl(flags);
     std::optional<CreationType> type;
@@ -266,21 +265,22 @@ zx::result<Vfs::OpenResult> Vfs::Open(fbl::RefPtr<Vnode> vndir, std::string_view
     if (result.is_error()) {
       return result.take_error();
     }
-    std::tie(vn, vn_is_open) = *std::move(result);
+    vn = *std::move(result);
     // If we created a new Vnode, set any attributes specified with the request.
-    if (vn_is_open && new_attrs) {
+    if (vn.is_open() && new_attrs) {
       ZX_DEBUG_ASSERT(!(new_attrs->Query() - vn->SupportedMutableAttributes()));
-      zx::result result = vn->UpdateAttributes(*new_attrs);
-      ZX_DEBUG_ASSERT_MSG(result.is_ok(), "Updating attributes on a new vnode should never fail!");
-      if (result.is_error()) {
-        return result.take_error();
+      zx::result update_result = vn->UpdateAttributes(*new_attrs);
+      ZX_DEBUG_ASSERT_MSG(update_result.is_ok(),
+                          "Updating attributes on a new vnode should never fail!");
+      if (update_result.is_error()) {
+        return update_result.take_error();
       }
     }
   }
 
   if (vn->IsRemote()) {
     // Opening a mount point: Traverse across remote.
-    return OpenResult::Remote(std::move(vn), ".");
+    return OpenResult::Remote(vn.CloseAndTake(), ".");
   }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
@@ -299,12 +299,12 @@ zx::result<Vfs::OpenResult> Vfs::Open(fbl::RefPtr<Vnode> vndir, std::string_view
   }
 
   // If the Vnode is already opened (e.g. it was just created) we can return early.
-  if (vn_is_open) {
-    return OpenResult::Local(std::move(vn), *protocol);
+  if (vn.is_open()) {
+    return OpenResult::Local(vn.TakeAsOpened(), *protocol);
   }
 
   // Open the Vnode with the negotiated protocol.
-  zx::result open_result = OpenResult::OpenVnode(std::move(vn), *protocol);
+  zx::result open_result = OpenResult::OpenVnode(vn.CloseAndTake(), *protocol);
   // Handle truncating the vnode if we opened a file and the request requires it.
   const bool truncate = (*protocol == VnodeProtocol::kFile) && (flags & fio::Flags::kFileTruncate);
   if (open_result.is_ok() && truncate) {
@@ -328,9 +328,10 @@ zx_status_t Vfs::Unlink(fbl::RefPtr<Vnode> vndir, std::string_view name, bool mu
   return ZX_OK;
 }
 
-zx::result<std::tuple<fbl::RefPtr<Vnode>, /*vnode_is_open*/ bool>> Vfs::CreateOrLookup(
-    fbl::RefPtr<fs::Vnode> vndir, std::string_view name, CreationMode mode,
-    std::optional<CreationType> type, fio::Rights connection_rights) {
+zx::result<MaybeOpenedVnode> Vfs::CreateOrLookup(fbl::RefPtr<fs::Vnode> vndir,
+                                                 std::string_view name, CreationMode mode,
+                                                 std::optional<CreationType> type,
+                                                 fio::Rights connection_rights) {
   // If the request requires we create an object, ensure the VFS isn't in read-only mode.
   if (mode != CreationMode::kNever && ReadonlyLocked()) {
     return zx::error(ZX_ERR_ACCESS_DENIED);
@@ -340,7 +341,7 @@ zx::result<std::tuple<fbl::RefPtr<Vnode>, /*vnode_is_open*/ bool>> Vfs::CreateOr
     if (mode == CreationMode::kAlways) {
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
-    return zx::ok(std::tuple{std::move(vndir), false});
+    return zx::ok(MaybeOpenedVnode(std::move(vndir), false));
   }
   // Try to create a new object if the request requires it.
   switch (mode) {
@@ -352,7 +353,7 @@ zx::result<std::tuple<fbl::RefPtr<Vnode>, /*vnode_is_open*/ bool>> Vfs::CreateOr
       zx::result created = vndir->Create(name, *type);
       if (created.is_ok()) {
         vndir->Notify(name, fio::WatchEvent::kAdded);
-        return zx::ok(std::tuple{*std::move(created), true});
+        return zx::ok(MaybeOpenedVnode(*std::move(created), true));
       }
       // If |name| already exists in this directory, look it up if the request allows it.
       if (created.error_value() == ZX_ERR_ALREADY_EXISTS && mode == CreationMode::kAllowExisting) {
@@ -386,7 +387,7 @@ zx::result<std::tuple<fbl::RefPtr<Vnode>, /*vnode_is_open*/ bool>> Vfs::CreateOr
   if (mode == CreationMode::kAlways) {
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
-  return zx::ok(std::tuple{std::move(vn), false});
+  return zx::ok(MaybeOpenedVnode(std::move(vn), false));
 }
 
 zx::result<bool> Vfs::TrimName(std::string_view& name) {
