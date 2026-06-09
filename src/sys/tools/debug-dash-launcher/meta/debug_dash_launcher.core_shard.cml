@@ -32,6 +32,11 @@
             to: "#debug-dash-launcher",
         },
         {
+            protocol: "fuchsia.diagnostics.ArchiveAccessor",
+            from: "parent/diagnostics-accessors",
+            to: "#debug-dash-launcher",
+        },
+        {
             protocol: [ "fuchsia.process.Resolver" ],
             from: "#process_resolver",
             to: "#debug-dash-launcher",
