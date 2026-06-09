@@ -93,6 +93,7 @@ syscall_tests = [
   "ptrace_test",
   "read_write_test",
   "reboot_test",
+  "renameat2_exchange_sticky_test",
   "restart_read_test",
   "rlimit_test",
   "sched_test",

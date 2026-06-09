@@ -879,6 +879,18 @@ impl DirEntry {
                 new_basename,
             )?;
 
+            if let Some(replaced) = maybe_replaced.as_ref() {
+                // Safe because the parent is locked first, and then we check the
+                // sticky bit of the child. This parent -> child acquisition
+                // follows the hierarchical lock ordering.
+                let _token = allow_subclass();
+                new_parent.node.check_sticky_bit(
+                    current_task,
+                    &replaced.node,
+                    state.new_parent_info().unwrap_or_else(|| state.old_parent_info()),
+                )?;
+            }
+
             // We've found all the errors that we know how to find. Ask the
             // file system to actually execute the rename operation. Once the
             // file system has executed the rename, we are no longer allowed to
@@ -1493,7 +1505,6 @@ impl<'a> RenameContext<'a> {
     pub fn old_parent_info(&self) -> &crate::vfs::FsNodeInfo {
         &self.old_parent_info_guard
     }
-
     /// Returns a shared reference to the `FsNodeInfo` of the new parent
     /// directory.
     ///
