@@ -332,7 +332,8 @@ pub(in crate::security) fn bprm_creds_for_exec(
             .map_err(|_| errno!(EACCES))?
     };
 
-    let audit_context = current_task.into();
+    let task_audit_context = current_task.into();
+    let executable_audit_context = [task_audit_context, executable.into()];
     if current_sid == new_sid {
         // To `exec()` a binary in the caller's domain, the caller must be granted
         // "execute_no_trans" permission to the binary.
@@ -342,7 +343,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
             current_sid,
             executable_sid,
             FilePermission::ExecuteNoTrans,
-            audit_context,
+            (&executable_audit_context).into(),
         )?;
     } else {
         // Check that the domain transition is allowed.
@@ -352,7 +353,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
             current_sid,
             new_sid,
             ProcessPermission::Transition,
-            audit_context,
+            task_audit_context,
         )?;
 
         check_nnp_nosuid_transition(
@@ -361,7 +362,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
             current_sid,
             executable,
             current_task,
-            audit_context,
+            task_audit_context,
         )?;
 
         // Check that the executable file has an entry point into the new domain.
@@ -371,7 +372,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
             new_sid,
             executable_sid,
             FilePermission::Entrypoint,
-            audit_context,
+            (&executable_audit_context).into(),
         )?;
 
         // Check that ptrace permission is allowed if the process is traced.
@@ -384,7 +385,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
                 tracer_sid,
                 new_sid,
                 ProcessPermission::Ptrace,
-                audit_context,
+                task_audit_context,
             )
             .map_err(|_| errno!(EPERM))?;
         }
@@ -398,7 +399,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
                 current_sid,
                 new_sid,
                 ProcessPermission::Share,
-                audit_context,
+                task_audit_context,
             )?;
         }
     }
@@ -411,7 +412,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
             current_sid,
             new_sid,
             ProcessPermission::NoAtSecure,
-            audit_context,
+            task_audit_context,
         )
         .is_err();
 
