@@ -528,6 +528,7 @@ fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
 
     if let Some(value_ref) = map.lookup(key) {
         let result: BpfValue = value_ref.ptr().raw_ptr().into();
+        C::add_value_ref(context, value_ref);
         return result;
     }
 
@@ -546,6 +547,7 @@ fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
         if r.is_ok() {
             if let Some(value_ref) = map.lookup(key) {
                 let result: BpfValue = value_ref.ptr().raw_ptr().into();
+                C::add_value_ref(context, value_ref);
                 return result;
             }
         }
@@ -832,4 +834,195 @@ macro_rules! ebpf_program_context_type {
         impl $subtrait for $context {}
         ebpf::static_helper_set!($context, <$context as $subtrait>::get_helpers());
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::maps::{Map, PinnedMap};
+    use ebpf::{BpfValue, EbpfProgramContext, FromBpfValue, MapFlags, MapSchema};
+    use linux_uapi::{BPF_SK_STORAGE_GET_F_CREATE, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
+
+    struct MockSocket {
+        cookie: u64,
+    }
+    impl SocketRef for MockSocket {
+        fn get_socket_cookie(&self) -> Option<u64> {
+            Some(self.cookie)
+        }
+        fn get_socket_uid(&self) -> Option<uid_t> {
+            Some(0)
+        }
+    }
+    impl<'a> FromBpfValue<TestRunContext<'a>> for MockSocket {
+        unsafe fn from_bpf_value(_context: &mut TestRunContext<'a>, value: BpfValue) -> Self {
+            Self { cookie: value.as_u64() }
+        }
+    }
+
+    struct TestRunContext<'a> {
+        map_refs: Vec<MapValueRef<'a>>,
+    }
+    impl<'a> BpfSockContext for TestRunContext<'a> {
+        type BpfSockRef = MockSocket;
+    }
+    impl<'a> MapsContext<'a> for TestRunContext<'a> {
+        fn on_map_access(&mut self, _map: &Map) {}
+        fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
+            self.map_refs.push(map_ref);
+        }
+    }
+
+    struct TestContext;
+    impl EbpfProgramContext for TestContext {
+        type RunContext<'a> = TestRunContext<'a>;
+        type Packet<'a> = ();
+        type Arg1<'a> = ();
+        type Arg2<'a> = ();
+        type Arg3<'a> = ();
+        type Arg4<'a> = ();
+        type Arg5<'a> = ();
+        type Map = PinnedMap;
+    }
+
+    #[fuchsia::test]
+    fn test_sk_storage_get_uaf() {
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+            key_size: 4,
+            value_size: 8,
+            max_entries: 0,
+            flags: MapFlags::NoPrealloc,
+        };
+        let map = Map::new(schema, "test").unwrap();
+        let map_value = BpfValue::from(&*map as *const Map);
+
+        let mut context = TestRunContext { map_refs: vec![] };
+
+        // 1. Create entry for socket 42
+        let sk_value1 = BpfValue::from(42u64);
+        let init_value1 = [0x11u8; 8];
+        let init_value_ptr1 = BpfValue::from(init_value1.as_ptr());
+        let flags = BpfValue::from(BPF_SK_STORAGE_GET_F_CREATE as u64);
+
+        let ptr1 = bpf_sk_storage_get::<TestContext>(
+            &mut context,
+            map_value,
+            sk_value1,
+            init_value_ptr1,
+            flags,
+            BpfValue::default(),
+        );
+        assert!(!ptr1.is_zero());
+
+        // Verify initial value
+        // SAFETY: ptr1 is a valid pointer to the map value.
+        unsafe {
+            assert_eq!(*(ptr1.as_ptr::<u64>()), 0x1111111111111111);
+        }
+
+        // 2. Delete entry for socket 42 from map
+        let key_bytes = 42u64.to_ne_bytes();
+        map.delete(&key_bytes).unwrap();
+
+        // 3. Create entry for socket 43
+        // If UAF exists, this should reuse the same memory block because it was freed.
+        let sk_value2 = BpfValue::from(43u64);
+        let init_value2 = [0x22u8; 8];
+        let init_value_ptr2 = BpfValue::from(init_value2.as_ptr());
+
+        let ptr2 = bpf_sk_storage_get::<TestContext>(
+            &mut context,
+            map_value,
+            sk_value2,
+            init_value_ptr2,
+            flags,
+            BpfValue::default(),
+        );
+        assert!(!ptr2.is_zero());
+
+        // We want to assert that the value at ptr1 has NOT changed, which means it was not reused.
+        // This assertion will FAIL without the fix (UAF occurs,
+        // ptr1's memory is overwritten with ptr2's init value),
+        // and PASS with the fix (ptr1's memory is kept alive).
+        // SAFETY: ptr1 points to memory that is kept alive by the reference in `context`.
+        unsafe {
+            assert_eq!(*(ptr1.as_ptr::<u64>()), 0x1111111111111111);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_sk_storage_get_uaf_query() {
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+            key_size: 4,
+            value_size: 8,
+            max_entries: 0,
+            flags: MapFlags::NoPrealloc,
+        };
+        let map = Map::new(schema, "test").unwrap();
+        let map_value = BpfValue::from(&*map as *const Map);
+
+        let mut context = TestRunContext { map_refs: vec![] };
+
+        // 1. Create entry for socket 42
+        let sk_value1 = BpfValue::from(42u64);
+        let init_value1 = [0x11u8; 8];
+        let init_value_ptr1 = BpfValue::from(init_value1.as_ptr());
+        let flags = BpfValue::from(BPF_SK_STORAGE_GET_F_CREATE as u64);
+
+        let ptr1 = bpf_sk_storage_get::<TestContext>(
+            &mut context,
+            map_value,
+            sk_value1,
+            init_value_ptr1,
+            flags,
+            BpfValue::default(),
+        );
+        assert!(!ptr1.is_zero());
+
+        // Clear context to simulate that we don't hold the creation
+        // reference anymore. The map still holds the reference.
+        context.map_refs.clear();
+
+        // 2. Query entry for socket 42 (without CREATE flag)
+        let ptr1_query = bpf_sk_storage_get::<TestContext>(
+            &mut context,
+            map_value,
+            sk_value1,
+            BpfValue::default(),
+            BpfValue::default(),
+            BpfValue::default(),
+        );
+        assert_eq!(ptr1.as_u64(), ptr1_query.as_u64());
+
+        // 3. Delete entry for socket 42 from map
+        let key_bytes = 42u64.to_ne_bytes();
+        map.delete(&key_bytes).unwrap();
+
+        // 4. Create entry for socket 43
+        // If UAF exists, this should reuse the same memory block
+        // because it was freed.
+        let sk_value2 = BpfValue::from(43u64);
+        let init_value2 = [0x22u8; 8];
+        let init_value_ptr2 = BpfValue::from(init_value2.as_ptr());
+
+        let ptr2 = bpf_sk_storage_get::<TestContext>(
+            &mut context,
+            map_value,
+            sk_value2,
+            init_value_ptr2,
+            flags,
+            BpfValue::default(),
+        );
+        assert!(!ptr2.is_zero());
+
+        // We want to assert that the value at ptr1_query has NOT
+        // changed.
+        // SAFETY: ptr1_query points to memory that is kept alive by
+        // the reference in `context` (from the query).
+        unsafe {
+            assert_eq!(*(ptr1_query.as_ptr::<u64>()), 0x1111111111111111);
+        }
+    }
 }
