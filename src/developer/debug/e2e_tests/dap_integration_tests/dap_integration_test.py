@@ -8,12 +8,22 @@ import sys
 import unittest
 
 from dap_test_framework import DapTestCase
+from pydap.models import InitializeArguments
 
 
 class TestDapSmoke(DapTestCase):
     async def test_setup(self) -> None:
         # This test verifies that the setup, such as connecting to the DAP server, succeeds both locally and in the CQ
         pass
+
+
+class TestDapInit(DapTestCase):
+    async def test_initialize(self) -> None:
+        await self.initialize(InitializeArguments(adapterID="zxdb"))
+
+    async def test_initialize_partial(self) -> None:
+        self.split_request(1, delay=0.1)
+        await self.initialize(InitializeArguments(adapterID="zxdb"))
 
 
 def main() -> None:

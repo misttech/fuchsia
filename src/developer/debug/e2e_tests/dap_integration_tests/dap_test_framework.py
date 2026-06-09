@@ -8,14 +8,21 @@ import asyncio
 import copy
 import json
 import os
+import signal
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
+from async_utils.command import (
+    AsyncCommand,
+    StderrEvent,
+    StdoutEvent,
+    TerminationEvent,
+)
+from ffx_cmd.lib import FfxCmd
 from portpicker import portpicker
-from pydap.client import DapClient
 from pydap.dap_types import DapBaseModel
 from pydap.models import (
     EvaluateArguments,
@@ -23,6 +30,7 @@ from pydap.models import (
     LaunchArguments,
     StackTraceArguments,
 )
+from zxdb_dap import ZxdbDapClient
 
 
 class RequestFuture:
@@ -145,26 +153,26 @@ class DapTestFramework:
     """Base class for DAP integration tests."""
 
     def __init__(self) -> None:
-        self.client = DapClient()
+        self.client = ZxdbDapClient()
+        self._split_requests: Dict[int, float] = {}
+        self._original_write = self.client._write_message
+        setattr(self.client, "_write_message", self._patched_write_message)
         self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self.traffic_history: List[Dict[str, Any]] = []
         self.unmatched_events: List[Dict[str, Any]] = []
         self._client_task: Optional[asyncio.Task[None]] = None
         self._process_task: Optional[asyncio.Task[None]] = None
         self._request_tasks: List[asyncio.Task[None]] = []
-        self.proc: Optional[Any] = None
+        self.proc: Optional[AsyncCommand] = None
+        self._server_log_task: Optional[asyncio.Task[None]] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self.pending_futures: List[RequestFuture] = []
         self.event_expectations: List[EventFuture] = []
         self._isolate_dir: Optional[tempfile.TemporaryDirectory[str]] = None
+        self._server_logs: List[str] = []
 
     async def start_server(self, port: int) -> None:
         """Starts the DAP server via FfxCmd and waits for it to be ready."""
-        # Imported locally to allow hermetic unit testing without Fuchsia SDK dependencies.
-        import signal
-
-        from ffx_cmd.lib import FfxCmd
-
         # Instantiate FfxCmd using create_test_inner() to bypass the default
         # FfxCmd constructor's build directory lookup, which fails in isolated
         # test execution environments like CQ.
@@ -214,11 +222,12 @@ class DapTestFramework:
             "--new-agent",
             "--",
             "--enable-debug-adapter",
+            "--debug-mode",
             f"--debug-adapter-port={port}",
             f"--signal-when-ready={os.getpid()}",
         ]
-
         self.proc = await ffx_cmd.start(*args)
+        self._server_log_task = asyncio.create_task(self._read_server_log())
         # Setup signal handler to wait for zxdb to be ready
         loop = asyncio.get_running_loop()
         signal_fut = loop.create_future()
@@ -263,6 +272,10 @@ class DapTestFramework:
                 assert isinstance(resp, DapBaseModel)
                 resp_dict = resp.dump_dap()
                 self.traffic_history.append(resp_dict)
+                if not resp_dict.get("success", True):
+                    raise AssertionError(
+                        f"DAP request {command} failed: {resp_dict.get('message')}"
+                    )
                 req_fut.set_result(resp_dict)
             except Exception as e:
                 req_fut.set_exception(e)
@@ -276,6 +289,30 @@ class DapTestFramework:
         event_fut = EventFuture(self, event_name)
         self.event_expectations.append(event_fut)
         return event_fut
+
+    async def _patched_write_message(
+        self, writer: asyncio.StreamWriter, value: dict[str, Any]
+    ) -> None:
+        """Intercepts all outbound DAP messages to execute dynamic callbacks on matched sequence numbers."""
+        seq = value.get("seq")
+        if seq is not None and seq in self._split_requests:
+            delay = self._split_requests.pop(seq)
+            content = json.dumps(value, separators=(",", ":")).encode("utf-8")
+            header = f"Content-Length: {len(content)}\r\n\r\n".encode("utf-8")
+            full_payload = header + content
+            # Split in half to test arbitrary fragmentation boundaries (e.g. mid-body).
+            split_idx = len(full_payload) // 2
+            writer.write(full_payload[:split_idx])
+            await writer.drain()
+            await asyncio.sleep(delay)
+            writer.write(full_payload[split_idx:])
+            await writer.drain()
+        else:
+            await self._original_write(writer, value)
+
+    def split_request(self, seq: int, delay: float = 0.1) -> None:
+        """Configures the client to split the request with the given sequence number."""
+        self._split_requests[seq] = delay
 
     async def _event_processor_loop(self) -> None:
         """Continuously reads events from queue and processes them against expectations."""
@@ -563,17 +600,21 @@ class DapTestFramework:
             await self._writer.wait_closed()
         if self.proc:
             try:
-                if hasattr(self.proc, "terminate"):
-                    self.proc.terminate()
-                if (
-                    hasattr(self.proc, "_runner_task")
-                    and self.proc._runner_task
-                ):
-                    await self.proc._runner_task
-                elif hasattr(self.proc, "wait"):
-                    await self.proc.wait()
-            except (ProcessLookupError, AttributeError):
+                self.proc.terminate()
+            except ProcessLookupError:
                 pass
+        if self._server_log_task:
+            try:
+                await asyncio.wait_for(self._server_log_task, timeout=5.0)
+            except TimeoutError:
+                print(
+                    "Teardown: Timeout waiting for server log reader to finish, cancelling..."
+                )
+                self._server_log_task.cancel()
+                try:
+                    await self._server_log_task
+                except asyncio.CancelledError:
+                    pass
             except Exception as e:
                 print(f"Teardown: error draining server process: {e}")
 
@@ -581,26 +622,72 @@ class DapTestFramework:
             self._isolate_dir.cleanup()
             self._isolate_dir = None
 
+    async def _read_server_log(self) -> None:
+        if self.proc is None:
+            raise RuntimeError("Cannot read server log: process is not started")
+        try:
+            async for event in self.proc:
+                if isinstance(event, StdoutEvent):
+                    self._server_logs.append(
+                        f"[zxdb stdout] {event.text.decode('utf-8', errors='replace')}"
+                    )
+                elif isinstance(event, StderrEvent):
+                    self._server_logs.append(
+                        f"[zxdb stderr] {event.text.decode('utf-8', errors='replace')}"
+                    )
+                elif isinstance(event, TerminationEvent):
+                    self._server_logs.append(
+                        f"[zxdb terminated] exit code: {event.return_code}\n"
+                    )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self._server_logs.append(f"Error reading server log: {e}\n")
+            raise
+
+    def dump_server_logs(self) -> None:
+        """Dumps captured DAP server stdout/stderr logs to host output."""
+        if not self._server_logs:
+            return
+        print("\n--- Captured DAP Server Logs ---", flush=True)
+        for line in self._server_logs:
+            print(line, end="", flush=True)
+        print("---------------------------------\n", flush=True)
+
 
 class DapTestCase(unittest.IsolatedAsyncioTestCase):
     """Base class for DAP integration tests, handling server lifecycle fixtures."""
 
     async def asyncSetUp(self) -> None:
+        print(f"\n[TEST START] {self.id()}", flush=True)
         self.framework = DapTestFramework()
         self.port = portpicker.pick_unused_port()
+
         # Start server and connect
         await self.framework.start_server(self.port)
 
     async def asyncTearDown(self) -> None:
-        # Await all pending futures first to check expectations
+        test_failed = False
+        outcome = getattr(self, "_outcome", None)
+        if outcome:
+            errors = getattr(outcome, "errors", [])
+            for _, exc_info in errors:
+                if exc_info:
+                    test_failed = True
+                    break
+
         try:
             await self.framework.verify_all_expectations()
         except Exception as e:
-            print(f"Teardown: Expectations failed: {e}")
+            test_failed = True
+            print(f"Teardown: Expectations failed: {e}", flush=True)
             raise
         finally:
-            # Disconnect and terminate server
+            # Disconnect and terminate server (drains logs)
             await self.framework.teardown()
+            if test_failed:
+                self.framework.dump_server_logs()
+            print(f"[TEST END] {self.id()}\n", flush=True)
 
     # Delegation methods for cleaner test syntax
     def initialize(self, args: InitializeArguments) -> RequestFuture:
@@ -617,6 +704,9 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
         return self.framework.stack_trace(args)
+
+    def split_request(self, seq: int, delay: float = 0.1) -> None:
+        self.framework.split_request(seq, delay)
 
     def on_event(self, event_name: str) -> EventFuture:
         return self.framework.on_event(event_name)

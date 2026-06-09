@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "src/developer/debug/shared/logging/logging.h"
@@ -36,9 +37,36 @@
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace zxdb {
+namespace {
+
+constexpr std::string_view kContentLengthHeader = "Content-Length:";
+
+// Escapes newlines and carriage returns for clean single-line debug logging.
+std::string EscapeNewlines(std::string_view sv) {
+  size_t extra = 0;
+  for (char c : sv) {
+    if (c == '\n' || c == '\r') {
+      extra++;
+    }
+  }
+  std::string s;
+  s.reserve(sv.size() + extra);
+  for (char c : sv) {
+    if (c == '\n') {
+      s += "\\n";
+    } else if (c == '\r') {
+      s += "\\r";
+    } else {
+      s += c;
+    }
+  }
+  return s;
+}
+
+}  // namespace
 
 DebugAdapterContext::DebugAdapterContext(Console* console, debug::StreamBuffer* stream)
-    : console_(console), dap_(dap::Session::create()) {
+    : console_(console), dap_(dap::Session::create()), stream_(stream) {
   reader_ = std::make_shared<DebugAdapterReader>(stream);
   writer_ = std::make_shared<DebugAdapterWriter>(stream);
 
@@ -238,9 +266,74 @@ void DebugAdapterContext::Init() {
   init_done_ = true;
 }
 
+bool DebugAdapterContext::HasCompleteMessage() {
+  if (!stream_) {
+    return false;
+  }
+
+  char peek_buf[1024];
+  size_t peeked = stream_->Peek(peek_buf, sizeof(peek_buf));
+  if (peeked == 0) {
+    return false;
+  }
+
+  std::string_view view(peek_buf, peeked);
+
+  size_t cl_pos = view.find("Content-Length:");
+  if (cl_pos == std::string_view::npos) {
+    DEBUG_LOG(DebugAdapter)
+        << "Completeness check: 'Content-Length:' not found in peeked data (size=" << peeked
+        << "): " << EscapeNewlines(view);
+    return false;
+  }
+
+  size_t header_end = view.find("\r\n\r\n", cl_pos);
+  if (header_end == std::string_view::npos) {
+    DEBUG_LOG(DebugAdapter)
+        << "Completeness check: '\\r\\n\\r\\n' not found after 'Content-Length:' (size=" << peeked
+        << "): " << EscapeNewlines(view);
+    return false;
+  }
+
+  size_t val_pos = cl_pos + kContentLengthHeader.size();
+  while (val_pos < header_end && (view[val_pos] == ' ' || view[val_pos] == '\t')) {
+    val_pos++;
+  }
+
+  size_t len = 0;
+  while (val_pos < header_end && view[val_pos] >= '0' && view[val_pos] <= '9') {
+    len = len * 10 + (view[val_pos] - '0');
+    val_pos++;
+  }
+
+  if (len == 0) {
+    DEBUG_LOG(DebugAdapter) << "Completeness check: Invalid or 0 Content-Length in: "
+                            << EscapeNewlines(view);
+    return false;
+  }
+
+  size_t header_len = header_end + 4;
+  size_t total_len = header_len + len;
+
+  bool complete = stream_->IsAvailable(total_len);
+
+  DEBUG_LOG(DebugAdapter) << "Completeness check: required=" << total_len << ", peeked=" << peeked
+                          << ", complete=" << complete;
+
+  if (!complete) {
+    DEBUG_LOG(DebugAdapter) << "Incomplete message data: " << EscapeNewlines(view);
+  }
+
+  return complete;
+}
+
 void DebugAdapterContext::OnStreamReadable() {
-  while (auto payload = dap_->getPayload()) {
-    payload();
+  while (HasCompleteMessage()) {
+    if (auto payload = dap_->getPayload()) {
+      payload();
+    } else {
+      break;
+    }
   }
 }
 

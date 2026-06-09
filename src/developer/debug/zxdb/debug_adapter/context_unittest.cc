@@ -446,4 +446,33 @@ TEST_F(ProcessDetachTest, TerminatedEvent) {
   EXPECT_TRUE(event_received);
 }
 
+TEST_F(ContextTest, PartialInitializeRequest) {
+  SetUpConnectedContext();
+
+  bool event_received = false;
+  client().registerHandler([&](const dap::InitializedEvent& arg) { event_received = true; });
+
+  std::string json =
+      "{\"arguments\":{\"adapterID\":\"zxdb\"},\"command\":\"initialize\",\"seq\":1,\"type\":"
+      "\"request\"}";
+  std::string header = "Content-Length: " + std::to_string(json.size()) + "\r\n\r\n";
+  std::string full_msg = header + json;
+
+  size_t split_pos = full_msg.size() / 2;
+  std::string part1 = full_msg.substr(0, split_pos);
+  std::string part2 = full_msg.substr(split_pos);
+
+  context().stream()->AddReadData(std::vector<char>(part1.begin(), part1.end()));
+  context().OnStreamReadable();
+
+  RunPendingClientCalls();
+  EXPECT_FALSE(event_received);
+
+  context().stream()->AddReadData(std::vector<char>(part2.begin(), part2.end()));
+  context().OnStreamReadable();
+
+  RunPendingClientCalls();
+  EXPECT_TRUE(event_received);
+}
+
 }  // namespace zxdb

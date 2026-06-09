@@ -71,6 +71,7 @@ class DebugAdapterContext : public ThreadObserver,
   Console* console() { return console_; }
   Session* session() { return console_->context().session(); }
   dap::Session& dap() { return *dap_; }
+  debug::StreamBuffer* stream() { return stream_; }
   bool supports_run_in_terminal() { return supports_run_in_terminal_; }
 
   // Notification about the stream.
@@ -198,6 +199,15 @@ class DebugAdapterContext : public ThreadObserver,
 
   // Monitors async-backtrace state changes and propagates via custom DAP events.
   std::optional<AsyncBacktraceSubscription> async_backtrace_subscription_;
+
+  // Checks if a complete DAP message is available in the stream before parsing. The `dap::Reader`
+  // interface (defined in `dap/io.h`) expects `read()` to block until data is available, but our
+  // `DebugAdapterReader` implementation is non-blocking. To prevent `cppdap` from corrupting the
+  // stream when reading partial packets, we gate calls with this check to ensure a full message is
+  // buffered. See more in https://fxbug.dev/521233855.
+  bool HasCompleteMessage();
+
+  debug::StreamBuffer* stream_ = nullptr;
 
   void Init();
 };

@@ -3,9 +3,13 @@
 # found in the LICENSE file.
 
 import asyncio
+import sys
 import unittest
+from io import StringIO
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+from async_utils.command import StderrEvent, StdoutEvent, TerminationEvent
 from dap_test_framework import DapTestFramework, RequestFuture
 from pydap.client import DapClient
 
@@ -169,6 +173,54 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(2.0):
             _, event = await asyncio.gather(put_event(), fut)
             self.assertEqual(event["event"], "initialized")
+
+    async def test_server_log_captured_on_exception(self) -> None:
+        class FakeProc:
+            def __init__(self) -> None:
+                self.events = [
+                    StdoutEvent(text=b"stdout line\n"),
+                    StderrEvent(text=b"stderr line\n"),
+                    TerminationEvent(return_code=0, runtime=1.0),
+                ]
+
+            def __aiter__(self) -> "FakeProc":
+                return self
+
+            async def __anext__(self) -> Any:
+                if not self.events:
+                    raise StopAsyncIteration
+                await asyncio.sleep(0.01)
+                return self.events.pop(0)
+
+            def terminate(self) -> None:
+                pass
+
+            def kill(self) -> None:
+                pass
+
+        self.framework.proc = FakeProc()  # type: ignore
+
+        # Start the server log task
+        self.framework._server_log_task = asyncio.create_task(
+            self.framework._read_server_log()
+        )
+
+        captured_output = StringIO()
+        sys.stdout = captured_output
+        try:
+            # Simulate a test failure exception
+            raise RuntimeError("Simulated test failure")
+        except RuntimeError:
+            # This is what asyncTearDown does
+            await self.framework.teardown()
+            self.framework.dump_server_logs()
+        finally:
+            sys.stdout = sys.__stdout__
+
+        output_str = captured_output.getvalue()
+        self.assertIn("[zxdb stdout] stdout line\n", output_str)
+        self.assertIn("[zxdb stderr] stderr line\n", output_str)
+        self.assertIn("[zxdb terminated] exit code: 0", output_str)
 
 
 if __name__ == "__main__":
