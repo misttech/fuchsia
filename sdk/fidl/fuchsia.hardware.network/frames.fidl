@@ -157,10 +157,6 @@ type RxFlags = strict bits : uint32 {
     /// `SessionFlags::REPORT_INVALID_RX` option is selected when creating a
     /// session.
     RX_VALIDATION_ERROR = 0x40000000;
-    /// This is an echoed tx frame, created by a tx request.
-    ///
-    /// Can only be set in sessions that have the `LISTEN_TX` flag.
-    RX_ECHOED_TX = 0x80000000;
 };
 
 /// Flags set by a Client when handing a buffer to a client on the tx path.
