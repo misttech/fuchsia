@@ -531,7 +531,6 @@ mod test {
     use flex_fuchsia_net_interfaces as fnet_interfaces;
     use flex_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
     use fnet_interfaces_admin::InterfaceRemovedReason;
-    use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
     use test_case::test_case;
     use zx_status as zx;
 

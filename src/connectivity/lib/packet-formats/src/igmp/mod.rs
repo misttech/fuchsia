@@ -407,7 +407,7 @@ pub fn peek_message_type<MessageType: TryFrom<u8>>(
 #[cfg(test)]
 mod tests {
 
-    use packet::{NestablePacketBuilder as _, NoOpSerializationContext, ParseBuffer, Serializer};
+    use packet::{NoOpSerializationContext, ParseBuffer, Serializer};
 
     use super::*;
     use crate::igmp::messages::*;

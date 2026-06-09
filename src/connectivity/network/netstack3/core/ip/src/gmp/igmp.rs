@@ -1041,8 +1041,8 @@ mod tests {
         run_with_many_seeds,
     };
     use netstack3_base::{
-        CounterCollection, CounterContext, CtxPair, Instant as _, IntoCoreTimerCtx,
-        NetworkSerializationContext, NetworkSerializer, SendFrameContext as _,
+        CounterCollection, CounterContext, CtxPair, IntoCoreTimerCtx, NetworkSerializationContext,
+        NetworkSerializer, SendFrameContext as _,
     };
     use packet::serialize::Buf;
     use packet::{ParsablePacket as _, ParseBuffer, Serializer};

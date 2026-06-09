@@ -4021,8 +4021,8 @@ mod tests {
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
-    use futures::future::{self, FutureExt as _};
-    use futures::stream::{FusedStream as _, TryStreamExt as _};
+    use futures::future;
+    use futures::stream::FusedStream as _;
     use net_declare::{
         fidl_ip, fidl_ip_v4_with_prefix, fidl_ip_v6, fidl_ip_v6_with_prefix, fidl_mac, fidl_subnet,
     };

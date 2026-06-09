@@ -1649,7 +1649,7 @@ pub(crate) fn reassemble_fragmented_packet<
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use packet::{Buf, FragmentedBuffer, NestableSerializer as _, ParseBuffer};
+    use packet::{Buf, FragmentedBuffer, ParseBuffer};
     use test_case::test_case;
 
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};

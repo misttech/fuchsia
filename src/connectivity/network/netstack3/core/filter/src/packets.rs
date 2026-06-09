@@ -3091,7 +3091,7 @@ pub mod testutil {
         use net_declare::{net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
         use net_types::ip::Subnet;
         use netstack3_base::{SeqNum, UnscaledWindowSize};
-        use packet::{NestablePacketBuilder as _, PartialPacketBuilder as _, TruncateDirection};
+        use packet::{PartialPacketBuilder as _, TruncateDirection};
         use packet_formats::icmp::{Icmpv4DestUnreachableCode, Icmpv6DestUnreachableCode};
 
         use super::*;
@@ -3646,8 +3646,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use packet::{
-        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, NestablePacketBuilder as _,
-        NestableSerializer as _, ParseBufferMut, PartialSerializer,
+        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, ParseBufferMut, PartialSerializer,
     };
     use packet_formats::icmp::IcmpZeroCode;
     use packet_formats::tcp::TcpSegmentBuilder;

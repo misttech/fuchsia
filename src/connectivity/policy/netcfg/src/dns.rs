@@ -337,9 +337,7 @@ mod tests {
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
     };
     use futures::channel::mpsc;
-    use futures::{
-        FutureExt as _, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _,
-    };
+    use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
     use net_declare::fidl_socket_addr;
     use pretty_assertions::assert_eq;
 

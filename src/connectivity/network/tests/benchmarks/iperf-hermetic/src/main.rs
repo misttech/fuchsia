@@ -301,7 +301,7 @@ async fn bench<N: Netstack, I: TestIpExt>(
 mod test {
     use futures::StreamExt as _;
     use netstack_testing_common::get_component_moniker;
-    use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
+    use netstack_testing_common::realms::Netstack;
     use netstack_testing_macros::netstack_test;
     use test_case::test_case;
 

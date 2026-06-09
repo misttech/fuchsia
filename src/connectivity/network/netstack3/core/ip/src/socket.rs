@@ -1597,8 +1597,8 @@ pub(crate) mod testutil {
 
     use crate::internal::types::RoutePreference;
     use derivative::Derivative;
+    use net_types::MulticastAddr;
     use net_types::ip::{GenericOverIp, IpAddr, IpAddress, Ipv4, Ipv4Addr, Ipv6, Subnet};
-    use net_types::{MulticastAddr, Witness as _};
     use netstack3_base::testutil::{FakeCoreCtx, FakeStrongDeviceId, FakeWeakDeviceId};
     use netstack3_base::{SendFrameContext, SendFrameError};
     use netstack3_filter::Tuple;

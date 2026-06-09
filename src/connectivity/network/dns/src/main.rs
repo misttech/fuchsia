@@ -1364,7 +1364,6 @@ mod tests {
     use diagnostics_assertions::{NonZeroUintProperty, assert_data_tree, tree_assertion};
     use dns::DEFAULT_PORT;
     use dns::test_util::*;
-    use futures::future::TryFutureExt as _;
     use itertools::Itertools as _;
     use net_declare::{fidl_ip, std_ip, std_ip_v4, std_ip_v6, std_socket_addr};
     use net_types::ip::Ip as _;

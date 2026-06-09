@@ -1393,7 +1393,7 @@ pub mod testutil {
 #[cfg(test)]
 mod tests {
     use net_types::ethernet::Mac;
-    use packet::{Buf, FragmentedBuffer, NestableSerializer as _, ParseBuffer};
+    use packet::{Buf, FragmentedBuffer, ParseBuffer};
 
     use super::*;
     use crate::ethernet::{

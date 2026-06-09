@@ -845,7 +845,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use net_types::ethernet::Mac;
-    use net_types::ip::{Ip as _, IpVersionMarker, Mtu};
+    use net_types::ip::{IpVersionMarker, Mtu};
     use netstack3_base::testutil::{
         FakeDeviceId, FakeInstant, FakeTimerCtxExt, FakeWeakDeviceId, TestIpExt, assert_empty,
         new_rng, run_with_many_seeds,
