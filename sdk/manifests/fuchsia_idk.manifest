@@ -211,9 +211,9 @@ fidl_library://fidl/fuchsia.diagnostics.types
 fidl_library://fidl/fuchsia.driver.development
 fidl_library://fidl/fuchsia.driver.framework
 fidl_library://fidl/fuchsia.driver.metadata (unstable)
-fidl_library://fidl/fuchsia.driver.token (unstable)
 fidl_library://fidl/fuchsia.driver.registrar
 fidl_library://fidl/fuchsia.driver.test
+fidl_library://fidl/fuchsia.driver.token (unstable)
 fidl_library://fidl/fuchsia.element
 fidl_library://fidl/fuchsia.factory
 fidl_library://fidl/fuchsia.factory.wlan
@@ -243,6 +243,7 @@ fidl_library://fidl/fuchsia.hardware.inlineencryption (unstable)
 fidl_library://fidl/fuchsia.hardware.interconnect (unstable)
 fidl_library://fidl/fuchsia.hardware.light
 fidl_library://fidl/fuchsia.hardware.mailbox (unstable)
+fidl_library://fidl/fuchsia.hardware.mediacodec (unstable)
 fidl_library://fidl/fuchsia.hardware.network
 fidl_library://fidl/fuchsia.hardware.network.driver (unstable)
 fidl_library://fidl/fuchsia.hardware.nfc (unstable)

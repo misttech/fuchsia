@@ -9,7 +9,10 @@ fidl_library(
     srcs = [
         "mediacodec.fidl",
     ],
+    api_area = "Media",
+    category = "partner",
     enable_hlcpp = True,
+    stable = False,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.io",

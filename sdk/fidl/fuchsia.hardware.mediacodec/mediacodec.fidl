@@ -7,22 +7,26 @@ library fuchsia.hardware.mediacodec;
 using fuchsia.io;
 using zx;
 
-closed protocol Device {
-    /// This method connects the caller with a fuchsia.mediacodec.CodecFactory.
-    strict GetCodecFactory(resource struct {
+@available(added=HEAD)
+open protocol Device {
+    /// This request connects the caller with a fuchsia.mediacodec.CodecFactory.
+    flexible GetCodecFactory(resource struct {
         request zx.Handle:CHANNEL;
     });
 
-    /// This method hands a service directory to the codec.  Currently the only service available
-    /// via this service directory is fuchsia.metrics.MetricEventLoggerFactory.  Any services
-    /// available via this service directory are services we'd prefer to get via the DDK.  A device
-    /// can simply close this channel if the device doesn't need to use any services available via
-    /// this service directory.
-    strict SetAuxServiceDirectory(resource struct {
+    /// This request is deprecated, and should do nothing in DFv2 drivers. DFv2 drivers should just
+    /// drop `service_directory`, and not rely on the client ever sending `SetAuxServiceDirectory`.
+    ///
+    /// For legacy reasons, if `SetAuxServiceDirectory` is sent by the client, the
+    /// `service_directory` has `fuchsia.metrics.MetricEventLoggerFactory`. However, DFv2 drivers
+    /// should instead use services obtained from their incoming service directory.
+    @available(added=HEAD, deprecated=HEAD)
+    flexible SetAuxServiceDirectory(resource struct {
         service_directory client_end:fuchsia.io.Directory;
     });
 };
 
+@available(added=HEAD)
 // Added to allow service connection to replace devfs
 service Service {
     device client_end:Device;

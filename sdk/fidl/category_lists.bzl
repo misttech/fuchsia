@@ -218,6 +218,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_idk",
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_idk",
     "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox_idk",
+    "//sdk/fidl/fuchsia.hardware.mediacodec:fuchsia.hardware.mediacodec_idk",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_idk",
     "//sdk/fidl/fuchsia.hardware.nfc:fuchsia.hardware.nfc_idk",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_idk",
