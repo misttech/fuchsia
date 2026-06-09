@@ -9,6 +9,7 @@ import sys
 from typing import Final
 
 from daemon_manager.manager import UDS_PATH, DaemonManager, DaemonManagerError
+from pydantic import ValidationError
 from shared.protocol import (
     BaseRequest,
     StartRequest,
@@ -123,10 +124,7 @@ async def main(args: list[str]) -> int:
                 return await start_daemon(req.port, req.connect)
             elif isinstance(req, StopRequest):
                 return await stop_daemon()
-        except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON: {e}", file=sys.stderr)
-            return 1
-        except ValueError as e:
+        except (ValueError, ValidationError) as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
     elif parsed_args.command == "start":
@@ -137,11 +135,17 @@ async def main(args: list[str]) -> int:
         try:
             args_dict = vars(parsed_args)
             req = make_request(args_dict)
-        except ValueError as e:
+        except (ValueError, ValidationError) as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
     assert req is not None
+    # This assertion should theoretically be impossible to trigger because
+    # parsed_args.command dispatches to make_request(), which uses Pydantic's
+    # TypeAdapter.validate_python() to guarantee that 'req' is a valid subclass
+    # of BaseRequest. Actual validation failures are caught and surfaced as
+    # ValueError/ValidationError in shared/protocol.py.
+    # We preserve this as a defensive runtime check.
     assert isinstance(req, BaseRequest)
     if parsed_args.ack_seq is not None:
         req.ack_seq = parsed_args.ack_seq

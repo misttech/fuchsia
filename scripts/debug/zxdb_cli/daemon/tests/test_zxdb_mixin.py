@@ -43,6 +43,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(resp.success)
             mock_detach.assert_called_once()
+            self.assertIsNotNone(mock_detach.call_args)
+            assert mock_detach.call_args is not None
             args = mock_detach.call_args[0][1]
             self.assertTrue(args.detach_all)
 
@@ -71,6 +73,8 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(resp.success)
             mock_detach.assert_called_once()
+            self.assertIsNotNone(mock_detach.call_args)
+            assert mock_detach.call_args is not None
             args = mock_detach.call_args[0][1]
             self.assertEqual(args.pid, 1234)
 
@@ -84,21 +88,6 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event["body"]["pid"], 1234)
             self.assertFalse(event["body"]["all"])
 
-    async def test_handle_detach_missing_pid(self) -> None:
-        daemon = Daemon(port=15678)
-        daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1"}
-
-        req = DetachRequest()
-        resp = await daemon.handle_detach(req)
-
-        self.assertFalse(resp.success)
-        self.assertIn("PID is required", resp.message or "")
-
-        # Verify state NOT modified
-        self.assertEqual(daemon.active_processes, {1234: "proc1"})
-        self.assertEqual(daemon.event_queue.qsize(), 0)
-
     async def test_handle_detach_not_connected(self) -> None:
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = None
@@ -108,22 +97,6 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
-
-    async def test_handle_detach_malformed_request(self) -> None:
-        daemon = Daemon(port=15678)
-        daemon.zxdb_writer = Mock()
-        daemon.active_processes = {1234: "proc1"}
-
-        # Both pid and all set
-        req = DetachRequest(pid=1234, all=True)
-        resp = await daemon.handle_detach(req)
-
-        self.assertFalse(resp.success)
-        self.assertIn("Cannot specify both PID and 'all'", resp.message or "")
-
-        # Verify state NOT modified
-        self.assertEqual(daemon.active_processes, {1234: "proc1"})
-        self.assertEqual(daemon.event_queue.qsize(), 0)
 
     async def test_handle_detach_dap_failure(self) -> None:
         daemon = Daemon(port=15678)

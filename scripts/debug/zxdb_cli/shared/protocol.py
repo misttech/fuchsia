@@ -2,232 +2,173 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import dataclasses
-import json
-from typing import Any
+from typing import Annotated, Any, Literal
 
-PROTOCOL_VERSION = 3
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+
+PROTOCOL_VERSION = 4
 
 
-@dataclasses.dataclass(kw_only=True)
-class BaseRequest:
-    """Base class for all requests containing the command name."""
+class BaseRequest(BaseModel):
+    """Base class for all requests, enforcing keyword-only instantiation."""
+
+    model_config = ConfigDict(kw_only=True)
 
     command: str
     last_seen_seq: int | None = None
     ack_seq: int | None = None
 
 
-@dataclasses.dataclass(kw_only=True)
 class StartRequest(BaseRequest):
     """Request to start the debugging session."""
 
+    command: Literal["start"] = "start"
     port: int | None = None
-
-    # Connect to an existing debug adapter on |port|.
     connect: bool = False
-    command: str = "start"
 
 
-@dataclasses.dataclass(kw_only=True)
 class HelloRequest(BaseRequest):
     """Initial handshake request to verify protocol version."""
 
+    command: Literal["hello"] = "hello"
     version: int
-    command: str = "hello"
 
 
-@dataclasses.dataclass(kw_only=True)
 class StopRequest(BaseRequest):
     """Request to stop the daemon and session."""
 
-    command: str = "stop"
+    command: Literal["stop"] = "stop"
 
 
-@dataclasses.dataclass(kw_only=True)
 class DetachRequest(BaseRequest):
     """Request to detach from a process."""
 
+    command: Literal["detach"] = "detach"
     pid: int | None = None
     all: bool = False
-    command: str = "detach"
+
+    @model_validator(mode="after")
+    def validate(self) -> "DetachRequest":
+        if self.all and self.pid is not None:
+            raise ValueError("Cannot specify both PID and all")
+        if not self.all and self.pid is None:
+            raise ValueError("PID is required when all is not specified")
+        return self
 
 
-@dataclasses.dataclass(kw_only=True)
 class GetStateRequest(BaseRequest):
     """Request current state of threads."""
 
-    command: str = "get-state"
+    command: Literal["get-state"] = "get-state"
 
 
-@dataclasses.dataclass(kw_only=True)
 class WaitForEventRequest(BaseRequest):
+    """Request to wait for a debug adapter event."""
+
+    command: Literal["wait-for-event"] = "wait-for-event"
+    last_seen_seq: int  # Overridden to be required
     timeout: int | None = None
-    command: str = "wait-for-event"
 
 
-@dataclasses.dataclass(kw_only=True)
 class AttachRequest(BaseRequest):
     """Request to attach to a process."""
 
-    filter: str | int
-    command: str = "attach"
+    command: Literal["attach"] = "attach"
+    # Place 'int' first in the Union to avoid Pydantic standard coercion of PIDs to strings.
+    filter: int | str
 
 
-@dataclasses.dataclass(kw_only=True)
 class ThreadsRequest(BaseRequest):
     """Request list of threads."""
 
-    command: str = "threads"
+    command: Literal["threads"] = "threads"
 
 
-# TODO(https://fxbug.dev/509557630): Implement process-wide continue.
-@dataclasses.dataclass(kw_only=True)
 class ContinueRequest(BaseRequest):
     """Request to resume execution of a thread."""
 
+    command: Literal["continue"] = "continue"
     thread_id: int
     single_thread: bool | None = None
-    command: str = "continue"
 
 
-# TODO(https://fxbug.dev/509557630): Implement process-wide pause.
-@dataclasses.dataclass(kw_only=True)
 class PauseRequest(BaseRequest):
     """Request to pause execution of a thread."""
 
+    command: Literal["pause"] = "pause"
     thread_id: int
-    command: str = "pause"
 
 
-@dataclasses.dataclass(kw_only=True)
 class StackTraceRequest(BaseRequest):
     """Request stack trace for a thread."""
 
+    command: Literal["stackTrace"] = "stackTrace"
     thread_id: int
-    command: str = "stackTrace"
 
 
-@dataclasses.dataclass
-class ThreadInfo:
+class ThreadInfo(BaseModel):
     """Information about a single thread."""
 
     id: int
     name: str
 
 
-@dataclasses.dataclass
-class GetStateResponse:
-    """Response for get-state command containing thread list."""
+class GetStateResponse(BaseModel):
+    """Response for get-state command containing thread list and active processes."""
 
     threads: list[ThreadInfo]
+    processes: dict[int, str] | None = None
 
 
-@dataclasses.dataclass
-class Response:
+class Response(BaseModel):
     """Standard response wrapper."""
 
     success: bool
     message: str | None = None
-    body: dict[str, Any] | None = None
+    body: GetStateResponse | dict[str, Any] | None = None
     events: list[dict[str, Any]] | None = None
 
 
-def serialize(obj: BaseRequest | Response) -> str:
-    assert dataclasses.is_dataclass(obj)
-    return json.dumps(dataclasses.asdict(obj)) + "\n"
+# RequestType is a polymorphic union of all request models, using the "command" field
+# as a discriminator. This allows Pydantic to automatically select and validate
+# the correct subclass during parsing.
+RequestType = Annotated[
+    StartRequest
+    | HelloRequest
+    | StopRequest
+    | DetachRequest
+    | GetStateRequest
+    | WaitForEventRequest
+    | AttachRequest
+    | ThreadsRequest
+    | ContinueRequest
+    | PauseRequest
+    | StackTraceRequest,
+    Field(discriminator="command"),
+]
+
+# TypeAdapter is used to validate python dicts or JSON payloads against the polymorphic RequestType union.
+_request_adapter = TypeAdapter(RequestType)
+
+
+def serialize(obj: BaseModel) -> str:
+    return obj.model_dump_json() + "\n"
 
 
 def make_request(data: dict[str, Any]) -> BaseRequest:
-    """Dispatches raw dictionary data into appropriate request objects."""
-
-    command = data.get("command")
-    req: BaseRequest
-    match command:
-        case "start":
-            req = StartRequest(
-                port=data.get("port"),
-                connect=data.get("connect", False),
-            )
-        case "hello":
-            version = data.get("version")
-            if version is None:
-                raise ValueError("Version must be specified for hello")
-            req = HelloRequest(version=version)
-        case "stop":
-            req = StopRequest()
-        case "detach":
-            raw_pid = data.get("pid")
-            raw_all = data.get("all", False)
-            if raw_all and raw_pid is not None:
-                raise ValueError("Cannot specify both PID and all")
-            if not raw_all and raw_pid is None:
-                raise ValueError("PID is required when all is not specified")
-
-            try:
-                pid = int(raw_pid) if raw_pid is not None else None
-            except ValueError:
-                raise ValueError("pid must be an integer")
-
-            req = DetachRequest(pid=pid, all=data.get("all", False))
-        case "get-state":
-            req = GetStateRequest()
-        case "attach":
-            process_filter = data.get("filter")
-            if process_filter is None:
-                raise ValueError("Filter must be specified for attach")
-            req = AttachRequest(filter=process_filter)
-        case "threads":
-            req = ThreadsRequest()
-        case "pause":
-            thread_id = data.get("thread_id")
-            if thread_id is None:
-                raise ValueError("Thread ID must be specified for pause")
-            req = PauseRequest(thread_id=thread_id)
-        case "continue":
-            thread_id = data.get("thread_id")
-            if thread_id is None:
-                raise ValueError("Thread ID must be specified for continue")
-            req = ContinueRequest(
-                thread_id=thread_id, single_thread=data.get("single_thread")
-            )
-        case "stackTrace":
-            thread_id = data.get("thread_id")
-            if thread_id is None:
-                raise ValueError("Thread ID must be specified for stackTrace")
-            req = StackTraceRequest(thread_id=thread_id)
-        case "wait-for-event":
-            last_seen = data.get("last_seen_seq")
-            timeout = data.get("timeout")
-            if last_seen is not None:
-                try:
-                    last_seen_seq = int(last_seen)
-                except ValueError:
-                    raise ValueError("last_seen_seq must be an integer")
-            else:
-                last_seen_seq = None
-
-            try:
-                timeout_val = int(timeout) if timeout is not None else None
-            except ValueError:
-                raise ValueError("timeout must be an integer")
-
-            req = WaitForEventRequest(
-                last_seen_seq=last_seen_seq, timeout=timeout_val
-            )
-        case _:
-            raise ValueError(f"Unknown command: {command}")
-
-    ack_seq = data.get("ack_seq")
-    if ack_seq is not None:
-        try:
-            req.ack_seq = int(ack_seq)
-        except ValueError:
-            raise ValueError("ack_seq must be an integer")
-
-    return req
+    return _request_adapter.validate_python(data)
 
 
 def deserialize_request(line: str) -> BaseRequest:
-    data = json.loads(line.strip())
-    return make_request(data)
+    return _request_adapter.validate_json(line.strip())
+
+
+def get_schema() -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "zxdb-cli Protocol Schema",
+        "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
+        "version": PROTOCOL_VERSION,
+        "requests": _request_adapter.json_schema(),
+        "responses": Response.model_json_schema(),
+    }

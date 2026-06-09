@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import asyncio
-import json
 import os
 import signal
 import socket
@@ -13,9 +12,11 @@ from pathlib import Path
 from typing import Final
 
 from fx_cmd.lib import FxCmd
+from pydantic import ValidationError
 from shared.protocol import (
     PROTOCOL_VERSION,
     HelloRequest,
+    Response,
     StartRequest,
     StopRequest,
     serialize,
@@ -134,14 +135,20 @@ class DaemonManager:
                     "No response received during handshake"
                 )
 
-            resp_dict = json.loads(response_line.decode("utf-8"))
-            if not resp_dict.get("success"):
-                raise DaemonHandshakeError(
-                    f"Handshake failed: {resp_dict.get('message')}"
+            try:
+                resp = Response.model_validate_json(
+                    response_line.decode("utf-8")
                 )
+            except ValidationError as e:
+                raise DaemonHandshakeError(f"Malformed handshake response: {e}")
 
-            body = resp_dict.get("body", {})
-            daemon_version = body.get("protocol_version")
+            if not resp.success:
+                raise DaemonHandshakeError(f"Handshake failed: {resp.message}")
+
+            if not isinstance(resp.body, dict):
+                raise DaemonHandshakeError("Malformed handshake response body")
+
+            daemon_version = resp.body.get("protocol_version")
             if daemon_version != PROTOCOL_VERSION:
                 raise DaemonHandshakeError(
                     f"Protocol version mismatch. CLI: {PROTOCOL_VERSION}, Daemon: {daemon_version}"
@@ -197,10 +204,18 @@ class DaemonManager:
             if not response_line:
                 raise DaemonConnectionError("No response received from daemon.")
 
-            resp_dict = json.loads(response_line.decode("utf-8"))
-            if not resp_dict.get("success"):
+            try:
+                resp = Response.model_validate_json(
+                    response_line.decode("utf-8")
+                )
+            except ValidationError as e:
                 raise DaemonConnectionError(
-                    resp_dict.get("message", "Failed to connect to DAP")
+                    f"Malformed response from daemon: {e}"
+                )
+
+            if not resp.success:
+                raise DaemonConnectionError(
+                    resp.message or "Failed to connect to DAP"
                 )
 
         except DaemonConnectionError:
@@ -344,10 +359,18 @@ class DaemonManager:
                     raise DaemonConnectionError(
                         "No response received from daemon on start request."
                     )
-                resp_dict = json.loads(response_line.decode("utf-8"))
-                if not resp_dict.get("success"):
+                try:
+                    resp = Response.model_validate_json(
+                        response_line.decode("utf-8")
+                    )
+                except ValidationError as e:
                     raise DaemonConnectionError(
-                        resp_dict.get("message", "Failed to initialize session")
+                        f"Malformed response on start request: {e}"
+                    )
+
+                if not resp.success:
+                    raise DaemonConnectionError(
+                        resp.message or "Failed to initialize session"
                     )
             except DaemonConnectionError:
                 raise

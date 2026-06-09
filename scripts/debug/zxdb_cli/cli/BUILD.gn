@@ -28,5 +28,6 @@ if (is_host) {
   python_host_test("cli_test") {
     main_source = "tests/test_cli.py"
     libraries = [ ":cli_lib" ]
+    test_data_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
   }
 }

@@ -106,6 +106,10 @@ if (is_host) {
       test_dir = "$root_out_dir/test_data/fxtest-rewrite-tests"
       sources = binary_sources + [ "main.py" ]
       libraries = binary_deps + [ "//third_party/parameterized" ]
+
+      # TODO(https://fxbug.dev/521328891): The debugger module needs pydantic to resolve, even if it
+      # isn't used.
+      test_data_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
       deps = [
         ":test_data",
         ":test_deps",

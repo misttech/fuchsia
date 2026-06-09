@@ -26,12 +26,14 @@ from shared.protocol import (
     ContinueRequest,
     DetachRequest,
     GetStateRequest,
+    GetStateResponse,
     HelloRequest,
     PauseRequest,
     Response,
     StackTraceRequest,
     StartRequest,
     StopRequest,
+    ThreadInfo,
     ThreadsRequest,
     WaitForEventRequest,
     deserialize_request,
@@ -294,9 +296,7 @@ class Daemon:
         finally:
             loop.remove_signal_handler(signal.SIGUSR1)
 
-    async def handle_start(self, req: BaseRequest) -> Response:
-        assert isinstance(req, StartRequest)
-
+    async def handle_start(self, req: StartRequest) -> Response:
         async with self._start_lock:
             if resp := self._check_already_running(req):
                 return resp
@@ -351,19 +351,7 @@ class Daemon:
         self.stop_event.set()
         return Response(success=True, message="Daemon stopping")
 
-    async def handle_detach(self, req: BaseRequest) -> Response:
-        assert isinstance(req, DetachRequest)
-        if req.all and req.pid is not None:
-            return Response(
-                success=False,
-                message="Cannot specify both PID and 'all' in detach request",
-            )
-        if not req.all and req.pid is None:
-            return Response(
-                success=False,
-                message="PID is required when 'all' is not specified",
-            )
-
+    async def handle_detach(self, req: DetachRequest) -> Response:
         if not self.zxdb_writer:
             return Response(
                 success=False, message="Not connected to zxdb DAP server"
@@ -411,6 +399,11 @@ class Daemon:
         )
 
     async def handle_get_state(self, _req: GetStateRequest) -> Response:
+        """Queries the debug adapter for the current threads and active processes.
+
+        Returns:
+            A Response containing a GetStateResponse body mapping active processes and threads.
+        """
         if not self.zxdb_writer:
             return Response(
                 success=False, message="Not connected to zxdb DAP server"
@@ -418,16 +411,17 @@ class Daemon:
         try:
             threads_resp = await self.dap_client.threads(self.zxdb_writer)
             threads = []
-            for t in threads_resp.body.threads:
-                threads.append(
-                    {
-                        "id": t.id,
-                        "name": t.name,
-                    }
-                )
+            # Defensive check to ensure zxdb DAP server successfully returned a valid threads list.
+            if threads_resp.body and threads_resp.body.threads:
+                for t in threads_resp.body.threads:
+                    threads.append(ThreadInfo(id=t.id, name=t.name))
+
+            state_resp = GetStateResponse(
+                threads=threads, processes=self.active_processes
+            )
             return Response(
                 success=True,
-                body={"threads": threads, "processes": self.active_processes},
+                body=state_resp,
             )
         except Exception as e:
             return Response(
@@ -460,9 +454,10 @@ class Daemon:
 
         try:
             resp = await self.dap_client.threads(self.zxdb_writer)
+            body = resp.body.model_dump(by_alias=True) if resp.body else None
             return Response(
                 success=True,
-                body=resp.body.model_dump(by_alias=True),
+                body=body,
             )
         except Exception as e:
             return Response(
@@ -514,16 +509,21 @@ class Daemon:
                 ),
             )
 
+            body = (
+                stack_resp.body.model_dump(by_alias=True)
+                if stack_resp.body
+                else None
+            )
             return Response(
                 success=True,
-                body=stack_resp.body.model_dump(by_alias=True),
+                body=body,
             )
         except Exception as e:
             return Response(
                 success=False, message=f"Failed to get stack trace: {e}"
             )
 
-    async def handle_wait_for_event(self, req: BaseRequest) -> Response:
+    async def handle_wait_for_event(self, req: WaitForEventRequest) -> Response:
         """Blocks until there are events with sequence number greater than last_seen_seq.
 
         Args:
@@ -532,13 +532,7 @@ class Daemon:
         Returns:
             A Response containing the new events.
         """
-        if req.last_seen_seq is None:
-            return Response(
-                success=False,
-                message="last_seen_seq is required for wait-for-event",
-            )
-
-        timeout = req.timeout if isinstance(req, WaitForEventRequest) else None
+        timeout = req.timeout
 
         async with self.new_event_condition:
             try:

@@ -11,6 +11,7 @@ if (is_host) {
       "cli:cli_test",
       "daemon:tests",
       "daemon_manager:tests",
+      "shared:protocol_test($host_toolchain)",
       "tests:cli_integration_test",
     ]
   }

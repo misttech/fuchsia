@@ -168,12 +168,82 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             print(f"Test failed with message: {resp.message}")
         self.assertTrue(resp.success)
         assert resp.body is not None
-        threads = resp.body["threads"]
-        self.assertEqual(len(threads), 2)
-        self.assertEqual(threads[0]["id"], 1)
-        self.assertEqual(threads[0]["name"], "main")
-        self.assertEqual(threads[1]["id"], 2)
-        self.assertEqual(threads[1]["name"], "worker")
+        from shared.protocol import GetStateResponse
+
+        # Double-compatibility check:
+        # Pydantic v2 union coercion automatically parses the dictionary returned by handle_threads
+        # (which matches GetStateResponse's fields) into a typed GetStateResponse object at runtime.
+        # We check the type to support both strongly-typed GetStateResponse objects and raw dictionaries
+        # in mock testing.
+        if isinstance(resp.body, GetStateResponse):
+            threads = resp.body.threads
+            self.assertEqual(len(threads), 2)
+            self.assertEqual(threads[0].id, 1)
+            self.assertEqual(threads[0].name, "main")
+            self.assertEqual(threads[1].id, 2)
+            self.assertEqual(threads[1].name, "worker")
+        else:
+            threads = resp.body["threads"]
+            self.assertEqual(len(threads), 2)
+            self.assertEqual(threads[0]["id"], 1)
+            self.assertEqual(threads[0]["name"], "main")
+            self.assertEqual(threads[1]["id"], 2)
+            self.assertEqual(threads[1]["name"], "worker")
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_get_state(self, mock_dap_client_class: Mock) -> None:
+        """Verifies handle_get_state successfully queries threads and returns GetStateResponse."""
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_threads_resp = Mock()
+        mock_body = Mock()
+        mock_thread1 = Mock()
+        mock_thread1.id = 1
+        mock_thread1.name = "main"
+        mock_body.threads = [mock_thread1]
+        mock_threads_resp.body = mock_body
+        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.active_processes = {1234: "test_process"}
+
+        from shared.protocol import GetStateRequest, GetStateResponse
+
+        resp = await daemon.handle_get_state(GetStateRequest())
+
+        self.assertTrue(resp.success)
+        state_resp = resp.body
+        assert isinstance(state_resp, GetStateResponse)
+        self.assertEqual(len(state_resp.threads), 1)
+        self.assertEqual(state_resp.threads[0].id, 1)
+        self.assertEqual(state_resp.threads[0].name, "main")
+        self.assertEqual(state_resp.processes, {1234: "test_process"})
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_get_state_defensive(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        """Verifies handle_get_state gracefully handles None threads response body."""
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_threads_resp = Mock()
+        mock_threads_resp.body = None  # Simulate missing DAP body
+        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.active_processes = {1234: "test_process"}
+
+        from shared.protocol import GetStateRequest, GetStateResponse
+
+        resp = await daemon.handle_get_state(GetStateRequest())
+
+        self.assertTrue(resp.success)
+        state_resp = resp.body
+        assert isinstance(state_resp, GetStateResponse)
+        self.assertEqual(
+            len(state_resp.threads), 0
+        )  # Successfully defaulted to empty list without crashing
+        self.assertEqual(state_resp.processes, {1234: "test_process"})
 
     @patch("daemon.daemon.asyncio.start_unix_server")
     @patch("daemon.daemon.ZxdbDapClient")
