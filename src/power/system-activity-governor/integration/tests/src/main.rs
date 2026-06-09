@@ -292,6 +292,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -428,6 +429,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -519,6 +521,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -595,6 +598,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -681,6 +685,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -757,6 +762,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -843,6 +849,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1077,6 +1084,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1196,6 +1204,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1272,6 +1281,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1332,6 +1342,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1653,6 +1664,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_wak
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -1740,6 +1752,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -1808,6 +1821,7 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
                         ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                         ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                         ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                        "is_unmonitored_lease": true,
                     }
                 }
             },
@@ -1942,6 +1956,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2083,6 +2098,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2508,6 +2524,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2571,6 +2588,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2613,6 +2631,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2660,6 +2679,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2745,6 +2765,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2785,6 +2806,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -2832,6 +2854,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -3427,6 +3450,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3529,6 +3553,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3890,7 +3915,7 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_to_suspending()
+async fn test_activity_governor_acquire_unmonitored_wake_lease_raises_execution_state_to_suspending()
 -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
@@ -3919,7 +3944,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let wake_lease_name = "wake_lease";
     let wake_lease =
-        activity_governor.acquire_long_wake_lease(wake_lease_name).await.unwrap().unwrap();
+        activity_governor.acquire_unmonitored_wake_lease(wake_lease_name).await.unwrap().unwrap();
 
     // Trigger "boot complete" signal.
     {
@@ -3945,7 +3970,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
                         ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                         ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                         ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
-                    "is_long_lease": true,
+                    "is_unmonitored_lease": true,
                 }
             }
         },
@@ -3967,6 +3992,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
                 suspend_loop_max_attempts: 10u64,
+                long_wake_lease_timeout: 60u64,
             },
         }
     );
@@ -4195,6 +4221,327 @@ async fn test_activity_governor_reports_on_suspend_blocker_stall(
 }
 
 #[fuchsia::test]
+async fn test_activity_governor_files_crash_report_on_normal_wake_lease() -> Result<()> {
+    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear the dirty bit by calling watch_file once.
+    let _ = querier.watch_file().await?;
+
+    let token = activity_governor
+        .acquire_wake_lease("test-normal-lease")
+        .await?
+        .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+
+    // We give 5 extra seconds due to avoid flakes.
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+            panic!("Timeout waiting for next watcher message.");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 1);
+
+    drop(token);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_rates_limit_long_wake_lease_crash_reports() -> Result<()> {
+    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear the dirty bit by calling watch_file once.
+    let _ = querier.watch_file().await?;
+
+    // Acquire lease A twice, verifying that a crash report is filed each time.
+    for i in 1..=2 {
+        let token = activity_governor
+            .acquire_wake_lease("test-lease-a")
+            .await?
+            .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+
+        let num_filed = querier
+            .watch_file()
+            .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+                panic!("Timeout waiting for crash report {} for lease A.", i);
+            })
+            .await?;
+
+        assert_eq!(num_filed, i as u64);
+        drop(token);
+    }
+
+    // Acquire lease A the third time. It should be suppressed.
+    let token3 = activity_governor
+        .acquire_wake_lease("test-lease-a")
+        .await?
+        .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+
+    // Verify NO new reports were filed for lease A.
+    let res = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(3).after_now(), || Ok(0))
+        .await;
+
+    assert_eq!(res.unwrap(), 0);
+    drop(token3);
+
+    // Acquire lease B once. It should NOT be suppressed because it has a different name.
+    let token_b = activity_governor
+        .acquire_wake_lease("test-lease-b")
+        .await?
+        .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || {
+            panic!("Timeout waiting for crash report for lease B.");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 3);
+    drop(token_b);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_does_not_file_crash_report_on_explicit_unmonitored_wake_lease()
+-> Result<()> {
+    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear the dirty bit by calling watch_file once.
+    let _ = querier.watch_file().await?;
+
+    let token = activity_governor
+        .acquire_unmonitored_wake_lease("test-long-lease")
+        .await?
+        .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+
+    // Verify NO reports were filed
+    let mut watch_fut = Box::pin(querier.watch_file().fuse());
+    let mut timeout_fut =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(5).after_now()).fuse());
+
+    let filed = futures::select! {
+        _num = watch_fut => true,
+        () = timeout_fut => false,
+    };
+
+    assert!(!filed);
+
+    drop(token);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_unmonitored_lease_reset() -> Result<()> {
+    // Set timeout to 5 seconds via RealmOptions
+    let (realm, _activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(5),
+        ..Default::default()
+    })
+    .await?;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear initial state if any
+    let _ = querier.watch_file().await?;
+
+    // 1. Acquire a regular wake lease
+    log::info!("Before acquire_wake_lease regular");
+    let regular_lease = activity_governor.acquire_wake_lease("regular_lease").await?;
+    log::info!("After acquire_wake_lease regular");
+
+    // 2. Acquire an unmonitored lease ("arbitrary_unmonitored_lease")
+    log::info!("Before acquire_unmonitored_wake_lease");
+    let unmonitored_lease = activity_governor
+        .acquire_unmonitored_wake_lease("arbitrary_unmonitored_lease")
+        .await
+        .unwrap()
+        .unwrap();
+    log::info!("After acquire_unmonitored_wake_lease");
+
+    // Hold unmonitored lease until timeout.
+    // Timeout is 5s, so if it didn't reset, it would have fired by another 4 seconds.
+    // We wait for 6 seconds to check no report.
+    let res = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(6).after_now(), || Ok(0))
+        .await;
+
+    // We expect timeout (returning Ok(0)), meaning NO report was filed!
+    assert_eq!(res.unwrap(), 0);
+
+    // 3. Drop unmonitored lease
+    drop(unmonitored_lease);
+
+    // Wait for timeout again (5s). We wait 10s to be sure.
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(10).after_now(), || {
+            panic!("Timeout waiting for crash report after drop.");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 1);
+
+    // Cleanup regular lease
+    drop(regular_lease);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_long_wake_lease_detector_does_not_trigger_on_normal_drop() -> Result<()> {
+    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear initial state
+    let _ = querier.watch_file().await?;
+
+    // Acquire a lease
+    let wake_lease = activity_governor.acquire_wake_lease("short-lease").await?.unwrap();
+    assert!(!wake_lease.is_invalid());
+
+    // Drop it immediately
+    drop(wake_lease);
+
+    // Wait for 5 seconds to prove no file reports were triggered!
+    let mut watch_fut = Box::pin(querier.watch_file().fuse());
+    let mut timeout_fut =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(5).after_now()).fuse());
+
+    let filed = futures::select! {
+        _num = watch_fut => true,
+        () = timeout_fut => false,
+    };
+
+    assert!(!filed);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_regular_lease_during_policy_lease() -> Result<()> {
+    // Set timeout to 1 second via RealmOptions
+    let (realm, _activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        long_wake_lease_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear initial state
+    let _ = querier.watch_file().await?;
+
+    // 1. Acquire an ApplicationActivity lease (policy lease)
+    log::info!("Before take_application_activity_lease");
+    let app_activity_lease =
+        activity_governor.take_application_activity_lease("test-app-activity").await?;
+    log::info!("After take_application_activity_lease");
+
+    // 2. Acquire a regular wake lease
+    log::info!("Before acquire_wake_lease regular");
+    let regular_lease = activity_governor
+        .acquire_wake_lease("regular_lease")
+        .await?
+        .map_err(|e| anyhow::anyhow!("Acquire failed: {:?}", e))?;
+    log::info!("After acquire_wake_lease regular");
+
+    // Wait 5 seconds (timeout is 1s)
+    // Since policy lease is active, expect NO report!
+    let res = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(5).after_now(), || Ok(0))
+        .await;
+    assert_eq!(res.unwrap(), 0);
+
+    // 3. Drop policy lease
+    drop(app_activity_lease);
+
+    // Expect report filed!
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(5).after_now(), || {
+            panic!("Timeout waiting for crash report after policy lease drop.");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 1);
+
+    // Cleanup
+    drop(regular_lease);
+
+    Ok(())
+}
+
+#[fuchsia::test]
 async fn test_activity_governor_wake_leases_before_and_after_sag_creation() -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
         wait_for_suspending_token: Some(true),
@@ -4345,6 +4692,7 @@ async fn test_activity_governor_application_activity_lease_before_sag_creation()
                         ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                         ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                         ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                        "is_unmonitored_lease": true,
                     }
                 }
             }

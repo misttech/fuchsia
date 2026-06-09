@@ -184,6 +184,16 @@ async fn create_test_env() -> TestEnv {
         .await
         .unwrap();
 
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.power.LongWakeLeaseTimeout"))
+                .from(&config_no_suspender_ref)
+                .to(&system_activity_governor_ref),
+        )
+        .await
+        .unwrap();
+
     // Offer capabilities from void to system-activity-governor.
     builder
         .add_route(

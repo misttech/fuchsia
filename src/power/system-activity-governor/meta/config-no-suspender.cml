@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "//src/power/system-activity-governor/meta/config-suspend-failures.cml" ],
+    include: [
+        "//src/power/system-activity-governor/meta/config-long-wake-lease-timeout.cml",
+        "//src/power/system-activity-governor/meta/config-suspend-failures.cml",
+    ],
     capabilities: [
         {
             config: "fuchsia.power.UseSuspender",

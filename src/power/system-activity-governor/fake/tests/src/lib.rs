@@ -76,6 +76,14 @@ async fn create_test_env() -> TestEnv {
         .unwrap();
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.LongWakeLeaseTimeout".parse().unwrap(),
+            value: 300u32.into(),
+        }))
+        .await
+        .unwrap();
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration("fuchsia.power.UseSuspender"))
@@ -111,6 +119,16 @@ async fn create_test_env() -> TestEnv {
                 .capability(Capability::configuration(
                     "fuchsia.power.RebootOnStalledSuspendBlocker",
                 ))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.power.LongWakeLeaseTimeout"))
                 .from(Ref::self_())
                 .to(&component_ref),
         )

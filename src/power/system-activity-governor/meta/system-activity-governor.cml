@@ -116,6 +116,17 @@
             type: "uint32",
         },
         {
+            config: "fuchsia.power.LongWakeLeaseTimeout",
+
+            // The timeout in seconds before filing a crash report for
+            // long holding wake leases.
+            from: "parent",
+            key: "long_wake_lease_timeout",
+            type: "uint32",
+            availability: "optional",
+            default: 300,
+        },
+        {
             config: "fuchsia.power.MaxActiveWakeLeasesToLog",
 
             // Sets the maximum number of active wake leases that will be logged to SAG's Inspect.

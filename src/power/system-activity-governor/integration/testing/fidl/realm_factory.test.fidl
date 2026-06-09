@@ -29,6 +29,10 @@ type RealmOptions = resource table {
     /// Specifies whether SAG will trigger a reboot when a suspend/resume
     /// hang is detected. Defaults to false.
     5: reboot_on_stalled_suspend_blocker bool;
+
+    /// Specifies the timeout in seconds for the long wake lease watchdog.
+    /// Recommended to use default of 60 seconds in test.
+    6: long_wake_lease_timeout_seconds uint32;
 };
 
 @discoverable

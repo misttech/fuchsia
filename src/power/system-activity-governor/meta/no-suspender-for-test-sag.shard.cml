@@ -25,5 +25,10 @@
             to: [ "#test-system-activity-governor" ],
             availability: "optional",
         },
+        {
+            config: "fuchsia.power.LongWakeLeaseTimeout",
+            from: "#config-no-suspender",
+            to: [ "#test-system-activity-governor" ],
+        },
     ],
 }

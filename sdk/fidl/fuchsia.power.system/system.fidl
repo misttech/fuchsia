@@ -238,17 +238,17 @@ open protocol ActivityGovernor {
     }) error AcquireWakeLeaseError;
 
 
-    /// Creates a long-term lease that blocks suspension of the hardware platform.
+    /// Creates an unmonitored lease that blocks suspension of the hardware platform.
     ///
     /// The hardware platform will not suspend as long as a valid
     /// [`LeaseToken`] exists.
     ///
     /// This is intended for leases expected to be held for extended periods.
     /// Unlike normal wake leases, the server does not monitor the duration
-    /// of a long wake lease and will not log a runtime error if it exceeds
+    /// of an unmonitored wake lease and will not file a crash report if it exceeds
     /// preconfigured alert thresholds.
     @available(added=HEAD)
-    flexible AcquireLongWakeLease(struct {
+    flexible AcquireUnmonitoredWakeLease(struct {
         /// The name of the lease.
         ///
         /// The name cannot be empty but is not required to be globally unique.

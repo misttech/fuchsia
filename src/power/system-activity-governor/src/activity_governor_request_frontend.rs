@@ -102,7 +102,7 @@ impl ActivityGovernorRequestFrontend {
                 self.stored_wake_leases.borrow_mut().push(StoredWakeLease {
                     name,
                     server_token,
-                    is_long: false,
+                    is_unmonitored: false,
                 });
             }
             Ok(fsystem::ActivityGovernorRequest::AcquireWakeLeaseWithToken {
@@ -114,16 +114,19 @@ impl ActivityGovernorRequestFrontend {
                 self.stored_wake_leases.borrow_mut().push(StoredWakeLease {
                     name,
                     server_token,
-                    is_long: false,
+                    is_unmonitored: false,
                 });
             }
-            Ok(fsystem::ActivityGovernorRequest::AcquireLongWakeLease { responder, name }) => {
+            Ok(fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
+                responder,
+                name,
+            }) => {
                 let (server_token, client_token) = fsystem::LeaseToken::create();
                 let _ = responder.send(Ok(client_token));
                 self.stored_wake_leases.borrow_mut().push(StoredWakeLease {
                     name,
                     server_token,
-                    is_long: true,
+                    is_unmonitored: true,
                 });
             }
             Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker { responder, payload }) => {
@@ -345,7 +348,7 @@ mod tests {
         frontend.stored_wake_leases.borrow_mut().push(StoredWakeLease {
             name: "test_lease".to_string(),
             server_token: fsystem::LeaseToken::create().0,
-            is_long: false,
+            is_unmonitored: false,
         });
 
         frontend.stored_suspend_blockers.borrow_mut().push(StoredSuspendBlocker {

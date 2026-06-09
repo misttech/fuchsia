@@ -52,6 +52,12 @@
             availability: "optional",
         },
         {
+            config: [ "fuchsia.power.LongWakeLeaseTimeout" ],
+            from: "parent",
+            to: "#system-activity-governor",
+            availability: "optional",
+        },
+        {
             dictionary: "diagnostics",
             from: "self",
             to: [ "#system-activity-governor" ],

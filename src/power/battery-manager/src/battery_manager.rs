@@ -267,7 +267,7 @@ impl BatteryManager {
         };
 
         if is_charging && self.charge_wake_lease.borrow().is_none() {
-            let res = sag.acquire_long_wake_lease("charging_block_suspension").await;
+            let res = sag.acquire_unmonitored_wake_lease("charging_block_suspension").await;
 
             match res {
                 Ok(Ok(token)) => {
@@ -927,7 +927,7 @@ mod tests {
         fasync::Task::local(async move {
             while let Ok(req) = stream.try_next().await {
                 match req {
-                    Some(fsystem::ActivityGovernorRequest::AcquireLongWakeLease {
+                    Some(fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
                         responder,
                         ..
                     }) => {

@@ -58,6 +58,7 @@
         },
         {
             config: [
+                "fuchsia.power.LongWakeLeaseTimeout",
                 "fuchsia.power.RebootOnStalledSuspendBlocker",
                 "fuchsia.power.SuspendResumeStuckWarningTimeout",
                 "fuchsia.power.UseSuspender",

@@ -76,6 +76,11 @@
             to: "#system-activity-governor",
         },
         {
+            config: "fuchsia.power.LongWakeLeaseTimeout",
+            from: "#config-use-suspender",
+            to: "#system-activity-governor",
+        },
+        {
             protocol: "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
             from: "#fake-shutdown-shim",
             to: "#system-activity-governor",

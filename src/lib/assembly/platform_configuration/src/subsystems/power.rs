@@ -112,6 +112,11 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 Config::new(ConfigValueType::Bool, true.into()),
             )?;
 
+            builder.set_config_capability(
+                "fuchsia.power.LongWakeLeaseTimeout",
+                Config::new(ConfigValueType::Uint32, 300u32.into()),
+            )?;
+
             if context.build_type == &BuildType::Eng {
                 builder.platform_bundle("topology_test_daemon")?;
             }

@@ -47,6 +47,7 @@
                 "fuchsia.platform.bus.SoftwareDeviceIds",
                 "fuchsia.platform.bus.SoftwareDeviceNames",
                 "fuchsia.power.cpu.BoostEnabled",
+                "fuchsia.power.LongWakeLeaseTimeout",
                 "fuchsia.power.RebootOnStalledSuspendBlocker",
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.StoragePowerManagementEnabled",

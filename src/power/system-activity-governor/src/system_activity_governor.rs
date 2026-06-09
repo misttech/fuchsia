@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct StoredWakeLease {
     pub name: String,
     pub server_token: fsystem::LeaseToken,
-    pub is_long: bool,
+    pub is_unmonitored: bool,
 }
 
 pub struct StoredSuspendBlocker {
@@ -211,11 +211,12 @@ impl LeaseStatus {
 struct ActiveWakeLease {
     name: String,
     lease_type: &'static str,
-    is_long: bool,
+    is_unmonitored: bool,
     client_token_koid: u64,
     server_token_koid: u64,
     status: RefCell<LeaseStatus>,
     error: RefCell<Option<String>>,
+    timer_task: RefCell<Option<fasync::Task<()>>>,
 }
 
 /// Manager of leases that block execution state.
@@ -255,6 +256,11 @@ struct LeaseManager {
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
     /// Sender for crash reports.
     report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
+    /// Detector for long-lived wake leases that are not obtained as Application Activity Lease
+    /// or Long Wake Lease.
+    long_lease_detector: Option<LongLeaseDetector>,
+    /// Count of active unmonitored leases.
+    active_unmonitored_lease_count: Rc<Cell<u32>>,
 }
 
 impl LeaseManager {
@@ -270,9 +276,13 @@ impl LeaseManager {
         >,
         max_wake_leases_to_log: usize,
         report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
+        long_lease_threshold: Option<fasync::MonotonicDuration>,
     ) -> Self {
         let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
         let active_wake_leases_clone = active_wake_leases.clone();
+
+        let long_lease_detector = long_lease_threshold
+            .map(|threshold| LongLeaseDetector::new(threshold, report_sender.clone()));
 
         // The wake_leases node is created lazily so we don't have to keep it up to date every time
         // a new lease is created or dropped.
@@ -294,8 +304,8 @@ impl LeaseManager {
                     );
                     lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, lease.name.clone());
                     lease_node.record_string(fobs::WAKE_LEASE_ITEM_TYPE, lease.lease_type);
-                    if lease.is_long {
-                        lease_node.record_bool("is_long_lease", true);
+                    if lease.is_unmonitored {
+                        lease_node.record_bool("is_unmonitored_lease", true);
                     }
                     lease_node.record_uint(
                         fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
@@ -331,6 +341,61 @@ impl LeaseManager {
             max_lease_id: AtomicU64::new(0),
             before_suspend_notifier,
             report_sender,
+            long_lease_detector,
+            active_unmonitored_lease_count: Rc::new(Cell::new(0)),
+        }
+    }
+
+    // When an unmonitored lease is acquired, cancel the timers for all monitored leases.
+    fn handle_unmonitored_lease_acquired(
+        is_unmonitored: bool,
+        active_unmonitored_lease_count: &Rc<Cell<u32>>,
+        active_wake_leases: &Rc<RefCell<BTreeMap<u64, Rc<ActiveWakeLease>>>>,
+    ) {
+        if is_unmonitored {
+            let count = active_unmonitored_lease_count.get() + 1;
+            active_unmonitored_lease_count.set(count);
+            log::info!("Unmonitored lease acquired. Active count: {}", count);
+
+            if count == 1 {
+                log::info!("Unmonitored lease active, cancelling regular lease timers.");
+                for lease in active_wake_leases.borrow().values() {
+                    if !lease.is_unmonitored {
+                        lease.timer_task.borrow_mut().take();
+                    }
+                }
+            }
+        }
+    }
+
+    // When an unmonitored lease is dropped, restart the timers for all monitored leases.
+    fn handle_unmonitored_lease_dropped(
+        is_unmonitored: bool,
+        active_unmonitored_lease_count: &Rc<Cell<u32>>,
+        active_wake_leases: &Rc<RefCell<BTreeMap<u64, Rc<ActiveWakeLease>>>>,
+        long_lease_detector: &Option<LongLeaseDetector>,
+    ) {
+        if is_unmonitored {
+            let old_count = active_unmonitored_lease_count.get();
+            if old_count > 0 {
+                let count = old_count - 1;
+                active_unmonitored_lease_count.set(count);
+                log::info!("Unmonitored lease dropped. Active count: {}", count);
+
+                if count == 0 {
+                    log::info!("All unmonitored leases dropped, restarting regular lease timers.");
+                    for (id, lease) in active_wake_leases.borrow().iter() {
+                        if !lease.is_unmonitored {
+                            let timer_task = long_lease_detector
+                                .as_ref()
+                                .map(|detector| detector.start_timer(lease.name.clone(), *id));
+                            *lease.timer_task.borrow_mut() = timer_task;
+                        }
+                    }
+                }
+            } else {
+                log::warn!("Unmonitored lease dropped but count was already 0");
+            }
         }
     }
 
@@ -415,27 +480,43 @@ impl LeaseManager {
         let active_lease = Rc::new(ActiveWakeLease {
             name: name.clone(),
             lease_type: fobs::WAKE_LEASE_ITEM_TYPE_APPLICATION_ACTIVITY,
-            is_long: false,
+            is_unmonitored: true,
             client_token_koid: related_koid,
             server_token_koid: token_info.koid.raw_koid(),
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
+            timer_task: RefCell::new(None),
         });
         self.active_wake_leases.borrow_mut().insert(lease_id, active_lease);
 
         let active_wake_leases = self.active_wake_leases.clone();
+        let active_unmonitored_lease_count = self.active_unmonitored_lease_count.clone();
+        let long_lease_detector = self.long_lease_detector.clone();
+
+        Self::handle_unmonitored_lease_acquired(
+            true,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+        );
 
         fasync::Task::local(async move {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
             log::debug!("Dropping application activity lease for '{}'", name);
 
+            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
+            active_wake_leases.borrow_mut().remove(&lease_id);
+
+            Self::handle_unmonitored_lease_dropped(
+                true,
+                &active_unmonitored_lease_count,
+                &active_wake_leases,
+                &long_lease_detector,
+            );
+
             if let Some(detector) = loop_detector {
                 detector.on_lease_dropped();
             }
-
-            sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
-            active_wake_leases.borrow_mut().remove(&lease_id);
         })
         .detach();
 
@@ -446,7 +527,7 @@ impl LeaseManager {
         &self,
         name: String,
         server_token: fsystem::LeaseToken,
-        is_long: bool,
+        is_unmonitored: bool,
     ) -> Result<()> {
         let suspend_blocker = match self.suspend_block_manager.try_get_blocker() {
             None => {
@@ -463,25 +544,43 @@ impl LeaseManager {
         let before_suspend_notifier = self.before_suspend_notifier.clone();
         let active_wake_leases = self.active_wake_leases.clone();
         let execution_state_lessor = self.execution_state_lessor.clone();
+        let long_lease_detector = self.long_lease_detector.clone();
 
         log::debug!("Acquiring wake lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
         let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
         sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
 
+        let active_unmonitored_lease_count = self.active_unmonitored_lease_count.clone();
+
+        Self::handle_unmonitored_lease_acquired(
+            is_unmonitored,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+        );
+
         fasync::Task::local(async move {
             let token_info = server_token.basic_info().expect("zx_object_get_info failed");
             let related_koid = token_info.related_koid.raw_koid();
 
+            // Permitted unmonitored wake leases should not have their timers started.
+            let timer_task = if !is_unmonitored && active_unmonitored_lease_count.get() == 0 {
+                long_lease_detector.as_ref().map(|detector| detector.start_timer(name.clone(), lease_id))
+            } else {
+                None
+            };
+
             let active_lease = Rc::new(ActiveWakeLease {
                 name: name.clone(),
                 lease_type: fobs::WAKE_LEASE_ITEM_TYPE_WAKE,
-                is_long,
+                is_unmonitored,
                 client_token_koid: related_koid,
                 server_token_koid: token_info.koid.raw_koid(),
                 status: RefCell::new(LeaseStatus::AwaitingSatisfaction),
                 error: RefCell::new(None),
+                timer_task: RefCell::new(timer_task),
             });
+
             active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
             // If a suspend transition is currently in progress, race the wake lease token's
@@ -515,6 +614,12 @@ impl LeaseManager {
                         name);
                     sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
                     active_wake_leases.borrow_mut().remove(&lease_id);
+                    Self::handle_unmonitored_lease_dropped(
+                        is_unmonitored,
+                        &active_unmonitored_lease_count,
+                        &active_wake_leases,
+                        &long_lease_detector,
+                    );
                     return;
                 }
             }
@@ -570,9 +675,15 @@ impl LeaseManager {
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
             active_wake_leases.borrow_mut().remove(&lease_id);
 
-            // Drop `suspend_blocker` before `lease` to avoid to avoid the possibility (however
-            // unlikely) that the lease drop leads to a suspend attempt before the suspend blocker
-            // is removed.
+            Self::handle_unmonitored_lease_dropped(
+                is_unmonitored,
+                &active_unmonitored_lease_count,
+                &active_wake_leases,
+                &long_lease_detector,
+            );
+
+            // Drop `suspend_blocker` before `lease` to avoid the possibility (however unlikely)
+            // that the lease drop leads to a suspend attempt before the suspend blocker is removed.
             drop(suspend_blocker);
 
             // Before dropping `lease`, yield to other async tasks. If another wake lease request
@@ -587,9 +698,13 @@ impl LeaseManager {
         Ok(())
     }
 
-    async fn create_wake_lease(&self, name: String, is_long: bool) -> Result<fsystem::LeaseToken> {
+    async fn create_wake_lease(
+        &self,
+        name: String,
+        is_unmonitored: bool,
+    ) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
-        self.create_wake_lease_using_token(name, server_token, is_long).await?;
+        self.create_wake_lease_using_token(name, server_token, is_unmonitored).await?;
         Ok(client_token)
     }
 
@@ -741,6 +856,61 @@ struct CrashReportMessage {
     report: ffeedback::CrashReport,
     /// Reason to initiate reboot. If None, we don't reboot.
     reboot_reason: Option<fstatecontrol::ShutdownReason>,
+}
+
+/// Detects wake leases held for an unusually long time (e.g. > 5 minutes).
+#[derive(Clone)]
+struct LongLeaseDetector {
+    timeout: fasync::MonotonicDuration,
+    report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
+    report_counts: Rc<RefCell<BTreeMap<String, u32>>>,
+}
+
+impl LongLeaseDetector {
+    const CRASH_SIGNATURE: &'static str = "fuchsia-wake-lease-held-long";
+
+    fn new(
+        timeout: fasync::MonotonicDuration,
+        report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
+    ) -> Self {
+        Self { timeout, report_sender, report_counts: Rc::new(RefCell::new(BTreeMap::new())) }
+    }
+
+    fn start_timer(&self, name: String, lease_id: u64) -> fasync::Task<()> {
+        let report_sender = self.report_sender.clone();
+        let timeout = self.timeout;
+        let report_counts = self.report_counts.clone();
+        fasync::Task::local(async move {
+            fasync::Timer::new(timeout).await;
+            let count = report_counts.borrow().get(&name).copied().unwrap_or(0);
+            if count >= 2 {
+                log::info!(
+                    "Wake lease '{}' (id={}) held for longer than {:?}; crash report suppressed",
+                    name,
+                    lease_id,
+                    timeout
+                );
+                return;
+            }
+            report_counts.borrow_mut().insert(name.clone(), count + 1);
+            log::info!(
+                "Wake lease '{}' (id={}) held for longer than {:?}; filing crash report",
+                name,
+                lease_id,
+                timeout
+            );
+            let report = ffeedback::CrashReport {
+                program_name: Some("system".to_string()),
+                crash_signature: Some(Self::CRASH_SIGNATURE.to_string()),
+                is_fatal: Some(false),
+                ..Default::default()
+            };
+            let message = CrashReportMessage { report, reboot_reason: None };
+            if let Err(e) = report_sender.unbounded_send(message) {
+                log::warn!("Failed to send crash report to channel: {:?}", e);
+            }
+        })
+    }
 }
 
 /// SystemActivityGovernor runs the server for fuchsia.power.suspend and fuchsia.power.system FIDL
@@ -920,6 +1090,11 @@ impl SystemActivityGovernor {
         .expect("PowerElementContext encountered error while building application_activity");
 
         let before_suspend_notifier = Rc::new(RefCell::new(None));
+        let long_lease_threshold = if config.long_wake_lease_timeout == 0 {
+            None
+        } else {
+            Some(fasync::MonotonicDuration::from_seconds(config.long_wake_lease_timeout as i64))
+        };
         let lease_manager = LeaseManager::new(
             &inspect_root,
             sag_event_logger.clone(),
@@ -930,6 +1105,7 @@ impl SystemActivityGovernor {
             before_suspend_notifier.clone(),
             config.max_active_wake_leases_to_log as usize,
             report_sender.clone(),
+            long_lease_threshold,
         );
 
         element_power_level_names.push(generate_element_power_level_names(
@@ -1209,8 +1385,11 @@ impl SystemActivityGovernor {
                 }) => {
                     self.handle_acquire_wake_lease_with_token(responder, name, server_token).await;
                 }
-                Ok(fsystem::ActivityGovernorRequest::AcquireLongWakeLease { responder, name }) => {
-                    self.handle_acquire_long_wake_lease(responder, name).await;
+                Ok(fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
+                    responder,
+                    name,
+                }) => {
+                    self.handle_acquire_unmonitored_wake_lease(responder, name).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
                     responder,
@@ -1283,14 +1462,14 @@ impl SystemActivityGovernor {
     async fn acquire_wake_lease_common(
         &self,
         name: String,
-        is_long: bool,
+        is_unmonitored: bool,
     ) -> Result<fsystem::LeaseToken, fsystem::AcquireWakeLeaseError> {
         if name.is_empty() {
             log::warn!("Received invalid name while acquiring wake lease");
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
         } else {
             self.lease_manager
-                .create_wake_lease(name, is_long)
+                .create_wake_lease(name, is_unmonitored)
                 .await
                 .and_then(|client_token| {
                     client_token
@@ -1326,16 +1505,16 @@ impl SystemActivityGovernor {
         }
     }
 
-    async fn handle_acquire_long_wake_lease(
+    async fn handle_acquire_unmonitored_wake_lease(
         &self,
-        responder: fsystem::ActivityGovernorAcquireLongWakeLeaseResponder,
+        responder: fsystem::ActivityGovernorAcquireUnmonitoredWakeLeaseResponder,
         name: String,
     ) {
         let client_token_res = self.acquire_wake_lease_common(name, true).await;
         if let Err(error) = responder.send(client_token_res) {
             log::warn!(
                 error:?;
-                "Encountered error while responding to AcquireLongWakeLease request"
+                "Encountered error while responding to AcquireUnmonitoredWakeLease request"
             );
         }
     }
@@ -1485,7 +1664,7 @@ impl SystemActivityGovernor {
                 .create_wake_lease_using_token(
                     lease.name.clone(),
                     lease.server_token,
-                    lease.is_long,
+                    lease.is_unmonitored,
                 )
                 .await;
             if let Err(ref error) = res {
@@ -1949,5 +2128,243 @@ mod tests {
         detector.on_suspend_attempt();
         detector.on_suspend_attempt(); // count=3
         assert_eq!(detector.should_report(), ReportAction::ShouldReport);
+    }
+
+    #[fuchsia::test]
+    fn test_long_lease_detector() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (sender, mut receiver) = futures::channel::mpsc::unbounded::<CrashReportMessage>();
+        let detector = LongLeaseDetector::new(fasync::MonotonicDuration::from_seconds(5), sender);
+
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+        let lease_id = 1u64;
+
+        let active_lease = Rc::new(ActiveWakeLease {
+            name: "test_lease".to_string(),
+            lease_type: "wake",
+            is_unmonitored: false,
+            client_token_koid: 123,
+            server_token_koid: 456,
+            status: RefCell::new(LeaseStatus::Satisfied),
+            error: RefCell::new(None),
+            timer_task: RefCell::new(None),
+        });
+        active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+        let timer_task = detector.start_timer("test_lease".to_string(), lease_id);
+        *active_lease.timer_task.borrow_mut() = Some(timer_task);
+
+        // Let the spawned task run and register the timer!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Move time forward to trigger timer!
+        executor.set_fake_time(
+            fasync::MonotonicInstant::now() + fasync::MonotonicDuration::from_seconds(6),
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        let report = receiver.try_next();
+        assert!(report.is_ok());
+        let report = report.unwrap();
+        assert!(report.is_some());
+        let report = report.unwrap();
+        assert_eq!(report.report.crash_signature.unwrap(), LongLeaseDetector::CRASH_SIGNATURE);
+    }
+
+    #[fuchsia::test]
+    fn test_long_lease_detector_rate_limiting() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (sender, mut receiver) = futures::channel::mpsc::unbounded::<CrashReportMessage>();
+        let detector = LongLeaseDetector::new(fasync::MonotonicDuration::from_seconds(5), sender);
+
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+
+        // Start timer for lease A three times
+        for lease_id in 1..=3u64 {
+            let active_lease = Rc::new(ActiveWakeLease {
+                name: "test_lease_a".to_string(),
+                lease_type: "wake",
+                is_unmonitored: false,
+                client_token_koid: 100 + lease_id,
+                server_token_koid: 200 + lease_id,
+                status: RefCell::new(LeaseStatus::Satisfied),
+                error: RefCell::new(None),
+                timer_task: RefCell::new(None),
+            });
+            active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+            let timer_task = detector.start_timer("test_lease_a".to_string(), lease_id);
+            *active_lease.timer_task.borrow_mut() = Some(timer_task);
+        }
+
+        // Start timer for lease B once
+        let lease_id = 4u64;
+        let active_lease = Rc::new(ActiveWakeLease {
+            name: "test_lease_b".to_string(),
+            lease_type: "wake",
+            is_unmonitored: false,
+            client_token_koid: 100 + lease_id,
+            server_token_koid: 200 + lease_id,
+            status: RefCell::new(LeaseStatus::Satisfied),
+            error: RefCell::new(None),
+            timer_task: RefCell::new(None),
+        });
+        active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+        let timer_task = detector.start_timer("test_lease_b".to_string(), lease_id);
+        *active_lease.timer_task.borrow_mut() = Some(timer_task);
+
+        // Let the spawned tasks run and register the timers!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Move time forward to trigger timers!
+        executor.set_fake_time(
+            fasync::MonotonicInstant::now() + fasync::MonotonicDuration::from_seconds(6),
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // We expect exactly 3 reports in the receiver (2 for A, 1 for B)
+        let mut reports = Vec::new();
+        while let Ok(Some(report)) = receiver.try_next() {
+            reports.push(report);
+        }
+        assert_eq!(reports.len(), 3);
+        for report in reports {
+            assert_eq!(report.report.crash_signature.unwrap(), LongLeaseDetector::CRASH_SIGNATURE);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_unmonitored_lease_cancels_timer() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (sender, mut receiver) = futures::channel::mpsc::unbounded::<CrashReportMessage>();
+        let detector = LongLeaseDetector::new(fasync::MonotonicDuration::from_seconds(5), sender);
+
+        let active_unmonitored_lease_count = Rc::new(Cell::new(0));
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+        let lease_id = 1u64;
+
+        let active_lease = Rc::new(ActiveWakeLease {
+            name: "test_lease".to_string(),
+            lease_type: fobs::WAKE_LEASE_ITEM_TYPE_WAKE,
+            is_unmonitored: false,
+            client_token_koid: 123,
+            server_token_koid: 456,
+            status: RefCell::new(LeaseStatus::Satisfied),
+            error: RefCell::new(None),
+            timer_task: RefCell::new(None),
+        });
+        active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+        let timer_task = detector.start_timer("test_lease".to_string(), lease_id);
+        *active_lease.timer_task.borrow_mut() = Some(timer_task);
+
+        // Let the spawned task run and register the timer!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        LeaseManager::handle_unmonitored_lease_acquired(
+            true,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+        );
+
+        assert!(active_lease.timer_task.borrow().is_none());
+
+        // Move time forward to see if it fires (it shouldn't because cancelled!).
+        executor.set_fake_time(
+            fasync::MonotonicInstant::now() + fasync::MonotonicDuration::from_seconds(6),
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        let res = receiver.try_next();
+        assert!(res.is_err() || res.unwrap().is_none(), "Expected no crash report to be filed");
+
+        LeaseManager::handle_unmonitored_lease_dropped(
+            true,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+            &Some(detector.clone()),
+        );
+
+        // Let the spawned task run and register the timer!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        assert!(active_lease.timer_task.borrow().is_some());
+
+        // Move time forward to trigger timer!
+        executor.set_fake_time(
+            fasync::MonotonicInstant::now() + fasync::MonotonicDuration::from_seconds(6),
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        let report = receiver.try_next();
+        assert!(report.is_ok());
+        let report = report.unwrap();
+        assert!(report.is_some());
+        let report = report.unwrap();
+        assert_eq!(report.report.crash_signature.unwrap(), LongLeaseDetector::CRASH_SIGNATURE);
+    }
+
+    #[fuchsia::test]
+    fn test_regular_lease_created_while_unmonitored_lease_active_starts_timer_on_drop() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let (sender, mut receiver) = futures::channel::mpsc::unbounded::<CrashReportMessage>();
+        let detector = LongLeaseDetector::new(fasync::MonotonicDuration::from_seconds(5), sender);
+
+        let active_unmonitored_lease_count = Rc::new(Cell::new(0));
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+        let lease_id = 1u64;
+
+        // 1. Acquire unmonitored lease first.
+        LeaseManager::handle_unmonitored_lease_acquired(
+            true,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+        );
+
+        // 2. Create normal lease. It should NOT have a timer started.
+        let active_lease = Rc::new(ActiveWakeLease {
+            name: "test_lease".to_string(),
+            lease_type: fobs::WAKE_LEASE_ITEM_TYPE_WAKE,
+            is_unmonitored: false,
+            client_token_koid: 123,
+            server_token_koid: 456,
+            status: RefCell::new(LeaseStatus::Satisfied),
+            error: RefCell::new(None),
+            timer_task: RefCell::new(None), // No timer!
+        });
+        active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+        assert!(active_lease.timer_task.borrow().is_none());
+
+        // 3. Drop unmonitored lease.
+        LeaseManager::handle_unmonitored_lease_dropped(
+            true,
+            &active_unmonitored_lease_count,
+            &active_wake_leases,
+            &Some(detector.clone()),
+        );
+
+        // Let the spawned task run and register the timer!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // 4. Verify timer is NOW started!
+        assert!(active_lease.timer_task.borrow().is_some());
+
+        // 5. Move time forward to trigger timer!
+        executor.set_fake_time(
+            fasync::MonotonicInstant::now() + fasync::MonotonicDuration::from_seconds(6),
+        );
+
+        // Run tasks until stalled to let the timer fire!
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // 6. Verify report received!
+        let report = receiver.try_next();
+        assert!(report.is_ok());
+        let report = report.unwrap();
+        assert!(report.is_some());
+        let report = report.unwrap();
+        assert_eq!(report.report.crash_signature.unwrap(), LongLeaseDetector::CRASH_SIGNATURE);
     }
 }

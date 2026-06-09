@@ -89,6 +89,7 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
     let stuck_warning_timeout_seconds = options.stuck_warning_timeout_seconds.unwrap_or(60);
     let reboot_on_stalled_suspend_blocker =
         options.reboot_on_stalled_suspend_blocker.unwrap_or(false);
+    let long_wake_lease_timeout_seconds = options.long_wake_lease_timeout_seconds.unwrap_or(60);
 
     let builder = RealmBuilder::new().await?;
 
@@ -269,11 +270,27 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
         .await?;
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.LongWakeLeaseTimeout".parse()?,
+            value: long_wake_lease_timeout_seconds.into(),
+        }))
+        .await?;
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration(
                     "fuchsia.power.RebootOnStalledSuspendBlocker",
                 ))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.power.LongWakeLeaseTimeout"))
                 .from(Ref::self_())
                 .to(&component_ref),
         )

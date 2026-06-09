@@ -82,6 +82,7 @@ async fn create_power_realm<'a>(
         "fuchsia.power.SuspendResumeStuckWarningTimeout";
     const CONFIG_REBOOT_ON_SUSPEND_STUCK_CONFIG: &str =
         "fuchsia.power.RebootOnStalledSuspendBlocker";
+    const CONFIG_LONG_WAKE_LEASE_TIMEOUT_CONFIG: &str = "fuchsia.power.LongWakeLeaseTimeout";
 
     fn suspender_dep() -> fnetemul::Capability {
         fnetemul::Capability::ChildDep(fnetemul::ChildDep {
@@ -157,6 +158,13 @@ async fn create_power_realm<'a>(
                 name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
                 capability: Some(fnetemul::ExposedCapability::Configuration(
                     CONFIG_REBOOT_ON_SUSPEND_STUCK_CONFIG.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
+                capability: Some(fnetemul::ExposedCapability::Configuration(
+                    CONFIG_LONG_WAKE_LEASE_TIMEOUT_CONFIG.to_string(),
                 )),
                 ..Default::default()
             }),
