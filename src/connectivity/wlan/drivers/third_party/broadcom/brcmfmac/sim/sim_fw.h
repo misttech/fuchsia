@@ -339,6 +339,15 @@ class SimFirmware {
   // Allow simulation to set CapabilityIovars
   void SetCapabilityIovars(CapabilityIovars new_iovars) { capability_iovars_ = new_iovars; }
 
+  void SetBssInfoOverride(const brcmf_bss_info_le& bss_info) { bss_info_override_ = bss_info; }
+  void ClearBssInfoOverride() { bss_info_override_.reset(); }
+
+  void SetAssocRespIes(cpp20::span<const uint8_t> ies) {
+    size_t copy_len = std::min(ies.size(), sizeof(assoc_resp_ies_));
+    memcpy(assoc_resp_ies_, ies.data(), copy_len);
+    assoc_resp_ies_len_ = copy_len;
+  }
+
   // Firmware iovar accessors
   zx_status_t IovarsSet(uint16_t ifidx, const char* name, const void* value, size_t value_len,
                         bcme_status_t* fw_err);
@@ -715,6 +724,8 @@ class SimFirmware {
   uint32_t buf_key_b4_m4_ = 0;        // Buffer key until EAPOL 4th frame is sent out
   bool wme_rx_error_high_ =
       false;  // If set to true, sim-fw will return wme stats with high rx drop
+
+  std::optional<brcmf_bss_info_le> bss_info_override_;
 
   CapabilityIovars capability_iovars_{};
 

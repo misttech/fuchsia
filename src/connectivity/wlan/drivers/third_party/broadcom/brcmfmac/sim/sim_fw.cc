@@ -761,12 +761,16 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
     }
     case BRCMF_C_GET_BSS_INFO: {
       BRCMF_DBG(SIM, "GET_BSS_INFO");
-      brcmf_bss_info_le bss_info;
-      // Set (or copy in) data for the fields that we know the driver uses.
-      memcpy(&bss_info.BSSID, &assoc_state_.opts->bssid.byte, ETH_ALEN);
-      bss_info.beacon_period = 100;
-      bss_info.capability = 0;
-      bss_info.ie_length = 0;
+      brcmf_bss_info_le bss_info = {};
+      if (bss_info_override_.has_value()) {
+        bss_info = bss_info_override_.value();
+      } else {
+        // Set (or copy in) data for the fields that we know the driver uses.
+        memcpy(&bss_info.BSSID, &assoc_state_.opts->bssid.byte, ETH_ALEN);
+        bss_info.beacon_period = 100;
+        bss_info.capability = 0;
+        bss_info.ie_length = 0;
+      }
       // Real firmware returns data after an offset, which driver currently skips past.
       const size_t bssInfoOffset = 4;
       memcpy(data + bssInfoOffset, &bss_info, sizeof(bss_info));

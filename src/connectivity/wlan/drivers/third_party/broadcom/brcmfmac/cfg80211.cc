@@ -5820,11 +5820,25 @@ zx_status_t brcmf_update_bss_info(struct brcmf_if* ifp) {
     return ZX_OK;
   }
 
+  if (!ifp->connect_req.selected_bss().has_value()) {
+    BRCMF_ERR("Unexpected brcmf_update_bss_info() without valid connect_req.");
+    return ZX_ERR_BAD_STATE;
+  }
+
   // No roam request, so attempt to get the current BSS info from firmware.
   BRCMF_INFO("Getting current BSS info from firmware");
   // Firmware returns the BSS info data after a small offset.
-  const size_t kBssInfoOffset = 4;
-  const size_t kBssInfoBufLen = sizeof(brcmf_bss_info_le) + kBssInfoOffset;
+  constexpr size_t kBssInfoOffset = 4;
+  constexpr size_t kBssInfoBufLen = sizeof(brcmf_bss_info_le) + kBssInfoOffset;
+
+  // TODO(b/519259848): Check that kBssInfoBufLen is correct here.
+  // Is kBssInfoBufLen the correct length? It seems like we expect that there is BSS info data
+  // after the brcmf_bss_info_le struct. But this will only read up to sizeof(brcmf_info_le_struct)
+  // + 4, which means that it *won't* return any data after the brcmf_bss_info_le struct.
+  //
+  // But this path is only used for firmware-initiated roaming, which isn't enabled in prod right
+  // now, and I don't have the means to test it. So I'm keeping this as-is for now until
+  // firmware-initiated roaming is tested and enabled (if ever).
   const auto bss_info_status =
       brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_BSS_INFO, cfg->extra_buf, kBssInfoBufLen, &fw_err);
   if (bss_info_status != ZX_OK) {
@@ -5838,9 +5852,25 @@ zx_status_t brcmf_update_bss_info(struct brcmf_if* ifp) {
   auto bss_info = reinterpret_cast<brcmf_bss_info_le*>(bss_info_buf);
 
   // Copy info into relevant fields.
-  const uint8_t* ie_ptr = reinterpret_cast<uint8_t*>(bss_info) + bss_info->ie_offset;
   cfg->capability = bss_info->capability;
+
+  // Check that the IEs don't extend beyond the size of cfg->extra_buf. We don't accidentally want
+  // to read data beyond cfg->extra_buf during the memcpy.
+  constexpr size_t max_ie_buf_len = WL_EXTRA_BUF_MAX - kBssInfoOffset;
+  if (bss_info->ie_offset > max_ie_buf_len ||
+      bss_info->ie_length > max_ie_buf_len - bss_info->ie_offset) {
+    BRCMF_ERR("Invalid BSS info: ie_offset %u, ie_length %u exceed buffer size %d",
+              bss_info->ie_offset, bss_info->ie_length, WL_EXTRA_BUF_MAX);
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // TODO(b/519259848): Should this also update selected_bss().bssid()?
+  // It's possible that reconnects after a firmware-initiated roam don't work because the BSSID
+  // isn't updated.
+  ifp->connect_req.selected_bss()->ies().resize(bss_info->ie_length);
+  const uint8_t* ie_ptr = bss_info_buf + bss_info->ie_offset;
   memcpy(ifp->connect_req.selected_bss()->ies().data(), ie_ptr, bss_info->ie_length);
+
   brcmf_init_prof(prof);
   memcpy(&prof->bssid, &bss_info->BSSID, ETH_ALEN);
   prof->beacon_period = bss_info->beacon_period;

@@ -512,4 +512,94 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoIeBufferMalformed) {
   EXPECT_NE(wlan_ieee80211::StatusCode::kSuccess, roam_result_ind.status_code().value());
 }
 
+// DUT is configured to roam when AP sends a BTM request, but the firmware returns BSS info designed
+// to trigger a heap buffer overflow/out-of-bounds read in the driver. This test ensures the driver
+// safely rejects the invalid BSS info and tears down the connection without crashing.
+TEST_F(WnmTest, FwInitiatedRoamHeapBufferOverflow) {
+  setup_btm_firmware_support_ = true;
+  PreInit();
+  Init();
+
+  simulation::FakeAp ap_0(env_.get(), kAp0Bssid, kDefaultSsid, kAp0Channel);
+  simulation::FakeAp ap_1(env_.get(), kAp1Bssid, kDefaultSsid, kAp1Channel);
+  ap_0.EnableBeacon(zx::msec(60));
+  ap_1.EnableBeacon(zx::msec(60));
+  aps_.push_back(&ap_0);
+  aps_.push_back(&ap_1);
+
+  // 1. Associate with ap_0
+  client_ifc_.AssociateWith(ap_0, zx::msec(10));
+  env_->Run(zx::sec(1));
+  ASSERT_EQ(SimInterface::AssocContext::kAssociated, client_ifc_.assoc_ctx_.state);
+
+  // 2. Prepare Association Response IEs that are too long.
+  // We fill it with a pattern to detect overflow.
+  constexpr size_t kLargeAssocRespIesSize =
+      WL_ASSOC_INFO_MAX;                  // Driver's assoc resp IEs limit (512)
+  constexpr uint8_t kFillPattern = 0x41;  // 'A'
+  std::vector<uint8_t> large_assoc_resp_ies(kLargeAssocRespIesSize, kFillPattern);
+
+  // 3. Prepare BSS info that triggers the boundary check.
+  // We set ie_offset to point past the overwritten BSS info part.
+  // We set ie_length to a value that exceeds the remaining size of extra_buf (2048 - 4 = 2044).
+  constexpr uint16_t kDefaultBeaconPeriod = 100;
+  constexpr uint16_t kOverflowIeOffset = sizeof(brcmf_bss_info_le);  // Point past BSS info struct
+
+  // A truly malicious length that causes the offset + length to exceed WL_EXTRA_BUF_MAX (2048)
+  // which triggers our new, secure boundary check.
+  constexpr uint32_t kOverflowIeLength = 2000;
+
+  static_assert(
+      kOverflowIeOffset + kOverflowIeLength > 2044,
+      "Overflow length + offset must exceed the secure boundary (2044) to verify rejection");
+
+  brcmf_bss_info_le overflow_bss_info;
+  memset(&overflow_bss_info, 0, sizeof(overflow_bss_info));
+  memcpy(&overflow_bss_info.BSSID, kAp1Bssid.byte, ETH_ALEN);
+  overflow_bss_info.beacon_period = kDefaultBeaconPeriod;
+  overflow_bss_info.capability = 0;
+  overflow_bss_info.ie_offset = kOverflowIeOffset;  // point to the long IEs in extra_buf
+  overflow_bss_info.ie_length = kOverflowIeLength;  // large length to trigger overflow
+
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    brcmf_simdev* sim = device->GetSim();
+    // Directly inject the long assoc resp IEs into firmware's cache
+    sim->sim_fw->SetAssocRespIes(large_assoc_resp_ies);
+    // Override BRCMF_C_GET_BSS_INFO to return our BSS info designed to overflow
+    sim->sim_fw->SetBssInfoOverride(overflow_bss_info);
+  });
+
+  // 4. Trigger a BTM request from ap_0 to roam to ap_1.
+  common::MacAddr client_mac;
+  client_ifc_.GetMacAddr(&client_mac);
+  const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
+  const simulation::SimNeighborReportElement neighbor{
+      .bssid = kAp1Bssid,
+      .operating_class = kAp1OperatingClass,
+      .channel_number = kAp1Channel.primary,
+  };
+  const std::vector<simulation::SimNeighborReportElement> candidates({neighbor});
+  const simulation::SimBtmReqFrame btm_req(kAp0Bssid, client_mac, req_mode, candidates);
+
+  // Schedule the BTM request
+  ScheduleBtmReq(btm_req, zx::sec(1));
+
+  // Run the environment. This should trigger the firmware-initiated roam,
+  // which will lead to heap buffer overflow if vulnerable.
+  env_->Run(kTestDuration);
+
+  // Ensure that the client is disconnected because of the rejected roam attempt.
+  EXPECT_EQ(SimInterface::AssocContext::kNone, client_ifc_.assoc_ctx_.state);
+  EXPECT_EQ(1U, client_ifc_.stats_.connect_attempts);
+  EXPECT_EQ(1U, btm_req_frame_count_);
+
+  // Roam result should have been sent indicating failure.
+  ASSERT_EQ(client_ifc_.stats_.roam_result_indications.size(), 1U);
+  const auto& roam_result_ind = client_ifc_.stats_.roam_result_indications.front();
+  ASSERT_TRUE(roam_result_ind.status_code().has_value());
+  EXPECT_FALSE(roam_result_ind.original_association_maintained().value());
+  ASSERT_TRUE(roam_result_ind.target_bss_authenticated().has_value());
+  EXPECT_NE(wlan_ieee80211::StatusCode::kSuccess, roam_result_ind.status_code().value());
+}
+
 }  // namespace wlan::brcmfmac
