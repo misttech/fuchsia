@@ -752,17 +752,62 @@ open protocol BufferCollection {
     /// For buffer allocation to be attempted, all holders of a
     /// `BufferCollection` client end need to call `SetConstraints` before
     /// sysmem will attempt to allocate buffers.
-    ///
-    /// + request `constraints` These are the constraints on the buffer
-    ///   collection imposed by the sending client/participant.  The
-    ///   `constraints` field is not required to be set. If not set, the client
-    ///   is not setting any actual constraints, but is indicating that the
-    ///   client has no constraints to set. A client that doesn't set the
-    ///   `constraints` field won't receive any VMO handles, but can still find
-    ///   out how many buffers were allocated and can still refer to buffers by
-    ///   their `buffer_index`.
     flexible SetConstraints(resource table {
+        /// These are the constraints on the buffer collection imposed by the
+        /// sending client/participant.  The `constraints` field is not required
+        /// to be set. If not set, the client is not setting any actual
+        /// constraints, but is indicating that the client has no constraints to
+        /// set. A client that doesn't set the `constraints` field won't receive
+        /// any VMO handles, but can still find out how many buffers were
+        /// allocated and can still refer to buffers by their `buffer_index`.
         1: constraints BufferCollectionConstraints;
+
+        /// This field should only be set if a client must force the new buffer
+        /// collection to have exactly identical SingleBufferSettings as a
+        /// previously-allocated collection, else the allocation must fail.
+        ///
+        /// Setting this field nails down all the constraints except the buffer
+        /// count, so clients shouldn't expect this to work unless the overall
+        /// set of participants on this logical buffer collection is the same as
+        /// for the previous allocation (though this isn't strictly required to
+        /// be true). Even then, if any participant indicates different
+        /// constraints than for this VMO's collection, the allocation is fairly
+        /// likely to fail. For these reasons, clients will want to avoid
+        /// setting this field unless it's really needed.
+        ///
+        /// The `must_match_vmo` handle must be a handle to a sysmem-provided
+        /// VMO, else the logical buffer collection will fail. To check whether
+        /// a VMO handle refers to a sysmem-provided VMO before setting this
+        /// field (if not already known), see
+        /// `[fuchsia.sysmem2/Allocator.GetVmoInfo]`.
+        ///
+        /// This still ensures that constraints of other participants are
+        /// satisfied as well, else the allocation will fail.
+        ///
+        /// This field is a VMO rather than SingleBufferSettings so that adding
+        /// a new field to SingleBufferSettings remains compatible with this
+        /// mechanism without needing to update/rebuild all clients using this
+        /// mechanism to copy the new field.
+        ///
+        /// This field is a VMO rather than a "handle to a SingleBufferSettings"
+        /// (or similar) to avoid this field causing allocation failure when
+        /// there are zero actual still-existing buffers to match (in which case
+        /// not setting this field is better than letting an already-gone buffer
+        /// dictate the settings for new buffers).
+        ///
+        /// Clients should avoid keeping a buffer alive just to use it with this
+        /// field; instead drop the old buffer when appropriate, and allocate
+        /// new buffer(s) like it's the first allocation after boot again.
+        ///
+        /// See also `[fuchsia.sysmem2/BufferCollection.AttachToken]` which is a
+        /// substantially different mechanism, but might be a workable
+        /// alternative to setting this feild in a few (but not all) situations
+        /// that would otherwise need to set this field.
+        ///
+        /// In most cases the constraints field should specify all the necessary
+        /// constraints known to the client, and this field should not be set.
+        @available(added=NEXT)
+        2: must_match_vmo zx.Handle:VMO;
     });
 
     /// Wait until all buffers are allocated.

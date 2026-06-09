@@ -55,6 +55,19 @@ type VmoBuffer = resource table {
 const MAX_COUNT_BUFFER_COLLECTION_INFO_BUFFERS uint32 = 128;
 
 /// Information about a buffer collection and its buffers.
+///
+/// When adding fields to this table, see also
+/// fuchsia.sysmem2/Allocator.GetVmoInfo, redacted_buffer_collection_info, and
+/// RedactBufferCollectionInfo. Consider whether a client with only
+/// ZX_RIGHT_TRANSFER right on a sysmem vmo handle, calling GetVmoInfo, should
+/// be given the information in the new field, or whether it should be un-set
+/// during redaction. GetVmoInfo is analogous to zx_object_get_info with topic
+/// ZX_INFO_VMO, which doesn't require the VMO handle to have any rights - just
+/// needs to be a handle to a VMO. Fields that are necessary to correctly use a
+/// single sysmem VMO in isolation are generally ok (but still think about it
+/// field by field). Fields that are not necessary to correctly use a single
+/// sysmem VMO in isolation should probably be redacted for GetVmoInfo
+/// redacted_buffer_collection_info.
 @available(added=19)
 type BufferCollectionInfo = resource table {
     /// These settings apply to all the buffers in the initial buffer
@@ -86,6 +99,9 @@ type BufferCollectionInfo = resource table {
     /// This field will always be set by sysmem, even if the participant doesn't
     /// specify any buffer usage (but the [`fuchsia.sysmem2/VmoBuffer.vmo`]
     /// sub-field within this field won't be set in that case).
+    ///
+    /// In the response from `[fuchsia.sysmem2/Allocator.GetVmoInfo]`, in the
+    /// redacted_buffer_collection_info, this field is un-set.
     2: buffers vector<VmoBuffer>:MAX_COUNT_BUFFER_COLLECTION_INFO_BUFFERS;
 
     /// This number is unique among all logical buffer collections per boot.
@@ -102,6 +118,11 @@ type BufferCollectionInfo = resource table {
     ///
     /// This field will always be set by sysmem.
     3: buffer_collection_id uint64;
+
+    // Other than buffer_collection_id, all fields that are applicable to all
+    // buffers of the collection should go in SingleBufferSettings instead of
+    // directly here, so that GetVmoInfo can return those fields without adding
+    // more fields to GetVmoInfo's response table.
 };
 
 /// These settings and constraints apply to all the buffers in the collection.

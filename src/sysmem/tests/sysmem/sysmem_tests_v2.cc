@@ -381,9 +381,8 @@ void set_empty_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection
   EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
 }
 
-void set_min_camping_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
-                                    uint32_t min_buffer_count_for_camping,
-                                    uint32_t max_buffer_count = 0) {
+v2::BufferCollectionConstraints make_min_camping_constraints_v2(
+    uint32_t min_buffer_count_for_camping, uint32_t max_buffer_count = 0) {
   v2::BufferCollectionConstraints constraints;
   constraints.usage().emplace();
   constraints.usage()->cpu() = v2::kCpuUsageReadOften | v2::kCpuUsageWriteOften;
@@ -404,6 +403,14 @@ void set_min_camping_constraints_v2(fidl::SyncClient<v2::BufferCollection>& coll
     constraints.max_buffer_count() = max_buffer_count;
   }
   ZX_DEBUG_ASSERT(!constraints.image_format_constraints().has_value());
+  return constraints;
+}
+
+void set_min_camping_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
+                                    uint32_t min_buffer_count_for_camping,
+                                    uint32_t max_buffer_count = 0) {
+  auto constraints =
+      make_min_camping_constraints_v2(min_buffer_count_for_camping, max_buffer_count);
   v2::BufferCollectionSetConstraintsRequest set_constraints_request;
   set_constraints_request.constraints() = std::move(constraints);
   EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
@@ -6267,72 +6274,236 @@ TEST(Sysmem, GetBufferCollectionId) {
 }
 
 TEST(Sysmem, GetVmoInfo) {
-  constexpr uint32_t kBufferCount = 10;
-  auto token = create_initial_token_v2();
-  auto weak_token = create_token_under_token_v2(token);
-  ASSERT_TRUE(weak_token->SetWeak().is_ok());
-  auto get_buffer_collection_id_result = token->GetBufferCollectionId();
-  ASSERT_TRUE(get_buffer_collection_id_result.is_ok());
-  uint64_t buffer_collection_id = *get_buffer_collection_id_result->buffer_collection_id();
-  auto collection = convert_token_to_collection_v2(std::move(token));
-  auto weak_collection = convert_token_to_collection_v2(std::move(weak_token));
-  set_min_camping_constraints_v2(collection, kBufferCount);
-  set_min_camping_constraints_v2(weak_collection, 0);
+  zx::vmo non_matching_single_buffer_settings_vmo = []() {
+    auto token = create_initial_token_v2();
+    auto collection = convert_token_to_collection_v2(std::move(token));
+    auto constraints = make_min_camping_constraints_v2(1);
+    *constraints.buffer_memory_constraints()->min_size_bytes() *= 2;
+    *constraints.buffer_memory_constraints()->max_size_bytes() *= 2;
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    // intentional copy/clone
+    set_constraints_request.constraints() = constraints;
+    auto set_constraints_result = collection->SetConstraints(std::move(set_constraints_request));
+    ZX_ASSERT(set_constraints_result.is_ok());
+    auto wait_result = collection->WaitForAllBuffersAllocated();
+    ZX_ASSERT(wait_result.is_ok());
+    auto& buffer_size =
+        *wait_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes();
+    ZX_ASSERT(buffer_size == *constraints.buffer_memory_constraints()->min_size_bytes());
+    ZX_ASSERT(buffer_size == 2 * zx_system_get_page_size());
+    return std::move(*wait_result.value().buffer_collection_info()->buffers()->at(0).vmo());
+  }();
+  ZX_ASSERT(non_matching_single_buffer_settings_vmo.is_valid());
+  // With this many potential combinations, we don't test every possible combination. Using a list
+  // of gtest parameter combos built by some code run from main seems like another valid option, but
+  // we have some dependencies among parameters which would lead to non-trivial and non-local logic
+  // somewhere else to build the right combos for this test, and the lack of parameter names when
+  // using gtest parameter combo lists isn't great when there are this many params. To a limited
+  // degree wrt this context, this test can be thought of as having some similarities to a "model
+  // based test"; this test using gtest parameters would similarly not be a great fit.
+  //
+  // These are similar to the loop vars of the nested loops below, but these don't have their own
+  // loops to avoid 8x iterations.
+  uint32_t is_need_single_buffer_settings_set_to_false = 0;
+  uint32_t is_need_weak_set_to_false = 0;
+  uint32_t is_vmo_settings_to_check_matching = 0;
+  uint32_t is_vmo_settings_to_check_ignore_size = 0;
+  for (uint32_t is_vmo_settings_to_check_set = 0; is_vmo_settings_to_check_set < 2;
+       ++is_vmo_settings_to_check_set) {
+    for (uint32_t is_need_weak = 0; is_need_weak < 2; ++is_need_weak) {
+      for (uint32_t is_need_single_buffer_settings = 0; is_need_single_buffer_settings < 2;
+           ++is_need_single_buffer_settings) {
+        for (uint32_t is_constraints_to_check_set = 0; is_constraints_to_check_set < 2;
+             ++is_constraints_to_check_set) {
+          for (uint32_t is_constraints_ok = 0; is_constraints_ok < 2; ++is_constraints_ok) {
+            constexpr uint32_t kBufferCount = 10;
+            auto token = create_initial_token_v2();
+            auto weak_token = create_token_under_token_v2(token);
+            ASSERT_TRUE(weak_token->SetWeak().is_ok());
+            auto get_buffer_collection_id_result = token->GetBufferCollectionId();
+            ASSERT_TRUE(get_buffer_collection_id_result.is_ok());
+            uint64_t buffer_collection_id =
+                *get_buffer_collection_id_result->buffer_collection_id();
+            auto collection = convert_token_to_collection_v2(std::move(token));
+            auto weak_collection = convert_token_to_collection_v2(std::move(weak_token));
 
-  auto wait_result = collection->WaitForAllBuffersAllocated();
-  ASSERT_TRUE(wait_result.is_ok());
-  auto collection_info = std::move(*wait_result->buffer_collection_info());
+            auto constraints = make_min_camping_constraints_v2(kBufferCount);
+            fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+            // intentional copy/clone
+            set_constraints_request.constraints() = constraints;
+            auto set_constraints_result =
+                collection->SetConstraints(std::move(set_constraints_request));
+            ZX_ASSERT(set_constraints_result.is_ok());
 
-  ASSERT_TRUE(weak_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
+            set_min_camping_constraints_v2(weak_collection, 0);
 
-  auto weak_wait_result = weak_collection->WaitForAllBuffersAllocated();
-  ASSERT_TRUE(weak_wait_result.is_ok());
-  auto weak_collection_info = std::move(*weak_wait_result->buffer_collection_info());
+            auto wait_result = collection->WaitForAllBuffersAllocated();
+            ASSERT_TRUE(wait_result.is_ok());
+            auto collection_info = std::move(*wait_result->buffer_collection_info());
 
-  // Close collection to get rid of the strong VMOs held server-side by collection, so that we can
-  // test closing the last strong VMO below.
-  (void)collection->Release();
-  collection.TakeClientEnd();
+            ASSERT_TRUE(
+                weak_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
 
-  auto sysmem_result = connect_to_sysmem_service_v2();
-  ASSERT_TRUE(sysmem_result.is_ok());
-  auto sysmem = std::move(sysmem_result.value());
-  for (uint32_t buffer_index = 0; buffer_index < kBufferCount; ++buffer_index) {
-    zx::vmo dup_strong_vmo;
-    ASSERT_OK(collection_info.buffers()
-                  ->at(buffer_index)
-                  .vmo()
-                  .value()
-                  .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_strong_vmo));
-    fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request;
-    get_vmo_info_request.vmo() = std::move(dup_strong_vmo);
-    auto get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request));
-    ASSERT_TRUE(get_vmo_info_result.is_ok());
-    auto vmo_info = std::move(get_vmo_info_result.value());
-    ASSERT_EQ(buffer_collection_id, vmo_info.buffer_collection_id());
-    ASSERT_EQ(buffer_index, vmo_info.buffer_index());
-    ASSERT_FALSE(vmo_info.close_weak_asap().has_value());
+            auto weak_wait_result = weak_collection->WaitForAllBuffersAllocated();
+            ASSERT_TRUE(weak_wait_result.is_ok());
+            auto weak_collection_info = std::move(*weak_wait_result->buffer_collection_info());
 
-    if (buffer_index % 2 == 0) {
-      // for half the buffers, close the last strong VMO before GetVmoInfo(weak)
-      collection_info.buffers()->at(buffer_index).vmo().reset();
-      zx::nanosleep(zx::deadline_after(zx::msec(50)));
+            // Close collection to get rid of the strong VMOs held server-side by collection, so
+            // that we can test closing the last strong VMO below.
+            (void)collection->Release();
+            collection.TakeClientEnd();
+
+            auto sysmem_result = connect_to_sysmem_service_v2();
+            ASSERT_TRUE(sysmem_result.is_ok());
+            auto sysmem = std::move(sysmem_result.value());
+            for (uint32_t buffer_index = 0; buffer_index < kBufferCount; ++buffer_index) {
+              zx::vmo dup_strong_vmo;
+              ASSERT_OK(collection_info.buffers()
+                            ->at(buffer_index)
+                            .vmo()
+                            .value()
+                            .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_strong_vmo));
+
+              fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request;
+              get_vmo_info_request.vmo() = std::move(dup_strong_vmo);
+
+              if (is_constraints_to_check_set) {
+                auto constraints_to_check = make_min_camping_constraints_v2(0);
+                if (is_constraints_ok) {
+                  ZX_ASSERT(constraints_to_check.buffer_memory_constraints()->min_size_bytes() ==
+                            zx_system_get_page_size());
+                  ZX_ASSERT(constraints_to_check.buffer_memory_constraints()->max_size_bytes() ==
+                            zx_system_get_page_size());
+                } else {
+                  *constraints_to_check.buffer_memory_constraints()->min_size_bytes() *= 2;
+                  *constraints_to_check.buffer_memory_constraints()->max_size_bytes() *= 2;
+                }
+                get_vmo_info_request.constraints_to_check() = std::move(constraints_to_check);
+              }
+              ZX_ASSERT(get_vmo_info_request.constraints_to_check().has_value() ==
+                        is_constraints_to_check_set);
+
+              if (is_need_single_buffer_settings) {
+                get_vmo_info_request.need_single_buffer_settings() = true;
+              } else {
+                if (is_need_single_buffer_settings_set_to_false) {
+                  get_vmo_info_request.need_single_buffer_settings() = false;
+                }
+                is_need_single_buffer_settings_set_to_false =
+                    (is_need_single_buffer_settings_set_to_false + 1) % 2;
+              }
+              ZX_ASSERT((get_vmo_info_request.need_single_buffer_settings().has_value() &&
+                         *get_vmo_info_request.need_single_buffer_settings()) ==
+                        is_need_single_buffer_settings);
+
+              if (is_need_weak) {
+                get_vmo_info_request.need_weak() = true;
+              } else {
+                if (is_need_weak_set_to_false) {
+                  get_vmo_info_request.need_weak() = false;
+                }
+                is_need_weak_set_to_false = (is_need_weak_set_to_false + 1) % 2;
+              }
+              ZX_ASSERT((get_vmo_info_request.need_weak().has_value() &&
+                         *get_vmo_info_request.need_weak()) == is_need_weak);
+
+              if (is_vmo_settings_to_check_set) {
+                zx::vmo* to_dup = nullptr;
+                if (is_vmo_settings_to_check_matching) {
+                  to_dup = &*collection_info.buffers()->at(1).vmo();
+                } else {
+                  to_dup = &non_matching_single_buffer_settings_vmo;
+                }
+                ZX_ASSERT(to_dup->is_valid());
+                zx::vmo dup;
+                zx_status_t dup_status = to_dup->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+                ZX_ASSERT(dup_status == ZX_OK);
+                get_vmo_info_request.vmo_settings_to_check() = std::move(dup);
+                if (is_vmo_settings_to_check_ignore_size) {
+                  get_vmo_info_request.vmo_settings_to_check_ignore_size() = true;
+                }
+              }
+
+              auto get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request));
+              ASSERT_TRUE(get_vmo_info_result.is_ok());
+              auto vmo_info = std::move(get_vmo_info_result.value());
+              ASSERT_EQ(buffer_collection_id, vmo_info.buffer_collection_id());
+              ASSERT_EQ(buffer_index, vmo_info.buffer_index());
+              ASSERT_EQ(is_need_weak, vmo_info.close_weak_asap().has_value());
+
+              ASSERT_EQ(is_constraints_to_check_set, vmo_info.constraints_ok().has_value());
+              if (is_constraints_to_check_set) {
+                ASSERT_EQ(!!is_constraints_ok, !!*vmo_info.constraints_ok());
+              }
+
+              ASSERT_EQ(is_need_single_buffer_settings,
+                        vmo_info.single_buffer_settings().has_value());
+              if (is_need_single_buffer_settings) {
+                ASSERT_EQ(*collection_info.settings(), *vmo_info.single_buffer_settings());
+                ASSERT_EQ(*weak_collection_info.settings(), *vmo_info.single_buffer_settings());
+              }
+
+              ASSERT_EQ(is_need_weak, vmo_info.weak_vmo().has_value());
+
+              ASSERT_EQ(is_vmo_settings_to_check_set, vmo_info.vmo_settings_match().has_value());
+              if (is_vmo_settings_to_check_set) {
+                ASSERT_EQ(is_vmo_settings_to_check_matching || is_vmo_settings_to_check_ignore_size,
+                          *vmo_info.vmo_settings_match());
+                is_vmo_settings_to_check_ignore_size =
+                    (is_vmo_settings_to_check_ignore_size + 1) % 2;
+              }
+
+              if (buffer_index % 2 == 0) {
+                // for half the buffers, close the last strong VMO before GetVmoInfo(weak)
+                collection_info.buffers()->at(buffer_index).vmo().reset();
+                zx_signals_t pending;
+                weak_collection_info.buffers()
+                    ->at(buffer_index)
+                    .close_weak_asap()
+                    ->wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite(), &pending);
+                ASSERT_TRUE(pending & ZX_EVENTPAIR_PEER_CLOSED);
+              }
+
+              zx::vmo dup_weak_vmo;
+              ASSERT_OK(weak_collection_info.buffers()
+                            ->at(buffer_index)
+                            .vmo()
+                            .value()
+                            .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_weak_vmo));
+              fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request_2;
+              get_vmo_info_request_2.vmo() = std::move(dup_weak_vmo);
+              auto weak_get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request_2));
+              ASSERT_TRUE(weak_get_vmo_info_result.is_ok());
+              auto weak_vmo_info = std::move(weak_get_vmo_info_result.value());
+              ASSERT_EQ(buffer_collection_id, weak_vmo_info.buffer_collection_id());
+              ASSERT_EQ(buffer_index, weak_vmo_info.buffer_index());
+              ASSERT_TRUE(weak_vmo_info.close_weak_asap().has_value());
+
+              if (is_need_weak) {
+                zx::vmo dup_weak_vmo_2;
+                ASSERT_OK(weak_collection_info.buffers()
+                              ->at(buffer_index)
+                              .vmo()
+                              .value()
+                              .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_weak_vmo_2));
+                fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request_3;
+                get_vmo_info_request_3.vmo() = std::move(dup_weak_vmo_2);
+                get_vmo_info_request_3.need_weak() = true;
+                auto weak_get_vmo_info_result =
+                    sysmem->GetVmoInfo(std::move(get_vmo_info_request_3));
+                ASSERT_EQ(weak_get_vmo_info_result.is_ok(), buffer_index % 2 != 0);
+                if (buffer_index % 2 == 0) {
+                  ASSERT_EQ(weak_get_vmo_info_result.error_value().domain_error(),
+                            fuchsia_sysmem2::Error::kNoMoreStrongVmoHandles);
+                }
+              }
+            }
+            // this setting is per-collection not per buffer, so increment after loop over buffers
+            is_vmo_settings_to_check_matching = (is_vmo_settings_to_check_matching + 1) % 2;
+          }
+        }
+      }
     }
-
-    zx::vmo dup_weak_vmo;
-    ASSERT_OK(weak_collection_info.buffers()
-                  ->at(buffer_index)
-                  .vmo()
-                  .value()
-                  .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_weak_vmo));
-    fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request_2;
-    get_vmo_info_request_2.vmo() = std::move(dup_weak_vmo);
-    auto weak_get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request_2));
-    ASSERT_TRUE(weak_get_vmo_info_result.is_ok());
-    auto weak_vmo_info = std::move(weak_get_vmo_info_result.value());
-    ASSERT_EQ(buffer_collection_id, weak_vmo_info.buffer_collection_id());
-    ASSERT_EQ(buffer_index, weak_vmo_info.buffer_index());
-    ASSERT_TRUE(weak_vmo_info.close_weak_asap().has_value());
   }
 }
 

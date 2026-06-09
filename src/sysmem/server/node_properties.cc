@@ -243,6 +243,57 @@ const fuchsia_sysmem2::BufferCollectionConstraints* NodeProperties::buffer_colle
   return &*buffer_collection_constraints_;
 }
 
+const std::optional<fuchsia_sysmem2::SingleBufferSettings>& NodeProperties::must_match_settings()
+    const {
+  return must_match_settings_;
+}
+
+bool NodeProperties::SetMustMatchVmo(zx::vmo must_match_vmo) {
+  // We convert from zx::vmo to SingleBufferSettings here and drop must_match_vmo, to avoid keeping
+  // must_match_vmo open any longer than necessary - also to avoid delaying any errors during
+  // conversion. We could potentially move this code somewhere else, but the important thing is that
+  // we convert to SingleBufferSettings and drop the must_match_vmo during V2 SetConstraints
+  // handling.
+  zx_info_handle_basic_t basic_info{};
+  zx_status_t get_info_status = must_match_vmo.get_info(ZX_INFO_HANDLE_BASIC, &basic_info,
+                                                        sizeof(basic_info), nullptr, nullptr);
+  if (get_info_status != ZX_OK) {
+    // No rights are required for ZX_INFO_HANDLE_BASIC, so this shouldn't happen.
+    LogError(FROM_HERE, "must_match_vmo.get_info failed - protocol deviation");
+    return false;
+  }
+  // Likely redundant with FIDL generated code; check anyway for now.
+  if (basic_info.type != ZX_OBJ_TYPE_VMO) {
+    LogError(FROM_HERE, "must_match_vmo requires VMO handle - protocol deviation");
+    return false;
+  }
+  zx_koid_t vmo_koid = basic_info.koid;
+  auto logical_buffer_result =
+      logical_buffer_collection_->parent_sysmem_->FindLogicalBufferByVmoKoid(vmo_koid);
+  if (!logical_buffer_result.logical_buffer) {
+    // The client was supposed to pass a sysmem-provided VMO in must_match_vmo. If the client
+    // needs to check first, see GetVmoInfo.
+    LogError(FROM_HERE, "not a sysmem-provided VMO - protocol deviation");
+    return false;
+  }
+  auto& logical_buffer = *logical_buffer_result.logical_buffer;
+  // We know the VMO was handed out by sysmem, which also implies that the buffer is done
+  // allocating. We wouldn't have found it above if somehow the buffer is no longer tracked by
+  // sysmem, but that doesn't happen until after the sysmem-provided VMO is gone and we know that
+  // hasn't happened yet since we know must_match_vmo exists here. That said, we use "value()"
+  // instead of "*" on this line for easier diagnosis just in case. Currently, relevant parts of
+  // sysmem run on the same thread, so no lock is currently needed here despite accessing a
+  // different LogicalBufferCollection.
+  auto& must_match_settings = logical_buffer.logical_buffer_collection()
+                                  .buffer_collection_info_before_population_.value()
+                                  .settings()
+                                  .value();
+  ZX_DEBUG_ASSERT(!must_match_settings_.has_value());
+  // intentionally clone/copy must_match_settings
+  must_match_settings_.emplace(must_match_settings);
+  return true;
+}
+
 void NodeProperties::SetBufferCollectionConstraints(
     fuchsia_sysmem2::BufferCollectionConstraints buffer_collection_constraints) {
   ZX_DEBUG_ASSERT(!buffer_collection_constraints_.has_value());

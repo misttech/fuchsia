@@ -439,7 +439,8 @@ type ImageFormatConstraints = struct {
 
 /// Describes how an image is represented.
 ///
-/// This type is deprecated for new code, but is still used by some camera code.
+/// This type is deprecated for new code, but is still used by some camera code
+/// and by StreamProcessor (for now).
 type ImageFormat_2 = struct {
     /// Pixel format.
     pixel_format PixelFormat;

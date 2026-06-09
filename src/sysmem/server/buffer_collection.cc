@@ -52,7 +52,6 @@ const uint32_t kMaxClientVmoRights =
     //
     // Remaining bits of ZX_DEFAULT_VMO_RIGHTS (as of this writing):
     ZX_RIGHT_MAP;
-
 }  // namespace
 
 // static
@@ -208,8 +207,8 @@ void BufferCollection::V1::SetConstraints(SetConstraintsRequest& request,
   // The LogicalBufferCollection cares if this BufferCollection view has null
   // constraints, but only later when it asks for the specific constraints.
   parent_.logical_buffer_collection().OnDependencyReady();
-  // |this| may be gone at this point, if the allocation failed.  Regardless,
-  // SetConstraints() worked, so ZX_OK.
+  // |this| may be gone at this point, if the allocation failed. Regardless,
+  // SetConstraints() worked.
 }
 
 void BufferCollection::V2::SetConstraints(SetConstraintsRequest& request,
@@ -218,6 +217,7 @@ void BufferCollection::V2::SetConstraints(SetConstraintsRequest& request,
                  "logical_buffer_collection", &parent_.logical_buffer_collection());
 
   if (!parent_.CommonSetConstraintsStage1(completer)) {
+    // CommonSetConstraintsStage1 already called parent_.FailSync.
     return;
   }
 
@@ -230,6 +230,18 @@ void BufferCollection::V2::SetConstraints(SetConstraintsRequest& request,
     local_constraints = std::move(request.constraints().value());
   }
 
+  if (request.must_match_vmo().has_value()) {
+    // This converts the vmo into settings we must match (without relying on the client to know
+    // about every field of SingleBufferSettings), to avoid holding the VMO handle longer than
+    // necessary.
+    if (!parent_.node_properties().SetMustMatchVmo(std::move(*request.must_match_vmo()))) {
+      // SetMustMatchVmo will log a more specific reason, but we still need to fail the
+      // BufferCollection.
+      parent_.FailSync(FROM_HERE, completer, Error::kProtocolDeviation,
+                       "protocol violation involving must_match_vmo (see above)");
+      return;
+    }
+  }
   parent_.node_properties().SetBufferCollectionConstraints(std::move(local_constraints));
 
   if (parent_.logical_buffer_collection().is_verbose_logging()) {
@@ -244,8 +256,8 @@ void BufferCollection::V2::SetConstraints(SetConstraintsRequest& request,
   // The LogicalBufferCollection cares if this BufferCollection view has null
   // constraints, but only later when it asks for the specific constraints.
   parent_.logical_buffer_collection().OnDependencyReady();
-  // |this| may be gone at this point, if the allocation failed.  Regardless,
-  // SetConstraints() worked, so ZX_OK.
+  // |this| may be gone at this point, if the allocation failed. Regardless,
+  // SetConstraints() worked.
 }
 
 template <typename Completer>

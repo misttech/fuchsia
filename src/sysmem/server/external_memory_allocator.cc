@@ -26,6 +26,7 @@ ExternalMemoryAllocator::ExternalMemoryAllocator(
 ExternalMemoryAllocator::~ExternalMemoryAllocator() { ZX_DEBUG_ASSERT(is_empty()); }
 
 zx_status_t ExternalMemoryAllocator::Allocate(uint64_t raw_vmo_size,
+                                              std::optional<uint64_t> min_physical_alignment,
                                               const fuchsia_sysmem2::SingleBufferSettings& settings,
                                               std::optional<std::string> name,
                                               uint64_t buffer_collection_id, uint32_t buffer_index,
@@ -35,6 +36,13 @@ zx_status_t ExternalMemoryAllocator::Allocate(uint64_t raw_vmo_size,
   ZX_DEBUG_ASSERT_MSG(*settings.buffer_settings()->raw_vmo_size() == raw_vmo_size,
                       "settings raw_vmo_size: %" PRIu64 " raw_vmo_size: %" PRIu64,
                       *settings.buffer_settings()->raw_vmo_size(), raw_vmo_size);
+  // The min_physical_alignment isn't (so far) plumbed to fuchsia.hardware.sysmem/Heap.AllocateVmo
+  // called below, so for now we need to fail if the requested physical alignment is greater than
+  // PAGE_SIZE. All sysmem allocations are have start and size aligned to PAGE_SIZE.
+  if (min_physical_alignment.has_value() && *min_physical_alignment > zx_system_get_page_size()) {
+    LOG(ERROR, "min_physical_alignment > PAGE_SIZE unexpected");
+    return ZX_ERR_NOT_SUPPORTED;
+  }
   // TODO(https://fxbug.dev/42135564): We're currently using WireSharedClient for the combination of
   // "shared" and sync() being available, but once we remove OnRegister we should also evaluate
   // whether we can just use fidl::SyncClient.

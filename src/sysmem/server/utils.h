@@ -130,4 +130,14 @@ TypeOut static_down_cast(TypeIn in) {
   return result;
 }
 
+// Leaves the source optional with has_value() false instead of leaving source.has_value() true with
+// a moved-out contained value. This is a nice way of dealing with an optional that's getting moved
+// into a lambda's captures.
+template <typename T>
+std::optional<T> TakeOptional(std::optional<T>& source) {
+  auto tmp = std::move(source);
+  source.reset();
+  return tmp;
+}
+
 #endif  // SRC_SYSMEM_SERVER_UTILS_H_

@@ -97,9 +97,39 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.constraints_to_check",
+        "ordinal": "4",
+        "type": "fuchsia.sysmem2/BufferCollectionConstraints"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.need_single_buffer_settings",
+        "ordinal": "3",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.need_weak",
+        "ordinal": "2",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.vmo",
         "ordinal": "1",
         "type": "zx/Handle:VMO"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.vmo_settings_to_check",
+        "ordinal": "5",
+        "type": "zx/Handle:VMO"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/AllocatorGetVmoInfoRequest.vmo_settings_to_check_ignore_size",
+        "ordinal": "6",
+        "type": "bool"
     },
     {
         "kind": "table",
@@ -149,6 +179,30 @@
         "name": "fuchsia.sysmem2/Allocator_GetVmoInfo_Response.close_weak_asap",
         "ordinal": "3",
         "type": "zx/Handle:EVENTPAIR"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/Allocator_GetVmoInfo_Response.constraints_ok",
+        "ordinal": "6",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/Allocator_GetVmoInfo_Response.single_buffer_settings",
+        "ordinal": "5",
+        "type": "fuchsia.sysmem2/SingleBufferSettings"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/Allocator_GetVmoInfo_Response.vmo_settings_match",
+        "ordinal": "7",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/Allocator_GetVmoInfo_Response.weak_vmo",
+        "ordinal": "4",
+        "type": "zx/Handle:VMO"
     },
     {
         "kind": "table",
@@ -422,6 +476,12 @@
         "name": "fuchsia.sysmem2/BufferCollectionSetConstraintsRequest.constraints",
         "ordinal": "1",
         "type": "fuchsia.sysmem2/BufferCollectionConstraints"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.sysmem2/BufferCollectionSetConstraintsRequest.must_match_vmo",
+        "ordinal": "2",
+        "type": "zx/Handle:VMO"
     },
     {
         "kind": "table",
@@ -804,6 +864,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.sysmem2/BufferMemoryConstraints.min_physical_base_alignment",
+        "ordinal": "9",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.sysmem2/BufferMemoryConstraints.min_size_bytes",
         "ordinal": "1",
         "type": "uint64"
@@ -1001,6 +1067,11 @@
         "kind": "enum/member",
         "name": "fuchsia.sysmem2/Error.NO_MEMORY",
         "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.sysmem2/Error.NO_MORE_STRONG_VMO_HANDLES",
+        "value": "9"
     },
     {
         "kind": "enum/member",

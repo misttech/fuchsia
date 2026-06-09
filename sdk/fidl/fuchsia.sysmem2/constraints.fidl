@@ -120,6 +120,7 @@ type BufferCollectionConstraints = table {
     ///
     /// If this field is un-set, the logical `min_buffer_count` is 0.
     5: min_buffer_count uint32;
+
     /// A particularly-picky participant may unfortunately need to demand a
     /// tight range of `buffer_count`, or even a specific `buffer_count`. This
     /// field should remain 0 unless a participant really must set this field to
@@ -292,6 +293,17 @@ type BufferMemoryConstraints = table {
     /// that the secure heap is acceptable via `heap_permitted`, or specify
     /// `NONE_USAGE`.
     8: permitted_heaps vector<Heap>:MAX_COUNT_BUFFER_MEMORY_CONSTRAINTS_PERMITTED_HEAPS;
+
+    /// If physically_contiguous_required is false or un-set, this field must
+    /// also be un-set.
+    ///
+    /// When set, this field must be non-zero and must be a power of 2 (only 1
+    /// bit set to 1, rest all 0).
+    ///
+    /// When set, this is the minimum alignment of the base physical address of
+    /// each buffer.
+    @available(added=NEXT)
+    9: min_physical_base_alignment uint64;
 };
 
 /// `INACCESSIBLE` is only for cases where there is no CPU access to the

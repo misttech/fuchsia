@@ -165,6 +165,8 @@ class NodeProperties : public std::enable_shared_from_this<NodeProperties> {
   // OrphanedConstraints may have constraints.
   bool has_constraints() const;
   const fuchsia_sysmem2::BufferCollectionConstraints* buffer_collection_constraints() const;
+  const std::optional<fuchsia_sysmem2::SingleBufferSettings>& must_match_settings() const;
+  bool SetMustMatchVmo(zx::vmo must_match_vmo);
   void SetBufferCollectionConstraints(
       fuchsia_sysmem2::BufferCollectionConstraints buffer_collection_constraints);
 
@@ -302,11 +304,15 @@ class NodeProperties : public std::enable_shared_from_this<NodeProperties> {
   //     optional SetConstraintsAuxBuffers
   //     SetConstraints()
   //
-  // v2 (TODO):
+  // v2:
   //     SetConstraints()
   //
   // Either way, the constraints here are in v2 form.
   std::optional<fuchsia_sysmem2::BufferCollectionConstraints> buffer_collection_constraints_;
+  // These are the settings retrieved using the SetConstraintsRequest.must_match_vmo, if that
+  // request field was set. We drop the must_match_vmo during SetConstraints to avoid keeping the
+  // handle open longer than necessary.
+  std::optional<fuchsia_sysmem2::SingleBufferSettings> must_match_settings_;
 
   // These counts are for the current NodeProperties + any current children (direct and indirect) of
   // the current NodeProperties.  For LogicalBufferCollection::root_, these counts are for the whole

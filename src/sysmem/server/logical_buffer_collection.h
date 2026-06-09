@@ -373,6 +373,18 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
   zx::time create_time_monotonic() const { return create_time_monotonic_; }
 
+  const fuchsia_sysmem2::SingleBufferSettings& single_buffer_settings() {
+    // Caller must ensure this will be present by the time
+    // single_buffer_settings is called. For example, by only calling
+    // single_buffer_settings when a vmo handle given out as part of the buffer
+    // collection has come back from a sysmem client.
+    ZX_ASSERT(buffer_collection_info_before_population_.has_value());
+    return *buffer_collection_info_before_population_->settings();
+  }
+
+  bool CheckConstraintsAgainstExistingSettings(
+      const fuchsia_sysmem2::BufferCollectionConstraints& constraints);
+
  private:
   friend class LogicalBuffer;
   friend class NodeProperties;
@@ -385,8 +397,10 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
     Constraints(const Constraints&) = delete;
     Constraints(Constraints&&) = default;
     Constraints(fuchsia_sysmem2::BufferCollectionConstraints constraints,
+                std::optional<fuchsia_sysmem2::SingleBufferSettings> must_match_settings,
                 const NodeProperties& node_properties)
         : buffer_collection_constraints_(std::move(constraints)),
+          must_match_settings_(std::move(must_match_settings)),
           node_properties_(node_properties) {}
 
     const fuchsia_sysmem2::BufferCollectionConstraints& constraints() const {
@@ -396,6 +410,10 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
       return buffer_collection_constraints_;
     }
 
+    const std::optional<fuchsia_sysmem2::SingleBufferSettings>& must_match_settings() const {
+      return must_match_settings_;
+    }
+
     const ClientDebugInfo& client_debug_info() const {
       return node_properties_.client_debug_info();
     }
@@ -403,6 +421,7 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
    private:
     fuchsia_sysmem2::BufferCollectionConstraints buffer_collection_constraints_;
+    std::optional<fuchsia_sysmem2::SingleBufferSettings> must_match_settings_;
     const NodeProperties& node_properties_;
   };
 
@@ -485,6 +504,20 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   std::optional<fuchsia_sysmem2::Error> TryLateLogicalAllocation(
       std::vector<NodeProperties*> nodes);
 
+  fuchsia_sysmem2::BufferCollectionConstraints GetExistingConstraints(
+      const fuchsia_sysmem2::SingleBufferSettings& settings,
+      std::optional<uint32_t> min_buffer_count, std::optional<uint32_t> max_buffer_count);
+
+  // The tmp_nodes vector must be empty on entry to this method. After calling this method, the
+  // caller must keep tmp_nodes alive until after subsequent call to CombineConstraints or any other
+  // usage of constraints_list, and should delete the vector soon after that.
+  //
+  // For any existing entry that has must_match_vmo set, this adds another entry to constraints_list
+  // based on the SingleBufferSettings of the must_match_vmo's collection. This does not add any
+  // constraints on the buffer count.
+  bool AugmentConstraintsList(ConstraintsList& constraints_list,
+                              std::vector<std::unique_ptr<NodeProperties>>& tmp_nodes);
+
   zx::result<bool> CompareBufferCollectionInfo(fuchsia_sysmem2::BufferCollectionInfo& lhs,
                                                fuchsia_sysmem2::BufferCollectionInfo& rhs);
 
@@ -562,6 +595,7 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
   fpromise::result<zx::vmo> AllocateVmo(MemoryAllocator* allocator,
                                         const fuchsia_sysmem2::SingleBufferSettings& settings,
+                                        std::optional<uint64_t> min_physical_alignment,
                                         uint32_t index);
 
   int32_t CompareImageFormatConstraintsTieBreaker(const fuchsia_sysmem2::ImageFormatConstraints& a,

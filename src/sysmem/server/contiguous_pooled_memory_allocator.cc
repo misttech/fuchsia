@@ -267,6 +267,7 @@ zx_status_t ContiguousPooledMemoryAllocator::Init(uint32_t alignment_log2) {
   if (alignment_log2 < system_page_alignment) {
     alignment_log2 = safe_cast<uint32_t>(system_page_alignment);
   }
+  max_supported_alignment_log2_ = alignment_log2;
   const uint64_t vmo_size = fbl::round_up<uint64_t>(size_, zx_system_get_page_size());
   zx_status_t status = zx::vmo::create_contiguous(parent_device_->bti(), vmo_size, alignment_log2,
                                                   &local_contiguous_vmo);
@@ -280,6 +281,9 @@ zx_status_t ContiguousPooledMemoryAllocator::Init(uint32_t alignment_log2) {
 }
 
 zx_status_t ContiguousPooledMemoryAllocator::InitPhysical(zx_paddr_t paddr) {
+  // __builtin_ctzll is UB when paddr is 0. Zircon will never allocate a physically contiguous VMO
+  // using physical page 0, but guard against 0 here anyway to avoid taking a dep on that here.
+  max_supported_alignment_log2_ = paddr != 0 ? __builtin_ctzll(paddr) : sizeof(paddr) * 8;
   const uint64_t vmo_size = fbl::round_up<uint64_t>(size_, zx_system_get_page_size());
   zx::result<zx::vmo> physical_vmo_result = parent_device_->CreatePhysicalVmo(paddr, vmo_size);
   if (!physical_vmo_result.is_ok()) {
@@ -360,6 +364,11 @@ zx_status_t ContiguousPooledMemoryAllocator::InitCommon(zx::vmo local_contiguous
     return status;
   }
   phys_start_ = addrs;
+  // We intentionally do not have max_supported_alignment_log2_ depend on luck here. Please do not
+  // do max_supported_alignment_log2_ = std::max(max_supported_alignment_log2_,
+  // __builtin_ctzll(phys_start_)) here, so that requests for particular alignment can either fail
+  // or succeed based on what's guaranteed (assuming we get this far etc), not what happened to
+  // occur this boot.
 
   // Since the VMO is contiguous or physical, we don't need to keep the VMO pinned for it to remain
   // physically contiguous.  A physical VMO can't have any pages decommitted, while a contiguous
@@ -417,9 +426,9 @@ zx_status_t ContiguousPooledMemoryAllocator::InitCommon(zx::vmo local_contiguous
 }
 
 zx_status_t ContiguousPooledMemoryAllocator::Allocate(
-    uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
-    std::optional<std::string> name, uint64_t buffer_collection_id, uint32_t buffer_index,
-    zx::vmo* parent_vmo) {
+    uint64_t raw_vmo_size, std::optional<uint64_t> min_physical_alignment,
+    const fuchsia_sysmem2::SingleBufferSettings& settings, std::optional<std::string> name,
+    uint64_t buffer_collection_id, uint32_t buffer_index, zx::vmo* parent_vmo) {
   TRACE_DURATION("gfx", "ContiguousPooledMemoryAllocator::Allocate", "size_bytes",
                  *settings.buffer_settings()->size_bytes());
   ZX_DEBUG_ASSERT_MSG(raw_vmo_size % zx_system_get_page_size() == 0, "raw_vmo_size: 0x%" PRIx64,
@@ -436,11 +445,22 @@ zx_status_t ContiguousPooledMemoryAllocator::Allocate(
 
   const uint64_t guard_region_size = has_internal_guard_regions_ ? guard_region_size_ : 0;
   uint64_t allocation_size = raw_vmo_size + guard_region_size_ * 2;
+  uint64_t alignment = zx_system_get_page_size();
+  if (min_physical_alignment.has_value()) {
+    if (has_internal_guard_regions_) {
+      LOG(ERROR, "has_internal_guard_regions_ and min_physical_alignment not supported together");
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+    alignment = std::max(alignment, *min_physical_alignment);
+    if (alignment > (1 << max_supported_alignment_log2_)) {
+      LOG(ERROR, "alignment > (1 << max_supported_alignment_log2_)");
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+  }
   // TODO(https://fxbug.dev/42119460): Use a fragmentation-reducing allocator (such as best fit).
   //
   // The "region" param is an out ref.
-  zx_status_t status =
-      region_allocator_.GetRegion(allocation_size, zx_system_get_page_size(), region);
+  zx_status_t status = region_allocator_.GetRegion(allocation_size, alignment, region);
   if (status != ZX_OK) {
     LOG(WARNING, "GetRegion failed (out of space?) - size: %" PRIu64 " status: %d", raw_vmo_size,
         status);

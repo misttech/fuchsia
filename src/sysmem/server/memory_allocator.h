@@ -51,6 +51,10 @@ class MemoryAllocator {
 
   // size - the needed size in bytes, rounded up to a page boundaryß
   //
+  // min_physical_alignment - the minimum alignment of the physical base address of the allocation;
+  // a MemoryAllocator that isn't allocating physically contiguous memory can either completely
+  // ignore this parameter, or fail with ZX_ERR_NOT_SUPPORTED if this has_value()
+  //
   // settings - allocators may observe settings if needed, but are discouraged from looking at
   // settings unless really needed; settings.buffer_settings.size_bytes is the logical size in bytes
   // not rounded up to a page boundary, so most allocators will only care about `size` (first
@@ -68,7 +72,8 @@ class MemoryAllocator {
   //
   // returns zx_status_t - the error may be useful for debugging, but the error code indicated to
   // sysmem clients will be sanitized to ZX_ERR_NO_MEMORY.
-  virtual zx_status_t Allocate(uint64_t size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+  virtual zx_status_t Allocate(uint64_t size, std::optional<uint64_t> min_physical_alignment,
+                               const fuchsia_sysmem2::SingleBufferSettings& settings,
                                std::optional<std::string> name, uint64_t buffer_collection_id,
                                uint32_t buffer_index, zx::vmo* parent_vmo) = 0;
 

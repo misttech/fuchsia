@@ -61,7 +61,8 @@ class ContiguousPooledMemoryAllocator : public MemoryAllocator {
   // range of VDEC from the TEE.
   zx_status_t InitPhysical(zx_paddr_t paddr);
 
-  zx_status_t Allocate(uint64_t raw_vmo_size, const fuchsia_sysmem2::SingleBufferSettings& settings,
+  zx_status_t Allocate(uint64_t raw_vmo_size, std::optional<uint64_t> min_physical_alignment,
+                       const fuchsia_sysmem2::SingleBufferSettings& settings,
                        std::optional<std::string> name, uint64_t buffer_collection_id,
                        uint32_t buffer_index, zx::vmo* parent_vmo) override;
 
@@ -405,6 +406,8 @@ class ContiguousPooledMemoryAllocator : public MemoryAllocator {
   std::vector<DeletedRegion> deleted_regions_;
 
   protected_ranges::ProtectedRangesCoreControl* protected_ranges_core_control_ = nullptr;
+
+  uint32_t max_supported_alignment_log2_ = 0;
 };
 
 }  // namespace sysmem_service

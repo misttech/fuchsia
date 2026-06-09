@@ -105,4 +105,9 @@ type Error = flexible enum : uint32 {
     // This was prevously conveyed with ZX_ERR_OUT_OF_RANGE, but that error code
     // isn't a perfect semantic match.
     TOO_MANY_GROUP_CHILD_COMBINATIONS = 8;
+
+    /// `GetVmoInfo` can fail with this error if `need_weak` is set to true and
+    /// no more strong vmo handles remain to the logical buffer.
+    @available(added=NEXT)
+    NO_MORE_STRONG_VMO_HANDLES = 9;
 };

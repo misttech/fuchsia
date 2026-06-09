@@ -241,11 +241,6 @@ static_assert(!IsStdString_v<uint32_t>);
     ZX_DEBUG_ASSERT(table_ref.field_name().has_value());                                         \
   } while (false)
 
-template <typename T>
-T AlignUp(T value, T divisor) {
-  return (value + divisor - 1) / divisor * divisor;
-}
-
 bool IsPotentiallyIncludedInInitialAllocation(const NodeProperties& node) {
   bool potentially_included_in_initial_allocation = true;
   for (const NodeProperties* iter = &node; iter; iter = iter->parent()) {
@@ -1123,9 +1118,10 @@ void LogicalBufferCollection::FailDownFrom(NodeProperties* tree_to_fail, Error e
     // gone.  Any further pending requests were dropped when the channels closed just above.
     //
     // Since all the token views and collection views are gone, there is no way for any client to be
-    // sent the VMOs again, so we can close the handles to the VMOs here.  This is necessary in
-    // order to get ZX_VMO_ZERO_CHILDREN to happen in TrackedParentVmo(s) of parent_vmos_, but not
-    // sufficient alone (clients must also close their VMO(s)).
+    // sent the strong VMOs again, so we can close the handles to the strong VMOs here.  This is
+    // necessary in order to get ZX_VMO_ZERO_CHILDREN to happen in TrackedParentVmo(s) of
+    // parent_vmos_, but not sufficient alone (clients must also close their VMO(s) including both
+    // strong and weak VMOs).
     //
     // Clear out the result info since we won't be sending it again. This also clears out any
     // children of strong_parent_vmo_ that LogicalBufferCollection may still be holding.
@@ -1764,7 +1760,7 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
     if (node_properties->buffer_collection_constraints()) {
       // first parameter is cloned/copied via generated code
       constraints_list.emplace_back(*node_properties->buffer_collection_constraints(),
-                                    *node_properties);
+                                    node_properties->must_match_settings(), *node_properties);
     }
   }
 
@@ -1793,6 +1789,21 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
       LogError(FROM_HERE, "secure_required && !is_secure_mem_ready && was_secure_mem_ready");
       return fpromise::error(Error::kUnspecified);
     }
+  }
+
+  // Must out-last elements in constraints_list (and does), but doesn't need to out-last
+  // constraints_list itself. See assert below re. constraints_list.empty().
+  std::vector<std::unique_ptr<NodeProperties>> tmp_nodes;
+  // This handles any must_match_vmo by adding an entry to constraints_list based on
+  // SingleBufferSettings of the must_match_vmo's collection, or failing if must_match_vmo isn't a
+  // sysmem-provided VMO. All the current entries in the constraints_list remain unmodified, but
+  // must_match_vmo is ignored after this call, aside from potential logging if this collection has
+  // verbose logging enabled.
+  if (!AugmentConstraintsList(constraints_list, tmp_nodes)) {
+    LogError(FROM_HERE, "AugmentConstraintsList failed");
+    // the only current reason for this is client providing a must_match_vmo that's not a
+    // sysmem-provided VMO
+    return fpromise::error(Error::kProtocolDeviation);
   }
 
   // Notes on memory pressure:
@@ -1825,6 +1836,12 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
   // loaned to zircon when not in use using VMO range decommit, and success of re-commit isn't
   // guaranteed.
 
+  // This doesn't necessarily mean that any of the clients have
+  // set non-empty constraints though.  We do require that at least one
+  // participant (probably the initiator) retains an open channel to its
+  // BufferCollection until allocation is done, else allocation won't be
+  // attempted.
+  ZX_DEBUG_ASSERT(root_->connected_client_count() != 0);
   auto combine_result = CombineConstraints(&constraints_list);
   if (!combine_result.is_ok()) {
     // It's impossible to combine the constraints due to incompatible
@@ -1832,8 +1849,13 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
     LogInfo(FROM_HERE, "CombineConstraints() failed");
     return fpromise::error(Error::kConstraintsIntersectionEmpty);
   }
+
   ZX_DEBUG_ASSERT(combine_result.is_ok());
+
   ZX_DEBUG_ASSERT(constraints_list.empty());
+  // tmp_nodes is still alive here after constraints_list.empty() assert just above, so tmp_nodes
+  // outlasted elements of constraints_list
+
   auto combined_constraints = combine_result.take_value();
 
   auto generate_result = GenerateUnpopulatedBufferCollectionInfo(combined_constraints);
@@ -1929,6 +1951,7 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
     if (logically_allocated_node->buffer_collection_constraints()) {
       // first parameter cloned/copied via generated code
       constraints_list.emplace_back(*logically_allocated_node->buffer_collection_constraints(),
+                                    logically_allocated_node->must_match_settings(),
                                     *logically_allocated_node);
     }
   }
@@ -1940,7 +1963,7 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
     if (additional_node->buffer_collection_constraints()) {
       // first parameter cloned/copied via generated code
       constraints_list.emplace_back(*additional_node->buffer_collection_constraints(),
-                                    *additional_node);
+                                    additional_node->must_match_settings(), *additional_node);
     }
   }
 
@@ -1950,68 +1973,9 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
   // optional characteristics, we require those so that we'll choose to enable those characteristics
   // again if we can, else we'll fail to CombineConstraints().
   const auto& existing = *buffer_collection_info_before_population_;
-  fuchsia_sysmem2::BufferCollectionConstraints existing_constraints;
-  fuchsia_sysmem2::BufferUsage usage;
-  usage.none().emplace(fuchsia_sysmem2::kNoneUsage);
-  existing_constraints.usage().emplace(std::move(usage));
-  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_camping().has_value());
-  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_dedicated_slack().has_value());
-  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_shared_slack().has_value());
-  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_shared_slack().has_value());
-  existing_constraints.min_buffer_count().emplace(safe_cast<uint32_t>(existing.buffers()->size()));
-  // We don't strictly need to set this, because we always try to allocate as few buffers as we can
-  // so we'd catch needing more than we have during linear form comparison below, but _might_ be
-  // easier to diagnose why we failed with this set, as the constraints aggregation will fail with
-  // a logged message about the max_buffer_count being exceeded.
-  existing_constraints.max_buffer_count().emplace(safe_cast<uint32_t>(existing.buffers()->size()));
-  existing_constraints.buffer_memory_constraints().emplace();
-  auto& buffer_memory_constraints = existing_constraints.buffer_memory_constraints().value();
-  buffer_memory_constraints.min_size_bytes().emplace(
-      existing.settings()->buffer_settings()->size_bytes().value());
-  buffer_memory_constraints.max_size_bytes().emplace(
-      existing.settings()->buffer_settings()->size_bytes().value());
-  if (existing.settings()->buffer_settings()->is_physically_contiguous().value()) {
-    buffer_memory_constraints.physically_contiguous_required().emplace(true);
-  }
-  ZX_DEBUG_ASSERT(existing.settings()->buffer_settings()->is_secure().value() ==
-                  IsSecureHeap(existing.settings()->buffer_settings()->heap().value()));
-  if (existing.settings()->buffer_settings()->is_secure().value()) {
-    buffer_memory_constraints.secure_required().emplace(true);
-  }
-  switch (existing.settings()->buffer_settings()->coherency_domain().value()) {
-    case fuchsia_sysmem2::CoherencyDomain::kCpu:
-      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
-      buffer_memory_constraints.cpu_domain_supported().emplace(true);
-      buffer_memory_constraints.ram_domain_supported().emplace(false);
-      buffer_memory_constraints.inaccessible_domain_supported().emplace(false);
-      break;
-    case fuchsia_sysmem2::CoherencyDomain::kRam:
-      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
-      buffer_memory_constraints.cpu_domain_supported().emplace(false);
-      buffer_memory_constraints.ram_domain_supported().emplace(true);
-      buffer_memory_constraints.inaccessible_domain_supported().emplace(false);
-      break;
-    case fuchsia_sysmem2::CoherencyDomain::kInaccessible:
-      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
-      buffer_memory_constraints.cpu_domain_supported().emplace(false);
-      buffer_memory_constraints.ram_domain_supported().emplace(false);
-      buffer_memory_constraints.inaccessible_domain_supported().emplace(true);
-      break;
-    default:
-      ZX_PANIC("not yet implemented (new enum value?)");
-  }
-  buffer_memory_constraints.permitted_heaps().emplace(1);
-  // intentional copy/clone
-  buffer_memory_constraints.permitted_heaps()->at(0) =
-      existing.settings()->buffer_settings()->heap().value();
-  if (existing.settings()->image_format_constraints().has_value()) {
-    // We can't loosen the constraints after initial allocation, nor can we tighten them.  We also
-    // want to chose the same PixelFormat as we already have allocated.
-    existing_constraints.image_format_constraints().emplace(1);
-    // clone/copy via generated code
-    existing_constraints.image_format_constraints()->at(0) =
-        existing.settings()->image_format_constraints().value();
-  }
+  fuchsia_sysmem2::BufferCollectionConstraints existing_constraints = GetExistingConstraints(
+      existing.settings().value(), safe_cast<uint32_t>(existing.buffers()->size()),
+      safe_cast<uint32_t>(existing.buffers()->size()));
 
   if (is_verbose_logging()) {
     LogInfo(FROM_HERE, "constraints from initial allocation:");
@@ -2023,8 +1987,30 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
   auto tmp_node = NodeProperties::NewTemporary(this, std::move(existing_constraints),
                                                "sysmem-internals-no-fewer");
   // first parameter cloned/copied via generated code
-  constraints_list.emplace_back(*tmp_node->buffer_collection_constraints(), *tmp_node);
+  constraints_list.emplace_back(*tmp_node->buffer_collection_constraints(),
+                                tmp_node->must_match_settings(), *tmp_node);
 
+  // Must out-last elements in constraints_list (and does), but doesn't need to out-last
+  // constraints_list itself. See assert below re. constraints_list.empty().
+  std::vector<std::unique_ptr<NodeProperties>> tmp_nodes;
+  // This handles any must_match_vmo by adding an entry to constraints_list based on
+  // SingleBufferSettings of the must_match_vmo's collection, or failing if must_match_vmo isn't a
+  // sysmem-provided VMO. All the current entries in the constraints_list remain unmodified, but
+  // must_match_vmo is ignored after this call, aside from potential logging if this collection has
+  // verbose logging enabled.
+  if (!AugmentConstraintsList(constraints_list, tmp_nodes)) {
+    LogError(FROM_HERE, "AugmentConstraintsList failed");
+    // the only current reason for this is client providing a must_match_vmo that's not a
+    // sysmem-provided VMO
+    return Error::kProtocolDeviation;
+  }
+
+  // This doesn't necessarily mean that any of the clients have
+  // set non-empty constraints though.  We do require that at least one
+  // participant (probably the initiator) retains an open channel to its
+  // BufferCollection until allocation is done, else allocation won't be
+  // attempted.
+  ZX_DEBUG_ASSERT(root_->connected_client_count() != 0);
   auto combine_result = CombineConstraints(&constraints_list);
   if (!combine_result.is_ok()) {
     // It's impossible to combine the constraints due to incompatible constraints, or all
@@ -2036,7 +2022,11 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
   }
 
   ZX_DEBUG_ASSERT(combine_result.is_ok());
+
   ZX_DEBUG_ASSERT(constraints_list.empty());
+  // tmp_nodes is still alive here after constraints_list.empty() assert just above, so tmp_nodes
+  // outlasted elements of constraints_list
+
   auto combined_constraints = combine_result.take_value();
 
   auto generate_result = GenerateUnpopulatedBufferCollectionInfo(combined_constraints);
@@ -2082,6 +2072,105 @@ std::optional<Error> LogicalBufferCollection::TryLateLogicalAllocation(
   //
   // no error == success
   return std::nullopt;
+}
+
+fuchsia_sysmem2::BufferCollectionConstraints LogicalBufferCollection::GetExistingConstraints(
+    const fuchsia_sysmem2::SingleBufferSettings& settings, std::optional<uint32_t> min_buffer_count,
+    std::optional<uint32_t> max_buffer_count) {
+  fuchsia_sysmem2::BufferCollectionConstraints existing_constraints;
+  fuchsia_sysmem2::BufferUsage usage;
+  usage.none().emplace(fuchsia_sysmem2::kNoneUsage);
+  existing_constraints.usage().emplace(std::move(usage));
+  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_camping().has_value());
+  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_dedicated_slack().has_value());
+  ZX_DEBUG_ASSERT(!existing_constraints.min_buffer_count_for_shared_slack().has_value());
+  if (min_buffer_count.has_value()) {
+    existing_constraints.min_buffer_count() = *min_buffer_count;
+  }
+  if (max_buffer_count.has_value()) {
+    existing_constraints.max_buffer_count() = *max_buffer_count;
+  }
+  existing_constraints.buffer_memory_constraints().emplace();
+  auto& buffer_memory_constraints = existing_constraints.buffer_memory_constraints().value();
+  buffer_memory_constraints.min_size_bytes().emplace(
+      settings.buffer_settings()->size_bytes().value());
+  buffer_memory_constraints.max_size_bytes().emplace(
+      settings.buffer_settings()->size_bytes().value());
+  if (settings.buffer_settings()->is_physically_contiguous().value()) {
+    buffer_memory_constraints.physically_contiguous_required().emplace(true);
+  }
+  ZX_DEBUG_ASSERT(settings.buffer_settings()->is_secure().value() ==
+                  IsSecureHeap(settings.buffer_settings()->heap().value()));
+  if (settings.buffer_settings()->is_secure().value()) {
+    buffer_memory_constraints.secure_required().emplace(true);
+  }
+  switch (settings.buffer_settings()->coherency_domain().value()) {
+    case fuchsia_sysmem2::CoherencyDomain::kCpu:
+      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
+      buffer_memory_constraints.cpu_domain_supported().emplace(true);
+      buffer_memory_constraints.ram_domain_supported().emplace(false);
+      buffer_memory_constraints.inaccessible_domain_supported().emplace(false);
+      break;
+    case fuchsia_sysmem2::CoherencyDomain::kRam:
+      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
+      buffer_memory_constraints.cpu_domain_supported().emplace(false);
+      buffer_memory_constraints.ram_domain_supported().emplace(true);
+      buffer_memory_constraints.inaccessible_domain_supported().emplace(false);
+      break;
+    case fuchsia_sysmem2::CoherencyDomain::kInaccessible:
+      // We don't want defaults chosen based on usage, so explicitly specify each of these fields.
+      buffer_memory_constraints.cpu_domain_supported().emplace(false);
+      buffer_memory_constraints.ram_domain_supported().emplace(false);
+      buffer_memory_constraints.inaccessible_domain_supported().emplace(true);
+      break;
+    default:
+      ZX_PANIC("not yet implemented (new enum value?)");
+  }
+  buffer_memory_constraints.permitted_heaps().emplace(1);
+  // intentional copy/clone
+  buffer_memory_constraints.permitted_heaps()->at(0) = settings.buffer_settings()->heap().value();
+  if (settings.image_format_constraints().has_value()) {
+    // We can't loosen the constraints after initial allocation, nor can we tighten them.  We also
+    // want to chose the same PixelFormat as we already have allocated.
+    existing_constraints.image_format_constraints().emplace(1);
+    // clone/copy via generated code
+    existing_constraints.image_format_constraints()->at(0) =
+        settings.image_format_constraints().value();
+  }
+
+  return existing_constraints;
+}
+
+bool LogicalBufferCollection::AugmentConstraintsList(
+    ConstraintsList& constraints_list, std::vector<std::unique_ptr<NodeProperties>>& tmp_nodes) {
+  size_t starting_size = constraints_list.size();
+  auto constraints_list_iter = constraints_list.begin();
+  // std::list iterators remain valid when adding an item to end of list
+  static_assert(std::is_same_v<ConstraintsList, std::list<Constraints>>);
+  for (size_t i = 0; i < starting_size; ++i, ++constraints_list_iter) {
+    auto& maybe_must_match_settings = constraints_list_iter->must_match_settings();
+    if (!maybe_must_match_settings.has_value()) {
+      continue;
+    }
+    auto& must_match_settings = *maybe_must_match_settings;
+    auto must_match_constraints =
+        GetExistingConstraints(must_match_settings, std::nullopt, std::nullopt);
+
+    // This tmp_node doesn't need BufferCollectionConstraints; we add must_match_constraints to
+    // constraints_list directly below. We may remove the BufferCollectionConstraints parameter from
+    // NewTemporary before long, or make the NodeProperties of Constraints optional.
+    auto tmp_node = NodeProperties::NewTemporary(
+        this, fuchsia_sysmem2::BufferCollectionConstraints{}, "AugmentConstraintsList");
+
+    // first parameter cloned/copied by generated code; second parameter kept alive by tmp_nodes
+    //
+    // We won't be iterating over this added element in the current loop because we stop at
+    // starting_size minus 1.
+    constraints_list.emplace_back(must_match_constraints, tmp_node->must_match_settings(),
+                                  *tmp_node);
+    tmp_nodes.emplace_back(std::move(tmp_node));
+  }
+  return true;
 }
 
 zx::result<bool> LogicalBufferCollection::CompareBufferCollectionInfo(
@@ -2356,7 +2445,6 @@ void LogicalBufferCollection::BindSharedCollectionInternal(
 
 bool LogicalBufferCollection::IsMinBufferSizeSpecifiedByAnyParticipant(
     const ConstraintsList& constraints_list) {
-  ZX_DEBUG_ASSERT(root_->connected_client_count() != 0);
   ZX_DEBUG_ASSERT(!constraints_list.empty());
   for (auto& entry : constraints_list) {
     auto& constraints = entry.constraints();
@@ -2518,12 +2606,6 @@ LogicalBufferCollection::PrioritizedGroupsOfPrunedSubtreeEligibleForLogicalAlloc
 
 fpromise::result<fuchsia_sysmem2::BufferCollectionConstraints, void>
 LogicalBufferCollection::CombineConstraints(ConstraintsList* constraints_list) {
-  // This doesn't necessarily mean that any of the clients have
-  // set non-empty constraints though.  We do require that at least one
-  // participant (probably the initiator) retains an open channel to its
-  // BufferCollection until allocation is done, else allocation won't be
-  // attempted.
-  ZX_DEBUG_ASSERT(root_->connected_client_count() != 0);
   ZX_DEBUG_ASSERT(!constraints_list->empty());
 
   // At least one participant must specify min buffer size (in terms of non-zero min buffer size or
@@ -3019,9 +3101,32 @@ bool LogicalBufferCollection::CheckSanitizeHeap(CheckSanitizeStage stage,
 bool LogicalBufferCollection::CheckSanitizeBufferMemoryConstraints(
     CheckSanitizeStage stage, const fuchsia_sysmem2::BufferUsage& buffer_usage,
     fuchsia_sysmem2::BufferMemoryConstraints& constraints) {
+  if (stage != CheckSanitizeStage::kAggregated) {
+    if (constraints.min_physical_base_alignment().has_value()) {
+      if (!constraints.physically_contiguous_required().has_value() ||
+          !*constraints.physically_contiguous_required()) {
+        LogError(
+            FROM_HERE,
+            "constraints.min_physical_base_alignment field set when physically_contiguous_required un-set or false");
+        return false;
+      }
+      uint64_t alignment = *constraints.min_physical_base_alignment();
+      if (alignment == 0) {
+        LogError(FROM_HERE, "constraints.min_physical_base_alignment field must not be set to 0");
+        return false;
+      }
+      if ((alignment & (alignment - 1)) != 0) {
+        LogError(FROM_HERE, "constraints.min_physical_base_alignment must be a power of 2 if set");
+        return false;
+      }
+    }
+  }
   FIELD_DEFAULT_ZERO(constraints, min_size_bytes);
   FIELD_DEFAULT_MAX(constraints, max_size_bytes);
   FIELD_DEFAULT_FALSE(constraints, physically_contiguous_required);
+  if (*constraints.physically_contiguous_required()) {
+    FIELD_DEFAULT(constraints, min_physical_base_alignment, 1u);
+  }
   FIELD_DEFAULT_FALSE(constraints, secure_required);
   // The CPU domain is supported by default, unless secure_required.
   FIELD_DEFAULT(constraints, cpu_domain_supported, !*constraints.secure_required());
@@ -3223,6 +3328,33 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
       constraints.min_bytes_per_row() =
           std::max(constraints.min_bytes_per_row().value(), minimum_row_bytes);
     }
+  }
+
+  // Avoid requiring clients to round up if the client is just using a min as-is. This must be done
+  // after adjustments to the divisor(s) and alignment(s) (above) and before min > max is checked
+  // for (below).
+  constraints.min_size()->width() =
+      fbl::round_up(constraints.min_size()->width(), constraints.size_alignment()->width());
+  constraints.min_size()->height() =
+      fbl::round_up(constraints.min_size()->height(), constraints.size_alignment()->height());
+  constraints.min_bytes_per_row() =
+      fbl::round_up(*constraints.min_bytes_per_row(), *constraints.bytes_per_row_divisor());
+
+  // Avoid claiming a max is supported if that max isn't conformant with divisor(s) and
+  // alignment(s). The value 0xFFFFFFFF is left alone, despite it being odd, since that value is
+  // documented as the default if there's no explicit limit and some clients may check for and/or
+  // expect 0xFFFFFFFF when no participant specifies a max.
+  if (constraints.max_size()->width() != std::numeric_limits<uint32_t>::max()) {
+    constraints.max_size()->width() =
+        fbl::round_down(constraints.max_size()->width(), constraints.size_alignment()->width());
+  }
+  if (constraints.max_size()->height() != std::numeric_limits<uint32_t>::max()) {
+    constraints.max_size()->height() =
+        fbl::round_down(constraints.max_size()->height(), constraints.size_alignment()->height());
+  }
+  if (constraints.max_bytes_per_row() != std::numeric_limits<uint32_t>::max()) {
+    constraints.max_bytes_per_row() =
+        fbl::round_down(*constraints.max_bytes_per_row(), *constraints.bytes_per_row_divisor());
   }
 
   if (!constraints.color_spaces().has_value()) {
@@ -3551,6 +3683,10 @@ bool LogicalBufferCollection::AccumulateConstraintBufferMemory(
 
   acc->physically_contiguous_required() =
       *acc->physically_contiguous_required() || *c.physically_contiguous_required();
+  if (*acc->physically_contiguous_required()) {
+    acc->min_physical_base_alignment() =
+        std::max(*acc->min_physical_base_alignment(), *c.min_physical_base_alignment());
+  }
 
   acc->secure_required() = *acc->secure_required() || *c.secure_required();
 
@@ -4144,10 +4280,9 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
         LogError(FROM_HERE, "size_alignment.width caused size.width > max_size.width");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
-
       // We use required_max_size.height because that's the max height that the producer (or
       // initiator) needs these buffers to be able to hold.
-      min_image.size()->height() = AlignUp(
+      min_image.size()->height() = fbl::round_up(
           std::max(image_format_constraints.min_size()->height(), required_max_size.height()),
           image_format_constraints.size_alignment()->height());
       if (min_image.size()->height() > image_format_constraints.max_size()->height()) {
@@ -4162,8 +4297,8 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
         LogError(FROM_HERE, "stride_bytes_per_width_pixel * size.width failed");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
-      // TODO: Make/use a safemath-y version of AlignUp().
-      min_image.bytes_per_row() = AlignUp(
+      // TODO: Make/use a safemath-y version of fbl::round_up().
+      min_image.bytes_per_row() = fbl::round_up(
           std::max(one_row_non_padding_bytes, *image_format_constraints.min_bytes_per_row()),
           *image_format_constraints.bytes_per_row_divisor());
       if (*min_image.bytes_per_row() > *image_format_constraints.max_bytes_per_row()) {
@@ -4172,7 +4307,6 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
                  "max_bytes_per_row");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
-
       uint32_t min_image_width_times_height;
       if (!CheckMul(min_image.size()->width(), min_image.size()->height())
                .AssignIfValid(&min_image_width_times_height)) {
@@ -4418,7 +4552,9 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
   auto cleanup_buffers = fit::defer([this] { ClearBuffers(); });
 
   for (uint32_t i = 0; i < result.buffers()->size(); ++i) {
-    auto allocate_result = AllocateVmo(allocator, settings, i);
+    auto allocate_result =
+        AllocateVmo(allocator, settings,
+                    constraints.buffer_memory_constraints()->min_physical_base_alignment(), i);
     if (!allocate_result.is_ok()) {
       LogError(FROM_HERE, "AllocateVmo() failed");
       return fpromise::error(Error::kNoMemory);
@@ -4440,7 +4576,7 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
 
 fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
     MemoryAllocator* allocator, const fuchsia_sysmem2::SingleBufferSettings& settings,
-    uint32_t index) {
+    std::optional<uint64_t> min_physical_alignment, uint32_t index) {
   TRACE_DURATION("gfx", "LogicalBufferCollection::AllocateVmo", "size_bytes",
                  *settings.buffer_settings()->size_bytes());
 
@@ -4448,6 +4584,19 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
   // should also round up when allocating.
   size_t rounded_size_bytes = *settings.buffer_settings()->raw_vmo_size();
   ZX_DEBUG_ASSERT((rounded_size_bytes % zx_system_get_page_size()) == 0);
+
+  if (min_physical_alignment.has_value()) {
+    // This avoids any degenerate cases in MemoryAllocator(s). All sysmem allocators are
+    // page-aligned per granularity of read/write permissions for mappings and so on.
+    min_physical_alignment =
+        std::max(*min_physical_alignment, static_cast<uint64_t>(zx_system_get_page_size()));
+    // must be power of 2
+    if ((*min_physical_alignment & (*min_physical_alignment - 1)) != 0) {
+      // should be impossible, but if this somehow happens, don't abort() sysmem
+      LogError(FROM_HERE, "*min_physical_alignment somehow not a power of 2");
+      return fpromise::error();
+    }
+  }
 
   // raw_parent_vmo may itself be a child VMO of an allocator's overall contig VMO, but that's an
   // internal detail of the allocator.  The ZERO_CHILDREN signal will only be set when all direct
@@ -4458,8 +4607,8 @@ fpromise::result<zx::vmo> LogicalBufferCollection::AllocateVmo(
   if (name_.has_value()) {
     name = fbl::StringPrintf("%s:%d", name_->name.c_str(), index).c_str();
   }
-  zx_status_t status = allocator->Allocate(rounded_size_bytes, settings, name,
-                                           buffer_collection_id_, index, &raw_parent_vmo);
+  zx_status_t status = allocator->Allocate(rounded_size_bytes, min_physical_alignment, settings,
+                                           name, buffer_collection_id_, index, &raw_parent_vmo);
   if (status != ZX_OK) {
     LogError(FROM_HERE,
              "allocator.Allocate failed - size_bytes: %zu "
@@ -5078,7 +5227,7 @@ void LogicalBufferCollection::LogImageFormatConstraints(
     auto indent = indent_tracker.Nested();
     for (uint32_t i = 0; i < ifc.required_max_size_list()->size(); ++i) {
       auto& required_max_size = ifc.required_max_size_list()->at(i);
-      LogInfo(FROM_HERE, "%*srequired_max_size_list[%u]: {%u, %u}", indent.num_spaces(), "",
+      LogInfo(FROM_HERE, "%*srequired_max_size_list[%u]: {%u, %u}", indent.num_spaces(), "", i,
               required_max_size.width(), required_max_size.height());
     }
   }
@@ -5481,6 +5630,23 @@ bool LogicalBufferCollection::IsSecurePermitted(
   return found_permitted_secure_heap;
 }
 
+bool LogicalBufferCollection::CheckConstraintsAgainstExistingSettings(
+    const fuchsia_sysmem2::BufferCollectionConstraints& constraints) {
+  const auto& settings = single_buffer_settings();
+  ConstraintsList constraints_list;
+  std::vector<std::unique_ptr<NodeProperties>> tmp_nodes;
+  // This tmp_node doesn't need BufferCollectionConstraints; we add must_match_constraints to
+  // constraints_list directly below. We may remove the BufferCollectionConstraints parameter from
+  // NewTemporary before long, or make the NodeProperties of Constraints optional.
+  auto tmp_node = NodeProperties::NewTemporary(this, fuchsia_sysmem2::BufferCollectionConstraints{},
+                                               "CheckConstraintsAgainstExistingSettings");
+  auto* tmp_node_ptr = tmp_node.get();
+  tmp_nodes.emplace_back(std::move(tmp_node));
+  constraints_list.emplace_back(constraints, settings, *tmp_node_ptr);
+  AugmentConstraintsList(constraints_list, tmp_nodes);
+  return CombineConstraints(&constraints_list).is_ok();
+}
+
 fit::result<zx_status_t, std::unique_ptr<LogicalBuffer>> LogicalBuffer::Create(
     fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection, uint32_t buffer_index,
     zx::vmo parent_vmo) {
@@ -5751,11 +5917,30 @@ fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
   // sysmem VMO, if that's added in future.
 
   // If strong_parent_vmo_ still exists, then we know parent_vmo_ also still exists.
-  ZX_DEBUG_ASSERT(parent_vmo_);
-  ZX_DEBUG_ASSERT(logical_buffer_collection_->allocation_result_info_.has_value());
-  size_t raw_size_bytes = *logical_buffer_collection_->allocation_result_info_->settings()
-                               ->buffer_settings()
-                               ->raw_vmo_size();
+  ZX_DEBUG_ASSERT(!!parent_vmo_);
+  // We use buffer_collection_info_before_population_ here instead of allocation_result_info_
+  // because allocation_result_info_ gets cleared out by FailDownFrom, whereas
+  // buffer_collection_info_before_population_ remains set (as the latter has no VMO handles). This
+  // way Allocator.GetVmoInfo with need_weak true can get a weak VMO from an existing VMO regardless
+  // of whether before or after FailDownFrom. This way we avoid GetVmoInfo behavior varying
+  // depending on ordering of events at the server. If FailDownFrom has already happened, the
+  // close_weak_asap mechanism will handle that as usual.
+  ZX_DEBUG_ASSERT(!!logical_buffer_collection_);
+  ZX_DEBUG_ASSERT(
+      logical_buffer_collection_->buffer_collection_info_before_population_.has_value());
+  ZX_DEBUG_ASSERT(logical_buffer_collection_->buffer_collection_info_before_population_->settings()
+                      .has_value());
+  ZX_DEBUG_ASSERT(logical_buffer_collection_->buffer_collection_info_before_population_->settings()
+                      ->buffer_settings()
+                      .has_value());
+  ZX_DEBUG_ASSERT(logical_buffer_collection_->buffer_collection_info_before_population_->settings()
+                      ->buffer_settings()
+                      ->raw_vmo_size()
+                      .has_value());
+  size_t raw_size_bytes =
+      *logical_buffer_collection_->buffer_collection_info_before_population_->settings()
+           ->buffer_settings()
+           ->raw_vmo_size();
   ZX_DEBUG_ASSERT(raw_size_bytes % zx_system_get_page_size() == 0);
   zx::vmo per_sent_weak_parent;
   zx_status_t status =

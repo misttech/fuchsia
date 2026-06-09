@@ -315,42 +315,72 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
     return;
   }
   auto& vmo = *request.vmo();
-  zx_info_handle_basic_t basic_info{};
-  zx_status_t status =
-      vmo.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr);
-  if (status != ZX_OK) {
-    allocator_->LogError(FROM_HERE, "GetVmoInfo couldn't vmo.get_info to get koid");
+  auto find_logical_buffer = [this](const zx::vmo& vmo, GetVmoInfoCompleter::Sync& completer)
+      -> std::optional<Sysmem::FindLogicalBufferByVmoKoidResult> {
+    zx_info_handle_basic_t basic_info{};
+    zx_status_t status =
+        vmo.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      allocator_->LogError(FROM_HERE, "GetVmoInfo couldn't vmo.get_info to get koid");
 
-    Error translated_status;
-    if (status == ZX_ERR_ACCESS_DENIED) {
-      translated_status = Error::kHandleAccessDenied;
-    } else {
-      translated_status = Error::kUnspecified;
+      Error translated_status;
+      if (status == ZX_ERR_ACCESS_DENIED) {
+        translated_status = Error::kHandleAccessDenied;
+      } else {
+        translated_status = Error::kUnspecified;
+      }
+
+      completer.Reply(fit::error(translated_status));
+      return std::nullopt;
     }
-
-    completer.Reply(fit::error(translated_status));
+    // Possibly redundant with FIDL generated code.
+    if (basic_info.type != ZX_OBJ_TYPE_VMO) {
+      allocator_->LogError(FROM_HERE, "GetVmoInfo requires VMO handle");
+      completer.Reply(fit::error(Error::kProtocolDeviation));
+      return std::nullopt;
+    }
+    zx_koid_t vmo_koid = basic_info.koid;
+    auto logical_buffer_result = allocator_->parent_sysmem_->FindLogicalBufferByVmoKoid(vmo_koid);
+    if (!logical_buffer_result.logical_buffer) {
+      // We don't log anything in this path because a client may just be checking if a VMO is a
+      // sysmem VMO, which could make a LogInfo() here noisy.
+      completer.Reply(fit::error(Error::kNotFound));
+      return std::nullopt;
+    }
+    return logical_buffer_result;
+  };
+  auto maybe_logical_buffer_result = find_logical_buffer(vmo, completer);
+  if (!maybe_logical_buffer_result.has_value()) {
+    // find_logical_buffer already called completer.Reply
     return;
   }
-  // Possibly redundant with FIDL generated code.
-  if (basic_info.type != ZX_OBJ_TYPE_VMO) {
-    allocator_->LogError(FROM_HERE, "GetVmoInfo requires VMO handle");
-    completer.Reply(fit::error(Error::kProtocolDeviation));
-    return;
-  }
-  zx_koid_t vmo_koid = basic_info.koid;
-  auto logical_buffer_result = allocator_->parent_sysmem_->FindLogicalBufferByVmoKoid(vmo_koid);
-  if (!logical_buffer_result.logical_buffer) {
-    // We don't log anything in this path because a client may just be checking if a VMO is a
-    // sysmem VMO, which could make a LogInfo() here noisy.
-    completer.Reply(fit::error(Error::kNotFound));
-    return;
-  }
+  auto& logical_buffer_result = *maybe_logical_buffer_result;
   auto& logical_buffer = *logical_buffer_result.logical_buffer;
   fuchsia_sysmem2::AllocatorGetVmoInfoResponse response;
   response.buffer_collection_id() =
       logical_buffer.logical_buffer_collection().buffer_collection_id();
   response.buffer_index() = logical_buffer.buffer_index();
-  if (logical_buffer_result.is_koid_of_weak_vmo) {
+  bool need_weak = request.need_weak().has_value() && *request.need_weak();
+  if (need_weak) {
+    auto weak_vmo_result = logical_buffer.CreateWeakVmo(allocator_->client_debug_info_.has_value()
+                                                            ? *allocator_->client_debug_info_
+                                                            : ClientDebugInfo{});
+    if (!weak_vmo_result.is_ok()) {
+      // This is intentionally not trying to convey a translated zx_status_t, as there's little the
+      // client can do to fix any reason why CreateWeakVmo can fail, nor any reason for the client
+      // to react differently per zx_status_t value. CreateWeakVmo already logged.
+      completer.Reply(fit::error(Error::kUnspecified));
+      return;
+    }
+    auto& maybe_weak_vmo = *weak_vmo_result;
+    if (!maybe_weak_vmo.has_value()) {
+      completer.Reply(fit::error(Error::kNoMoreStrongVmoHandles));
+      return;
+    }
+    auto& weak_vmo = *maybe_weak_vmo;
+    response.weak_vmo() = std::move(weak_vmo);
+  }
+  if (logical_buffer_result.is_koid_of_weak_vmo || need_weak) {
     auto dup_result = logical_buffer.logical_buffer_collection().DupCloseWeakAsapClientEnd(
         logical_buffer.buffer_index());
     if (dup_result.is_error()) {
@@ -359,13 +389,55 @@ void Allocator::V2::GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::
     }
     response.close_weak_asap() = std::move(dup_result).value();
   }
+  bool need_single_buffer_settings =
+      request.need_single_buffer_settings().has_value() && *request.need_single_buffer_settings();
+  if (need_single_buffer_settings) {
+    // intentional copy/clone
+    response.single_buffer_settings() =
+        logical_buffer.logical_buffer_collection().single_buffer_settings();
+  }
+  if (request.constraints_to_check().has_value()) {
+    response.constraints_ok() =
+        logical_buffer.logical_buffer_collection().CheckConstraintsAgainstExistingSettings(
+            *request.constraints_to_check());
+  }
+  if (request.vmo_settings_to_check().has_value()) {
+    auto maybe_other_logical_buffer_result =
+        find_logical_buffer(*request.vmo_settings_to_check(), completer);
+    if (!maybe_other_logical_buffer_result.has_value()) {
+      // find_logical_buffer already called completer.Reply
+      return;
+    }
+    auto& other_logical_buffer = *maybe_other_logical_buffer_result->logical_buffer;
+    if (request.vmo_settings_to_check_ignore_size().has_value() &&
+        *request.vmo_settings_to_check_ignore_size()) {
+      // this path can be useful for video decoder input buffers where input buffer sizes may vary
+      // when buffers are from separate BufferCollection(s), but other buffer properties don't vary
+      //
+      // copy/clone, un-set size fields, compare; clients typically do GetVmoInfo up to once per
+      // buffer and cache the result; the clone here isn't likely to be a problem
+      auto other = other_logical_buffer.logical_buffer_collection().single_buffer_settings();
+      auto this_one = logical_buffer.logical_buffer_collection().single_buffer_settings();
+      other.buffer_settings()->size_bytes().reset();
+      other.buffer_settings()->raw_vmo_size().reset();
+      this_one.buffer_settings()->size_bytes().reset();
+      this_one.buffer_settings()->raw_vmo_size().reset();
+      response.vmo_settings_match() = (other == this_one);
+    } else {
+      // compare in place, including the size fields
+      response.vmo_settings_match() =
+          (other_logical_buffer.logical_buffer_collection().single_buffer_settings() ==
+           logical_buffer.logical_buffer_collection().single_buffer_settings());
+    }
+  }
+
   completer.Reply(fit::ok(std::move(response)));
 }
 
 void Allocator::V2::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_sysmem2::Allocator> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  allocator_->LogError(FROM_HERE, "token group unknown method - ordinal: %" PRIx64,
+  allocator_->LogError(FROM_HERE, "Allocator unknown method - ordinal: %" PRIx64,
                        metadata.method_ordinal);
   completer.Close(ZX_ERR_INTERNAL);
 }
