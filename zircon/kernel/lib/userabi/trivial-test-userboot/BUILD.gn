@@ -11,6 +11,8 @@ import("//build/toolchain/zircon/user_basic_redirect.gni")
 import("//zircon/kernel/kernel_package.gni")
 import("//zircon/kernel/phys/kernel_elf_binary.gni")
 
+long_name = "trivial-test-userboot-with-very-long-name-needing-truncation"
+
 kernel_elf_binary("trivial-test-userboot") {
   visibility = [ ":*" ]
   testonly = true
@@ -38,6 +40,8 @@ kernel_elf_binary("trivial-test-userboot") {
   # A standalone binary should indicate its stack requirements.
   # They should be minimal for this test.
   ldflags = [ "-Wl,-z,stack-size=0x10000" ]
+
+  install_name = long_name
 }
 
 user_basic_redirect("trivial-test-userboot.basic") {
@@ -63,7 +67,7 @@ kernel_package("select-userboot-test") {
 zbi_test("select-userboot-boot-test") {
   args = [
     "kernel.enable-serial-syscalls=true",
-    "kernel.select.userboot=trivial-test-userboot",
+    "kernel.select.userboot=$long_name",
     "kernel.select=select-userboot-test",
   ]
   deps = [

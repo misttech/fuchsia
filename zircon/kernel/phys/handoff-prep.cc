@@ -221,7 +221,11 @@ PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_vi
             data.size_bytes());
 
   PhysVmo vmo{.addr = addr, .stream_size = stream_size};
-  vmo.set_name(name);
+  // The name is sometimes an arbitrary file name, which might be too long.
+  // The set_name() method is strict on size to avoid literal names so long
+  // they get truncated, but this path gets whatever names were packed into the
+  // ZBI_TYPE_STORAGE_KERNEL package.
+  vmo.set_name(name.substr(0, ZX_MAX_NAME_LEN - 1));
   return vmo;
 }
 

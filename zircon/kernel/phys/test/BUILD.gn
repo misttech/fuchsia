@@ -609,7 +609,7 @@ kernel_cmdline("physboot-test-data.cmdline") {
 
   args = [
     "kernel.select=physboot-test-data",
-    "kernel.select.userboot=trivial-test-userboot",
+    "kernel.select.userboot=trivial-test-userboot-with-very-long-name-needing-truncation",
   ]
 }
 
