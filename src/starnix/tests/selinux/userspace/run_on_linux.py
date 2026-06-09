@@ -471,25 +471,38 @@ else:
         parser.print_help()
         print("\nStandard Unittest Help:")
     else:
-        print("Re-building tests...")
         fuchsia_dir = get_fuchsia_dir()
-        subprocess.run(
-            [
-                "scripts/fx",
-                "build",
-                "//src/starnix/tests/selinux/userspace:tests",
-            ],
-            check=True,
-            cwd=fuchsia_dir,
-        )
-        # To match the behavior of when the script is invoked by `fx test`,
-        # change the CWD to the output directory.
         output_dir_str = subprocess.check_output(
             ["scripts/fx", "get-build-dir"], cwd=fuchsia_dir, text=True
         ).strip()
         output_dir = pathlib.Path(output_dir_str)
         if not output_dir.is_absolute():
             output_dir = fuchsia_dir / output_dir
+
+        # Run `fx gn desc` to see if the target exists. If not, exit early.
+        target = "//src/starnix/tests/selinux/userspace:tests"
+        gn_desc = subprocess.run(
+            ["scripts/fx", "gn", "desc", str(output_dir), target],
+            cwd=fuchsia_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if gn_desc.returncode != 0:
+            print(f"ERROR: {target} is not part of the build graph.")
+            sys.exit(1)
+
+        print(f"Re-building {target}...")
+        subprocess.run(
+            [
+                "scripts/fx",
+                "build",
+                target,
+            ],
+            check=True,
+            cwd=fuchsia_dir,
+        )
+        # To match the behavior of when the script is invoked by `fx test`,
+        # change the CWD to the output directory.
         os.chdir(output_dir)
 
         populate_dynamic_tests()
