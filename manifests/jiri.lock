@@ -671,18 +671,13 @@
     },
     {
         "package": "fuchsia/third_party/rust_bindgen/linux-amd64",
-        "version": "git_revision:2048231f45c87cd65d7891f55090aac81cc0d66b",
-        "instance_id": "UuRZLoFgMshgZfZRk-Xuuyrb_xdIvQhubYh4_TI0ZyIC"
+        "version": "git_revisions:2048231f45c87cd65d7891f55090aac81cc0d66b,6e9694a1c32d27b9fb23aa0a4a71171c08a0597a",
+        "instance_id": "taYHDuvekY21eDvchEjgTtr-zY0PwNYGzVfG0Gn4fV4C"
     },
     {
-        "package": "fuchsia/third_party/rust_bindgen/mac-amd64",
-        "version": "git_revision:2048231f45c87cd65d7891f55090aac81cc0d66b",
-        "instance_id": "KCkmAth_jH15MnL6_ptM8vANL9i-8s9O9AFxIDXAiXAC"
-    },
-    {
-        "package": "fuchsia/third_party/rust_bindgen/mac-arm64",
-        "version": "git_revision:2048231f45c87cd65d7891f55090aac81cc0d66b",
-        "instance_id": "YhFTrE-xB1AwwvdAHHIAWuNl0fJrXX-sNsdymuf7OyMC"
+        "package": "fuchsia/third_party/rust_bindgen/linux-arm64",
+        "version": "git_revisions:2048231f45c87cd65d7891f55090aac81cc0d66b,6e9694a1c32d27b9fb23aa0a4a71171c08a0597a",
+        "instance_id": "28wh-qrn6c9YEMsM9iioNwpOoTj6ejU5mdWRYscIwTgC"
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/linux-amd64",
