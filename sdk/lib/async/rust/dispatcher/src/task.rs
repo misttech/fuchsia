@@ -50,14 +50,6 @@ impl<T: Send + 'static> Task<T> {
         (future, state)
     }
 
-    pub(crate) fn try_start<D: OnDispatcher + 'static>(
-        future: impl Future<Output = T> + Send + 'static,
-        dispatcher: D,
-    ) -> Result<Self, Status> {
-        let (future, state) = Self::new(future, dispatcher);
-        state.queue().map(|_| future)
-    }
-
     pub(crate) fn start<D: OnDispatcher + 'static>(
         future: impl Future<Output = T> + Send + 'static,
         dispatcher: D,

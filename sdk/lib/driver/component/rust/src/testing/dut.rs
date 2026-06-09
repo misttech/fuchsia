@@ -110,16 +110,13 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));
         let client_dispatcher = ClientDispatcher::new(client_end);
         let client = client_dispatcher.client();
-        dispatcher
-            .as_weak()
-            .spawn(async move {
-                // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
-                // At that point the driver has closed its server which signifies it has
-                // completed its stop or has failed to start.
-                client_dispatcher.run_client().await.unwrap_err();
-                client_exit_tx.send(()).unwrap();
-            })
-            .unwrap();
+        dispatcher.as_weak().spawn(async move {
+            // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
+            // At that point the driver has closed its server which signifies it has
+            // completed its stop or has failed to start.
+            client_dispatcher.run_client().await.unwrap_err();
+            client_exit_tx.send(()).unwrap();
+        });
 
         Self {
             driver_outgoing,

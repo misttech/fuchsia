@@ -132,16 +132,12 @@ mod tests {
         let (client_end, server_end) = fdf_fidl::create_channel();
         service_proxy.device(server_end).unwrap();
         let (sender, receiver) = mpsc::channel();
-        started_driver
-            .harness()
-            .dispatcher()
-            .spawn(async move {
-                let dispatcher = ClientDispatcher::new(client_end);
-                let client = dispatcher.client();
-                sender.send(client).unwrap();
-                dispatcher.run_client().await.unwrap();
-            })
-            .unwrap();
+        started_driver.harness().dispatcher().spawn(async move {
+            let dispatcher = ClientDispatcher::new(client_end);
+            let client = dispatcher.client();
+            sender.send(client).unwrap();
+            dispatcher.run_client().await.unwrap();
+        });
 
         let client = receiver.recv().unwrap();
 

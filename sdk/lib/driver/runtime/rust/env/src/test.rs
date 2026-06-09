@@ -34,7 +34,7 @@ pub fn spawn_in_driver<T: Send + 'static>(
     p: impl Future<Output = T> + Send + 'static,
 ) -> T {
     run_in_driver_raw(name, true, false, |tx| {
-        CurrentDispatcher.spawn(async move { tx.send(p.await).unwrap() }).unwrap();
+        CurrentDispatcher.spawn(async move { tx.send(p.await).unwrap() });
     })
 }
 
@@ -47,7 +47,7 @@ pub fn spawn_in_driver_etc<T: Send + 'static>(
     p: impl Future<Output = T> + Send + 'static,
 ) -> T {
     run_in_driver_raw(name, allow_thread_blocking, unsynchronized, |tx| {
-        CurrentDispatcher.spawn(async move { tx.send(p.await).unwrap() }).unwrap();
+        CurrentDispatcher.spawn(async move { tx.send(p.await).unwrap() });
     })
 }
 

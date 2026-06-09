@@ -125,14 +125,11 @@ pub trait OnDispatcher: Clone + Send + Sync {
     /// dispatcher shut down).
     ///
     /// Returns a [`JoinHandle`] that will detach the future when dropped.
-    fn spawn(
-        &self,
-        future: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<JoinHandle<()>, Status>
+    fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()>
     where
         Self: 'static,
     {
-        Task::try_start(future, self.clone()).map(Task::detach_on_drop)
+        Task::start(future, self.clone()).detach_on_drop()
     }
 
     /// Spawn an asynchronous task that outputs type 'T' on this dispatcher. The returned future's

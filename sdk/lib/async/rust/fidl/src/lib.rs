@@ -353,14 +353,12 @@ mod tests {
             );
             let client_dispatcher = ClientDispatcher::new(client_end);
             let _client = client_dispatcher.client();
-            CurrentDispatcher
-                .spawn(async {
-                    println!(
-                        "client task finished: {:?}",
-                        client_dispatcher.run(IgnoreEvents).await.map(|_| ())
-                    );
-                })
-                .unwrap();
+            CurrentDispatcher.spawn(async {
+                println!(
+                    "client task finished: {:?}",
+                    client_dispatcher.run(IgnoreEvents).await.map(|_| ())
+                );
+            });
             (_server_chan, _client)
         });
     }

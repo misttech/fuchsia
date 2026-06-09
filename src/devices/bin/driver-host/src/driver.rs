@@ -1006,14 +1006,9 @@ impl Driver {
 
         // This spawns the request to acquire a power lease to run under the driver dispatcher
         // asynchronously.
-        let task_result = dispatcher.spawn(async move {
+        dispatcher.spawn(async move {
             self_clone.acquire_power_lease(remote_token).await;
         });
-
-        if let Err(e) = task_result {
-            log::error!("Failed to spawn power lease request task: {e:?}");
-            self.signal_shutdown_fallbacks();
-        }
     }
 
     async fn acquire_power_lease(&self, remote_token: zx::EventPair) {

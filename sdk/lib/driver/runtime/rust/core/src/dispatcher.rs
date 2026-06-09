@@ -408,7 +408,7 @@ pub trait OnDriverDispatcher: OnDispatcher {
         self.on_maybe_dispatcher(|dispatcher| {
             let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
             if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
-                OnDispatcher::spawn(self, AddSendFuture(future))
+                Ok(OnDispatcher::spawn(self, AddSendFuture(future)))
             } else {
                 Err(Status::BAD_STATE)
             }
@@ -670,19 +670,17 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = mpsc::channel();
         with_raw_dispatcher("spawn local failures", move |dispatcher| {
             let inside_dispatcher = dispatcher.clone();
-            dispatcher
-                .spawn(async move {
-                    assert_eq!(
-                        inside_dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
-                        Status::BAD_STATE
-                    );
-                    assert_eq!(
-                        inside_dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
-                        Status::BAD_STATE
-                    );
-                    shutdown_tx.send(()).unwrap();
-                })
-                .unwrap();
+            dispatcher.spawn(async move {
+                assert_eq!(
+                    inside_dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
+                    Status::BAD_STATE
+                );
+                assert_eq!(
+                    inside_dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
+                    Status::BAD_STATE
+                );
+                shutdown_tx.send(()).unwrap();
+            });
             shutdown_rx.recv().unwrap();
         });
     }
@@ -697,23 +695,21 @@ mod tests {
             NO_SYNC_CALLS_ROLE,
             move |dispatcher| {
                 let inside_dispatcher = dispatcher.clone();
-                dispatcher
-                    .spawn(async move {
-                        let tx_clone = tx.clone();
-                        inside_dispatcher
-                            .spawn_local(async move {
-                                tx_clone.send(()).unwrap();
-                            })
-                            .unwrap();
-                        inside_dispatcher
-                            .compute_local(async move {
-                                tx.send(()).unwrap();
-                            })
-                            .unwrap()
-                            .await
-                            .unwrap();
-                    })
-                    .unwrap();
+                dispatcher.spawn(async move {
+                    let tx_clone = tx.clone();
+                    inside_dispatcher
+                        .spawn_local(async move {
+                            tx_clone.send(()).unwrap();
+                        })
+                        .unwrap();
+                    inside_dispatcher
+                        .compute_local(async move {
+                            tx.send(()).unwrap();
+                        })
+                        .unwrap()
+                        .await
+                        .unwrap();
+                });
                 // one empty object received each for spawn and compute _local.
                 rx.recv().unwrap();
                 rx.recv().unwrap();
@@ -775,8 +771,8 @@ mod tests {
             let (fin_tx, fin_rx) = mpsc::channel();
             let (ping_tx, pong_rx) = async_mpsc::channel(10);
             let (pong_tx, ping_rx) = async_mpsc::channel(10);
-            dispatcher.spawn(ping(ping_tx, ping_rx)).unwrap();
-            dispatcher.spawn(pong(fin_tx, pong_tx, pong_rx)).unwrap();
+            dispatcher.spawn(ping(ping_tx, ping_rx));
+            dispatcher.spawn(pong(fin_tx, pong_tx, pong_rx));
 
             fin_rx.recv().expect("to receive final value");
         });
@@ -812,7 +808,7 @@ mod tests {
             let (pong_tx, ping_rx) = async_mpsc::channel(10);
 
             // spawn ping on the driver dispatcher
-            dispatcher.spawn(ping(ping_tx, ping_rx)).unwrap();
+            dispatcher.spawn(ping(ping_tx, ping_rx));
 
             // and run pong on the fuchsia_async executor
             let mut executor = fuchsia_async::LocalExecutor::default();
