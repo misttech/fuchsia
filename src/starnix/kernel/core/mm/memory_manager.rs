@@ -4396,19 +4396,33 @@ impl MemoryManager {
         stats
     }
 
-    pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
+    fn run_atomic_op<F, T>(&self, futex_addr: FutexAddress, mut op: F) -> Result<T, Errno>
+    where
+        F: FnMut(&usercopy::Usercopy) -> Result<T, ()>,
+    {
         if let Some(usercopy) = usercopy() {
+            // Try the lock-free fast path first.
+            // Note: `op` returns `Err(())` strictly on memory access faults. For
+            // compare-exchange operations, a logical mismatch is wrapped inside a
+            // successful `Ok(value_or_error)`, meaning we will short-circuit here
+            // and won't incorrectly retry on logical failures.
+            if let Ok(val) = op(usercopy) {
+                return Ok(val);
+            }
             self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
-            usercopy.atomic_load_u32_acquire(futex_addr.ptr()).map_err(|_| errno!(EFAULT))
+            op(usercopy).map_err(|_| errno!(EFAULT))
         } else {
             unreachable!("can only control memory ordering of atomics with usercopy");
         }
     }
 
+    pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
+        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
+    }
+
     pub fn atomic_load_u32_relaxed(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        if let Some(usercopy) = usercopy() {
-            self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
-            usercopy.atomic_load_u32_relaxed(futex_addr.ptr()).map_err(|_| errno!(EFAULT))
+        if usercopy().is_some() {
+            self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_relaxed(futex_addr.ptr()))
         } else {
             // SAFETY: `self.state.read().read_memory` only returns `Ok` if all
             // bytes were read to.
@@ -4431,9 +4445,10 @@ impl MemoryManager {
         futex_addr: FutexAddress,
         value: u32,
     ) -> Result<(), Errno> {
-        if let Some(usercopy) = usercopy() {
-            self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
-            usercopy.atomic_store_u32_relaxed(futex_addr.ptr(), value).map_err(|_| errno!(EFAULT))
+        if usercopy().is_some() {
+            self.run_atomic_op(futex_addr, |uc| {
+                uc.atomic_store_u32_relaxed(futex_addr.ptr(), value)
+            })
         } else {
             self.state.read().write_memory(
                 futex_addr.into(),
@@ -4450,17 +4465,9 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
-        if let Err(e) = self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None) {
-            return CompareExchangeResult::Error(e);
-        }
-        let Some(usercopy) = usercopy() else {
-            unreachable!("Atomic compare/exchange requires usercopy.");
-        };
-        CompareExchangeResult::from_usercopy(usercopy.atomic_compare_exchange_u32_acq_rel(
-            futex_addr.ptr(),
-            current,
-            new,
-        ))
+        CompareExchangeResult::from_usercopy(self.run_atomic_op(futex_addr, |uc| {
+            uc.atomic_compare_exchange_u32_acq_rel(futex_addr.ptr(), current, new)
+        }))
     }
 
     pub fn atomic_compare_exchange_weak_u32_acq_rel(
@@ -4469,17 +4476,9 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
-        if let Err(e) = self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None) {
-            return CompareExchangeResult::Error(e);
-        }
-        let Some(usercopy) = usercopy() else {
-            unreachable!("Atomic compare/exchange requires usercopy.");
-        };
-        CompareExchangeResult::from_usercopy(usercopy.atomic_compare_exchange_weak_u32_acq_rel(
-            futex_addr.ptr(),
-            current,
-            new,
-        ))
+        CompareExchangeResult::from_usercopy(self.run_atomic_op(futex_addr, |uc| {
+            uc.atomic_compare_exchange_weak_u32_acq_rel(futex_addr.ptr(), current, new)
+        }))
     }
 }
 
@@ -4496,11 +4495,11 @@ pub enum CompareExchangeResult<T> {
 }
 
 impl<T> CompareExchangeResult<T> {
-    fn from_usercopy(usercopy_res: Result<Result<T, T>, ()>) -> Self {
-        match usercopy_res {
+    fn from_usercopy(res: Result<Result<T, T>, Errno>) -> Self {
+        match res {
             Ok(Ok(_)) => Self::Success,
             Ok(Err(observed)) => Self::Stale { observed },
-            Err(()) => Self::Error(errno!(EFAULT)),
+            Err(e) => Self::Error(e),
         }
     }
 }
