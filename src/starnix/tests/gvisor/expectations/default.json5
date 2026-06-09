@@ -955,6 +955,7 @@
                 "NetlinkRouteTest.ProcNetDevStableAcrossCalls",
 
                 // TODO(https://fxbug.dev/507936011): Fix and re-enable.
+                // Truncation on getsockopt is supported, but this test uses TCP options that aren't supported yet.
                 "AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer*",
             ],
         },

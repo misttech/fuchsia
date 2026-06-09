@@ -260,11 +260,9 @@ class GetSockOptProcessor : OptValAndLen<void*, socklen_t*> {
       return optval_len.take_error();
     }
     auto [optval, optlen] = *optval_len;
-    if (data_len > *optlen) {
-      return SockOptResult::Errno(EINVAL);
-    }
-    memcpy(optval, data, data_len);
-    *optlen = data_len;
+    socklen_t copy_len = std::min(data_len, *optlen);
+    memcpy(optval, data, copy_len);
+    *optlen = copy_len;
     return SockOptResult::Ok();
   }
 };

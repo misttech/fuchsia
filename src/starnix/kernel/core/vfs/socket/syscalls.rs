@@ -1002,12 +1002,16 @@ pub fn sys_getsockopt(
     // Even if `getsockopt()` above returned an error we still need to run
     // the eBPF program - it may handle the error.
     let (optlen, error) = match result {
-        Ok(new_optval) if new_optval.len() > optval.len() => (optlen, Some(errno!(EINVAL))),
         Ok(new_optval) => {
-            // Copy the returned value to the buffer, but don't truncate it yet
-            // - this will allow to use the whole buffer in the eBPF program.
-            optval[..new_optval.len()].copy_from_slice(&new_optval);
-            (new_optval.len(), None)
+            // Linux getsockopt allows the user to pass a buffer smaller than the option's
+            // actual size, in which case the kernel truncates the returned value to fit
+            // the buffer and returns success.
+            //
+            // On the other hand, if the option is smaller than the user provided buffer,
+            // the eBPF program can still use the entire user allocated buffer if needed.
+            let len = std::cmp::min(new_optval.len(), optval.len());
+            optval[..len].copy_from_slice(&new_optval[..len]);
+            (len, None)
         }
         Err(e) => (optlen, Some(e)),
     };

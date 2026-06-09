@@ -1167,6 +1167,50 @@ TEST_P(SocketOptsTest, GetTcpCongestionWithZeroOptLen) {
   ASSERT_STREQ(buf, "TEST");
 }
 
+TEST_P(SocketOptsTest, GetsockoptTruncation) {
+  fbl::unique_fd s;
+  ASSERT_TRUE(s = NewSocket()) << strerror(errno);
+
+  int optval = 1;
+  ASSERT_EQ(setsockopt(s.get(), SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)), 0)
+      << strerror(errno);
+
+  constexpr socklen_t kExpectedSize = sizeof(int);
+  constexpr uint8_t kPresetValue = 0xcd;
+  uint8_t full_buf[kExpectedSize];
+  uint8_t buf[kExpectedSize + 8];
+
+  socklen_t full_len = sizeof(full_buf);
+  ASSERT_EQ(getsockopt(s.get(), SOL_SOCKET, SO_REUSEADDR, full_buf, &full_len), 0)
+      << strerror(errno);
+  ASSERT_EQ(full_len, kExpectedSize);
+
+  for (socklen_t optlen = 0; optlen <= kExpectedSize + 8; ++optlen) {
+    memset(buf, kPresetValue, sizeof(buf));
+
+    socklen_t optlen_out = optlen;
+    ASSERT_EQ(getsockopt(s.get(), SOL_SOCKET, SO_REUSEADDR, buf, &optlen_out), 0)
+        << "Failed for optlen=" << optlen << ": " << strerror(errno);
+
+    if (optlen > kExpectedSize) {
+      EXPECT_EQ(optlen_out, kExpectedSize);
+    } else {
+      EXPECT_EQ(optlen_out, optlen);
+    }
+
+    // Verify that the first `optlen_out` bytes match the full option value.
+    for (socklen_t i = 0; i < optlen_out; ++i) {
+      EXPECT_EQ(buf[i], full_buf[i]) << "Mismatch at index " << i << " for optlen=" << optlen;
+    }
+
+    // Verify that the bytes after `optlen_out` are untouched.
+    for (size_t i = optlen_out; i < sizeof(buf); ++i) {
+      EXPECT_EQ(buf[i], kPresetValue)
+          << "Buffer overflow at index " << i << " for optlen=" << optlen;
+    }
+  }
+}
+
 TEST_P(SocketOptsTest, UpdateAnyTimestampDisablesOtherTimestampOptions) {
   constexpr std::pair<SockOption, const char*> kOpts[] = {
       std::make_pair(GetTimestamp(), "SO_TIMESTAMP"),

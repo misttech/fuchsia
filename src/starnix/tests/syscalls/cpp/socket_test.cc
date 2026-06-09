@@ -67,6 +67,8 @@
 #define IPT_SO_GET_REVISION_TARGET (IPT_BASE_CTL + 3)
 #endif
 
+namespace {
+
 TEST(UnixSocket, ReadAfterClose) {
   int fds[2];
 
@@ -1298,6 +1300,89 @@ TEST(Socket, GetSockOptZeroSize) {
   getsockopt(fd.get(), SOL_TCP, TCP_CONGESTION, &buf, &optlen);
 }
 
+void VerifyGetsockoptTruncation(int fd, int level, int optname, socklen_t expected_full_size) {
+  ASSERT_LE(expected_full_size, 248u);
+
+  // First, get the full option value.
+  uint8_t full_buf[256] = {0};
+  socklen_t full_len = sizeof(full_buf);
+  ASSERT_THAT(getsockopt(fd, level, optname, full_buf, &full_len), SyscallSucceeds());
+  ASSERT_EQ(full_len, expected_full_size);
+
+  uint8_t truncated_buf[256];
+  constexpr uint8_t kPresetValue = 0xcd;
+
+  // Test different truncation lengths.
+  for (socklen_t optlen = 0; optlen <= expected_full_size + 8; ++optlen) {
+    memset(truncated_buf, kPresetValue, sizeof(truncated_buf));
+
+    socklen_t optlen_out = optlen;
+    ASSERT_THAT(getsockopt(fd, level, optname, truncated_buf, &optlen_out), SyscallSucceeds())
+        << "Failed for optlen=" << optlen;
+
+    if (optlen > expected_full_size) {
+      EXPECT_EQ(optlen_out, expected_full_size);
+    } else {
+      EXPECT_EQ(optlen_out, optlen);
+    }
+
+    // Verify that the first `optlen_out` bytes match the full option value.
+    for (socklen_t i = 0; i < optlen_out; ++i) {
+      EXPECT_EQ(truncated_buf[i], full_buf[i])
+          << "Mismatch at index " << i << " for optlen=" << optlen;
+    }
+
+    // Verify that the bytes after `optlen_out` are untouched.
+    for (size_t i = optlen_out; i < sizeof(truncated_buf); ++i) {
+      EXPECT_EQ(truncated_buf[i], kPresetValue)
+          << "Buffer overflow at index " << i << " for optlen=" << optlen;
+    }
+  }
+}
+
+TEST(GetsockoptTruncationTest, TcpNodelay) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+  int one = 1;
+  ASSERT_EQ(setsockopt(fd.get(), SOL_TCP, TCP_NODELAY, &one, sizeof(one)), 0) << strerror(errno);
+  VerifyGetsockoptTruncation(fd.get(), SOL_TCP, TCP_NODELAY, sizeof(int));
+}
+
+TEST(GetsockoptTruncationTest, TcpReuseAddr) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+  int one = 1;
+  ASSERT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)), 0)
+      << strerror(errno);
+  VerifyGetsockoptTruncation(fd.get(), SOL_SOCKET, SO_REUSEADDR, sizeof(int));
+}
+
+TEST(GetsockoptTruncationTest, UdpReuseAddr) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+  int one = 1;
+  ASSERT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)), 0)
+      << strerror(errno);
+  VerifyGetsockoptTruncation(fd.get(), SOL_SOCKET, SO_REUSEADDR, sizeof(int));
+}
+
+TEST(GetsockoptTruncationTest, UnixReuseAddr) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_UNIX, SOCK_STREAM, 0))) << strerror(errno);
+  int one = 1;
+  ASSERT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)), 0)
+      << strerror(errno);
+  VerifyGetsockoptTruncation(fd.get(), SOL_SOCKET, SO_REUSEADDR, sizeof(int));
+}
+
+TEST(GetsockoptTruncationTest, RcvTimeo) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+  struct timeval tv = {.tv_sec = 42, .tv_usec = 123456};
+  ASSERT_EQ(setsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)), 0) << strerror(errno);
+  VerifyGetsockoptTruncation(fd.get(), SOL_SOCKET, SO_RCVTIMEO, sizeof(struct timeval));
+}
+
 class ScmCredentialsTest : public testing::Test {
  protected:
   void SetUp() override {
@@ -1462,3 +1547,5 @@ TEST_F(ScmCredentialsTest, ForgeryGid) {
   TestForgery(std::nullopt, 100, 201, sender, no_caps, {.success = true});
   TestForgery(std::nullopt, 100, 202, sender, no_caps, {.success = true});
 }
+
+}  // namespace
