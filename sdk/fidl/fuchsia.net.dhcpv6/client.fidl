@@ -69,7 +69,7 @@ type NewClientParams = table {
     /// The ID of the interface the client will run on.
     ///
     /// Required.
-    1: interface_id uint64;
+    1: interface_id fuchsia.net.InterfaceId;
 
     /// The socket address to use when communicating with servers.
     ///

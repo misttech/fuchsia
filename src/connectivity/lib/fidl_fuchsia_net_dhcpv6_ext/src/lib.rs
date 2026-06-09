@@ -20,7 +20,7 @@ pub struct NewClientParams {
     /// The ID of the interface the client will run on.
     ///
     /// See [`fidl_fuchsia_net_dhcpv6::NewClientParams::interface_id`].
-    pub interface_id: u64,
+    pub interface_id: fidl_fuchsia_net::InterfaceId,
     /// The socket address to use when communicating with servers.
     ///
     /// DHCPv6 servers listen for link-local multicasts, so not using a

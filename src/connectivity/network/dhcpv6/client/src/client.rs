@@ -134,7 +134,7 @@ impl Default for Timers {
 /// A DHCPv6 client.
 pub(crate) struct Client<S: for<'a> AsyncSocket<'a>> {
     /// The interface the client is running on.
-    interface_id: u64,
+    interface_id: fnet::InterfaceId,
     /// Stores the hash of the last observed version of DNS servers by a watcher.
     ///
     /// The client uses this hash to determine whether new changes in DNS servers are observed and
@@ -331,7 +331,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
         duid: Option<dhcpv6_core::ClientDuid>,
         transaction_id: [u8; 3],
         config: ClientConfig,
-        interface_id: u64,
+        interface_id: fnet::InterfaceId,
         socket_fn: impl FnOnce() -> std::io::Result<S>,
         server_addr: SocketAddr,
         request_stream: ClientRequestStream,
