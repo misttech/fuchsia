@@ -22,7 +22,7 @@ use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 use starnix_logging::{log_info, log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked, Mutex, RwLock, Unlocked};
+use starnix_sync::{FileOpsCore, LockDepMutex, LockDepRwLock, Locked, TerminalLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
     PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
@@ -114,12 +114,12 @@ struct PerfState {
     // When a sample is generated for any event in a group, we use this
     // "format ID" from the group leader as the value for *both* the
     // `PERF_SAMPLE_ID` and `PERF_SAMPLE_IDENTIFIER` fields.
-    format_id_lookup_table: Mutex<HashMap<FileObjectId, u64>>,
+    format_id_lookup_table: LockDepMutex<HashMap<FileObjectId, u64>, TerminalLock>,
 }
 
 impl Default for PerfState {
     fn default() -> Self {
-        Self { format_id_lookup_table: Mutex::new(HashMap::new()) }
+        Self { format_id_lookup_table: LockDepMutex::new(HashMap::new()) }
     }
 }
 
@@ -213,7 +213,7 @@ impl PerfEventFileState {
 pub struct PerfEventFile {
     _tid: tid_t,
     _cpu: i32,
-    perf_event_file: RwLock<PerfEventFileState>,
+    perf_event_file: LockDepRwLock<PerfEventFileState, TerminalLock>,
     // The security state for this PerfEventFile.
     pub security_state: security::PerfEventState,
     seq_lock: Arc<OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>>,
@@ -1107,7 +1107,7 @@ pub fn sys_perf_event_open(
     let file = Box::new(PerfEventFile {
         _tid: tid,
         _cpu: cpu,
-        perf_event_file: RwLock::new(perf_event_file),
+        perf_event_file: LockDepRwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
         seq_lock: seq_lock,
     });
