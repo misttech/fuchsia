@@ -9,7 +9,7 @@
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use futures::TryStreamExt;
 use starnix_logging::{log_debug, log_error, log_warn, with_zx_name};
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, TerminalLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::collections::HashMap;
@@ -122,7 +122,7 @@ pub struct Pager {
     port: zx::Port,
     zero_vmo: zx::Vmo,
     next_filesystem_id: AtomicU32,
-    filesystems: Mutex<HashMap<u32, Arc<Filesystem>>>,
+    filesystems: LockDepMutex<HashMap<u32, Arc<Filesystem>>, TerminalLock>,
 }
 
 impl Pager {
@@ -138,7 +138,7 @@ impl Pager {
                 b"starnix:ext4",
             ),
             next_filesystem_id: AtomicU32::new(1),
-            filesystems: Mutex::new(HashMap::new()),
+            filesystems: Default::default(),
         })
     }
 
@@ -185,16 +185,18 @@ impl Pager {
                         {
                             fuchsia_trace::duration!(CATEGORY_STARNIX_PAGER, "vmo_read");
                             let (filesystem_num, inode_num) = split_key(packet.key());
-                            self.filesystems
+                            let filesystem = self
+                                .filesystems
                                 .lock()
                                 .get(&filesystem_num)
-                                .expect("Unexpected packet key")
-                                .receive_pager_packet(
-                                    inode_num,
-                                    contents,
-                                    &transfer_vmo,
-                                    transfer_vmo_addr,
-                                );
+                                .cloned()
+                                .expect("Unexpected packet key");
+                            filesystem.receive_pager_packet(
+                                inode_num,
+                                contents,
+                                &transfer_vmo,
+                                transfer_vmo_addr,
+                            );
                         }
                         zx::PacketContents::Pager(contents)
                             if contents.command() == ZX_PAGER_VMO_COMPLETE =>
@@ -214,7 +216,8 @@ impl Pager {
                             // We may get VMO_ZERO_CHILDREN notifications for
                             // files within a filesystem after it is unmounted,
                             // ignore those.
-                            if let Some(filesystem) = self.filesystems.lock().get(&filesystem_num) {
+                            let filesystem = self.filesystems.lock().get(&filesystem_num).cloned();
+                            if let Some(filesystem) = filesystem {
                                 filesystem.on_zero_children(inode_num).expect("on_zero_children");
                             }
                         }
@@ -259,7 +262,7 @@ pub struct Filesystem {
     pager: Arc<Pager>,
     backing_vmo: zx::Vmo,
     block_size: u64,
-    files_by_inode: Mutex<HashMap<u32, Arc<PagedFile>>>,
+    files_by_inode: LockDepMutex<HashMap<u32, Arc<PagedFile>>, TerminalLock>,
     id: u32,
 }
 
@@ -271,7 +274,13 @@ impl Filesystem {
             return error!(EINVAL, "Bad block size {block_size}");
         }
         let id = pager.allocate_filesystem_id();
-        Ok(Self { pager, backing_vmo, block_size, files_by_inode: Mutex::new(HashMap::new()), id })
+        Ok(Self {
+            pager,
+            backing_vmo,
+            block_size,
+            files_by_inode: Default::default(),
+            id,
+        })
     }
 
     /// Registers the file with the pager.  Returns a child VMO.  `extents` should be sorted.

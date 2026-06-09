@@ -5,9 +5,9 @@
 use crate::suspend::WakeSources;
 use anyhow::{Error, anyhow};
 use fuchsia_async as fasync;
-use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use log::warn;
+use starnix_sync::{LockDepMutex, TerminalLock};
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use std::pin::pin;
@@ -46,7 +46,10 @@ const PROXY_ROLE_NAME: &str = "fuchsia.starnix.runner.proxy";
 
 /// Starts a thread that listens for new proxies and runs `start_proxy` on each.
 pub fn run_proxy_thread(
-    new_proxies: async_channel::Receiver<(ChannelProxy, Arc<Mutex<WakeSources>>)>,
+    new_proxies: async_channel::Receiver<(
+        ChannelProxy,
+        Arc<LockDepMutex<WakeSources, TerminalLock>>,
+    )>,
 ) {
     let _ = std::thread::Builder::new().name("proxy_thread".to_string()).spawn(move || {
         if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(PROXY_ROLE_NAME) {
@@ -77,7 +80,7 @@ pub fn run_proxy_thread(
 /// When the task exits, `proxy.resume_event` will be removed from `wake_sources`.
 async fn start_proxy(
     proxy: ChannelProxy,
-    wake_sources: Arc<Mutex<WakeSources>>,
+    wake_sources: Arc<LockDepMutex<WakeSources, TerminalLock>>,
     bounce_bytes: Rc<RefCell<[MaybeUninit<u8>; zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize]>>,
     bounce_handles: Rc<
         RefCell<[MaybeUninit<zx::NullableHandle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize]>,
