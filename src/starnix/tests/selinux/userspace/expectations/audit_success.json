@@ -613,6 +613,16 @@
             ]
         },
         {
+            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
+            "audit_expectations": [
+                "avc:  denied  { override_creds } for scontext=test_u:test_r:io_uring_test_no_override_t:s0 tcontext=test_u:test_r:io_uring_test_no_override_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
             "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"

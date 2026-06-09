@@ -29,6 +29,12 @@
                 "IoUringTest/IoUringCmdTest.Cmd/Allowed",
                 "IoUringTest/IoUringCmdTest.Cmd/Denied",
 
+                // TODO: https://fxbug.dev/505326006 - Implement the uring_override_creds hook once
+                // the IORING_REGISTER_PERSONALITY flag is supported in io_uring_register by
+                // Fuchsia.
+                "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
+                "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
+
                 // TODO: https://fxbug.dev/492550768 - Apply filesystem { relabelfrom relabelto }
                 // checks when mounting with fscontext= or context=.
                 "MountTest.FsContextRequiresRelabelFromAndTo",
