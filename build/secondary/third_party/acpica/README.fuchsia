@@ -1,8 +1,14 @@
 Name: acpica
-Source: https://acpica.org/sites/acpica/files/acpica-unix2-20200110.tar.gz
+URL: https://github.com/acpica/acpica
 License: BSD
 License File: src/LICENSE
-Version: 20200110
+Revision: f78d50aacc2a1c6dfa59052a696a54cec16e6aab
+Version: R01_10_20
+
+Description: operating system-independent implementation of
+the Advanced Configuration and Power Interface specification.
+https://acpica.org/sites/acpica/files/acpica-unix2-20200110.tar.gz
+Utilizing version 20200110.
 
 Modifications:
 - Added README.fuchsia

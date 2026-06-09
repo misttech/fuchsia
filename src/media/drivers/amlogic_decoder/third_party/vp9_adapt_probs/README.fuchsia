@@ -1,10 +1,10 @@
 Name: VP9 coefficiant adaption
 URL: https://github.com/webmproject/libvpx
-Version: 1.0
+Revision: 4d0fe85c1957cea215085e7da41ee797e6a51f01
 Security Critical: yes
 
 License File: LICENSE
   License: Apache-2.0
 
 Description:
-  This is the implementation of the function to calculate hardware register settings for VP9 decoder loop filter coefficients.
+  This is the implementation of the function to calculate hardware register settings for VP9 decoder loop filter coefficients. Revision found via looking at closest commit to when this 3p dep commit was started.

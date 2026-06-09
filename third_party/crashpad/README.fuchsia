@@ -1,6 +1,6 @@
 Name: Crashpad
 URL: https://fuchsia.googlesource.com/third_party/crashpad
-Revision: d47b05a2a8f96908504f8f182d29e59dd6facad6
+Revision: 55563f3f73145c502e70ab0c4960c6e7c4e3db59
 License File: src/LICENSE
-Description: Crash-reporting system for applications. Revision found via GitOrigin-RevId from commits.
+Description: Crash-reporting system for applications.
 Local Modifications: a few third_party folders removed as per copybara
