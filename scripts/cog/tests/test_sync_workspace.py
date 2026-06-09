@@ -72,6 +72,8 @@ if cmd == "api.get-modified-repos":
         if fake_repos:
             for repo in fake_repos.split(","):
                 print(repo)
+        else:
+            print("No modified repo paths")
     else:
         output_type = os.environ.get("GIT_CITC_OUTPUT_TYPE", "typical")
         if output_type == "typical":

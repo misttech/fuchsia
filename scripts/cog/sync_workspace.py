@@ -75,11 +75,12 @@ class WorkspaceSyncService:
 
     @property
     def _affected_cog_repos(self) -> set[str]:
+        stdout = self._git_citc("api.get-modified-repos").strip()
+        if not stdout or stdout == "No modified repo paths":
+            return set()
         return set(
             repo
-            for repo in self._git_citc("api.get-modified-repos")
-            .strip()
-            .split("\n")
+            for repo in stdout.split("\n")
             if repo and repo not in self._config["repo"]["ignored"]
         )
 
