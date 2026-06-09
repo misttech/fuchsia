@@ -12,6 +12,7 @@
 #include <lib/driver/component/cpp/stop_completer.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/symbols/symbols.h>
+#include <zircon/availability.h>
 
 namespace fdf_internal {
 
@@ -45,7 +46,11 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
 
   DriverServer2(fdf_dispatcher_t* dispatcher, fdf_handle_t server_handle)
       : dispatcher_(dispatcher), driver_(std::make_unique<DriverBaseImpl>()) {
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
     fdf_dispatcher_t* always_on_dispatcher = fdf_dispatcher_get_always_on_dispatcher(dispatcher_);
+#else
+    fdf_dispatcher_t* always_on_dispatcher = dispatcher_;
+#endif
     binding_.emplace(always_on_dispatcher,
                      fdf::ServerEnd<fuchsia_driver_framework::Driver>(fdf::Channel(server_handle)),
                      this, fidl::kIgnoreBindingClosure);
@@ -127,7 +132,11 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
       return;
     }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
     fdf_dispatcher_t* always_on_dispatcher = fdf_dispatcher_get_always_on_dispatcher(dispatcher_);
+#else
+    fdf_dispatcher_t* always_on_dispatcher = dispatcher_;
+#endif
     async::PostTask(fdf_dispatcher_get_async_dispatcher(always_on_dispatcher),
                     [this]() { binding_.reset(); });
   }
