@@ -248,7 +248,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                                 continue;
                             }
                             Ok(opened_file) => {
-                                let file_clone = (*opened_file).clone();
+                                let file_clone = opened_file.clone();
                                 entry.insert(Some(opened_file));
                                 file_clone
                             }

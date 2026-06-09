@@ -169,7 +169,7 @@ impl FxFile {
         {
             let mut guard = this.pager().recorder();
             if let Some(recorder) = &mut (*guard) {
-                let _ = recorder.record_open(this.0.clone() as Arc<dyn FxNode>);
+                let _ = recorder.record_open(this.clone() as Arc<dyn FxNode>);
             }
         }
         if let Some(rights) = flags.rights() {
@@ -225,28 +225,6 @@ impl FxFile {
     /// If marked for purging, returns None.
     pub fn into_opened_node(self: Arc<Self>) -> Option<OpenedNode<FxFile>> {
         self.increment_open_count().then(|| OpenedNode(self))
-    }
-
-    /// Create an OpenedNode if it is already open, if not, return the bare Arc.
-    fn hold_open(self: Arc<Self>) -> Result<OpenedNode<FxFile>, Arc<Self>> {
-        let mut old = self.load_state();
-        loop {
-            if old.open_count() == 0 {
-                return Err(self);
-            }
-
-            assert!(old.open_count() < MAX_OPEN_COUNTS);
-
-            match self.state.compare_exchange_weak(
-                old.0,
-                old.0 + 1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return Ok(OpenedNode(self)),
-                Err(new_value) => old.0 = new_value,
-            }
-        }
     }
 
     /// Persists any unflushed data to disk.
@@ -745,6 +723,27 @@ impl File for FxFile {
 
 #[fxfs_trace::trace]
 impl PagerBacked for FxFile {
+    fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
+        let mut old = self.load_state();
+        loop {
+            if old.open_count() == 0 {
+                return Err(self);
+            }
+
+            assert!(old.open_count() < MAX_OPEN_COUNTS);
+
+            match self.state.compare_exchange_weak(
+                old.0,
+                old.0 + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(OpenedNode(self)),
+                Err(new_value) => old.0 = new_value,
+            }
+        }
+    }
+
     fn pager(&self) -> &crate::pager::Pager {
         self.handle.owner().pager()
     }
@@ -774,39 +773,26 @@ impl PagerBacked for FxFile {
 
         let byte_count = range.len();
         self.handle.owner().clone().report_pager_dirty(byte_count, move || {
-            // We hold the node open here if it is already open. If the node has been closed then
-            // any mark_dirty requests that arrive should be racing, likely with caller shutdown. If
-            // the node closes while this mark dirty is in-flight, then this node closure will do
-            // all the proper clean up, including marking IS_DIRTY if the file has dirty bytes that
-            // need cleaning.
-            let this = match self.hold_open() {
-                Ok(opened_node) => opened_node,
-                Err(this) => {
-                    this.handle.owner().report_pager_clean(byte_count);
-                    range.report_failure(zx::Status::BAD_STATE);
-                    return;
-                }
-            };
-            match this.handle.mark_dirty(range) {
+            match self.handle.mark_dirty(range) {
                 Ok(dirty_bytes) => {
                     // If there's a whole batch worth to write. Just write it. Spurious failures
                     // here are fine. This is best effort so keep it cheap.
                     if dirty_bytes > BACKGROUND_FLUSH_THRESHOLD
-                        && !this.background_flush_running.swap(true, Ordering::Relaxed)
+                        && !self.background_flush_running.swap(true, Ordering::Relaxed)
                     {
-                        let owner = this.handle.owner().clone();
+                        let owner = self.handle.owner().clone();
                         owner.spawn(async move {
                             // Ignore the result, the flush call already logs the errors.
-                            let _ = this.handle.flush(FlushType::Background).await;
+                            let _ = self.handle.flush(FlushType::Background).await;
                             // If this future gets dropped before resetting this it means the
                             // volume is shutting down anyways.
-                            this.background_flush_running.store(false, Ordering::Relaxed);
+                            self.background_flush_running.store(false, Ordering::Relaxed);
                         });
                     }
                 }
                 Err(_) => {
                     // Undo the report of the dirty pages since mark_dirty failed.
-                    this.handle.owner().report_pager_clean(byte_count)
+                    self.handle.owner().report_pager_clean(byte_count)
                 }
             }
         });

@@ -602,6 +602,11 @@ impl PagedObjectHandle {
         &self,
         page_range: MarkDirtyRange<T>,
     ) -> Result<u64, zx::Status> {
+        // Hold an OpenedNode to outlive the lock. When the last OpenedNode is dropped it will call
+        // `needs_flush()` which will take the inner lock, which is already held for the duration of
+        // this method.
+        let _opened_node = page_range.file().dup();
+
         let mut inner = self.inner.lock();
         if inner.read_only {
             // Enable-verity has already been called on this file.
@@ -1586,7 +1591,7 @@ mod tests {
     use super::*;
     use crate::fuchsia::directory::FxDirectory;
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::node::FxNode;
+    use crate::fuchsia::node::{FxNode, OpenedNode};
     use crate::fuchsia::pager::{PageInRange, PagerPacketReceiverRegistration, default_page_in};
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
@@ -2810,13 +2815,9 @@ mod tests {
                 unimplemented!();
             }
 
-            fn open_count_add_one(&self) {
-                unimplemented!();
-            }
+            fn open_count_add_one(&self) {}
 
-            fn open_count_sub_one(self: Arc<Self>) {
-                unimplemented!();
-            }
+            fn open_count_sub_one(self: Arc<Self>) {}
 
             fn object_descriptor(&self) -> fxfs::object_store::ObjectDescriptor {
                 unimplemented!();
@@ -2824,6 +2825,10 @@ mod tests {
         }
 
         impl PagerBacked for File {
+            fn try_keep_open(self: Arc<Self>) -> Result<OpenedNode<Self>, Arc<Self>> {
+                Ok(OpenedNode(self))
+            }
+
             fn pager(&self) -> &crate::pager::Pager {
                 self.handle.owner().pager()
             }
@@ -5014,5 +5019,50 @@ mod tests {
         let mut flush_state = FlushState::new(reservation, DirtyPages::default(), FlushType::Sync);
 
         flush_state.did_flush_pages(DirtyPages::default());
+    }
+
+    #[fuchsia::test]
+    async fn test_drop_last_opened_node_in_mark_dirty() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let root = open_volume(&volume);
+        {
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+            let page_size = zx::system_get_page_size() as u64;
+            file.resize(page_size).await.unwrap().expect("Resizing");
+            let file_id = file
+                .get_attributes(fio::NodeAttributesQuery::ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .1
+                .id
+                .unwrap();
+
+            // Retrieve the internal FxFile object from the volume's node cache.
+            let node = volume.volume().cache().get(file_id).expect("Node not in cache");
+            let fx_file = node.into_any().downcast::<FxFile>().expect("Not FxFile");
+
+            // Hold open the last copy here.
+            let opened_node = fx_file.clone().into_opened_node().expect("into_opened_node failed");
+            close_file_checked(file).await;
+
+            // Create a dirty range to synchronously call MarkDirty on the file with the last opened
+            // reference.
+            let range = MarkDirtyRange::new(0..page_size, opened_node);
+            fx_file.mark_dirty(range);
+        }
+
+        close_dir_checked(root).await;
+        volume.volume().terminate().await;
+        fs.close().await.expect("close filesystem failed");
     }
 }
