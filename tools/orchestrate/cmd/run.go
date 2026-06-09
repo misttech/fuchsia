@@ -43,7 +43,7 @@ func (r *runCmd) SetFlags(f *flag.FlagSet) {
 
 }
 
-func (r *runCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+func (r *runCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if r.help {
 		fmt.Println(r.Usage())
 		return subcommands.ExitSuccess
@@ -93,7 +93,7 @@ func (r *runCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcomman
 	if serialLog != nil {
 		defer serialLog.Symbolize(runner)
 	}
-	if err := runner.Run(runInput, f.Args()); err != nil {
+	if err := runner.Run(ctx, runInput, f.Args()); err != nil {
 		fmt.Printf("Runner failed: %v\n", err)
 		return subcommands.ExitFailure
 	}

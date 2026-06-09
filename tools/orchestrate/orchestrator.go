@@ -24,8 +24,8 @@ type FFXClient interface {
 	Close() error
 	ApplyEnv(env []string) ([]string, error)
 	SetDefaultTarget(target *string)
-	Flash(fastbootSerial, productDir, pubKeyPath string) error
-	IsPackageServerRunning(repoName string) (bool, error)
+	Flash(ctx context.Context, fastbootSerial, productDir, pubKeyPath string) error
+	IsPackageServerRunning(ctx context.Context, repoName string) (bool, error)
 
 	// High-level provisioning operations
 	SetupFfx(ctx context.Context, repoName string) error
@@ -75,7 +75,7 @@ func NewTestOrchestrator(deviceConfig *DeviceConfig) *TestOrchestrator {
 	}
 }
 
-func (r *TestOrchestrator) instantiateFfx(in *RunInput) error {
+func (r *TestOrchestrator) instantiateFfx(ctx context.Context, in *RunInput) error {
 	if r.ffx != nil {
 		return nil
 	}
@@ -87,7 +87,7 @@ func (r *TestOrchestrator) instantiateFfx(in *RunInput) error {
 		ExePath: filepath.Join(wd, in.Target().FfxPath),
 		LogDir:  os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"),
 	}
-	f, err := ffx.New(ffxOpt)
+	f, err := ffx.New(ctx, ffxOpt)
 	if err != nil {
 		return fmt.Errorf("ffx.New: %w", err)
 	}
@@ -96,16 +96,16 @@ func (r *TestOrchestrator) instantiateFfx(in *RunInput) error {
 }
 
 // Run executes tests.
-func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
+func (r *TestOrchestrator) Run(ctx context.Context, in *RunInput, testCmd []string) error {
 	if len(in.Cipd()) > 0 {
 		fmt.Println("=== orchestrate - Downloading CIPD packages (0/6) ===")
-		if err := r.cipdEnsure(in); err != nil {
+		if err := r.cipdEnsure(ctx, in); err != nil {
 			return fmt.Errorf("cipdEnsure: %w", err)
 		}
 	}
 	if in.IsTarget() {
 		fmt.Println("=== orchestrate - Setting up ffx (1/6) ===")
-		if err := r.instantiateFfx(in); err != nil {
+		if err := r.instantiateFfx(ctx, in); err != nil {
 			return fmt.Errorf("instantiateFfx: %w", err)
 		}
 		defer func() {
@@ -113,7 +113,7 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 				fmt.Printf("ffx.Close: %v\n", err)
 			}
 		}()
-		if err := r.ffx.SetupFfx(context.Background(), r.repoName); err != nil {
+		if err := r.ffx.SetupFfx(ctx, r.repoName); err != nil {
 			return fmt.Errorf("SetupFfx: %w", err)
 		}
 		defer func() {
@@ -125,7 +125,7 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 		if in.Target().TransferURL != "" {
 			fmt.Println("=== orchestrate - Downloading Product Bundle (2/6) ===")
 			var err error
-			productDir, err = r.downloadProductBundle(in)
+			productDir, err = r.downloadProductBundle(ctx, in)
 			if err != nil {
 				return fmt.Errorf("downloadProductBundle: %w", err)
 			}
@@ -135,12 +135,12 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 		}
 		if in.IsHardware() {
 			fmt.Println("=== orchestrate - Flashing Device (3/6) ===")
-			if err := r.flashDevice(productDir); err != nil {
+			if err := r.flashDevice(ctx, productDir); err != nil {
 				return fmt.Errorf("flashDevice: %w", err)
 			}
 		} else if in.IsEmulator() {
 			fmt.Println("=== orchestrate - Starting Emulator (3/6) ===")
-			if err := r.startEmulator(productDir); err != nil {
+			if err := r.startEmulator(ctx, productDir); err != nil {
 				return fmt.Errorf("startEmulator: %w", err)
 			}
 			defer func() {
@@ -150,12 +150,12 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 			}()
 		}
 		fmt.Println("=== orchestrate - Serving Packages (4/6) ===")
-		if err := r.servePackages(in, productDir); err != nil {
+		if err := r.servePackages(ctx, in, productDir); err != nil {
 			return fmt.Errorf("servePackages: %w", err)
 		}
 		defer r.stopPackageServer()
 		fmt.Println("=== orchestrate - Reach Device (5/6) ===")
-		if err := r.reachDevice(); err != nil {
+		if err := r.reachDevice(ctx); err != nil {
 			return fmt.Errorf("reachDevice: %w", err)
 		}
 		defer r.stopFfxLog()
@@ -163,14 +163,14 @@ func (r *TestOrchestrator) Run(in *RunInput, testCmd []string) error {
 		fmt.Println("=== orchestrate - Skipped Target Provisioning (1-5/6) ===")
 	}
 	fmt.Println("=== orchestrate - Test (6/6) ===")
-	if err := r.test(testCmd, in); err != nil {
+	if err := r.test(ctx, testCmd, in); err != nil {
 		return fmt.Errorf("test: %w", err)
 	}
 	return nil
 }
 
 /* Step 0 - Downloading CIPD packages. */
-func (r *TestOrchestrator) cipdEnsure(in *RunInput) error {
+func (r *TestOrchestrator) cipdEnsure(ctx context.Context, in *RunInput) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("os.Getwd: %w", err)
@@ -189,7 +189,7 @@ func (r *TestOrchestrator) cipdEnsure(in *RunInput) error {
 			":gce",
 		}
 		fmt.Printf("Running command: %+v stdin: %s", cipdCmd, ensureLine)
-		cmd := exec.Command(cipdCmd[0], cipdCmd[1:]...)
+		cmd := exec.CommandContext(ctx, cipdCmd[0], cipdCmd[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = strings.NewReader(ensureLine)
@@ -202,31 +202,31 @@ func (r *TestOrchestrator) cipdEnsure(in *RunInput) error {
 }
 
 /* Step 2 - Downloading product bundle. */
-func (r *TestOrchestrator) downloadProductBundle(in *RunInput) (string, error) {
+func (r *TestOrchestrator) downloadProductBundle(ctx context.Context, in *RunInput) (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("os.Getwd: %w", err)
 	}
 	dir := filepath.Join(wd, "ffx-product-bundle")
 
-	if err := r.ffx.ProductDownload(context.Background(), in.Target().TransferURL, dir, in.Target().FfxluciauthPath); err != nil {
+	if err := r.ffx.ProductDownload(ctx, in.Target().TransferURL, dir, in.Target().FfxluciauthPath); err != nil {
 		return "", fmt.Errorf("ffx product download: %w", err)
 	}
 	return dir, nil
 }
 
 /* Step 3 - Flashing device OR Starting emulator. */
-func (r *TestOrchestrator) flashDevice(productDir string) error {
-	if err := r.ffx.Flash(r.deviceConfig.FastbootSerial, productDir, ""); err != nil {
+func (r *TestOrchestrator) flashDevice(ctx context.Context, productDir string) error {
+	if err := r.ffx.Flash(ctx, r.deviceConfig.FastbootSerial, productDir, ""); err != nil {
 		return fmt.Errorf("ffx flash: %w", err)
 	}
 	return nil
 }
 
-func (r *TestOrchestrator) startEmulator(productDir string) error {
+func (r *TestOrchestrator) startEmulator(ctx context.Context, productDir string) error {
 	emu_name := fmt.Sprintf("fuchsia-emulator-%d", os.Getpid())
 
-	if err := r.ffx.EmuStart(context.Background(), productDir, emu_name); err != nil {
+	if err := r.ffx.EmuStart(ctx, productDir, emu_name); err != nil {
 		return fmt.Errorf("ffx emu start: %w", err)
 	}
 
@@ -247,48 +247,48 @@ Serving packages requires:
 * Package servers are managed by name.
 
 */
-func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error {
+func (r *TestOrchestrator) servePackages(ctx context.Context, in *RunInput, productDir string) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("os.Getwd: %w", err)
 	}
 	repoDir := filepath.Join(wd, "repo")
-	if err := r.ffx.RepositoryCreate(context.Background(), repoDir); err != nil {
+	if err := r.ffx.RepositoryCreate(ctx, repoDir); err != nil {
 		return fmt.Errorf("ffx repository create: %w", err)
 	}
-	if err := r.ffx.RepositoryPublish(context.Background(), repoDir, productDir, in.Target().PackageArchives); err != nil {
+	if err := r.ffx.RepositoryPublish(ctx, repoDir, productDir, in.Target().PackageArchives); err != nil {
 		return fmt.Errorf("ffx repository publish: %w", err)
 	}
 	for _, buildID := range in.Target().BuildIds {
-		if err := r.ffx.SymbolIndexAdd(context.Background(), buildID); err != nil {
+		if err := r.ffx.SymbolIndexAdd(ctx, buildID); err != nil {
 			return fmt.Errorf("ffx debug symbol-index add %s: %w", buildID, err)
 		}
 	}
 
-	if err := r.serveAndWait(repoDir); err != nil {
+	if err := r.serveAndWait(ctx, repoDir); err != nil {
 		return fmt.Errorf("serveAndWait: %w", err)
 	}
 
-	if _, err := r.ffx.RepositoryServerList(context.Background()); err != nil {
+	if _, err := r.ffx.RepositoryServerList(ctx); err != nil {
 		return fmt.Errorf("ffx repository server list: %w", err)
 	}
 	return nil
 }
 
-func (r *TestOrchestrator) serveAndWait(repoDir string) error {
+func (r *TestOrchestrator) serveAndWait(ctx context.Context, repoDir string) error {
 	port := os.Getenv("FUCHSIA_PACKAGE_SERVER_PORT")
 	if port == "" {
 		// Use a dynamic port unless the environment is specific.
 		port = "0"
 	}
 	addr := fmt.Sprintf("[::]:%s", port)
-	if err := r.ffx.RepositoryServerStart(context.Background(), r.repoName, repoDir, addr); err != nil {
+	if err := r.ffx.RepositoryServerStart(ctx, r.repoName, repoDir, addr); err != nil {
 		return fmt.Errorf("ffx repository server start: %w", err)
 	}
 
 	// The server start command when using `--background` waits for the server
 	// to actually start before exiting, so this check is a double check.
-	running, err := r.ffx.IsPackageServerRunning(r.repoName)
+	running, err := r.ffx.IsPackageServerRunning(ctx, r.repoName)
 	if err != nil {
 		return fmt.Errorf("ffx isPackageServerRunning: %w", err)
 	}
@@ -299,42 +299,42 @@ func (r *TestOrchestrator) serveAndWait(repoDir string) error {
 }
 
 /* Step 5 - Reach Device */
-func (r *TestOrchestrator) reachDevice() error {
+func (r *TestOrchestrator) reachDevice(ctx context.Context) error {
 	if r.deviceConfig != nil {
 		addr := r.deviceConfig.Network.IPv4
-		if err := r.ffx.TargetAdd(context.Background(), addr); err != nil {
+		if err := r.ffx.TargetAdd(ctx, addr); err != nil {
 			return fmt.Errorf("ffx target add: %w", err)
 		}
 	}
 
-	if _, err := r.ffx.TargetList(context.Background()); err != nil {
+	if _, err := r.ffx.TargetList(ctx); err != nil {
 		return fmt.Errorf("ffx target list: %w", err)
 	}
 
-	if err := r.ffx.TargetWait(context.Background()); err != nil {
+	if err := r.ffx.TargetWait(ctx); err != nil {
 		return fmt.Errorf("ffx target wait: %w", err)
 	}
-	if _, err := r.ffx.TargetShow(context.Background()); err != nil {
+	if _, err := r.ffx.TargetShow(ctx); err != nil {
 		return fmt.Errorf("ffx target show: %w", err)
 	}
-	if err := r.dumpFfxLog(); err != nil {
+	if err := r.dumpFfxLog(ctx); err != nil {
 		return fmt.Errorf("dumpFfxLog: %w", err)
 	}
 
 	// Register the repo server using the aliases configured with the running server.
-	if err := r.ffx.TargetRepositoryRegister(context.Background(), r.repoName, []string{"fuchsia.com", "chromium.org"}); err != nil {
+	if err := r.ffx.TargetRepositoryRegister(ctx, r.repoName, []string{"fuchsia.com", "chromium.org"}); err != nil {
 		return fmt.Errorf("ffx target repository register: %w", err)
 	}
 	return nil
 }
 
-func (r *TestOrchestrator) dumpFfxLog() error {
+func (r *TestOrchestrator) dumpFfxLog(ctx context.Context) error {
 	logFile, err := os.Create(targetLog)
 	if err != nil {
 		return fmt.Errorf("os.Create: %w", err)
 	}
 	r.targetLogFile = logFile
-	closer, err := r.ffx.TargetLogStart(context.Background(), logFile)
+	closer, err := r.ffx.TargetLogStart(ctx, logFile)
 	if err != nil {
 		return fmt.Errorf("TargetLogStart: %w", err)
 	}
@@ -343,7 +343,7 @@ func (r *TestOrchestrator) dumpFfxLog() error {
 }
 
 /* Step 6 - Test */
-func (r *TestOrchestrator) test(testCmd []string, in *RunInput) error {
+func (r *TestOrchestrator) test(ctx context.Context, testCmd []string, in *RunInput) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("os.Getwd: %w", err)
@@ -378,7 +378,7 @@ func (r *TestOrchestrator) test(testCmd []string, in *RunInput) error {
 	}
 
 	// Create cmd AFTER setting the PATH so that it will correctly resolve testCmd[0]
-	cmd := exec.Command(testCmd[0], testCmd[1:]...)
+	cmd := exec.CommandContext(ctx, testCmd[0], testCmd[1:]...)
 	cmd.Env = env
 
 	// Setup pipes to forward subcmd stdout and stderr to logFile and os.Stdout.
@@ -391,7 +391,9 @@ func (r *TestOrchestrator) test(testCmd []string, in *RunInput) error {
 	fmt.Printf("Pausing 10 seconds for log flush...\n")
 	time.Sleep(10 * time.Second)
 	if in.IsTarget() {
-		if err := r.ffx.TargetSnapshot(context.Background(), os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")); err != nil {
+		snapshotCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := r.ffx.TargetSnapshot(snapshotCtx, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")); err != nil {
 			fmt.Printf("target snapshot: %v\n", err)
 		}
 	}
@@ -401,7 +403,7 @@ func (r *TestOrchestrator) test(testCmd []string, in *RunInput) error {
 	// TODO(b/322928092): Disable and remove this once `orchestrate` is the
 	// entrypoint for all bazel_build_test_upload invocations.
 	if in.HasExperiment("orchestrate-error-on-test-failure") && testErr != nil {
-		return fmt.Errorf("Test Failures: %w", err)
+		return fmt.Errorf("Test Failures: %w", testErr)
 	}
 	return nil
 }

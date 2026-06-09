@@ -113,7 +113,7 @@ type Option struct {
 }
 
 // New sets up a config and filepaths for local or Forge use.
-func New(opt *Option) (*Ffx, error) {
+func New(ctx context.Context, opt *Option) (*Ffx, error) {
 	f := &Ffx{
 		bin:         opt.ExePath,
 		sslCertPath: opt.SSLCertPath,
@@ -133,7 +133,7 @@ func New(opt *Option) (*Ffx, error) {
 	// Setup the default config if it has not been initialized yet.
 	configPath := filepath.Join(f.Dir, ".ffx_user_config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := f.setupDefaultConfig(configPath, *opt); err != nil {
+		if err := f.setupDefaultConfig(ctx, configPath, *opt); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -142,7 +142,7 @@ func New(opt *Option) (*Ffx, error) {
 	return f, nil
 }
 
-func (f *Ffx) setupDefaultConfig(configPath string, opt Option) error {
+func (f *Ffx) setupDefaultConfig(ctx context.Context, configPath string, opt Option) error {
 	if opt.LogDir == "" {
 		opt.LogDir = filepath.Join(f.Dir, "log")
 	}
@@ -157,15 +157,15 @@ func (f *Ffx) setupDefaultConfig(configPath string, opt Option) error {
 	}
 
 	// Write the config to the isolation dir so that we don't need to pass it with every command.
-	if out, err := f.RunCmdSync("config", "env", "set", configPath); err != nil {
+	if out, err := f.RunCmdSync(ctx, "config", "env", "set", configPath); err != nil {
 		return fmt.Errorf("saving ffx config path: %s, %w", out, err)
 	}
 	return nil
 }
 
-// Cmd returns a generic exec.Cmd configured to execute ffx.
-func (f *Ffx) Cmd(args ...string) (*exec.Cmd, error) {
-	cmd := exec.Command(f.bin, args...)
+// CmdContext returns a generic exec.Cmd configured to execute ffx with context.
+func (f *Ffx) CmdContext(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	cmd := exec.CommandContext(ctx, f.bin, args...)
 	env, err := f.ApplyEnv(cmd.Environ())
 	if err != nil {
 		return nil, fmt.Errorf("Applying ffx env: %v", err)
@@ -214,8 +214,8 @@ func (f *Ffx) ApplyEnv(env []string) ([]string, error) {
 }
 
 // RunCmdSync starts a command and waits for the command to complete.
-func (f *Ffx) RunCmdSync(args ...string) (string, error) {
-	cmd, err := f.Cmd(args...)
+func (f *Ffx) RunCmdSync(ctx context.Context, args ...string) (string, error) {
+	cmd, err := f.CmdContext(ctx, args...)
 	if err != nil {
 		return "", fmt.Errorf("Creating ffx command from %+v: %v", args, err)
 	}
@@ -235,8 +235,8 @@ func (f *Ffx) RunCmdSync(args ...string) (string, error) {
 }
 
 // RunCmdAsync starts a command but does NOT wait for the command to complete.
-func (f *Ffx) RunCmdAsync(args ...string) (*exec.Cmd, error) {
-	cmd, err := f.Cmd(args...)
+func (f *Ffx) RunCmdAsync(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	cmd, err := f.CmdContext(ctx, args...)
 	if err != nil {
 		return nil, fmt.Errorf("Creating ffx command from %+v: %v", args, err)
 	}
@@ -248,8 +248,8 @@ func (f *Ffx) RunCmdAsync(args ...string) (*exec.Cmd, error) {
 }
 
 // ConfigGet reads from the ffx config and writes to result as structured data.
-func (f *Ffx) ConfigGet(field string, result any) error {
-	out, err := f.RunCmdSync("config", "get", field)
+func (f *Ffx) ConfigGet(ctx context.Context, field string, result any) error {
+	out, err := f.RunCmdSync(ctx, "config", "get", field)
 	if err != nil {
 		return fmt.Errorf("ffx config failed for %q: %w", field, err)
 	}
@@ -276,8 +276,8 @@ func (f *Ffx) SetDefaultTarget(target *string) {
 }
 
 // GetDefaultTarget gets the effective default ffx target.
-func (f *Ffx) GetDefaultTarget() (string, error) {
-	defaultName, err := f.RunCmdSync("target", "default", "get")
+func (f *Ffx) GetDefaultTarget(ctx context.Context) (string, error) {
+	defaultName, err := f.RunCmdSync(ctx, "target", "default", "get")
 	if err != nil {
 		return "", fmt.Errorf("run \"target default get\" command. %s. %w", defaultName, err)
 	}
@@ -288,15 +288,15 @@ func (f *Ffx) GetDefaultTarget() (string, error) {
 // WaitForDaemon tries a few times to check that the daemon is up
 // and returns an error if it fails to respond.
 func (f *Ffx) WaitForDaemon(ctx context.Context) error {
-	return utils.RunWithRetries(context.Background(), 500*time.Millisecond, 3, func() error {
-		_, err := f.RunCmdSync("daemon", "echo")
+	return utils.RunWithRetries(ctx, 500*time.Millisecond, 3, func() error {
+		_, err := f.RunCmdSync(ctx, "daemon", "echo")
 		return err
 	})
 }
 
 // Flash uses "ffx target flash" to flash a product bundle into a device.
 // pubKeyPath is optional and ignored if empty.
-func (f *Ffx) Flash(fastbootSerial, productDir, pubKeyPath string) error {
+func (f *Ffx) Flash(ctx context.Context, fastbootSerial, productDir, pubKeyPath string) error {
 	ffxArgs := []string{
 		"--target", fastbootSerial,
 		"target", "flash",
@@ -304,7 +304,7 @@ func (f *Ffx) Flash(fastbootSerial, productDir, pubKeyPath string) error {
 	if pubKeyPath != "" {
 		ffxArgs = append(ffxArgs, "--authorized-keys", pubKeyPath)
 	}
-	_, err := f.RunCmdSync(ffxArgs...)
+	_, err := f.RunCmdSync(ctx, ffxArgs...)
 	return err
 }
 
@@ -346,9 +346,9 @@ func writeConfigFile(configPath string, opt Option, socketPath string) error {
 }
 
 // isRunning returns true if the package server is currently running and responds to HTTP requests.
-func (f *Ffx) IsPackageServerRunning(repoName string) (bool, error) {
+func (f *Ffx) IsPackageServerRunning(ctx context.Context, repoName string) (bool, error) {
 	args := []string{"--machine", "json", "repository", "server", "list"}
-	out, err := f.RunCmdSync(args...)
+	out, err := f.RunCmdSync(ctx, args...)
 	if err != nil {
 		return false, fmt.Errorf("ffx repository server list: output: %s, error: %w", out, err)
 	}
@@ -378,13 +378,13 @@ func (f *Ffx) ProductDownload(ctx context.Context, transferURL, outDir, authPath
 	if authPath != "" {
 		args = append(args, "--auth", authPath)
 	}
-	_, err := f.RunCmdSync(args...)
+	_, err := f.RunCmdSync(ctx, args...)
 	return err
 }
 
 // EmuStart starts the emulator.
 func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
-	_, err := f.RunCmdSync(
+	_, err := f.RunCmdSync(ctx,
 		"emu",
 		"start",
 		productDir,
@@ -398,13 +398,13 @@ func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
 
 // RepositoryCreate creates a repository.
 func (f *Ffx) RepositoryCreate(ctx context.Context, repoDir string) error {
-	_, err := f.RunCmdSync("repository", "create", repoDir)
+	_, err := f.RunCmdSync(ctx, "repository", "create", repoDir)
 	return err
 }
 
 // RepositoryPublish publishes packages to a repository.
 func (f *Ffx) RepositoryPublish(ctx context.Context, repoDir, productDir string, packageArchives []string) error {
-	if _, err := f.RunCmdSync("repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
+	if _, err := f.RunCmdSync(ctx, "repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
 		return err
 	}
 	if len(packageArchives) > 0 {
@@ -412,7 +412,7 @@ func (f *Ffx) RepositoryPublish(ctx context.Context, repoDir, productDir string,
 		for _, far := range packageArchives {
 			publishArgs = append(publishArgs, "--package-archive", far)
 		}
-		if _, err := f.RunCmdSync(publishArgs...); err != nil {
+		if _, err := f.RunCmdSync(ctx, publishArgs...); err != nil {
 			return err
 		}
 	}
@@ -421,7 +421,7 @@ func (f *Ffx) RepositoryPublish(ctx context.Context, repoDir, productDir string,
 
 // SymbolIndexAdd adds a build ID to the symbol index.
 func (f *Ffx) SymbolIndexAdd(ctx context.Context, buildID string) error {
-	_, err := f.RunCmdSync("debug", "symbol-index", "add", buildID)
+	_, err := f.RunCmdSync(ctx, "debug", "symbol-index", "add", buildID)
 	return err
 }
 
@@ -435,41 +435,41 @@ func (f *Ffx) RepositoryServerStart(ctx context.Context, repoName, repoDir, addr
 		"--repository", repoName,
 		"--refresh-metadata",
 	}
-	_, err := f.RunCmdSync(args...)
+	_, err := f.RunCmdSync(ctx, args...)
 	return err
 }
 
 // RepositoryServerStop stops the repository server.
 func (f *Ffx) RepositoryServerStop(ctx context.Context, repoName string) error {
-	_, err := f.RunCmdSync("repository", "server", "stop", repoName)
+	_, err := f.RunCmdSync(ctx, "repository", "server", "stop", repoName)
 	return err
 }
 
 // RepositoryServerList lists the repository servers.
 func (f *Ffx) RepositoryServerList(ctx context.Context) (string, error) {
-	return f.RunCmdSync("repository", "server", "list")
+	return f.RunCmdSync(ctx, "repository", "server", "list")
 }
 
 // TargetAdd adds a target.
 func (f *Ffx) TargetAdd(ctx context.Context, addr string) error {
-	_, err := f.RunCmdSync("target", "add", addr, "--nowait")
+	_, err := f.RunCmdSync(ctx, "target", "add", addr, "--nowait")
 	return err
 }
 
 // TargetList lists the targets.
 func (f *Ffx) TargetList(ctx context.Context) (string, error) {
-	return f.RunCmdSync("--machine", "json-pretty", "target", "list")
+	return f.RunCmdSync(ctx, "--machine", "json-pretty", "target", "list")
 }
 
 // TargetWait waits for the target to be reachable.
 func (f *Ffx) TargetWait(ctx context.Context) error {
-	_, err := f.RunCmdSync("target", "wait")
+	_, err := f.RunCmdSync(ctx, "target", "wait")
 	return err
 }
 
 // TargetShow shows target details.
 func (f *Ffx) TargetShow(ctx context.Context) (string, error) {
-	return f.RunCmdSync("--machine", "json-pretty", "target", "show")
+	return f.RunCmdSync(ctx, "--machine", "json-pretty", "target", "show")
 }
 
 // TargetRepositoryRegister registers a repository with the target.
@@ -481,19 +481,19 @@ func (f *Ffx) TargetRepositoryRegister(ctx context.Context, repoName string, ali
 	for _, alias := range aliases {
 		args = append(args, "--alias", alias)
 	}
-	_, err := f.RunCmdSync(args...)
+	_, err := f.RunCmdSync(ctx, args...)
 	return err
 }
 
 // TargetSnapshot takes a target snapshot.
 func (f *Ffx) TargetSnapshot(ctx context.Context, dir string) error {
-	_, err := f.RunCmdSync("target", "snapshot", "-d", dir)
+	_, err := f.RunCmdSync(ctx, "target", "snapshot", "-d", dir)
 	return err
 }
 
 // Symbolize symbolizes logs using ffx debug symbolize.
 func (f *Ffx) Symbolize(ctx context.Context, input io.Reader, output io.Writer) error {
-	cmd, err := f.Cmd("debug", "symbolize")
+	cmd, err := f.CmdContext(ctx, "debug", "symbolize")
 	if err != nil {
 		return err
 	}
@@ -520,7 +520,7 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 	}
 
 	for _, cmd := range cmds {
-		if _, err := f.RunCmdSync(cmd...); err != nil {
+		if _, err := f.RunCmdSync(ctx, cmd...); err != nil {
 			return fmt.Errorf("ffx setup %v: %w", cmd, err)
 		}
 	}
@@ -528,18 +528,18 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 	logDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
 	if logDir != "" {
 		cmd := []string{"config", "set", "log.dir", logDir}
-		if _, err := f.RunCmdSync(cmd...); err != nil {
+		if _, err := f.RunCmdSync(ctx, cmd...); err != nil {
 			return fmt.Errorf("ffx setup %v: %w", cmd, err)
 		}
 	}
 
 	ffxConfigDump := filepath.Join(logDir, "ffx_config.txt")
-	if err := f.dumpFfxConfig(ffxConfigDump); err != nil {
+	if err := f.dumpFfxConfig(ctx, ffxConfigDump); err != nil {
 		return fmt.Errorf("dumpFfxConfig: %w", err)
 	}
 
 	ffxDaemonLog := filepath.Join(logDir, "ffx_daemon.log")
-	if err := f.daemonStart(ffxDaemonLog); err != nil {
+	if err := f.daemonStart(ctx, ffxDaemonLog); err != nil {
 		return fmt.Errorf("ffx daemon start: %w", err)
 	}
 	if err := f.WaitForDaemon(ctx); err != nil {
@@ -548,13 +548,13 @@ func (f *Ffx) SetupFfx(ctx context.Context, repoName string) error {
 	return nil
 }
 
-func (f *Ffx) dumpFfxConfig(outputPath string) error {
+func (f *Ffx) dumpFfxConfig(ctx context.Context, outputPath string) error {
 	logFile, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("os.Create: %w", err)
 	}
 	defer logFile.Close()
-	cmd, err := f.Cmd("config", "get")
+	cmd, err := f.CmdContext(ctx, "config", "get")
 	if err != nil {
 		return err
 	}
@@ -563,13 +563,13 @@ func (f *Ffx) dumpFfxConfig(outputPath string) error {
 	return cmd.Run()
 }
 
-func (f *Ffx) daemonStart(outputPath string) error {
+func (f *Ffx) daemonStart(ctx context.Context, outputPath string) error {
 	logFile, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("os.Create: %w", err)
 	}
 	defer logFile.Close()
-	cmd, err := f.Cmd("daemon", "start")
+	cmd, err := f.CmdContext(ctx, "daemon", "start")
 	if err != nil {
 		return err
 	}
@@ -588,13 +588,13 @@ func (f *Ffx) daemonStart(outputPath string) error {
 
 // EmuStop stops all running emulator instances.
 func (f *Ffx) EmuStop(ctx context.Context) error {
-	_, err := f.RunCmdSync("emu", "stop", "--all")
+	_, err := f.RunCmdSync(ctx, "emu", "stop", "--all")
 	return err
 }
 
 // DaemonStop stops the ffx daemon.
 func (f *Ffx) DaemonStop(ctx context.Context) error {
-	_, err := f.RunCmdSync("daemon", "stop", "--no-wait")
+	_, err := f.RunCmdSync(ctx, "daemon", "stop", "--no-wait")
 	return err
 }
 
@@ -611,7 +611,7 @@ func (c *ffxLogCloser) Close() error {
 
 // TargetLogStart starts streaming target logs in the background.
 func (f *Ffx) TargetLogStart(ctx context.Context, output io.Writer) (io.Closer, error) {
-	cmd, err := f.Cmd("log", "--symbolize", "off")
+	cmd, err := f.CmdContext(ctx, "log", "--symbolize", "off")
 	if err != nil {
 		return nil, fmt.Errorf("ffx.Cmd: %w", err)
 	}

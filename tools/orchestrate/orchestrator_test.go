@@ -107,12 +107,12 @@ func (m *mockFFXClient) TargetLogStart(ctx context.Context, output io.Writer) (i
 	return &mockTargetLogCloser{}, nil
 }
 
-func (m *mockFFXClient) Flash(fastbootSerial, productDir, pubKeyPath string) error {
+func (m *mockFFXClient) Flash(ctx context.Context, fastbootSerial, productDir, pubKeyPath string) error {
 	call := m.recordCall("Flash", fastbootSerial, productDir, pubKeyPath)
 	return call.retErr
 }
 
-func (m *mockFFXClient) IsPackageServerRunning(repoName string) (bool, error) {
+func (m *mockFFXClient) IsPackageServerRunning(ctx context.Context, repoName string) (bool, error) {
 	call := m.recordCall("IsPackageServerRunning", repoName)
 	if call.retErr != nil {
 		return false, call.retErr
@@ -389,7 +389,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	}
 
 	// Run the orchestrator
-	err := orchestrator.Run(runInput, []string{testCmdPath})
+	err := orchestrator.Run(context.Background(), runInput, []string{testCmdPath})
 	if err != nil {
 		t.Errorf("orchestrator.Run failed: %v", err)
 	}

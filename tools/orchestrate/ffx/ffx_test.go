@@ -5,6 +5,7 @@
 package orchestrate
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 
 func TestFfxEnvContainsSsh(t *testing.T) {
 	ffx := &Ffx{Dir: "/foo/bar", bin: "foo/bar/ffx", sslCertPath: "/this/or/something"}
-	cmd, err := ffx.Cmd("config", "get")
+	cmd, err := ffx.CmdContext(context.Background(), "config", "get")
 	if err != nil {
 		t.Error(err)
 	}
@@ -39,7 +40,7 @@ func TestFfxSetDefaultTargetNotSet(t *testing.T) {
 	ffxEnv := func(defaultTarget *string) []string {
 		ffx := &Ffx{Dir: "/foo/bar", bin: "foo/bar/ffx", sslCertPath: "/this/or/something"}
 		ffx.SetDefaultTarget(defaultTarget)
-		cmd, err := ffx.Cmd("config", "get")
+		cmd, err := ffx.CmdContext(context.Background(), "config", "get")
 		if err != nil {
 			t.Error(err)
 		}
