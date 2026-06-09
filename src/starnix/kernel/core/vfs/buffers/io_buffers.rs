@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    MemoryAccessorExt, NumberOfElementsRead, RemoteMemoryManager, TaskMemoryAccessor,
-    UNIFIED_ASPACES_ENABLED, read_to_array, read_to_object_as_bytes, read_to_vec,
+    MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, UNIFIED_ASPACES_ENABLED,
+    read_to_array, read_to_object_as_bytes, read_to_vec,
 };
 use crate::task::{CurrentTask, Task};
 use smallvec::{SmallVec, smallvec};
@@ -425,12 +425,6 @@ impl<'a> UserBuffersOutputBuffer<'a, Task> {
     }
 }
 
-impl<'a> UserBuffersOutputBuffer<'a, RemoteMemoryManager> {
-    pub fn remote_new(mm: &'a RemoteMemoryManager, buffers: UserBuffers) -> Result<Self, Errno> {
-        Self::new_inner(mm, buffers)
-    }
-}
-
 impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersOutputBuffer<'a, M> {
     fn segments_count(&self) -> Result<usize, Errno> {
         Ok(self.buffers.len())
@@ -604,12 +598,6 @@ impl<'a> UserBuffersInputBuffer<'a, CurrentTask> {
 impl<'a> UserBuffersInputBuffer<'a, Task> {
     pub fn syscall_new(task: &'a Task, buffers: UserBuffers) -> Result<Self, Errno> {
         Self::new_inner(task, buffers)
-    }
-}
-
-impl<'a> UserBuffersInputBuffer<'a, RemoteMemoryManager> {
-    pub fn remote_new(mm: &'a RemoteMemoryManager, buffers: UserBuffers) -> Result<Self, Errno> {
-        Self::new_inner(mm, buffers)
     }
 }
 

@@ -5,7 +5,6 @@
 use crate::mm::barrier::{BarrierType, system_barrier};
 use crate::mm::mapping::MappingBackingMemory;
 use crate::mm::memory::MemoryObject;
-use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
@@ -2699,66 +2698,6 @@ impl MemoryManagerState {
 /// pinning.
 pub struct MlockShadowProcess(memory_pinning::ShadowProcess);
 
-/// A memory manager for another thread.
-///
-/// When accessing memory through this object, we use less efficient codepaths that work across
-/// address spaces.
-pub struct RemoteMemoryManager {
-    mm: Arc<MemoryManager>,
-}
-
-impl RemoteMemoryManager {
-    fn new(mm: Arc<MemoryManager>) -> Self {
-        Self { mm }
-    }
-}
-
-// If we just have a MemoryManager, we cannot assume that its address space is current, which means
-// we need to use the slower "syscall" mechanism to access its memory.
-impl MemoryAccessor for RemoteMemoryManager {
-    fn read_memory<'a>(
-        &self,
-        addr: UserAddress,
-        bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        self.mm.syscall_read_memory(addr, bytes)
-    }
-
-    fn read_memory_partial_until_null_byte<'a>(
-        &self,
-        addr: UserAddress,
-        bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        self.mm.syscall_read_memory_partial_until_null_byte(addr, bytes)
-    }
-
-    fn read_memory_partial<'a>(
-        &self,
-        addr: UserAddress,
-        bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        self.mm.syscall_read_memory_partial(addr, bytes)
-    }
-
-    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.syscall_write_memory(addr, bytes)
-    }
-
-    fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.syscall_write_memory_partial(addr, bytes)
-    }
-
-    fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.mm.syscall_zero(addr, length)
-    }
-}
-
-impl TaskMemoryAccessor for RemoteMemoryManager {
-    fn maximum_valid_address(&self) -> Option<UserAddress> {
-        Some(self.mm.maximum_valid_user_address)
-    }
-}
-
 impl MemoryManager {
     /// Ensures that any mapping at `addr` is actually mapped at in the user vmar.
     ///
@@ -3081,11 +3020,6 @@ impl MemoryManager {
 
     pub fn syscall_zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
         self.state.read().zero(addr, length, &self.mapping_context)
-    }
-
-    /// Obtain a reference to this memory manager that can be used from another thread.
-    pub fn as_remote(self: &Arc<Self>) -> RemoteMemoryManager {
-        RemoteMemoryManager::new(self.clone())
     }
 
     /// Performs a data and instruction cache flush over the given address range.
@@ -4924,7 +4858,7 @@ fn generate_random_offset_for_aslr(arch_width: ArchWidth) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::memory_accessor::MemoryAccessorExt;
+    use crate::mm::memory_accessor::{MemoryAccessor, MemoryAccessorExt};
     use crate::mm::syscalls::do_mmap;
     use crate::task::syscalls::sys_prctl;
     use crate::testing::*;

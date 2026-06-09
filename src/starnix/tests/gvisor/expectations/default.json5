@@ -961,6 +961,10 @@
         {
             type: "skip",
             matchers: [
+                // TODO(https://fxbug.dev/42066087): This test clones with CLONE_VM without
+                // CLONE_THREAD which Starnix does not properly support.
+                "AIOTest.CloneVm",
+
                 // Passes on arm64, fails on x64.
                 "SysretTest.BadRsp",
 

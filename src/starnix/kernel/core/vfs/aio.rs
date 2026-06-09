@@ -4,10 +4,10 @@
 
 use crate::mm::{
     DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags,
-    RemoteMemoryManager, TaskMemoryAccessor,
+    TaskMemoryAccessor,
 };
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, SimpleWaiter, WaitQueue};
+use crate::task::{CurrentTask, SimpleWaiter, Task, WaitQueue};
 use crate::vfs::eventfd::EventFdFileObject;
 use crate::vfs::syscalls::IocbPtr;
 use crate::vfs::{
@@ -26,7 +26,7 @@ use starnix_uapi::{
     aio_context_t, errno, error, io_event, iocb,
 };
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes;
 
 /// From aio.go in gVisor.
@@ -257,7 +257,7 @@ impl TryFrom<u32> for OpType {
 struct IoOperation {
     op_type: OpType,
     file: WeakFileHandle,
-    mm: RemoteMemoryManager,
+    task: Weak<Task>,
     buffers: UserBuffers,
     offset: usize,
     id: u64,
@@ -326,7 +326,7 @@ impl IoOperation {
         Ok(IoOperation {
             op_type,
             file: Arc::downgrade(&file),
-            mm: current_task.mm()?.as_remote(),
+            task: Arc::downgrade(&current_task.task),
             buffers,
             offset,
             id: control_block.aio_data,
@@ -372,15 +372,16 @@ impl IoOperation {
         current_task: &CurrentTask,
         file: FileHandle,
     ) -> Result<usize, Errno> {
-        let buffers = self.buffers.clone();
         let mut output_buffer = {
-            let sink = UserBuffersOutputBuffer::remote_new(&self.mm, buffers.clone())?;
+            let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
+            let sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
             VecOutputBuffer::new(sink.available())
         };
 
         file.read_at(locked, current_task, self.offset, &mut output_buffer)?;
 
-        let mut sink = UserBuffersOutputBuffer::remote_new(&self.mm, buffers)?;
+        let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
+        let mut sink = UserBuffersOutputBuffer::syscall_new(&task, self.buffers.clone())?;
         sink.write(&output_buffer.data())
     }
 
@@ -391,7 +392,8 @@ impl IoOperation {
         file: FileHandle,
     ) -> Result<usize, Errno> {
         let mut input_buffer = {
-            let mut source = UserBuffersInputBuffer::remote_new(&self.mm, self.buffers.clone())?;
+            let task = self.task.upgrade().ok_or_else(|| errno!(EFAULT))?;
+            let mut source = UserBuffersInputBuffer::syscall_new(&task, self.buffers.clone())?;
             VecInputBuffer::new(&source.read_all()?)
         };
 
