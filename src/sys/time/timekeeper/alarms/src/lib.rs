@@ -349,7 +349,7 @@ impl std::future::Future for HwResponseFut {
 async fn stop_hrtimer(hrtimer: &Box<dyn TimerOps>, timer_config: &TimerConfig) {
     trace::duration!("alarms", "hrtimer:stop", "id" => timer_config.id);
     debug!("stop_hrtimer: stopping hardware timer: {}", timer_config.id);
-    hrtimer.stop(timer_config.id).await;
+    log_long_op!(hrtimer.stop(timer_config.id));
     debug!("stop_hrtimer: stopped  hardware timer: {}", timer_config.id);
 }
 
@@ -511,16 +511,13 @@ pub async fn serve(timer_loop: Rc<Loop>, requests: fta::WakeAlarmsRequestStream)
 async fn handle_cancel(alarm_id: String, conn_id: zx::Koid, cmd: &mut mpsc::Sender<Cmd>) {
     let done = zx::Event::create();
     let timer_id = timers::Id::new(alarm_id.clone(), conn_id);
-    if let Err(e) = cmd
-        .send(Cmd::StopById {
-            timer_id,
-            done: done.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible"),
-        })
-        .await
-    {
+    if let Err(e) = log_long_op!(cmd.send(Cmd::StopById {
+        timer_id,
+        done: done.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible"),
+    })) {
         warn!("handle_request: error while trying to cancel: {}: {:?}", alarm_id, e);
     }
-    wait_signaled(&done).await;
+    log_long_op!(wait_signaled(&done));
 }
 
 /// Processes a single Wake API request from a single client.
@@ -604,7 +601,7 @@ async fn handle_request(
         fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
             // TODO: b/383062441 - make this into an async task so that we wait
             // less to schedule the next alarm.
-            log_long_op!(handle_cancel(alarm_id, conn_id, &mut cmd));
+            handle_cancel(alarm_id, conn_id, &mut cmd).await;
         }
         fta::WakeAlarmsRequest::Set { notifier, deadline, mode, alarm_id, responder } => {
             // Alarm is not scheduled yet!
