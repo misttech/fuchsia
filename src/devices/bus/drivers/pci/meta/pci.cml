@@ -15,6 +15,7 @@
     },
     capabilities: [
         { service: 'fuchsia.hardware.pci.Service' },
+        { service: 'fuchsia.hardware.pci.BusService' },
     ],
     use: [
         { service: 'fuchsia.hardware.pci.BoardConfiguration' },
@@ -22,6 +23,10 @@
     expose: [
         {
             service: 'fuchsia.hardware.pci.Service',
+            from: 'self',
+        },
+        {
+            service: 'fuchsia.hardware.pci.BusService',
             from: 'self',
         },
     ],

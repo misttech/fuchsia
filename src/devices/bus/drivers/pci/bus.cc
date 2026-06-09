@@ -5,6 +5,7 @@
 #include "src/devices/bus/drivers/pci/bus.h"
 
 #include <fidl/fuchsia.hardware.pci/cpp/natural_types.h>
+#include <fidl/fuchsia.io/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -88,6 +89,16 @@ zx_status_t Bus::Initialize() {
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to add bus driver: %s", zx_status_get_string(status));
     return status;
+  }
+
+  zx::result result = DdkAddService<fuchsia_hardware_pci::BusService>(
+      fuchsia_hardware_pci::BusService::InstanceHandler({
+          .bus = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                         fidl::kIgnoreBindingClosure),
+      }));
+  if (result.is_error()) {
+    zxlogf(ERROR, "failed to add BusService: %s", result.status_string());
+    return result.status_value();
   }
 
   if (zx::result<PciFidl::BoardConfiguration> result =

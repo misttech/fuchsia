@@ -275,6 +275,10 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.pci.BusService",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.backlight.Service",
             availability: "optional",
         },

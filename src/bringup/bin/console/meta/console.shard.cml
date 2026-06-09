@@ -334,6 +334,12 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.hardware.pci.BusService",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.usb.peripheral.Service",
             from: "#boot-drivers",
             to: "#console-launcher",
@@ -345,6 +351,11 @@
         },
         {
             service: "fuchsia.hardware.pty.Service",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+        },
+        {
+            service: "fuchsia.hardware.pci.BusService",
             from: "#boot-drivers",
             to: "#console-launcher",
         },

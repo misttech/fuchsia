@@ -61,8 +61,8 @@ type PciDevice = struct {
     function_id uint8;
 };
 
-/// The Bus protocol provides information about PCI device children on the PCI
-/// providing the service.
+/// The Bus service provides information about devices on a particular bus. It
+/// is used by clients like lspci, not drivers.
 @discoverable
 closed protocol Bus {
     /// Retrieve information about the segment group and buses covered by a Bus.
@@ -560,4 +560,9 @@ closed protocol Device {
 
 service Service {
     device client_end:Device;
+};
+
+@available(added=HEAD)
+service BusService {
+    bus client_end:Bus;
 };

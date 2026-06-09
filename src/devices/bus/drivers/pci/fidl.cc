@@ -83,13 +83,13 @@ zx::result<> FidlDevice::Create(zx_device_t* parent, pci::Device* device) {
               fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    zxlogf(ERROR, "Failed to add service the outgoing directory");
+    zxlogf(ERROR, "Failed to add Service to the outgoing directory: %s", result.status_string());
     return result.take_error();
   }
 
   result = fidl_dev->outgoing_dir().Serve(std::move(endpoints->server));
   if (result.is_error()) {
-    zxlogf(ERROR, "Failed to service the outgoing directory");
+    zxlogf(ERROR, "Failed to service the outgoing directory: %s", result.status_string());
     return result.take_error();
   }
 

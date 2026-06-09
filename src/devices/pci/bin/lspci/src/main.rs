@@ -4,15 +4,14 @@
 
 // All PCI layouts and information are documented in the PCI Local Bus Specification
 // https://pcisig.com/specification-overview/pci-conventional
-use anyhow::{anyhow, Context, Error};
-use fidl_fuchsia_hardware_pci::{Address, BusMarker, BusProxy, HeaderType};
-use fuchsia_fs::directory::{dir_contains, open_in_namespace, readdir, DirentKind};
-use fuchsia_fs::PERM_READABLE;
+use anyhow::{Context, Error, anyhow};
+use fidl_fuchsia_hardware_pci::{Address, BusProxy, HeaderType};
+use fuchsia_component::client::Service;
 use lspci::bridge::Bridge;
 use lspci::device::Device;
 use lspci::filter::Filter;
 use lspci::util::Hexdumper;
-use lspci::{db, Args, SubCommand};
+use lspci::{Args, SubCommand, db};
 use std::fs::File;
 use std::io::prelude::*;
 use zx::Status;
@@ -20,7 +19,7 @@ use zx::Status;
 #[fuchsia_async::run_singlethreaded]
 async fn main() -> Result<(), Error> {
     let args: Args = argh::from_env();
-    let proxies = find_buses(&args.service).await?;
+    let proxies = find_buses().await?;
     handle_subcommands(&proxies, args).await
 }
 
@@ -125,36 +124,20 @@ async fn find_bus_containing_bdf<'a>(
     Err(anyhow!("PCI bus containing {} not found", filter))
 }
 
-// Find 'bus' entries that correspond to fuchsia.hardware.pci services.
-async fn find_buses(path: &str) -> Result<Vec<BusProxy>, Error> {
+// Find 'bus' entries that correspond to fuchsia.hardware.pci.BusService instances.
+async fn find_buses() -> Result<Vec<BusProxy>, Error> {
     let mut proxies = Vec::new();
-    for dir in readdir(&open_in_namespace(path, PERM_READABLE)?)
-        .await?
-        .into_iter()
-        .filter(|entry| entry.kind == DirentKind::Directory)
-    {
-        let dir_name = format!("{}/{}", path, dir.name);
-        let bus_name = format!("{}/bus", dir_name);
-        let dir_proxy = open_in_namespace(&dir_name, PERM_READABLE)?;
-        if dir_contains(&dir_proxy, "bus").await? {
-            let (proxy, server) = fidl::endpoints::create_proxy::<BusMarker>();
-            match fdio::service_connect(&bus_name, server.into_channel()) {
-                Ok(_) => proxies.push(proxy),
-                Err(status) => {
-                    eprintln!("Couldn't connect to PCI bus service at '{}': {}", bus_name, status)
-                }
-            }
-        }
+    let service = Service::open(fidl_fuchsia_hardware_pci::BusServiceMarker)
+        .context("Failed to open BusService")?;
+
+    for instance in service.enumerate().await.context("Failed to enumerate BusService instances")? {
+        let proxy =
+            instance.connect_to_bus().context("Failed to connect to BusService instance member")?;
+        proxies.push(proxy);
     }
 
     if proxies.is_empty() {
-        // Although it looks strange here, it lines up properly with anyhow!'s Error: prefix.
-        Err(anyhow!(format!(
-            "Couldn't find a PCI bus service in {}
-       You may be able to manually specify the platform directory manually.
-       Otherwise, due to https://fxbug.dev/42108122 you may have success using `k lspci` instead of `lspci`.",
-            path
-        )))
+        Err(anyhow!("Couldn't find any PCI bus service instances."))
     } else {
         Ok(proxies)
     }

@@ -8,8 +8,10 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/device.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/stdcompat/span.h>
@@ -185,6 +187,7 @@ class Bus : public PciBusType,
   inspect::Node bus_node_;
   inspect::Node devices_node_;
   inspect::StringArray acpi_node_;
+  fidl::ServerBindingGroup<fuchsia_hardware_pci::Bus> bindings_;
 };
 
 zx_status_t pci_bus_bind(void* ctx, zx_device_t* parent);
