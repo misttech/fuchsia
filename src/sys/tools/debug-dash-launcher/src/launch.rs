@@ -85,6 +85,7 @@ async fn explore_over_handles(
         .map_err(|_| LauncherError::ProcessLauncher)?;
 
     let mut args = Vec::new();
+    args.push(b"/.dash/internal/bin/sh".to_vec());
     if let Some(cmd) = command {
         args.extend(DASH_ARGS_FOR_COMMAND.iter().map(|b| b.to_vec()));
         args.push(cmd.into_bytes());

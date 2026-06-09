@@ -162,3 +162,76 @@ pub async fn exit_with_no_error() {
         }
     }
 }
+
+#[fuchsia::test]
+pub async fn background_job() {
+    let (_stdio, stdio_server) = zx::Socket::create_stream();
+
+    let launcher = connect_to_protocol::<fdash::LauncherMarker>().unwrap();
+
+    let result = launcher
+        .explore_component_over_socket(
+            ".",
+            stdio_server,
+            &[],
+            Some("true &"),
+            fdash::DashNamespaceLayout::NestAllInstanceDirs,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_ok());
+
+    let mut output = String::new();
+    loop {
+        match _stdio.wait_one(
+            zx::Signals::SOCKET_READABLE | zx::Signals::SOCKET_PEER_CLOSED,
+            zx::MonotonicInstant::INFINITE,
+        ) {
+            zx::WaitResult::Ok(signals) => {
+                if signals.contains(zx::Signals::SOCKET_READABLE) {
+                    let mut buf = [0u8; 1024];
+                    match _stdio.read(&mut buf) {
+                        Ok(bytes_read) => {
+                            if bytes_read == 0 {
+                                break;
+                            }
+                            output.push_str(std::str::from_utf8(&buf[..bytes_read]).unwrap());
+                        }
+                        Err(zx::Status::SHOULD_WAIT) => {
+                            continue;
+                        }
+                        Err(zx::Status::PEER_CLOSED) => {
+                            break;
+                        }
+                        Err(e) => {
+                            panic!("Socket read failed: {:?}", e);
+                        }
+                    }
+                }
+                if signals.contains(zx::Signals::SOCKET_PEER_CLOSED) {
+                    // Read any remaining data.
+                    let mut buf = [0u8; 1024];
+                    while let Ok(bytes_read) = _stdio.read(&mut buf) {
+                        if bytes_read == 0 {
+                            break;
+                        }
+                        output.push_str(std::str::from_utf8(&buf[..bytes_read]).unwrap());
+                    }
+                    break;
+                }
+            }
+            zx::WaitResult::TimedOut(_) => {
+                break;
+            }
+            zx::WaitResult::Canceled(_) => {
+                break;
+            }
+            zx::WaitResult::Err(status) => {
+                panic!("Wait failed: {:?}", status);
+            }
+        }
+    }
+
+    assert!(!output.contains("Failed to create subshell"), "Output was: {}", output);
+}
