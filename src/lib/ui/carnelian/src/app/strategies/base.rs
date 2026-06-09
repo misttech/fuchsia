@@ -16,7 +16,7 @@ use fidl_fuchsia_hardware_display::ProviderProxy;
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::channel::mpsc::UnboundedSender;
-use keymaps::select_keymap;
+use keymaps::US_QWERTY;
 
 // This trait exists to keep the hosted implementation and the
 // direct implementations as separate as possible.
@@ -92,7 +92,7 @@ fn make_direct_app_strategy(
 ) -> Result<AppStrategyPtr, Error> {
     let strat = DisplayDirectAppStrategy::new(
         display_coordinator,
-        select_keymap(&app_config.keymap_name),
+        &US_QWERTY,
         internal_sender,
         &app_config,
     );

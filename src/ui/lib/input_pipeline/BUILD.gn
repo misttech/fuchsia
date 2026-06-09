@@ -124,7 +124,6 @@ _input_pipeline = {
     "src/mouse_injector_handler.rs",
     "src/observe_fake_events_input_handler.rs",
     "src/testing_utilities.rs",
-    "src/text_settings_handler.rs",
     "src/touch_binding.rs",
     "src/touch_injector_handler.rs",
     "src/utils.rs",

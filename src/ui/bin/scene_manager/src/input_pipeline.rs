@@ -17,7 +17,6 @@ use crate::lib::media_buttons_handler::MediaButtonsHandler;
 use crate::lib::modifier_handler::{ModifierHandler, ModifierMeaningHandler};
 use crate::lib::mouse_injector_handler::MouseInjectorHandler;
 
-use crate::lib::text_settings_handler::TextSettingsHandler;
 use crate::lib::touch_injector_handler::TouchInjectorHandler;
 use crate::lib::{CursorMessage, Dispatcher, Incoming, input_device, keymap_handler, metrics};
 use crate::scene_management::SceneManagerTrait;
@@ -308,10 +307,6 @@ async fn register_keyboard_related_input_handlers(
     assembly = assembly.add_display_ownership(display_ownership_event, input_handlers_node);
     assembly = add_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
 
-    // Add the text settings handler early in the pipeline to use the
-    // keymap settings in the remainder of the pipeline.
-    assembly =
-        add_text_settings_handler(incoming, assembly, input_handlers_node, metrics_logger.clone());
     assembly = add_keymap_handler(assembly, input_handlers_node, metrics_logger.clone());
     assembly =
         add_key_meaning_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
@@ -493,24 +488,9 @@ fn add_inspect_handler(
     ))
 }
 
-/// Hooks up the text settings handler.
-fn add_text_settings_handler(
-    incoming: &Incoming,
-    assembly: InputPipelineAssembly,
-    input_handlers_node: &fuchsia_inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    let proxy = incoming
-        .connect_protocol::<fsettings::KeyboardProxy>()
-        .expect("needs a connection to fuchsia.settings.Keyboard");
-    let text_handler = TextSettingsHandler::new(None, input_handlers_node, metrics_logger);
-    text_handler.clone().serve(proxy);
-    assembly.add_handler(text_handler)
-}
-
-/// Hooks up the keymapper.  The keymapper requires the text settings handler to
-/// be added as well to support keymapping.  Otherwise, it defaults to applying
-/// the US QWERTY keymap.
+/// Hooks up the keymapper.
+///
+/// Converts HID key events to `KeyMeaning` events.
 fn add_keymap_handler(
     assembly: InputPipelineAssembly,
     input_handlers_node: &inspect::Node,

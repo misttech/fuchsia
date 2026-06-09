@@ -27,7 +27,6 @@ pub mod dispatcher;
 pub mod media_buttons_handler;
 pub mod modifier_handler;
 pub mod mouse_injector_handler;
-pub mod text_settings_handler;
 pub mod touch_injector_handler;
 
 #[cfg(feature = "dso")]

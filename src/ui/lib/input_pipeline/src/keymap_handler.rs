@@ -139,11 +139,8 @@ impl KeymapHandler {
 
         self.modifier_state.borrow_mut().update(event_type, key);
         self.lock_state.borrow_mut().update(event_type, key);
-        let key_meaning = keymaps::select_keymap(&event.get_keymap()).apply(
-            key,
-            &*self.modifier_state.borrow(),
-            &*self.lock_state.borrow(),
-        );
+        let key_meaning =
+            keymaps::apply(key, &*self.modifier_state.borrow(), &*self.lock_state.borrow());
         input_device::UnhandledInputEvent {
             device_event: input_device::InputDeviceEvent::Keyboard(
                 event.into_with_key_meaning(key_meaning),

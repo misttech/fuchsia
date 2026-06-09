@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use fidl_fuchsia_input::{Key, KeymapId};
+use fidl_fuchsia_input::Key;
 use fidl_fuchsia_ui_input3::{KeyEventType, KeyMeaning, LockState, Modifiers, NonPrintableKey};
 use log::{debug, error};
 use std::collections::{self, HashMap};
@@ -18,38 +18,13 @@ pub mod usages;
 /// A US QWERTY keymap.
 pub static US_QWERTY: LazyLock<Keymap<'static>> = LazyLock::new(|| Keymap::new(&defs::QWERTY_MAP));
 
-/// A US DVORAK keymap.
-pub static US_DVORAK: LazyLock<Keymap<'static>> = LazyLock::new(|| Keymap::new(&defs::DVORAK_MAP));
-
-/// A FR AZERTY keymap.
-pub static FR_AZERTY: LazyLock<Keymap<'static>> =
-    LazyLock::new(|| Keymap::new(&defs::FR_AZERTY_MAP));
-
-/// A US COLEMAK keymap.
-pub static US_COLEMAK: LazyLock<Keymap<'static>> =
-    LazyLock::new(|| Keymap::new(&defs::COLEMAK_MAP));
-
-/// Gets a keymap based on the supplied `keymap` selector.  If no keymap is
-/// found the fallback is always US QWERTY.
-pub fn select_keymap<'a>(keymap: &Option<String>) -> &'a Keymap<'a> {
-    match keymap {
-        Some(k) if k == "FR_AZERTY" => &FR_AZERTY,
-        Some(k) if k == "US_DVORAK" => &US_DVORAK,
-        Some(k) if k == "US_COLEMAK" => &US_COLEMAK,
-        _ => &US_QWERTY,
-    }
-}
-
-/// Converts the keymap string into a supported `KeymapId`.
-///
-/// An unknown keymap string always becomes [KeymapId::UsQwerty].
-pub fn into_keymap_id(keymap: &str) -> KeymapId {
-    match keymap {
-        "FR_AZERTY" => KeymapId::FrAzerty,
-        "US_DVORAK" => KeymapId::UsDvorak,
-        "US_COLEMAK" => KeymapId::UsColemak,
-        _ => KeymapId::UsQwerty,
-    }
+/// Applies the US QWERTY keymap to the given key.
+pub fn apply(
+    key: Key,
+    modifier_state: &impl ModifierChecker,
+    lock_state: &impl LockStateChecker,
+) -> Option<KeyMeaning> {
+    US_QWERTY.apply(key, modifier_state, lock_state)
 }
 
 /// Extracts key meaning in accordance with the Fuchsia key event API specification.
@@ -130,13 +105,7 @@ impl<'a> Keymap<'a> {
             Key::Home => Some(NonPrintableKey::Home),
             Key::PageUp => Some(NonPrintableKey::PageUp),
             Key::PageDown => Some(NonPrintableKey::PageDown),
-            Key::RightAlt => Some(if std::ptr::eq(self, &*FR_AZERTY) {
-                // Used for Chromium testing - not yet handled consistently and
-                // seriously.
-                NonPrintableKey::AltGraph
-            } else {
-                NonPrintableKey::Alt
-            }),
+            Key::RightAlt => Some(NonPrintableKey::Alt),
             Key::LeftAlt => Some(NonPrintableKey::Alt),
             Key::RightCtrl => Some(NonPrintableKey::Control),
             Key::LeftCtrl => Some(NonPrintableKey::Control),
@@ -678,16 +647,7 @@ mod tests {
     use test_case::test_case;
 
     const HID_USAGE_KEY_A: u32 = 0x04;
-    const HID_USAGE_KEY_B: u32 = 0x05;
-    const HID_USAGE_KEY_C: u32 = 0x06;
-    const HID_USAGE_KEY_K: u32 = 0x0e;
-    const HID_USAGE_KEY_L: u32 = 0x0f;
-    const HID_USAGE_KEY_M: u32 = 0x10;
-    const HID_USAGE_KEY_N: u32 = 0x11;
-    const HID_USAGE_KEY_Q: u32 = 0x14;
-    const HID_USAGE_KEY_U: u32 = 0x18;
     const HID_USAGE_KEY_1: u32 = 0x1e;
-    const HID_USAGE_KEY_SEMICOLON: u32 = 0x33;
 
     // The effects of Shift and CapsLock on keys are different for non-letters.
     #[test]
@@ -750,181 +710,6 @@ mod tests {
             US_QWERTY.hid_usage_to_code_point(
                 HID_USAGE_KEY_A,
                 &ModifierState::new().with(Modifiers::LEFT_SHIFT),
-                &LockStateKeys::new(),
-            )?
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn spotcheck_fr_azerty_keymap() -> Result<()> {
-        assert_eq!(
-            'a' as u32,
-            FR_AZERTY.hid_usage_to_code_point(
-                HID_USAGE_KEY_Q,
-                &ModifierState::new(),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'M' as u32,
-            FR_AZERTY.hid_usage_to_code_point(
-                HID_USAGE_KEY_SEMICOLON,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            ',' as u32,
-            FR_AZERTY.hid_usage_to_code_point(
-                HID_USAGE_KEY_M,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn spotcheck_us_dvorak_keymap() -> Result<()> {
-        assert_eq!(
-            'a' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_A,
-                &ModifierState::default(),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'a' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_A,
-                &ModifierState::new().with(Modifiers::CAPS_LOCK),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'A' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_A,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            'x' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_B,
-                &ModifierState::new(),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'X' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_B,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            'X' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_B,
-                &ModifierState::new().with(Modifiers::LEFT_SHIFT),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'n' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_L,
-                &ModifierState::new(),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'N' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_L,
-                &ModifierState::new().with(Modifiers::LEFT_SHIFT),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'N' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_L,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            '\'' as u32,
-            US_DVORAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_Q,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn spotcheck_us_colemak_keymap() -> Result<()> {
-        assert_eq!(
-            'c' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_C,
-                &ModifierState::new().with(Modifiers::CAPS_LOCK),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'O' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_SEMICOLON,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            'L' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_U,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            'e' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_K,
-                &ModifierState::new(),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'M' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_M,
-                &ModifierState::new(),
-                &LockStateKeys::new().with(LockState::CAPS_LOCK),
-            )?
-        );
-        assert_eq!(
-            'A' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_A,
-                &ModifierState::new().with(Modifiers::LEFT_SHIFT),
-                &LockStateKeys::new(),
-            )?
-        );
-        assert_eq!(
-            'k' as u32,
-            US_COLEMAK.hid_usage_to_code_point(
-                HID_USAGE_KEY_N,
-                &ModifierState::new(),
                 &LockStateKeys::new(),
             )?
         );
@@ -1199,16 +984,6 @@ mod tests {
         LockStateKeys::new(),
         Some(KeyMeaning::Codepoint(65));
         "test basic mapping - capital letter")
-    ]
-    #[test_case(
-        // This test case is needed for Chromium integration.
-        // See https://fxbug.dev/42061371.
-        &FR_AZERTY,
-        Key::RightAlt,
-        ModifierState::new(),
-        LockStateKeys::new(),
-        Some(KeyMeaning::NonPrintableKey(NonPrintableKey::AltGraph));
-        "test FR AZERTY right Alt mapping to AltGr")
     ]
     #[test_case(
         &US_QWERTY,
