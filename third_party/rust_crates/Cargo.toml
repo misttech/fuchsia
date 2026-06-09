@@ -581,6 +581,9 @@ rustflags = [
   "--cfg=try_reserve_2",
 ]
 
+[gn.package.cast."0.2.7"]
+rustflags = []
+
 [gn.package.core-foundation-sys."0.8.7".platform."cfg(target_os = \"macos\")"]
 rustflags = ["-lframework=CoreFoundation"]
 

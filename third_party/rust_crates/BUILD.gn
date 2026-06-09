@@ -5169,19 +5169,19 @@ rustc_library("cargo-platform-v0_3_1") {
   applicable_licenses = [ ":cargo-platform-v0_3_1.license" ]
 }
 
-license("cast-v0_2_2.license") {
+license("cast-v0_2_7.license") {
   public_package_name = "cast"
   license_files = [
-    "//third_party/rust_crates/vendor/cast-0.2.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cast-0.2.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cast-0.2.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cast-0.2.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("cast-v0_2_2") {
+rustc_library("cast-v0_2_7") {
   crate_name = "cast"
-  source_root = "//third_party/rust_crates/vendor/cast-0.2.2/src/lib.rs"
-  output_name = "cast-2e8d76cdb85d3e9e"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/cast-0.2.7/src/lib.rs"
+  output_name = "cast-ff173f6b2ac2308b"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -5192,15 +5192,15 @@ rustc_library("cast-v0_2_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2e8d76cdb85d3e9e",
-    "-Cextra-filename=-2e8d76cdb85d3e9e",
+    "-Cmetadata=ff173f6b2ac2308b",
+    "-Cextra-filename=-ff173f6b2ac2308b",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cast-v0_2_2.license" ]
+  applicable_licenses = [ ":cast-v0_2_7.license" ]
 }
 
 license("cbc-v0_1_2.license") {
@@ -6172,7 +6172,7 @@ rustc_library("criterion-v0_2_11") {
   deps += [ ":csv-v1_4_0" ]
   deps += [ ":walkdir-v2_5_0" ]
   deps += [ ":atty-v0_2_11" ]
-  deps += [ ":cast-v0_2_2" ]
+  deps += [ ":cast-v0_2_7" ]
   deps += [ ":clap-v2_34_0" ]
   deps += [ ":itertools-v0_8_0" ]
   deps += [ ":lazy_static-v1_5_0" ]
