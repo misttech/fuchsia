@@ -98,6 +98,10 @@ pub fn resolve_dependencies<'a>(
             graph.insert_edge_from_root(name)?;
         }
 
+        for library in libraries.clone() {
+            graph.insert_edge_from_root(&library.name)?;
+        }
+
         for from in libraries {
             for to in &from.using {
                 graph.insert_edge(&from.name, &to.name)?;
@@ -114,6 +118,7 @@ pub fn resolve_dependencies<'a>(
 fn find_qualified_identifier(
     declaration: &bind_library::Declaration,
     using: &Vec<parser::common::Include>,
+    library_names: &std::collections::HashSet<CompoundIdentifier>,
     local_qualified: &CompoundIdentifier,
 ) -> Result<CompoundIdentifier, CompilerError> {
     if let Some(namespace) = declaration.identifier.parent() {
@@ -129,16 +134,20 @@ fn find_qualified_identifier(
         }
 
         // Find the fully qualified name from the included libraries.
-        let include = using
-            .iter()
-            .find(|include| {
-                namespace == include.name || Some(namespace.to_string()) == include.alias
-            })
-            .ok_or_else(|| {
-                CompilerError::UnresolvedQualification(declaration.identifier.clone())
-            })?;
+        let include = using.iter().find(|include| {
+            namespace == include.name || Some(namespace.to_string()) == include.alias
+        });
 
-        return Ok(include.name.nest(declaration.identifier.name.clone()));
+        if let Some(include) = include {
+            return Ok(include.name.nest(declaration.identifier.name.clone()));
+        }
+
+        // Check if the namespace exists in the compiled library names
+        if library_names.contains(&namespace) {
+            return Ok(namespace.nest(declaration.identifier.name.clone()));
+        }
+
+        return Err(CompilerError::UnresolvedQualification(declaration.identifier.clone()));
     }
 
     // It is not valid to extend an unqualified (i.e. local) key.
@@ -219,11 +228,15 @@ pub fn construct_symbol_table(
 ) -> Result<SymbolTable, CompilerError> {
     let mut symbol_table: HashMap<CompoundIdentifier, Symbol> = get_deprecated_symbols();
 
+    let libs = libraries.collect::<Vec<_>>();
+    let library_names =
+        libs.iter().map(|lib| lib.name.clone()).collect::<std::collections::HashSet<_>>();
+
     // Cache extended declarations and insert them into the symbol table after we resolve all
     // library declarations.
     let mut extended_declarations: Vec<SymbolTableDeclaration> = vec![];
 
-    for lib in libraries {
+    for lib in libs {
         let bind_library::Ast { name, using, declarations } = &*lib;
 
         let aliased_name = match aliases.get(name) {
@@ -242,12 +255,17 @@ pub fn construct_symbol_table(
             // it is unqualified use the local qualified name. Also do a first pass at checking
             // whether the extend keyword is used correctly. Once again keep separate entries for
             // symbol table keys (k) and values (v) because the key might be aliased.
-            let qualified_id = find_qualified_identifier(declaration, using, &local_qualified_id)?;
+            let qualified_id =
+                find_qualified_identifier(declaration, using, &library_names, &local_qualified_id)?;
 
             if let Some(alias) = aliased_name.as_ref() {
                 let alias_local_qualified_id = alias.nest(declaration.identifier.name.clone());
-                let alias_qualified_id =
-                    find_qualified_identifier(declaration, using, &alias_local_qualified_id)?;
+                let alias_qualified_id = find_qualified_identifier(
+                    declaration,
+                    using,
+                    &library_names,
+                    &alias_local_qualified_id,
+                )?;
 
                 let entry_data = SymbolTableDeclaration {
                     declaration: declaration.clone(),

@@ -144,5 +144,6 @@ group("tests") {
   deps = [
     ":bind-fuzzers",
     ":bind_tests",
+    ":lib_test($host_toolchain)",
   ]
 }

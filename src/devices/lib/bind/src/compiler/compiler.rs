@@ -903,9 +903,12 @@ mod test {
             },
         ];
 
+        let mut resolved = resolve_dependencies(&rules.using, libraries.iter()).unwrap();
+        resolved.sort_by_key(|lib| lib.name.to_string());
+
         assert_eq!(
-            resolve_dependencies(&rules.using, libraries.iter()),
-            Ok(vec![
+            resolved,
+            vec![
                 &bind_library::Ast {
                     name: make_identifier!("A"),
                     using: vec![Include { name: make_identifier!("A", "B"), alias: None }],
@@ -916,7 +919,12 @@ mod test {
                     using: vec![],
                     declarations: vec![],
                 },
-            ])
+                &bind_library::Ast {
+                    name: make_identifier!("A", "C"),
+                    using: vec![],
+                    declarations: vec![],
+                },
+            ]
         );
     }
 

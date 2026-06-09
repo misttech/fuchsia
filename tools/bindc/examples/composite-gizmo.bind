@@ -4,9 +4,6 @@
 
 composite gizmo_pci;
 
-using fuchsia.hardware.pci;
-using fuchsia.hardware.tee;
-using fuchsia.platform;
 
 primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
