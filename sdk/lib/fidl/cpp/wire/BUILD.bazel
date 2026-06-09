@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
 wavl_tree_headers = [
     "include/lib/fidl/cpp/wire/internal/intrusive_container/node_utils.h",

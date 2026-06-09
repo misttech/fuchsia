@@ -5,9 +5,9 @@
 """Defines the zircon library for the current configuration."""
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_noop_atom")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/cc:shared_library.bzl", "cc_link_stub_from_ifs_file")
+load("//build/bazel/rules/idk:idk_atom.bzl", "idk_noop_atom")
 
 # Note: The definitions here are less complex than in the BUILD.gn, which
 # supports kernel-specific requirements that do not apply to the Bazel graph.

@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_go_binary_host_tool")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 go_library(

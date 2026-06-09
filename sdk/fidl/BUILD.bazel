@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
+load("//build/bazel/rules/idk:idk_molecule.bzl", "idk_molecule")
 
 # The lists of FIDL libraries with categories.
 # Targets must be included if and only if the `fidl()` target specifies:

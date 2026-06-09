@@ -554,7 +554,7 @@ func TestIDKConversion(t *testing.T) {
 	}{
 		{
 			name: "IDK C++ source library",
-			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+			bazel: `load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
 idk_cc_source_library(
 	name = "foo",
@@ -603,7 +603,7 @@ idk_cc_source_library(
 			// This test case should be identical to the one for
 			// `idk_cc_source_library()` except for `sdk_publishable` in the
 			// expectation and `sdk` the input and expectation.
-			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
+			bazel: `load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library_zx")
 
 idk_cc_source_library_zx(
 	name = "foo",
@@ -687,7 +687,7 @@ idk_cc_source_library_zx(
 		},
 		{
 			name: "Fuchsia and non-Fuchsia source files",
-			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+			bazel: `load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
 list_of_files = ["baz.cc"]
 list_of_internal_hdrs = ["include/lib/foobar/internal/internal_baz.h"]

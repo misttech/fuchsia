@@ -6,22 +6,25 @@
 
 load("@fuchsia_build_info//:args.bzl", "target_cpu")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/idk:idk_atom.bzl", "idk_noop_atom")
 load(
-    "//build/bazel/bazel_idk:defs.bzl",
+    "//build/bazel/rules/idk:idk_cc_prebuilt_library.bzl",
     "idk_cc_shared_library",
     "idk_cc_shared_library_zx",
-    "idk_cc_source_library",
-    "idk_cc_source_library_zx",
     "idk_cc_static_library",
     "idk_cc_static_library_zx",
-    "idk_data",
-    "idk_molecule",
-    "idk_noop_atom",
 )
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load(
+    "//build/bazel/rules/idk:idk_cc_source_library.bzl",
+    "idk_cc_source_library",
+    "idk_cc_source_library_zx",
+)
+load("//build/bazel/rules/idk:idk_data.bzl", "idk_data")
 load(
     "//build/bazel/rules/idk:idk_molecule.bzl",
     "idk_all_api_level_and_cpu_combinations_molecule",
+    "idk_molecule",
 )
 load(
     "//build/bazel/rules/idk:idk_transitions.bzl",
