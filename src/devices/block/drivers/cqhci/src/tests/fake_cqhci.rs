@@ -340,7 +340,9 @@ impl CommandQueueHost for TestCommandQueueHost {
     }
 
     async fn disable(&self) -> Result<(), zx::Status> {
-        self.0.task_handler.state.lock().enabled = false;
+        let mut state = self.0.task_handler.state.lock();
+        state.enabled = false;
+        state.driver_in_recovery = false;
         Ok(())
     }
 }
@@ -389,6 +391,10 @@ struct FakeHardwareState {
     tasks_in_progress: u32,
     active_partition: u32,
     valid_crypto_slots: std::collections::HashSet<u8>,
+    /// Set to true when the driver acknowledges an error interrupt, and cleared when the driver
+    /// resets the hardware (by disabling CQE). While true, the driver must not attempt to submit
+    /// new tasks.
+    driver_in_recovery: bool,
 }
 
 impl FakeHardwareState {
@@ -487,6 +493,7 @@ impl mmio::Mmio for FakeMmio {
     fn try_store32(&mut self, offset: usize, value: u32) -> Result<(), mmio::MmioError> {
         let mut state = self.state.lock();
         let enabled = state.enabled;
+        let driver_in_recovery = state.driver_in_recovery;
         let buf = self.buffer_mut(&mut state);
 
         let idx = offset / 4;
@@ -494,6 +501,7 @@ impl mmio::Mmio for FakeMmio {
             MmioRegionType::Cqhci => match offset {
                 CQHCI_CQ_TDBR_OFFSET => {
                     assert!(enabled, "Doorbell rung while CQHCI is disabled");
+                    assert!(!driver_in_recovery, "Doorbell rung while driver is in recovery");
                     // Notify the FakeTaskHandler on doorbell ring
                     let current = buf[idx];
                     let new_val = current | value;
@@ -513,6 +521,9 @@ impl mmio::Mmio for FakeMmio {
                     let current = buf[idx];
                     let cleared = current & !value;
                     buf[idx] = cleared;
+                    if CqhciCqInterruptStatusRegister::from_raw(value).is_error() {
+                        state.driver_in_recovery = true;
+                    }
                     Ok(())
                 }
                 CQHCI_CQ_CTL_OFFSET => {
@@ -651,6 +662,7 @@ impl FakeTaskHandler {
                 tasks_in_progress: 0,
                 active_partition: EmmcPartitionId::UserDataPartition as u32,
                 valid_crypto_slots: std::collections::HashSet::new(),
+                driver_in_recovery: false,
             })),
             bti,
             partition_vmos,
@@ -817,7 +829,11 @@ impl FakeTaskHandler {
 
             if !has_error {
                 let (target_vmo, rpmb_active, _active_partition) = {
-                    let state = self.state.lock();
+                    let mut state = self.state.lock();
+                    if !state.enabled {
+                        state.tasks_in_progress &= !(1 << task_id);
+                        return;
+                    }
                     (
                         self.partition_vmos
                             .get(&state.active_partition)

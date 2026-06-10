@@ -250,7 +250,7 @@ async fn test_forwards_non_cq_interrupts() {
     started_driver.stop_driver().await;
 }
 
-#[fuchsia::test]
+#[fuchsia::test(threads = 2)]
 async fn test_error_recovery() {
     let (fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");
@@ -268,26 +268,35 @@ async fn test_error_recovery() {
     let on_error_listener = state.lock().on_error_event.listen();
 
     // Start two tasks to continuously submit requests.
-    let reader = {
-        let block_client = connect_block_client(&started_driver, "user").await;
-        let state = state.clone();
-        fixture.scope.spawn(async move {
-            for _ in 0..MAX_PIN_OPS {
-                let mut buf = vec![0u8; 512];
-                let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
-                let mut state = state.lock();
-                if result.is_err() {
-                    state.num_errors += 1;
-                    state.on_error_event.notify(usize::MAX);
-                }
-                if state.abort {
-                    break;
-                }
+    let block_client = {
+        let proxy = connect_block_proxy(&started_driver, "user");
+        RemoteBlockClient::new(proxy)
+    }
+    .await
+    .expect("failed to create block client");
+    let state_clone = state.clone();
+    let reader = fixture.scope.spawn(async move {
+        // Limit iterations to avoid exhausting the fake BTI's physical addresses.
+        for _ in 0..1000 {
+            let mut buf = vec![0u8; 512];
+            let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+            let mut state = state_clone.lock();
+            if result.is_err() {
+                state.num_errors += 1;
+                state.on_error_event.notify(usize::MAX);
             }
-        })
-    };
+            if state.abort {
+                break;
+            }
+        }
+    });
     let flusher = {
-        let block_client = connect_block_client(&started_driver, "user").await;
+        let block_client = {
+            let proxy = connect_block_proxy(&started_driver, "user");
+            RemoteBlockClient::new(proxy)
+        }
+        .await
+        .expect("failed to create block client");
         let state = state.clone();
         fixture.scope.spawn(async move {
             loop {
@@ -313,6 +322,9 @@ async fn test_error_recovery() {
     reader.await;
     flusher.await;
 
+    // We should only see tasks which were currently in-flight failing. Since there are only two
+    // clients (1 reader, 1 flusher), at most 2 tasks should fail (the one we explicitly failed,
+    // and any which was already in-flight).
     assert!(state.lock().num_errors <= 2);
 
     started_driver.stop_driver().await;

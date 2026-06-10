@@ -355,7 +355,10 @@ impl Inner {
 
     /// If `true`, then the caller should wait before attempting to submit the new task.
     fn should_wait_to_submit_tasks(&self) -> bool {
-        !self.async_task_queue.is_empty() || self.state != State::Enabled || self.blocked
+        !self.async_task_queue.is_empty()
+            || self.state != State::Enabled
+            || self.blocked
+            || self.needs_recovery
     }
 
     fn snapshot_regs(&self, capabilities: &CqhciCqCapsRegister) -> CqhciRegisterSnapshot {
