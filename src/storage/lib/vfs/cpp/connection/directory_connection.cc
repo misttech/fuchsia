@@ -423,17 +423,16 @@ void DirectoryConnection::Rename(RenameRequestView request, RenameCompleter::Syn
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
-  // TODO(https://fxbug.dev/346585458): This operation should require the MODIFY_DIRECTORY right
-  // instead of the WRITE_BYTES right.
-  if (!(rights() & fuchsia_io::Rights::kWriteBytes)) {
+  if (!(rights() & fuchsia_io::Rights::kModifyDirectory)) {
     completer.ReplyError(ZX_ERR_ACCESS_DENIED);
     return;
   }
   auto fs = vfs();
-  zx_status_t status = fs ? fs->Rename(std::move(request->dst_parent_token), vnode(),
-                                       std::string_view(request->src.data(), request->src.size()),
-                                       std::string_view(request->dst.data(), request->dst.size()))
-                          : ZX_ERR_CANCELED;
+  zx_status_t status =
+      fs ? fs->Rename(std::move(request->dst_parent_token), vnode(),
+                      std::string_view(request->src.data(), request->src.size()),
+                      std::string_view(request->dst.data(), request->dst.size()), rights())
+         : ZX_ERR_CANCELED;
   if (status == ZX_OK) {
     completer.ReplySuccess();
   } else {

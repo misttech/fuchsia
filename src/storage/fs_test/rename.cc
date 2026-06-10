@@ -5,8 +5,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/fdio/cpp/caller.h>
+#include <lib/fdio/directory.h>
 #include <limits.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -404,6 +405,172 @@ TEST_P(RenameTest, RenameDirectoryToChildIsForbidden) {
             -1);
   EXPECT_EQ(rename(GetPath("alpha/bravo").c_str(), GetPath("alpha/bravo/charlie").c_str()), -1);
   EXPECT_EQ(rename(GetPath("alpha/bravo").c_str(), GetPath("alpha/bravo").c_str()), 0);
+}
+
+TEST_P(RenameTest, RenameRightsEscalation) {
+  ASSERT_EQ(mkdir(GetPath("dir_src").c_str(), 0755), 0);
+  ASSERT_EQ(mkdir(GetPath("dir_dst").c_str(), 0755), 0);
+  int fd = open(GetPath("dir_src/file").c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+  ASSERT_GT(fd, 0);
+  close(fd);
+
+  auto src_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(fdio_open3(GetPath("dir_src").c_str(),
+                       static_cast<uint64_t>(fio::kPermWritable | fio::Flags::kProtocolDirectory),
+                       src_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient src_client{std::move(src_endpoints.client)};
+
+  auto dst_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(fdio_open3(GetPath("dir_dst").c_str(),
+                       static_cast<uint64_t>(fio::kPermReadable | fio::kPermWritable |
+                                             fio::Flags::kProtocolDirectory),
+                       dst_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient dst_client{std::move(dst_endpoints.client)};
+
+  auto token_result = dst_client->GetToken();
+  ASSERT_EQ(token_result.status(), ZX_OK);
+  ASSERT_EQ(token_result->s, ZX_OK);
+
+  zx::handle token_handle;
+  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
+  zx::event token(token_handle.release());
+
+  auto rename_result =
+      src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file"));
+  ASSERT_EQ(rename_result.status(), ZX_OK);
+  ASSERT_TRUE(rename_result->is_error());
+  EXPECT_EQ(rename_result->error_value(), ZX_ERR_ACCESS_DENIED);
+
+  // Clean up
+  EXPECT_EQ(unlink(GetPath("dir_src/file").c_str()), 0);
+  EXPECT_EQ(rmdir(GetPath("dir_src").c_str()), 0);
+  EXPECT_EQ(rmdir(GetPath("dir_dst").c_str()), 0);
+}
+
+TEST_P(RenameTest, RenameWithinSameDirectoryWithRestrictedRightsSucceeds) {
+  ASSERT_EQ(mkdir(GetPath("dir_src").c_str(), 0755), 0);
+  int fd = open(GetPath("dir_src/file").c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+  ASSERT_GT(fd, 0);
+  close(fd);
+
+  auto src_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(fdio_open3(GetPath("dir_src").c_str(),
+                       static_cast<uint64_t>(fio::kPermWritable | fio::Flags::kProtocolDirectory),
+                       src_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient src_client{std::move(src_endpoints.client)};
+
+  auto token_result = src_client->GetToken();
+  ASSERT_EQ(token_result.status(), ZX_OK);
+  ASSERT_EQ(token_result->s, ZX_OK);
+
+  zx::handle token_handle;
+  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
+  zx::event token(token_handle.release());
+
+  auto rename_result =
+      src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file2"));
+  ASSERT_EQ(rename_result.status(), ZX_OK);
+  EXPECT_TRUE(rename_result->is_ok());
+
+  // Clean up
+  EXPECT_EQ(unlink(GetPath("dir_src/file2").c_str()), 0);
+  EXPECT_EQ(rmdir(GetPath("dir_src").c_str()), 0);
+}
+
+TEST_P(RenameTest, RenameWithoutModifyDirectoryFails) {
+  ASSERT_EQ(mkdir(GetPath("dir_src").c_str(), 0755), 0);
+  ASSERT_EQ(mkdir(GetPath("dir_dst").c_str(), 0755), 0);
+  int fd = open(GetPath("dir_src/file").c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+  ASSERT_GT(fd, 0);
+  close(fd);
+
+  auto src_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  fio::Flags flags =
+      (fio::kPermWritable & ~fio::Flags::kPermModifyDirectory) | fio::Flags::kProtocolDirectory;
+  ASSERT_EQ(fdio_open3(GetPath("dir_src").c_str(), static_cast<uint64_t>(flags),
+                       src_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient src_client{std::move(src_endpoints.client)};
+
+  auto dst_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(fdio_open3(GetPath("dir_dst").c_str(),
+                       static_cast<uint64_t>(fio::kPermReadable | fio::kPermWritable |
+                                             fio::Flags::kProtocolDirectory),
+                       dst_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient dst_client{std::move(dst_endpoints.client)};
+
+  auto token_result = dst_client->GetToken();
+  ASSERT_EQ(token_result.status(), ZX_OK);
+  ASSERT_EQ(token_result->s, ZX_OK);
+
+  zx::handle token_handle;
+  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
+  zx::event token(token_handle.release());
+
+  auto rename_result =
+      src_client->Rename(fidl::StringView("file"), std::move(token), fidl::StringView("file"));
+  ASSERT_EQ(rename_result.status(), ZX_OK);
+  ASSERT_TRUE(rename_result->is_error());
+  EXPECT_EQ(rename_result->error_value(), ZX_ERR_ACCESS_DENIED);
+
+  // Clean up
+  EXPECT_EQ(unlink(GetPath("dir_src/file").c_str()), 0);
+  EXPECT_EQ(rmdir(GetPath("dir_src").c_str()), 0);
+  EXPECT_EQ(rmdir(GetPath("dir_dst").c_str()), 0);
+}
+
+TEST_P(RenameTest, RenameWithinSameDirectoryWithoutModifyDirectoryFails) {
+  ASSERT_EQ(mkdir(GetPath("dir_src").c_str(), 0755), 0);
+  int fd = open(GetPath("dir_src/file").c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+  ASSERT_GT(fd, 0);
+  close(fd);
+
+  // Connection 1: Restricted (has WRITE_BYTES, lacks MODIFY_DIRECTORY).
+  // We will call Rename on this.
+  auto src_restricted_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  fio::Flags restricted_flags =
+      (fio::kPermWritable & ~fio::Flags::kPermModifyDirectory) | fio::Flags::kProtocolDirectory;
+  ASSERT_EQ(fdio_open3(GetPath("dir_src").c_str(), static_cast<uint64_t>(restricted_flags),
+                       src_restricted_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient src_restricted_client{std::move(src_restricted_endpoints.client)};
+
+  // Connection 2: Full (has MODIFY_DIRECTORY).
+  // We will get the token from this.
+  auto src_full_endpoints = fidl::Endpoints<fio::Directory>::Create();
+  ASSERT_EQ(fdio_open3(GetPath("dir_src").c_str(),
+                       static_cast<uint64_t>(fio::kPermWritable | fio::Flags::kProtocolDirectory),
+                       src_full_endpoints.server.TakeChannel().release()),
+            ZX_OK);
+  fidl::WireSyncClient src_full_client{std::move(src_full_endpoints.client)};
+
+  auto token_result = src_full_client->GetToken();
+  ASSERT_EQ(token_result.status(), ZX_OK);
+  ASSERT_EQ(token_result->s, ZX_OK);
+
+  zx::handle token_handle;
+  ASSERT_EQ(token_result->token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_handle), ZX_OK);
+  zx::event token(token_handle.release());
+
+  // Call Rename on the restricted connection, using the token from the full connection.
+  auto rename_result = src_restricted_client->Rename(fidl::StringView("file"), std::move(token),
+                                                     fidl::StringView("file2"));
+  ASSERT_EQ(rename_result.status(), ZX_OK);
+  ASSERT_TRUE(rename_result->is_error());
+  EXPECT_EQ(rename_result->error_value(), ZX_ERR_ACCESS_DENIED);
+
+  // Clean up (if it incorrectly succeeded, we need to clean up file2, otherwise file)
+  struct stat st;
+  if (stat(GetPath("dir_src/file2").c_str(), &st) == 0) {
+    EXPECT_EQ(unlink(GetPath("dir_src/file2").c_str()), 0);
+  } else {
+    EXPECT_EQ(unlink(GetPath("dir_src/file").c_str()), 0);
+  }
+  EXPECT_EQ(rmdir(GetPath("dir_src").c_str()), 0);
 }
 
 INSTANTIATE_TEST_SUITE_P(/*no prefix*/, RenameTest, testing::ValuesIn(AllTestFilesystems()),

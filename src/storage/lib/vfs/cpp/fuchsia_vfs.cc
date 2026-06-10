@@ -224,7 +224,8 @@ zx_status_t FuchsiaVfs::TokenToVnode(zx::event token, fbl::RefPtr<Vnode>* out) {
 }
 
 zx_status_t FuchsiaVfs::Rename(zx::event token, fbl::RefPtr<Vnode> oldparent,
-                               std::string_view oldStr, std::string_view newStr) {
+                               std::string_view oldStr, std::string_view newStr,
+                               fuchsia_io::Rights source_rights) {
   // Local filesystem
   bool old_must_be_dir;
   {
@@ -260,6 +261,11 @@ zx_status_t FuchsiaVfs::Rename(zx::event token, fbl::RefPtr<Vnode> oldparent,
     }
     if (zx_status_t status = TokenToVnode(std::move(token), &newparent); status != ZX_OK) {
       return status;
+    }
+
+    if (oldparent != newparent &&
+        (source_rights & fuchsia_io::kRwStarDir) != fuchsia_io::kRwStarDir) {
+      return ZX_ERR_ACCESS_DENIED;
     }
 
     if (zx_status_t status =

@@ -223,6 +223,13 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             return Err(Status::ACCESS_DENIED);
         }
 
+        let is_same_dir =
+            Arc::ptr_eq(&(self.base.directory.clone() as Arc<dyn MutableDirectory>), &dst_parent);
+
+        if !is_same_dir && !self.base.options.rights.contains(fio::RW_STAR_DIR) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
         dst_parent.clone().rename(self.base.directory.clone(), src, dst).await
     }
 }

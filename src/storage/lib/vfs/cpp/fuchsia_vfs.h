@@ -155,7 +155,8 @@ class FuchsiaVfs : public Vfs {
   zx_status_t Link(zx::event token, fbl::RefPtr<Vnode> oldparent, std::string_view oldStr,
                    std::string_view newStr) __TA_EXCLUDES(vfs_lock_);
   zx_status_t Rename(zx::event token, fbl::RefPtr<Vnode> oldparent, std::string_view oldStr,
-                     std::string_view newStr) __TA_EXCLUDES(vfs_lock_);
+                     std::string_view newStr, fuchsia_io::Rights source_rights)
+      __TA_EXCLUDES(vfs_lock_);
 
   // Provides the implementation for fuchsia.io.Directory.QueryFilesystem().
   // This default implementation returns ZX_ERR_NOT_SUPPORTED.
