@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::convert::{
-    convert_channel_band, convert_rssi_bucket, convert_security_type, convert_snr_bucket,
+    convert_channel_band, convert_is_owe_transition, convert_rssi_bucket, convert_security_type,
+    convert_snr_bucket,
 };
 use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 use crate::util::cobalt_logger::log_cobalt_batch;
@@ -260,6 +261,7 @@ impl ConnectDisconnectLogger {
         result: fidl_ieee80211::StatusCode,
         bss: &BssDescription,
         is_credential_rejected: bool,
+        is_owe_transition: bool,
     ) {
         let mut flushed_successive_failures = None;
         let mut downtime_duration = None;
@@ -283,7 +285,7 @@ impl ConnectDisconnectLogger {
         self.log_connect_attempt_cobalt(result, flushed_successive_failures, downtime_duration)
             .await;
         if result == fidl_ieee80211::StatusCode::Success {
-            self.log_device_connected_cobalt_metrics(bss).await;
+            self.log_device_connected_cobalt_metrics(bss, is_owe_transition).await;
         }
 
         let security_type = convert_security_type(&bss.protection());
@@ -291,6 +293,7 @@ impl ConnectDisconnectLogger {
         let channel_band = convert_channel_band(primary_channel);
         let rssi_bucket = convert_rssi_bucket(bss.rssi_dbm);
         let snr_bucket = convert_snr_bucket(bss.snr_db);
+        let is_owe_transition_dim = convert_is_owe_transition(is_owe_transition);
 
         let mut daily_stats = self.daily_connect_stats.lock();
         daily_stats.connect_per_security_type.entry(security_type).or_default().increment(result);
@@ -302,6 +305,11 @@ impl ConnectDisconnectLogger {
         daily_stats.connect_per_channel_band.entry(channel_band).or_default().increment(result);
         daily_stats.connect_per_rssi_bucket.entry(rssi_bucket).or_default().increment(result);
         daily_stats.connect_per_snr_bucket.entry(snr_bucket).or_default().increment(result);
+        daily_stats
+            .connect_per_is_owe_transition
+            .entry(is_owe_transition_dim)
+            .or_default()
+            .increment(result);
     }
 
     fn log_connect_attempt_inspect(
@@ -370,7 +378,11 @@ impl ConnectDisconnectLogger {
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_connect_attempt_cobalt");
     }
 
-    async fn log_device_connected_cobalt_metrics(&self, bss: &BssDescription) {
+    async fn log_device_connected_cobalt_metrics(
+        &self,
+        bss: &BssDescription,
+        is_owe_transition: bool,
+    ) {
         let mut metric_events = vec![];
         metric_events.push(MetricEvent {
             metric_id: metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
@@ -448,6 +460,13 @@ impl ConnectDisconnectLogger {
             metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
             event_codes: vec![],
             payload: MetricEventPayload::StringValue(oui_string),
+        });
+
+        let is_owe_transition_dim = convert_is_owe_transition(is_owe_transition);
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+            event_codes: vec![is_owe_transition_dim as u32],
+            payload: MetricEventPayload::Count(1),
         });
 
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_device_connected_cobalt_metrics");
@@ -602,6 +621,21 @@ impl ConnectDisconnectLogger {
                             metric_id:
                                 metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_SNR_BUCKET_METRIC_ID,
                             event_codes: vec![snr_bucket as u32],
+                            payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
+                                success_rate,
+                            )),
+                        });
+                    }
+                }
+                for (is_owe_transition, counter) in
+                    daily_stats.connect_per_is_owe_transition.drain()
+                {
+                    if counter.total > 0 {
+                        let success_rate = counter.success as f64 / counter.total as f64;
+                        metric_events.push(MetricEvent {
+                            metric_id:
+                                metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+                            event_codes: vec![is_owe_transition as u32],
                             payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(
                                 success_rate,
                             )),
@@ -904,6 +938,10 @@ struct DailyConnectStats {
         HashMap<metrics::ConnectivityWlanMetricDimensionRssiBucket, ConnectAttemptsCounter>,
     connect_per_snr_bucket:
         HashMap<metrics::ConnectivityWlanMetricDimensionSnrBucket, ConnectAttemptsCounter>,
+    connect_per_is_owe_transition: HashMap<
+        metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition,
+        ConnectAttemptsCounter,
+    >,
 }
 
 impl DailyConnectStats {
@@ -915,6 +953,7 @@ impl DailyConnectStats {
             connect_per_channel_band: HashMap::new(),
             connect_per_rssi_bucket: HashMap::new(),
             connect_per_snr_bucket: HashMap::new(),
+            connect_per_is_owe_transition: HashMap::new(),
         }
     }
 }
@@ -961,8 +1000,12 @@ mod tests {
             &client,
         );
         let bss = random_bss_description!();
-        let mut log_connect_attempt =
-            pin!(logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss, false));
+        let mut log_connect_attempt = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss,
+            false,
+            false
+        ));
         assert!(
             harness.run_until_stalled_drain_cobalt_events(&mut log_connect_attempt).is_ready(),
             "`log_connect_attempt` did not complete",
@@ -1040,6 +1083,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1125,6 +1169,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1168,6 +1213,18 @@ mod tests {
             test_helper.get_logged_metrics(metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID);
         assert_eq!(metrics_oui.len(), 1);
         assert_eq!(metrics_oui[0].payload, MetricEventPayload::StringValue("00F620".to_string()));
+
+        let metrics_owe_transition = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+        );
+        assert_eq!(metrics_owe_transition.len(), 1);
+        assert_eq!(
+            metrics_owe_transition[0].event_codes,
+            vec![
+                metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::No
+                    as u32
+            ]
+        );
     }
 
     #[fuchsia::test]
@@ -1185,6 +1242,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1234,6 +1292,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1283,6 +1342,7 @@ mod tests {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                 &bss_description,
+                false,
                 false
             ));
             assert_eq!(
@@ -1298,6 +1358,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1315,6 +1376,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1345,6 +1407,7 @@ mod tests {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                 &bss_description,
+                false,
                 false
             ));
             assert_eq!(
@@ -1407,8 +1470,12 @@ mod tests {
         bss.snr_db = 15; // snr 15 -> From11To15 (event code 3)
 
         // 1 success, 1 failure => 50% success rate
-        let mut test_fut =
-            pin!(logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss, false));
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss,
+            false,
+            true
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -1417,7 +1484,8 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
             &bss,
-            false
+            false,
+            true
         ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -1509,6 +1577,62 @@ mod tests {
             vec![metrics::ConnectivityWlanMetricDimensionSnrBucket::From11To15 as u32]
         );
         assert_eq!(daily_snr_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+
+        // Check is_owe_transition breakdown
+        let daily_owe_metrics = test_helper.get_logged_metrics(
+            metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+        );
+        assert_eq!(daily_owe_metrics.len(), 1);
+        assert_eq!(
+            daily_owe_metrics[0].event_codes,
+            vec![
+                metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::Yes
+                    as u32
+            ]
+        );
+        assert_eq!(daily_owe_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+    }
+
+    #[fuchsia::test]
+    fn test_log_connect_attempt_cobalt_owe_transition() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Generate BSS Description
+        let bss_description = random_bss_description!(Wpa2,
+            channel: Channel::new(157, Cbw::Cbw40),
+            bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
+        );
+
+        // Log the event with is_owe_transition = true
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false,
+            true
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let metrics_owe_transition = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+        );
+        assert_eq!(metrics_owe_transition.len(), 1);
+        assert_eq!(
+            metrics_owe_transition[0].event_codes,
+            vec![
+                metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::Yes
+                    as u32
+            ]
+        );
     }
 
     #[fuchsia::test]
@@ -1551,6 +1675,7 @@ mod tests {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                 &bss_description,
+                false,
                 false
             ));
             assert_eq!(
@@ -1812,6 +1937,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1850,6 +1976,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1882,6 +2009,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1929,6 +2057,7 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::Success,
             &bss_description,
+            false,
             false
         ));
         assert_eq!(
@@ -1977,7 +2106,8 @@ mod tests {
         let mut test_fut = pin!(logger.handle_connect_attempt(
             fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
             &bss_description,
-            true
+            true,
+            false
         ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),

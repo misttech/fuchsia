@@ -64,3 +64,26 @@ pub fn convert_snr_bucket(snr: i8) -> metrics::ConnectivityWlanMetricDimensionSn
         _ => _0,
     }
 }
+
+pub fn convert_is_owe_transition(
+    is_owe_transition: bool,
+) -> metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition {
+    use metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::*;
+    if is_owe_transition { Yes } else { No }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(true, metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::Yes)]
+    #[test_case(false, metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition::No)]
+    fn test_convert_is_owe_transition(
+        is_owe_transition: bool,
+        expected: metrics::DailyConnectSuccessRateBreakdownByIsOweTransitionMetricDimensionIsOweTransition,
+    ) {
+        let actual = convert_is_owe_transition(is_owe_transition);
+        assert_eq!(actual, expected);
+    }
+}

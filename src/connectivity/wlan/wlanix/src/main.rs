@@ -1178,6 +1178,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                     Ok(ConnectResult::Success(connected)) => {
                         info!("Connected to requested network");
                         // Report the requested SSID for OWE transition networks.
+                        let is_owe_transition = connected.ssid_if_owe_transition.is_some();
                         let ssid = connected
                             .ssid_if_owe_transition
                             .unwrap_or_else(|| connected.bss.ssid.clone());
@@ -1186,6 +1187,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                             result: fidl_ieee80211::StatusCode::Success,
                             bss: connected.bss.clone(),
                             is_credential_rejected: false,
+                            is_owe_transition,
                         });
                         let event = fidl_wlanix::SupplicantStaIfaceCallbackOnStateChangedRequest {
                             new_state: Some(fidl_wlanix::StaIfaceCallbackState::Completed),
@@ -1220,6 +1222,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                             result: fail.status_code,
                             bss: fail.bss.clone(),
                             is_credential_rejected: fail.is_credential_rejected,
+                            is_owe_transition: fail.is_owe_transition,
                         });
                         let event =
                             fidl_wlanix::SupplicantStaIfaceCallbackOnAssociationRejectedRequest {
@@ -4304,7 +4307,7 @@ mod tests {
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult { result, bss, is_credential_rejected: _ })) => {
+            Ok(Some(TelemetryEvent::ConnectResult { result, bss, is_credential_rejected: _, is_owe_transition: _ })) => {
                 assert_eq!(result, fidl_ieee80211::StatusCode::Success);
                 assert_eq!(bss.ssid, Ssid::try_from("foo").unwrap());
                 assert_eq!(bss.bssid, Bssid::from([42, 42, 42, 42, 42, 42]));
@@ -4679,7 +4682,8 @@ mod tests {
             Ok(Some(TelemetryEvent::ConnectResult {
                 result: _,
                 bss: _,
-                is_credential_rejected: _
+                is_credential_rejected: _,
+                is_owe_transition: _,
             }))
         );
 
@@ -4782,7 +4786,8 @@ mod tests {
             Ok(Some(TelemetryEvent::ConnectResult {
                 result: _,
                 bss: _,
-                is_credential_rejected: _
+                is_credential_rejected: _,
+                is_owe_transition: _,
             }))
         );
 

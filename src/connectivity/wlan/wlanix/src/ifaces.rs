@@ -322,6 +322,7 @@ pub(crate) struct ConnectFail {
     pub status_code: fidl_ieee80211::StatusCode,
     pub is_credential_rejected: bool,
     pub timed_out: bool,
+    pub is_owe_transition: bool,
 }
 
 #[derive(Debug)]
@@ -802,12 +803,14 @@ impl ClientIface for SmeClientIface {
                 ssid_if_owe_transition,
             }))
         } else {
+            let is_owe_transition = ssid_if_owe_transition.is_some();
             self.bss_scorer.report_connect_failure(bssid, &sme_result);
             Ok(ConnectResult::Fail(ConnectFail {
                 bss: Box::new(bss_description),
                 status_code: sme_result.code,
                 is_credential_rejected: sme_result.is_credential_rejected,
                 timed_out,
+                is_owe_transition,
             }))
         }
     }
@@ -1259,6 +1262,7 @@ pub mod test_utils {
                     status_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
                     is_credential_rejected: false,
                     timed_out: false,
+                    is_owe_transition: false,
                 }))
             }
         }
