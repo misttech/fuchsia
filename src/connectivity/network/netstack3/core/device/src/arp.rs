@@ -10,7 +10,7 @@ use alloc::fmt::Debug;
 
 use log::{debug, trace, warn};
 use net_types::ip::{Ip, Ipv4, Ipv4Addr};
-use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
+use net_types::{SpecifiedAddr, UnicastAddr, UnicastAddress as _, Witness as _};
 use netstack3_base::{
     CoreTimerContext, Counter, CounterContext, DeviceIdContext, EventContext, FrameDestination,
     InstantBindingsTypes, LinkDevice, NetworkSerializer, SendFrameContext, SendFrameError,
@@ -439,6 +439,14 @@ fn handle_packet<
     // some RFCs built on top of ARP (i.e. RFC 5227 - IPv4 Address Conflict
     // Detection) explicitly call out that echoed ARP packets should be ignored.
     let sender_hw_addr = packet.sender_hardware_address();
+    // TODO(https://fxbug.dev/42083958): Actually use UnicastAddr everywhere.
+    if !sender_hw_addr.is_unicast() {
+        debug!(
+            "dropping arp packet with non-unicast sender hardware address: {:?}",
+            sender_hw_addr
+        );
+        return;
+    }
     if sender_hw_addr == *core_ctx.get_hardware_addr(bindings_ctx, &device_id) {
         core_ctx.counters().rx_echoed_packets.increment();
         debug!("dropping an echoed ARP packet: {op:?}");

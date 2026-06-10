@@ -30,7 +30,7 @@ use packet_formats::testutil::{
     parse_ethernet_frame, parse_icmp_packet_in_ip_packet_in_ethernet_frame,
 };
 use packet_formats::udp::UdpPacketBuilder;
-use test_case::test_case;
+use test_case::{test_case, test_matrix};
 
 use netstack3_base::testutil::{
     FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext, set_logger_for_test,
@@ -47,7 +47,7 @@ use netstack3_core::testutil::{
     CtxPairExt, DEFAULT_INTERFACE_METRIC, DispatchedFrame, FakeBindingsCtx, FakeCtx,
     FakeCtxBuilder, FakeCtxNetworkSpec, new_simple_fake_network,
 };
-use netstack3_core::{CoreTxMetadata, IpExt, UnlockedCoreCtx};
+use netstack3_core::{CoreTxMetadata, IpExt, TimerId, UnlockedCoreCtx};
 use netstack3_device::ARP_OVERRIDE_LOCK_TIME;
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_hashmap::HashMap;
@@ -57,8 +57,8 @@ use netstack3_ip::device::{
 };
 use netstack3_ip::icmp::{self, REQUIRED_NDP_IP_PACKET_HOP_LIMIT};
 use netstack3_ip::nud::{
-    self, Delay, DynamicNeighborState, DynamicNeighborUpdateSource, Incomplete, NeighborState,
-    NudConfigContext, NudContext, NudHandler, Reachable, Stale,
+    self, ConfirmationFlags, Delay, DynamicNeighborState, DynamicNeighborUpdateSource, Incomplete,
+    NeighborState, NudConfigContext, NudContext, NudHandler, Reachable, Stale,
 };
 use netstack3_ip::{self as ip, AddableEntry, AddableMetric};
 use netstack3_tcp::{self as tcp, TcpSocketId};
@@ -274,6 +274,46 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
     );
 }
 
+fn incoming_neighbor_confirmation<I: TestIpExt>(remote_mac: Mac, solicited: bool) -> Buf<Vec<u8>> {
+    I::map_ip_in(
+        I::TEST_ADDRS,
+        |TestAddrs { local_ip, local_mac, remote_ip, .. }| {
+            ArpPacketBuilder::new(
+                ArpOp::Response,
+                remote_mac,
+                *remote_ip,
+                local_mac.get(),
+                *local_ip,
+            )
+            .into_serializer()
+            .wrap_in(EthernetFrameBuilder::new(
+                remote_mac,
+                if solicited { *local_mac } else { Mac::BROADCAST },
+                EtherType::Arp,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+        },
+        |TestAddrs { local_ip, local_mac, remote_ip, .. }| {
+            icmp::testutil::neighbor_advertisement_ip_packet(
+                *remote_ip, *local_ip, /* router_flag */ false, solicited,
+                /* override_flag */ true, remote_mac,
+            )
+            .wrap_in(EthernetFrameBuilder::new(
+                remote_mac,
+                *local_mac,
+                EtherType::Ipv6,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+        },
+    )
+}
+
 #[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
 #[ip_test(I)]
 #[test_case(true; "solicited")]
@@ -281,49 +321,6 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
 fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: TestIpExt + IpExt>(
     solicited: bool,
 ) {
-    fn incoming_neighbor_confirmation<I: TestIpExt>(
-        remote_mac: Mac,
-        solicited: bool,
-    ) -> Buf<Vec<u8>> {
-        I::map_ip_in(
-            I::TEST_ADDRS,
-            |TestAddrs { local_ip, local_mac, remote_ip, .. }| {
-                ArpPacketBuilder::new(
-                    ArpOp::Response,
-                    remote_mac,
-                    *remote_ip,
-                    local_mac.get(),
-                    *local_ip,
-                )
-                .into_serializer()
-                .wrap_in(EthernetFrameBuilder::new(
-                    remote_mac,
-                    if solicited { *local_mac } else { Mac::BROADCAST },
-                    EtherType::Arp,
-                    ETHERNET_MIN_BODY_LEN_NO_TAG,
-                ))
-                .serialize_vec_outer(&mut NetworkSerializationContext::default())
-                .unwrap()
-                .unwrap_b()
-            },
-            |TestAddrs { local_ip, local_mac, remote_ip, .. }| {
-                icmp::testutil::neighbor_advertisement_ip_packet(
-                    *remote_ip, *local_ip, /* router_flag */ false, solicited,
-                    /* override_flag */ true, remote_mac,
-                )
-                .wrap_in(EthernetFrameBuilder::new(
-                    remote_mac,
-                    *local_mac,
-                    EtherType::Ipv6,
-                    ETHERNET_MIN_BODY_LEN_NO_TAG,
-                ))
-                .serialize_vec_outer(&mut NetworkSerializationContext::default())
-                .unwrap()
-                .unwrap_b()
-            },
-        )
-    }
-
     set_logger_for_test();
 
     let TestAddrs { subnet, local_ip, local_mac, remote_ip, remote_mac, .. } = I::TEST_ADDRS;
@@ -392,7 +389,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
     // signal, we consider all replies to be "override".)
     let new_remote_mac = {
         let mut mac = *remote_mac;
-        mac.as_mut()[0] ^= 0xFF;
+        mac.as_mut()[5] ^= 0xFF;
         mac
     };
 
@@ -1074,4 +1071,252 @@ fn icmp_error_fragment_offset(fragment_offset: u16) {
             assert_eq!(found, None);
         }
     })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TestNudState {
+    Vacant,
+    Incomplete,
+    Reachable,
+    Stale,
+    Delay,
+}
+
+const BROADCAST_MAC: Mac = Mac::BROADCAST;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NudMessageType {
+    Probe,
+    Confirmation,
+}
+
+fn incoming_neighbor_probe<I: TestIpExt>(remote_mac: Mac) -> Buf<Vec<u8>> {
+    I::map_ip_in(
+        I::TEST_ADDRS,
+        |TestAddrs { local_ip, remote_ip, .. }| {
+            ArpPacketBuilder::new(
+                ArpOp::Request,
+                remote_mac,
+                *remote_ip,
+                Mac::UNSPECIFIED,
+                *local_ip,
+            )
+            .into_serializer()
+            .wrap_in(EthernetFrameBuilder::new(
+                remote_mac,
+                Mac::BROADCAST,
+                EtherType::Arp,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+        },
+        |TestAddrs { local_ip, remote_ip, .. }| {
+            let dst_ip = local_ip.to_solicited_node_address();
+            let dst_mac = Mac::from(&dst_ip);
+            icmp::testutil::neighbor_solicitation_ip_packet(
+                *remote_ip,
+                dst_ip.get(),
+                *local_ip,
+                remote_mac,
+            )
+            .wrap_in(EthernetFrameBuilder::new(
+                remote_mac,
+                dst_mac,
+                EtherType::Ipv6,
+                ETHERNET_MIN_BODY_LEN_NO_TAG,
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+        },
+    )
+}
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+fn setup_nud_state<I: TestIpExt + IpExt>(
+    core_ctx: &mut UnlockedCoreCtx<'_, FakeBindingsCtx>,
+    bindings_ctx: &mut FakeBindingsCtx,
+    device_id: &EthernetDeviceId<FakeBindingsCtx>,
+    state: TestNudState,
+) where
+    for<'a> UnlockedCoreCtx<'a, FakeBindingsCtx>: DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<FakeBindingsCtx>>
+        + NudContext<I, EthernetLinkDevice, FakeBindingsCtx>,
+{
+    let TestAddrs { remote_ip, remote_mac, .. } = I::TEST_ADDRS;
+    match state {
+        TestNudState::Vacant => {}
+        TestNudState::Incomplete => {
+            let _ = core_ctx.send_ip_packet_to_neighbor(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                packet::Buf::new(vec![], ..),
+                Default::default(),
+            );
+        }
+        TestNudState::Reachable => {
+            core_ctx.handle_neighbor_update(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+            );
+            core_ctx.handle_neighbor_update(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                DynamicNeighborUpdateSource::Confirmation {
+                    link_address: Some(*remote_mac),
+                    flags: ConfirmationFlags { solicited_flag: true, override_flag: true },
+                },
+            );
+        }
+        TestNudState::Stale => {
+            core_ctx.handle_neighbor_update(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+            );
+        }
+        TestNudState::Delay => {
+            core_ctx.handle_neighbor_update(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+            );
+            let _ = core_ctx.send_ip_packet_to_neighbor(
+                bindings_ctx,
+                device_id,
+                remote_ip,
+                packet::Buf::new(vec![], ..),
+                Default::default(),
+            );
+        }
+    }
+}
+const MULTICAST_MAC: Mac = Mac::new([0x01, 0x00, 0x5e, 0x00, 0x00, 0x01]);
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+#[test_matrix(
+    [
+        TestNudState::Vacant,
+        TestNudState::Incomplete,
+        TestNudState::Reachable,
+        TestNudState::Stale,
+        TestNudState::Delay,
+    ],
+    [
+        NudMessageType::Probe,
+        NudMessageType::Confirmation,
+    ],
+    [
+        BROADCAST_MAC,
+        MULTICAST_MAC,
+    ]
+)]
+fn nud_ignores_non_unicast_macs_integration<I: TestIpExt + IpExt>(
+    initial_state: TestNudState,
+    msg_type: NudMessageType,
+    non_unicast_mac: Mac,
+) where
+    for<'a> UnlockedCoreCtx<'a, FakeBindingsCtx>: DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<FakeBindingsCtx>>
+        + NudContext<I, EthernetLinkDevice, FakeBindingsCtx>,
+{
+    set_logger_for_test();
+
+    let TestAddrs { local_mac, remote_ip, local_ip, subnet, remote_mac, .. } = I::TEST_ADDRS;
+
+    let mut builder = FakeCtxBuilder::default();
+    let device_idx = builder.add_device_with_ip(local_mac, local_ip.get(), subnet);
+    let (mut ctx, device_ids) = builder.build();
+    let eth_device_id = device_ids[device_idx].clone();
+
+    let (mut core_ctx, bindings_ctx) = ctx.contexts();
+    setup_nud_state::<I>(&mut core_ctx, bindings_ctx, &eth_device_id, initial_state);
+
+    // Advance the clock to exceed the duplicate confirmation lock time for ARP (1 second).
+    let _ = ctx.trigger_timers_for::<TimerId<FakeBindingsCtx>>(
+        ARP_OVERRIDE_LOCK_TIME + core::time::Duration::from_secs(1),
+    );
+
+    // 2. Inject the non-unicast message.
+    let frame = match msg_type {
+        NudMessageType::Probe => incoming_neighbor_probe::<I>(non_unicast_mac),
+        NudMessageType::Confirmation => {
+            incoming_neighbor_confirmation::<I>(non_unicast_mac, /* solicited */ true)
+        }
+    };
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: eth_device_id.clone(),
+            parsing_context: NetworkParsingContext::default(),
+        },
+        frame,
+    );
+
+    // 3. Assert the state remains unchanged.
+    NudContext::<I, EthernetLinkDevice, _>::with_nud_state_mut(
+        &mut ctx.core_ctx(),
+        &eth_device_id,
+        |state, _config| {
+            let actual = state.neighbors().get(&remote_ip);
+            match initial_state {
+                TestNudState::Vacant => {
+                    // Receiving the NS even though the Source Link Layer Address option
+                    // gets ignored will result in an entry being added in Incomplete
+                    // state.
+                    if I::VERSION == IpVersion::V6 && msg_type == NudMessageType::Probe {
+                        assert_matches!(
+                            actual,
+                            Some(NeighborState::Dynamic(DynamicNeighborState::Incomplete(_)))
+                        );
+                    } else {
+                        assert_matches!(actual, None);
+                    }
+                }
+                TestNudState::Incomplete => {
+                    assert_matches!(
+                        actual,
+                        Some(NeighborState::Dynamic(DynamicNeighborState::Incomplete(_)))
+                    );
+                }
+                TestNudState::Reachable => {
+                    assert_matches!(
+                        actual,
+                        Some(NeighborState::Dynamic(DynamicNeighborState::Reachable(r)))
+                            if r.link_address == *remote_mac
+                    );
+                }
+                TestNudState::Stale => {
+                    // Receiving a NS triggers a reply which transitions the state from Stale
+                    // to Delay.
+                    if I::VERSION == IpVersion::V6 && msg_type == NudMessageType::Probe {
+                        assert_matches!(
+                            actual,
+                            Some(NeighborState::Dynamic(DynamicNeighborState::Delay(d)))
+                                if d.link_address == *remote_mac
+                        );
+                    } else {
+                        assert_matches!(
+                            actual,
+                            Some(NeighborState::Dynamic(DynamicNeighborState::Stale(s)))
+                                if s.link_address == *remote_mac
+                        );
+                    }
+                }
+                TestNudState::Delay => {
+                    assert_matches!(
+                        actual,
+                        Some(NeighborState::Dynamic(DynamicNeighborState::Delay(d)))
+                            if d.link_address == *remote_mac
+                    );
+                }
+            }
+        },
+    );
 }
