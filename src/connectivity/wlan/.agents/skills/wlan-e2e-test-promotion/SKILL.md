@@ -30,7 +30,7 @@ If these tools are not present, the automation script will fail and direct you t
 To identify FYI tests and check their stability across all board variants, run the provided helper script from the workspace root:
 
 ```bash
-python3 src/connectivity/wlan/.agents/skills/promote-e2e-tests/scripts/promote_e2e_tests.py
+python3 src/connectivity/wlan/.agents/skills/wlan-e2e-test-promotion/scripts/promote_e2e_tests.py
 ```
 
 The script will:
