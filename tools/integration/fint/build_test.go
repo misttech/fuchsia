@@ -29,6 +29,7 @@ import (
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
+	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 )
 
 type fakeBuildModules struct {
@@ -979,5 +980,89 @@ func Test_writeBuildDirManifest(t *testing.T) {
 
 	if diff := cmp.Diff(want, got, opts...); diff != "" {
 		t.Errorf("Build dir manifest is wrong (-want +got):\n%s", diff)
+	}
+}
+
+type mockSubprocessRunner struct {
+	commandsRun [][]string
+}
+
+func (r *mockSubprocessRunner) Run(ctx context.Context, cmd []string, options subprocess.RunOptions) error {
+	r.commandsRun = append(r.commandsRun, cmd)
+	return nil
+}
+
+func TestBuildBazelHostTests(t *testing.T) {
+	checkoutDir := t.TempDir()
+	buildDir := t.TempDir()
+
+	testSpecs := []build.TestSpec{
+		{
+			Test: build.Test{
+				Label: "@//src/foo:foo_test",
+				Path:  "bazel-out/foo",
+			},
+		},
+		{
+			Test: build.Test{
+				Label: "@//src/bar:bar_test",
+				Path:  "bazel-out/bar",
+			},
+		},
+		{
+			Test: build.Test{
+				Label: "//src/gn:gn_test",
+				Path:  "host_x64/gn_test",
+			},
+		},
+	}
+
+	// Create bazel_top_dir config in checkoutDir
+	topDirConfigDir := filepath.Join(checkoutDir, "build", "bazel", "config")
+	if err := os.MkdirAll(topDirConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	topDirConfigPath := filepath.Join(topDirConfigDir, "bazel_top_dir")
+	if err := os.WriteFile(topDirConfigPath, []byte("custom/bazel/dir\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock bazel launcher binary
+	bazelLauncherDir := filepath.Join(buildDir, "custom", "bazel", "dir")
+	if err := os.MkdirAll(bazelLauncherDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bazelLauncherPath := filepath.Join(bazelLauncherDir, "bazel")
+	if err := os.WriteFile(bazelLauncherPath, []byte(""), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	runner := &mockSubprocessRunner{}
+	if err := buildBazelHostTests(ctx, runner, checkoutDir, buildDir, testSpecs); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(runner.commandsRun) != 1 {
+		t.Fatalf("expected 1 command run, got %d", len(runner.commandsRun))
+	}
+
+	gotCmd := runner.commandsRun[0]
+	wantCmd := []string{
+		bazelLauncherPath,
+		"build",
+		"--config=host",
+		"--build_runfile_links=true",
+		"--enable_runfiles=true",
+		"@//src/bar:bar_test",
+		"@//src/foo:foo_test",
+	}
+	// Sort the labels at the end of wantCmd and gotCmd to ensure deterministic comparison
+	labelsStartIdx := 5
+	if len(gotCmd) > labelsStartIdx {
+		slices.Sort(gotCmd[labelsStartIdx:])
+	}
+	if diff := cmp.Diff(wantCmd, gotCmd); diff != "" {
+		t.Errorf("command differs (-want +got):\n%s", diff)
 	}
 }

@@ -11,6 +11,7 @@ scripts ot locations.
   Used by: `//tools/devshell/lib/bazel_utils.sh`
   Used by: `//build/bazel/scripts/parse-workspace-event-log.py`
   Used by: `//build/bazel/scripts/workspace_utils.py`
+  Used by: `//tools/integration/fint/build.go`
 
 - bazel_args.gni:
 

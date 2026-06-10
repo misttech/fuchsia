@@ -563,6 +563,9 @@ func buildImpl(
 			return artifacts, err
 		}
 	}
+	if err := buildBazelHostTests(ctx, runner, contextSpec.CheckoutDir, contextSpec.BuildDir, modules.TestSpecs()); err != nil {
+		return artifacts, err
+	}
 
 	// TODO(olivernewman): Figure out a way to skip this analysis when the
 	// caller doesn't care about running tests, or just wants to run all tests
@@ -1082,4 +1085,52 @@ func exportDebugSymbols(ctx context.Context, buildAPIClient buildAPIClient, cont
 	}
 
 	return string(b), nil
+}
+
+func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutDir, buildDir string, testSpecs []build.TestSpec) error {
+	var bazelLabels []string
+	for _, spec := range testSpecs {
+		// Bazel tests are differentiated from GN tests by having a "@" prefix
+		// in the label field.
+		if strings.HasPrefix(spec.Label, "@") {
+			bazelLabels = append(bazelLabels, spec.Label)
+		}
+	}
+	if len(bazelLabels) == 0 {
+		return nil
+	}
+
+	topDirConfigPath := filepath.Join(checkoutDir, "build", "bazel", "config", "bazel_top_dir")
+	data, err := os.ReadFile(topDirConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read bazel_top_dir config at %s: %w", topDirConfigPath, err)
+	}
+	bazelTopDir := strings.TrimSpace(string(data))
+	bazelLauncher := filepath.Join(buildDir, bazelTopDir, "bazel")
+	if _, err := os.Stat(bazelLauncher); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("bazel launcher not found at %s: check if the workspace was properly initialized by GN/Ninja", bazelLauncher)
+		}
+		return err
+	}
+
+	cmd := append([]string{
+		bazelLauncher,
+		"build",
+		"--config=host",
+		// Bazel prefers to wait until the latest possible moment (e.g. `bazel
+		// test`) to generate runfiles. Forcing runfile link generation during
+		// `bazel build` ensures all runtime dependencies are materialized under
+		// the execroot where the test runner expects them.
+		"--build_runfile_links=true",
+		"--enable_runfiles=true",
+	}, bazelLabels...)
+
+	if err := runner.Run(ctx, cmd, subprocess.RunOptions{
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}); err != nil {
+		return fmt.Errorf("failed to build Bazel host tests: %w", err)
+	}
+	return nil
 }
