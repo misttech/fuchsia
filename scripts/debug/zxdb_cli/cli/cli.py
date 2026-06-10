@@ -15,6 +15,7 @@ from shared.protocol import (
     StartRequest,
     StopRequest,
     deserialize_request,
+    get_schema,
     make_request,
     serialize,
 )
@@ -61,6 +62,13 @@ async def main(args: list[str]) -> int:
     attach_parser = subparsers.add_parser("attach", help="Attach to a process")
     attach_parser.add_argument("filter", help="Process name or ID to attach to")
     subparsers.add_parser("threads", help="Get list of threads")
+
+    schema_parser = subparsers.add_parser(
+        "schema", help="Print the JSON schema of the protocol"
+    )
+    schema_parser.add_argument(
+        "--indent", type=int, default=2, help="JSON indentation level"
+    )
 
     continue_parser = subparsers.add_parser("continue", help="Resume execution")
     continue_parser.add_argument(
@@ -131,6 +139,9 @@ async def main(args: list[str]) -> int:
         return await start_daemon(parsed_args.port, parsed_args.connect)
     elif parsed_args.command == "stop":
         return await stop_daemon()
+    elif parsed_args.command == "schema":
+        print(json.dumps(get_schema(), indent=parsed_args.indent))
+        return 0
     elif parsed_args.command:
         try:
             args_dict = vars(parsed_args)
