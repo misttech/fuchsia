@@ -1,0 +1,65 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/testing/golden_files.gni")
+import("//third_party/protobuf/proto_library.gni")
+
+# Compiles a protocol buffer for Python and defines it as a golden checked-in
+# file in the source tree.
+#
+# Parameters (all delegate to proto_library):
+#
+#   sources (required)
+#       List of .proto files.
+#
+#   import_dirs (optional)
+#       Additional import paths for .proto files.
+#
+template("golden_python_proto") {
+  assert(defined(invoker.sources), "sources is a required parameter")
+
+  _proto_name = "${target_name}_proto"
+
+  proto_library(_proto_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "visibility",
+                             "testonly",
+                           ])
+    generate_cc = false
+    generate_go = false
+    generate_python = true
+  }
+
+  _here = rebase_path(".", "//")
+  _py_out_dir = "${root_out_dir}/pyproto/${_here}"
+  _goldens = []
+
+  foreach(source, invoker.sources) {
+    _name = get_path_info(source, "name")
+    _dir = rebase_path(get_path_info(source, "dir"), ".")
+
+    _output = "${_name}_pb2.py"
+    _golden_name = "${_name}_pb2_py_diff"
+
+    golden_files(_golden_name) {
+      formatter = {
+        script = "//build/python/strip_copyright.sh"
+      }
+      comparisons = [
+        {
+          golden = "${_dir}/${_output}"
+          candidate = "${_py_out_dir}/${golden}"
+        },
+      ]
+      deps = [ ":${_proto_name}" ]
+    }
+    _goldens += [ ":${_golden_name}" ]
+  }
+
+  group(target_name) {
+    public_deps = [ ":${_proto_name}" ] + _goldens
+  }
+}

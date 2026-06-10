@@ -10,7 +10,7 @@ def _python_format(ctx):
     Args:
       ctx: A ctx instance.
     """
-    py_files = ctx.scm.affected_files(glob = ["*.py", "!third_party"])
+    py_files = ctx.scm.affected_files(glob = ["*.py", "!third_party", "!*_pb2.py"])
     if not py_files:
         return
 

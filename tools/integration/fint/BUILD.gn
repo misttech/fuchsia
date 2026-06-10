@@ -6,6 +6,7 @@ import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 import("//build/go/golden_go_proto.gni")
+import("//build/python/golden_python_proto.gni")
 
 if (is_host) {
   golden_go_proto("build_artifacts") {
@@ -14,15 +15,28 @@ if (is_host) {
     # For access to google.protobuf.Struct type.
     import_protobuf_full = true
   }
+  golden_python_proto("build_artifacts_py") {
+    sources = [ "proto/build_artifacts.proto" ]
+    import_protobuf_full = true
+  }
   golden_go_proto("context") {
+    sources = [ "proto/context.proto" ]
+  }
+  golden_python_proto("context_py") {
     sources = [ "proto/context.proto" ]
   }
   golden_go_proto("set_artifacts") {
     sources = [ "proto/set_artifacts.proto" ]
   }
+  golden_python_proto("set_artifacts_py") {
+    sources = [ "proto/set_artifacts.proto" ]
+  }
   golden_go_proto("static") {
     sources = [ "proto/static.proto" ]
     generate_descriptor_set = true
+  }
+  golden_python_proto("static_py") {
+    sources = [ "proto/static.proto" ]
   }
 
   go_test("fint_lib_tests") {
@@ -54,8 +68,12 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
+    ":build_artifacts_py($host_toolchain)",
+    ":context_py($host_toolchain)",
     ":fint_lib_tests($host_toolchain)",
     ":main_tests($host_toolchain)",
+    ":set_artifacts_py($host_toolchain)",
+    ":static_py($host_toolchain)",
   ]
 }
 
