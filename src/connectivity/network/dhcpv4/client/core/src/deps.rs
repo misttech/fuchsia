@@ -61,6 +61,9 @@ pub enum SocketError {
     /// Broken pipe.
     #[error("broken pipe")]
     BrokenPipe,
+    /// The connection was aborted.
+    #[error("connection aborted")]
+    ConnectionAborted,
     /// Other IO errors observed on socket operations.
     #[error("socket error: {0}")]
     Other(std::io::Error),

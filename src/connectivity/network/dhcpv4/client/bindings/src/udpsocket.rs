@@ -28,7 +28,6 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
                 "unexpected error {e:?}; nonblocking logic should be
                  handled by fuchsia_async UDP socket wrapper"
             ),
-            E::Econnaborted => panic!("unexpected error {e:?}; not using stream sockets"),
             E::Ehostunreach => dhcp_client_core::deps::SocketError::HostUnreachable,
             E::Enetunreach => dhcp_client_core::deps::SocketError::NetworkUnreachable,
             E::Enobufs | E::Enomem => panic!("out of memory: {e:?}"),
@@ -69,6 +68,10 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             // These errors can be returned from `sendto()` at the socket layer.
             E::Eintr => panic!("got EINTR, should be handled by lower-level library: {:?}", e),
             E::Econnreset => panic!("got ECONNRESET, but we aren't using TCP: {:?}", e),
+
+            // ============
+            // UDP sockets can be disconnected via fuchsia.net.sockets/Control.DisconnectIp.
+            E::Econnaborted => dhcp_client_core::deps::SocketError::ConnectionAborted,
 
             // ============
             // The following errors aren't expected to be returned by any of the
