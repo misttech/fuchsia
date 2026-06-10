@@ -60,9 +60,11 @@ struct Traits<efi_serial_io_protocol> {
 
 // Do CRLF conversion into a buffer and call Traits::Write to flush it.
 template <typename Protocol>
-int EfiStdoutWrite(void* protocol, ktl::string_view str) {
+int EfiStdoutWrite(void* protocol, const char* str_data, size_t str_len) {
   using Char = typename Traits<Protocol>::Char;
   using CharsFrom = uart::CharsFrom<ktl::string_view, Char>;
+
+  const ktl::string_view str{str_data, str_len};
 
   // Minimum bytes to be reserved at the end of the buffer
   constexpr size_t kMinLeft = Traits<Protocol>::kMinLeft;
