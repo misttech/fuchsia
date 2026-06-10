@@ -97,7 +97,7 @@ def _visit_target(target, ctx):
     transitive_providers = []
 
     has_applicable_licenses = False
-    for license_dep in getattr(ctx.rule.attr, _APPLICABLE_LICENSES_ATTR, getattr(ctx.rule.attr, _PACKAGE_METADATA_ATTR, [])):
+    for license_dep in getattr(ctx.rule.attr, _APPLICABLE_LICENSES_ATTR, []):
         # This target has applicable_licenses. Lets collect the licenses.
         has_applicable_licenses = True
         if LicenseInfo in license_dep:
@@ -105,6 +105,11 @@ def _visit_target(target, ctx):
         else:
             # applicable_licenses must reference a `license` target, which is a provider of LicenseInfo.
             fail("No LicenseInfo provided for %s. Is this target a `license` target?" % license_dep)
+
+    for metadata_dep in getattr(ctx.rule.attr, _PACKAGE_METADATA_ATTR, []):
+        if LicenseInfo in metadata_dep:
+            has_applicable_licenses = True
+            license_infos.append(metadata_dep[LicenseInfo])
 
     target_needs_license = not has_applicable_licenses and _does_target_need_license(target, optional_rule = ctx.rule)
 
