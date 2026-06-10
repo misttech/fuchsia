@@ -282,11 +282,16 @@ impl Resolver {
                 let (message_vec, sockaddr) =
                     receive_from_fut.await.context("error receiving from dns upstream socket")?;
 
+                let addr_string = sockaddr
+                    .as_socket()
+                    .map(|addr| addr.to_string())
+                    .unwrap_or_else(|| format!("{:?}", sockaddr));
+
                 info!(
                     tag = "resolver";
                     "Incoming {} bytes DNS response from {:?}",
                     message_vec.len(),
-                    sockaddr
+                    addr_string
                 );
                 if let Err(e) =
                     sender.send((DnsUpstreamQueryRefWrapper(thread_context), message_vec)).await
