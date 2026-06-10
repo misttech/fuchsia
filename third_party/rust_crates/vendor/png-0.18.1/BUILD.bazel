@@ -73,7 +73,7 @@ rust_library(
     }),
     version = "0.18.1",
     deps = [
-        "//third_party/rust_crates/vendor/bitflags-2.12.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
         "//third_party/rust_crates/vendor/crc32fast-1.5.0:crc32fast",
         "//third_party/rust_crates/vendor/fdeflate-0.3.7:fdeflate",
         "//third_party/rust_crates/vendor/flate2-1.1.9:flate2",

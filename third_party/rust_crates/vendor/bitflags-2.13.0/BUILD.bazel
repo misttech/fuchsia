@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "bitflags",
     package_url = "https://github.com/bitflags/bitflags",
-    package_version = "2.12.0",
+    package_version = "2.13.0",
 )
 
 license(
@@ -76,7 +76,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.12.0",
+    version = "2.13.0",
     deps = [
         "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],

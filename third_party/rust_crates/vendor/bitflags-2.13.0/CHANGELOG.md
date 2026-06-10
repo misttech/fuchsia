@@ -1,4 +1,22 @@
+# 2.13.0
+
+## What's Changed
+* add `MyFlags::Abc::iter_equal_names()` method by @ssrlive in https://github.com/bitflags/bitflags/pull/489
+
+**Full Changelog**: https://github.com/bitflags/bitflags/compare/2.12.1...2.13.0
+
+# 2.12.1
+
+## What's Changed
+* Rework the `#[flag_name]` feature and re-stabilize as `#[bitflags(flag_name)]` by @KodrAus in https://github.com/bitflags/bitflags/pull/487
+
+**Full Changelog**: https://github.com/bitflags/bitflags/compare/2.12.0...2.12.1
+
 # 2.12.0
+
+## Yanked
+
+This release has been yanked because the `#[flag_name]` processing noticeably increases macro recursion, hitting the default limit in cases that are already close to it.
 
 ## What's Changed
 * Add a custom `#[flag_name]` attribute by @KodrAus in https://github.com/bitflags/bitflags/pull/483

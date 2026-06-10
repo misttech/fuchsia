@@ -343,14 +343,14 @@ alias(
 )
 
 alias(
-    name = "bitflags-2.12.0",
-    actual = "//third_party/rust_crates/vendor/bitflags-2.12.0:bitflags",
+    name = "bitflags-2.13.0",
+    actual = "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
     tags = ["manual"],
 )
 
 alias(
     name = "bitflags",
-    actual = "//third_party/rust_crates/vendor/bitflags-2.12.0:bitflags",
+    actual = "//third_party/rust_crates/vendor/bitflags-2.13.0:bitflags",
     tags = ["manual"],
 )
 
