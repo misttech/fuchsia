@@ -526,13 +526,10 @@
         },
         "oneOf": [
             {
-                "$ref": "#/$defs/StartRequest"
+                "$ref": "#/$defs/AttachRequest"
             },
             {
-                "$ref": "#/$defs/HelloRequest"
-            },
-            {
-                "$ref": "#/$defs/StopRequest"
+                "$ref": "#/$defs/ContinueRequest"
             },
             {
                 "$ref": "#/$defs/DetachRequest"
@@ -541,29 +538,32 @@
                 "$ref": "#/$defs/GetStateRequest"
             },
             {
-                "$ref": "#/$defs/WaitForEventRequest"
-            },
-            {
-                "$ref": "#/$defs/AttachRequest"
-            },
-            {
-                "$ref": "#/$defs/ThreadsRequest"
-            },
-            {
-                "$ref": "#/$defs/ContinueRequest"
+                "$ref": "#/$defs/HelloRequest"
             },
             {
                 "$ref": "#/$defs/PauseRequest"
             },
             {
                 "$ref": "#/$defs/StackTraceRequest"
+            },
+            {
+                "$ref": "#/$defs/StartRequest"
+            },
+            {
+                "$ref": "#/$defs/StopRequest"
+            },
+            {
+                "$ref": "#/$defs/ThreadsRequest"
+            },
+            {
+                "$ref": "#/$defs/WaitForEventRequest"
             }
         ]
     },
     "responses": {
         "$defs": {
             "GetStateResponse": {
-                "description": "Response for get-state command containing thread list and active processes.",
+                "description": "Response for get-state command containing thread list and active\nprocesses.",
                 "properties": {
                     "threads": {
                         "items": {

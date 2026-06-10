@@ -17,12 +17,9 @@ from typing import Any
 from cli.cli import main
 from daemon.daemon import UDS_PATH
 from portpicker import portpicker
-from shared.protocol import (
-    PROTOCOL_VERSION,
-    HelloRequest,
-    StartRequest,
-    serialize,
-)
+from shared.protocol import PROTOCOL_VERSION, serialize
+from shared.protocol.hello import HelloRequest
+from shared.protocol.start import StartRequest
 
 DAEMON_CLEANUP_TIMEOUT = 5.0
 

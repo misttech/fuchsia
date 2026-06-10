@@ -21,7 +21,19 @@ if (is_host) {
     library_name = "shared"
     sources = [
       "__init__.py",
-      "protocol.py",
+      "protocol/__init__.py",
+      "protocol/attach.py",
+      "protocol/base.py",
+      "protocol/continue_request.py",
+      "protocol/detach.py",
+      "protocol/get_state.py",
+      "protocol/hello.py",
+      "protocol/pause.py",
+      "protocol/stack_trace.py",
+      "protocol/start.py",
+      "protocol/stop.py",
+      "protocol/threads.py",
+      "protocol/wait_for_event.py",
     ]
     library_deps = [ "//third_party/pylibs/pydantic" ]
   }

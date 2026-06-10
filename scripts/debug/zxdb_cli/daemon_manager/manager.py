@@ -13,14 +13,10 @@ from typing import Final
 
 from fx_cmd.lib import FxCmd
 from pydantic import ValidationError
-from shared.protocol import (
-    PROTOCOL_VERSION,
-    HelloRequest,
-    Response,
-    StartRequest,
-    StopRequest,
-    serialize,
-)
+from shared.protocol import PROTOCOL_VERSION, Response, serialize
+from shared.protocol.hello import HelloRequest
+from shared.protocol.start import StartRequest
+from shared.protocol.stop import StopRequest
 
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 

@@ -5,15 +5,13 @@
 import unittest
 
 from pydantic import ValidationError
-from shared.protocol import (
-    AttachRequest,
-    DetachRequest,
-    HelloRequest,
-    StartRequest,
-    StopRequest,
-    WaitForEventRequest,
-    make_request,
-)
+from shared.protocol import make_request
+from shared.protocol.attach import AttachRequest
+from shared.protocol.detach import DetachRequest
+from shared.protocol.hello import HelloRequest
+from shared.protocol.start import StartRequest
+from shared.protocol.stop import StopRequest
+from shared.protocol.wait_for_event import WaitForEventRequest
 
 
 class TestDetachRequestSchema(unittest.TestCase):
