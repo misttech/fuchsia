@@ -417,7 +417,9 @@ class PreemptionState {
     preempts_pending_.fetch_or(reschedule_mask);
 
     // Are we pending for the local CPU?
-    if (reschedule_mask & cpu_num_to_mask(arch_curr_cpu_num() == 0)) {
+    const cpu_mask_t local_cpu_mask = cpu_num_to_mask(arch_curr_cpu_num());
+    const bool local_cpu_in_resched_mask = (reschedule_mask & local_cpu_mask) != 0;
+    if (!local_cpu_in_resched_mask) {
       // Nope.
       return;
     }
