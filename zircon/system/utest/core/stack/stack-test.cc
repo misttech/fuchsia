@@ -58,9 +58,14 @@ void* DoStackTest(void* arg) {
   info->tls_buf = &tls_buf;
 
 #if __has_feature(safe_stack)
+// TODO(https://fxbug.dev/521959939): Migrate to __safestack_get_unsafe_stack_* once the new
+// toolchain has rolled.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
   info->unsafe_start = __builtin___get_unsafe_stack_start();
   info->unsafe_ptr = __builtin___get_unsafe_stack_ptr();
   info->unsafe_end = __builtin___get_unsafe_stack_top();
+#pragma clang diagnostic pop
 #endif
 
 #if __has_feature(shadow_call_stack)
