@@ -2095,6 +2095,7 @@ mod arch32 {
         sys_sched_setaffinity as sys_arch32_sched_setaffinity,
         sys_sched_setparam as sys_arch32_sched_setparam,
         sys_sched_setscheduler as sys_arch32_sched_setscheduler, sys_seccomp as sys_arch32_seccomp,
+        sys_setfsgid as sys_arch32_setfsgid, sys_setfsgid as sys_arch32_setfsgid32,
         sys_setfsuid as sys_arch32_setfsuid, sys_setfsuid as sys_arch32_setfsuid32,
         sys_setgid as sys_arch32_setgid32, sys_setgroups as sys_arch32_setgroups32,
         sys_setns as sys_arch32_setns, sys_setpgid as sys_arch32_setpgid,

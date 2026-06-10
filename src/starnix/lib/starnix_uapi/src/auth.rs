@@ -416,28 +416,10 @@ impl Credentials {
         Ok(())
     }
 
-    fn apply_suid_and_sgid(&mut self, maybe_set: UserAndOrGroupId) {
-        if maybe_set.is_none() {
-            return;
-        }
-
-        let prev = self.clone();
-
-        if let Some(uid) = maybe_set.uid {
-            self.euid = uid;
-            self.fsuid = uid;
-        }
-
-        if let Some(gid) = maybe_set.gid {
-            self.egid = gid;
-            self.fsgid = gid;
-        }
-
-        self.update_capabilities(&prev);
-    }
-
     pub fn exec(&mut self, maybe_set: UserAndOrGroupId) {
         let is_suid_or_sgid = maybe_set.is_some();
+        let prev = self.clone();
+
         // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
         //
         //   If the set-user-ID bit is set on the program file referred to by
@@ -446,7 +428,22 @@ impl Credentials {
         //   the set-group-ID bit is set on the program file, then the
         //   effective group ID of the calling process is set to the group of
         //   the program file.
-        self.apply_suid_and_sgid(maybe_set);
+        if let Some(uid) = maybe_set.uid {
+            self.euid = uid;
+        }
+
+        if let Some(gid) = maybe_set.gid {
+            self.egid = gid;
+        }
+
+        // On exec, the filesystem UIDs are always reset to the effective UIDs.
+        // See credentials(7).
+        self.fsuid = self.euid;
+        self.fsgid = self.egid;
+
+        if is_suid_or_sgid {
+            self.update_capabilities(&prev);
+        }
 
         // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
         //

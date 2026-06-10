@@ -33,10 +33,10 @@ syscall_tests_executables = [
   # go/keep-sorted start
 
   ":extended_pstate_initial_state_child",
+  ":print_uid_gid_exec_child",
   ":procfs_test_exec_child",
   ":ptrace_test_exec_child",
   ":signal_handling_test_exec_child",
-  ":suid_test_exec_child",
   ":syscall_test_exec_child",
   "test_programs:clone_exec_helper",
   "test_programs:exit_zero",
@@ -64,6 +64,7 @@ syscall_tests = [
   "cpuinfo_test",
   "custom_artifact_test",
   "epoll_test",
+  "exec_test",
   "extended_pstate_test",
   "fallocate_test",
   "fcntl_test",
@@ -249,6 +250,7 @@ syscall_tests_migrated_to_machina = [
   "cpuinfo_test",
   "custom_artifact_test",
   "epoll_test",
+  "exec_test",
   "exit_test",
   "extended_pstate_test",
   "fallocate_test",
@@ -554,10 +556,10 @@ if (is_linux) {
     deps = [ ":test_utils" ]
   }
 
-  executable("suid_test_exec_child") {
+  executable("print_uid_gid_exec_child") {
     testonly = true
     emit_tool_path = false
-    sources = [ "suid_test_exec_child.cc" ]
+    sources = [ "print_uid_gid_exec_child.cc" ]
 
     # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
     exclude_toolchain_tags = [

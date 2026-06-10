@@ -33,13 +33,13 @@ constexpr uid_t kRootUid = 0;
 constexpr gid_t kRootGid = 0;
 
 std::string GetCredsBinaryPath() {
-  std::string test_binary = "data/tests/deps/suid_test_exec_child";
+  std::string test_binary = "data/tests/deps/print_uid_gid_exec_child";
   if (!files::IsFile(test_binary)) {
     // We're running on host
     char self_path[PATH_MAX];
     realpath("/proc/self/exe", self_path);
 
-    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "suid_test_exec_child");
+    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "print_uid_gid_exec_child");
   }
   return test_binary;
 }
