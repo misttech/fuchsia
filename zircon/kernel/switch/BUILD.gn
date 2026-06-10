@@ -616,7 +616,12 @@ config("rust-target") {
   rustflags = [
     "-Zunstable-options",
     "--sysroot=" + rebase_path(root_gen_dir, root_build_dir),
-    "--target=kernel",
+
+    # TODO(https://gn.g-issues.chromium.org/issues/522275056): The GN
+    # parser does not recognize `--target=kernel`. This must be
+    # `--target kernel`.
+    "--target",
+    "kernel",
   ]
   if (rust_rbe_enable) {
     rustflags += [
