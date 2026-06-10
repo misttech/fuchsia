@@ -14,6 +14,7 @@ ROOT_PATH = os.path.join(os.path.dirname(__file__), "..", "..")
 
 RUSTFMT_PATH = "prebuilt/third_party/rust/linux-x64/bin/rustfmt"
 BINDGEN_PATH = "prebuilt/third_party/rust_bindgen/linux-x64/bindgen"
+CLANG_PATH = "prebuilt/third_party/clang/linux-x64/bin/clang"
 FX_PATH = "scripts/fx"
 
 FUCHSIA_NOTICE_HEADER = (
@@ -189,6 +190,13 @@ class Bindgen:
                 self.clang_target,
                 "-DIS_BINDGEN=1",
             ]
+
+            clang_resource_dir = (
+                subprocess.check_output([CLANG_PATH, "-print-resource-dir"])
+                .decode("utf-8")
+                .strip()
+            )
+            args += ["-resource-dir", clang_resource_dir]
 
             if not self.enable_stdlib_include_dirs:
                 args += ["-nostdlibinc"]
