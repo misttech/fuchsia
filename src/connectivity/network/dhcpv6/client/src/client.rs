@@ -525,8 +525,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
             .iter()
             .map(|addr| {
                 let address = fnet::Ipv6Address { addr: addr.ipv6_bytes() };
-                let zone_index =
-                    if is_unicast_link_local_strict(&address) { self.interface_id } else { 0 };
+                let zone_index = if addr.is_unicast_link_local() { self.interface_id } else { 0 };
 
                 fnet_name::DnsServer_ {
                     address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
@@ -738,14 +737,6 @@ fn create_socket(
     fasync::net::UdpSocket::from_socket(socket.into())
 }
 
-/// Returns `true` if the input address is a link-local address (`fe80::/64`).
-///
-/// TODO(https://github.com/rust-lang/rust/issues/27709): use is_unicast_link_local_strict() in
-/// stable rust when it's available.
-fn is_unicast_link_local_strict(addr: &fnet::Ipv6Address) -> bool {
-    addr.addr[..8] == [0xfe, 0x80, 0, 0, 0, 0, 0, 0]
-}
-
 fn duid_from_fidl(duid: Duid) -> Result<dhcpv6_core::ClientDuid, ()> {
     /// According to [RFC 8415, section 11.2], DUID of type DUID-LLT has a type value of 1
     ///
@@ -803,8 +794,9 @@ pub(crate) async fn serve_client(
     NewClientParams { interface_id, address, duid, config }: NewClientParams,
     request: ServerEnd<ClientMarker>,
 ) -> Result<()> {
-    if Ipv6Addr::from(address.address.addr).is_multicast()
-        || (is_unicast_link_local_strict(&address.address) && address.zone_index != interface_id)
+    let std_addr = Ipv6Addr::from(address.address.addr);
+    if std_addr.is_multicast()
+        || (std_addr.is_unicast_link_local() && address.zone_index != interface_id)
     {
         return request
             .close_with_epitaph(zx::Status::INVALID_ARGS)
@@ -1277,15 +1269,6 @@ mod tests {
                 Err(fidl::Error::ClientChannelClosed { status: zx::Status::INVALID_ARGS, .. })
             );
         }
-    }
-
-    #[test]
-    fn test_is_unicast_link_local_strict() {
-        assert_eq!(is_unicast_link_local_strict(&fidl_ip_v6!("fe80::")), true);
-        assert_eq!(is_unicast_link_local_strict(&fidl_ip_v6!("fe80::1")), true);
-        assert_eq!(is_unicast_link_local_strict(&fidl_ip_v6!("fe80::ffff:1:2:3")), true);
-        assert_eq!(is_unicast_link_local_strict(&fidl_ip_v6!("fe80::1:0:0:0:0")), false);
-        assert_eq!(is_unicast_link_local_strict(&fidl_ip_v6!("fe81::")), false);
     }
 
     fn create_test_dns_server(
