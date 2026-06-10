@@ -45,6 +45,9 @@ const (
 
 	// TestInfraFailure means that the test failed because of infra related issue.
 	TestInfraFailure TestStatus = "INFRA_FAIL"
+
+	// TestExonerated represents an exonerated test.
+	TestExonerated TestStatus = "EXONERATED"
 )
 
 // IsFailure returns whether a test result corresponds to any failure condition

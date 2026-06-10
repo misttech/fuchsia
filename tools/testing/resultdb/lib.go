@@ -30,6 +30,8 @@ const (
 	// Failure reason is limited to 1024 bytes.
 	// https://source.chromium.org/chromium/infra/infra_superproject/+/main:infra/go/src/go.chromium.org/luci/resultdb/pbutil/test_result.go;l=44;drc=bfb50731e1b97d7ca771fb2d31dc7338c3db40f5
 	MaxFailureReasonLength = 1024
+	// MaxBatchSize is the maximum number of items (results or exonerations) reported in a single request.
+	MaxBatchSize = 250
 )
 
 // ParseSummary unmarshals the summary.json file content into runtests.TestSummary struct.
@@ -45,26 +47,43 @@ func ParseSummary(filePath string) (*runtests.TestSummary, error) {
 	return &summary, nil
 }
 
-// SummaryToResultSink converts runtests.TestSummary data into an array of result_sink TestResult.
-func SummaryToResultSink(s *runtests.TestSummary, tags []*resultpb.StringPair, outputRoot string) ([]*sinkpb.TestResult, []string) {
+// SummaryToResultSink converts runtests.TestSummary data into an array of result_sink TestResult and TestExoneration.
+func SummaryToResultSink(s *runtests.TestSummary, tags []*resultpb.StringPair, outputRoot string) ([]*sinkpb.TestResult, []*sinkpb.TestExoneration, []string) {
 	if len(outputRoot) == 0 {
 		outputRoot, _ = os.Getwd()
 	}
 	rootPath, _ := filepath.Abs(outputRoot)
 	var r []*sinkpb.TestResult
+	var exonerations []*sinkpb.TestExoneration
 	var ts []string
 	for _, test := range s.Tests {
 		if len(test.Cases) > 0 {
-			testCases, testsSkipped := testCaseToResultSink(test.Cases, tags, &test, rootPath)
+			testCases, testExonerations, testsSkipped := testCaseToResultSink(test.Cases, tags, &test, rootPath)
 			r = append(r, testCases...)
+			exonerations = append(exonerations, testExonerations...)
 			ts = append(ts, testsSkipped...)
 		}
-		if testResult, testsSkipped, err := testDetailsToResultSink(tags, &test, rootPath); err == nil {
+		// TODO(b/502613208): If a top-level test passes but has a nested test case that
+		// is exonerated, it currently reports both a "PASS" status and an exoneration.
+		// This is redundant since ResultDB generally ignores exonerations for passing tests.
+		if testResult, testExoneration, testSkipped, err := testDetailsToResultSink(tags, &test, rootPath); err == nil {
+			if testResult == nil {
+				panic("testResult shouldn't be nil when err is nil")
+			}
 			r = append(r, testResult)
-			ts = append(ts, testsSkipped...)
+			if testExoneration != nil {
+				exonerations = append(exonerations, testExoneration)
+			}
+			if testSkipped != "" {
+				panic(fmt.Sprintf("testSkipped should be empty when err is nil, got: %q", testSkipped))
+			}
+		} else {
+			if testSkipped != "" {
+				ts = append(ts, testSkipped)
+			}
 		}
 	}
-	return r, ts
+	return r, exonerations, ts
 }
 
 // InvocationLevelArtifacts creates resultdb artifacts for invocation-level files to be sent to ResultDB.
@@ -96,21 +115,23 @@ func InvocationLevelArtifacts(outputRoot string, invocationArtifacts []string) m
 	return artifacts
 }
 
-func ProcessSummaries(summaries []string, tags []*resultpb.StringPair, outputRoot string) ([]*sinkpb.ReportTestResultsRequest, []string, error) {
+func ProcessSummaries(summaries []string, tags []*resultpb.StringPair, outputRoot string) ([]*sinkpb.ReportTestResultsRequest, []*sinkpb.ReportTestExonerationsRequest, []string, error) {
 	var requests []*sinkpb.ReportTestResultsRequest
+	var exonerationRequests []*sinkpb.ReportTestExonerationsRequest
 	var allTestsSkipped []string
 
 	for _, summaryFile := range summaries {
 		summary, err := ParseSummary(summaryFile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		testResults, testsSkipped := SummaryToResultSink(summary, tags, outputRoot)
-		requests = append(requests, createTestResultsRequests(testResults, 250)...)
+		testResults, exonerations, testsSkipped := SummaryToResultSink(summary, tags, outputRoot)
+		requests = append(requests, createTestResultsRequests(testResults, MaxBatchSize)...)
+		exonerationRequests = append(exonerationRequests, createTestExonerationsRequests(exonerations, MaxBatchSize)...)
 		allTestsSkipped = append(allTestsSkipped, testsSkipped...)
 	}
 
-	return requests, allTestsSkipped, nil
+	return requests, exonerationRequests, allTestsSkipped, nil
 }
 
 // artifactName returns a unique name to correspond to the file which
@@ -152,8 +173,9 @@ func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails, disp
 // testCaseToResultSink converts TestCaseResult defined in //tools/testing/runtests/runtests.go
 // to ResultSink's TestResult. A testcase will not be converted if test result cannot be
 // mapped to result_sink.Status.
-func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.StringPair, testDetail *runtests.TestDetails, outputRoot string) ([]*sinkpb.TestResult, []string) {
-	var testResult []*sinkpb.TestResult
+func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.StringPair, testDetail *runtests.TestDetails, outputRoot string) ([]*sinkpb.TestResult, []*sinkpb.TestExoneration, []string) {
+	var testResults []*sinkpb.TestResult
+	var testExonerations []*sinkpb.TestExoneration
 	var testsSkipped []string
 
 	// Ignore the failure reason kind and error. We only check the top-level test status
@@ -168,6 +190,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 			testsSkipped = append(testsSkipped, testID)
 			continue
 		}
+
 		testCaseTags := append([]*resultpb.StringPair{
 			{Key: "format", Value: testCase.Format},
 			{Key: "is_test_case", Value: "true"},
@@ -213,21 +236,28 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 			}
 		}
 		setTestMetadata(&r, *testDetail, testCase.DisplayName)
-		testResult = append(testResult, &r)
+		testResults = append(testResults, &r)
+
+		if testCase.Status == runtests.TestExonerated {
+			testExonerations = append(testExonerations, &sinkpb.TestExoneration{
+				TestId:          testID,
+				ExplanationHtml: fmt.Sprintf("Test case %s was exonerated in the test summary.", testCase.CaseName),
+				Reason:          resultpb.ExonerationReason_NOT_CRITICAL,
+			})
+		}
 	}
-	return testResult, testsSkipped
+	return testResults, testExonerations, testsSkipped
 }
 
 // testDetailsToResultSink converts TestDetail defined in /tools/testing/runtests/runtests.go
-// to ResultSink's TestResult. Returns (nil, error) if a test result cannot be mapped to
+// to ResultSink's TestResult. Returns an error if a test result cannot be mapped to
 // result_sink.Status
-func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.TestDetails, outputRoot string) (*sinkpb.TestResult, []string, error) {
-	var testsSkipped []string
+func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.TestDetails, outputRoot string) (*sinkpb.TestResult, *sinkpb.TestExoneration, string, error) {
 	if len(testDetail.Name) > MaxTestIDLength {
-		testsSkipped = append(testsSkipped, testDetail.Name)
 		log.Printf("[ERROR] Skip uploading to ResultDB due to test_id exceeding %d bytes max limit: %q", MaxTestIDLength, testDetail.Name)
-		return nil, testsSkipped, fmt.Errorf("The test name exceeds %d bytes max limit: %q ", MaxTestIDLength, testDetail.Name)
+		return nil, nil, testDetail.Name, fmt.Errorf("The test name exceeds %d bytes max limit: %q ", MaxTestIDLength, testDetail.Name)
 	}
+
 	testTags := append([]*resultpb.StringPair{
 		{Key: "gn_label", Value: testDetail.GNLabel},
 		// Most consumers should use `source_label` rather than `gn_label` since
@@ -250,7 +280,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	testStatus, failureReasonKind, err := resultDBStatus(testDetail.Status)
 	if err != nil {
 		log.Printf("[Warn] Skip uploading test target: %s to ResultDB due to error: %v", testDetail.Name, err)
-		return nil, testsSkipped, err
+		return nil, nil, "", err
 	}
 	r.StatusV2 = testStatus
 	if testStatus == resultpb.TestResult_FAILED {
@@ -280,7 +310,16 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 
 	setTestMetadata(&r, *testDetail, "")
-	return &r, testsSkipped, nil
+
+	if testDetail.Status == runtests.TestExonerated {
+		return &r, &sinkpb.TestExoneration{
+			TestId:          testDetail.Name,
+			ExplanationHtml: fmt.Sprintf("Test target %s was exonerated in the test summary.", testDetail.Name),
+			Reason:          resultpb.ExonerationReason_NOT_CRITICAL,
+		}, "", nil
+	}
+
+	return &r, nil, "", nil
 }
 
 func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
@@ -309,12 +348,7 @@ func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 		return ""
 	}
 
-	// Truncate to max length.
-	failureReason := builder.String()
-	if len(failureReason) > MaxFailureReasonLength {
-		failureReason = failureReason[:MaxFailureReasonLength]
-	}
-	return failureReason
+	return truncateString(builder.String(), MaxFailureReasonLength)
 }
 
 func resultDBStatus(result runtests.TestStatus) (resultpb.TestResult_Status, resultpb.FailureReason_Kind, error) {
@@ -329,6 +363,8 @@ func resultDBStatus(result runtests.TestStatus) (resultpb.TestResult_Status, res
 		return resultpb.TestResult_FAILED, resultpb.FailureReason_TIMEOUT, nil
 	case runtests.TestInfraFailure:
 		return resultpb.TestResult_FAILED, resultpb.FailureReason_CRASH, nil
+	case runtests.TestExonerated:
+		return resultpb.TestResult_FAILED, resultpb.FailureReason_ORDINARY, nil
 	}
 	return resultpb.TestResult_STATUS_UNSPECIFIED, resultpb.FailureReason_KIND_UNSPECIFIED, fmt.Errorf("cannot map Result: %s to result_sink test_result status", result)
 }
@@ -374,19 +410,38 @@ func truncateString(str string, maxLength int) string {
 	return str
 }
 
-// createTestResultsRequests breaks an array of resultpb.TestResult into an array of resultpb.ReportTestResultsRequest
-// chunkSize defined the number of TestResult contained in each ReportTrestResultsRequest.
+// createTestResultsRequests breaks an array of sinkpb.TestResult into an array of sinkpb.ReportTestResultsRequest
+// using the specified chunk size limit.
 func createTestResultsRequests(results []*sinkpb.TestResult, chunkSize int) []*sinkpb.ReportTestResultsRequest {
-	totalChunks := (len(results)-1)/chunkSize + 1
-	requests := make([]*sinkpb.ReportTestResultsRequest, totalChunks)
-	for i := 0; i < totalChunks; i++ {
-		requests[i] = &sinkpb.ReportTestResultsRequest{
-			TestResults: make([]*sinkpb.TestResult, 0, chunkSize),
-		}
+	return chunkSlice(results, chunkSize, func(chunk []*sinkpb.TestResult) *sinkpb.ReportTestResultsRequest {
+		return &sinkpb.ReportTestResultsRequest{TestResults: chunk}
+	})
+}
+
+// createTestExonerationsRequests breaks an array of sinkpb.TestExoneration into an array of sinkpb.ReportTestExonerationsRequest
+// using the specified chunk size limit.
+func createTestExonerationsRequests(exonerations []*sinkpb.TestExoneration, chunkSize int) []*sinkpb.ReportTestExonerationsRequest {
+	return chunkSlice(exonerations, chunkSize, func(chunk []*sinkpb.TestExoneration) *sinkpb.ReportTestExonerationsRequest {
+		return &sinkpb.ReportTestExonerationsRequest{TestExonerations: chunk}
+	})
+}
+
+// chunkSlice generic helper splits a slice of T into chunks of the specified size,
+// and wraps each chunk into a request R using the provided wrapper function.
+func chunkSlice[T any, R any](items []T, chunkSize int, wrapper func([]T) R) []R {
+	if len(items) == 0 {
+		return nil
 	}
-	for i, result := range results {
-		requestIndex := i / chunkSize
-		requests[requestIndex].TestResults = append(requests[requestIndex].TestResults, result)
+	totalChunks := (len(items)-1)/chunkSize + 1
+	requests := make([]R, totalChunks)
+	for i := 0; i < totalChunks; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(items) {
+			end = len(items)
+		}
+		// Use 3-index slicing to set capacity to length for safety
+		requests[i] = wrapper(items[start:end:end])
 	}
 	return requests
 }

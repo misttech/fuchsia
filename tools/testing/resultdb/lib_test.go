@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
+	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -24,7 +26,7 @@ import (
 func TestParseSummary(t *testing.T) {
 	const testCount = 10
 	summary := createTestSummary(testCount)
-	testResults, _ := SummaryToResultSink(summary, []*resultpb.StringPair{}, "")
+	testResults, _, _ := SummaryToResultSink(summary, []*resultpb.StringPair{}, "")
 	if len(testResults) != testCount {
 		t.Errorf(
 			"Parsed incorrect number of resultdb tests in TestSummary, got %d, want %d",
@@ -65,7 +67,7 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 	extraTags := []*resultpb.StringPair{
 		{Key: "key1", Value: "value1"},
 	}
-	result, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
+	result, _, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
 	if err != nil {
 		t.Fatalf("Cannot parse test detail. got %s", err)
 	}
@@ -131,12 +133,12 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 	extraTags := []*resultpb.StringPair{
 		{Key: "key1", Value: "value1"},
 	}
-	result, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
+	result, _, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
 	if err != nil {
 		t.Fatalf("Cannot parse test detail. got %s", err)
 	}
 
-	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed\nbar_2: test case failed\nbar_3: test case failed\nbar_4: test case failed\nbar_5: test case failed\nbar_6: test case failed\nbar_7: test case failed\nbar_8: test case failed\nbar_9: test case failed\nbar_10: test case failed\nbar_11: test case failed\nbar_12: test case failed\nbar_13: test case failed\nbar_14: test case failed\nbar_15: test case failed\nbar_16: test case failed\nbar_17: test case failed\nbar_18: test case failed\nbar_19: test case failed\nbar_20: test case failed\nbar_21: test case failed\nbar_22: test case failed\nbar_23: test case failed\nbar_24: test case failed\nbar_25: test case failed\nbar_26: test case failed\nbar_27: test case failed\nbar_28: test case failed\nbar_29: test case failed\nbar_30: test case failed\nbar_31: test case failed\nbar_32: test case failed\nbar_33: test case failed\nbar_34: test case failed\nbar_35: test case failed\nbar_36: test case failed\nbar_37: test case failed\nbar_38: test case failed\nbar_39: test case failed\nbar_40: test case failed\nbar_41: t"
+	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed\nbar_2: test case failed\nbar_3: test case failed\nbar_4: test case failed\nbar_5: test case failed\nbar_6: test case failed\nbar_7: test case failed\nbar_8: test case failed\nbar_9: test case failed\nbar_10: test case failed\nbar_11: test case failed\nbar_12: test case failed\nbar_13: test case failed\nbar_14: test case failed\nbar_15: test case failed\nbar_16: test case failed\nbar_17: test case failed\nbar_18: test case failed\nbar_19: test case failed\nbar_20: test case failed\nbar_21: test case failed\nbar_22: test case failed\nbar_23: test case failed\nbar_24: test case failed\nbar_25: test case failed\nbar_26: test case failed\nbar_27: test case failed\nbar_28: test case failed\nbar_29: test case failed\nbar_30: test case failed\nbar_31: test case failed\nbar_32: test case failed\nbar_33: test case failed\nbar_34: test case failed\nbar_35: test case failed\nbar_36: test case failed\nbar_37: test case failed\nbar_38: test case failed\nbar_39: test case failed\nbar_40: test case failed\nbar_41..."
 	var gotErr string
 	if result.FailureReason != nil && len(result.FailureReason.Errors) > 0 {
 		gotErr = result.FailureReason.Errors[0].Message
@@ -222,7 +224,7 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			extraTags := []*resultpb.StringPair{}
-			result, _, err := testDetailsToResultSink(extraTags, &tc.detail, outputRoot)
+			result, _, _, err := testDetailsToResultSink(extraTags, &tc.detail, outputRoot)
 			if err != nil {
 				t.Fatalf("Cannot parse test detail: %s", err)
 			}
@@ -262,7 +264,7 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		},
 		ComponentID: 1478143,
 	}
-	results, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
 	if len(results) != 5 {
 		t.Errorf("Got %d test case results, want 5", len(results))
 	}
@@ -513,4 +515,259 @@ func TestTruncateString(t *testing.T) {
 				tc.testStr, tc.limit, r, tc.want)
 		}
 	}
+}
+
+func TestExoneratedTestCase(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "foo",
+		Status:    runtests.TestFailure,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "foo/bar_exonerated",
+					SuiteName:   "foo",
+					CaseName:    "bar_exonerated",
+					Status:      runtests.TestExonerated,
+					Format:      "Rust",
+					FailReason:  "Flaky test instance",
+				},
+				{
+					DisplayName: "foo/bar_passed",
+					SuiteName:   "foo",
+					CaseName:    "bar_passed",
+					Status:      runtests.TestSuccess,
+					Format:      "Rust",
+				},
+			},
+		},
+	}
+
+	results, exonerations, skipped := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+
+	if len(results) != 2 {
+		t.Fatalf("Got %d test case results, want 2", len(results))
+	}
+	if len(skipped) != 0 {
+		t.Errorf("Got skipped tests %v, want 0", skipped)
+	}
+	if len(exonerations) != 1 {
+		t.Fatalf("Got %d exonerations, want 1", len(exonerations))
+	}
+
+	// Verify the first result is the exonerated one (FAILED)
+	exoneratedCaseResult := results[0]
+	if exoneratedCaseResult.TestId != "foo/foo:bar_exonerated" {
+		t.Errorf("Unexpected TestId for exonerated case: %s", exoneratedCaseResult.TestId)
+	}
+	if exoneratedCaseResult.StatusV2 != resultpb.TestResult_FAILED {
+		t.Errorf("Exonerated case result status should be FAILED, got: %s", exoneratedCaseResult.StatusV2)
+	}
+	if exoneratedCaseResult.FailureReason == nil || len(exoneratedCaseResult.FailureReason.Errors) == 0 {
+		t.Fatalf("Exonerated case result should have FailureReason")
+	}
+	if exoneratedCaseResult.FailureReason.Errors[0].Message != "Flaky test instance" {
+		t.Errorf("Unexpected FailureReason message: %s", exoneratedCaseResult.FailureReason.Errors[0].Message)
+	}
+
+	// Verify the second result is the passed one (PASSED)
+	passedCaseResult := results[1]
+	if passedCaseResult.TestId != "foo/foo:bar_passed" {
+		t.Errorf("Unexpected TestId for passed case: %s", passedCaseResult.TestId)
+	}
+	if passedCaseResult.StatusV2 != resultpb.TestResult_PASSED {
+		t.Errorf("Passed case result status should be PASSED, got: %s", passedCaseResult.StatusV2)
+	}
+	if passedCaseResult.FailureReason != nil {
+		t.Errorf("Passed case result should not have FailureReason, got: %+v", passedCaseResult.FailureReason)
+	}
+
+	// Verify that the exoneration maps to the exact test case ID
+	exoneration := exonerations[0]
+	if exoneration.TestId != "foo/foo:bar_exonerated" {
+		t.Errorf("Exoneration maps to incorrect TestId: got %s, want foo/foo:bar_exonerated", exoneration.TestId)
+	}
+	if exoneration.Reason != resultpb.ExonerationReason_NOT_CRITICAL {
+		t.Errorf("Unexpected Exoneration reason: got %v, want NOT_CRITICAL", exoneration.Reason)
+	}
+	if !strings.Contains(exoneration.ExplanationHtml, "bar_exonerated") {
+		t.Errorf("ExplanationHtml does not name the testcase: got %q", exoneration.ExplanationHtml)
+	}
+}
+
+func TestExoneratedTestDetail(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:           "foo_exonerated_target",
+		Status:         runtests.TestExonerated,
+		StartTime:      time.Now(),
+		DurationMillis: 500,
+	}
+
+	result, exoneration, skipped, err := testDetailsToResultSink([]*resultpb.StringPair{}, detail, outputRoot)
+	if err != nil {
+		t.Fatalf("Unexpected error mapping details: %v", err)
+	}
+	if skipped != "" {
+		t.Errorf("Got skipped test %q, want empty", skipped)
+	}
+	if result == nil {
+		t.Fatalf("Result is nil")
+	}
+	if exoneration == nil {
+		t.Fatalf("Exoneration is nil")
+	}
+
+	// Verify that the exonerated target has its result mapped as FAILED
+	if result.TestId != "foo_exonerated_target" {
+		t.Errorf("Unexpected TestId: got %s", result.TestId)
+	}
+	if result.StatusV2 != resultpb.TestResult_FAILED {
+		t.Errorf("Exonerated target status should be FAILED, got: %s", result.StatusV2)
+	}
+
+	// Verify the target's exoneration maps to the target's flat name
+	if exoneration.TestId != "foo_exonerated_target" {
+		t.Errorf("Exoneration maps to incorrect TestId: got %s", exoneration.TestId)
+	}
+	if exoneration.Reason != resultpb.ExonerationReason_NOT_CRITICAL {
+		t.Errorf("Unexpected Exoneration reason: got %v", exoneration.Reason)
+	}
+	if !strings.Contains(exoneration.ExplanationHtml, "foo_exonerated_target") {
+		t.Errorf("ExplanationHtml does not name the test target: got %q", exoneration.ExplanationHtml)
+	}
+}
+
+func TestExoneratedSummaryToResultSink(t *testing.T) {
+	summary := &runtests.TestSummary{
+		Tests: []runtests.TestDetails{
+			{
+				Name:      "test_exonerated_target",
+				Status:    runtests.TestExonerated,
+				StartTime: time.Now(),
+			},
+			{
+				Name:      "test_exonerated_case",
+				Status:    runtests.TestFailure,
+				StartTime: time.Now(),
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{
+						{
+							DisplayName: "test_exonerated_case/suite:case",
+							SuiteName:   "suite",
+							CaseName:    "case",
+							Status:      runtests.TestExonerated,
+						},
+					},
+				},
+			},
+			{
+				Name:      "test_passed",
+				Status:    runtests.TestSuccess,
+				StartTime: time.Now(),
+			},
+		},
+	}
+
+	results, exonerations, skipped := SummaryToResultSink(summary, []*resultpb.StringPair{}, "")
+
+	// test_exonerated_target reports 1 result (itself) and 1 target exoneration.
+	// test_exonerated_case reports 2 results (the case and the target details) and 1 case exoneration.
+	// test_passed reports 1 result (itself).
+	// Total expected results: 1 (target) + 1 (case) + 1 (details of target) + 1 (passed target) = 4
+	if len(results) != 4 {
+		t.Errorf("Got %d results, want 4", len(results))
+	}
+	if len(exonerations) != 2 {
+		t.Fatalf("Got %d exonerations, want 2", len(exonerations))
+	}
+	if len(skipped) != 0 {
+		t.Errorf("Got skipped tests %v, want 0", skipped)
+	}
+
+	// Verify the two exonerations map to their respective targets
+	exonerationIDs := []string{exonerations[0].TestId, exonerations[1].TestId}
+	sort.Strings(exonerationIDs)
+
+	expectedIDs := []string{"test_exonerated_case/suite:case", "test_exonerated_target"}
+	if diff := cmp.Diff(exonerationIDs, expectedIDs); diff != "" {
+		t.Errorf("Exoneration IDs differ (-got +want):\n%s", diff)
+	}
+}
+
+func TestRequestsChunking(t *testing.T) {
+	t.Run("TestResults_Chunking", func(t *testing.T) {
+		const resultCount = MaxBatchSize*2 + 1
+		results := make([]*sinkpb.TestResult, resultCount)
+		for i := 0; i < resultCount; i++ {
+			results[i] = &sinkpb.TestResult{
+				TestId: fmt.Sprintf("test_result_%d", i),
+			}
+		}
+
+		resultRequests := createTestResultsRequests(results, MaxBatchSize)
+
+		// Expected partition chunks: MaxBatchSize, MaxBatchSize, 1 (total 3 chunks)
+		if len(resultRequests) != 3 {
+			t.Fatalf("Expected 3 TestResults request chunks, got: %d", len(resultRequests))
+		}
+		if len(resultRequests[0].TestResults) != MaxBatchSize {
+			t.Errorf("First chunk should have %d results, got: %d", MaxBatchSize, len(resultRequests[0].TestResults))
+		}
+		if len(resultRequests[1].TestResults) != MaxBatchSize {
+			t.Errorf("Second chunk should have %d results, got: %d", MaxBatchSize, len(resultRequests[1].TestResults))
+		}
+		if len(resultRequests[2].TestResults) != 1 {
+			t.Errorf("Third chunk should have 1 result, got: %d", len(resultRequests[2].TestResults))
+		}
+		expectedLastResultId := fmt.Sprintf("test_result_%d", resultCount-1)
+		if resultRequests[2].TestResults[0].TestId != expectedLastResultId {
+			t.Errorf("Unexpected TestId in last chunk: got %s, want %s", resultRequests[2].TestResults[0].TestId, expectedLastResultId)
+		}
+	})
+
+	t.Run("TestResults_Empty", func(t *testing.T) {
+		emptyResults := createTestResultsRequests(nil, MaxBatchSize)
+		if emptyResults != nil {
+			t.Errorf("Expected nil for empty results chunking, got: %+v", emptyResults)
+		}
+	})
+
+	t.Run("TestExonerations_Chunking", func(t *testing.T) {
+		const exonerationCount = MaxBatchSize*2 + 1
+		exonerations := make([]*sinkpb.TestExoneration, exonerationCount)
+		for i := 0; i < exonerationCount; i++ {
+			exonerations[i] = &sinkpb.TestExoneration{
+				TestId: fmt.Sprintf("test_exoneration_%d", i),
+			}
+		}
+
+		exonerationRequests := createTestExonerationsRequests(exonerations, MaxBatchSize)
+
+		// Expected partition chunks: MaxBatchSize, MaxBatchSize, 1 (total 3 chunks)
+		if len(exonerationRequests) != 3 {
+			t.Fatalf("Expected 3 TestExonerations request chunks, got: %d", len(exonerationRequests))
+		}
+		if len(exonerationRequests[0].TestExonerations) != MaxBatchSize {
+			t.Errorf("First chunk should have %d exonerations, got: %d", MaxBatchSize, len(exonerationRequests[0].TestExonerations))
+		}
+		if len(exonerationRequests[1].TestExonerations) != MaxBatchSize {
+			t.Errorf("Second chunk should have %d exonerations, got: %d", MaxBatchSize, len(exonerationRequests[1].TestExonerations))
+		}
+		if len(exonerationRequests[2].TestExonerations) != 1 {
+			t.Errorf("Third chunk should have 1 exoneration, got: %d", len(exonerationRequests[2].TestExonerations))
+		}
+		expectedLastExonerationId := fmt.Sprintf("test_exoneration_%d", exonerationCount-1)
+		if exonerationRequests[2].TestExonerations[0].TestId != expectedLastExonerationId {
+			t.Errorf("Unexpected TestId in last chunk: got %s, want %s", exonerationRequests[2].TestExonerations[0].TestId, expectedLastExonerationId)
+		}
+	})
+
+	t.Run("TestExonerations_Empty", func(t *testing.T) {
+		emptyExonerations := createTestExonerationsRequests(nil, MaxBatchSize)
+		if emptyExonerations != nil {
+			t.Errorf("Expected nil for empty exonerations chunking, got: %+v", emptyExonerations)
+		}
+	})
 }

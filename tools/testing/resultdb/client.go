@@ -13,6 +13,7 @@ import (
 
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // luciContext corresponds to the schema of the file identified by the
@@ -44,15 +45,23 @@ type resultDBInvocation struct {
 	Name string `json:"name"`
 }
 
-func (c *Client) ReportTestResults(requests []*sinkpb.ReportTestResultsRequest) error {
-	for _, request := range requests {
-		testResult := protojson.Format(request)
-		err := c.sendData(testResult, "ReportTestResults")
+func report[T proto.Message](c *Client, requests []T, endpoint string) error {
+	for _, req := range requests {
+		data := protojson.Format(req)
+		err := c.sendData(data, endpoint)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c *Client) ReportTestResults(requests []*sinkpb.ReportTestResultsRequest) error {
+	return report(c, requests, "ReportTestResults")
+}
+
+func (c *Client) ReportTestExonerations(requests []*sinkpb.ReportTestExonerationsRequest) error {
+	return report(c, requests, "ReportTestExonerations")
 }
 
 func (c *Client) ReportInvocationLevelArtifacts(outputRoot string, invocationArtifacts []string) error {

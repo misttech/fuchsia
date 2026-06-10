@@ -43,6 +43,7 @@ func mainImpl() error {
 	flag.Parse()
 
 	var requests []*sinkpb.ReportTestResultsRequest
+	var exonerationRequests []*sinkpb.ReportTestExonerationsRequest
 	var allTestsSkipped []string
 
 	tagPairs, err := convertTags(tags)
@@ -50,7 +51,7 @@ func mainImpl() error {
 		return err
 	}
 
-	requests, allTestsSkipped, err = resultdb.ProcessSummaries(summaries, tagPairs, outputRoot)
+	requests, exonerationRequests, allTestsSkipped, err = resultdb.ProcessSummaries(summaries, tagPairs, outputRoot)
 	if err != nil {
 		return err
 	}
@@ -61,6 +62,10 @@ func mainImpl() error {
 	}
 
 	if err = client.ReportTestResults(requests); err != nil {
+		return err
+	}
+
+	if err = client.ReportTestExonerations(exonerationRequests); err != nil {
 		return err
 	}
 
