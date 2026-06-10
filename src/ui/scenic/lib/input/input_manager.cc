@@ -96,10 +96,16 @@ void InputManager::BindScopedObserverRegistry(
   scoped_observer_registry_.Bind(std::move(request));
 }
 
+#if !defined(FUCHSIA_DSO)
 void InputManager::BindPointerinjectorRegistry(
     fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
   input_.BindPointerinjectorRegistry(std::move(request));
 }
+#else
+void InputManager::BindPointerinjectorRegistry(zx::channel channel) {
+  input_.BindPointerinjectorRegistry(std::move(channel));
+}
+#endif
 
 void InputManager::BindLocalHit(
     fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {

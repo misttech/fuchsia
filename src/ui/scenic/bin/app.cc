@@ -661,11 +661,20 @@ void App::InitializeInput() {
       });
 
   // Register Pointerinjector Registry
+#if !defined(FUCHSIA_DSO)
   app_context_->outgoing()->AddPublicService<fuchsia::ui::pointerinjector::Registry>(
       [this](fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
         input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,
                                  std::move(request));
       });
+#else
+  app_context_->outgoing()->AddPublicService(
+      [this](zx::channel channel, async_dispatcher_t* unused_dispatcher) mutable {
+        input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,
+                                 std::move(channel));
+      },
+      fuchsia_ui_pointerinjector_dso::Registry::kDiscoverableName);
+#endif
 
   // Register LocalHit upgrade registry
   app_context_->outgoing()->AddPublicService<fuchsia::ui::pointer::augment::LocalHit>(

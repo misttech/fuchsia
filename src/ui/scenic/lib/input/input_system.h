@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_INPUT_INPUT_SYSTEM_H_
 
 #include <lib/async/dispatcher.h>
+#include <lib/zx/channel.h>
 
 #include <optional>
 
@@ -28,8 +29,12 @@ class InputSystem {
               sys::ComponentContext* context = nullptr);
   ~InputSystem() = default;
 
+#if !defined(FUCHSIA_DSO)
   void BindPointerinjectorRegistry(
       fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+#else
+  void BindPointerinjectorRegistry(zx::channel channel);
+#endif
   void BindLocalHit(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
   void BindA11yPointerEventRegistry(
       fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
@@ -44,6 +49,7 @@ class InputSystem {
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
       zx_koid_t client_view_ref_koid);
 
+#if !defined(FUCHSIA_DSO)
   // For tests.
   // TODO(https://fxbug.dev/42152433): Remove when integration tests are properly separated out.
   void RegisterPointerinjector(
@@ -52,14 +58,16 @@ class InputSystem {
       fuchsia::ui::pointerinjector::Registry::RegisterCallback callback) {
     pointerinjector_registry_.Register(std::move(config), std::move(injector), std::move(callback));
   }
+#endif
 
  private:
   HitTester hit_tester_;
   MouseSystem mouse_system_;
   TouchSystem touch_system_;
-  PointerinjectorRegistry pointerinjector_registry_;
 #if defined(FUCHSIA_DSO)
-  ::scenic_impl::input_dso::PointerinjectorRegistry pointerinjector_registry_dso_;
+  ::scenic_impl::input_dso::PointerinjectorRegistry pointerinjector_registry_;
+#else
+  PointerinjectorRegistry pointerinjector_registry_;
 #endif
 };
 

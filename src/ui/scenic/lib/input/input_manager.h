@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
+#include <lib/zx/channel.h>
 
 #include "src/ui/scenic/lib/focus/focus_manager.h"
 #include "src/ui/scenic/lib/input/constants.h"
@@ -69,8 +70,12 @@ class InputManager {
       fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request);
   void BindScopedObserverRegistry(
       fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request);
+#if !defined(FUCHSIA_DSO)
   void BindPointerinjectorRegistry(
       fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+#else
+  void BindPointerinjectorRegistry(zx::channel channel);
+#endif
   void BindLocalHit(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
   void BindA11yPointerEventRegistry(
       fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
