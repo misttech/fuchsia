@@ -3321,6 +3321,142 @@ TEST(Vmar, WriteReadOnlyMemory) {
   EXPECT_OK(zx::process::self()->write_memory(addr, &addr, 8, &actual));
 }
 
+// Test that zx_vmar_op_range checks handle rights before allowing operation to proceed.
+TEST(Vmar, OpRangeRights) {
+  // Limit interference between operations by providing every op with a separate vmar.
+  struct Setup {
+    zx::vmar no_rights, read_only, read_write;
+    zx_vaddr_t addr;
+    fit::deferred_action<fit::closure> cleanup;
+  };
+
+  auto make_one_page_vmar = []() -> zx::result<Setup> {
+    zx::vmo vmo;
+    zx_status_t status = zx::vmo::create(zx_system_get_page_size(), 0, &vmo);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    zx::vmar sub;
+    zx_vaddr_t addr;
+    status = zx::vmar::root_self()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0,
+                                             zx_system_get_page_size(), &sub, &addr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    status =
+        sub.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, zx_system_get_page_size(), &addr);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    zx::vmar sub_no_rights, sub_read_only, sub_read_write;
+    status = sub.duplicate(0, &sub_no_rights);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    status = sub.duplicate(ZX_RIGHT_READ, &sub_read_only);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    status = sub.duplicate(ZX_RIGHT_READ | ZX_RIGHT_WRITE, &sub_read_write);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    return zx::ok(Setup{
+        .no_rights = std::move(sub_no_rights),
+        .read_only = std::move(sub_read_only),
+        .read_write = std::move(sub_read_write),
+        .addr = addr,
+        .cleanup = fit::defer(
+            fit::closure([sub = std::move(sub)]() { ZX_ASSERT(ZX_OK == sub.destroy()); })),
+    });
+  };
+
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->no_rights.op_range(ZX_VMAR_OP_COMMIT, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->read_only.op_range(ZX_VMAR_OP_COMMIT, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_OK(
+        s->read_write.op_range(ZX_VMAR_OP_COMMIT, s->addr, zx_system_get_page_size(), nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->no_rights.op_range(ZX_VMAR_OP_DECOMMIT, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->read_only.op_range(ZX_VMAR_OP_DECOMMIT, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_OK(s->read_write.op_range(ZX_VMAR_OP_DECOMMIT, s->addr, zx_system_get_page_size(),
+                                     nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_STATUS(ZX_ERR_ACCESS_DENIED,
+                  s->no_rights.op_range(ZX_VMAR_OP_MAP_RANGE, s->addr, zx_system_get_page_size(),
+                                        nullptr, 0));
+    EXPECT_OK(s->read_only.op_range(ZX_VMAR_OP_MAP_RANGE, s->addr, zx_system_get_page_size(),
+                                    nullptr, 0));
+    EXPECT_OK(s->read_write.op_range(ZX_VMAR_OP_MAP_RANGE, s->addr, zx_system_get_page_size(),
+                                     nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->no_rights.op_range(ZX_VMAR_OP_ZERO, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->read_only.op_range(ZX_VMAR_OP_ZERO, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_OK(
+        s->read_write.op_range(ZX_VMAR_OP_ZERO, s->addr, zx_system_get_page_size(), nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_OK(s->no_rights.op_range(ZX_VMAR_OP_DONT_NEED, s->addr, zx_system_get_page_size(),
+                                    nullptr, 0));
+    EXPECT_OK(s->read_only.op_range(ZX_VMAR_OP_DONT_NEED, s->addr, zx_system_get_page_size(),
+                                    nullptr, 0));
+    EXPECT_OK(s->read_write.op_range(ZX_VMAR_OP_DONT_NEED, s->addr, zx_system_get_page_size(),
+                                     nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_OK(s->no_rights.op_range(ZX_VMAR_OP_ALWAYS_NEED, s->addr, zx_system_get_page_size(),
+                                    nullptr, 0));
+    EXPECT_OK(s->read_only.op_range(ZX_VMAR_OP_ALWAYS_NEED, s->addr, zx_system_get_page_size(),
+                                    nullptr, 0));
+    EXPECT_OK(s->read_write.op_range(ZX_VMAR_OP_ALWAYS_NEED, s->addr, zx_system_get_page_size(),
+                                     nullptr, 0));
+  }
+  {
+    zx::result<Setup> s = make_one_page_vmar();
+    ASSERT_OK(s.status_value());
+    EXPECT_STATUS(
+        ZX_ERR_ACCESS_DENIED,
+        s->no_rights.op_range(ZX_VMAR_OP_PREFETCH, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_OK(
+        s->read_only.op_range(ZX_VMAR_OP_PREFETCH, s->addr, zx_system_get_page_size(), nullptr, 0));
+    EXPECT_OK(s->read_write.op_range(ZX_VMAR_OP_PREFETCH, s->addr, zx_system_get_page_size(),
+                                     nullptr, 0));
+  }
+}
+
 // Test that attempting to access the stream size of a read-only VMO subject to
 // zx_process_write_memory doesn't crash, and that the inherited stream size is correct. Regression
 // test for https://fxbug.dev/506555297.

@@ -56,6 +56,10 @@ class VmAddressRegionDispatcher final
   // protections.
   static bool is_valid_mapping_protection(uint32_t flags);
 
+  static ktl::optional<VmAddressRegion::RangeOpType> range_op_type_from_code(uint32_t op);
+
+  static bool is_operation_allowed_from_rights(VmAddressRegion::RangeOpType op, zx_rights_t rights);
+
   static VmAddressRegionOpChildren op_children_from_rights(zx_rights_t rights) {
     return (rights & ZX_RIGHT_OP_CHILDREN) == 0 ? VmAddressRegionOpChildren::No
                                                 : VmAddressRegionOpChildren::Yes;

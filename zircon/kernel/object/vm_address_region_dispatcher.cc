@@ -226,37 +226,64 @@ zx_status_t VmAddressRegionDispatcher::Protect(vaddr_t base, size_t len, uint32_
   return vmar_->Protect(base, len, arch_mmu_flags, op_children);
 }
 
+// static
+ktl::optional<VmAddressRegion::RangeOpType> VmAddressRegionDispatcher::range_op_type_from_code(
+    uint32_t op) {
+  switch (op) {
+    case ZX_VMAR_OP_COMMIT:
+      return VmAddressRegion::RangeOpType::Commit;
+    case ZX_VMAR_OP_DECOMMIT:
+      return VmAddressRegion::RangeOpType::Decommit;
+    case ZX_VMAR_OP_MAP_RANGE:
+      return VmAddressRegion::RangeOpType::MapRange;
+    case ZX_VMAR_OP_ZERO:
+      return VmAddressRegion::RangeOpType::Zero;
+    case ZX_VMAR_OP_DONT_NEED:
+      return VmAddressRegion::RangeOpType::DontNeed;
+    case ZX_VMAR_OP_ALWAYS_NEED:
+      return VmAddressRegion::RangeOpType::AlwaysNeed;
+    case ZX_VMAR_OP_PREFETCH:
+      return VmAddressRegion::RangeOpType::Prefetch;
+    default:
+      return ktl::nullopt;
+  }
+}
+
+// static
+bool VmAddressRegionDispatcher::is_operation_allowed_from_rights(VmAddressRegion::RangeOpType op,
+                                                                 zx_rights_t rights) {
+  switch (op) {
+    case VmAddressRegion::RangeOpType::Commit:
+    case VmAddressRegion::RangeOpType::Decommit:
+    case VmAddressRegion::RangeOpType::Zero:
+      return (rights & ZX_RIGHT_WRITE) != 0;
+    case VmAddressRegion::RangeOpType::Prefetch:
+    case VmAddressRegion::RangeOpType::MapRange:
+      return (rights & ZX_RIGHT_READ) != 0;
+    case VmAddressRegion::RangeOpType::DontNeed:
+    case VmAddressRegion::RangeOpType::AlwaysNeed:
+      return true;  // just hints
+    default:
+      panic("invalid range op type %d", static_cast<int>(op));
+  }
+}
+
 zx_status_t VmAddressRegionDispatcher::RangeOp(uint32_t op, vaddr_t base, size_t len,
                                                zx_rights_t rights, user_inout_ptr<void> buffer,
                                                size_t buffer_size) {
   canary_.Assert();
 
-  const VmAddressRegionOpChildren op_children = op_children_from_rights(rights);
-
-  // TODO(https://fxbug.dev/42115873): Restrict these operations based on the passed in |rights|.
-  if (op == ZX_VMAR_OP_COMMIT) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::Commit, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_DECOMMIT) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::Decommit, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_MAP_RANGE) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::MapRange, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_ZERO) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::Zero, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_DONT_NEED) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::DontNeed, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_ALWAYS_NEED) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::AlwaysNeed, base, len, op_children, buffer,
-                          buffer_size);
-  } else if (op == ZX_VMAR_OP_PREFETCH) {
-    return vmar_->RangeOp(VmAddressRegion::RangeOpType::Prefetch, base, len, op_children, buffer,
-                          buffer_size);
+  const ktl::optional<VmAddressRegion::RangeOpType> which_op = range_op_type_from_code(op);
+  if (!which_op.has_value()) {
+    return ZX_ERR_INVALID_ARGS;
   }
-  return ZX_ERR_INVALID_ARGS;
+
+  if (!is_operation_allowed_from_rights(*which_op, rights)) {
+    return ZX_ERR_ACCESS_DENIED;
+  }
+
+  const VmAddressRegionOpChildren op_children = op_children_from_rights(rights);
+  return vmar_->RangeOp(*which_op, base, len, op_children, buffer, buffer_size);
 }
 
 zx_status_t VmAddressRegionDispatcher::Unmap(vaddr_t base, size_t len,
