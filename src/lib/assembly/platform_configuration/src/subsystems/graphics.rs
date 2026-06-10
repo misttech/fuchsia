@@ -38,6 +38,10 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
             builder.platform_bundle("vulkan_loader")?;
         }
 
+        if context.board_config.provides_feature(BoardFeature::FakeDisplay) {
+            builder.platform_bundle("fake_display_stack_host")?;
+        }
+
         builder.set_config_capability("fuchsia.virtcon.BufferCount", Config::new_void())?;
 
         if let Some(scheme) = &virtcon_config.color_scheme {

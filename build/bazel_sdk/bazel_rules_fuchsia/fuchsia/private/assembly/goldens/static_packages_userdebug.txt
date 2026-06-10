@@ -36,6 +36,7 @@ build-info-service
 ?factory-reset-trigger
 ?factory_reset
 ?factory_store_providers
+?fake-display-stack-host
 ?fake_battery
 ?fan-controller
 ?feedback-config

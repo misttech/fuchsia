@@ -43,9 +43,11 @@ source_set("fake-lib") {
   ]
 }
 
+# TODO(https://fxbug.dev/517943116): This target is not testonly because it is
+# used by fake-display-stack-host, which is included in assembly.
+# We should make fake-display a driver only included for specific product
+# assembly configurations so we can make this testonly again.
 static_library("fake-display-stack") {
-  testonly = true
-
   sources = [
     "fake-coordinator-harness.cc",
     "fake-coordinator-harness.h",

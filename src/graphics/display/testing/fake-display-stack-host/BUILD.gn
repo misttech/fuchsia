@@ -8,7 +8,6 @@ import("//build/test.gni")
 import("//tools/cmc/build/expect_includes.gni")
 
 executable("bin") {
-  testonly = true
   output_name = "fake-display-stack-host"
 
   sources = [ "main.cc" ]
@@ -27,31 +26,26 @@ executable("bin") {
 }
 
 fuchsia_component_manifest("component-manifest") {
-  testonly = true
   manifest = "meta/fake-display-stack-host.cml"
   component_name = "fake-display-stack-host"
 }
 
 fuchsia_component("component") {
-  testonly = true
   cm_label = ":component-manifest"
   deps = [ ":bin" ]
 }
 
 fuchsia_structured_config_cpp_elf_lib("config-cpp-lib") {
-  testonly = true
   namespace = "fake_display_stack_host_config"
   cm_label = ":component-manifest"
 }
 
 fuchsia_structured_config_values("default-config-values") {
-  testonly = true
   cm_label = ":component-manifest"
   values_source = "config/default-config-values.json5"
 }
 
 group("component-with-default-config") {
-  testonly = true
   deps = [
     ":component",
     ":default-config-values",
@@ -59,7 +53,6 @@ group("component-with-default-config") {
 }
 
 fuchsia_package("fake-display-stack-host") {
-  testonly = true
   package_name = "fake-display-stack-host"
   deps = [
     ":component",
@@ -68,7 +61,6 @@ fuchsia_package("fake-display-stack-host") {
 }
 
 export_fuchsia_package_to_bazel("fake-display-stack-host.bazel_input") {
-  testonly = true
   package = ":fake-display-stack-host"
 }
 
@@ -83,7 +75,6 @@ expect_includes("shard-includes") {
 # Only supports statically defined components; do not use this on realms built
 # by Realm Builder.
 group("child-component") {
-  testonly = true
   deps = [
     ":component",
     ":shard-includes",
@@ -94,7 +85,6 @@ group("child-component") {
 # Only supports statically defined components; do not use this on realms built
 # by Realm Builder.
 group("child-component-with-default-config") {
-  testonly = true
   deps = [
     ":component-with-default-config",
     ":shard-includes",

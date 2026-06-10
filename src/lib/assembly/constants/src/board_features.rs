@@ -25,6 +25,8 @@ pub enum BoardFeature {
     EagerPowerManager,
     /// Fake battery driver for testing or emulators.
     FakeBattery,
+    /// Fake display stack host for testing.
+    FakeDisplay,
     /// Fake power sensor driver for testing.
     FakePowerSensor,
     /// Cooling fan device support.
@@ -118,6 +120,7 @@ impl AsRef<str> for BoardFeature {
             Self::CustomAudioCore => "fuchsia::custom_audio_core",
             Self::EagerPowerManager => "fuchsia::eager_power_manager",
             Self::FakeBattery => "fuchsia::fake_battery",
+            Self::FakeDisplay => "fuchsia::fake_display",
             Self::FakePowerSensor => "fuchsia::fake_power_sensor",
             Self::Fan => "fuchsia::fan",
             Self::Gnss => "fuchsia::gnss",

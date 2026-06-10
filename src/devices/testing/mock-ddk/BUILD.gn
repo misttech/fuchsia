@@ -6,8 +6,6 @@ import("//build/components.gni")
 import("//build/test.gni")
 
 source_set("mock-ddk") {
-  testonly = true
-
   sources = [
     "libdriver-api.cc",
     "mock-device.cc",

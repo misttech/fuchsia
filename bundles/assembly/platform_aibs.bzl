@@ -229,6 +229,7 @@ platform_aib_names = bringup_platform_aib_names + [
     # Graphics
     "vulkan_loader",
     "display_drivers_base",
+    "fake_display_stack_host",
 
     # SWD (Software Delivery)
     "product_provided_update_checker",

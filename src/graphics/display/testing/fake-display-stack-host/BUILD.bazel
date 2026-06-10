@@ -10,3 +10,8 @@ fuchsia_prebuilt_package(
     name = "fake-display-stack-host",
     archive = "@gn_targets//src/graphics/display/testing/fake-display-stack-host",
 )
+
+exports_files(
+    ["meta/fake-display-core-child.shard.cml"],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

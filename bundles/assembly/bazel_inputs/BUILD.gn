@@ -362,6 +362,11 @@ group("fake_power_sensor") {
   deps = [ "//bundles/assembly/bazel_inputs/src/power/testing/fake-powersensor:fake_power_sensor_package" ]
 }
 
+group("fake_display_stack_host") {
+  testonly = true
+  deps = [ "//bundles/assembly/bazel_inputs/src/graphics/display/testing/fake-display-stack-host:bazel_input" ]
+}
+
 group("sdhci_driver") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/devices/block/drivers/sdhci:package",
