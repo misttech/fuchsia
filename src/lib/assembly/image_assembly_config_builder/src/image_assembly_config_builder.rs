@@ -191,6 +191,7 @@ impl ImageAssemblyConfigBuilder {
             product: _,
             board: _,
             packages,
+            drivers,
             packages_to_compile,
             shell_commands,
             developer_provided_files: _,
@@ -215,6 +216,19 @@ impl ImageAssemblyConfigBuilder {
                 &package_details.set,
             )
             .context("Adding developer-specified package")?;
+        }
+
+        // Add drivers specified by the developer
+        for driver_details in drivers {
+            self.add_driver_package(
+                DriverDetails {
+                    package: driver_details.package,
+                    components: driver_details.components,
+                },
+                driver_details.set,
+                PackageOrigin::Developer,
+                None,
+            )?;
         }
 
         for compiled_package_def in packages_to_compile {
@@ -309,33 +323,14 @@ impl ImageAssemblyConfigBuilder {
 
         // Drivers are added to the correct driver map based on their set
         for driver_details in drivers {
-            let driver_package_path = &bundle_path.join(&driver_details.package);
-            self.add_package_from_path(
-                driver_package_path,
-                PackageOrigin::AIB,
-                &driver_details.set,
-            )?;
-
-            let driver_package_type = match driver_details.set {
-                PackageSet::Base => DriverPackageType::Base,
-                PackageSet::Bootfs => DriverPackageType::Boot,
-                _ => bail!("Unsupported driver package set type {:?}", driver_details.set),
-            };
-
-            let package_url =
-                DriverManifestBuilder::get_package_url(driver_package_type, driver_package_path)?;
-
-            let driver_set = match driver_package_type {
-                DriverPackageType::Base => &mut self.base_drivers,
-                DriverPackageType::Boot => &mut self.boot_drivers,
-            };
-
-            driver_set.try_insert_unique(
-                package_url,
+            self.add_driver_package(
                 DriverDetails {
-                    package: driver_details.package.into(),
+                    package: driver_details.package,
                     components: driver_details.components,
                 },
+                driver_details.set,
+                PackageOrigin::AIB,
+                Some(bundle_path),
             )?;
         }
 
@@ -402,26 +397,11 @@ impl ImageAssemblyConfigBuilder {
                 (true, PackageSet::Base) => continue,
                 (_, set) => set,
             };
-            // These need to be consolidated into a single type so that they are
-            // less cumbersome.
-            let driver_package_type = match &set {
-                PackageSet::Base => DriverPackageType::Base,
-                PackageSet::Bootfs => DriverPackageType::Boot,
-                _ => bail!("Unsupported board package set type {:?}", set),
-            };
-
-            self.add_package_from_path(&package, PackageOrigin::Board, &set)?;
-
-            let package_url =
-                DriverManifestBuilder::get_package_url(driver_package_type, &package)?;
-
-            let driver_set = match &driver_package_type {
-                DriverPackageType::Base => &mut self.base_drivers,
-                DriverPackageType::Boot => &mut self.boot_drivers,
-            };
-            driver_set.try_insert_unique(
-                package_url,
-                DriverDetails { package: package.into(), components },
+            self.add_driver_package(
+                DriverDetails { package, components },
+                set,
+                PackageOrigin::Board,
+                None,
             )?;
         }
 
@@ -728,20 +708,48 @@ impl ImageAssemblyConfigBuilder {
         // Base drivers are added to the base packages
         // Config data is not supported for driver packages since it is deprecated.
         for driver_details in drivers {
-            self.add_package_from_path(
-                &driver_details.package,
+            self.add_driver_package(
+                driver_details,
+                PackageSet::Base,
                 PackageOrigin::Product,
-                &PackageSet::Base,
-            )
-            .context("Adding base drivers")?;
-
-            let package_url = DriverManifestBuilder::get_package_url(
-                DriverPackageType::Base,
-                &driver_details.package,
+                None,
             )?;
-
-            self.base_drivers.try_insert_unique(package_url, driver_details)?;
         }
+        Ok(())
+    }
+
+    /// Helper to add a driver package, handling path resolution and insertion into the correct
+    /// driver set.
+    fn add_driver_package(
+        &mut self,
+        driver_details: DriverDetails,
+        set: PackageSet,
+        origin: PackageOrigin,
+        bundle_path: Option<&Utf8Path>,
+    ) -> Result<()> {
+        let driver_package_path =
+            bundle_path.map(|p| p.join(&driver_details.package)).unwrap_or_else(|| {
+                // If no bundle_path is provided, assume driver_details.package
+                // is absolute.
+                driver_details.package.clone()
+            });
+
+        self.add_package_from_path(&driver_package_path, origin, &set)?;
+
+        let driver_package_type = match set {
+            PackageSet::Base => DriverPackageType::Base,
+            PackageSet::Bootfs => DriverPackageType::Boot,
+            set => bail!("Unsupported package set '{set}' for drivers"),
+        };
+
+        let package_url =
+            DriverManifestBuilder::get_package_url(driver_package_type, &driver_package_path)?;
+
+        let driver_set = match &driver_package_type {
+            DriverPackageType::Base => &mut self.base_drivers,
+            DriverPackageType::Boot => &mut self.boot_drivers,
+        };
+        driver_set.try_insert_unique(package_url, driver_details)?;
         Ok(())
     }
 
@@ -2758,5 +2766,43 @@ mod tests {
                 "some_other_arg".to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn test_developer_overrides_drivers() {
+        let vars = TempdirPathsForTest::new();
+
+        let mut builder = ImageAssemblyConfigBuilder::new(
+            BuildType::Eng,
+            FeatureSetLevel::Standard,
+            "my_board".into(),
+            None::<Utf8PathBuf>,
+            FilesystemImageMode::default(),
+            AssemblyMode::default(),
+            SystemReleaseInfo::new_for_testing(),
+        );
+
+        let driver_path_base = write_empty_pkg(&vars.outdir, "my_driver_base", None);
+        let driver_path_boot = write_empty_pkg(&vars.outdir, "my_driver_boot", None);
+        builder
+            .add_developer_overrides(DeveloperOverrides {
+                drivers: vec![
+                    PackagedDriverDetails {
+                        package: driver_path_base.clone().into(),
+                        set: PackageSet::Base,
+                        components: vec!["meta/my_driver_base.cm".into()],
+                    },
+                    PackagedDriverDetails {
+                        package: driver_path_boot.clone().into(),
+                        set: PackageSet::Bootfs,
+                        components: vec!["meta/my_driver_boot.cm".into()],
+                    },
+                ],
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert!(builder.base_drivers.contains_key("fuchsia-pkg://fuchsia.com/my_driver_base"));
+        assert!(builder.boot_drivers.contains_key("fuchsia-boot:///my_driver_boot"));
     }
 }

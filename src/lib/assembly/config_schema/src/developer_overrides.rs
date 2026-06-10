@@ -8,8 +8,8 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::PackageDetails;
 use crate::assembly_input_bundle::{CompiledPackageDefinition, ShellCommands};
+use crate::{PackageDetails, PackagedDriverDetails};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum FeedbackBuildTypeConfig {
@@ -74,6 +74,11 @@ pub struct DeveloperOverrides {
     /// Packages to add to the build.
     #[walk_paths]
     pub packages: Vec<PackageDetails>,
+
+    /// Drivers to add to the build.
+    #[serde(default)]
+    #[walk_paths]
+    pub drivers: Vec<PackagedDriverDetails>,
 
     /// Compiled components to add to the build
     #[walk_paths]

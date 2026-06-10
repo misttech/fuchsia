@@ -81,6 +81,30 @@ import("//build/components/fuchsia_package.gni")
 #     [list, GN labels] A list of GN labels of bootfs_files_for_assembly()
 #     targets to include in bootfs_files provided by this AIB.
 #
+#  base_driver_packages [optional]
+#    [list of scopes] A list of scopes that describe the driver packages to
+#    include in the base package set.
+#
+#    Example:
+#    base_driver_packages = [
+#      {
+#        package_target = "//path/to/driver:package"
+#        driver_components = [ "meta/driver.cm" ]
+#      }
+#    ]
+#
+#  bootfs_driver_packages [optional]
+#    [list of scopes] A list of scopes that describe the driver packages to
+#    include in the bootfs package set.
+#
+#    Example:
+#    bootfs_driver_packages = [
+#      {
+#        package_target = "//path/to/driver:package"
+#        driver_components = [ "meta/driver.cm" ]
+#      }
+#    ]
+#
 #  shell_commands (optional; default: empty)
 #    [list of scopes] A list of scopes that describe the shell commands for each
 #    listed package (the packages need to be separately included in the desired
@@ -214,6 +238,57 @@ template("assembly_developer_overrides") {
     }
   }
 
+  # Gather up all the developer-specified driver packages.
+  _drivers = []
+
+  if (defined(invoker.base_driver_packages)) {
+    foreach(driver_entry, invoker.base_driver_packages) {
+      assert(defined(driver_entry.package_target),
+             "package_target must be supplied for base_driver_packages")
+      assert(defined(driver_entry.driver_components),
+             "driver_components must be supplied for base_driver_packages")
+      driver_target = driver_entry.package_target
+      _package_out_dir = get_label_info(driver_target, "target_out_dir")
+      _package_name = get_label_info(driver_target, "name")
+      _manifest_path =
+          "${_package_out_dir}/${_package_name}/package_manifest.json"
+
+      _drivers += [
+        {
+          package = rebase_path(_manifest_path, root_build_dir)
+          set = "base"
+          components = driver_entry.driver_components
+        },
+      ]
+      creation_inputs += [ _manifest_path ]
+      creation_deps += [ driver_target ]
+    }
+  }
+
+  if (defined(invoker.bootfs_driver_packages)) {
+    foreach(driver_entry, invoker.bootfs_driver_packages) {
+      assert(defined(driver_entry.package_target),
+             "package_target must be supplied for bootfs_driver_packages")
+      assert(defined(driver_entry.driver_components),
+             "driver_components must be supplied for bootfs_driver_packages")
+      driver_target = driver_entry.package_target
+      _package_out_dir = get_label_info(driver_target, "target_out_dir")
+      _package_name = get_label_info(driver_target, "name")
+      _manifest_path =
+          "${_package_out_dir}/${_package_name}/package_manifest.json"
+
+      _drivers += [
+        {
+          package = rebase_path(_manifest_path, root_build_dir)
+          set = "bootfs"
+          components = driver_entry.driver_components
+        },
+      ]
+      creation_inputs += [ _manifest_path ]
+      creation_deps += [ driver_target ]
+    }
+  }
+
   _compiled_packages = []
   if (defined(invoker.compiled_packages)) {
     foreach(package, invoker.compiled_packages) {
@@ -322,6 +397,7 @@ template("assembly_developer_overrides") {
                              "kernel",
                            ])
     packages = _packages
+    drivers = _drivers
     packages_to_compile = _compiled_packages
     shell_commands = _shell_commands
 

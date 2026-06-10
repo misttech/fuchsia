@@ -11,7 +11,13 @@ import sys
 from dataclasses import dataclass, field
 from typing import cast
 
-from assembly import FilePath, PackageCopier, PackageDetails, fast_copy_makedirs
+from assembly import (
+    FilePath,
+    PackageCopier,
+    PackagedDriverDetails,
+    PackageDetails,
+    fast_copy_makedirs,
+)
 from assembly.assembly_input_bundle import (
     CompiledComponentDefinition,
     CompiledPackageDefinition,
@@ -68,6 +74,7 @@ class DeveloperOverridesFromGN:
 
     # Packages we need to copy, so we'll need real types for those
     packages: list[PackageDetails] = field(default_factory=list)
+    drivers: list[PackagedDriverDetails] = field(default_factory=list)
     packages_to_compile: list[CompiledPackageDefinition] = field(
         default_factory=list
     )
@@ -117,6 +124,7 @@ class DeveloperOverridesForAssembly:
 
     # Packages we need to copy, so we'll need real types for those
     packages: list[PackageDetails] = field(default_factory=list)
+    drivers: list[PackagedDriverDetails] = field(default_factory=list)
     packages_to_compile: list[CompiledPackageDefinition] = field(
         default_factory=list
     )
@@ -185,7 +193,11 @@ def main() -> int:
         ]
 
     package_copier = None
-    if overrides_from_gn.packages or overrides_from_gn.bootfs_files_package:
+    if (
+        overrides_from_gn.packages
+        or overrides_from_gn.drivers
+        or overrides_from_gn.bootfs_files_package
+    ):
         package_copier = PackageCopier(args.outdir)
 
     if package_copier:
@@ -196,6 +208,19 @@ def main() -> int:
                 )
                 overrides_for_assembly.packages.append(
                     PackageDetails(destination_path, package_entry.set)
+                )
+
+        if overrides_from_gn.drivers:
+            for driver_entry in overrides_from_gn.drivers:
+                destination_path, _ = package_copier.add_package(
+                    driver_entry.package
+                )
+                overrides_for_assembly.drivers.append(
+                    PackagedDriverDetails(
+                        package=destination_path,
+                        set=driver_entry.set,
+                        components=driver_entry.components,
+                    )
                 )
 
         if overrides_from_gn.bootfs_files_package:
