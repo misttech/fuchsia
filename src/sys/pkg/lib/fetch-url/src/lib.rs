@@ -15,11 +15,12 @@ const HTTP_PARTIAL_CONTENT_OK: u32 = 206;
 const HTTP_OK: u32 = 200;
 
 /// The byte range of the fetch request
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Range {
     /// The start offset in bytes, zero-indexed, inclusive
-    start: u64,
+    pub start: u64,
     /// The end offset in bytes, inclusive
-    end: Option<u64>,
+    pub end: Option<u64>,
 }
 
 pub async fn fetch_url(

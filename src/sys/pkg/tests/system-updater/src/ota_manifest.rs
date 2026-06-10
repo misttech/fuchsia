@@ -79,14 +79,7 @@ async fn packageless_update_fails_with_wrong_signature() {
 
     let env = TestEnv::builder().ota_manifest_raw(bad_signed_manifest).build().await;
 
-    let mut attempt = start_update(
-        &MANIFEST_URL.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        None,
-    )
-    .await
-    .unwrap();
+    let mut attempt = env.start_packageless_update().await.unwrap();
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     assert_eq!(
@@ -96,4 +89,81 @@ async fn packageless_update_fails_with_wrong_signature() {
     assert_matches!(attempt.try_next().await, Ok(None));
 
     env.assert_interactions(initial_interactions());
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn packageless_update_with_valid_range() {
+    let content_blob = vec![1; 200];
+    let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
+    let zbi_content = b"zbi contents";
+    let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
+
+    let manifest = OtaManifest {
+        blob_base_url: "blobs/1".into(),
+        images: vec![manifest::Image {
+            slot: manifest::Slot::AB,
+            image_type: manifest::ImageType::Asset(AssetType::Zbi),
+            blob: manifest::Blob {
+                uncompressed_size: zbi_content.len() as u64,
+                fuchsia_merkle_root: zbi_hash,
+            },
+        }],
+        ..make_manifest([manifest::Blob {
+            uncompressed_size: content_blob.len() as u64,
+            fuchsia_merkle_root: content_blob_hash,
+        }])
+    };
+
+    let key_bytes = hex::decode(super::MANIFEST_PRIVATE_KEY).unwrap();
+    let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
+    let signed_manifest =
+        ::update_package::signed_manifest::generate(manifest, &key_pair, &key_pair).unwrap();
+
+    let mut served_bytes = vec![0xAA; 123];
+    let offset = served_bytes.len() as u64;
+    served_bytes.extend(&signed_manifest);
+    served_bytes.extend(vec![0xBB; 456]);
+
+    let env = TestEnv::builder()
+        .ota_manifest_raw(served_bytes)
+        .blob(content_blob_hash, content_blob)
+        .blob(zbi_hash, zbi_content.to_vec())
+        .build()
+        .await;
+
+    let options = fidl_fuchsia_update_installer_ext::Options {
+        initiator: Initiator::User,
+        allow_attach_to_existing_attempt: false,
+        should_write_recovery: true,
+        manifest_range: Some(fidl_fuchsia_update_installer_ext::options::Range {
+            offset,
+            size: signed_manifest.len() as u64,
+        }),
+    };
+
+    env.run_update_with_options(MANIFEST_URL, options).await.unwrap();
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn packageless_update_fails_with_overflowing_range() {
+    let env = TestEnv::builder().build().await;
+
+    let options = fidl_fuchsia_update_installer_ext::Options {
+        initiator: Initiator::User,
+        allow_attach_to_existing_attempt: false,
+        should_write_recovery: true,
+        manifest_range: Some(fidl_fuchsia_update_installer_ext::options::Range {
+            offset: u64::MAX,
+            size: 10,
+        }),
+    };
+
+    let mut attempt = env.start_update_with_options(MANIFEST_URL, options, None).await.unwrap();
+
+    assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::FailPrepare(PrepareFailureReason::Internal)
+    );
+    assert_matches!(attempt.try_next().await, Ok(None));
 }

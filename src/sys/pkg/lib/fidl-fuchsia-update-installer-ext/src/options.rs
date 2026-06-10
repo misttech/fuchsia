@@ -29,6 +29,15 @@ impl Initiator {
     }
 }
 
+/// A byte range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Arbitrary, Serialize, Deserialize)]
+pub struct Range {
+    /// The start offset in bytes.
+    pub offset: u64,
+    /// The size of the range in bytes.
+    pub size: u64,
+}
+
 /// Configuration options for an update attempt.
 #[derive(Clone, Debug, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct Options {
@@ -46,15 +55,29 @@ pub struct Options {
     /// Determines if the installer should update the recovery partition if an
     /// update is available.  Defaults to true.
     pub should_write_recovery: bool,
+
+    /// Optional range parameter to be used as the `Range` HTTP header when fetching the manifest.
+    pub manifest_range: Option<Range>,
 }
 
 impl Options {
     /// Serializes Options to a Fuchsia Inspect node.
     pub fn write_to_inspect(&self, node: &inspect::Node) {
-        let Options { initiator, allow_attach_to_existing_attempt, should_write_recovery } = self;
+        let Options {
+            initiator,
+            allow_attach_to_existing_attempt,
+            should_write_recovery,
+            manifest_range,
+        } = self;
         node.record_string("initiator", initiator.name());
         node.record_bool("allow_attach_to_existing_attempt", *allow_attach_to_existing_attempt);
         node.record_bool("should_write_recovery", *should_write_recovery);
+        if let Some(range) = manifest_range {
+            node.record_child("manifest_range", |range_node| {
+                range_node.record_uint("offset", range.offset);
+                range_node.record_uint("size", range.size);
+            });
+        }
     }
 }
 
@@ -66,6 +89,18 @@ pub enum OptionsParseError {
     MissingInitiator,
 }
 
+impl From<fidl_fuchsia_update_installer::Range> for Range {
+    fn from(data: fidl_fuchsia_update_installer::Range) -> Self {
+        Self { offset: data.offset, size: data.size }
+    }
+}
+
+impl From<&Range> for fidl_fuchsia_update_installer::Range {
+    fn from(range: &Range) -> Self {
+        Self { offset: range.offset, size: range.size }
+    }
+}
+
 impl TryFrom<fidl_fuchsia_update_installer::Options> for Options {
     type Error = OptionsParseError;
 
@@ -73,12 +108,15 @@ impl TryFrom<fidl_fuchsia_update_installer::Options> for Options {
         let initiator =
             data.initiator.map(|o| o.into()).ok_or(OptionsParseError::MissingInitiator)?;
 
+        let manifest_range = data.manifest_range.map(Range::from);
+
         Ok(Self {
             initiator,
             allow_attach_to_existing_attempt: data
                 .allow_attach_to_existing_attempt
                 .unwrap_or(false),
             should_write_recovery: data.should_write_recovery.unwrap_or(true),
+            manifest_range,
         })
     }
 }
@@ -89,6 +127,7 @@ impl From<&Options> for fidl_fuchsia_update_installer::Options {
             initiator: Some(options.initiator.into()),
             allow_attach_to_existing_attempt: Some(options.allow_attach_to_existing_attempt),
             should_write_recovery: Some(options.should_write_recovery),
+            manifest_range: options.manifest_range.as_ref().map(|r| r.into()),
             ..Default::default()
         }
     }

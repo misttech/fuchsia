@@ -430,6 +430,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -484,6 +485,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -527,6 +529,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -556,6 +559,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -615,6 +619,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
@@ -844,6 +849,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let client = fdomain_local::local_client_empty();
@@ -899,6 +905,7 @@ mod tests {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
+            manifest_range: None,
         };
 
         let client = fdomain_local::local_client_empty();

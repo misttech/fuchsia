@@ -1114,17 +1114,49 @@ impl MockHttpLoaderService {
                     let url = request.url.unwrap();
                     let response = if url == MANIFEST_URL {
                         let manifest_bytes = self.manifest.clone().unwrap();
-                        let (client, server) = zx::Socket::create_stream();
-                        let mut server = fasync::Socket::from_socket(server);
-                        fasync::Task::spawn(async move {
-                            server.write_all(&manifest_bytes).await.unwrap()
-                        })
-                        .detach();
+                        let range_header = request.headers.as_ref().and_then(|headers| {
+                            headers.iter().find(|h| h.name == b"Range").map(|h| &h.value)
+                        });
 
-                        fhttp::Response {
-                            body: Some(client),
-                            status_code: Some(200),
-                            ..Default::default()
+                        if let Some(range_val) = range_header {
+                            let range_str = str::from_utf8(range_val).unwrap();
+                            let range_str = range_str.strip_prefix("bytes=").unwrap();
+                            let (start_str, end_str) = range_str.split_once('-').unwrap();
+                            let start: usize = start_str.parse().unwrap();
+                            let end: usize = end_str.parse().unwrap();
+
+                            if start < manifest_bytes.len()
+                                && end < manifest_bytes.len()
+                                && start <= end
+                            {
+                                let (client, server) = zx::Socket::create_stream();
+                                let mut server = fasync::Socket::from_socket(server);
+                                fasync::Task::spawn(async move {
+                                    server.write_all(&manifest_bytes[start..=end]).await.unwrap()
+                                })
+                                .detach();
+
+                                fhttp::Response {
+                                    body: Some(client),
+                                    status_code: Some(206),
+                                    ..Default::default()
+                                }
+                            } else {
+                                fhttp::Response { status_code: Some(416), ..Default::default() }
+                            }
+                        } else {
+                            let (client, server) = zx::Socket::create_stream();
+                            let mut server = fasync::Socket::from_socket(server);
+                            fasync::Task::spawn(async move {
+                                server.write_all(&manifest_bytes).await.unwrap()
+                            })
+                            .detach();
+
+                            fhttp::Response {
+                                body: Some(client),
+                                status_code: Some(200),
+                                ..Default::default()
+                            }
                         }
                     } else {
                         fhttp::Response { status_code: Some(404), ..Default::default() }
@@ -1242,6 +1274,7 @@ fn default_options() -> Options {
         initiator: Initiator::User,
         allow_attach_to_existing_attempt: true,
         should_write_recovery: true,
+        manifest_range: None,
     }
 }
 

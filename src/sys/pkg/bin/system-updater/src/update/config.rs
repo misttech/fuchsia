@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::metrics;
+use fidl_fuchsia_update_installer_ext::options::Range;
 use fidl_fuchsia_update_installer_ext::{Initiator as ExtInitiator, Options};
 use std::time::{Instant, SystemTime};
 
@@ -15,6 +16,7 @@ pub struct Config {
     pub(super) start_time: SystemTime,
     pub(super) start_time_mono: Instant,
     pub allow_attach_to_existing_attempt: bool,
+    pub manifest_range: Option<Range>,
 }
 
 impl Config {
@@ -31,6 +33,7 @@ impl Config {
             start_time,
             start_time_mono,
             allow_attach_to_existing_attempt: options.allow_attach_to_existing_attempt,
+            manifest_range: options.manifest_range,
         }
     }
 }
@@ -44,6 +47,7 @@ impl std::fmt::Debug for Config {
             .field("start_time", &chrono::DateTime::<chrono::Utc>::from(self.start_time))
             .field("start_time_mono", &self.start_time_mono)
             .field("allow_attach_to_existing_attempt", &self.allow_attach_to_existing_attempt)
+            .field("manifest_range", &self.manifest_range)
             .finish()
     }
 }
@@ -111,6 +115,7 @@ impl<'a> ConfigBuilder<'a> {
                 allow_attach_to_existing_attempt,
                 should_write_recovery,
                 initiator: ExtInitiator::User,
+                manifest_range: None,
             },
         ))
     }
@@ -126,6 +131,7 @@ mod tests {
             initiator: ExtInitiator::User,
             allow_attach_to_existing_attempt: true,
             should_write_recovery: true,
+            manifest_range: None,
         };
         let update_url: http::Uri = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 
@@ -138,6 +144,7 @@ mod tests {
                 update_url: url,
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
+                manifest_range: None,
                 ..
             } if url == update_url
         );

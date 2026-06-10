@@ -112,6 +112,12 @@ enum PrepareError {
     #[error("while fetching update url")]
     FetchUrl(#[source] fetch_url::errors::FetchUrlError),
 
+    #[error("invalid manifest range offset={offset} size={size}")]
+    InvalidManifestRange { offset: u64, size: u64 },
+
+    #[error("manifest range is not supported for package-based updates")]
+    ManifestRangeNotSupported,
+
     #[error("while opening blobfs")]
     OpenBlobfs(#[source] blobfs::BlobfsError),
 
@@ -339,6 +345,7 @@ async fn update(
             initiator: config.initiator.into(),
             allow_attach_to_existing_attempt: config.allow_attach_to_existing_attempt,
             should_write_recovery: config.should_write_recovery,
+            manifest_range: config.manifest_range,
         },
         &config.update_url,
         config.start_time,
@@ -852,6 +859,9 @@ impl Attempt<'_> {
 
         let update_url = AbsolutePackageUrl::parse(&self.config.update_url.to_string())
             .map_err(PrepareError::ParseUpdatePackageUrl)?;
+        if self.config.manifest_range.is_some() {
+            return Err(PrepareError::ManifestRangeNotSupported);
+        }
         let update_pkg = resolve_update_package(
             &self.env.pkg_resolver,
             &update_url,
@@ -1284,7 +1294,16 @@ impl PackagelessAttempt<'_> {
             .map_err(PrepareError::PreparePartitionMetdata)?;
 
         let update_url = self.config.update_url.to_string();
-        let manifest_bytes = fetch_url(&update_url, None).await.map_err(PrepareError::FetchUrl)?;
+        let manifest_range = if let Some(r) = self.config.manifest_range {
+            let end = r.offset.checked_add(r.size).and_then(|val| val.checked_sub(1)).ok_or_else(
+                || PrepareError::InvalidManifestRange { offset: r.offset, size: r.size },
+            )?;
+            Some(fetch_url::Range { start: r.offset, end: Some(end) })
+        } else {
+            None
+        };
+        let manifest_bytes =
+            fetch_url(&update_url, manifest_range).await.map_err(PrepareError::FetchUrl)?;
 
         let manifest = update_package::signed_manifest::parse_and_verify(
             &manifest_bytes,

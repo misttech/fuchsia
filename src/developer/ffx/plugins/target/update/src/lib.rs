@@ -371,6 +371,7 @@ impl UpdateTool {
             initiator: installer::Initiator::User,
             should_write_recovery: true,
             allow_attach_to_existing_attempt: true,
+            manifest_range: None,
         };
 
         let client = installer_proxy.domain();

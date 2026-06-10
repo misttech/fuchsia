@@ -163,6 +163,7 @@ async fn rejects_skip_recovery_flag(update_url: &str) {
                 initiator: Initiator::User,
                 allow_attach_to_existing_attempt: true,
                 should_write_recovery: false,
+                manifest_range: None,
             },
         )
         .await;

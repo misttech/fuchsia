@@ -20,7 +20,11 @@ closed protocol Installer {
     /// attempt is started or attached to, provide status updates through
     /// `monitor`.
     ///
-    /// + request `url` The fuchsia-pkg URL of the update package to update to.
+    /// + request `url` The URL of the resource that describes the update. Must have one of the
+    /// following schemes:
+    ///     * "fuchsia-pkg": The resource is an [update package](https://fuchsia.dev/fuchsia-src/concepts/packages/update_pkg).
+    ///     * "http[s]": The resource is a blob-based update manifest.
+    ///       TODO(https://fxbug.dev/479283380): Link to RFC
     /// + request `options` Configuration options for this update attempt.
     ///     Ignored or merged with the existing `options` if an update attempt
     ///     is already in progress.
@@ -104,6 +108,14 @@ closed protocol RebootController {
     strict Detach();
 };
 
+/// A byte range.
+type Range = struct {
+    /// The start offset of the range in bytes.
+    offset uint64;
+    /// The size of the range in bytes.
+    size uint64;
+};
+
 /// Configuration options for an update attempt.
 type Options = table {
     /// What initiated this update attempt. Required.
@@ -120,6 +132,11 @@ type Options = table {
     /// Determines if the installer should update the recovery partition if an
     /// update is available.  Defaults to true.
     3: should_write_recovery bool;
+
+    /// The range of the resource indicated by the [`Installer.StartUpdate`] url that corresponds to
+    /// the manifest. Can only be set when the [`Installer.StartUpdate`] url has scheme "http[s]",
+    /// i.e. when using the blob-based update manifest. Defaults to the entire resource.
+    4: manifest_range Range;
 };
 
 /// Who or what initiated the update installation.

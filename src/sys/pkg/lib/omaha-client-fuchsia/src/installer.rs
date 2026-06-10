@@ -166,6 +166,7 @@ where
             },
             should_write_recovery: true,
             allow_attach_to_existing_attempt: true,
+            manifest_range: None,
         };
 
         let proxy = self.installer_connector.connect().map_err(FuchsiaInstallError::Connect)?;
@@ -592,6 +593,7 @@ mod tests {
                         initiator,
                         should_write_recovery,
                         allow_attach_to_existing_attempt,
+                        ..
                     } = options.try_into().unwrap();
                     assert_eq!(initiator, Initiator::User);
                     assert_matches!(reboot_controller, Some(_));
@@ -692,6 +694,7 @@ mod tests {
                         initiator,
                         should_write_recovery,
                         allow_attach_to_existing_attempt,
+                        ..
                     } = options.try_into().unwrap();
                     assert_eq!(initiator, Initiator::User);
                     assert!(should_write_recovery);

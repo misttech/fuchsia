@@ -2317,6 +2317,7 @@ async fn recovery_present_but_should_write_recovery_is_false() {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: true,
             should_write_recovery: false,
+            manifest_range: None,
         },
     )
     .await
@@ -2393,6 +2394,7 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
             initiator: Initiator::User,
             allow_attach_to_existing_attempt: true,
             should_write_recovery: false,
+            manifest_range: None,
         },
     )
     .await

@@ -34,6 +34,7 @@ async fn handle_force_install_impl(
         },
         should_write_recovery: true,
         allow_attach_to_existing_attempt: true,
+        manifest_range: None,
     };
 
     let (reboot_controller, reboot_controller_server_end) =
