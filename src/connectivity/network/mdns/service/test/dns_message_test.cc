@@ -30,6 +30,22 @@ TEST(DnsMessageTest, EqualityOperator) {
   EXPECT_FALSE(DnsName("cruel.shoes.") == DnsName("cruel.shoes.", 11));
 }
 
+// Tests DnsName hashing.
+TEST(DnsMessageTest, Hash) {
+  DnsName name1("Cruel.Shoes.");
+  DnsName name2("cruel.shoes.");
+  DnsName name3("nice.shoes.");
+
+  EXPECT_TRUE(name1 == name2);
+  EXPECT_EQ(name1.hash(), name2.hash());
+  EXPECT_NE(name1.hash(), name3.hash());
+
+  // Also check DnsName hash in std::hash
+  std::hash<DnsName> hasher;
+  EXPECT_EQ(hasher(name1), hasher(name2));
+  EXPECT_NE(hasher(name1), hasher(name3));
+}
+
 // Tests DnsName::first_label_view and DnsName::next_label_view.
 TEST(DnsMessageTest, LabelViews) {
   DnsName name("testinstance._testservice._tcp.local.");

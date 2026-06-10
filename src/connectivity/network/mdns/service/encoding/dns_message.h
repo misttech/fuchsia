@@ -165,7 +165,12 @@ struct DnsName {
 
   // Returns the hash of this DnsName.
   size_t hash() const {
-    return std::hash<std::size_t>{}(first_label_size_) ^ std::hash<std::string>{}(dotted_string_);
+    std::string lowercase_dotted_string = dotted_string_;
+    for (char& c : lowercase_dotted_string) {
+      c = fxl::ToLowerASCII(c);
+    }
+    return std::hash<std::size_t>{}(first_label_size_) ^
+           std::hash<std::string>{}(lowercase_dotted_string);
   }
 
  private:
