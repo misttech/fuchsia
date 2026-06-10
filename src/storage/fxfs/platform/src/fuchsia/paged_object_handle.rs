@@ -63,6 +63,8 @@ use crate::fuchsia::testing::TestCallback;
 static CALLBACK_BEFORE_RANGE_COLLECTION: TestCallback = TestCallback::new();
 #[cfg(test)]
 static CALLBACK_AFTER_RANGE_COLLECTION: TestCallback = TestCallback::new();
+#[cfg(test)]
+static CALLBACK_AFTER_SIZE_CAPTURE: TestCallback = TestCallback::new();
 
 pub struct PagedObjectHandle {
     inner: Mutex<Inner>,
@@ -874,10 +876,8 @@ impl PagedObjectHandle {
         });
         let (num_batches_complete, batches_to_flush) = &mut *guard;
 
-        let last_batch_index = batches_to_flush.len() - 1;
         for (i, batch) in batches_to_flush.iter().enumerate() {
             let first_batch = i == 0;
-            let last_batch = i == last_batch_index;
 
             let mut transaction = if batch.mode == BatchMode::Cow {
                 self.new_transaction(Some(flush_state.reservation())).await?
@@ -886,21 +886,22 @@ impl PagedObjectHandle {
             };
             batch.writeback_begin(self.vmo(), self.pager());
 
-            let size = if last_batch {
-                if batch.end() > content_size {
-                    // Now that we've called writeback_begin, get the stream size again.  If the
-                    // stream size has increased (it can't decrease because we hold a lock on
-                    // truncation), it's possible that it grew before we called writeback_begin in
-                    // which case, the kernel won't mark the tail page dirty again so we must
-                    // increase the stream size, but no further than the end of the tail page.
-                    let new_content_size =
-                        self.vmo().get_stream_size().context("get_stream_size failed")?;
+            let size = if batch.end() > content_size {
+                // Now that we've called writeback_begin, get the stream size again.  If the
+                // stream size has increased (it can't decrease because we hold a lock on
+                // truncation), it's possible that it grew before we called writeback_begin in
+                // which case, the kernel won't mark the tail page dirty again so we must
+                // increase the stream size, but no further than the end of the tail page.
+                let new_content_size =
+                    self.vmo().get_stream_size().context("get_stream_size failed")?;
 
-                    assert!(new_content_size >= content_size);
+                // TODO(https://fxbug.dev/522042546): This might be too strong.  Whilst we do not
+                // need to support the case for the file shrinking, it might be possible for a user
+                // to make this happen.
+                assert!(new_content_size >= content_size);
 
-                    content_size = std::cmp::min(new_content_size, batch.end())
-                }
-                Some(content_size)
+                content_size = new_content_size;
+                Some(std::cmp::min(new_content_size, batch.end()))
             } else if batch.end() > previous_content_size {
                 Some(batch.end())
             } else {
@@ -1007,6 +1008,10 @@ impl PagedObjectHandle {
 
         let content_size = self.vmo().get_stream_size().context("get_stream_size failed")?;
         let previous_content_size = self.handle.get_size();
+
+        #[cfg(test)]
+        CALLBACK_AFTER_SIZE_CAPTURE.call();
+
         let BatchCollectionResult {
             batches: flush_batches,
             pages_to_flush: dirty_pages_to_flush,
@@ -3095,6 +3100,76 @@ mod tests {
 
             proxy.sync().await.unwrap().expect("Syncing");
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_race_eof_flush_corruption() {
+        let fixture = TestFixture::new_unencrypted().await;
+        let concurrent_write_start;
+
+        {
+            let (proxy, _, stream) = open_file_proxy_object_and_stream(&fixture).await;
+
+            let page_size = zx::system_get_page_size() as u64;
+            let initial_pages = 125;
+            let initial_size = initial_pages * page_size;
+            let buf = vec![0xaa; initial_size as usize];
+            stream.write_at(zx::StreamWriteOptions::empty(), 0, &buf).expect("Initial write");
+            proxy.sync().await.unwrap().expect("Initial sync");
+
+            // Write 0-10KB (Overwrite)
+            let overwrite_size = 10 * 1024;
+            let overwrite_buf = vec![0xbb; overwrite_size];
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), 0, &overwrite_buf)
+                .expect("Overwrite write");
+
+            // Write 512000 to 613376 (extends file, Cow)
+            let extension_end = 599 * 1024;
+            let extension_size = extension_end - initial_size;
+            let extension_buf = vec![0xcc; extension_size as usize];
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), initial_size, &extension_buf)
+                .expect("Extension write");
+
+            concurrent_write_start = extension_end;
+            let concurrent_write_end = 700 * 1024;
+            let concurrent_write_size = concurrent_write_end - concurrent_write_start;
+            let concurrent_write_buf = vec![0xdd; concurrent_write_size as usize];
+
+            let stream_clone =
+                stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
+            let _guard = CALLBACK_AFTER_SIZE_CAPTURE.set(move || {
+                stream_clone
+                    .write_at(
+                        zx::StreamWriteOptions::empty(),
+                        concurrent_write_start,
+                        &concurrent_write_buf,
+                    )
+                    .expect("Concurrent write");
+            });
+
+            proxy.sync().await.unwrap().expect("Syncing");
+        }
+
+        let device = fixture.close().await;
+
+        // Remount
+        let fixture = TestFixture::open(
+            device,
+            TestFixtureOptions { encrypted: false, format: false, ..Default::default() },
+        )
+        .await;
+
+        {
+            let (_proxy, _, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let read_buf = stream
+                .read_at_to_vec(zx::StreamReadOptions::empty(), concurrent_write_start, 100)
+                .expect("Reading back");
+            assert_eq!(read_buf[0], 0xdd);
         }
 
         fixture.close().await;
