@@ -647,7 +647,9 @@ const auto kCases = testing::Values(
     Param{0x5533310a, true, true},  // Driver polls in version 3.10a+
     Param{0x5533310b, true, true},
     Param{0x5533311a, true, true},
-    Param{0x5534101a, false, false});
+    Param{0x55333110, true, true},
+    Param{0x5533401a, true, true},
+    Param{0x5534101a, false, false});  // 5534 is invalid core id.
 // clang-format on
 
 using Parameterized = TestFixture<false, testing::TestWithParam<Param>>;

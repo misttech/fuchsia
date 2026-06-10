@@ -792,7 +792,12 @@ zx_status_t Dwc3::CheckHwVersion() {
     const uint8_t rev = n4;
 
     // Only valid on core versions 3.10a+
-    poll_end_xfer_ = major >= 3 && minor >= 10 && rev >= 0xa;
+    // clang-format off
+    poll_end_xfer_ = (
+        major > 3
+        || (major == 3 && minor > 10)
+        || (major == 3 && minor == 10 && rev >= 0xa));
+    // clang-format on
 
     fdf::info("Detected Synopsys DWC_usb3 core version {}.{:02d}{:x}", major, minor, rev);
     return ZX_OK;
