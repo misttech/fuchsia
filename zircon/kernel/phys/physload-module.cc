@@ -36,7 +36,7 @@ AddressSpace* gAddressSpace;  // address-space.cc is not linked in.
   // because we don't want to stash this module's (uninitialized) stdout to be
   // restored, but keep the one already stashed by physload.
   gLog = log;
-  gStdout = FILE{log};
+  FILE::stdout_ = FILE{log};
 
   // Install the other global state handed off from physload.
   gArchPhysInfo = arch_phys;

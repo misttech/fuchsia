@@ -107,22 +107,26 @@ static void stdout_write_buffered(ktl::string_view str, SkipPersistedDebuglog sk
 
 // This is what printf calls.  Really this could and should be const.
 // But all the stdio function signatures require non-const `FILE*`.
-FILE gStdout{[](ktl::string_view str) {
-  stdout_write_buffered(str, SkipPersistedDebuglog::No);
-  return static_cast<int>(str.size());
-}};
+FILE FILE::stdout_{[](void*, ktl::string_view str) {
+                     stdout_write_buffered(str, SkipPersistedDebuglog::No);
+                     return static_cast<int>(str.size());
+                   },
+                   nullptr};
 
-FILE gSerialFile{[](ktl::string_view str) {
-  serial_write(str);
-  return static_cast<int>(str.size());
-}};
+FILE gSerialFile{[](void*, ktl::string_view str) {
+                   serial_write(str);
+                   return static_cast<int>(str.size());
+                 },
+                 nullptr};
 
-FILE gStdoutUnbuffered{[](ktl::string_view str) {
-  stdout_write(str, SkipPersistedDebuglog::No);
-  return static_cast<int>(str.size());
-}};
+FILE gStdoutUnbuffered{[](void*, ktl::string_view str) {
+                         stdout_write(str, SkipPersistedDebuglog::No);
+                         return static_cast<int>(str.size());
+                       },
+                       nullptr};
 
-FILE gStdoutNoPersist{[](ktl::string_view str) {
-  stdout_write_buffered(str, SkipPersistedDebuglog::Yes);
-  return static_cast<int>(str.size());
-}};
+FILE gStdoutNoPersist{[](void*, ktl::string_view str) {
+                        stdout_write_buffered(str, SkipPersistedDebuglog::Yes);
+                        return static_cast<int>(str.size());
+                      },
+                      nullptr};

@@ -34,7 +34,7 @@ class Log {
   // depending on the kernel.phys.verbose boot option.
   [[nodiscard]] FILE VerboseOnlyFile();
 
-  // Replace the *stdout object with this one, storing the previous
+  // Replace the FILE::stdout_ object with this one, storing the previous
   // stdout object and mirroring the output to that one.
   void SetStdout();
 

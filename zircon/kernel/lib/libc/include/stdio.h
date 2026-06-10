@@ -14,9 +14,7 @@
 // All anybody really wants from stdio is printf.
 
 #ifdef __cplusplus
-#include <ktl/concepts.h>
 #include <ktl/string_view.h>
-#include <ktl/type_traits.h>
 
 class FILE {
  public:
@@ -26,30 +24,19 @@ class FILE {
   // (and the double indirection for a single-entry vtable--at the cost of
   // double indirection for the ptr data in a callback that uses it).
 
-  using Callback = int(void*, const char*, size_t);
+  using Callback = int(void*, ktl::string_view);
 
   FILE() = default;
 
   constexpr FILE(Callback* write, void* ptr) : write_(write), ptr_(ptr) {}
 
-  explicit FILE(int (*write)(ktl::string_view str))
-      : FILE(
-            [](void* ptr, const char* str, size_t len) {
-              return reinterpret_cast<int (*)(ktl::string_view)>(ptr)({str, len});
-            },
-            reinterpret_cast<void*>(write)) {}
-
-  template <class T>
-    requires requires(T* writer, ktl::string_view str) {
-      { writer->Write(str) } -> ktl::convertible_to<int>;
-    }
+  template <typename T>
   explicit FILE(T* writer)
-      : FILE([](void* ptr, const char* str,
-                size_t len) { return static_cast<T*>(ptr)->Write({str, len}); },
-             writer) {}
+      : write_([](void* ptr, ktl::string_view s) { return static_cast<T*>(ptr)->Write(s); }),
+        ptr_(writer) {}
 
   // This is what fprintf calls to do output.
-  int Write(ktl::string_view s) { return write_(ptr_, s.data(), s.size()); }
+  int Write(ktl::string_view s) { return write_(ptr_, s); }
 
   constexpr explicit operator bool() const { return write_; }
 
@@ -59,17 +46,16 @@ class FILE {
 
   constexpr bool operator!=(const FILE& other) const { return !(*this == other); }
 
+  // This is not defined by libc itself.  The kernel defines it to point at
+  // the default console output mechanism.
+  static FILE stdout_;
+
  private:
   Callback* write_ = nullptr;
   void* ptr_ = nullptr;
 };
-// FILE has a standard layout that stays compatible with C and thus #[repr(C)].
-static_assert(ktl::is_standard_layout_v<FILE>);
 
-// This is not defined by libc itself.  The kernel defines it to point at
-// the default console output mechanism.
-extern FILE gStdout;
-#define stdout (&gStdout)
+#define stdout (&FILE::stdout_)
 
 inline int fputc(int c, FILE* f) {
   const unsigned char uc = static_cast<unsigned char>(c);

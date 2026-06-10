@@ -19,12 +19,11 @@
 #include <ktl/enforce.h>
 
 namespace {
-
-FILE NULL_FILE = FILE{[](ktl::string_view str) -> int {
-  DEBUG_ASSERT(str.size() <= ktl::numeric_limits<int>::max());
-  return static_cast<int>(str.size());
-}};
-
+FILE NULL_FILE = FILE{[](void*, ktl::string_view str) -> int {
+                        DEBUG_ASSERT(str.size() <= ktl::numeric_limits<int>::max());
+                        return static_cast<int>(str.size());
+                      },
+                      nullptr};
 }  // namespace
 
 MappedCrashlog::MappedCrashlog(ktl::span<ktl::byte> range)

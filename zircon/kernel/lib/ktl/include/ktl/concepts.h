@@ -15,7 +15,6 @@ using std::assignable_from;
 using std::common_reference_with;
 using std::common_with;
 using std::constructible_from;
-using std::convertible_to;
 using std::copy_constructible;
 using std::copyable;
 using std::default_initializable;

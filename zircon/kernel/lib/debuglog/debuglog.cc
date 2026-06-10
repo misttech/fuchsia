@@ -39,10 +39,11 @@ static_assert((DLOG_MAX_RECORD & 3) == 0, "E_DONT_DO_THAT");
 
 static lazy_init::LazyInit<DLog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled> DLOG;
 
-FILE gDlogSerialFile{[](ktl::string_view str) {
-  dlog_serial_write(str);
-  return static_cast<int>(str.size());
-}};
+FILE gDlogSerialFile{[](void*, ktl::string_view str) {
+                       dlog_serial_write(str);
+                       return static_cast<int>(str.size());
+                     },
+                     nullptr};
 
 // The debuglog maintains a circular buffer of debuglog records,
 // consisting of a common header (dlog_header_t) followed by up

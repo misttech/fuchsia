@@ -12,17 +12,18 @@
 
 #include "log.h"
 
-FILE gStdout;
+FILE FILE::stdout_;
 
 PhysConsole::PhysConsole()
-    : null_{[](ktl::string_view s) -> int { return static_cast<int>(s.length()); }}, mux_files_{} {}
+    : null_{[](void*, ktl::string_view s) -> int { return static_cast<int>(s.length()); }, nullptr},
+      mux_files_{} {}
 
 PhysConsole& PhysConsole::Get() {
   static PhysConsole gConsole;
   return gConsole;
 }
 
-void InitStdout() { gStdout = PhysConsole::Get().mux_; }
+void InitStdout() { FILE::stdout_ = PhysConsole::Get().mux_; }
 
 void PhysConsole::SetMux(size_t idx, const FILE& f) {
   mux_files_[idx] = f;

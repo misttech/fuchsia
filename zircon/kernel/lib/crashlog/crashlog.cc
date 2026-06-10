@@ -44,10 +44,11 @@ crashlog_t g_crashlog = {};
 
 PanicBuffer panic_buffer;
 
-FILE stdout_panic_buffer{[](ktl::string_view str) {
-  panic_buffer.Append(str);
-  return gStdoutNoPersist.Write(str);
-}};
+FILE stdout_panic_buffer{[](void*, ktl::string_view str) {
+                           panic_buffer.Append(str);
+                           return gStdoutNoPersist.Write(str);
+                         },
+                         nullptr};
 
 namespace {
 
