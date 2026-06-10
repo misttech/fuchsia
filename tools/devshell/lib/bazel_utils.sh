@@ -53,7 +53,7 @@ fx-bazel () {
   case "${bazel_command}" in
     # The following commands are configuration-sensitive, and will require
     # A platform --config option to avoid toolchain resolution errors.
-    aquery|cquery|build|run|test)
+    aquery|build|cquery|info|run|test)
       local opt
       local has_platform_config
       for opt in "${args[@]:1}"; do
