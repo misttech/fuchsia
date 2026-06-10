@@ -4,11 +4,15 @@
 use argh::{ArgsInfo, FromArgs, SubCommand};
 use fho::subtool::{StandaloneFhoHandler, StandaloneToolCommand};
 use fho::{FfxContext, Result};
+use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex};
+
+/// Number of log file rotations to keep.
+const LOG_ROTATIONS: usize = 5;
 
 // [START command_struct]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -63,8 +67,6 @@ async fn implementation(
 ) -> Result<ExitStatus> {
     let ffx_command::InitializedCmd { cmd: ffx, context: ctx, help_state } = icmd;
 
-    let log_id: u64 = rand::random();
-
     match help_state {
         ffx_command::HelpState::ReturnArgsInfo => {
             let args_info = ffx_command::CliArgsInfo::from(UsbDriverCommand::get_args_info());
@@ -96,6 +98,24 @@ async fn implementation(
         StandaloneFhoHandler::Standalone(cmd) => cmd,
     };
 
+    let (socket_path, found_config) = ctx
+        .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
+        .level(Some(ffx_config::ConfigLevel::Runtime))
+        .build()
+        .get::<PathBuf>(&ctx)
+        .map(|x| (x, true))
+        .or_else(|_| -> fho::Result<_> {
+            ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
+                .level(Some(ffx_config::ConfigLevel::Default))
+                .build()
+                .get::<PathBuf>(&ctx)
+                .map(|ret| (ret, false))
+                .map_err(|e| fho::Error::Unexpected(e.into()))
+        })?;
+
+    let path_sha2 = Sha256::digest(socket_path.as_os_str().as_encoded_bytes());
+    let log_id = u64::from_be_bytes(path_sha2[..8].try_into().unwrap());
+
     let (sink, log_path) = if command.background || command.log_dir.is_some() {
         let mut path = if let Some(log_dir) = &command.log_dir {
             PathBuf::from(log_dir)
@@ -109,7 +129,18 @@ async fn implementation(
             path
         };
         let _: Result<(), _> = std::fs::create_dir_all(&path);
-        path.push(format!("ffx_usb.{log_id:x}.log"));
+
+        let usb_path = |rot: usize| path.join(format!("ffx_usb.{log_id:x}.{rot}.log"));
+
+        for rot in (0..LOG_ROTATIONS).rev() {
+            if rot + 1 == LOG_ROTATIONS {
+                let _: Result<(), _> = std::fs::remove_file(usb_path(rot));
+            } else {
+                let _: Result<(), _> = std::fs::rename(usb_path(rot), usb_path(rot + 1));
+            }
+        }
+
+        path.push(usb_path(0));
 
         let file = match OpenOptions::new().write(true).append(true).create(true).open(&path) {
             Ok(f) => f,
@@ -163,21 +194,6 @@ async fn implementation(
             "Schema is not defined for this subcommand"
         )));
     }
-
-    let (socket_path, found_config) = ctx
-        .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
-        .level(Some(ffx_config::ConfigLevel::Runtime))
-        .build()
-        .get::<PathBuf>(&ctx)
-        .map(|x| (x, true))
-        .or_else(|_| -> fho::Result<_> {
-            ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
-                .level(Some(ffx_config::ConfigLevel::Default))
-                .build()
-                .get::<PathBuf>(&ctx)
-                .map(|ret| (ret, false))
-                .map_err(|e| fho::Error::Unexpected(e.into()))
-        })?;
 
     if !found_config
         && let Ok(p) =
