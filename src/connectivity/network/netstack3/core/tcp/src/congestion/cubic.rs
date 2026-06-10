@@ -66,9 +66,10 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         //   W_est(t) = W_max*beta_cubic +
         //         [3*(1-beta_cubic)/(1+beta_cubic)] * (t/RTT) (Eq. 4)
         let round_trips = t.as_secs_f32() / rtt.as_secs_f32();
+        let mss_u32 = u32::from(mss);
         let w_tcp = self.w_max as f32 * CUBIC_BETA
-            + (3.0 * (1.0 - CUBIC_BETA) / (1.0 + CUBIC_BETA)) * round_trips * u32::from(mss) as f32;
-        w_tcp as u32
+            + (3.0 * (1.0 - CUBIC_BETA) / (1.0 + CUBIC_BETA)) * round_trips * mss_u32 as f32;
+        (w_tcp as u32 / mss_u32) * mss_u32
     }
 
     pub(super) fn on_ack(
@@ -218,7 +219,9 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         //   In case of timeout, CUBIC follows Standard TCP to reduce cwnd
         //   [RFC5681], but sets ssthresh using beta_cubic (same as in
         //   Section 4.5) that is different from Standard TCP [RFC5681].
-        *ssthresh = u32::max((*cwnd as f32 * CUBIC_BETA) as u32, 2 * u32::from(*mss));
+        let mss_u32 = u32::from(*mss);
+        let ssthresh_segs = (*cwnd as f32 * CUBIC_BETA) as u32 / mss_u32;
+        *ssthresh = u32::max(ssthresh_segs, 2) * mss_u32;
         *cwnd = *ssthresh;
         // Reset our running count of the acked bytes.
         self.bytes_acked = 0;
@@ -276,18 +279,18 @@ mod tests {
     //
     // NB: Skip the tests with a loss_rate_reciprocal of 100_000_000 as they
     // take too long to run.
-    #[test_case(Duration::from_millis(100), 100 => 11; "rtt=0.1 p=0.01 Wavg=12")]
+    #[test_case(Duration::from_millis(100), 100 => 10; "rtt=0.1 p=0.01 Wavg=12")]
     #[test_case(Duration::from_millis(100), 1_000 => 38; "rtt=0.1 p=0.001 Wavg=38")]
     #[test_case(Duration::from_millis(100), 10_000 => 187; "rtt=0.1 p=0.0001 Wavg=187")]
-    #[test_case(Duration::from_millis(100), 100_000 => 1058; "rtt=0.1 p=0.00001 Wavg=1054")]
-    #[test_case(Duration::from_millis(100), 1_000_000 => 5939; "rtt=0.1 p=0.000001 Wavg=5926")]
-    #[test_case(Duration::from_millis(100), 10_000_000 => 33465; "rtt=0.1 p=0.0000001 Wavg=33325")]
-    #[test_case(Duration::from_millis(10), 100 => 11; "rtt=0.01 p=0.01 Wavg=12")]
-    #[test_case(Duration::from_millis(10), 1_000 => 37; "rtt=0.01 p=0.001 Wavg=38")]
-    #[test_case(Duration::from_millis(10), 10_000 => 121; "rtt=0.01 p=0.0001 Wavg=120")]
-    #[test_case(Duration::from_millis(10), 100_000 => 386; "rtt=0.01 p=0.00001 Wavg=379")]
-    #[test_case(Duration::from_millis(10), 1_000_000 => 1262; "rtt=0.01 p=0.000001 Wavg=1200")]
-    #[test_case(Duration::from_millis(10), 10_000_000 => 5953; "rtt=0.01 p=0.0000001 Wavg=5926")]
+    #[test_case(Duration::from_millis(100), 100_000 => 1057; "rtt=0.1 p=0.00001 Wavg=1054")]
+    #[test_case(Duration::from_millis(100), 1_000_000 => 5938; "rtt=0.1 p=0.000001 Wavg=5926")]
+    #[test_case(Duration::from_millis(100), 10_000_000 => 33464; "rtt=0.1 p=0.0000001 Wavg=33325")]
+    #[test_case(Duration::from_millis(10), 100 => 10; "rtt=0.01 p=0.01 Wavg=12")]
+    #[test_case(Duration::from_millis(10), 1_000 => 36; "rtt=0.01 p=0.001 Wavg=38")]
+    #[test_case(Duration::from_millis(10), 10_000 => 120; "rtt=0.01 p=0.0001 Wavg=120")]
+    #[test_case(Duration::from_millis(10), 100_000 => 385; "rtt=0.01 p=0.00001 Wavg=379")]
+    #[test_case(Duration::from_millis(10), 1_000_000 => 1261; "rtt=0.01 p=0.000001 Wavg=1200")]
+    #[test_case(Duration::from_millis(10), 10_000_000 => 5952; "rtt=0.01 p=0.0000001 Wavg=5926")]
     fn average_window_size(rtt: Duration, loss_rate_reciprocal: u32) -> u32 {
         // Run the test long enough to experience 5 loss events.
         let round_trips = loss_rate_reciprocal * 5;
@@ -364,13 +367,13 @@ mod tests {
 
         // In this roundtrip, we enter a new congestion epoch from slow start,
         // in this round trip, both cubic and tcp equations will have t=0, so
-        // the cwnd in this round trip will be ssthresh, which is 3001 bytes,
+        // the cwnd in this round trip will be ssthresh, which is 2680 bytes,
         // or 5 full sized segments.
         clock.sleep(RTT);
         for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
             cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 5 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 5 * u32::from(DEFAULT_MSS));
 
         // Now we are at `epoch_start+RTT`, the window size should grow by at
         // least 1 u32::from(DEFAULT_MSS) per RTT (standard TCP).
@@ -378,7 +381,7 @@ mod tests {
         for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
             cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 6 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 6 * u32::from(DEFAULT_MSS));
     }
 
     // This is a regression test for https://fxbug.dev/327628809.

@@ -593,7 +593,7 @@ mod tests {
                 rto: Some(Duration::from_secs(1)),
                 rtt: None,
                 rtt_var: None,
-                snd_ssthresh: 3066,
+                snd_ssthresh: 2920,
                 snd_cwnd: 7300,
                 last_ack_recv: None,
                 snd_mss: Some(1460),
