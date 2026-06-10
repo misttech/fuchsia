@@ -129,6 +129,8 @@ group("tests") {
     ":bazel_source_path_mapper_test($host_toolchain)",
     ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
+    ":compute_content_hash_test($host_toolchain)",
+    ":get_git_head_commit_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",
     ":remote_services_utils_test($host_toolchain)",
     ":runfiles_utils_test($host_toolchain)",
@@ -136,14 +138,4 @@ group("tests") {
     ":stdio_redirection_test($host_toolchain)",
     ":workspace_utils_test($host_toolchain)",
   ]
-
-  # TODO(https://fxbug.dev/384878204): enable build-time tests once
-  # CI bots can run git commands properly.
-  if (false) {
-    deps += [
-      ":compute_content_hash_test($host_toolchain)",
-      ":get_git_head_commit_test($host_toolchain)",
-      ":runfiles_utils_test($host_toolchain)",
-    ]
-  }
 }

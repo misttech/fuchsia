@@ -32,7 +32,7 @@ def _git_cmd(git_dir: Path, args: T.Sequence[str | Path]) -> str:
 
 def _setup_first_git_dir(git_dir: Path) -> tuple[str, str]:
     git_dir.mkdir(parents=True, exist_ok=True)
-    _git_cmd(git_dir, ["init"])
+    _git_cmd(git_dir, ["-c", "init.defaultBranch=main", "init"])
     # required to avoid errors on CI build bots when running this test.
     _git_cmd(git_dir, ["config", "--local", "user.email", "test@example.com"])
     _git_cmd(git_dir, ["config", "--local", "user.name", "Test User"])
@@ -48,14 +48,10 @@ def _setup_first_git_dir(git_dir: Path) -> tuple[str, str]:
 
 def _setup_second_git_dir(git_dir: Path, submodule_path: Path) -> str:
     git_dir.mkdir(parents=True)
-    _git_cmd(git_dir, ["init"])
+    _git_cmd(git_dir, ["-c", "init.defaultBranch=main", "init"])
     # required to avoid errors on CI build bots when running this test.
     _git_cmd(git_dir, ["config", "--local", "user.email", "test@example.com"])
     _git_cmd(git_dir, ["config", "--local", "user.name", "Test User"])
-
-    # Print git version for https://fxbug.dev/384878204
-    git_version = _git_cmd(git_dir, ["--version"])
-    print(f"git version [{git_version}]", file=sys.stderr)
 
     # Add a submodule. Using -c protocol.file.allow=always
     # is required to avoid an error message that says:
