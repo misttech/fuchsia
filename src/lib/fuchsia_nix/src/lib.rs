@@ -8,7 +8,7 @@ pub mod errno {
 
 pub mod net {
     pub mod if_ {
-        pub use nix::net::if_::if_nametoindex;
+        pub use nix::net::if_::{if_indextoname, if_nametoindex};
     }
 }
 

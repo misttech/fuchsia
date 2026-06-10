@@ -43,6 +43,11 @@ tests = [
     ]
   },
   {
+    label = "dhcpv6-client"
+    err_logs = true
+    package_deps = [ "//src/connectivity/network/dhcpv6/client:component" ]
+  },
+  {
     label = "dns"
     err_logs = true
     package_deps = [

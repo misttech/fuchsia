@@ -712,8 +712,12 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
     }
 }
 
-/// Creates a socket listening on the input address.
-fn create_socket(addr: SocketAddr) -> std::io::Result<fasync::net::UdpSocket> {
+/// Creates a socket listening on the input address and binds it to the
+/// interface.
+fn create_socket(
+    addr: SocketAddr,
+    interface_id: fnet::InterfaceId,
+) -> std::io::Result<fasync::net::UdpSocket> {
     let socket = socket2::Socket::new(
         socket2::Domain::IPV6,
         socket2::Type::DGRAM,
@@ -721,6 +725,15 @@ fn create_socket(addr: SocketAddr) -> std::io::Result<fasync::net::UdpSocket> {
     )?;
     // It is possible to run multiple clients on the same address.
     socket.set_reuse_port(true)?;
+
+    // The client is created for a specific interface; bind to that interface.
+    let interface_id = u32::try_from(interface_id).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "interface ID does not fit in u32")
+    })?;
+    let name = fuchsia_nix::net::if_::if_indextoname(interface_id)
+        .map_err(Into::<std::io::Error>::into)?;
+    socket.bind_device(Some(name.as_bytes()))?;
+
     socket.bind(&addr.into())?;
     fasync::net::UdpSocket::from_socket(socket.into())
 }
@@ -820,7 +833,7 @@ pub(crate) async fn serve_client(
         dhcpv6_core::client::transaction_id(),
         config,
         interface_id,
-        || create_socket(addr),
+        || create_socket(addr, interface_id),
         SocketAddr::new(servers_addr, RELAY_AGENT_AND_SERVER_PORT),
         request_stream,
     )

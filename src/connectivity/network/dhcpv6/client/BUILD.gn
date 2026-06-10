@@ -25,6 +25,7 @@ network_unified_binary("dhcpv6_client") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia_nix",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/packet",
     "//third_party/rust_crates:anyhow",
