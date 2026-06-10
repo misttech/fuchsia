@@ -217,7 +217,7 @@
 
     <!-- Perfetto trace processor -->
     <package name="perfetto/trace_processor_shell/${platform}"
-             version="git_tag:v56.0"
+             version="git_tag:v56.1"
              platforms="linux-amd64"
              path="prebuilt/third_party/perfetto/trace_processor_shell/{{.OS}}-{{.Arch}}"/>
 
