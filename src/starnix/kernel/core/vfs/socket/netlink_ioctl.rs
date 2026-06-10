@@ -313,9 +313,7 @@ pub fn netlink_ioctl(
             Ok(SUCCESS)
         }
         SIOCSIFADDR => {
-            if security::check_task_capable(current_task, CAP_NET_ADMIN).is_err() {
-                return error!(EPERM, "tried to SIOCSIFADDR without CAP_NET_ADMIN");
-            }
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
 
             let in_ifreq: IfReq =
                 current_task.read_multi_arch_object(IfReqPtr::new(current_task, user_addr))?;
@@ -407,9 +405,7 @@ pub fn netlink_ioctl(
             Ok(SUCCESS)
         }
         SIOCSIFNETMASK => {
-            if security::check_task_capable(current_task, CAP_NET_ADMIN).is_err() {
-                return error!(EPERM, "tried to SIOCSIFNETMASK without CAP_NET_ADMIN");
-            }
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
 
             let in_ifreq: IfReq =
                 current_task.read_multi_arch_object(IfReqPtr::new(current_task, user_addr))?;
@@ -599,6 +595,7 @@ pub fn netlink_ioctl(
             Ok(SUCCESS)
         }
         SIOCSIFFLAGS => {
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
             let user_addr = UserAddress::from(arg);
             let in_ifreq: IfReq =
                 current_task.read_multi_arch_object(IfReqPtr::new(current_task, user_addr))?;

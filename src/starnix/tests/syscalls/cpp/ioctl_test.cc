@@ -20,10 +20,13 @@
 #include <fbl/unique_fd.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/input.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -464,6 +467,26 @@ TEST_F(IoctlTest, SIOCSIFFLAGS_Success) {
   ASSERT_EQ(GetLoopbackIfFlags(fd), kLoopbackIfFlagsEnabled);
   ASSERT_NO_FATAL_FAILURE(SetLoopbackIfFlags(fd, kLoopbackIfFlagsDisabled));
   ASSERT_NO_FATAL_FAILURE(SetLoopbackIfFlags(fd, kLoopbackIfFlagsEnabled));
+}
+
+TEST_F(IoctlTest, SIOCSIFFLAGS_RequiresCapNetAdmin) {
+  if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+    GTEST_SKIP() << "Need CAP_NET_ADMIN to run this test";
+  }
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+
+    ifreq ifr = {};
+    strncpy(ifr.ifr_name, kLoopbackIfName, IFNAMSIZ);
+    // Try to get flags first to have a valid structure
+    ASSERT_EQ(ioctl(fd.get(), SIOCGIFFLAGS, &ifr), 0) << strerror(errno);
+
+    // Try to set the same flags (no-op change) but it should still fail due to capability!
+    EXPECT_THAT(ioctl(fd.get(), SIOCSIFFLAGS, &ifr), SyscallFailsWithErrno(EPERM));
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 TEST_F(IoctlTest, SIOCGIFHWADDR_Success) {
