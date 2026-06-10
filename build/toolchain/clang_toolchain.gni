@@ -183,6 +183,8 @@ template("clang_toolchain") {
                 # site packages.
                 "-S",
                 rebase_path("//build/gn/verify_depfile.py", root_build_dir),
+                "--ignore-prefix=$rebased_rustc_prefix",
+                "--ignore-rspfile=${rbe_toolchain_vars.rust_compilation_deps_path}",
               ])
     }
 
@@ -546,8 +548,7 @@ template("clang_toolchain") {
         command += " {{rustdeps}} {{externs}}"
       }
       if (verify_depfile) {
-        command +=
-            " && $depfile_verifier -t \"{{label}}\" -d $depfile {{sources}}"
+        command += " && $depfile_verifier --label='{{label}}' --depfile=$depfile {{sources}}"
       }
 
       # Append command suffix and expand {{STRIP_ARGS}} and
@@ -693,8 +694,7 @@ template("clang_toolchain") {
         command += " {{rustdeps}} {{externs}}"
       }
       if (verify_depfile) {
-        command +=
-            " && $depfile_verifier -t \"{{label}}\" -d $depfile {{sources}}"
+        command += " && $depfile_verifier --label='{{label}}' --depfile=$depfile {{sources}}"
       }
 
       description = "RUST {{output}}"
@@ -740,8 +740,7 @@ template("clang_toolchain") {
         command += " {{rustdeps}} {{externs}}"
       }
       if (verify_depfile) {
-        command +=
-            " && $depfile_verifier -t \"{{label}}\" -d $depfile {{sources}}"
+        command += " && $depfile_verifier --label='{{label}}' --depfile=$depfile {{sources}}"
       }
 
       description = "RUST {{output}}"
@@ -813,8 +812,7 @@ template("clang_toolchain") {
         command += " {{rustdeps}} {{externs}}"
       }
       if (verify_depfile) {
-        command +=
-            " && $depfile_verifier -t \"{{label}}\" -d $depfile {{sources}}"
+        command += " && $depfile_verifier --label='{{label}}' --depfile=$depfile {{sources}}"
       }
 
       description = "RUST {{output}}"

@@ -35,6 +35,9 @@ _DEFAULT_COMMON_RUST_FLAGS = [
     # GN: //build/config:stack-size-section
     "-Zemit-stack-sizes",
 
+    # GN: //build/config:rust-depinfo
+    "-Zbinary-dep-depinfo",
+
     # GN: //build/config/rust:default_debug_assertions
     #
     # TODO(jayzhuang): Enable debug-assertions for non-release builds.

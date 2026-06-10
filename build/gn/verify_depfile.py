@@ -8,6 +8,7 @@ from __future__ import print_function
 import argparse
 import os.path
 import sys
+from pathlib import Path
 
 # Exempt targets with these prefixes.
 EXEMPTION_PREFIXES = [
@@ -75,16 +76,27 @@ def main():
         description="Verifies that the compiler-emitted depfile strictly contains the expected source files"
     )
     parser.add_argument(
-        "-t",
-        "--target_label",
+        "--label",
         required=True,
         help="GN target label being checked",
     )
     parser.add_argument(
-        "-d",
         "--depfile",
         required=True,
         help="path to compiler emitted depfile",
+    )
+    parser.add_argument(
+        "--ignore-prefix",
+        action="append",
+        default=[],
+        help="Path prefix of files to ignore (may be repeated)",
+    )
+    parser.add_argument(
+        "--ignore-rspfile",
+        action="append",
+        type=Path,
+        default=[],
+        help="Response file listing exact paths to ignore (may be repeated)",
     )
     parser.add_argument(
         "expected_sources",
@@ -101,11 +113,19 @@ def main():
 
     # Ignore specific target exemptions.
     for prefix in EXEMPTION_PREFIXES:
-        if args.target_label.startswith(prefix):
+        if args.label.startswith(prefix):
             return 0
 
+    ignore_paths = set()
+    for rspfile in args.ignore_rspfile:
+        ignore_paths.update(rspfile.read_text().splitlines())
+
     expected_sources = set(args.expected_sources)
-    actual_sources = parse_depfile(args.depfile)
+    actual_sources = {
+        file
+        for file in parse_depfile(args.depfile)
+        if not any(file.startswith(prefix) for prefix in args.ignore_prefix)
+    } - ignore_paths
 
     unlisted_sources = actual_sources.difference(expected_sources)
     if unlisted_sources:
@@ -122,13 +142,13 @@ def main():
 
         print(
             "note: the BUILD.gn file for {} should have the following:\n".format(
-                args.target_label
+                args.label
             ),
             file=sys.stderr,
         )
 
         rust_sources = [
-            build_file_source_path(args.target_label, source)
+            build_file_source_path(args.label, source)
             for source in actual_sources
             if source.endswith(".rs")
         ]
@@ -136,7 +156,7 @@ def main():
             print_suggested_sources("sources", rust_sources)
 
         non_rust_sources = [
-            build_file_source_path(args.target_label, source)
+            build_file_source_path(args.label, source)
             for source in actual_sources
             if not source.endswith(".rs")
         ]

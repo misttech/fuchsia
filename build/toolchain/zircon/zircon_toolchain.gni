@@ -685,10 +685,10 @@ template("zircon_toolchain") {
         rebase_path(python_exe_src, root_build_dir),
         "-S",
         rebase_path("//build/gn/verify_depfile.py", root_build_dir),
-        "-t",
-        "\"{{label}}\"",
-        "-d",
-        depfile,
+        "--label='{{label}}'",
+        "--ignore-prefix=$rebased_rustc_prefix",
+        "--ignore-rspfile=${rbe_toolchain_vars.rust_compilation_deps_path}",
+        "--depfile=$depfile",
         "{{sources}}",
       ]
     }

@@ -147,6 +147,12 @@ config("time-trace") {
   }
 }
 
+config("rust-depinfo") {
+  # rustc depfiles should identify all the .rlib / .rmeta / etc. input files,
+  # not just the .rs source files.
+  rustflags = [ "-Zbinary-dep-depinfo" ]
+}
+
 config("compiler") {
   cflags = []
   cflags_cc = [ "-fvisibility-inlines-hidden" ]
@@ -159,6 +165,7 @@ config("compiler") {
     ":call-graph-section",
     ":stack-size-section",
     ":stack-clash-protection",
+    ":rust-depinfo",
   ]
 
   if (is_gcc) {

@@ -86,6 +86,7 @@ linker_config("compiler") {
     "//build/config:crash_diagnostics",
     "//build/config:call-graph-section",
     "//build/config:stack-size-section",
+    "//build/config:rust-depinfo",
 
     # TODO: "$current_os:compiler",
   ]

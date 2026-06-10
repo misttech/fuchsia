@@ -104,12 +104,16 @@ rbe_toolchain_vars = {
     ]
   }
 
+  rust_compilation_deps_path =
+      "{{target_gen_dir}}/{{label_name}}.rust_compilation_deps"
+  rust_sources_path = "{{target_gen_dir}}//{{label_name}}.rust_sources"
+
   rust_command_prefix = [
     rebase_path(python_exe_src, root_build_dir),
     "-S",
     rebase_path(rustc_remote_wrapper, root_build_dir),
-    "--rust-compilation-deps-path={{target_gen_dir}}/{{label_name}}.rust_compilation_deps",
-    "--rust-sources-path={{target_gen_dir}}//{{label_name}}.rust_sources",
+    "--rust-compilation-deps-path=$rust_compilation_deps_path",
+    "--rust-sources-path=$rust_sources_path",
   ]
 
   if (disable_xattr_for_rbe) {
