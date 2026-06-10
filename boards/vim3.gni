@@ -20,7 +20,7 @@
 # NOTE: if you touch this file, please add this line to your commit
 # description so that the vim3 tests are run as we do not run vim3 tests in CQ
 # by default.
-# Cq-Include-Trybots: luci.turquoise.global.try:bringup.vim3-debug,core.vim3-debug,core.vim3-vg-debug
+# Cq-Include-Trybots:luci.turquoise.global.try:bringup.vim3-debug,core.vim3-debug,core.vim3-vg-debug
 
 has_board = true
 target_cpu = "arm64"

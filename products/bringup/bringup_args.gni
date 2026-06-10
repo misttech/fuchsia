@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Common params for all bazel_product_bundle() template instances for bringup products
+# Common params for all bazel_product_bundle() template instances for bringup
+# products
 bazel_product_bundle_params = {
   testonly = true
   use_bringup_platform_bundles = true

@@ -29,7 +29,8 @@ generate_scrutiny_configs("userdebug") {
   kernel_cmdline_golden = "${_goldens_dir}/kernel_cmdline_userdebug.txt"
 }
 
-# Build goldens with only the kernel args to require owners from the kernel team.
+# Build goldens with only the kernel args to require owners from the kernel
+# team.
 generate_scrutiny_configs("user_kernel_args") {
   platform_artifacts = "//bundles/assembly:platform"
   build_type = "user"

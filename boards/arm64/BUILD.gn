@@ -65,8 +65,9 @@ board_input_bundle("main_bundle") {
 
 # Special PSCI_CPU_SUSPEND states for QEMU.
 #
-# Both in TCG and KVM mode, suspend states are accepted, and treated as a `retention` state, meaning
-# core state is not lost, and the core isn't powered down. The core enters WFI internally.
+# Both in TCG and KVM mode, suspend states are accepted, and treated as a
+# `retention` state, meaning core state is not lost, and the core isn't powered
+# down. The core enters WFI internally.
 zbi_item("qemu_psci_cpu_suspend_states") {
   type = "ZBI_TYPE_KERNEL_DRIVER"
   extra = "ZBI_KERNEL_DRIVER_ARM_PSCI_CPU_SUSPEND"
@@ -75,13 +76,15 @@ zbi_item("qemu_psci_cpu_suspend_states") {
     {
       id = 0
 
-      # QEMU only supports the "Original format" (section 5.4.2.1 of DEN0022F.b), where bit 16 is
-      # the StateType and bits 15:0 are the StateID.
+      # QEMU only supports the "Original format" (section 5.4.2.1 of
+      # DEN0022F.b), where bit 16 is the StateType and bits 15:0 are the
+      # StateID.
       #
-      # Since QEMU does not support powerdown states, we use StateType=0 (meaning
-      # standby/retention).  For the StateID field, QEMU doesn't care so we simply use 1, which if
-      # QEMU were following the recommended encoding would mean core is last in the core power
-      # level, system level is run, cluster level is run, core level is standby.
+      # Since QEMU does not support powerdown states, we use StateType=0
+      # (meaning standby/retention). For the StateID field, QEMU doesn't care so
+      # we simply use 1, which if QEMU were following the recommended encoding
+      # would mean core is last in the core power level, system level is run,
+      # cluster level is run, core level is standby.
       power_state = 1
 
       # Nothing special.

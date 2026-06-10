@@ -23,11 +23,12 @@
 # but each entry needs a ticket assigned to the assembly team with an agreed
 # upon solution for how to address the tech-debt.
 
-# This `minimal` product is intended to be the "smallest thing we'd still call Fuchsia," which
-# implies simplicity, security, updatability and performance. Importantly, that differs from "all
-# current products use this feature;" today, that is what the `core` product is for.
-# `minimal` will change over time, both by addition and subtraction -- for example, should the
-# team ship a mechanism for updating Fuchsia that does not require IP networking, that functionality
+# This `minimal` product is intended to be the "smallest thing we'd still call
+# Fuchsia," which implies simplicity, security, updatability and performance.
+# Importantly, that differs from "all current products use this feature;" today,
+# that is what the `core` product is for. `minimal` will change over time, both
+# by addition and subtraction -- for example, should the team ship a mechanism
+# for updating Fuchsia that does not require IP networking, that functionality
 # should be moved to a higher-level product definition.
 
 bazel_product_bundle_prefix = "//products/minimal:product_bundle"

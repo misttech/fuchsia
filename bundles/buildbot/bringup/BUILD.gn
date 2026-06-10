@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This is a group of tests to run in bringup builders.  These are NOT added to the bringup
-# image itself.  These are integration and e2e tests.
+# This is a group of tests to run in bringup builders. These are NOT added to
+# the bringup image itself. These are integration and e2e tests.
 group("bringup") {
   testonly = true
 

@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# A collection of all stress tests available in-tree. The tests in this group will be built
-# and run on the core.x64-stress builder.
+# A collection of all stress tests available in-tree. The tests in this group
+# will be built and run on the core.x64-stress builder.
 group("stress-tests") {
   testonly = true
   public_deps = [

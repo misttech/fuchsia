@@ -55,8 +55,8 @@ if (current_cpu == "x64") {
     bazel_inputs_from_gn =
         bringup_bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -70,8 +70,8 @@ if (current_cpu == "x64") {
     bazel_inputs_from_gn =
         bringup_with_tests_bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 }
@@ -88,8 +88,8 @@ if (current_cpu == "arm64") {
     bazel_inputs_from_gn =
         bringup_bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -104,8 +104,8 @@ if (current_cpu == "arm64") {
     bazel_inputs_from_gn =
         bringup_with_tests_bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -121,8 +121,8 @@ if (current_cpu == "arm64") {
         bringup_bazel_inputs + [ "//boards/qemu-arm64:qemu-arm64.bazel_input" ]
     image_use_vbmeta = false
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -138,8 +138,8 @@ if (current_cpu == "arm64") {
                            [ "//boards/qemu-arm64:qemu-arm64.bazel_input" ]
     image_use_vbmeta = false
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -153,8 +153,8 @@ if (current_cpu == "arm64") {
     bazel_inputs_from_gn =
         bringup_bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -168,8 +168,8 @@ if (current_cpu == "arm64") {
     bazel_inputs_from_gn =
         bringup_with_tests_bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 }
@@ -186,8 +186,8 @@ if (current_cpu == "riscv64") {
         bringup_bazel_inputs + [ "//boards/riscv64:riscv64.bazel_input" ]
     image_use_vbmeta = false
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 
@@ -202,8 +202,8 @@ if (current_cpu == "riscv64") {
                            [ "//boards/riscv64:riscv64.bazel_input" ]
     image_use_vbmeta = false
 
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
+    # Note: this is last so that local variables cannot mask anything set in
+    # that scope, so that this scope only contains truly common parameters.
     forward_variables_from(bazel_product_bundle_params, "*")
   }
 }

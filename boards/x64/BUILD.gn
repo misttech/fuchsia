@@ -54,10 +54,10 @@ board_input_bundle("reduced_perf_variation_args") {
     "kernel.page-scanner.enable-eviction=false",
 
     # Disable Intel Turbo Boost. Turbo Boost provides a significant speed-up to
-    # many workloads, but — because CPU frequencies vary based on previous work,
-    # work in other cores, system temperature, etc — makes performance of systems
-    # less predictable. We prefer stability in our performance comparison
-    # benchmarks.
+    # many workloads, but -- because CPU frequencies vary based on previous
+    # work, work in other cores, system temperature, etc -- makes performance
+    # of systems less predictable. We prefer stability in our performance
+    # comparison benchmarks.
     "kernel.x86.turbo=false",
 
     # Set the Intel HWP performance profile to be "stable", trying to keep the

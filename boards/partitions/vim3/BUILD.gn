@@ -10,7 +10,7 @@ assert(current_toolchain == default_toolchain,
 # NOTE: if you touch this target, please add this line to your commit
 # description so that the vim3 tests are run as we do not run vim3 tests in CQ
 # by default.
-# Cq-Include-Trybots: luci.turquoise.global.try:bringup.vim3-debug,core.vim3-debug,core.vim3-vg-debug
+# Cq-Include-Trybots:luci.turquoise.global.try:bringup.vim3-debug,core.vim3-debug,core.vim3-vg-debug
 generated_partitions_config("vim3") {
   bootloader_partitions = [
     {

@@ -219,8 +219,9 @@ bazel_board_configuration("reduced_perf_variation") {
   deps = [ ":bazel_inputs" ]
 }
 
-# Note: This group contains bazel built drivers that are defined in individual bazel_actions.
-# Adding this to your build graph will greatly reduce your build speed.
+# Note: This group contains bazel built drivers that are defined in individual
+# bazel_actions. Adding this to your build graph will greatly reduce your build
+# speed.
 group("vim3-release") {
   deps = [
     "//src/connectivity/ethernet/drivers/aml-ethernet:package-archive",

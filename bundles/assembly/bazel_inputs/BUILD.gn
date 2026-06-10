@@ -2,12 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Every AIB in //bundles/assembly/BUILD.gn has a same-named group in this file, which is the list of
-# all inputs that make up that AIB, which need to come from GN instead of being created within
-# Bazel itself.
+# Every AIB in //bundles/assembly/BUILD.gn has a same-named group in this file,
+# which is the list of all inputs that make up that AIB, which need to come from
+# GN instead of being created within Bazel itself.
 #
-# For every GN-produced bazel input, there is a directory below this one which has the same path
-# as that input has in GN.  ie  //src/lib/foo:bar will be a target named 'bar' in
+# For every GN-produced bazel input, there is a directory below this one which
+# has the same path as that input has in GN. ie //src/lib/foo:bar will be a
+# target named 'bar' in
 # '//bundles/assembly/bazel_inputs/src/lib/foo/BUILD.gn'
 #
 # Currently, this only contains:
@@ -15,8 +16,10 @@
 #
 # Other inputs will be added in successive CLs.
 #
-# The idea is that eventually, all of those inputs will be created within Bazel itself, and then
-# this GN file, and those in the subdirectories below this one, will all be deleted.
+# The idea is that eventually, all of those inputs will be created within Bazel
+# itself, and then
+# this GN file, and those in the subdirectories below this one, will all be
+# deleted.
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
@@ -647,7 +650,8 @@ group("core_realm_eng") {
     "//bundles/assembly/bazel_inputs/src/sys/tools/debug-dash-launcher",
   ]
 
-  # Add all the sbase_binaries as deps, since they're either in base or the ondemand package set.
+  # Add all the sbase_binaries as deps, since they're either in base or the
+  # ondemand package set.
   foreach(bin, sbase_binaries) {
     deps += [ "//bundles/assembly/bazel_inputs/third_party/sbase:${bin}_pkg" ]
   }
@@ -1600,7 +1604,8 @@ group("emulator_support") {
   deps = [ ":qemu_kernel_input" ]
 }
 
-# We do this because we need to have a stable target name for getting the qemu kernel into Bazel.
+# We do this because we need to have a stable target name for getting the qemu
+# kernel into Bazel.
 #
 # We have a group that provides a consistent target for the "generator"
 group("qemu_kernel") {

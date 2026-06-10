@@ -33,10 +33,12 @@ group("virtualization") {
   ]
 }
 
-# This group of tests relies on a product bundle with virtualization, which isolates the fairly
-# bloated virtualization stack from other product configs. Using a product bundle to introduce this
-# dependency allows us more control over the infrastructure environment, while also letting the
-# Starnix test runner and tests be buildable regardless of the virtualization stack inclusion.
+# This group of tests relies on a product bundle with virtualization, which
+# isolates the fairly bloated virtualization stack from other product configs.
+# Using a product bundle to introduce this dependency allows us more control
+# over the infrastructure environment, while also letting the Starnix test
+# runner and tests be buildable regardless of the virtualization stack
+# inclusion.
 product_bundle_test_group("starnix_virtualized_tests") {
   product_bundle = ":starnix_linux_vm_bundle"
   environments = [ emu_env ]

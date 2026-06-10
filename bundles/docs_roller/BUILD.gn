@@ -6,7 +6,8 @@ assert(current_toolchain == default_toolchain,
        "These can only be defined in the default toolchain")
 
 # A dedicated bundle for the docs_roller bot to reach the wide subset of targets
-# without inducing print output or warnings that pollute stdout and break JSON parsing.
+# without inducing print output or warnings that pollute stdout and break JSON
+# parsing.
 group("docs_roller") {
   testonly = true
   public_deps = [
