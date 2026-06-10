@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::task::{decode_page_fault_exception_report, get_signal_for_general_exception};
+use crate::arch::task::handle_hardware_exception;
 use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
@@ -11,9 +11,9 @@ use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
-    ExitStatus, RobustListHeadPtr, RunState, SeccompFilter, SeccompFilterContainer,
-    SeccompNotifierHandle, SeccompState, SeccompStateValue, Task, TaskFlags, TaskRunningState,
-    ThreadState, Waiter,
+    ExitStatus, PageFaultExceptionReport, RobustListHeadPtr, RunState, SeccompFilter,
+    SeccompFilterContainer, SeccompNotifierHandle, SeccompState, SeccompStateValue, Task,
+    TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
@@ -43,8 +43,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
-    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGSYS, SIGTRAP, SigSet, Signal,
-    UncheckedSignal,
+    SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGSYS, SIGTRAP, SigSet, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
@@ -1398,40 +1397,20 @@ impl CurrentTask {
         self.task.write().seccomp_filters.notifier = notifier;
     }
 
-    // On ARM32 Linux, some undefined instructions are treated as software breakpoints.
-    // Read the instruction that caused the exception to handle it appropriately.
-    fn is_arm32_breakpoint(&self) -> bool {
-        #[cfg(target_arch = "aarch64")]
-        if self.thread_state.arch_width().is_arch32() {
-            let ip = self.thread_state.registers.instruction_pointer_register();
-            let user_addr = UserAddress::from(ip);
-
-            if self.thread_state.registers.is_thumb() {
-                // Read 2 bytes first to check the narrow Thumb instruction.
-                if let Ok(insn_bytes_16) = self.read_memory_to_array::<2>(user_addr) {
-                    let insn_u16 = u16::from_le_bytes(insn_bytes_16);
-                    if insn_u16 == 0xde01 {
-                        return true;
-                    }
-
-                    // Next, read 4 bytes to check the wide Thumb instruction.
-                    if let Ok(insn_bytes_32) = self.read_memory_to_array::<4>(user_addr) {
-                        let insn_u32 = u32::from_le_bytes(insn_bytes_32);
-                        if insn_u32 == 0xa000f7f0 {
-                            return true;
-                        }
-                    }
-                }
-            } else {
-                if let Ok(insn_bytes_32) = self.read_memory_to_array::<4>(user_addr) {
-                    let insn_u32 = u32::from_le_bytes(insn_bytes_32);
-                    if insn_u32 == 0xe7f001f0 {
-                        return true;
-                    }
-                }
-            }
+    pub(crate) fn handle_page_fault(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        decoded: PageFaultExceptionReport,
+        status: zx::Status,
+    ) -> ExceptionResult {
+        if let Ok(mm) = self.mm() {
+            mm.handle_page_fault(locked, decoded, status)
+        } else {
+            panic!(
+                "system task is handling a major page fault status={:?}, report={:?}",
+                status, decoded
+            );
         }
-        false
     }
 
     /// Processes a Zircon exception associated with this task.
@@ -1440,37 +1419,14 @@ impl CurrentTask {
         locked: &mut Locked<Unlocked>,
         report: &zx::ExceptionReport,
     ) -> ExceptionResult {
+        if let Some(result) = handle_hardware_exception(locked, self, report) {
+            return result;
+        }
+
         match report.ty {
-            zx::ExceptionType::General => match get_signal_for_general_exception(&report.arch) {
-                Some(sig) => ExceptionResult::Signal(SignalInfo::kernel(sig)),
-                None => {
-                    log_error!("Unrecognized general exception: {:?}", report);
-                    ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
-                }
-            },
-            zx::ExceptionType::FatalPageFault { status } => {
-                let report = decode_page_fault_exception_report(&report.arch);
-                if let Ok(mm) = self.mm() {
-                    mm.handle_page_fault(locked, report, status)
-                } else {
-                    panic!(
-                        "system task is handling a major page fault status={:?}, report={:?}",
-                        status, report
-                    );
-                }
-            }
-            zx::ExceptionType::UndefinedInstruction => {
-                if self.is_arm32_breakpoint() {
-                    ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP))
-                } else {
-                    ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
-                }
-            }
-            zx::ExceptionType::UnalignedAccess => {
-                ExceptionResult::Signal(SignalInfo::kernel(SIGBUS))
-            }
-            zx::ExceptionType::SoftwareBreakpoint | zx::ExceptionType::HardwareBreakpoint => {
-                ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP))
+            zx::ExceptionType::General => {
+                log_error!("Unrecognized general exception: {:?}", report);
+                ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
             }
             zx::ExceptionType::ProcessNameChanged => {
                 log_error!("Received unexpected process name changed exception");
@@ -1492,6 +1448,10 @@ impl CurrentTask {
             }
             zx::ExceptionType::Unknown { ty, code, data } => {
                 log_error!(ty:?, code:?, data:?; "Received unexpected exception");
+                ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
+            }
+            _ => {
+                log_error!("Received unknown zircon exception: {:?}", report.ty);
                 ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
             }
         }
