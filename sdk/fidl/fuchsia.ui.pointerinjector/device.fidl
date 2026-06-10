@@ -95,7 +95,7 @@ closed protocol Device {
     /// Batching: The caller is expected to batch-inject all events that share the
     /// same timestamp (e.g., multiple finger samples). There may be multiple such
     /// batches per injection call.
-    @available(added=HEAD)
+    @available(added=NEXT)
     strict InjectEvents(DeviceInjectRequest);
 };
 

@@ -102,6 +102,14 @@
         "request": "fuchsia.ui.pointerinjector/DeviceInjectRequest"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.pointerinjector/Device.InjectEvents",
+        "strictness": "strict",
+        "ordinal": "6172664453086451255",
+        "direction": "one_way",
+        "request": "fuchsia.ui.pointerinjector/DeviceInjectRequest"
+    },
+    {
         "kind": "protocol",
         "name": "fuchsia.ui.pointerinjector/Device",
         "openness": "closed",
