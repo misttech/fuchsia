@@ -21,7 +21,10 @@ class FakeBusDriver : public FakeBusDriverType {
  public:
   static zx_status_t Create(zx_device_t* parent, const char* name, uint8_t start_bus,
                             uint8_t end_bus, bool is_extended);
-  ~FakeBusDriver() = default;
+  ~FakeBusDriver() {
+    upstream_.DisableDownstream();
+    upstream_.UnplugDownstream();
+  }
   zx_status_t CreateDevice(pci_bdf_t bdf, uint8_t* base_cfg, size_t base_cfg_size,
                            uint16_t vid = PCI_TEST_DRIVER_VID, uint16_t did = PCI_TEST_DRIVER_DID);
 

@@ -41,7 +41,6 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
         } {
     ZX_ASSERT(fake_root_resource_create(resource_.reset_and_get_address()) == ZX_OK);
     ZX_ASSERT(fake_bti_create(bti_.reset_and_get_address()) == ZX_OK);
-    sysmem_.reset(0x5359534D);  // SYSM
   }
   FakePciroot() : FakePciroot(/*bus_start=*/0, /*bus_cnt=*/1, /*is_extended=*/false) {}
 
@@ -230,7 +229,6 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   std::vector<zx::eventpair> allocation_eps_;
   zx::bti bti_;
   zx::resource resource_;
-  zx::channel sysmem_;
   std::vector<pci_legacy_irq_t> legacy_irqs_;
   std::vector<pci_irq_routing_entry_t> routing_entries_;
   std::vector<pci_bdf_t> acpi_devices_;
