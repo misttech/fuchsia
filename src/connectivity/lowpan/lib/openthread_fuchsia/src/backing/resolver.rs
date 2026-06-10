@@ -179,7 +179,7 @@ impl Resolver {
         thread_context: &'static ot::PlatDnsUpstreamQuery,
         dns_query: &ot::Message<'_>,
     ) {
-        let sockaddr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 53);
+        let sockaddr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0 /* ephemeral port */);
         let socket = match fuchsia_async::net::UdpSocket::bind(&sockaddr) {
             Ok(socket) => socket,
             Err(_) => {
