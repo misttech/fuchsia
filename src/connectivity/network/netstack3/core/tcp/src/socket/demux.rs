@@ -1348,7 +1348,7 @@ mod test {
         HandshakeOptions, NetworkSerializationContext, Options, ResetOptions, SackBlocks,
         SegmentOptions, UnscaledWindowSize,
     };
-    use packet::{ParseBuffer as _, Serializer as _};
+    use packet::Serializer as _;
     use packet_formats::tcp::options::TcpOptions as _;
     use test_case::test_case;
 
