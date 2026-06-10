@@ -81,7 +81,9 @@ zx::result<SysmemBufferInfo> SysmemBufferInfo::GetSysmemMetadata(
 
   ZX_DEBUG_ASSERT_MSG(buffer.has_vmo(), "Sysmem deviated from its contract");
   ZX_DEBUG_ASSERT_MSG(buffer.has_vmo_usable_start(), "Sysmem deviated from its contract");
-  ZX_DEBUG_ASSERT_MSG(!buffer.has_close_weak_asap(), "Sysmem deviated from its contract");
+  if (buffer.has_close_weak_asap()) {
+    fdf::info("Sysmem buffer has close_weak_asap set; fake-display-stack will ignore it.");
+  }
 
   ZX_DEBUG_ASSERT_MSG(collection_info.has_settings(), "Sysmem deviated from its contract");
   ZX_DEBUG_ASSERT_MSG(collection_info.settings().has_buffer_settings(),
