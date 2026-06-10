@@ -46,6 +46,8 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     service_fs
         .for_each_concurrent(None, |IncomingRequest::Launcher(mut stream)| async move {
+            let active_jobs =
+                std::sync::Arc::new(std::sync::Mutex::new(Vec::<(zx::Koid, zx::Job)>::new()));
             while let Some(Ok(request)) = stream.next().await {
                 match request {
                     fdash::LauncherRequest::ExploreComponentOverPty {
@@ -60,11 +62,13 @@ async fn main() -> Result<(), anyhow::Error> {
                         let result = crate::launch::component::explore_over_pty(
                             &moniker, pty, tool_urls, command, ns_layout,
                         )
-                        .await
-                        .map(|(p, j)| {
-                            info!("launched Dash for instance {}", moniker);
-                            notify_on_process_exit(p, j, responder.control_handle().clone());
-                        });
+                        .await;
+                        let result = handle_launch_result(
+                            result,
+                            format!("launched Dash for instance {}", moniker),
+                            responder.control_handle().clone(),
+                            active_jobs.clone(),
+                        );
                         let _ = responder.send(result);
                     }
                     fdash::LauncherRequest::ExploreComponentOverSocket {
@@ -79,11 +83,13 @@ async fn main() -> Result<(), anyhow::Error> {
                         let result = crate::launch::component::explore_over_socket(
                             &moniker, socket, tool_urls, command, ns_layout,
                         )
-                        .await
-                        .map(|(p, j)| {
-                            info!("launched Dash for instance {}", moniker);
-                            notify_on_process_exit(p, j, responder.control_handle().clone());
-                        });
+                        .await;
+                        let result = handle_launch_result(
+                            result,
+                            format!("launched Dash for instance {}", moniker),
+                            responder.control_handle().clone(),
+                            active_jobs.clone(),
+                        );
                         let _ = responder.send(result);
                     }
                     fdash::LauncherRequest::ExplorePackageOverSocket {
@@ -103,11 +109,13 @@ async fn main() -> Result<(), anyhow::Error> {
                             tool_urls,
                             command,
                         )
-                        .await
-                        .map(|(p, j)| {
-                            info!("launched Dash for package {} {}", url, subpackages.join(" "));
-                            notify_on_process_exit(p, j, responder.control_handle().clone());
-                        });
+                        .await;
+                        let result = handle_launch_result(
+                            result,
+                            format!("launched Dash for package {} {}", url, subpackages.join(" ")),
+                            responder.control_handle().clone(),
+                            active_jobs.clone(),
+                        );
                         let _ = responder.send(result);
                     }
                     fdash::LauncherRequest::ExplorePackageOverSocket2 {
@@ -128,13 +136,23 @@ async fn main() -> Result<(), anyhow::Error> {
                             tool_urls,
                             command,
                         )
-                        .await
-                        .map(|(p, j)| {
-                            info!("launched Dash for package {} {}", url, subpackages.join(" "));
-                            notify_on_process_exit(p, j, responder.control_handle().clone());
-                        });
+                        .await;
+                        let result = handle_launch_result(
+                            result,
+                            format!("launched Dash for package {} {}", url, subpackages.join(" ")),
+                            responder.control_handle().clone(),
+                            active_jobs.clone(),
+                        );
                         let _ = responder.send(result);
                     }
+                }
+            }
+            // Stream closed (client disconnected). Kill all remaining active jobs.
+            let mut jobs = active_jobs.lock().unwrap();
+            if !jobs.is_empty() {
+                info!("Client disconnected, killing {} active jobs", jobs.len());
+                for (_, job) in jobs.drain(..) {
+                    let _ = job.kill();
                 }
             }
         })
@@ -147,11 +165,18 @@ fn notify_on_process_exit(
     process: zx::Process,
     job: zx::Job,
     control_handle: fdash::LauncherControlHandle,
+    active_jobs: std::sync::Arc<std::sync::Mutex<Vec<(zx::Koid, zx::Job)>>>,
 ) {
     fasync::Task::spawn(async move {
         let _ = fasync::OnSignals::new(&process, zx::Signals::PROCESS_TERMINATED).await;
         // Kill the job to ensure all descendants are cleaned up.
         let _ = job.kill();
+
+        // Remove from active_jobs.
+        if let Ok(koid) = job.koid() {
+            active_jobs.lock().unwrap().retain(|(k, _)| *k != koid);
+        }
+
         match process.info() {
             Ok(info) => {
                 let _ = control_handle
@@ -166,4 +191,25 @@ fn notify_on_process_exit(
         }
     })
     .detach();
+}
+
+fn handle_launch_result(
+    result: Result<(zx::Process, zx::Job), fdash::LauncherError>,
+    log_message: String,
+    control_handle: fdash::LauncherControlHandle,
+    active_jobs: std::sync::Arc<std::sync::Mutex<Vec<(zx::Koid, zx::Job)>>>,
+) -> Result<(), fdash::LauncherError> {
+    match result {
+        Ok((p, j)) => {
+            info!("{}", log_message);
+            if let Ok(koid) = j.koid() {
+                if let Ok(j_dup) = j.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                    active_jobs.lock().unwrap().push((koid, j_dup));
+                }
+            }
+            notify_on_process_exit(p, j, control_handle, active_jobs);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }

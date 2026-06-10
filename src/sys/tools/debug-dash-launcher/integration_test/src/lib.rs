@@ -235,3 +235,35 @@ pub async fn background_job() {
 
     assert!(!output.contains("Failed to create subshell"), "Output was: {}", output);
 }
+
+#[fuchsia::test]
+pub async fn disconnect_kills_jobs() {
+    let (_stdio, stdio_server) = zx::Socket::create_stream();
+
+    let launcher = connect_to_protocol::<fdash::LauncherMarker>().unwrap();
+
+    let result = launcher
+        .explore_component_over_socket(
+            ".",
+            stdio_server,
+            &[],
+            None, // Interactive
+            fdash::DashNamespaceLayout::NestAllInstanceDirs,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_ok());
+
+    // Drop the launcher proxy to simulate client disconnect.
+    std::mem::drop(launcher);
+
+    // Wait for the socket to close. We expect this to happen because the launcher
+    // should kill the job (and thus the shell process) when the client disconnects.
+    match _stdio.wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE) {
+        zx::WaitResult::Ok(_) => {} // Success, socket closed.
+        zx::WaitResult::TimedOut(_) => unreachable!(),
+        zx::WaitResult::Canceled(_) => panic!("Wait canceled"),
+        zx::WaitResult::Err(status) => panic!("Wait failed: {:?}", status),
+    }
+}
