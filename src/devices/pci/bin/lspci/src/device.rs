@@ -1,11 +1,11 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::capability::Capability;
+use crate::Args;
+use crate::capability::{Capability, ExtendedCapability};
 use crate::config::{CommandRegister, StatusRegister, Type00Config};
 use crate::db::PciDb;
-use crate::util::{format_bytes, Hexdumper};
-use crate::Args;
+use crate::util::{Hexdumper, format_bytes};
 use fidl_fuchsia_hardware_pci::PciDevice as FidlDevice;
 use std::fmt;
 use zerocopy::Ref;
@@ -91,6 +91,9 @@ impl<'a> Device<'a> {
             }
             for capability in &self.device.capabilities {
                 writeln!(f, "\t{}", Capability::new(capability, &self.device.config[..]))?;
+            }
+            for ext_capability in &self.device.ext_capabilities {
+                writeln!(f, "\t{}", ExtendedCapability::new(ext_capability))?;
             }
         }
 

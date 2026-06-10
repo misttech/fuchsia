@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 use crate::util::is_set;
 use bitfield::bitfield;
-use fidl_fuchsia_hardware_pci::Capability as FidlCapability;
+use fidl_fuchsia_hardware_pci::{
+    Capability as FidlCapability, ExtendedCapability as FidlExtCapability,
+};
 use std::fmt;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref};
 
@@ -334,4 +336,217 @@ struct PciExpressCapability {
     device_capabilities: u32,
     device_control: u16,
     device_status: u16,
+}
+
+// PCIe Extended Capability IDs.
+// PCIe Base Specification rev4, chapter 7.6.
+enum ExtendedCapabilityType {
+    Null,
+    AdvancedErrorReporting,
+    VirtualChannelNoMfvc,
+    DeviceSerialNumber,
+    PowerBudgeting,
+    RootComplexLinkDeclaration,
+    RootComplexInternalLinkControl,
+    RootComplexEventCollectorEndpointAssociation,
+    MultiFunctionVirtualChannel,
+    VirtualChannel,
+    Rcrb,
+    Vendor,
+    Cac,
+    Acs,
+    Ari,
+    Ats,
+    SrIov,
+    MrIov,
+    Multicast,
+    Pri,
+    EnhancedAllocation,
+    ResizableBar,
+    DynamicPowerAllocation,
+    Tph,
+    LatencyToleranceReporting,
+    SecondaryPciExpress,
+    Pmux,
+    Pasid,
+    Lnr,
+    Dpc,
+    L1pmSubstates,
+    PrecisionTimeMeasurement,
+    Mpcie,
+    FrsQueueing,
+    ReadinessTimeReporting,
+    DesignatedVendor,
+    VfResizableBar,
+    DataLinkFeature,
+    PhysicalLayer16,
+    LaneMarginingAtReceiver,
+    HierarchyId,
+    NativePcieEnclosure,
+    PhysicalLayer32,
+    AlternateProtocol,
+    SystemFirmwareIntermediary,
+    Unknown(u16),
+}
+
+impl From<u16> for ExtendedCapabilityType {
+    fn from(value: u16) -> Self {
+        match value {
+            0x00 => ExtendedCapabilityType::Null,
+            0x01 => ExtendedCapabilityType::AdvancedErrorReporting,
+            0x02 => ExtendedCapabilityType::VirtualChannelNoMfvc,
+            0x03 => ExtendedCapabilityType::DeviceSerialNumber,
+            0x04 => ExtendedCapabilityType::PowerBudgeting,
+            0x05 => ExtendedCapabilityType::RootComplexLinkDeclaration,
+            0x06 => ExtendedCapabilityType::RootComplexInternalLinkControl,
+            0x07 => ExtendedCapabilityType::RootComplexEventCollectorEndpointAssociation,
+            0x08 => ExtendedCapabilityType::MultiFunctionVirtualChannel,
+            0x09 => ExtendedCapabilityType::VirtualChannel,
+            0x0a => ExtendedCapabilityType::Rcrb,
+            0x0b => ExtendedCapabilityType::Vendor,
+            0x0c => ExtendedCapabilityType::Cac,
+            0x0d => ExtendedCapabilityType::Acs,
+            0x0e => ExtendedCapabilityType::Ari,
+            0x0f => ExtendedCapabilityType::Ats,
+            0x10 => ExtendedCapabilityType::SrIov,
+            0x11 => ExtendedCapabilityType::MrIov,
+            0x12 => ExtendedCapabilityType::Multicast,
+            0x13 => ExtendedCapabilityType::Pri,
+            0x14 => ExtendedCapabilityType::EnhancedAllocation,
+            0x15 => ExtendedCapabilityType::ResizableBar,
+            0x16 => ExtendedCapabilityType::DynamicPowerAllocation,
+            0x17 => ExtendedCapabilityType::Tph,
+            0x18 => ExtendedCapabilityType::LatencyToleranceReporting,
+            0x19 => ExtendedCapabilityType::SecondaryPciExpress,
+            0x1a => ExtendedCapabilityType::Pmux,
+            0x1b => ExtendedCapabilityType::Pasid,
+            0x1c => ExtendedCapabilityType::Lnr,
+            0x1d => ExtendedCapabilityType::Dpc,
+            0x1e => ExtendedCapabilityType::L1pmSubstates,
+            0x1f => ExtendedCapabilityType::PrecisionTimeMeasurement,
+            0x20 => ExtendedCapabilityType::Mpcie,
+            0x21 => ExtendedCapabilityType::FrsQueueing,
+            0x22 => ExtendedCapabilityType::ReadinessTimeReporting,
+            0x23 => ExtendedCapabilityType::DesignatedVendor,
+            0x24 => ExtendedCapabilityType::VfResizableBar,
+            0x25 => ExtendedCapabilityType::DataLinkFeature,
+            0x26 => ExtendedCapabilityType::PhysicalLayer16,
+            0x27 => ExtendedCapabilityType::LaneMarginingAtReceiver,
+            0x28 => ExtendedCapabilityType::HierarchyId,
+            0x29 => ExtendedCapabilityType::NativePcieEnclosure,
+            0x2a => ExtendedCapabilityType::PhysicalLayer32,
+            0x2b => ExtendedCapabilityType::AlternateProtocol,
+            0x2c => ExtendedCapabilityType::SystemFirmwareIntermediary,
+            _ => ExtendedCapabilityType::Unknown(value),
+        }
+    }
+}
+
+pub struct ExtendedCapability {
+    offset: usize,
+    cap_type: ExtendedCapabilityType,
+}
+
+impl ExtendedCapability {
+    pub fn new(capability: &FidlExtCapability) -> Self {
+        ExtendedCapability {
+            offset: capability.offset as usize,
+            cap_type: ExtendedCapabilityType::from(capability.id),
+        }
+    }
+}
+
+impl fmt::Display for ExtendedCapability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Capabilities: [0x{:03x}] ", self.offset)?;
+        match self.cap_type {
+            ExtendedCapabilityType::Null => write!(f, "Null"),
+            ExtendedCapabilityType::AdvancedErrorReporting => write!(f, "Advanced Error Reporting"),
+            ExtendedCapabilityType::VirtualChannelNoMfvc => write!(f, "Virtual Channel (no MFVC)"),
+            ExtendedCapabilityType::DeviceSerialNumber => write!(f, "Device Serial Number"),
+            ExtendedCapabilityType::PowerBudgeting => write!(f, "Power Budgeting"),
+            ExtendedCapabilityType::RootComplexLinkDeclaration => {
+                write!(f, "Root Complex Link Declaration")
+            }
+            ExtendedCapabilityType::RootComplexInternalLinkControl => {
+                write!(f, "Root Complex Internal Link Control")
+            }
+            ExtendedCapabilityType::RootComplexEventCollectorEndpointAssociation => {
+                write!(f, "Root Complex Event Collector Endpoint Association")
+            }
+            ExtendedCapabilityType::MultiFunctionVirtualChannel => {
+                write!(f, "Multi-Function Virtual Channel")
+            }
+            ExtendedCapabilityType::VirtualChannel => write!(f, "Virtual Channel"),
+            ExtendedCapabilityType::Rcrb => write!(f, "RCRB"),
+            ExtendedCapabilityType::Vendor => write!(f, "Vendor Specific Option"),
+            ExtendedCapabilityType::Cac => write!(f, "CAC"),
+            ExtendedCapabilityType::Acs => write!(f, "Access Control Services"),
+            ExtendedCapabilityType::Ari => write!(f, "Alternative Routing-ID Interpretation (ARI)"),
+            ExtendedCapabilityType::Ats => write!(f, "Address Translation Services (ATS)"),
+            ExtendedCapabilityType::SrIov => write!(f, "Single Root I/O Virtualization (SR-IOV)"),
+            ExtendedCapabilityType::MrIov => write!(f, "Multi-Root I/O Virtualization (MR-IOV)"),
+            ExtendedCapabilityType::Multicast => write!(f, "Multicast"),
+            ExtendedCapabilityType::Pri => write!(f, "Page Request Interface (PRI)"),
+            ExtendedCapabilityType::EnhancedAllocation => write!(f, "Enhanced Allocation"),
+            ExtendedCapabilityType::ResizableBar => write!(f, "Resizable BAR"),
+            ExtendedCapabilityType::DynamicPowerAllocation => write!(f, "Dynamic Power Allocation"),
+            ExtendedCapabilityType::Tph => write!(f, "TLP Processing Hints (TPH)"),
+            ExtendedCapabilityType::LatencyToleranceReporting => {
+                write!(f, "Latency Tolerance Reporting")
+            }
+            ExtendedCapabilityType::SecondaryPciExpress => write!(f, "Secondary PCI Express"),
+            ExtendedCapabilityType::Pmux => write!(f, "Protocol Multiplexing (PMUX)"),
+            ExtendedCapabilityType::Pasid => write!(f, "Process Address Space ID (PASID)"),
+            ExtendedCapabilityType::Lnr => write!(f, "LN Requester (LNR)"),
+            ExtendedCapabilityType::Dpc => write!(f, "Downstream Port Containment (DPC)"),
+            ExtendedCapabilityType::L1pmSubstates => write!(f, "L1 PM Substates"),
+            ExtendedCapabilityType::PrecisionTimeMeasurement => {
+                write!(f, "Precision Time Measurement (PTM)")
+            }
+            ExtendedCapabilityType::Mpcie => write!(f, "M-PCIe"),
+            ExtendedCapabilityType::FrsQueueing => write!(f, "FRS Queueing"),
+            ExtendedCapabilityType::ReadinessTimeReporting => write!(f, "Readiness Time Reporting"),
+            ExtendedCapabilityType::DesignatedVendor => write!(f, "Designated Vendor-Specific"),
+            ExtendedCapabilityType::VfResizableBar => write!(f, "VF Resizable BAR"),
+            ExtendedCapabilityType::DataLinkFeature => write!(f, "Data Link Feature"),
+            ExtendedCapabilityType::PhysicalLayer16 => write!(f, "Physical Layer 16.0 GT/s"),
+            ExtendedCapabilityType::LaneMarginingAtReceiver => {
+                write!(f, "Lane Margining at Receiver")
+            }
+            ExtendedCapabilityType::HierarchyId => write!(f, "Hierarchy ID"),
+            ExtendedCapabilityType::NativePcieEnclosure => write!(f, "Native PCIe Enclosure"),
+            ExtendedCapabilityType::PhysicalLayer32 => write!(f, "Physical Layer 32.0 GT/s"),
+            ExtendedCapabilityType::AlternateProtocol => write!(f, "Alternate Protocol"),
+            ExtendedCapabilityType::SystemFirmwareIntermediary => {
+                write!(f, "System Firmware Intermediary")
+            }
+            ExtendedCapabilityType::Unknown(id) => {
+                write!(f, "Unknown Extended Capability (id = {:#04x})", id)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extended_capability_display() {
+        let cap = FidlExtCapability { id: 0x0001, offset: 0x0100 };
+        let ext_cap = ExtendedCapability::new(&cap);
+        assert_eq!(format!("{}", ext_cap), "Capabilities: [0x100] Advanced Error Reporting");
+
+        let cap_zero = FidlExtCapability { id: 0x0001, offset: 0x0 };
+        let ext_cap_zero = ExtendedCapability::new(&cap_zero);
+        assert_eq!(format!("{}", ext_cap_zero), "Capabilities: [0x000] Advanced Error Reporting");
+
+        let cap_unknown = FidlExtCapability { id: 0xabcd, offset: 0x0200 };
+        let ext_cap_unknown = ExtendedCapability::new(&cap_unknown);
+        assert_eq!(
+            format!("{}", ext_cap_unknown),
+            "Capabilities: [0x200] Unknown Extended Capability (id = 0xabcd)"
+        );
+    }
 }
