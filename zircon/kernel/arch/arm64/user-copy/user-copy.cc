@@ -75,6 +75,10 @@ zx_status_t arch_copy_to_user(void* dst, const void* src, size_t len) {
     return ZX_ERR_INVALID_ARGS;
   }
 
+  // Spectre V1.1: Confine {dst, len} to user addresses to prevent the kernel from speculatively
+  // storing to user-controlled addresses.
+  internal::validate_user_accessible_range(reinterpret_cast<vaddr_t*>(&dst), &len);
+
   zx_status_t ret =
       arm64_user_copy_pan_wrapped(dst, src, len, &Thread::Current::Get()->arch().data_fault_resume,
                                   ARM64_USER_COPY_DO_FAULTS)
@@ -119,6 +123,10 @@ UserCopyCaptureFaultsResult arch_copy_to_user_capture_faults(void* dst, const vo
   if (!is_user_accessible_range(reinterpret_cast<vaddr_t>(dst), len)) {
     return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
   }
+
+  // Spectre V1.1: Confine {dst, len} to user addresses to prevent the kernel from speculatively
+  // storing to user-controlled addresses.
+  internal::validate_user_accessible_range(reinterpret_cast<vaddr_t*>(&dst), &len);
 
   // Ensure that the calling thread is either holding no spinlocks, or has correctly specified a
   // non-blocking copy context.
