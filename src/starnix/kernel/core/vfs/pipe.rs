@@ -406,12 +406,27 @@ pub fn new_pipe(
         state.add_writer();
     }
 
-    let mut open = |flags: OpenFlags| {
-        let ops = PipeFileObject { pipe: Arc::clone(pipe) };
-        Ok(FileObject::new_anonymous(locked, current_task, Box::new(ops), Arc::clone(&node), flags))
-    };
+    // Creating the readable `FileObject` takes care of initializing the `node` security label.
+    let read_ops = PipeFileObject { pipe: Arc::clone(pipe) };
+    let read_file = FileObject::new_anonymous(
+        locked,
+        current_task,
+        Box::new(read_ops),
+        Arc::clone(&node),
+        OpenFlags::RDONLY,
+    );
 
-    Ok((open(OpenFlags::RDONLY)?, open(OpenFlags::WRONLY)?))
+    // Create the writable `FileObject` using the readable object's `name` to reduce overhead.
+    let write_ops = PipeFileObject { pipe: Arc::clone(pipe) };
+    let write_file = FileObject::new(
+        locked,
+        current_task,
+        Box::new(write_ops),
+        read_file.name.to_passive(),
+        OpenFlags::WRONLY,
+    )?;
+
+    Ok((read_file, write_file))
 }
 
 struct PipeFs;
