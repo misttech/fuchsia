@@ -64,13 +64,16 @@ source_set("ddktl") {
       # <ddktl/device.h> has #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
       "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
 
-      # <ddktl/metadata_server.h> has #include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
+      # <ddktl/metadata_server.h> has #include
+      # <fidl/fuchsia.driver.metadata/cpp/fidl.h>
       "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
 
-      # <ddktl/metadata_server.h> has #include <lib/component/outgoing/cpp/outgoing_directory.h>
+      # <ddktl/metadata_server.h> has #include
+      # <lib/component/outgoing/cpp/outgoing_directory.h>
       "//sdk/lib/component/outgoing/cpp",
 
-      # <ddktl/metadata_server.h> has #include <lib/driver/outgoing/cpp/outgoing_directory.h>
+      # <ddktl/metadata_server.h> has #include
+      # <lib/driver/outgoing/cpp/outgoing_directory.h>
       "//sdk/lib/driver/outgoing/cpp",
     ]
 
@@ -89,11 +92,11 @@ source_set("ddktl") {
   #    |\_________\   \|__|  \|_______|\|__|
   #    \|_________|
   #
-  # New drivers should be written for DFv2. If you need to target a board stuck on DFv1,
-  # it is acceptable to add an entry to this list.
+  # New drivers should be written for DFv2. If you need to target a board stuck
+  # on DFv1, it is acceptable to add an entry to this list.
   #
-  # To remove items from the allowlist, please send a change to one of the OWNERS of
-  # this file to remove an element from the visibility list below.
+  # To remove items from the allowlist, please send a change to one of the
+  # OWNERS of this file to remove an element from the visibility list below.
   #
   # Please allowlist entire directories rather than individual targets as it
   # requires less allowlist churn over time.

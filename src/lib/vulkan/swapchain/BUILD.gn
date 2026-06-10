@@ -7,7 +7,8 @@
 #
 # fuchsia_component() and fuchsia_package() instances should depend on
 # 'image_pipe_swapchain_layer' or 'image_pipe_swapchain_xxx_layer' to get both
-# the module and the configuration file properly installed into the final package.
+# the module and the configuration file properly installed into the final
+# package.
 
 # IMPORTANT: Keep in sync with //src/lib/vulkan/swapchain/sdk_atom_info.gni
 

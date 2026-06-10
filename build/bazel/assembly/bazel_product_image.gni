@@ -6,8 +6,9 @@ import("//build/assembly/developer_overrides.gni")
 import("//build/bazel/bazel_build_group.gni")
 
 # A GN wrapper for a Bazel product image target. From GN's perspective, this
-# target outputs a set of system images (ZBI, vbmeta, etc.) in its output directory,
-# making it a direct replacement for assembled_system() backed by Bazel.
+# target outputs a set of system images (ZBI, vbmeta, etc.) in its output
+# directory, making it a direct replacement for assembled_system() backed by
+# Bazel.
 #
 # Parameters
 #

@@ -78,8 +78,9 @@ static_library("unwinder") {
   }
 }
 
-# This test binary is always built in the linux_arm-shared toolchain. linux_arm is the only
-# toolchain that will produce 32 bit binaries with the ARM Exception Handling unwinding ABI.
+# This test binary is always built in the linux_arm-shared toolchain. linux_arm
+# is the only toolchain that will produce 32 bit binaries with the ARM Exception
+# Handling unwinding ABI.
 if (is_host) {
   host_test_data("test_so") {
     sources = [ "test_data/libunwind_info_test_data.targetso" ]
@@ -125,8 +126,8 @@ test("unwinder_tests_bin") {
 fuchsia_unittest_package("unwinder_tests") {
   deps = [ ":unwinder_tests_bin" ]
 
-  # This is a prebuilt test binary that we control ourselves. There won't be a corresponding
-  # unstripped binary for it.
+  # This is a prebuilt test binary that we control ourselves. There won't be a
+  # corresponding unstripped binary for it.
   disable_elf_binaries_checks = true
   data_deps = [ ":test_so" ]
 }

@@ -36,8 +36,8 @@ fuchsia_component("pass_without_config") {
   visibility = [ ":*" ]
 }
 
-# this package should only be depended upon by the test below, including it in a system image
-# should cause product validation to fail
+# this package should only be depended upon by the test below, including it in a
+# system image should cause product validation to fail
 _package_name = "validate_structured_config_repackaging"
 fuchsia_package(_package_name) {
   testonly = true
@@ -98,7 +98,8 @@ if (is_host) {
     testonly = true
     deps = [ ":structured_config_repackaging_test" ]
 
-    # Prevent this group from leaking packages into system images if incorrectly dep'd from target.
+    # Prevent this group from leaking packages into system images if incorrectly
+    # dep'd from target.
     metadata = {
       distribution_entries_barrier = []
       package_barrier = []

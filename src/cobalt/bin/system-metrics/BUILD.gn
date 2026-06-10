@@ -95,6 +95,7 @@ cc_test_executable("cobalt_system_metrics_unittests") {
     "//src/lib/timekeeper:testing",
   ]
 
-  # TODO(67363): Temporarily disable lsan for this target. Reenable once all leaks are fixed.
+  # TODO(67363): Temporarily disable lsan for this target. Reenable once all
+  # leaks are fixed.
   deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }

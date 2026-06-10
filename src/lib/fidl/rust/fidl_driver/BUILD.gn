@@ -20,11 +20,12 @@ rustc_library("fidl_driver") {
   test_deps = [ "//src/devices/bin/driver_runtime" ]
   with_unit_tests = true
 
-  # Rust fidl driver transport support is currently experimental, and restricted by a visibility
-  # list. Please check with the driver framework team before adding your fidl library to this list.
-  # Note: This is only required if you are using the old fidl bindings with driver transport, which
-  # is not really supported at all and is going to be removed. You should use the fidl_next bindings
-  # if you need to use driver transport in a rust driver.
+  # Rust fidl driver transport support is currently experimental, and restricted
+  # by a visibility list. Please check with the driver framework team before
+  # adding your fidl library to this list. Note: This is only required if you
+  # are using the old fidl bindings with driver transport, which is not really
+  # supported at all and is going to be removed. You should use the fidl_next
+  # bindings if you need to use driver transport in a rust driver.
   visibility = [
     ":*",
     "//sdk/fidl/fuchsia.driver.framework:*",

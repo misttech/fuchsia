@@ -17,7 +17,8 @@ declare_args() {
 }
 
 declare_args() {
-  # Path to directory containing ICU time zone resource files. See `icu_tzres_source`.
+  # Path to directory containing ICU time zone resource files. See
+  # `icu_tzres_source`.
   icu_tzres_path = "${icu_root}/tzres"
 
   assert(icu_tzres_source == "git" || icu_tzres_source == "prebuilt")

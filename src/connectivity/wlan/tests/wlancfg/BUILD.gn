@@ -125,7 +125,8 @@ group("tests_for_fyi_long") {
   public_deps = wlancfg_tests_for_fyi_long  # Edit in test_lists.gni
 }
 
-# Test cases that are not run automatically in infra, they are only used for release testing.
+# Test cases that are not run automatically in infra, they are only used for
+# release testing.
 group("tests_for_release_testing") {
   testonly = true
   public_deps = [

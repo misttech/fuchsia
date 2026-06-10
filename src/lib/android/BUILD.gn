@@ -11,8 +11,8 @@ group("tests") {
 # Some Android libraries fail to build with thread safety analysis but we do not
 # want to disable thread safety analysis for any downstream users.
 #
-# If updating the third_party Android code fails to compile, you may add this config
-# to the private config sections of the failing target.
+# If updating the third_party Android code fails to compile, you may add this
+# config to the private config sections of the failing target.
 config("android_config_no_thread_safety_analysis") {
   cflags_cc = [ "-Wno-thread-safety-analysis" ]
   configs = [ ":android_config" ]

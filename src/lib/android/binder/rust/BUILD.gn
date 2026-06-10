@@ -36,8 +36,8 @@ config("allow_non_snake_case") {
   rustflags = [ "-Anon_snake_case" ]
 }
 
-# This target lets us link the C++ standard library statically into programs which
-# depend on the AIDL Rust library, which links in C++ code.
+# This target lets us link the C++ standard library statically into programs
+# which depend on the AIDL Rust library, which links in C++ code.
 source_set("static_cpp_standard_library") {
   all_dependent_configs =
       [ "//build/config/fuchsia:static_cpp_standard_library" ]

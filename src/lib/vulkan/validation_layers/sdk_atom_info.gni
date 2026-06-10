@@ -5,8 +5,8 @@
 import("//build_overrides/vulkan_validation_layers.gni")
 
 # This builds a list of scopes for //src/lib/vulkan/validation_layers, which is
-# used to build an SDK atom for the layers. Keep this in sync with the content of
-# the imported .gni file above.
+# used to build an SDK atom for the layers. Keep this in sync with the content
+# of the imported .gni file above.
 #
 # See //src/lib/vulkan/BUILD.gn for the schema of each scope item in the list.
 #

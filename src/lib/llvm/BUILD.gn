@@ -21,10 +21,11 @@ group("LLVM") {
 }
 
 config("LLVMHeader_config") {
-  # elflib depends on LLVM headers and is compiled on target. Since we don't have Fuchsia variant
-  # of LLVM library yet, always use host_platform's include directory for now.
-  # It should make no difference as headers are the same across different platforms.
-  # Use -isystem instead of -I to suppress -Wconversion warnings in those headers.
+  # elflib depends on LLVM headers and is compiled on target. Since we don't
+  # have Fuchsia variant of LLVM library yet, always use host_platform's include
+  # directory for now. It should make no difference as headers are the same
+  # across different platforms. Use -isystem instead of -I to suppress
+  # -Wconversion warnings in those headers.
   cflags = [ "-isystem" + rebase_path("${llvm_prefix}/${host_platform}/include",
                                       root_build_dir) ]
 }

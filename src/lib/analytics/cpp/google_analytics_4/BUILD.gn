@@ -5,10 +5,10 @@
 import("//build/test.gni")
 
 static_library("google_analytics_4") {
-  # This library only provides an abstract class for Google Analytics client, which leaves the
-  # actual HTTP communications as implementation details.
-  # See //src/lib/analytics/cpp/core_dev_tools/google_analytics_client.{h,cc} for an implementation
-  # for Fuchsia developer tools written in C++
+  # This library only provides an abstract class for Google Analytics client,
+  # which leaves the actual HTTP communications as implementation details. See
+  # //src/lib/analytics/cpp/core_dev_tools/google_analytics_client.{h,cc} for an
+  # implementation for Fuchsia developer tools written in C++
   visibility = [
     ":*",
     "//src/lib/analytics/cpp/*",

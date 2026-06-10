@@ -40,10 +40,10 @@ fuchsia_unittest_package("syslog-gotests") {
     "//src/diagnostics/archivist:archivist-for-embedding-bundle",
   ]
   test_specs = {
-    # We need to use Archivist so we can verify logs have been written, but if we run
-    # tests in parallel, there will only be one Archivist component and the tests can
-    # interfere with each other. We could fix this by building a realm within each test,
-    # but it isn't worth the effort.
+    # We need to use Archivist so we can verify logs have been written, but if
+    # we run tests in parallel, there will only be one Archivist component and
+    # the tests can interfere with each other. We could fix this by building a
+    # realm within each test, but it isn't worth the effort.
     parallel = 1
 
     environments = [ emu_env ]

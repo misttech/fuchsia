@@ -16,8 +16,8 @@ fuchsia_component("fail_bad_runner") {
   visibility = [ ":*" ]
 }
 
-# this package should only be depended upon by the test below, including it in a system image
-# should cause product validation to fail
+# this package should only be depended upon by the test below, including it in a
+# system image should cause product validation to fail
 fuchsia_package("malformed_for_validation_fail") {
   deps = [
     ":fail_bad_runner",
@@ -63,7 +63,8 @@ if (is_host) {
     testonly = true
     deps = [ ":structured_config_malformed_test" ]
 
-    # Prevent this group from leaking packages into system images if incorrectly dep'd from target.
+    # Prevent this group from leaking packages into system images if incorrectly
+    # dep'd from target.
     metadata = {
       distribution_entries_barrier = []
       package_barrier = []

@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# For environments where fdio is not suitable, such as kernel ZBI tests (e.g. core-tests)
-# this library provides some minimal implementations for dealing with options and stdio.
+# For environments where fdio is not suitable, such as kernel ZBI tests (e.g.
+# core-tests) this library provides some minimal implementations for dealing
+# with options and stdio.
 # This implementation is meant for testing environments.
 
 import("//build/cpp/library_headers.gni")

@@ -17,7 +17,8 @@ if (is_fuchsia) {
     testonly = true
     manifest = "meta/test_session.cml"
 
-    # We don't intend to run this component, just make its manifest visible to scrutiny.
+    # We don't intend to run this component, just make its manifest visible to
+    # scrutiny.
     check_references = false
   }
 
@@ -25,7 +26,8 @@ if (is_fuchsia) {
     testonly = true
     manifest = "meta/component_with_broken_use.cml"
 
-    # We don't intend to run this component, just make its manifest visible to scrutiny.
+    # We don't intend to run this component, just make its manifest visible to
+    # scrutiny.
     check_references = false
   }
 
@@ -33,7 +35,8 @@ if (is_fuchsia) {
     testonly = true
     manifest = "meta/component_with_collection.cml"
 
-    # We don't intend to run this component, just make its manifest visible to scrutiny.
+    # We don't intend to run this component, just make its manifest visible to
+    # scrutiny.
     check_references = false
   }
 

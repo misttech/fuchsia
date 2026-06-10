@@ -40,7 +40,8 @@ if (is_host) {
     ]
   }
 
-  # Currently compiled for the host only, but could be packaged for the target if desired.
+  # Currently compiled for the host only, but could be packaged for the target
+  # if desired.
   executable("line_input_example") {
     sources = [ "line_input_example.cc" ]
 

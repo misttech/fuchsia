@@ -170,17 +170,19 @@ template("assemble_security_pkg_test_system") {
 
   # Resource files with both `local` and `packaged` paths.
   if (current_toolchain == target_toolchain) {
-    # fxfs_blob is pulled in via assembled_system.gni which includes generated_fshost_config.gni.
-    # assembled_system will generate either a fxfs.blk or fvm.blk depending on the fxfs_blob flag.
+    # fxfs_blob is pulled in via assembled_system.gni which includes
+    # generated_fshost_config.gni. assembled_system will generate either a
+    # fxfs.blk or fvm.blk depending on the fxfs_blob flag.
     if (use_fxfs_blob) {
       fs_file_name = "fxfs"
     } else {
       fs_file_name = "fvm"
     }
 
-    # Filesystem image can be fxfs or fvm, but the test should only need to know that it's
-    # a filesystem image. fshost will figure out which one it is when it's loaded into a VMO
-    # and added to the isolated dev tree via RamdiskClient.
+    # Filesystem image can be fxfs or fvm, but the test should only need to know
+    # that it's a filesystem image. fshost will figure out which one it is when
+    # it's loaded into a VMO and added to the isolated dev tree via
+    # RamdiskClient.
     fs_blk_resource = {
       local = "${directories.assembly_gen}/${fs_file_name}.blk"
       packaged = "data/assemblies/${packaged_assembly_directory}/fs.blk"

@@ -61,7 +61,8 @@ group("stdformat-test-deps") {
   ]
 }
 
-# This target will be forced to compile using stdformat provided polyfills and no inline variables.
+# This target will be forced to compile using stdformat provided polyfills and
+# no inline variables.
 test("stdformat-polyfills-no-inline-variables-unit-test") {
   sources = stdformat_test_sources
   deps = [ ":stdformat-test-deps" ]

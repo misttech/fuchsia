@@ -93,7 +93,8 @@ fuchsia_package("hwstress_v2_pkg") {
   deps = _hwstress_v2_components
 }
 
-# Tests requiring support from the CFv2 (or requiring support from libraries that depend on CFv2).
+# Tests requiring support from the CFv2 (or requiring support from libraries
+# that depend on CFv2).
 executable("hwstress_v2_test") {
   testonly = true
 

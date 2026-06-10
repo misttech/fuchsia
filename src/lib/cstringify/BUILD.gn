@@ -5,10 +5,12 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-# The cstringify!() macro should only be used in cases where a macro needs to create a C-string
-# literal from a path. Otherwise, the c"..." syntax or CString::new() should be used instead.
+# The cstringify!() macro should only be used in cases where a macro needs to
+# create a C-string literal from a path. Otherwise, the c"..." syntax or
+# CString::new() should be used instead.
 rustc_library("cstringify") {
-  # Add some friction to discourage use of the cstringify!() macro except when it's really needed.
+  # Add some friction to discourage use of the cstringify!() macro except when
+  # it's really needed.
   visibility = [
     ":*",
     "//src/lib/trace/rust/bench:*",

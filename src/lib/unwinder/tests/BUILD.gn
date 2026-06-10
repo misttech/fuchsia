@@ -35,8 +35,9 @@ source_set("cfi_only") {
   # //sdk/lib/c/sanitizers/backtrace.h.  We generally don't want to mess it up
   # so don't touch the config in these cases.
   #
-  # Only default_frame_pointers is in the config list, the unwind tables and shadow call stacks are
-  # enabled implicitly in the compiler on appropriate platforms.
+  # Only default_frame_pointers is in the config list, the unwind tables and
+  # shadow call stacks are enabled implicitly in the compiler on appropriate
+  # platforms.
   if (configs + [ "//build/config:default_frame_pointers" ] -
       [ "//build/config:default_frame_pointers" ] != configs) {
     configs -= [ "//build/config:default_frame_pointers" ]

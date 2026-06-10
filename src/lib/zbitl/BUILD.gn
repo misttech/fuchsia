@@ -47,7 +47,8 @@ library_headers("headers") {
     # <lib/zbitl/efi.h> has #include <efi/protocol/file.h>.
     "//zircon/kernel/lib/efi$headers_dep",
 
-    # <lib/zbitl/item.h> has #include <lib/zbi-format/internal/deprecated-cpu.h>.
+    # <lib/zbitl/item.h> has #include
+    # <lib/zbi-format/internal/deprecated-cpu.h>.
     "//sdk/lib/zbi-format:internal",
   ]
 }

@@ -6,7 +6,8 @@ import("//build/compiled_action.gni")
 import("//build/icu/third_party_icu_headers.gni")
 import("//src/lib/icu/tzdata/icu_tzres_source.gni")
 
-# Generates a file containing static data extracted from ICU using icu_data_extractor.
+# Generates a file containing static data extracted from ICU using
+# icu_data_extractor.
 #
 # Example:
 #

@@ -23,7 +23,8 @@ resource("cobalt_registry_for_tests") {
   outputs = [ "cobalt_tests_config_data/global_metrics_registry.pb" ]
 }
 
-# In the default config, Cobalt will upload all metrics (including max_release_stage=DEBUG metrics)
+# In the default config, Cobalt will upload all metrics (including
+# max_release_stage=DEBUG metrics)
 resource("config_for_tests") {
   sources = [ "app/configs/default_config.json" ]
   outputs = [ "cobalt_tests_config_data/config.json" ]

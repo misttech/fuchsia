@@ -32,7 +32,8 @@ group("e2e_tests_quick") {
   ]
 }
 
-# Test cases that are not run automatically in infra, they are only used for release testing.
+# Test cases that are not run automatically in infra, they are only used for
+# release testing.
 group("e2e_tests_manual") {
   testonly = true
   public_deps = [

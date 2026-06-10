@@ -4,9 +4,11 @@
 
 import("//src/lib/llvm/llvm_library.gni")
 
-# LLVM Libraries for Fuchsia. The targets in this file are for the prebuilt LLVM libraries that are
-# targeting Fuchsia in //prebuilt/third_party/llvm/fuchsia-*. Those packages are pinned to a forked
-# branch on our LLVM repository mirror and is not kept in sync with the host libraries used by zxdb.
+# LLVM Libraries for Fuchsia. The targets in this file are for the prebuilt LLVM
+# libraries that are targeting Fuchsia in //prebuilt/third_party/llvm/fuchsia-*.
+# Those packages are pinned to a forked
+# branch on our LLVM repository mirror and is not kept in sync with the host
+# libraries used by zxdb.
 
 # The following dependency graph could be obtained by
 # 1. Download llvm/utils/GenLibDeps.pl from LLVM codebase.

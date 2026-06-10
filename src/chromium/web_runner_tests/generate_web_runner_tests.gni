@@ -23,7 +23,8 @@ template("generate_web_runner_tests") {
       "//src/graphics/bin/vulkan_loader",
       "//src/ui/bin/text:text_manager",
 
-      # This dependency is used to provide a fake `fuchsia.intl.PropertyProvider`.
+      # This dependency is used to provide a fake
+      # `fuchsia.intl.PropertyProvider`.
       "//src/testing/fidl/intl_property_manager",
     ]
   }
