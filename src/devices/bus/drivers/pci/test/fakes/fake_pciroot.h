@@ -183,7 +183,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   zx_status_t PcirootGetAddressSpace(zx_paddr_t in_base, size_t size, pci_address_space_t type,
                                      bool low, uint64_t* out_base, zx::resource* resource,
                                      zx::eventpair* eventpair) {
-    if (!enable_get_address_space_) {
+    if (!enable_get_address_space_ || size == 0) {
       return ZX_ERR_NOT_SUPPORTED;
     }
 

@@ -44,6 +44,10 @@ zx::result<zx_paddr_t> PciRootHost::Allocate(AllocationType type, uint32_t kind,
   uint32_t rsrc_kind = 0;
   zx::unowned_resource rsrc = mmio_resource_->borrow();
 
+  if (size == 0) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   if (type == kIo) {
     allocator = &io_alloc_;
     allocator_name = "Io";
@@ -75,13 +79,10 @@ zx::result<zx_paddr_t> PciRootHost::Allocate(AllocationType type, uint32_t kind,
   zx_status_t st;
   RegionAllocator::Region::UPtr region_uptr;
   if (base) {
-    const ralloc_region_t region = {
-        .base = base,
-        .size = size,
-    };
-    st = allocator->GetRegion(region, region_uptr);
+    st = allocator->GetRegion({.base = base, .size = size}, region_uptr);
   } else {
-    st = allocator->GetRegion(static_cast<uint64_t>(size), size, region_uptr);
+    st = allocator->GetRegion(/*size=*/static_cast<uint64_t>(size), /*alignment=*/size,
+                              region_uptr);
   }
 
   if (st != ZX_OK) {

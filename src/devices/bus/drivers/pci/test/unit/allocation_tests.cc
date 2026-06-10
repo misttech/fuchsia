@@ -7,6 +7,7 @@
 #include <zircon/limits.h>
 #include <zircon/syscalls.h>
 
+#include <memory>
 #include <optional>
 
 #include <gtest/gtest.h>
@@ -44,6 +45,55 @@ TEST(PciAllocationTest, BalancedAllocation) {
 
   // TODO(https://fxbug.dev/42108122): Rework this with the new eventpair model of GetAddressSpace
   // EXPECT_EQ(0, fake_impl->allocation_cnt());
+}
+
+TEST(PciAllocationTest, RootNaturalAlignment) {
+  FakePciroot pciroot;
+  ddk::PcirootProtocolClient client(pciroot.proto());
+  PciRootAllocator root_alloc(client, PCI_ADDRESS_SPACE_MEMORY, false);
+
+  // Allocate the front 1024 bytes.
+  auto alloc1 = root_alloc.Allocate(std::nullopt, 0x400);
+  ASSERT_TRUE(alloc1.is_ok());
+
+  // Attempt to allocate 8192, which needs to be naturally aligned to the same
+  // size. It cannot start at 1024 where the previous allocation ended.
+  size_t alloc2_sz = 8192;
+  auto alloc2 = root_alloc.Allocate(std::nullopt, alloc2_sz);
+  ASSERT_TRUE(alloc2.is_ok());
+  EXPECT_TRUE(alloc2->base() % alloc2_sz == 0);
+  EXPECT_EQ(alloc2->size(), alloc2_sz);
+}
+
+TEST(PciAllocationTest, RegionNaturalAlignment) {
+  FakePciroot pciroot;
+  ddk::PcirootProtocolClient client(pciroot.proto());
+  PciRootAllocator root_alloc(client, PCI_ADDRESS_SPACE_MEMORY, false);
+
+  auto result = root_alloc.Allocate(std::nullopt, 0x1000000);
+  std::unique_ptr<PciAllocation> root_allocation = std::move(result.value());
+  PciRegionAllocator pci_allocator;
+  pci_allocator.SetParentAllocation(std::move(root_allocation));
+
+  // Allocate the front 1024 bytes.
+  auto alloc1 = pci_allocator.Allocate(std::nullopt, 0x400);
+  ASSERT_TRUE(alloc1.is_ok());
+
+  // Attempt to allocate 16K, which needs to be naturally aligned to the same
+  // size. It cannot start at 1024 where the previous allocation ended.
+  size_t alloc2_sz = 0x10000;
+  auto alloc2 = pci_allocator.Allocate(std::nullopt, alloc2_sz);
+  ASSERT_TRUE(alloc2.is_ok());
+  EXPECT_EQ(alloc2->size(), alloc2_sz);
+  EXPECT_EQ(alloc2->base() & (alloc2_sz - 1), 0u);
+}
+
+TEST(PciAllocationTest, ZeroSize) {
+  FakePciroot pciroot;
+  ddk::PcirootProtocolClient client(pciroot.proto());
+  PciRootAllocator root_alloc(client, PCI_ADDRESS_SPACE_MEMORY, false);
+
+  ASSERT_TRUE(root_alloc.Allocate(0, 0).is_error());
 }
 
 // Since test allocations lack a valid resource they should fail when

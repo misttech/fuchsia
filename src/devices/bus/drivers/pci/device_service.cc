@@ -47,7 +47,7 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
 
     fidl::VectorView<uint8_t> config(allocator, PCI_BASE_CONFIG_SIZE);
     for (uint16_t cfg_idx = 0; cfg_idx < PCI_BASE_CONFIG_SIZE; cfg_idx++) {
-      config[cfg_idx] = device.config()->Read(PciReg8(static_cast<uint8_t>(cfg_idx)));
+      config[cfg_idx] = cfg->Read(PciReg8(static_cast<uint8_t>(cfg_idx)));
     }
 
     size_t bar_cnt = device.bar_count();
@@ -59,7 +59,12 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
         bars[i].is_prefetchable = bar->is_prefetchable;
         bars[i].is_64bit = bar->is_64bit;
         bars[i].size = bar->size;
-        bars[i].address = bar->address;
+        // Read the currently configured address in the bar.
+        bars[i].address = cfg->Read(Config::kBar(i)) &
+                          (bar->is_mmio ? PCI_BAR_MMIO_ADDR_MASK : PCI_BAR_PIO_ADDR_MASK);
+        if (bar->is_64bit) {
+          bars[i].address |= static_cast<uint64_t>(cfg->Read(Config::kBar(i + 1))) << 32;
+        }
         bars[i].id = bar->bar_id;
       }
     }

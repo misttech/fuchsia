@@ -12,7 +12,6 @@
 #include <zircon/status.h>
 
 #include <cassert>
-#include <cinttypes>
 #include <cstring>
 #include <memory>
 
@@ -69,18 +68,22 @@ zx::result<std::unique_ptr<PciAllocation>> PciRegionAllocator::Allocate(
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
+  if (size == 0) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   RegionAllocator::Region::UPtr region_uptr;
   zx_status_t status = ZX_OK;
   // Only use base if it is non-zero. RegionAllocator's interface is overloaded so we have
   // to call it differently.
+  // Due to how GetRegion is overloaded we need to use a different parameter set
+  // if we'd like to request a specific base address. If no base address is
+  // specified then we'll take anything as long as the returned region is
+  // naturally aligned to the block's size.
   if (base) {
-    ralloc_region_t request = {
-        .base = (base) ? *base : 0,
-        .size = size,
-    };
-    status = allocator_.GetRegion(request, region_uptr);
+    status = allocator_.GetRegion({.base = base.value(), .size = size}, region_uptr);
   } else {
-    status = allocator_.GetRegion(size, zx_system_get_page_size(), region_uptr);
+    status = allocator_.GetRegion(/*size=*/size, /* alignment=*/size, /*out_region=*/region_uptr);
   }
 
   if (status != ZX_OK) {
