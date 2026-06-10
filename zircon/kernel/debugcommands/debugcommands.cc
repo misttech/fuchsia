@@ -21,8 +21,10 @@
 #include <string.h>
 #include <zircon/listnode.h>
 #include <zircon/time.h>
+#include <zircon/tls.h>
 #include <zircon/types.h>
 
+#include <arch/current_thread.h>
 #include <arch/ops.h>
 #include <kernel/lockdep.h>
 #include <kernel/thread.h>
@@ -353,13 +355,27 @@ static int crash_deref(bool thread) {
 
 // Crash by intentionally recursing to itself until the kernel
 // call stack is exceeded.
-__attribute__((noinline)) static int recurse(void* _func) {
-  auto func = reinterpret_cast<int (*)(void*)>(_func);
-  return func(_func) + 1;
+static int recurse() {
+  // The compiler doesn't know what function pointer this is anymore after the
+  // asm, but it hasn't changed.
+  decltype(recurse)* self = recurse;
+  __asm__ volatile("" : "+r"(self));
+  return self() + 1;
+}
+
+static void BeforeStackOverflow(const char* what) {
+  const auto& stack = Thread::Current::Get()->stack();
+  printf("%s from %p in [%#" PRIxPTR ", %#" PRIxPTR ") $tp %p stack_guard %#" PRIx64 "...\n", what,
+         __builtin_frame_address(0), stack.base(), stack.top(),
+         arch_get_current_compiler_thread_pointer(),
+         *reinterpret_cast<const uint64_t*>(arch_get_current_compiler_thread_pointer() +
+                                            ZX_TLS_STACK_GUARD_OFFSET));
 }
 
 static int crash_recurse() {
-  recurse(reinterpret_cast<void*>(&recurse));
+  BeforeStackOverflow("Recursing");
+
+  recurse();
 
   printf("survived.\n");
 
@@ -370,17 +386,44 @@ __attribute__((noinline)) static void stomp_stack(size_t size) {
   // -Wvla prevents VLAs but not explicit alloca.
   // Neither is allowed anywhere in the kernel outside this test code.
   void* death = __builtin_alloca(size);  // OK in test-only code.
-  memset(death, 0xaa, size);
+  memset(death, 0xdb, size);
   Thread::Current::SleepRelative(ZX_USEC(1));
 }
 
 static int crash_stackstomp() {
-  for (size_t i = 0; i < internal::kMachineStackSize * 2; i++)
+  BeforeStackOverflow("Stomping stack");
+
+  for (size_t i = 0; i < internal::kMachineStackSize * 2; i++) {
     stomp_stack(i);
+  }
 
   printf("survived.\n");
 
   return 0;
+}
+
+static int crash_shadow_call_stack_stomp() {
+#if !__has_feature(shadow_call_stack)
+  printf("Shadow call stack not in use.\n");
+  return -1;
+#else
+  BeforeStackOverflow("Overflowing shadow call stack");
+
+  // Just warp it straight to the edge so the next spill will overflow.
+  const uint64_t top = Thread::Current::Get()->stack().shadow_call_top();
+#if defined(__aarch64__)
+  __asm__ volatile("mov x18, %0" : : "r"(top));
+#elif defined(__riscv)
+  __asm__ volatile("mv gp, %0" : : "r"(top));
+#endif
+
+  // Cause some calls that definitely use the shadow call stack.
+  Thread::Current::SleepRelative(ZX_USEC(1));
+
+  printf("survived.\n");
+
+  return 0;
+#endif
 }
 
 static bool has_user_code_execution_protection() {
@@ -655,6 +698,8 @@ static int cmd_crash(int argc, const cmd_args* argv, uint32_t flags) {
     }
   } else if (!strcmp(argv[1].str, "stackstomp")) {
     return crash_stackstomp();
+  } else if (!strcmp(argv[1].str, "shadow_call_stack_stomp")) {
+    return crash_shadow_call_stack_stomp();
   } else if (!strcmp(argv[1].str, "recurse")) {
     return crash_recurse();
   } else if (!strcmp(argv[1].str, "user_read")) {

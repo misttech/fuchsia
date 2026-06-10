@@ -206,14 +206,17 @@ static_assert(__offsetof(riscv64_context_switch_frame, s0) == CONTEXT_SWITCH_FRA
 static_assert(sizeof(riscv64_context_switch_frame) == SIZEOF_CONTEXT_SWITCH_FRAME);
 static_assert(sizeof(riscv64_context_switch_frame) % 16u == 0u);
 
-extern "C" arch::AsmLabel riscv64_exception_entry;
+// Defined in stvec.S: the entry point for all exceptions; stvec points to it.
+extern "C" arch::AsmLabel Riscv64ExceptionEntry;
+
+// The Riscv64ExceptionEntry code calls one of these three.  The sepc and
+// sstatus values have already been stored in the iframe, but they are also
+// handy in the argument registers already.
+using Riscv64ExceptionFn = void(iframe_t* iframe, uint64_t pc, uint64_t status, int64_t cause);
+extern "C" Riscv64ExceptionFn Riscv64UserException, Riscv64KernelException,
+    Riscv64EmergencyException;
 
 extern "C" void riscv64_context_switch(vaddr_t* old_sp, vaddr_t new_sp);
-#if __has_feature(shadow_call_stack)
-extern "C" void riscv64_uspace_entry(const iframe_t* iframe, vaddr_t tp, vaddr_t shadow_call_base);
-#else
-extern "C" void riscv64_uspace_entry(const iframe_t* iframe, vaddr_t tp);
-#endif
 extern "C" syscall_result riscv64_syscall_dispatcher(iframe_t* frame);
 
 extern void riscv64_timer_exception();

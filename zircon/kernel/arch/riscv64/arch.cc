@@ -8,6 +8,7 @@
 #include <bits.h>
 #include <debug.h>
 #include <inttypes.h>
+#include <lib/arch/asm.h>
 #include <lib/arch/intrin.h>
 #include <platform.h>
 #include <stdlib.h>
@@ -36,7 +37,8 @@
 // first C level code to initialize each cpu
 void riscv64_init_percpu() {
   // set the top level exception handler
-  riscv64_csr_write(RISCV64_CSR_STVEC, (uintptr_t)&riscv64_exception_entry);
+  riscv64_csr_write(RISCV64_CSR_SSCRATCH, 0);  // Handler expects zero.
+  riscv64_csr_write(RISCV64_CSR_STVEC, arch::kAsmLabelAddress<Riscv64ExceptionEntry>);
 
   // set up the default sstatus for the current cpu
   riscv64_csr_write(RISCV64_CSR_SSTATUS, 0);

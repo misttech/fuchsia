@@ -85,6 +85,7 @@ if (toolchain_base_environment == "kernel") {
       "restricted.cc",
       "sbi.cc",
       "spinlock.cc",
+      "stvec.S",
       "thread.cc",
       "timer.cc",
       "user_copy_c.cc",

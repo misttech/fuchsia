@@ -39,11 +39,19 @@ void arch_thread_initialize(Thread* t, vaddr_t entry_point) {
   // create a default stack frame on the stack
   vaddr_t stack_top = t->stack().top();
 
+  // Always leave space at the very top for an iframe.  In user threads,
+  // arch_uspace_entry will clobber this space while the kernel stack below it
+  // is still in use.  In non-user threads, this space is wasted but those
+  // never need their full stack range anyway.
+  static_assert(sizeof(iframe_t) % 16 == 0);
+  stack_top -= sizeof(iframe_t);
+  DEBUG_ASSERT(IS_ROUNDED(stack_top, alignof(iframe_t)));
+
   // make sure the top of the stack is 16 byte aligned for ABI compliance
   DEBUG_ASSERT(IS_ROUNDED(stack_top, 16));
 
-  struct riscv64_context_switch_frame* frame = (struct riscv64_context_switch_frame*)(stack_top);
-  frame--;
+  riscv64_context_switch_frame* frame =
+      reinterpret_cast<riscv64_context_switch_frame*>(stack_top) - 1;
 
   // fill in the entry point
   frame->ra = entry_point;
@@ -121,14 +129,34 @@ void arch_enter_uspace(const iframe_t* iframe) {
 
   ASSERT(arch_is_valid_user_pc(iframe->regs.pc));
 
-  arch_disable_ints();
+  // arch_thread_initialize() left space so the base of the stack won't overlap
+  // with anything currently in use.  This function won't return, but instead
+  // will abandon all the kernel register and stack state to start fresh at the
+  // top of the machine stack and the base of the shadow call stack.
+  iframe_t* user_iframe = reinterpret_cast<iframe_t*>(ct->stack().top()) - 1;
+  *user_iframe = *iframe;
 
 #if __has_feature(shadow_call_stack)
-  riscv64_uspace_entry(iframe, ct->stack().top(), ct->stack().shadow_call_base());
+  const uint64_t scsp = ct->stack().shadow_call_base();
 #else
-  riscv64_uspace_entry(iframe, ct->stack().top());
+  const uint64_t scsp = 0;
 #endif
-  __UNREACHABLE;
+
+  // Disable interrupts and then warp into the stvec.S code as if just
+  // returning from Riscv64UserException after entering the kernel for a user
+  // mode exception.  To that code, it looks just like this initial iframe was
+  // the interrupted user state now being resumed.
+  arch_disable_ints();
+  __asm__ volatile(
+      R"""(
+      mv sp, %[sp]
+      mv gp, %[gp]
+      tail Riscv64ReturnToUser
+      unimp
+      )"""
+      :
+      : [sp] "r"(user_iframe), "m"(*user_iframe), [gp] "r"(scsp));
+  __builtin_unreachable();
 }
 
 void arch_context_switch(Thread* oldthread, Thread* newthread)

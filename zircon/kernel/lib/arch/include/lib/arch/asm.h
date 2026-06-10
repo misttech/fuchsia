@@ -12,19 +12,24 @@
 
 #include <lib/arch/internal/asm.h>
 
-#define DW_CFA_expression 0x10      // ULEB128 regno, ULEB128 length, bytes
-#define DW_CFA_val_expression 0x16  // ditto
-#define DW_OP_breg(n) (0x70 + (n))  // n <= 31; SLEB128 offset
-#define DW_OP_bregx 0x92            // ULEB128 regno, SLEB128 offset
-#define DW_OP_deref 0x06
-#define DW_OP_xor 0x27
+#define DW_CFA_def_cfa_expression 0xf  // ULEB128 length, bytes
+#define DW_CFA_expression 0x10         // ULEB128 regno, ULEB128 length, bytes
+#define DW_CFA_val_expression 0x16     // ditto
+#define DW_OP_bra 0x28                 // signed 2-byte constant
+#define DW_OP_breg(n) (0x70 + (n))     // n <= 31; SLEB128 offset
+#define DW_OP_bregx 0x92               // ULEB128 regno, SLEB128 offset
 #define DW_OP_consts 0x11
+#define DW_OP_deref 0x06
+#define DW_OP_drop 0x13
+#define DW_OP_dup 0x12
+#define DW_OP_lit(n) (DW_OP_lit0 + (n))  // n <= 31
+#define DW_OP_lit0 0x30
+#define DW_OP_minus 0x1c
 #define DW_OP_mul 0x1e
 #define DW_OP_plus 0x22
 #define DW_OP_plus_uconst 0x23
-#define DW_OP_minus 0x1c
-#define DW_OP_lit0 0x30
-#define DW_OP_lit(n) (DW_OP_lit0 + (n))  // n <= 31
+#define DW_OP_swap 0x16
+#define DW_OP_xor 0x27
 
 #define ULEB128_1BYTE(n) (n)
 #define ULEB128_2BYTE(n) (((n) & 0x7f) | 0x80), ((n) >> 7)

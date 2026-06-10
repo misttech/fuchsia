@@ -3,11 +3,13 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
+
 #include <bits.h>
 #include <debug.h>
 #include <inttypes.h>
 #include <lib/counters.h>
 #include <lib/crashlog.h>
+#include <lib/thread-stack/abi.h>
 #include <platform.h>
 #include <stdio.h>
 #include <trace.h>
@@ -18,6 +20,7 @@
 #include <arch/crashlog.h>
 #include <arch/exception.h>
 #include <arch/regs.h>
+#include <arch/riscv64.h>
 #include <arch/riscv64/user_copy.h>
 #include <arch/thread.h>
 #include <arch/user_copy.h>
@@ -255,20 +258,23 @@ void riscv64_syscall_handler(struct iframe_t* frame) {
   }
 }
 
-}  // namespace
-
-extern "C" void riscv64_exception_handler(int64_t cause, struct iframe_t* frame) {
-  const bool user = (frame->status & RISCV64_CSR_SSTATUS_SPP) == 0;
+void riscv64_exception_handler(iframe_t* frame, uint64_t pc, uint64_t status, int64_t cause) {
+  DEBUG_ASSERT(frame->regs.pc == pc);
+  DEBUG_ASSERT(frame->status == status);
+  const bool user = !(status & RISCV64_CSR_SSTATUS_SPP);
 
   LTRACEF("hart %u cause %s epc %#lx status %#lx user %u\n", arch_curr_cpu_num(),
           cause_to_string(cause), frame->regs.pc, frame->status, user);
 
-  // Some basic state checks of the current status register
-  uint64_t status = riscv64_csr_read(sstatus);
-  DEBUG_ASSERT((status & RISCV64_CSR_SSTATUS_SIE) == 0);
-  DEBUG_ASSERT((status & RISCV64_CSR_SSTATUS_UBE) == 0);
-  DEBUG_ASSERT((status & RISCV64_CSR_SSTATUS_SUM) == 0);
-  DEBUG_ASSERT((status & RISCV64_CSR_SSTATUS_MXR) == 0);
+  if constexpr (DEBUG_ASSERT_IMPLEMENTED) {
+    // Some basic state checks of the _current_ sstatus register, as opposed to
+    // the interrupted one saved in frame->status.
+    const uint64_t sstatus = riscv64_csr_read(sstatus);
+    DEBUG_ASSERT((sstatus & RISCV64_CSR_SSTATUS_SIE) == 0);
+    DEBUG_ASSERT((sstatus & RISCV64_CSR_SSTATUS_UBE) == 0);
+    DEBUG_ASSERT((sstatus & RISCV64_CSR_SSTATUS_SUM) == 0);
+    DEBUG_ASSERT((sstatus & RISCV64_CSR_SSTATUS_MXR) == 0);
+  }
 
   // TODO-rvbringup: add some kcounters
 
@@ -347,6 +353,83 @@ extern "C" void riscv64_exception_handler(int64_t cause, struct iframe_t* frame)
   if (unlikely(user)) {
     arch_iframe_process_pending_signals(frame);
   }
+}
+
+}  // namespace
+
+// Which of these the Riscv64ExceptionEntry assembly code calls depends on
+// sscratch, not on sstatus.SPP; but SPP should always match (set for Kernel).
+
+void Riscv64UserException(iframe_t* iframe, uint64_t pc, uint64_t status, int64_t cause) {
+  DEBUG_ASSERT_MSG(!(status & RISCV64_CSR_SSTATUS_SPP) || !(status & RISCV64_CSR_SSTATUS_SPIE),
+                   ": sepc %#" PRIx64 " scause %#" PRIx64 " sstatus %#" PRIx64, pc, status, cause);
+  riscv64_exception_handler(iframe, pc, status, cause);
+}
+
+void Riscv64KernelException(iframe_t* iframe, uint64_t pc, uint64_t status, int64_t cause) {
+  DEBUG_ASSERT_MSG((status & RISCV64_CSR_SSTATUS_SPP),
+                   ": sepc %#" PRIx64 " scause %#" PRIx64 " sstatus %#" PRIx64, pc, status, cause);
+  riscv64_exception_handler(iframe, pc, status, cause);
+  // The assembly code assumes certain registers cannot have been changed and
+  // do not need to be restored.  The percpu_ptr (s11) register could easily
+  // have changed if there was a reschedule in the handler (e.g. in a blocking
+  // page fault), but the others should not have.
+  DEBUG_ASSERT_MSG(iframe->regs.tp == reinterpret_cast<uintptr_t>(__builtin_thread_pointer()),
+                   ": resume tp %#" PRIx64 " != %p", iframe->regs.sp, __builtin_thread_pointer());
+  DEBUG_ASSERT_MSG(iframe->regs.sp == reinterpret_cast<uintptr_t>(iframe + 1),
+                   ": resume sp %#" PRIx64 " vs iframe %p", iframe->regs.sp, iframe);
+#if __has_feature(shadow_call_stack)
+  if constexpr (DEBUG_ASSERT_IMPLEMENTED) {
+    uint64_t gp;
+    __asm__ volatile("mv %0, gp" : "=r"(gp));
+    // This function's own frame spilled its ra to the shadow call stack, so
+    // its current value is incremented one slot from the interrupted state.
+    gp -= sizeof(uint64_t);
+    DEBUG_ASSERT_MSG(iframe->regs.gp == gp, ": resume gp %#" PRIx64 " != %#" PRIx64,
+                     iframe->regs.gp, gp);
+  }
+#endif
+}
+
+void Riscv64EmergencyException(iframe_t* iframe, uint64_t pc, uint64_t status, int64_t cause) {
+  // The assembly code switches to a dedicated "emergency" stack (and shadow
+  // call stack) before calling here.  These just live in kernel bss that is
+  // never used except in this panic path, and don't bother with guard regions
+  // or page alignment.  The symbols are only referenced in stvec.S assembly,
+  // but they need to be defined somewhere.  They're defined here inside the
+  // function to take advantage of asm operands for the size constants.
+  __asm__ volatile(
+      R"""(
+      .pushsection .bss, "aw?", %%nobits
+      .balign 16
+      .globl riscv64_emergency_stack_base
+      .hidden riscv64_emergency_stack_base
+      riscv64_emergency_stack_base: .space %0
+      .globl riscv64_emergency_stack_top
+      .hidden riscv64_emergency_stack_top
+      riscv64_emergency_stack_top:
+      .popsection
+      )"""
+      :
+      : "i"(kMachineStack.size_bytes));
+#if __has_feature(shadow_call_stack)
+  __asm__ volatile(
+      R"""(
+      .pushsection .bss, "aw?", %%nobits
+      .balign 8
+      .globl riscv64_emergency_shadow_call_stack_base
+      .hidden riscv64_emergency_shadow_call_stack_base
+      riscv64_emergency_shadow_call_stack_base: .space %0
+      .globl riscv64_emergency_shadow_call_stack_top
+      .hidden riscv64_emergency_shadow_call_stack_top
+      riscv64_emergency_shadow_call_stack_top:
+      .popsection
+      )"""
+      :
+      : "i"(kShadowCallStack.size_bytes));
+#endif
+  exception_die(iframe, cause, riscv64_csr_read(RISCV64_CSR_STVAL),
+                "Exception with bad sscratch value: KERNEL STACK OVERFLOW!\n");
 }
 
 void arch_iframe_process_pending_signals(iframe_t* iframe) {
