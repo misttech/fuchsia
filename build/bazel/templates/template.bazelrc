@@ -15,11 +15,13 @@ build --incompatible_strict_action_env=true
 # though `bazel test` implicitly disables the behavior since  Bazel 7.1
 build --legacy_external_runfiles=false
 
-# Setup the default platform.
-# We need to set them for cqueries and aqueries as well as build (and
-# everything else that inherits from it). Alas, setting them in `common`
-# breaks other things.
-build --platforms=//build/bazel/platforms:default
+# Specify the default platforms.
+# The target platform is always set by the configuration specified via `--config`. To ensure there
+# are no situations where this is not the case, set the default platform to a nonexistent label,
+# which would cause an error rather than silently use the Bazel default.
+common --platforms=PLATFORM_SHOULD_BE_SPECIFIED_VIA_THE_CONFIG
+# TODO(https://fxbug.dev/520546777): Remove this once `compdb_for_labels()` specifies the platform.
+info --platforms=//build/bazel/platforms:default
 build --host_platform=//build/bazel/platforms:host
 
 # Note: Log file locations are now configured per-invocation in
