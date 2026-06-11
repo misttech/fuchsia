@@ -23,10 +23,8 @@ rustc_library("dispatcher") {
   ]
 
   sources = [
-    "src/dispatcher_arc.rs",
     "src/lib.rs",
     "src/task.rs",
-    "src/weak_dispatcher.rs",
   ]
 
   visibility = [ "//sdk/lib/async/*" ]

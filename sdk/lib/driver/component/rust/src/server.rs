@@ -14,7 +14,7 @@ use zx::Status;
 use fdf::{Channel, DispatcherBuilder, DriverDispatcherRef};
 use fidl_fuchsia_driver_framework::DriverRequest;
 
-use fdf::{AsAsyncDispatcherRef, DriverHandle, Message, fdf_handle_t};
+use fdf::{AsAsyncDispatcherRef, AsyncDispatcher, DriverHandle, Message, fdf_handle_t};
 
 use crate::{Driver, DriverContext, DriverError};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;
@@ -156,7 +156,7 @@ impl<T: Driver> DriverServer<T> {
     ///
     /// This method panics if the start message has already been received.
     async fn handle_start(&self, start_args: DriverStartArgs) -> Result<(), Status> {
-        let context = DriverContext::new(self.root_dispatcher.clone(), start_args)?;
+        let context = DriverContext::new(AsyncDispatcher::new(&self.root_dispatcher), start_args)?;
         context.start_logging(T::NAME)?;
 
         log::debug!("driver starting");

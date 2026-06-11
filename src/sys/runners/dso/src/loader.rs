@@ -313,7 +313,7 @@ impl Hooks {
         names: CArray<*const ::libc::c_char>,
         argv: CArray<*const ::libc::c_char>,
         envp: CArray<*const ::libc::c_char>,
-        mut dispatcher: fdf::DriverDispatcherRef<'static>,
+        dispatcher: fdf::AutoReleaseDispatcher,
     ) -> ::core::ffi::c_int {
         match self {
             Self::Sync(_) => unreachable!(),
@@ -327,7 +327,7 @@ impl Hooks {
                     argv: argv.0,
                     argc: argv.1 as i32,
                     envp: envp.0,
-                    dispatcher: dispatcher.as_raw(),
+                    dispatcher: dispatcher.as_dispatcher_ref().as_raw(),
                 })
             },
         }

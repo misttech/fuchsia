@@ -12,17 +12,14 @@ use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use zx_status::Status;
 use zx_types::zx_time_t;
 
-mod dispatcher_arc;
 mod task;
-mod weak_dispatcher;
 
 pub use task::*;
-pub use weak_dispatcher::*;
 
 /// A reference to a dispatcher that supports the v4 async api's reference counting operations,
 /// and so can be held safely without a lifetime.
@@ -225,16 +222,6 @@ impl<T: AsAsyncDispatcherRef + Clone> OnDispatcher for T {
 impl<T: AsAsyncDispatcherRef> OnDispatcher for Arc<T> {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
         f(Some(self.as_async_dispatcher_ref()))
-    }
-}
-
-impl<T: AsAsyncDispatcherRef> OnDispatcher for Weak<T> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        let dispatcher = Weak::upgrade(self);
-        match dispatcher {
-            Some(dispatcher) => f(Some(dispatcher.as_async_dispatcher_ref())),
-            None => f(None),
-        }
     }
 }
 

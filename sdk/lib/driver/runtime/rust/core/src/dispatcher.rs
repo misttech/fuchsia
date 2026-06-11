@@ -19,7 +19,7 @@ use crate::shutdown_observer::ShutdownObserver;
 pub use fdf_sys::fdf_dispatcher_t;
 pub use libasync::{
     AfterDeadline, AsAsyncDispatcherRef, AsyncDispatcher, AsyncDispatcherRef, DispatcherTimerExt,
-    JoinHandle, OnDispatcher, Task, WeakDispatcher,
+    JoinHandle, OnDispatcher, Task,
 };
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
@@ -165,7 +165,7 @@ impl DispatcherBuilder {
     /// As with [`Self::create`], this creates a new dispatcher as configured by this object, but
     /// instead of returning an owned reference it immediately releases the reference to be
     /// managed by the driver runtime.
-    pub fn create_released(self) -> Result<DriverDispatcherRef<'static>, Status> {
+    pub fn create_released(self) -> Result<AutoReleaseDispatcher, Status> {
         self.create().map(Dispatcher::release)
     }
 }
@@ -225,8 +225,8 @@ impl Dispatcher {
     /// that can be used to access it. The lifetime of this reference is static because it will
     /// exist so long as this current driver is loaded, but the driver runtime will shut it down
     /// when the driver is unloaded.
-    pub fn release(self) -> DriverDispatcherRef<'static> {
-        DriverDispatcherRef(ManuallyDrop::new(self), PhantomData)
+    pub fn release(self) -> AutoReleaseDispatcher {
+        AutoReleaseDispatcher { dispatcher: ManuallyDrop::new(self) }
     }
 
     /// Returns a [`DispatcherRef`] that references this dispatcher with a lifetime constrained by
@@ -265,15 +265,32 @@ impl Drop for Dispatcher {
 #[derive(Debug)]
 pub struct AutoReleaseDispatcher {
     dispatcher: ManuallyDrop<Dispatcher>,
-    weak_ref: std::sync::OnceLock<WeakDispatcher>,
 }
 
 impl AutoReleaseDispatcher {
+    /// Creates a dispatcher ref from a raw handle.
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for ensuring that the given handle is valid and
+    /// not owned by any other wrapper that will free it at an arbitrary
+    /// time.
+    pub unsafe fn from_raw(dispatcher: NonNull<fdf_dispatcher_t>) -> Self {
+        let dispatcher = ManuallyDrop::new(Dispatcher(dispatcher));
+        Self { dispatcher }
+    }
+
     /// Returns a weakened reference to this dispatcher. This weak reference will only be valid so
     /// long as the dispatcher is shutting down, after which it will no longer be usable to spawn
     /// tasks on.
-    pub fn as_weak(&self) -> WeakDispatcher {
-        self.weak_ref.get_or_init(|| WeakDispatcher::new(self.as_async_dispatcher_ref())).clone()
+    pub fn as_async_dispatcher(&self) -> AsyncDispatcher {
+        AsyncDispatcher::new(self)
+    }
+
+    /// Returns a [`DispatcherRef`] that references this dispatcher with a lifetime constrained by
+    /// `self`.
+    pub fn as_dispatcher_ref(&self) -> DriverDispatcherRef<'_> {
+        DriverDispatcherRef(ManuallyDrop::new(Dispatcher(self.dispatcher.0)), PhantomData)
     }
 
     /// Returns the Always-On interface of this dispatcher.
@@ -286,7 +303,7 @@ impl AutoReleaseDispatcher {
         // `AutoReleaseDispatcher`, the underlying dispatcher will not be shut down when dropped,
         // and we wrap the new dispatcher in `ManuallyDrop` to ensure the same.
         let dispatcher = unsafe { Dispatcher::from_raw(dispatcher_ref.always_on_dispatcher().0.0) };
-        Self { dispatcher: ManuallyDrop::new(dispatcher), weak_ref: Default::default() }
+        Self { dispatcher: ManuallyDrop::new(dispatcher) }
     }
 }
 
@@ -298,7 +315,7 @@ impl AsAsyncDispatcherRef for AutoReleaseDispatcher {
 
 impl From<Dispatcher> for AutoReleaseDispatcher {
     fn from(dispatcher: Dispatcher) -> Self {
-        Self { dispatcher: ManuallyDrop::new(dispatcher), weak_ref: Default::default() }
+        Self { dispatcher: ManuallyDrop::new(dispatcher) }
     }
 }
 

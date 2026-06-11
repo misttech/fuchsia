@@ -253,7 +253,6 @@ impl Component {
                 let dso_name = dso_name.to_string();
                 let dispatcher =
                     dispatcher.expect("missing dispatcher for async component").release();
-                let dispatcher2 = dispatcher.clone();
                 let (exit_code_tx, exit_code_rx) = oneshot::channel();
                 let shutdown_done_rx = shutdown_done_rx.expect("missing shutdown_done_rx");
 
@@ -296,7 +295,7 @@ impl Component {
                             names_arr,
                             argv_arr,
                             envp_arr,
-                            dispatcher2,
+                            dispatcher,
                         )
                     };
                     if code != 0 {

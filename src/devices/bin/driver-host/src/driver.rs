@@ -41,7 +41,7 @@ unsafe extern "C" {
 
 type DriverClient = fidl_next::Client<
     fidl_next_fuchsia_driver_framework::Driver,
-    fdf_fidl::DriverChannel<fdf::WeakDispatcher>,
+    fdf_fidl::DriverChannel<fdf::AsyncDispatcher>,
 >;
 
 struct LoadedDriver(u64);
@@ -641,7 +641,7 @@ impl Driver {
             .always_on_dispatcher
             .as_ref()
             .expect("always on dispatcher not set")
-            .as_weak();
+            .as_async_dispatcher();
         let (client, server) = fdf_fidl::create_channel_with_dispatchers::<fidl_next_fdf::Driver, _>(
             weak_always_on.clone(),
             weak_always_on.clone(),
@@ -1001,7 +1001,7 @@ impl Driver {
                 .always_on_dispatcher
                 .as_ref()
                 .expect("dispatcher should always be valid")
-                .as_weak();
+                .as_async_dispatcher();
         }
 
         // This spawns the request to acquire a power lease to run under the driver dispatcher

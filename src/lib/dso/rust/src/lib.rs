@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fdf::AutoReleaseDispatcher;
 pub use fuchsia_dso_macro::main;
 
 use fidl::endpoints::ServerEnd;
@@ -35,7 +36,7 @@ pub struct DsoAsyncArgs {
     /// The component's outgoing directory. This is an [`Option`] but should typically be present.
     pub outgoing_dir: Option<fidl::endpoints::ServerEnd<::fidl_fuchsia_io::DirectoryMarker>>,
     /// A reference to the dispatcher used to dispatch the component's tasks.
-    pub dispatcher: fdf::DriverDispatcherRef<'static>,
+    pub dispatcher: AutoReleaseDispatcher,
     /// The component's lifecycle server handle. It can close this channel to signal component
     /// exit.
     pub lifecycle: ServerEnd<LifecycleMarker>,
@@ -98,7 +99,9 @@ pub fn dso_init_async(payload: DsoStartAsyncPayload) -> DsoAsyncArgs {
     );
     // SAFETY: dso_runner guarantees `dispatcher` is an `fdf_dispatcher_t` so this is a valid cast.
     let dispatcher = unsafe {
-        fdf::DriverDispatcherRef::from_raw(ptr::NonNull::new(dispatcher).expect("null dispatcher"))
+        fdf::AutoReleaseDispatcher::from_raw(
+            ptr::NonNull::new(dispatcher).expect("null dispatcher"),
+        )
     };
     struct HandleInfo {
         handle: zx::NullableHandle,

@@ -12,7 +12,7 @@ use log::error;
 use namespace::Namespace;
 use zx::Status;
 
-use fdf::DriverDispatcherRef;
+use fdf::AsyncDispatcher;
 use fidl_fuchsia_driver_framework::DriverStartArgs;
 
 pub use fuchsia_inspect_contrib::content_publisher as inspect_publisher;
@@ -21,7 +21,7 @@ pub use fuchsia_inspect_contrib::content_publisher as inspect_publisher;
 #[non_exhaustive]
 pub struct DriverContext {
     /// A reference to the root [`fdf::Dispatcher`] for this driver.
-    pub root_dispatcher: DriverDispatcherRef<'static>,
+    pub root_dispatcher: AsyncDispatcher,
     /// The original [`DriverStartArgs`] passed in as start arguments, minus any parts that were
     /// used to construct other elements of [`Self`].
     pub start_args: DriverStartArgs,
@@ -127,7 +127,7 @@ impl DriverContext {
     }
 
     pub(crate) fn new(
-        root_dispatcher: DriverDispatcherRef<'static>,
+        root_dispatcher: AsyncDispatcher,
         mut start_args: DriverStartArgs,
     ) -> Result<Self, Status> {
         let incoming_namespace: Namespace = start_args

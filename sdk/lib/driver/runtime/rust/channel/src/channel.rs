@@ -374,8 +374,7 @@ mod tests {
     use std::sync::{Arc, mpsc};
 
     use fdf_core::dispatcher::{
-        AsAsyncDispatcherRef, CurrentDispatcher, DispatcherBuilder, DriverDispatcherRef,
-        OnDispatcher,
+        AsAsyncDispatcherRef, AsyncDispatcher, CurrentDispatcher, DispatcherBuilder, OnDispatcher,
     };
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;
@@ -522,10 +521,13 @@ mod tests {
 
             rust_async_dispatcher
                 .post_task_sync(move |_| {
-                    fdf_core::override_current_dispatcher(fdf_dispatcher, || {
-                        let mut executor = fuchsia_async::LocalExecutor::default();
-                        executor.run_singlethreaded(ping(ping_chan));
-                    });
+                    fdf_core::override_current_dispatcher(
+                        fdf_dispatcher.as_dispatcher_ref(),
+                        || {
+                            let mut executor = fuchsia_async::LocalExecutor::default();
+                            executor.run_singlethreaded(ping(ping_chan));
+                        },
+                    );
                 })
                 .unwrap();
 
@@ -598,9 +600,7 @@ mod tests {
         fin_rx.await.unwrap();
     }
 
-    async fn send_and_recv_lots_of_bytes_with_cancellations(
-        dispatcher: DriverDispatcherRef<'static>,
-    ) {
+    async fn send_and_recv_lots_of_bytes_with_cancellations(dispatcher: AsyncDispatcher) {
         let (tx, rx) = Channel::create();
         let (fin_tx, fin_rx) = oneshot::channel();
         let pending_count = Arc::new(AtomicU64::new(0));
@@ -617,7 +617,8 @@ mod tests {
                 let dispatcher =
                     DispatcherBuilder::new().name("fdf-synchronized").create().unwrap().release();
 
-                send_and_recv_lots_of_bytes_with_cancellations(dispatcher).await;
+                send_and_recv_lots_of_bytes_with_cancellations(dispatcher.as_async_dispatcher())
+                    .await;
             },
         );
     }
@@ -634,7 +635,8 @@ mod tests {
                     .unwrap()
                     .release();
 
-                send_and_recv_lots_of_bytes_with_cancellations(dispatcher).await;
+                send_and_recv_lots_of_bytes_with_cancellations(dispatcher.as_async_dispatcher())
+                    .await;
             },
         );
     }
@@ -664,14 +666,17 @@ mod tests {
                 let pending_count_clone = pending_count.clone();
                 dispatcher
                     .post_task_sync(move |_| {
-                        fdf_core::override_current_dispatcher(fdf_dispatcher, || {
-                            let mut executor = fuchsia_async::LocalExecutor::default();
-                            executor.run_singlethreaded(recv_lots_of_bytes_with_cancellations(
-                                rx,
-                                fin_tx,
-                                pending_count_clone,
-                            ));
-                        });
+                        fdf_core::override_current_dispatcher(
+                            fdf_dispatcher.as_dispatcher_ref(),
+                            || {
+                                let mut executor = fuchsia_async::LocalExecutor::default();
+                                executor.run_singlethreaded(recv_lots_of_bytes_with_cancellations(
+                                    rx,
+                                    fin_tx,
+                                    pending_count_clone,
+                                ));
+                            },
+                        );
                     })
                     .unwrap();
 
