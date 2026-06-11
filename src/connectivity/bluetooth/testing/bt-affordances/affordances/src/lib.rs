@@ -5,15 +5,11 @@
 use anyhow::anyhow;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId, Uuid};
-
 use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
-use fidl_fuchsia_bluetooth_sys::{
-    HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
-};
+use fidl_fuchsia_bluetooth_sys::{HostInfo, PairingOptions, Peer};
 use fuchsia_async::LocalExecutor;
 use fuchsia_bluetooth::types::Channel;
-
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -38,12 +34,6 @@ enum Request {
     Connect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     Disconnect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     Pair(PeerId, PairingOptions, oneshot::Sender<Result<(), anyhow::Error>>),
-    StartPairingDelegate(
-        InputCapability,
-        OutputCapability,
-        oneshot::Sender<Result<(), anyhow::Error>>,
-    ),
-    StopPairingDelegate(oneshot::Sender<bool>),
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
@@ -171,14 +161,6 @@ impl WorkThread {
                 }
                 Request::Pair(peer_id, options, result_sender) => {
                     result_sender.send(sys::pair(&proxies, &peer_id, &options).await).unwrap();
-                }
-                Request::StartPairingDelegate(input_cap, output_cap, result_sender) => {
-                    result_sender
-                        .send(sys::start_pairing_delegate(&proxies, &input_cap, &output_cap).await)
-                        .unwrap();
-                }
-                Request::StopPairingDelegate(result_sender) => {
-                    result_sender.send(sys::stop_pairing_delegate(&proxies).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
@@ -392,30 +374,6 @@ impl WorkThread {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::Pair(peer_id, options, sender))?;
         receiver.await?
-    }
-
-    // Start a pairing delegate server.
-    //
-    // Calling this while a pairing delegate is already active drops and overwrites the existing
-    // delegate.
-    pub async fn start_pairing_delegate(
-        &self,
-        input_cap: InputCapability,
-        output_cap: OutputCapability,
-    ) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender
-            .clone()
-            .unbounded_send(Request::StartPairingDelegate(input_cap, output_cap, sender))?;
-        receiver.await?
-    }
-
-    // Stop a pairing delegate server if one exists and was started by start_pairing_delegate.
-    // Returns false if no pairing delegate started by start_pairing_delegate is active.
-    pub async fn stop_pairing_delegate(&self) -> bool {
-        let (sender, receiver) = oneshot::channel::<bool>();
-        self.sender.clone().unbounded_send(Request::StopPairingDelegate(sender)).unwrap();
-        receiver.await.unwrap()
     }
 
     // Forget peer and delete all bonding information, if peer is found.

@@ -5,12 +5,13 @@
 use ::async_trait::async_trait;
 use ::ffx_bluetooth_pairable_args::{PairableCommand, PairableSubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
-use ffx_writer::{SimpleWriter, ToolIO as _};
-use fidl_fuchsia_bluetooth_affordances::{
-    HostControllerProxy, HostControllerStartPairingDelegateRequest,
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_bluetooth_sys::{
+    InputCapability, OutputCapability, PairingDelegateMarker, PairingProxy,
 };
-use fidl_fuchsia_bluetooth_sys::{InputCapability, OutputCapability};
-use target_holders::toolbox;
+use ffx_bluetooth_common::handle_pairing_delegate_requests;
+use ffx_writer::{SimpleWriter, ToolIO as _};
+use target_holders::fdomain::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]
@@ -18,7 +19,7 @@ pub struct PairableTool {
     #[command]
     cmd: PairableCommand,
     #[with(toolbox())]
-    host_controller: HostControllerProxy,
+    pairing_proxy: PairingProxy,
 }
 
 fho::embedded_plugin!(PairableTool);
@@ -32,13 +33,9 @@ impl FfxMain for PairableTool {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth pairable once
             PairableSubCommand::Once(ref cmd) => {
-                self.allow_pairing(&cmd.input_capability, &cmd.output_capability).await?;
                 writer.line("Allowing pairing")?;
-            }
-            // ffx bluetooth pairable stop
-            PairableSubCommand::Stop(ref _cmd) => {
-                self.disable_pairing().await?;
-                writer.line("Disabling pairing")?;
+                self.allow_pairing(&cmd.input_capability, &cmd.output_capability, &mut writer)
+                    .await?;
             }
         }
         Ok(())
@@ -51,31 +48,20 @@ impl PairableTool {
         &self,
         input_cap: &InputCapability,
         output_cap: &OutputCapability,
+        writer: &mut SimpleWriter,
     ) -> Result<()> {
-        let request = HostControllerStartPairingDelegateRequest {
-            input_capability: Some(*input_cap),
-            output_capability: Some(*output_cap),
-            ..Default::default()
-        };
-        Ok(self
-            .host_controller
-            .start_pairing_delegate(&request)
-            .await
-            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
-            .map_err(|err| {
-                fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
-                ))
-            })?)
-    }
+        let (pairing_delegate_client, delegate_stream) =
+            self.pairing_proxy.domain().create_request_stream::<PairingDelegateMarker>();
 
-    // Disable pairing for this device to reject incoming pairing requests.
-    async fn disable_pairing(&self) -> Result<()> {
-        Ok(self
-            .host_controller
-            .stop_pairing_delegate()
-            .await
-            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?)
+        if let Err(err) = self.pairing_proxy.set_pairing_delegate(
+            *input_cap,
+            *output_cap,
+            pairing_delegate_client,
+        ) {
+            return Err(fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")));
+        }
+        handle_pairing_delegate_requests(delegate_stream, None, writer).await?;
+        Ok(())
     }
 }
 

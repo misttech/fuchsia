@@ -11,11 +11,12 @@ ffx_plugin("ffx_bluetooth_pairable") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",
-    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common",
+    "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
@@ -24,7 +25,7 @@ ffx_plugin("ffx_bluetooth_pairable") {
 
   args_sources = [ "src/args.rs" ]
   args_deps = [
-    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust_fdomain",
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
   ]

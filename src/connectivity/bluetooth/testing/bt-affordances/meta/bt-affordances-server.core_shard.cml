@@ -23,12 +23,6 @@
             source_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.bluetooth.sys.Pairing" ],
-            from: "#bluetooth-core",
-            to: "#bt-affordances-server",
-            source_availability: "unknown",
-        },
-        {
             protocol: [
                 "fuchsia.bluetooth.affordances.HostController",
                 "fuchsia.bluetooth.affordances.PeerController",

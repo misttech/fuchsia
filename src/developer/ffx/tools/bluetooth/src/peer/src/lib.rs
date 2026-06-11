@@ -5,15 +5,16 @@
 use ::async_trait::async_trait;
 use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Transport};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
+use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_bluetooth::PeerId as FidlPeerId;
 use fdomain_fuchsia_bluetooth_affordances::{
-    HostControllerProxy, HostControllerStartPairingDelegateRequest, PeerControllerPairRequest,
-    PeerControllerProxy, PeerSelector,
+    PeerControllerPairRequest, PeerControllerProxy, PeerSelector,
 };
 use fdomain_fuchsia_bluetooth_sys::{
-    BondableMode, InputCapability, OutputCapability, PairingOptions, PairingSecurityLevel,
+    BondableMode, InputCapability, OutputCapability, PairingDelegateMarker, PairingOptions,
+    PairingProxy, PairingSecurityLevel,
 };
-use ffx_bluetooth_common::PeerIdOrAddr;
+use ffx_bluetooth_common::{PeerIdOrAddr, handle_pairing_delegate_requests};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use prettytable::{Row, Table, cell, format, row};
@@ -28,7 +29,7 @@ pub struct PeerTool {
     #[with(toolbox())]
     peer_controller: PeerControllerProxy,
     #[with(toolbox())]
-    host_controller: HostControllerProxy,
+    pairing_proxy: PairingProxy,
 }
 
 fho::embedded_plugin!(PeerTool);
@@ -67,11 +68,14 @@ impl FfxMain for PeerTool {
                 };
 
                 if cmd.with_pairing {
-                    self.allow_pairing().await?;
                     writer.line("Allowing pairing")?;
+                    futures::try_join!(
+                        self.allow_pairing(peer_id, &mut writer),
+                        self.connect_peer(peer_id)
+                    )?;
+                } else {
+                    self.connect_peer(peer_id).await?;
                 }
-
-                self.connect_peer(peer_id).await?;
                 writer.line(format!("Successfully sent connection request to peer {peer_id}"))?;
             }
             // ffx bluetooth peer disconnect
@@ -194,22 +198,19 @@ impl PeerTool {
             })?)
     }
 
-    async fn allow_pairing(&self) -> Result<()> {
-        let request = HostControllerStartPairingDelegateRequest {
-            input_capability: Some(InputCapability::None),
-            output_capability: Some(OutputCapability::None),
-            ..Default::default()
-        };
-        Ok(self
-            .host_controller
-            .start_pairing_delegate(&request)
-            .await
-            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
-            .map_err(|err| {
-                fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
-                ))
-            })?)
+    async fn allow_pairing(&self, peer_id: PeerId, writer: &mut SimpleWriter) -> Result<()> {
+        let (pairing_delegate_client, delegate_stream) =
+            self.pairing_proxy.domain().create_request_stream::<PairingDelegateMarker>();
+
+        if let Err(err) = self.pairing_proxy.set_pairing_delegate(
+            InputCapability::None,
+            OutputCapability::None,
+            pairing_delegate_client,
+        ) {
+            return Err(fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")));
+        }
+        handle_pairing_delegate_requests(delegate_stream, Some(peer_id), writer).await?;
+        Ok(())
     }
 
     async fn disconnect_peer(&self, id: PeerId) -> Result<()> {

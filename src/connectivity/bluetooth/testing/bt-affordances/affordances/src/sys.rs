@@ -6,14 +6,11 @@ use crate::proxies::Proxies;
 use anyhow::anyhow;
 use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId};
 use fidl_fuchsia_bluetooth_sys::{
-    AccessSetConnectionPolicyRequest, HostInfo, InputCapability, OutputCapability,
-    PairingDelegateMarker, PairingDelegateRequest, PairingDelegateRequestStream, PairingOptions,
-    Peer,
+    AccessSetConnectionPolicyRequest, HostInfo, PairingOptions, Peer,
 };
-use fuchsia_async::{Task, TimeoutExt, Timer};
+use fuchsia_async::{TimeoutExt, Timer};
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use std::ffi::CString;
 use std::sync::Arc;
 
@@ -63,39 +60,6 @@ pub(crate) async fn pair(
                 anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {sapphire_err:?}")
             })
         })
-}
-
-pub(crate) async fn start_pairing_delegate(
-    proxies: &Proxies,
-    input_cap: &InputCapability,
-    output_cap: &OutputCapability,
-) -> Result<(), anyhow::Error> {
-    let (pairing_delegate_client, pairing_delegate_request_stream) =
-        fidl::endpoints::create_request_stream::<PairingDelegateMarker>();
-
-    // Shut down any existing pairing delegate task.
-    let _ = stop_pairing_delegate(proxies).await;
-
-    if let Err(err) =
-        proxies.pairing_proxy.set_pairing_delegate(*input_cap, *output_cap, pairing_delegate_client)
-    {
-        return Err(anyhow!("fuchsia.bluetooth.sys.Pairing/SetPairingDelegate error: {err}"));
-    }
-
-    let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
-    let task =
-        Task::spawn(pairing_delegate_task(pairing_delegate_request_stream, shutdown_receiver));
-    *proxies.pairing_delegate_state.lock() = Some((task, shutdown_sender));
-    Ok(())
-}
-
-pub(crate) async fn stop_pairing_delegate(proxies: &Proxies) -> bool {
-    if let Some((task, shutdown_sender)) = proxies.pairing_delegate_state.lock().take() {
-        let _ = shutdown_sender.send(());
-        task.await;
-        return true;
-    }
-    false
 }
 
 pub(crate) async fn forget(proxies: &Proxies, peer_id: &PeerId) -> Result<(), anyhow::Error> {
@@ -303,44 +267,4 @@ pub(crate) fn set_device_class(
     proxies.access_proxy.set_device_class(&device_class).map_err(|fidl_error| {
         anyhow!("fuchsia.bluetooth.sys.Access/SetDeviceClass error: {fidl_error}")
     })
-}
-
-async fn pairing_delegate_task(
-    mut stream: PairingDelegateRequestStream,
-    shutdown_receiver: oneshot::Receiver<()>,
-) {
-    let mut shutdown_receiver = shutdown_receiver.fuse();
-    loop {
-        futures::select! {
-            request = stream.next() => {
-                match request {
-                    Some(Ok(request)) => {
-                        println!("Received pairing delegate request: {request:?}");
-                        match request {
-                            PairingDelegateRequest::OnPairingComplete {
-                                id,
-                                success,
-                                control_handle: _,
-                            } => {
-                                println!("Pairing complete for peer {id:?}: success={success}");
-                                break;
-                            }
-                            PairingDelegateRequest::OnPairingRequest {
-                                peer,
-                                method: _,
-                                displayed_passkey: _,
-                                responder,
-                            } => {
-                                println!("Accepting pairing request from peer {peer:?}");
-                                let _ = responder.send(true, 0);
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => break,
-                }
-            }
-            _ = shutdown_receiver => break,
-        }
-    }
 }

@@ -12,12 +12,11 @@ use fidl_fuchsia_bluetooth_le::{
 };
 use fidl_fuchsia_bluetooth_sys::{
     AccessMarker, AccessProxy, AddressLookupMarker, AddressLookupProxy, HostInfo,
-    HostWatcherMarker, HostWatcherProxy, PairingMarker, PairingProxy, Peer, ProcedureTokenProxy,
+    HostWatcherMarker, HostWatcherProxy, Peer, ProcedureTokenProxy,
 };
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
 
 pub(crate) struct Proxies {
     pub(crate) access_proxy: AccessProxy,
@@ -25,7 +24,6 @@ pub(crate) struct Proxies {
     pub(crate) central_proxy: CentralProxy,
     pub(crate) gatt_server_proxy: Server_Proxy,
     pub(crate) peripheral_proxy: PrivilegedPeripheralProxy,
-    pub(crate) pairing_proxy: PairingProxy,
     pub(crate) host_watcher_proxy: HostWatcherProxy,
     pub(crate) address_lookup_proxy: AddressLookupProxy,
     pub(crate) host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
@@ -38,7 +36,6 @@ pub(crate) struct Proxies {
     pub(crate) gatt_client: Option<fidl_fuchsia_bluetooth_gatt2::ClientProxy>,
     pub(crate) remote_service_proxy: Mutex<Option<RemoteServiceProxy>>,
     pub(crate) characteristic_notifier_task: Mutex<Option<Task<()>>>,
-    pub(crate) pairing_delegate_state: Mutex<Option<(Task<()>, oneshot::Sender<()>)>>,
 }
 
 impl Proxies {
@@ -50,7 +47,6 @@ impl Proxies {
         let central_proxy = connect_to_protocol::<CentralMarker>()?;
         let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
-        let pairing_proxy = connect_to_protocol::<PairingMarker>()?;
         let host_watcher_proxy = connect_to_protocol::<HostWatcherMarker>()?;
         let host_watcher_stream =
             HangingGetStream::new_with_fn_ptr(host_watcher_proxy.clone(), HostWatcherProxy::watch);
@@ -64,7 +60,6 @@ impl Proxies {
             central_proxy,
             gatt_server_proxy,
             peripheral_proxy,
-            pairing_proxy,
             host_watcher_proxy,
             address_lookup_proxy,
             host_watcher_stream,
@@ -77,7 +72,6 @@ impl Proxies {
             gatt_client: None,
             remote_service_proxy: Mutex::new(None),
             characteristic_notifier_task: Mutex::new(None),
-            pairing_delegate_state: Mutex::new(None),
         })
     }
 }

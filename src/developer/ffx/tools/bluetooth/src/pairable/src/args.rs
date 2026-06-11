@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_bluetooth_sys::{InputCapability, OutputCapability};
 use ffx_core::ffx_command;
-use fidl_fuchsia_bluetooth_sys::{InputCapability, OutputCapability};
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "pairable",
-    description = "Allow or disable pairing for this device.",
+    description = "Allow pairing with this device.",
     example = "ffx bluetooth pairable"
 )]
 pub struct PairableCommand {
@@ -23,7 +23,6 @@ pub struct PairableCommand {
 #[argh(subcommand)]
 pub enum PairableSubCommand {
     Once(OnceCommand),
-    Stop(StopCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -32,8 +31,9 @@ pub enum PairableSubCommand {
     name = "once",
     description = "Allow one incoming pairing request. Auto-accepts any valid pairing request and \
 stops accepting additional pairing requests after a successful pairing. If a pairing delegate is \
-already running (e.g. in normal operation of a production device), this operation will fail, \
-unless it was started by a previous call to this command, in which case it will be overwritten.",
+already running (e.g. in normal operation of a production device), this operation will fail. \
+Note: Because this command auto-accepts requests, specifying capabilities other than `none` may \
+cause pairing to fail if the negotiated method requires interactive passkey entry or display.",
     example = "Basic usage:
 
     $ ffx bluetooth pairable once
@@ -86,12 +86,3 @@ pub fn parse_output_capability(s: &str) -> Result<OutputCapability, String> {
         _ => Err("output capability should be 'none' or 'display'".to_string()),
     }
 }
-
-#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
-#[argh(
-    subcommand,
-    name = "stop",
-    description = "Disable pairing for this device to reject incoming pairing requests.",
-    example = "ffx bluetooth pairable stop"
-)]
-pub struct StopCommand {}

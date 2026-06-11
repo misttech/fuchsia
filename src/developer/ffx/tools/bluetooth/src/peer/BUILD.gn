@@ -19,8 +19,10 @@ ffx_plugin("ffx_bluetooth_peer") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common",
+    "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:prettytable-rs",
   ]
 

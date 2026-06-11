@@ -9,16 +9,16 @@ use fidl_fuchsia_bluetooth_affordances::{
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
     HostControllerSetConnectabilityRequest, HostControllerSetDeviceClassRequest,
-    HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
-    HostSelector, PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
-    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
-    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
-    PeripheralControllerRequestStream, ScanResultListenerOnPeersDiscoveredRequest,
+    HostControllerSetDiscoverabilityRequest, HostSelector, PeerControllerPairRequest,
+    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
+    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
+    PeripheralControllerRequest, PeripheralControllerRequestStream,
+    ScanResultListenerOnPeersDiscoveredRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
 use futures::{FutureExt, StreamExt, TryStreamExt};
-use log::error;
+use log::{error, warn};
 use std::sync::Arc;
 
 pub enum Services {
@@ -254,29 +254,12 @@ async fn handle_single_host_request(
                 }
             }
         }
-        HostControllerRequest::StartPairingDelegate { payload, responder } => {
-            let HostControllerStartPairingDelegateRequest {
-                input_capability: Some(input_capability),
-                output_capability: Some(output_capability),
-                ..
-            } = payload
-            else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
-                return Ok(());
-            };
-            match worker.start_pairing_delegate(input_capability, output_capability).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("StartPairingDelegate encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        HostControllerRequest::StartPairingDelegate { payload: _, responder } => {
+            warn!("StartPairingDelegate is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         HostControllerRequest::StopPairingDelegate { responder } => {
-            let _ = worker.stop_pairing_delegate().await;
+            warn!("StopPairingDelegate is being deprecated and no-op");
             responder.send()?;
         }
         HostControllerRequest::SetDeviceClass { payload, responder } => {
