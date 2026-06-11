@@ -2819,7 +2819,6 @@ pub fn sys_flock(
 ) -> Result<(), Errno> {
     let file = current_task.get_file(fd)?;
     let operation = FlockOperation::from_flags(operation)?;
-    security::check_file_lock_access(current_task, &file)?;
     file.flock(locked, current_task, operation)
 }
 

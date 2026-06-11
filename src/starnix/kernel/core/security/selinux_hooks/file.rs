@@ -19,10 +19,9 @@ use crate::security::selinux_hooks::{
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
 use linux_uapi::{
-    F_GETFL, F_GETLK, F_GETLK64, F_GETSIG, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_SETFL,
-    F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN, F_SETOWN_EX, F_SETSIG, FIBMAP,
-    FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION,
-    FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
+    F_GETFL, F_GETSIG, F_SETFL, F_SETOWN, F_SETOWN_EX, F_SETSIG, FIBMAP, FIGETBSZ, FIOASYNC,
+    FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS,
+    FS_IOC_SETVERSION,
 };
 use selinux::{
     CommonFilePermission, CommonFsNodePermission, ForClass, FsNodeClass, PolicyCap, SecurityId,
@@ -249,23 +248,7 @@ pub(in crate::security) fn check_file_fcntl_access(
             NO_PERMISSIONS,
             current_task.into(),
         ),
-        F_GETLK | F_SETLK | F_SETLKW | F_GETLK64 | F_SETLK64 | F_SETLKW64 | F_OFD_GETLK
-        | F_OFD_SETLK | F_OFD_SETLKW | F_SETLEASE => {
-            // BPF implements some lock operations but does not require file "lock"
-            // permission.
-            if file.downcast_file::<BpfHandle>().is_some() {
-                return Ok(());
-            }
-            // TODO: https://fxbug.dev/512798827 - Integrate file_lock() in VFS and remove this.
-            has_file_permissions(
-                &permission_check,
-                current_task,
-                subject_sid,
-                file,
-                &[CommonFsNodePermission::Lock],
-                current_task.into(),
-            )
-        }
+
         _ => Ok(()),
     }
 }

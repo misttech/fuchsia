@@ -364,6 +364,7 @@ impl FileObject {
         if self.flags().contains(OpenFlags::PATH) {
             return error!(EBADF);
         }
+        security::check_file_lock_access(current_task, self)?;
         loop {
             let mut flock_info = self.name.entry.node.ensure_rare_data().flock_info.lock();
             if operation.is_unlock() {

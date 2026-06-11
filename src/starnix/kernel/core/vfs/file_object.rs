@@ -2172,14 +2172,11 @@ impl FileObject {
     }
 
     /// See fcntl(F_SETLEASE)
-    pub fn set_lease(
-        &self,
-        _current_task: &CurrentTask,
-        lease: FileLeaseType,
-    ) -> Result<(), Errno> {
+    pub fn set_lease(&self, current_task: &CurrentTask, lease: FileLeaseType) -> Result<(), Errno> {
         if !self.node().is_reg() {
             return error!(EINVAL);
         }
+        security::check_file_lock_access(current_task, self)?;
         if lease == FileLeaseType::Read && self.can_write() {
             return error!(EAGAIN);
         }
@@ -2230,6 +2227,7 @@ impl FileObject {
         cmd: RecordLockCommand,
         flock: uapi::flock,
     ) -> Result<Option<uapi::flock>, Errno> {
+        security::check_file_lock_access(current_task, self)?;
         self.node().record_lock(locked, current_task, self, cmd, flock)
     }
 

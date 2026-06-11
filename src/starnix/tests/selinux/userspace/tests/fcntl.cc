@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include <fbl/unique_fd.h>
@@ -197,6 +198,31 @@ TEST(FcntlOrderingTest, SetLeaseChecksMacBeforeArgs) {
 
     ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_fcntl_child_no_use_fd_t:s0", [&] {
       EXPECT_THAT(fcntl(fd.get(), F_SETLEASE, F_RDLCK), SyscallFailsWithErrno(EACCES));
+    }));
+  }));
+}
+
+TEST(FlockSelinuxTest, FlockWithFdUse) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_fcntl_parent_t:s0", [&] {
+    auto fd = CreateTestFileFd();
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_fcntl_child_t:s0", [&] {
+      EXPECT_THAT(flock(fd.get(), LOCK_SH), SyscallSucceeds());
+      EXPECT_THAT(flock(fd.get(), LOCK_UN), SyscallSucceeds());
+    }));
+  }));
+}
+
+TEST(FlockSelinuxTest, FlockWithoutFileLock) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_fcntl_parent_t:s0", [&] {
+    auto fd = CreateTestFileFd();
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_fcntl_child_no_lock_t:s0", [&] {
+      EXPECT_THAT(flock(fd.get(), LOCK_SH), SyscallFailsWithErrno(EACCES));
     }));
   }));
 }
