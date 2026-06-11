@@ -1132,6 +1132,11 @@ where
     };
     send_signal_first(locked, tracee_task, state, signal);
 
+    // If the tracer is already sleeping in waitpid, it is waiting on the shared `tracer_waiters`
+    // queue. We must wake it up here so it can register on the new tracee's queue (and update its
+    // wait registration loop) rather than missing the initial stopped status notification.
+    ptrace_state.tracer_waiters.notify_all();
+
     Ok(())
 }
 

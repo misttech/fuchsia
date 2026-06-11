@@ -688,6 +688,105 @@ TEST(PtraceTest, PtraceEventStopWithForkClonePtrace) {
   DetectForkAndContinue(child_pid, false, false);
 }
 
+// Exercises the wakeup race on dynamic child ptrace attachment (e.g. CLONE_PTRACE). The tracer is
+// forced to sleep in waitpid() before the child transitions to its initial stopped state to verify
+// that the wakeup is not lost.
+TEST(PtraceTest, PtraceEventStopWithForkClonePtraceWakeup) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous attached = test_helper::MakeRendezvous();
+
+    pid_t tracee_pid = fork();
+    if (tracee_pid == 0) {
+      ready.poker.poke();
+      attached.holder.hold();
+
+      // Spawn grandchild via clone3 with CLONE_PTRACE.
+      struct clone_args args;
+      memset(&args, 0, sizeof(args));
+      args.flags = CLONE_PTRACE;
+      args.exit_signal = SIGCHLD;
+
+      pid_t grandchild_pid =
+          SAFE_SYSCALL(static_cast<pid_t>(syscall(SYS_clone3, &args, sizeof(args))));
+      if (grandchild_pid == 0) {
+        // Automatically stopped due to CLONE_PTRACE.
+        exit(0);
+      }
+
+      exit(0);
+    }
+
+    ready.holder.hold();
+
+    // Attach to the running tracee. This will automatically send a single SIGSTOP.
+    ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr), SyscallSucceeds());
+
+    int status;
+    ASSERT_THAT(waitpid(tracee_pid, &status, 0), SyscallSucceedsWithValue(tracee_pid));
+    ASSERT_TRUE(WIFSTOPPED(status));
+    ASSERT_EQ(WSTOPSIG(status), SIGSTOP);
+
+    ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, tracee_pid, 0, PTRACE_O_TRACEFORK), SyscallSucceeds());
+    attached.poker.poke();
+    ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, 0, 0), SyscallSucceeds());
+
+    // Force the tracer to immediately block in waitpid(-1, ...) before the grandchild actually
+    // finishes spawning or stopping. This simulates the race where the tracer is already asleep
+    // when the grandchild is attached from state.
+    //
+    // We use a loop because the parent's PTRACE_EVENT_FORK and the grandchild's initial SIGSTOP
+    // can arrive in either order, and waitpid(-1) will return whichever happens first.
+    pid_t grandchild_pid = 0;
+    bool got_parent_fork = false;
+    bool got_grandchild_stop = false;
+    while (!got_parent_fork || !got_grandchild_stop) {
+      int status;
+      pid_t pid = SAFE_SYSCALL(waitpid(-1, &status, 0));
+      if (pid == tracee_pid) {
+        ASSERT_TRUE(WIFSTOPPED(status));
+        ASSERT_EQ((status >> 8), (SIGTRAP | (PTRACE_EVENT_FORK << 8)));
+        got_parent_fork = true;
+
+        pid_t forked_pid = 0;
+        ASSERT_THAT(get_event_msg<pid_t>(tracee_pid, &forked_pid), SyscallSucceeds());
+        if (got_grandchild_stop) {
+          ASSERT_EQ(forked_pid, grandchild_pid);
+        } else {
+          grandchild_pid = forked_pid;
+        }
+      } else {
+        // This must be the grandchild.
+        ASSERT_TRUE(WIFSTOPPED(status));
+        ASSERT_EQ(WSTOPSIG(status), SIGSTOP);
+        got_grandchild_stop = true;
+        if (got_parent_fork) {
+          ASSERT_EQ(pid, grandchild_pid);
+        } else {
+          grandchild_pid = pid;
+        }
+      }
+    }
+
+    // Detach the parent tracee. When the grandchild exits, it sends SIGCHLD to the parent tracee.
+    // If the parent tracee is still traced, it will stop on this SIGCHLD, causing
+    // waitpid(tracee_pid) to return a stop event instead of the exit event. Detaching it here
+    // ensures it can exit without stopping, allowing us to wait for its clean exit below.
+    ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, 0, 0), SyscallSucceeds());
+
+    ASSERT_THAT(ptrace(PTRACE_CONT, grandchild_pid, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(waitpid(grandchild_pid, &status, 0), SyscallSucceedsWithValue(grandchild_pid));
+    ASSERT_TRUE(WIFEXITED(status));
+
+    // Wait for tracee to exit. It won't stop now because it is detached.
+    ASSERT_THAT(waitpid(tracee_pid, &status, 0), SyscallSucceedsWithValue(tracee_pid));
+    ASSERT_TRUE(WIFEXITED(status));
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 TEST(PtraceTest, PtraceEventStopWithVForkClonePtrace) {
   // TODO(https://fxbug.dev/317285180) don't skip on baseline
   if (!test_helper::IsStarnix()) {
