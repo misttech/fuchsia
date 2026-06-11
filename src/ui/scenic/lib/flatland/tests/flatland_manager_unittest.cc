@@ -264,6 +264,31 @@ TEST_F(FlatlandManagerTest, CreateFlatlands) {
   EXPECT_EQ(manager_->GetSessionCount(), 2ul);
 }
 
+TEST_F(FlatlandManagerTest, UntrustedFlatlandRunsOnIndependentThread) {
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
+
+  RunLoopUntilIdle();
+
+  // The session dispatcher should NOT be the main thread's dispatcher.
+  auto session_dispatcher = manager_->GetSessionDispatcher(id);
+  ASSERT_NE(session_dispatcher, nullptr);
+  EXPECT_NE(session_dispatcher, dispatcher());
+}
+
+TEST_F(FlatlandManagerTest, TrustedFlatlandRunsOnMainThread) {
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
+  const scheduling::SessionId id = manager_->CreateFlatland(flatland.NewRequest(dispatcher()),
+                                                            {.use_trusted_flatland_api = true});
+
+  RunLoopUntilIdle();
+
+  // The session dispatcher SHOULD be the main thread's dispatcher.
+  auto session_dispatcher = manager_->GetSessionDispatcher(id);
+  ASSERT_NE(session_dispatcher, nullptr);
+  EXPECT_EQ(session_dispatcher, dispatcher());
+}
+
 TEST_F(FlatlandManagerTest, CreateViewportedFlatlands) {
   fuchsia::ui::views::ViewportCreationToken parent_token;
   fuchsia::ui::views::ViewCreationToken child_token;

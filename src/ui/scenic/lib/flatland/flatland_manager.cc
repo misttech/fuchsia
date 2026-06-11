@@ -18,6 +18,7 @@
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
+#include "src/ui/scenic/lib/utils/task_utils.h"
 
 namespace flatland {
 
@@ -82,6 +83,42 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
     const FlatlandConfig& config) {
   utils::CheckIsOnMainThread();
 
+  if (config.use_trusted_flatland_api) {
+    return CreateTrustedFlatland(std::move(request), config);
+  } else {
+    return CreateUntrustedFlatland(std::move(request), config);
+  }
+}
+
+scheduling::SessionId FlatlandManager::CreateTrustedFlatland(
+    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
+    const FlatlandConfig& config) {
+  const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
+  FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
+  FX_DCHECK(flatland_display_instances_.find(id) == flatland_display_instances_.end());
+
+  auto result = flatland_instances_.emplace(id, std::make_unique<FlatlandInstance>());
+  FX_DCHECK(result.second);
+  auto& instance = result.first->second;
+
+  instance->loop = std::make_shared<utils::UnownedDispatcherHolder>(executor_.dispatcher());
+
+  if (!config.skips_present_credits) {
+    all_clients_opt_out_present_info_ = false;
+  }
+
+  instance->impl = NewFlatland(
+      instance->loop, std::move(request), id, [this, id] { DestroyInstanceFunction(id); },
+      flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(id),
+      buffer_collection_importers_, config);
+
+  alive_sessions_++;
+  return id;
+}
+
+scheduling::SessionId FlatlandManager::CreateUntrustedFlatland(
+    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
+    const FlatlandConfig& config) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
   FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
   FX_DCHECK(flatland_display_instances_.find(id) == flatland_display_instances_.end());
@@ -94,14 +131,9 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
       "Flatland ID=" + std::to_string(id) + " PEER=" + std::to_string(peer_endpoint_id);
 
   // Allocate the worker Loop first so that the Flatland impl can be bound to its dispatcher.
-  auto result = flatland_instances_.emplace(id, std::make_unique<FlatlandInstance>());
-  FX_DCHECK(result.second);
-
-  auto& instance = result.first->second;
-  instance->loop = std::make_shared<utils::LoopDispatcherHolder>(
+  auto loop_holder = std::make_shared<utils::LoopDispatcherHolder>(
       &kAsyncLoopConfigNoAttachToCurrentThread,
       [this](std::unique_ptr<async::Loop> loop_to_destroy) {
-        // Destroying a loop on its own dispatcher deadlocks, as it tries to join its own thread.
         FX_DCHECK(loop_to_destroy->dispatcher() != this->cleanup_loop_.dispatcher());
 
         async::PostTask(this->cleanup_loop_.dispatcher(),
@@ -111,6 +143,12 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
                           this->alive_sessions_--;
                         });
       });
+
+  auto result = flatland_instances_.emplace(id, std::make_unique<FlatlandInstance>());
+  FX_DCHECK(result.second);
+  auto& instance = result.first->second;
+  instance->loop = loop_holder;
+
   async::PostTask(instance->loop->dispatcher(), []() {
     zx_status_t status = fuchsia_scheduler::SetRoleForThisThread("fuchsia.graphics.flatland");
     if (status != ZX_OK) {
@@ -132,7 +170,7 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
       flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(id),
       buffer_collection_importers_, config);
 
-  zx_status_t status = instance->loop->loop().StartThread(name.c_str());
+  zx_status_t status = loop_holder->loop().StartThread(name.c_str());
   FX_DCHECK(status == ZX_OK);
 
   alive_sessions_++;
@@ -318,24 +356,37 @@ void FlatlandManager::OnFramePresented(
 
 size_t FlatlandManager::GetSessionCount() const { return flatland_instances_.size(); }
 
+async_dispatcher_t* FlatlandManager::GetSessionDispatcher(scheduling::SessionId session_id) const {
+  auto it = flatland_instances_.find(session_id);
+  if (it == flatland_instances_.end()) {
+    return nullptr;
+  }
+  return it->second->loop->dispatcher();
+}
+
+std::vector<scheduling::SessionId> FlatlandManager::GetSessionIds() const {
+  std::vector<scheduling::SessionId> ids;
+  for (const auto& [id, _] : flatland_instances_) {
+    ids.push_back(id);
+  }
+  return ids;
+}
+
 void FlatlandManager::SendPresentCredits(FlatlandInstance* instance,
                                          uint32_t present_credits_returned,
                                          Flatland::FuturePresentationInfos presentation_infos) {
   TRACE_DURATION("gfx", "FlatlandManager::SendPresentCredits");
   utils::CheckIsOnMainThread();
 
-  // The Flatland impl must be accessed on the thread it is bound to; post a task to that thread.
+  // The Flatland impl must be accessed on the thread it is bound to.
   std::weak_ptr<Flatland> weak_impl = instance->impl;
-  async::PostTask(instance->loop->dispatcher(),
-                  [weak_impl, present_credits_returned,
-                   presentation_infos = std::move(presentation_infos)]() mutable {
-                    // |impl| is guaranteed to be non-null.  When destroying an instance, the
-                    // manager erases the entry from the map, which means that subsequently
-                    // |instance| would not be found to pass it to this method.
-                    auto impl = weak_impl.lock();
-                    FX_CHECK(impl) << "Missing Flatland instance in SendPresentCredits().";
-                    impl->OnNextFrameBegin(present_credits_returned, std::move(presentation_infos));
-                  });
+  utils::ExecuteOrPostTaskOnDispatcher(
+      instance->loop->dispatcher(), [weak_impl, present_credits_returned,
+                                     presentation_infos = std::move(presentation_infos)]() mutable {
+        auto impl = weak_impl.lock();
+        FX_CHECK(impl) << "Missing Flatland instance in SendPresentCredits().";
+        impl->OnNextFrameBegin(present_credits_returned, std::move(presentation_infos));
+      });
 }
 
 void FlatlandManager::SendFramePresented(
@@ -349,16 +400,14 @@ void FlatlandManager::SendFramePresented(
     return;
   }
 
-  // The Flatland impl must be accessed on the thread it is bound to; post a task to that thread.
+  // The Flatland impl must be accessed on the thread it is bound to.
   std::weak_ptr<Flatland> weak_impl = instance->impl;
-  async::PostTask(instance->loop->dispatcher(), [weak_impl, latched_times, present_times]() {
-    // |impl| is guaranteed to be non-null.  When destroying an instance, the manager erases the
-    // entry from the map, which means that subsequently |instance| would not be found to pass it to
-    // this method.
-    auto impl = weak_impl.lock();
-    FX_CHECK(impl) << "Missing Flatland instance in SendFramePresented().";
-    impl->OnFramePresented(latched_times, present_times);
-  });
+  utils::ExecuteOrPostTaskOnDispatcher(
+      instance->loop->dispatcher(), [weak_impl, latched_times, present_times]() {
+        auto impl = weak_impl.lock();
+        FX_CHECK(impl) << "Missing Flatland instance in SendFramePresented().";
+        impl->OnFramePresented(latched_times, present_times);
+      });
 }
 
 void FlatlandManager::RemoveFlatlandInstance(scheduling::SessionId session_id) {
@@ -370,23 +419,30 @@ void FlatlandManager::RemoveFlatlandInstance(scheduling::SessionId session_id) {
     auto instance_kv = flatland_instances_.find(session_id);
     if (instance_kv != flatland_instances_.end()) {
       found = true;
-      // The Flatland impl must be destroyed on the thread that owns the looper it is bound to.
-      // Remove the instance from the map, then push cleanup onto the worker thread. Note that the
-      // closure exists only to transfer the cleanup responsibilities to the worker thread.
-      //
-      // Note: Capturing "this" is safe as a flatland manager is guaranteed to outlive any flatland
-      // instance.
-      async::PostTask(instance_kv->second->loop->dispatcher(),
-                      [instance = std::move(instance_kv->second)]() {
-                        TRACE_DURATION("gfx", "FlatlandManager::RemoveFlatlandInstance[task]");
+      auto& instance = instance_kv->second;
+      const bool is_main_thread_session = (instance->loop->dispatcher() == executor_.dispatcher());
 
-                        // A flatland instance must release all its resources, and its loop must be
-                        // destroyed on cleanup_loop_, before |alive_sessions_| can safely be
-                        // decremented. This ensures that flatland manager outlives every flatland
-                        // instance.
-                        instance->impl.reset();
-                        // Actually decrement alive_sessions_ in instance loop destruction thunk.
-                      });
+      if (is_main_thread_session) {
+        // Cleanup trusted Flatland sessions that run on Scenic's main thread.
+        // Destroy the implementation immediately, then decrement session count.
+        instance->impl.reset();
+        alive_sessions_--;
+      } else {
+        // Cleanup untrusted Flatland sessions that run on a dedicated worker thread.
+        // Post to the Flatland session's worker thread to destroy Flatland impl.
+        // Deleting the instance on the worker thread triggers ~LoopDispatcherHolder()
+        // which safely deletes the Loop via the cleanup_loop_.
+        async::PostTask(instance->loop->dispatcher(), [instance = std::move(instance)]() {
+          TRACE_DURATION("gfx", "FlatlandManager::RemoveFlatlandInstance[task]");
+
+          // A flatland instance must release all its resources, and its loop must be
+          // destroyed on cleanup_loop_, before |alive_sessions_| can safely be
+          // decremented. This ensures that flatland manager outlives every flatland
+          // instance.
+          instance->impl.reset();
+          // Actually decrement alive_sessions_ in instance loop destruction thunk.
+        });
+      }
       flatland_instances_.erase(session_id);
     }
   }

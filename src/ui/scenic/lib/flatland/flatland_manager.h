@@ -80,6 +80,8 @@ class FlatlandManager {
   size_t GetSessionCount() const;
   // Sessions still alive (but which might have been remove from FlatlandManager).
   size_t GetAliveSessionCount() const { return alive_sessions_; }
+  async_dispatcher_t* GetSessionDispatcher(scheduling::SessionId session_id) const;
+  std::vector<scheduling::SessionId> GetSessionIds() const;
 
   // TODO(https://fxbug.dev/42156949): This is method assumes that there are either 0 or 1
   // displays with attached Flatland content.
@@ -92,7 +94,7 @@ class FlatlandManager {
     // async::Loop itself. It must be the first member of this struct so that |impl| is
     // destroyed first in the default destruction order, else it will attempt to run on a shutdown
     // looper.
-    std::shared_ptr<utils::LoopDispatcherHolder> loop;
+    std::shared_ptr<utils::DispatcherHolder> loop;
 
     // The implementation of Flatland, which includes the bindings for the instance. This must come
     // before |peer_closed_waiter| so that the Wait is destroyed, and therefore cancelled, before
@@ -128,6 +130,14 @@ class FlatlandManager {
 
   // Removes the Flatland instance associated with |session_id|.
   void RemoveFlatlandInstance(scheduling::SessionId session_id);
+
+  scheduling::SessionId CreateTrustedFlatland(
+      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
+      const FlatlandConfig& config);
+
+  scheduling::SessionId CreateUntrustedFlatland(
+      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
+      const FlatlandConfig& config);
 
   // The function passed into a Flatland constructor that allows the Flatland instance to trigger
   // its own destruction when the client makes an unrecoverable error. This function will be called
