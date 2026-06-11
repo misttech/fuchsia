@@ -21,6 +21,7 @@ group("e2e_tests") {
     "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
     "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
     "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
+    "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
   ]
 }
 

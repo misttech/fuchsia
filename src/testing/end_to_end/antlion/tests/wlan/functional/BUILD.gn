@@ -136,11 +136,6 @@ antlion_host_test("wlan_scan_test_without_wpa2") {
   ]
 }
 
-antlion_host_test("wlan_target_security_test") {
-  main_source = "WlanTargetSecurityTest.py"
-  environments = wlan_ap_envs
-}
-
 antlion_host_test("wlan_wireless_network_management_test") {
   main_source = "WlanWirelessNetworkManagementTest.py"
   environments = wlan_ap_envs
@@ -162,7 +157,6 @@ group("e2e_tests") {
     ":wlan_reboot_dut_wpa3_test",
     ":wlan_scan_test",
     ":wlan_scan_test_without_wpa2",
-    ":wlan_target_security_test",
     ":wlan_wireless_network_management_test",
   ]
 }
