@@ -210,6 +210,10 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
     }
     expected_failure_tests_.push_back(failing_test.GetString());
   }
+  if (!std::is_sorted(expected_failure_tests_.begin(), expected_failure_tests_.end())) {
+    fprintf(stderr, "AuditChecker Error: %s is not sorted lexicographically.\n", kExpectedFailureKey);
+    return false;
+  }
 
   if (doc.HasMember(kSkipKey) && !doc[kSkipKey].IsArray()) {
     return false;
@@ -220,7 +224,12 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
     }
     skipped_tests_.push_back(skipped_test.GetString());
   }
+  if (!std::is_sorted(skipped_tests_.begin(), skipped_tests_.end())) {
+    fprintf(stderr, "AuditChecker Error: %s is not sorted lexicographically.\n", kSkipKey);
+    return false;
+  }
 
+  std::vector<std::string> success_test_names;
   for (const auto& test_obj : doc[kSuccessKey].GetArray()) {
     if (!test_obj.IsObject() || !test_obj.HasMember(kTestNameKey) ||
         !test_obj[kTestNameKey].IsString() || !test_obj.HasMember(kTestAuditExpectationsKey) ||
@@ -229,6 +238,7 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
     }
 
     std::string test_name = test_obj[kTestNameKey].GetString();
+    success_test_names.push_back(test_name);
     std::vector<AuditLogEntry> expected_logs;
 
     for (const auto& log_str_val : test_obj[kTestAuditExpectationsKey].GetArray()) {
@@ -244,6 +254,10 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
       }
     }
     expectations_map_[test_name] = std::move(expected_logs);
+  }
+  if (!std::is_sorted(success_test_names.begin(), success_test_names.end())) {
+    fprintf(stderr, "AuditChecker Error: %s is not sorted lexicographically.\n", kSuccessKey);
+    return false;
   }
   return true;
 }

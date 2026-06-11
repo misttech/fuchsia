@@ -93,25 +93,13 @@
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/write_WO",
-            "audit_expectations": [
-                "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
-            ]
-        },
-        {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/write_RW",
-            "audit_expectations": [
-                "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
-            ]
-        },
-        {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/none_WO",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_RW",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/none_RW",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/none_WO",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
@@ -129,13 +117,13 @@
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/read_WO",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_RW",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest.Map/read_RW",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/read_WO",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
@@ -153,39 +141,15 @@
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RO",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_RW",
             "audit_expectations": [
-                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=968 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+                "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_WO",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/write_WO",
             "audit_expectations": [
-                "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
-            ]
-        },
-        {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_RW",
-            "audit_expectations": [
-                "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
-            ]
-        },
-        {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RW",
-            "audit_expectations": [
-                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=982 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_WO",
-            "audit_expectations": [
-                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=996 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_RW",
-            "audit_expectations": [
-                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1003 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+                "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
@@ -201,19 +165,43 @@
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_read_RO",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_RW",
             "audit_expectations": [
-                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=1094 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+                "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_map_write_WO",
+            "audit_expectations": [
+                "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RO",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=968 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_read_RW",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=982 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_RW",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1003 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/no_write_WO",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=996 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_RO",
-            "audit_expectations": [
-                "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
-            ]
-        },
-        {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_WO",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
@@ -225,21 +213,33 @@
             ]
         },
         {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_prog_run_WO",
+            "audit_expectations": [
+                "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_read_RO",
+            "audit_expectations": [
+                "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=1094 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_read_RW",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"foo\" dev=\"bpf\" ino=1108 scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_write_WO",
-            "audit_expectations": [
-                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1122 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
             "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_write_RW",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1129 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/no_write_WO",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"foo\" dev=\"bpf\" ino=1122 scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
@@ -280,6 +280,24 @@
             ]
         },
         {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_GETLK",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLK",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLKW",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
             "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETFL",
             "audit_expectations": [
                 "avc:  denied  { use } for path=2F746D702F233234202864656C6574656429 dev=\"tmpfs\" ino=24 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
@@ -316,45 +334,9 @@
             ]
         },
         {
-            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_GETLK",
-            "audit_expectations": [
-                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
-            ]
-        },
-        {
-            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLK",
-            "audit_expectations": [
-                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
-            ]
-        },
-        {
-            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLKW",
-            "audit_expectations": [
-                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
-            ]
-        },
-        {
             "name": "Fcntl/FcntlTest.WithoutFileLock/F_GETLK",
             "audit_expectations": [
                 "avc:  denied  { lock } for path=2F746D702F233435202864656C6574656429 dev=\"tmpfs\" ino=45 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLEASE",
-            "audit_expectations": [
-                "avc:  denied  { lock } for path=2F746D702F233333202864656C6574656429 dev=\"tmpfs\" ino=33 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLK",
-            "audit_expectations": [
-                "avc:  denied  { lock } for path=2F746D702F233436202864656C6574656429 dev=\"tmpfs\" ino=46 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLKW",
-            "audit_expectations": [
-                "avc:  denied  { lock } for path=2F746D702F233437202864656C6574656429 dev=\"tmpfs\" ino=47 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
@@ -373,6 +355,24 @@
             "name": "Fcntl/FcntlTest.WithoutFileLock/F_OFD_SETLKW",
             "audit_expectations": [
                 "avc: denied { lock } scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLEASE",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233333202864656C6574656429 dev=\"tmpfs\" ino=33 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLK",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233436202864656C6574656429 dev=\"tmpfs\" ino=46 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLKW",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233437202864656C6574656429 dev=\"tmpfs\" ino=47 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
@@ -579,6 +579,32 @@
             ]
         },
         {
+            "name": "IoUringTest.IoUringSqpollDenied",
+            "audit_expectations": [
+                "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
+            "name": "IoUringTest/IoUringCmdTest.Cmd/Allowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "IoUringTest/IoUringCmdTest.Cmd/Denied",
+            "audit_expectations": [
+                "avc: denied { cmd } scontext=test_u:test_r:io_uring_test_no_cmd_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
+            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
+            "audit_expectations": [
+                "avc:  denied  { override_creds } for scontext=test_u:test_r:io_uring_test_no_override_t:s0 tcontext=test_u:test_r:io_uring_test_no_override_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
             "name": "IoctlTest.BasicCommandDenied",
             "audit_expectations": [
                 "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:fUJZDv\" dev=\"tmpfs\" ino=3 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
@@ -600,26 +626,6 @@
             "name": "IoctlTest.GetAttrCommandDenied",
             "audit_expectations": [
                 "avc:  denied  { getattr } for path=\"/tmp/ioctl_test_file:UwIqKx\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_ioctl_figetbsz_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "IoUringTest/IoUringCmdTest.Cmd/Allowed",
-            "audit_expectations": []
-        },
-        {
-            "name": "IoUringTest/IoUringCmdTest.Cmd/Denied",
-            "audit_expectations": [
-                "avc: denied { cmd } scontext=test_u:test_r:io_uring_test_no_cmd_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=io_uring permissive=0"
-            ]
-        },
-        {
-            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
-            "audit_expectations": []
-        },
-        {
-            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
-            "audit_expectations": [
-                "avc:  denied  { override_creds } for scontext=test_u:test_r:io_uring_test_no_override_t:s0 tcontext=test_u:test_r:io_uring_test_no_override_t:s0 tclass=io_uring permissive=0"
             ]
         },
         {
@@ -2334,12 +2340,6 @@
             "name": "UnlabeledFsTest.CreateFileInUnlabeledFs",
             "audit_expectations": [
                 "avc:  denied  { associate } for name=\"test-file\" scontext=unconfined_u:object_r:unlabeled_unconfined_file_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=filesystem permissive=1"
-            ]
-        },
-        {
-            "name": "IoUringTest.IoUringSqpollDenied",
-            "audit_expectations": [
-                "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"
             ]
         },
         {
