@@ -106,11 +106,13 @@ async fn to_success_response(
         status_code: Some(hyper_response.status().as_u16() as u32),
         status_line: Some(to_status_line(hyper_response.version(), hyper_response.status())),
         headers: Some(headers),
-        redirect: redirect_info.map(|info| net_http::RedirectTarget {
-            method: Some(info.method.to_string()),
-            url: info.url.map(|u| u.to_string()),
-            referrer: info.referrer.map(|r| r.to_string()),
-            ..Default::default()
+        redirect: redirect_info.and_then(|info| {
+            info.url.map(|url| net_http::RedirectTarget {
+                method: Some(info.method.to_string()),
+                url: Some(url.to_string()),
+                referrer: info.referrer.map(|r| r.to_string()),
+                ..Default::default()
+            })
         }),
         ..Default::default()
     };
@@ -365,6 +367,15 @@ fn calculate_redirect(
 ) -> Option<hyper::Uri> {
     let old_parts = old_url.clone().into_parts();
     let mut new_parts = hyper::Uri::try_from(location.as_bytes()).ok()?.into_parts();
+
+    // Prevent insecure redirect downgrade (https -> http)
+    if old_parts.scheme.as_ref().map(|s| s.as_str()) == Some("https")
+        && new_parts.scheme.as_ref().map(|s| s.as_str()) == Some("http")
+    {
+        error!("Not following insecure redirect downgrade");
+        return None;
+    }
+
     if new_parts.scheme.is_none() {
         new_parts.scheme = old_parts.scheme;
     }
@@ -695,5 +706,44 @@ mod tests {
             headers.get(&content_type_key),
             Some(&HeaderValue::from_static(content_type_val))
         );
+    }
+
+    #[test]
+    fn test_calculate_redirect() {
+        let old_url = hyper::Uri::from_static("https://example.com/path");
+
+        // Same scheme, relative path = Perform redirect
+        let loc = hyper::header::HeaderValue::from_static("/new-path");
+        assert_eq!(
+            calculate_redirect(&old_url, &loc),
+            Some(hyper::Uri::from_static("https://example.com/new-path"))
+        );
+
+        // Same scheme, different host under example namespace = Perform redirect
+        let loc = hyper::header::HeaderValue::from_static("https://other.example.com/path");
+        assert_eq!(
+            calculate_redirect(&old_url, &loc),
+            Some(hyper::Uri::from_static("https://other.example.com/path"))
+        );
+
+        // Insecure redirect downgrade (https -> http) = Block redirect
+        let loc = hyper::header::HeaderValue::from_static("http://example.com/path");
+        assert_eq!(calculate_redirect(&old_url, &loc), None);
+
+        // Insecure to insecure redirect = Perform redirect
+        let old_url_http = hyper::Uri::from_static("http://example.com/path");
+        let loc = hyper::header::HeaderValue::from_static("http://other.example.com/path");
+        assert_eq!(
+            calculate_redirect(&old_url_http, &loc),
+            Some(hyper::Uri::from_static("http://other.example.com/path"))
+        );
+
+        // Insecure redirect downgrade with uppercase scheme (https -> HTTP) = Block redirect
+        let loc = hyper::header::HeaderValue::from_static("HTTP://example.com/path");
+        assert_eq!(calculate_redirect(&old_url, &loc), None);
+
+        // Invalid URL characters = Block redirect
+        let loc = hyper::header::HeaderValue::from_bytes(b"https://\xffinvalid.com").unwrap();
+        assert_eq!(calculate_redirect(&old_url, &loc), None);
     }
 }
