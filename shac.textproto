@@ -22,3 +22,9 @@ vars: [
     default: "out/default"
   }
 ]
+
+passthrough_env: {
+  name: "JIRI_PACKAGES_DIR"
+  is_path: true
+}
+

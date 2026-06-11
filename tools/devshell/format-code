@@ -344,6 +344,18 @@ if [[ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" == "true" ]] && \
   shac_workdir="$(pwd)"
 fi
 
+# Resolve Jiri packages directory for worktrees, allowing sandboxed shac to
+# access prebuilt tools.
+if [[ -z "${JIRI_PACKAGES_DIR}" ]]; then
+  if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null) && [[ -d "${git_common_dir}" ]]; then
+    parent_root=$(cd "${git_common_dir}/.." 2>/dev/null && pwd)
+    packages_dir="${parent_root}/.jiri_root/packages"
+    if [[ -d "${packages_dir}" ]]; then
+      export JIRI_PACKAGES_DIR="${packages_dir}"
+    fi
+  fi
+fi
+
 # TODO(https://fxbug.dev/42162946): Move all formatters into SHAC to ensure parity between
 # the formatters enforced by the infrastructure and those enforced locally.
 print-and-execute "${PREBUILT_SHAC}" fmt \
