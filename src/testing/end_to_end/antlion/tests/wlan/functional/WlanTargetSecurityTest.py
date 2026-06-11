@@ -4,7 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_5G,
@@ -62,7 +61,6 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
             raise signals.TestAbortClass("Requires at least one access point")
 
     def teardown_test(self) -> None:
-        self.dut.disconnect()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -78,9 +76,9 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
                 security, since non-open target securities require a credential
                 to attempt a connection.
         """
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_5G)
         # Length 13, so it can be used for WEP or WPA
-        password = utils.rand_ascii_str(13)
+        password = AccessPointConfig.random_string(13)
 
         if self.openwrt_ap:
             config = AccessPointConfig(
