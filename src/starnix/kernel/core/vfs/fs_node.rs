@@ -151,13 +151,17 @@ struct FsNodeRareData {
 impl FsNodeRareData {
     fn ensure_fifo(&self, current_task: &CurrentTask) -> &PipeHandle {
         self.fifo.get_or_init(|| {
-            let mut default_pipe_capacity = (*PAGE_SIZE * 16) as usize;
-            if !security::is_task_capable_noaudit(current_task, CAP_SYS_RESOURCE) {
-                let kernel = current_task.kernel();
-                let max_size = kernel.system_limits.pipe_max_size.load(Ordering::Relaxed);
-                default_pipe_capacity = std::cmp::min(default_pipe_capacity, max_size);
-            }
-            Pipe::new(default_pipe_capacity)
+            let default_pipe_capacity = (*PAGE_SIZE * 16) as usize;
+            let kernel = current_task.kernel();
+            let max_size = kernel.system_limits.pipe_max_size.load(Ordering::Relaxed);
+            let capacity = if default_pipe_capacity <= max_size
+                || security::is_task_capable_noaudit(current_task, CAP_SYS_RESOURCE)
+            {
+                default_pipe_capacity
+            } else {
+                max_size
+            };
+            Pipe::new(capacity)
         })
     }
 }
