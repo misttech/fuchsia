@@ -9,6 +9,7 @@
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,40 @@ opener.addheaders = [("user-agent", "fuchsia-rust-3p-outdated")]
 request.install_opener(opener)
 
 
+def parse_semver(
+    version_str: str,
+) -> Tuple[int, int, int, bool, Tuple[Tuple[int, str], ...]]:
+    # Try to match major.minor.patch optional pre-release/build strings if available
+    # This is the conventional semantic version format for almost all crates on crates.io.
+    # If no match is found, treat it as a 0.0.0 version.
+    match = re.match(
+        r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$",
+        version_str,
+    )
+    if not match:
+        return (0, 0, 0, False, ())
+
+    major, minor, patch, prerelease, build = match.groups()
+    major = int(major)
+    minor = int(minor)
+    patch = int(patch)
+
+    # Prepare for semantic sorting in fetch_crate_versions()
+    # Prerelease versions are older than release versions.
+    # False < True, so release versions sort higher.
+    is_release = prerelease is None
+
+    pre_parts = []
+    if prerelease:
+        for part in prerelease.split("."):
+            if part.isdigit():
+                pre_parts.append((0, int(part)))
+            else:
+                pre_parts.append((1, part))
+
+    return (major, minor, patch, is_release, tuple(pre_parts))
+
+
 def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
     cache_path = cache_dir / crate
     if not cache_path.exists():
@@ -44,10 +79,13 @@ def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
             return []
     with open(cache_path) as f:
         data = json.load(f)
-    return [
+    versions = [
         (v["num"], datetime.fromisoformat(v["created_at"]))
         for v in data["versions"]
     ]
+    # Sort semantically with newest crates first
+    versions.sort(key=lambda x: parse_semver(x[0]), reverse=True)
+    return versions
 
 
 def process_crate(
