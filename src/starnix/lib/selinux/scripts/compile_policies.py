@@ -351,6 +351,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/fs_test.conf",
+        ],
+        "fs_test_policy",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/userspace_initial_context.conf",
         ],
         "userspace_initial_context_policy",

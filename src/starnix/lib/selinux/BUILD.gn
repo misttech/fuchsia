@@ -37,6 +37,7 @@ rustc_library("selinux") {
   inputs = [
     "testdata/composite_policies/compiled/allow_fork_policy",
     "testdata/composite_policies/compiled/class_defaults_policy",
+    "testdata/composite_policies/compiled/fs_test_policy",
     "testdata/composite_policies/compiled/genfscon_policy",
     "testdata/composite_policies/compiled/handle_unknown_policy-allow",
     "testdata/composite_policies/compiled/handle_unknown_policy-deny",

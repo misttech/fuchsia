@@ -2029,6 +2029,8 @@ impl FileObject {
             return error!(ENOENT);
         }
 
+        security::file_permission(current_task, self, security::PermissionFlags::READ)?;
+
         self.ops().readdir(locked, self, current_task, sink)?;
         self.update_atime();
         self.notify(InotifyMask::ACCESS);
