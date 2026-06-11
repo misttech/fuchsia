@@ -12,10 +12,11 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::run_state::RunState;
 use crate::task::tracing::KoidPair;
 use crate::task::{
-    AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
-    NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState, SchedulingPolicy,
-    SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState, ThreadGroup,
-    ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
+    AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
+    EventHandler, Kernel, NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState,
+    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
+    ThreadGroup, ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
+    ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsString};
 use atomic_bitflags::atomic_bitflags;
@@ -824,16 +825,50 @@ impl TaskPersistentInfoState {
         CredentialsReadGuard { _lock: lock, creds: self.creds.read() }
     }
 
-    /// Locks the credentials for writing.
-    /// SAFETY: Only use from CurrentTask, and keep the subjective credentials stored in CurrentTask
-    /// in sync.
-    pub(in crate::task) unsafe fn write_creds(&self) -> CredentialsWriteGuard<'_> {
-        let lock = self.creds_lock.write();
-        CredentialsWriteGuard { _lock: lock, creds: &self.creds }
+    /// Locks the credentials for writing, returning a guard that the `CurrentTask` can use to
+    /// update both the objective `Task` credentials, and its own subjective cached copy.
+    pub(in crate::task) fn write_current_task_creds(
+        self: &Arc<Self>,
+    ) -> CurrentTaskCredentialsWriteGuard {
+        let persistent_info = self.clone();
+        // SAFETY: `creds_lock` remains live via the `persistent_info` reference to `Self`.
+        let lock = unsafe {
+            let raw_lock = self.creds_lock.write();
+            std::mem::transmute::<RwLockWriteGuard<'_, ()>, RwLockWriteGuard<'static, ()>>(raw_lock)
+        };
+        CurrentTaskCredentialsWriteGuard { _lock: lock, persistent_info }
     }
 }
 
 pub type TaskPersistentInfo = Arc<TaskPersistentInfoState>;
+
+pub struct CurrentTaskCredentialsWriteGuard {
+    // Drop order is critical: the lock must be dropped BEFORE the persistent_info Arc.
+    // Rust drops fields in declaration order (top-to-bottom).
+    // So _lock is dropped first, then persistent_info.
+    _lock: RwLockWriteGuard<'static, ()>,
+    pub persistent_info: TaskPersistentInfo,
+}
+
+impl CurrentTaskCredentialsWriteGuard {
+    pub fn update(self, current_task: &CurrentTask, creds: Arc<Credentials>) {
+        self.persistent_info.creds.update(creds.clone());
+        *current_task.current_creds.borrow_mut() = CurrentCreds::Cached(creds);
+
+        // The /proc/pid directory's ownership is updated when the task's euid
+        // or egid changes. See proc(5).
+        let maybe_node = current_task.running_state().proc_pid_directory_cache.cloned();
+        if let Some(node) = maybe_node {
+            let creds = current_task.real_creds().euid_as_fscred();
+            // SAFETY: The /proc/pid directory held by `proc_pid_directory_cache` represents the
+            // current task. It's owner and group are supposed to track the current task's euid and
+            // egid.
+            unsafe {
+                node.force_chown(creds);
+            }
+        }
+    }
+}
 
 /// A unit of execution.
 ///

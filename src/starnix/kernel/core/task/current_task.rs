@@ -11,9 +11,9 @@ use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
-    ExitStatus, PageFaultExceptionReport, RobustListHeadPtr, RunState, SeccompFilter,
-    SeccompFilterContainer, SeccompNotifierHandle, SeccompState, SeccompStateValue, Task,
-    TaskFlags, TaskRunningState, ThreadState, Waiter,
+    CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
+    RunState, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle, SeccompState,
+    SeccompStateValue, Task, TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
@@ -323,31 +323,19 @@ impl CurrentTask {
         Arc::downgrade(&self.task)
     }
 
+    /// Locks the `CurrentTask`'s credentials for writing, allowing readers to coordinate by using
+    /// `Task::lock_creds()` where necessary.  e.g. This is used to avoid ptrace attachment racing
+    /// with critical security checks affecting the task's `Credentials` during `exec()`.
+    pub fn write_creds(&self) -> CurrentTaskCredentialsWriteGuard {
+        assert!(!self.has_overridden_creds());
+        self.persistent_info.write_current_task_creds()
+    }
+
     /// Change the current and real creds of the task. This is invalid to call while temporary
     /// credentials are present.
     pub fn set_creds(&self, creds: Credentials) {
-        assert!(!self.has_overridden_creds());
-
         let creds = Arc::new(creds);
-        let mut current_creds = self.current_creds.borrow_mut();
-        *current_creds = CurrentCreds::Cached(creds.clone());
-
-        // SAFETY: this is allowed because we are the CurrentTask.
-        unsafe {
-            self.persistent_info.write_creds().update(creds);
-        }
-        // The /proc/pid directory's ownership is updated when the task's euid
-        // or egid changes. See proc(5).
-        let maybe_node = self.running_state().proc_pid_directory_cache.cloned();
-        if let Some(node) = maybe_node {
-            let creds = self.real_creds().euid_as_fscred();
-            // SAFETY: The /proc/pid directory held by `proc_pid_directory_cache` represents the
-            // current task. It's owner and group are supposed to track the current task's euid and
-            // egid.
-            unsafe {
-                node.force_chown(creds);
-            }
-        }
+        self.write_creds().update(self, creds);
     }
 
     #[inline(always)]
@@ -1154,8 +1142,7 @@ impl CurrentTask {
 
             // TODO(https://fxbug.dev/433463756): Figure out whether this is the right place to
             // take the lock.
-            // SAFETY: this is allowed because we are the CurrentTask.
-            let mut writable_creds = unsafe { self.persistent_info.write_creds() };
+            let writable_creds = self.write_creds();
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
 
@@ -1182,8 +1169,7 @@ impl CurrentTask {
             security::bprm_committing_creds(locked, self, &resolved_elf)?;
 
             let new_creds = Arc::new(resolved_elf.creds.clone());
-            writable_creds.update(new_creds.clone());
-            *self.current_creds.borrow_mut() = CurrentCreds::Cached(new_creds);
+            writable_creds.update(self, new_creds);
         }
 
         let start_info = load_executable(self, resolved_elf, &path)?;
