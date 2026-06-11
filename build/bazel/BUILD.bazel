@@ -36,10 +36,7 @@ string_flag(
     visibility = [
         "//build/bazel/rules/fidl:__subpackages__",
         "//build/bazel/rules/idk/private:__subpackages__",
-        "//sdk/lib/async:__subpackages__",
-        "//sdk/lib/fdio:__subpackages__",
-        "//sdk/lib/fidl:__subpackages__",
-        "//sdk/lib/zxio:__subpackages__",
+        "//build/bazel/toolchains:__subpackages__",
     ],
 )
 

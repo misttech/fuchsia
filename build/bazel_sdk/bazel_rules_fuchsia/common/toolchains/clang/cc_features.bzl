@@ -505,6 +505,30 @@ def get_default_compile_flags_feature(
         ],
     )
 
+def get_fuchsia_api_level_feature(api_level):
+    """Creates a feature that adds the target Fuchsia API level flag.
+
+    Args:
+       api_level: The integer representation of the target Fuchsia API level.
+
+    Returns:
+       A feature() object.
+    """
+    return feature(
+        name = "fuchsia_api_level",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = _all_compile_actions,
+                flag_groups = [
+                    flag_group(
+                        flags = ["-ffuchsia-api-level={}".format(api_level)],
+                    ),
+                ],
+            ),
+        ],
+    )
+
 action_names = struct(
     all_actions = _all_actions,
     all_compile_actions = _all_compile_actions,

@@ -57,6 +57,7 @@ def _cc_toolchain_config_impl(ctx):
         ctx.label.repo_name,
         to_fuchsia_os_name(ctx.attr.target_os),
         to_fuchsia_cpu_name(target_cpu),
+        fuchsia_api_level = None,  # The SDK handles the Clang API level in `fuchsia_transition`.
         sysroot = sysroot,
     )
 

@@ -15,18 +15,29 @@ load(
 )
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
-load("//common:toolchains/clang/cc_features.bzl", "action_names", "get_default_compile_flags_feature")
+load(
+    "//common:toolchains/clang/cc_features.bzl",
+    "action_names",
+    "get_default_compile_flags_feature",
+    "get_fuchsia_api_level_feature",
+)
 load(
     "//common:toolchains/clang/clang_utils.bzl",
     "format_labels_list_to_target_tag_native_glob_select",
     "to_clang_target_tuple",
 )
-load("//common:toolchains/clang/providers.bzl", "ClangInfo")
+load("//common:toolchains/clang/providers.bzl", "ClangInfo", "FuchsiaApiLevelInfo")
 load("//common:toolchains/clang/sanitizer.bzl", "sanitizer_features")
 load("//common/platforms:utils.bzl", "to_fuchsia_cpu_name", "to_fuchsia_os_name")
 
 # buildifier: disable=unused-variable
-def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot = ""):
+def compute_clang_features(
+        clang_info,
+        repo_name,
+        target_os,
+        target_cpu,
+        fuchsia_api_level,
+        sysroot = ""):
     """Compute list of C++ toolchain features required by Clang.
 
     Args:
@@ -34,6 +45,7 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
       repo_name: The canonical name of the toolchain repository.
       target_os: Target OS, following Fuchsia conventions.
       target_cpu: Target CPU, following Fuchsia conventions.
+      fuchsia_api_level: Optional target Fuchsia API level.
       sysroot: Optional path to sysroot.
 
     Returns:
@@ -334,6 +346,17 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
             ),
         )
 
+    if fuchsia_api_level:
+        if not is_fuchsia:
+            fail('`fuchsia_api_level` is only supported when `target_os` is "fuchsia".')
+        features.append(
+            get_fuchsia_api_level_feature(fuchsia_api_level),
+        )
+    else:
+        # This function is used by the SDK, which does not provide the API level this way.
+        # Thus, the parameter is not required when `is_fuchsia`.
+        pass
+
     # TODO(https://fxbug.dev/356347441): Remove this once Bazel has been fixed.
     #
     # Adding this hard-coded feature to a C++ toolchain disables .d file processing.
@@ -482,12 +505,26 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
     else:
         sysroot_path = ctx.attr.sysroot_path
 
+    # Perform Fuchsia platform-specific checks here since `compute_clang_features()` is also used
+    # by the SDK and thus has more relaxed checks.
+    if ctx.attr.fuchsia_api_level:
+        if ctx.attr.target_os != "fuchsia":
+            # It is possible this will need to be permitted in the future.
+            # See https://fxbug.dev/42086088.
+            fail('`fuchsia_api_level` is only supported when `target_os` is "fuchsia".')
+        fuchsia_api_level = ctx.attr.fuchsia_api_level[FuchsiaApiLevelInfo].level
+    else:
+        if ctx.attr.target_os == "fuchsia":
+            fail('`fuchsia_api_level` is required when `target_os` is "fuchsia".')
+        fuchsia_api_level = None
+
     # TODO(digit): Change features list based on build variants
     features = compute_clang_features(
         clang_info,
         ctx.attr.toolchain_repo_name,
         to_fuchsia_os_name(ctx.attr.target_os),
         to_fuchsia_cpu_name(ctx.attr.target_arch),
+        fuchsia_api_level = fuchsia_api_level,
         sysroot = sysroot_path,
     )
 
@@ -527,6 +564,10 @@ _prebuilt_clang_cc_toolchain_config = rule(
             providers = [ClangInfo],
         ),
         "toolchain_repo_name": attr.string(mandatory = True),
+        "fuchsia_api_level": attr.label(
+            default = None,
+            providers = [FuchsiaApiLevelInfo],
+        ),
     },
 )
 
@@ -541,7 +582,8 @@ def generate_clang_cc_toolchain(
         sysroot_library_files = [],
         sysroot_path = "",
         sysroot_label = None,
-        extra_target_compatible_with = []):
+        extra_target_compatible_with = [],
+        fuchsia_api_level = None):
     """Define C++ toolchain related targets for a prebuilt Clang installation.
 
     This defines cc_toolchain(), cc_toolchain_config() and toolchain() targets
@@ -580,6 +622,9 @@ def generate_clang_cc_toolchain(
 
        extra_target_compatible_with: (optional) A list of extra target
            constraint values for the toolchain() target definition.
+
+       fuchsia_api_level: (optional) Label to the target API level build setting.
+           Must be set if and only if `target_os` is "fuchsia".
     """
     _prebuilt_clang_cc_toolchain_config(
         name = name + "_cc_toolchain_config",
@@ -591,6 +636,7 @@ def generate_clang_cc_toolchain(
         sysroot_label = sysroot_label,
         clang_info = clang_info,
         toolchain_repo_name = native.repo_name(),
+        fuchsia_api_level = fuchsia_api_level,
     )
 
     common_compiler_files = [

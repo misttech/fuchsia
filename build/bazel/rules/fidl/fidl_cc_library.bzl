@@ -406,9 +406,6 @@ def _fidl_cc_library(
             target_compatible_with = target_compatible_with,
             testonly = testonly,
             visibility = visibility,
-            copts = [
-                "-ffuchsia-api-level=4293918720",
-            ],
         )
 
 def _generate_fidl_cc_bindings_impl(ctx):

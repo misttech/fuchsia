@@ -6,7 +6,11 @@
 
 # Only toolchains should need to use the API level as an integer.
 visibility([
-    "//build/bazel/...",
+    "//build/bazel/rules/idk/...",
+    "//build/bazel/rules/packages/...",
+    "//build/bazel/toolchains/...",
+
+    # TODO(https://fxbug.dev/521882370): Remove uses of `fuchsia_api_level_copts()` and delete.
     "//sdk/lib/...",
     "//src/connectivity/network/netstack/udp_serde/...",
     "//zircon/system/ulib/zx/...",
@@ -47,9 +51,7 @@ def get_integer_for_api_level(api_level):
 
         return api_level_integer
 
+# TODO(https://fxbug.dev/521882370): Remove uses and delete.
 def fuchsia_api_level_copts():
-    """Returns copts to specify the API level. This is overwritten in the per-API-level IDK transition."""
-    return select({
-        "@//build/bazel:is_api_level_PLATFORM": ["-ffuchsia-api-level=%d" % get_integer_for_api_level("PLATFORM")],
-        "//conditions:default": [],
-    })
+    """Obsolete. Do not use."""
+    return []

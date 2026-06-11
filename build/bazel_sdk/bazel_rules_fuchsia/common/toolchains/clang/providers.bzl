@@ -14,3 +14,12 @@ ClangInfo = provider(
         "fuchsia_host_os": "Host os name using Fuchsia conventions.",
     },
 )
+
+FuchsiaApiLevelInfo = provider(
+    doc = "Exposes the Fuchsia API level as an integer. " +
+          "Used to abstract the mechanism used to obtain the API level " +
+          "in code used by the SDK and platform.",
+    fields = {
+        "level": "The integer representation of the target API level.",
+    },
+)

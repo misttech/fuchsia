@@ -4,7 +4,6 @@
 
 """Helper rules for the tests in this package."""
 
-load("//build/bazel:fuchsia_api_level.bzl", "get_integer_for_api_level")
 load(
     "//build/bazel/rules:stamp_group.bzl",
     "STAMP_GROUP_NON_DEPS_ATTRS",
@@ -13,37 +12,8 @@ load(
 
 visibility(["//build/bazel/bazel_idk/tests/..."])
 
-def _apply_clang_platform_api_level_impl(settings, _attr):
-    _platform_api_level_clang_switch = "-ffuchsia-api-level"
-    _platform_api_level_copt = "%s=%s" % (_platform_api_level_clang_switch, get_integer_for_api_level("PLATFORM"))
-
-    copt = list(settings["//command_line_option:copt"])
-
-    # An existing flag for an API level other than "PLATFORM" is unexpected.
-    for entry in copt:
-        if entry.startswith(_platform_api_level_clang_switch + "="):
-            if entry != _platform_api_level_copt:
-                fail("Non-PLATFORM API level already set. The tests are probably being run in an unexpected configuration.")
-
-    # Avoid adding the same flag twice, which would create a different Bazel config.
-    # This allows, for example, specifying the API level on the Bazel command line.
-    if _platform_api_level_copt not in copt:
-        copt.append(_platform_api_level_copt)
-
-    return {"//command_line_option:copt": copt}
-
-# Adds an entry to the `copt` build setting that defines Clang's Fuchsia
-# API level as "PLATFORM".
-_apply_clang_platform_api_level = transition(
-    implementation = _apply_clang_platform_api_level_impl,
-    inputs = ["//command_line_option:copt"],
-    outputs = [
-        "//command_line_option:copt",
-    ],
-)
-
-# TODO(https://fxbug.dev/443766378): Remove this rule once the API level is
-# defined by default.
+# TODO(https://fxbug.dev/521882370): Remove this rule now that the API level
+# is handled by the toolchain.
 build_with_platform_api_level = rule(
     doc = """Builds `deps` with the Fuchsia API level set to "PLATFORM".
     Currently, only C/C++ targets will have the API level set.
@@ -56,7 +26,6 @@ build_with_platform_api_level = rule(
         "deps": attr.label_list(
             doc = "List of Labels to build at the 'PLATFORM' API level.",
             mandatory = True,
-            cfg = _apply_clang_platform_api_level,
         ),
     } | STAMP_GROUP_NON_DEPS_ATTRS,
 )
