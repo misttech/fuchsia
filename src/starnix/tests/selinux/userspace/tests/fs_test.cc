@@ -55,4 +55,28 @@ TEST(FsTest, ReaddirDenied) {
   }));
 }
 
+constexpr char kFallocateFileLabel[] = "test_u:object_r:test_fs_fallocate_file_t:s0";
+
+// Verify that fallocate succeeds for a domain with write permission.
+TEST(FsTest, FallocateAllowed) {
+  auto test_file = ScopedTempFDWithLabel(kFallocateFileLabel);
+  ASSERT_TRUE(test_file.is_valid());
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_t:s0", [&]() {
+    EXPECT_THAT(fallocate(test_file.fd(), 0, 0, 1024), SyscallSucceeds());
+  }));
+}
+
+// Verify that fallocate fails for a domain without write permission.
+TEST(FsTest, FallocateDenied) {
+  auto test_file = ScopedTempFDWithLabel(kFallocateFileLabel);
+  ASSERT_TRUE(test_file.is_valid());
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_write_t:s0", [&]() {
+    EXPECT_THAT(fallocate(test_file.fd(), 0, 0, 1024), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 }  // namespace

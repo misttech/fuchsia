@@ -2118,6 +2118,8 @@ impl FileObject {
             return error!(EBADF);
         }
 
+        security::file_permission(current_task, self, security::PermissionFlags::WRITE)?;
+
         self.node().fallocate(locked, current_task, mode, offset, length)?;
         self.notify(InotifyMask::MODIFY);
         Ok(())

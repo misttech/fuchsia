@@ -402,6 +402,12 @@
             ]
         },
         {
+            "name": "FsTest.FallocateDenied",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_MdJDk7\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_fs_no_write_t:s0 tcontext=test_u:object_r:test_fs_fallocate_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "FsTest.ReaddirDenied",
             "audit_expectations": [
                 "avc:  denied  { read } for path=\"/tmp/testdir8oEUw5\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_fs_no_read_t:s0 tcontext=test_u:object_r:test_fs_readdir_dir_t:s0 tclass=dir permissive=0"
