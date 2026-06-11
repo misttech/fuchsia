@@ -4,6 +4,7 @@
 
 use crate::ledger_view::*;
 use anyhow::{Result, anyhow};
+use serde::Serialize;
 use std::io::Write;
 
 const DEFAULT_OUTCOME_VALUE: LedgerOutcome = LedgerOutcome::Success;
@@ -20,17 +21,22 @@ pub trait LedgerNodeOp {
     fn make_all(&self, display_mode: LedgerViewMode) -> Vec<LedgerViewNode>;
 }
 
+#[derive(Serialize, Clone)]
 pub struct LedgerNodeValue {
     data: String,
     outcome: LedgerOutcome,
     mode: LedgerMode,
 }
 
+#[derive(Serialize, Clone)]
 pub struct LedgerNode {
     value: LedgerNodeValue,
     children: Vec<LedgerNode>,
+    #[serde(skip)]
     is_closed: bool,
+    #[serde(skip)]
     outcome_fold_function: OutcomeFoldFunction,
+    #[serde(skip)]
     outcome_default_value: LedgerOutcome,
 }
 
@@ -222,7 +228,8 @@ impl LedgerNodeOp for LedgerNode {
     }
 }
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Serialize, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum LedgerOutcome {
     ValidRangeStart,
     Success,
@@ -245,13 +252,15 @@ impl LedgerOutcome {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum OutcomeFoldFunction {
     SuccessToFailure,
     FailureToSuccess,
 }
 
 // Mode type for nodes.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Serialize, Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum LedgerMode {
     Normal,
     Verbose,
@@ -289,6 +298,14 @@ impl<W: Write> DoctorLedger<W> {
             ledger_view: view,
             ledger_mode: mode,
         }
+    }
+
+    pub fn root_node(&self) -> &LedgerNode {
+        &self.root_node
+    }
+
+    pub fn into_root_node(self) -> LedgerNode {
+        self.root_node
     }
 
     pub fn add(&mut self, node: LedgerNode) -> Result<usize> {

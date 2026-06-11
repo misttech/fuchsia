@@ -45,6 +45,7 @@ ffx_plugin("ffx_doctor") {
     "//third_party/rust_crates:mockall",
     "//third_party/rust_crates:nix",
     "//third_party/rust_crates:regex",
+    "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:termion",
     "//third_party/rust_crates:thiserror",

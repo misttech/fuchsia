@@ -20,7 +20,7 @@ use ffx_ssh::{SshKeyErrorKind, SshKeyFiles};
 use ffx_target::{TargetInfoQuery, get_target_specifier};
 use ffx_target_show::ShowTool;
 use ffx_target_show_args::TargetShow;
-use ffx_writer::{SimpleWriter, VerifiedMachineWriter};
+use ffx_writer::{MachineWriter, ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, FhoEnvironment};
 use fidl::endpoints::create_proxy;
 use fidl::prelude::*;
@@ -53,6 +53,11 @@ const DOCTOR_OUTPUT_FILENAME: &str = "doctor_output.txt";
 const PLATFORM_INFO_FILENAME: &str = "platform.json";
 const USER_CONFIG_FILENAME: &str = "user_config.txt";
 const RECORD_CONFIG_SETTING: &str = "doctor.record_config";
+
+#[derive(serde::Serialize)]
+pub struct DoctorResult {
+    pub steps: LedgerNode,
+}
 
 #[derive(Debug, PartialEq)]
 enum StepType {
@@ -276,28 +281,54 @@ fho::embedded_plugin!(DoctorTool);
 
 #[async_trait(?Send)]
 impl FfxMain for DoctorTool {
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<DoctorResult>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         // TODO(b/373720502): This is passing a `Some(self.show_tool)` to make it simpler not to
         // have to update existing tests that take in a dozen arguments. The proper approach for
         // this is to refactor `ffx doctor` to make testing things like this less cumbersome.
         // TODO(b/373723080): Add actual tests for the usage of `ffx target show` within `ffx
         // doctor`.
-        Box::pin(doctor_cmd_impl(self.context, self.cmd, Some(self.show_tool), stdout())).await?;
+        // This duplication avoids dynamic dispatch overhead from generic Write arguments
+        // (std::io::Sink vs std::io::Stdout), which would result in different types.
+        if writer.is_machine() {
+            let ledger = Box::pin(doctor_cmd_impl(
+                self.context,
+                self.cmd,
+                Some(self.show_tool),
+                std::io::sink(),
+                std::io::sink(),
+            ))
+            .await?;
+            writer.machine(&DoctorResult { steps: ledger.into_root_node() })?;
+        } else {
+            Box::pin(doctor_cmd_impl(
+                self.context,
+                self.cmd,
+                Some(self.show_tool),
+                stdout(),
+                stdout(),
+            ))
+            .await?;
+        }
         Ok(())
     }
 }
 
-pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
+pub async fn doctor_cmd_impl<
+    StepWriter: Write + Send + Sync + 'static,
+    LedgerWriter: Write + Send + Sync + 'static,
+>(
     context: EnvironmentContext,
 
     mut cmd: DoctorCommand,
     show_tool: Option<ShowToolWrapper>,
-    mut writer: W,
-) -> Result<()> {
+    step_writer: StepWriter,
+    ledger_writer: LedgerWriter,
+) -> Result<DoctorLedger<LedgerWriter>> {
+    let mut writer: Box<dyn Write + Send + Sync + 'static> = Box::new(step_writer);
     let gchecker = gcheck::DefaultGChecker;
     let node = overnet_core::Router::new(None)
         .with_context(|| ffx_error!("Could not initialize Overnet"))?;
@@ -392,7 +423,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     }
 
     let recorder = Arc::new(Mutex::new(DoctorRecorder::new()));
-    let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), Box::new(writer));
+    let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), writer);
     let target_spec =
         get_target_specifier(&context).map_err(|e| format!("{:?}", e).replace("\n", ""));
 
@@ -401,11 +432,8 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
         true => LedgerViewMode::Verbose,
         false => LedgerViewMode::Normal,
     };
-    let mut ledger = DoctorLedger::<std::io::Stdout>::new(
-        stdout(),
-        Box::new(VisualLedgerView::new()),
-        ledger_mode,
-    );
+    let mut ledger =
+        DoctorLedger::new(ledger_writer, Box::new(VisualLedgerView::new()), ledger_mode);
     let usb_driver_finder = CommandUsbDriverFinder {};
 
     doctor(
@@ -444,7 +472,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
         _ => {}
     }
 
-    Ok(())
+    Ok(ledger)
 }
 
 fn get_kernel_name() -> Result<String> {
