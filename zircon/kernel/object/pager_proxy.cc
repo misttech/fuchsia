@@ -457,11 +457,16 @@ void PagerProxy::Dump(uint depth, uint32_t max_items) {
                page_source_closed_, (pager_ == nullptr), packet_busy_, complete_pending_);
 
   if (active_request_) {
-    printer.Emit("  active %s request on pager port [0x%lx, 0x%lx) (port koid 0x%lx)",
-                 PageRequestTypeToString(GetRequestType(active_request_)),
-                 GetRequestOffset(active_request_),
-                 GetRequestOffset(active_request_) + GetRequestLen(active_request_),
-                 port_.get()->get_koid());
+    if (active_request_ != &complete_request_) {
+      printer.Emit("  active %s request on pager port [0x%lx, 0x%lx) (port koid 0x%lx)",
+                   PageRequestTypeToString(GetRequestType(active_request_)),
+                   GetRequestOffset(active_request_),
+                   GetRequestOffset(active_request_) + GetRequestLen(active_request_),
+                   port_.get()->get_koid());
+    } else {
+      printer.Emit("  active COMPLETE request on pager port (port koid 0x%lx)",
+                   port_.get()->get_koid());
+    }
   } else {
     printer.Emit("  no active request on pager port");
   }
@@ -473,9 +478,13 @@ void PagerProxy::Dump(uint depth, uint32_t max_items) {
 
   printer.BeginList(max_items);
   for (auto& req : pending_requests_) {
-    printer.Emit("  pending %s req to queue on pager port [0x%lx, 0x%lx)",
-                 PageRequestTypeToString(GetRequestType(&req)), GetRequestOffset(&req),
-                 GetRequestOffset(&req) + GetRequestLen(&req));
+    if (&req != &complete_request_) {
+      printer.Emit("  pending %s req to queue on pager port [0x%lx, 0x%lx)",
+                   PageRequestTypeToString(GetRequestType(&req)), GetRequestOffset(&req),
+                   GetRequestOffset(&req) + GetRequestLen(&req));
+    } else {
+      printer.Emit("  pending COMPLETE request to queue on pager port");
+    }
   }
   printer.EndList();
 }
