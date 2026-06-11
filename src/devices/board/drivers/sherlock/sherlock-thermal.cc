@@ -72,14 +72,14 @@ const std::vector<fpbus::Mmio> thermal_mmios_ddr{
 
 const std::vector<fpbus::Irq> thermal_irqs_pll{
     {{
-        .irq = T931_TS_PLL_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_TS_PLL_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };
 
 const std::vector<fpbus::Irq> thermal_irqs_ddr{
     {{
-        .irq = T931_TS_DDR_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_TS_DDR_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

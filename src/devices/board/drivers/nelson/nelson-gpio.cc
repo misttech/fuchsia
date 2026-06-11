@@ -48,35 +48,35 @@ const std::vector<fpbus::Mmio> kGpioMmios{
 
 const std::vector<fpbus::Irq> kGpioIrqs{
     {{
-        .irq = S905D3_GPIO_IRQ_0,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_0),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_1,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_1),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_2,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_2),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_3,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_3),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_4,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_4),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_5,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_5),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_6,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_6),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
     {{
-        .irq = S905D3_GPIO_IRQ_7,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_GPIO_IRQ_7),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
 };

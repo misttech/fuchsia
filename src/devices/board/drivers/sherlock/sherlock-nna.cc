@@ -53,7 +53,7 @@ static const std::vector<fpbus::Bti> nna_btis{
 
 static const std::vector<fpbus::Irq> nna_irqs{
     {{
-        .irq = T931_NNA_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_NNA_IRQ),
         .mode = fpbus::ZirconInterruptMode::kLevelHigh,
     }},
 };

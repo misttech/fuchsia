@@ -241,12 +241,12 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
   }
 
   fpbus::Irq irq = {{
-      .irq = interrupt.irq(),
+      .irq = fpbus::IrqSpec::WithIrq(interrupt.irq()),
       .mode = *mode,
       .name = std::move(interrupt_name),
       .wake_vector = false,
   }};
-  fdf::debug("IRQ {:#x} named '{}' with mode {:#x} added to node '{}'.", *irq.irq(),
+  fdf::debug("IRQ {:#x} named '{}' with mode {:#x} added to node '{}'.", irq.irq()->irq().value(),
              irq.name().value_or("(no name)"), static_cast<uint32_t>(*irq.mode()), node_name);
 
   return zx::ok(irq);

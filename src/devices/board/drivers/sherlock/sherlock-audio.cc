@@ -131,13 +131,13 @@ zx_status_t Sherlock::AudioInit() {
   };
   static const std::vector<fpbus::Irq> frddr_b_irqs{
       {{
-          .irq = T931_AUDIO_FRDDR_B,
+          .irq = fpbus::IrqSpec::WithIrq(T931_AUDIO_FRDDR_B),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };
   static const std::vector<fpbus::Irq> toddr_b_irqs{
       {{
-          .irq = T931_AUDIO_TODDR_B,
+          .irq = fpbus::IrqSpec::WithIrq(T931_AUDIO_TODDR_B),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };

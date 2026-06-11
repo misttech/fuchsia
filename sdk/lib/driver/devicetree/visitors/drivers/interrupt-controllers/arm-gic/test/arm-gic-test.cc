@@ -54,8 +54,12 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty1) {
   auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ1_SPI) + 32, *(*irq)[0].irq());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ2_PPI) + 16, *(*irq)[1].irq());
+  ASSERT_TRUE((*irq)[0].irq().has_value());
+  ASSERT_TRUE((*irq)[0].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ1_SPI) + 32, (*irq)[0].irq()->irq().value());
+  ASSERT_TRUE((*irq)[1].irq().has_value());
+  ASSERT_TRUE((*irq)[1].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ2_PPI) + 16, (*irq)[1].irq()->irq().value());
   EXPECT_EQ(static_cast<uint32_t>(IRQ1_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[0].mode()));
   EXPECT_EQ(static_cast<uint32_t>(IRQ2_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[1].mode()));
   ASSERT_TRUE((*irq)[0].name().has_value());
@@ -70,8 +74,12 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty2) {
   auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ3_SPI) + 32, *(*irq)[0].irq());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ4_PPI) + 16, *(*irq)[1].irq());
+  ASSERT_TRUE((*irq)[0].irq().has_value());
+  ASSERT_TRUE((*irq)[0].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ3_SPI) + 32, (*irq)[0].irq()->irq().value());
+  ASSERT_TRUE((*irq)[1].irq().has_value());
+  ASSERT_TRUE((*irq)[1].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ4_PPI) + 16, (*irq)[1].irq()->irq().value());
   EXPECT_EQ(static_cast<uint32_t>(IRQ3_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[0].mode()));
   EXPECT_EQ(static_cast<uint32_t>(IRQ4_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[1].mode()));
   ASSERT_TRUE((*irq)[0].name().has_value());
@@ -86,8 +94,12 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty3) {
   auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ5_SPI) + 32, *(*irq)[0].irq());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ6_SPI) + 32, *(*irq)[1].irq());
+  ASSERT_TRUE((*irq)[0].irq().has_value());
+  ASSERT_TRUE((*irq)[0].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ5_SPI) + 32, (*irq)[0].irq()->irq().value());
+  ASSERT_TRUE((*irq)[1].irq().has_value());
+  ASSERT_TRUE((*irq)[1].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ6_SPI) + 32, (*irq)[1].irq()->irq().value());
   EXPECT_EQ(static_cast<uint32_t>(IRQ5_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[0].mode()));
   EXPECT_EQ(static_cast<uint32_t>(IRQ6_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[1].mode()));
 }
@@ -120,8 +132,12 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty4) {
   auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ7_SPI) + 32, *(*irq)[0].irq());
-  EXPECT_EQ(static_cast<uint32_t>(IRQ8_SPI) + 32, *(*irq)[1].irq());
+  ASSERT_TRUE((*irq)[0].irq().has_value());
+  ASSERT_TRUE((*irq)[0].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ7_SPI) + 32, (*irq)[0].irq()->irq().value());
+  ASSERT_TRUE((*irq)[1].irq().has_value());
+  ASSERT_TRUE((*irq)[1].irq()->irq().has_value());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ8_SPI) + 32, (*irq)[1].irq()->irq().value());
   EXPECT_EQ(static_cast<uint32_t>(IRQ7_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[0].mode()));
   EXPECT_EQ(static_cast<uint32_t>(IRQ8_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[1].mode()));
 }

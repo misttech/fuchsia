@@ -44,7 +44,7 @@ static const std::vector<fpbus::Mmio> raw_nand_mmios{
 
 static const std::vector<fpbus::Irq> raw_nand_irqs{
     {{
-        .irq = S905D2_RAW_NAND_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_RAW_NAND_IRQ),
         .mode = fpbus::ZirconInterruptMode::kDefault,
     }},
 };

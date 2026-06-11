@@ -145,13 +145,13 @@ zx_status_t Nelson::AudioInit() {
 
   static const std::vector<fpbus::Irq> frddr_b_irqs{
       {{
-          .irq = S905D3_AUDIO_FRDDR_B,
+          .irq = fpbus::IrqSpec::WithIrq(S905D3_AUDIO_FRDDR_B),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };
   static const std::vector<fpbus::Irq> toddr_b_irqs{
       {{
-          .irq = S905D3_AUDIO_TODDR_B,
+          .irq = fpbus::IrqSpec::WithIrq(S905D3_AUDIO_TODDR_B),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };

@@ -182,11 +182,15 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   if (unlikely(!IsValid(irq))) {
     return zx::error(ZX_ERR_INTERNAL);
   }
+  const fuchsia_hardware_platform_bus::IrqSpec& irq_spec = irq.irq().value();
+  if (!irq_spec.irq().has_value()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
 
   // If the driver chose "default" for the IRQ mode, use the configuration we have instead.
   const uint32_t cfg_mode = static_cast<uint32_t>(irq.mode().value()) & ZX_INTERRUPT_MODE_MASK;
   const uint32_t drv_mode = flags & ZX_INTERRUPT_MODE_MASK;
-  const auto vector = irq.irq().value();
+  const auto vector = irq_spec.irq().value();
 
   if (drv_mode == ZX_INTERRUPT_MODE_DEFAULT) {
     fdf::info(

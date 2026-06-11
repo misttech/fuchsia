@@ -57,23 +57,23 @@ static const std::vector<fpbus::Bti> astro_video_btis{
 
 static const std::vector<fpbus::Irq> astro_video_irqs{
     {{
-        .irq = S905D2_DEMUX_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_DEMUX_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = S905D2_PARSER_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_PARSER_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = S905D2_DOS_MBOX_0_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_DOS_MBOX_0_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = S905D2_DOS_MBOX_1_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_DOS_MBOX_1_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = S905D2_DOS_MBOX_2_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_DOS_MBOX_2_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

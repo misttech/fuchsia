@@ -51,7 +51,7 @@ static const std::vector<fpbus::Mmio> spi_mmios{
 
 static const std::vector<fpbus::Irq> spi_irqs{
     {{
-        .irq = T931_SPICC0_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_SPICC0_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

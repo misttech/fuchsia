@@ -81,7 +81,7 @@ static const std::vector<fpbus::Mmio> sd_emmc_mmios{
 
 static const std::vector<fpbus::Irq> sd_emmc_irqs{
     {{
-        .irq = T931_SD_EMMC_A_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_SD_EMMC_A_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

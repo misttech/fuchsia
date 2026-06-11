@@ -441,6 +441,9 @@ inline void StringifyPbusNode(const fuchsia_hardware_platform_bus::Node& node,
   if (node.instance_id()) {
     os << "    instance_id = " << *node.instance_id() << "\n";
   }
+  if (node.interrupt_controller_id()) {
+    os << "    interrupt_controller_id = " << *node.interrupt_controller_id() << "\n";
+  }
 
   if (node.mmio() && !node.mmio()->empty()) {
     os << "    mmios {\n";
@@ -464,7 +467,13 @@ inline void StringifyPbusNode(const fuchsia_hardware_platform_bus::Node& node,
     for (const auto& irq : *node.irq()) {
       os << "    irq {\n";
       if (irq.irq()) {
-        os << "      number = " << *irq.irq() << "\n";
+        if (irq.irq()->irq()) {
+          os << "      number = " << irq.irq()->irq().value() << "\n";
+        }
+        if (irq.irq()->userspace_irq()) {
+          os << "      number = " << irq.irq()->userspace_irq()->irq() << "\n";
+          os << "      controller = " << irq.irq()->userspace_irq()->controller_id() << "\n";
+        }
       }
       if (irq.mode()) {
         os << "      mode = " << StringifyIrqMode(*irq.mode()) << "\n";

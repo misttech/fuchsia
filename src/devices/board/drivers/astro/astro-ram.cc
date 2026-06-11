@@ -30,7 +30,7 @@ static const std::vector<fpbus::Bti> astro_ram_ctl_btis{
 
 static const std::vector<fpbus::Irq> astro_ram_ctl_irqs{
     {{
-        .irq = S905D2_DMC_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D2_DMC_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

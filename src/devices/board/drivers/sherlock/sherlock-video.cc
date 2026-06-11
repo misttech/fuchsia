@@ -59,19 +59,19 @@ static const std::vector<fpbus::Bti> sherlock_video_btis{
 
 static const std::vector<fpbus::Irq> sherlock_video_irqs{
     {{
-        .irq = T931_DEMUX_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_DEMUX_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = T931_PARSER_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_PARSER_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = T931_DOS_MBOX_0_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_DOS_MBOX_0_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
     {{
-        .irq = T931_DOS_MBOX_1_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_DOS_MBOX_1_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

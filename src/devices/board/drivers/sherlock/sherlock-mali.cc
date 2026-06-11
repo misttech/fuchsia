@@ -45,15 +45,15 @@ static const std::vector<fpbus::Mmio> mali_mmios{
 
 static const std::vector<fpbus::Irq> mali_irqs{
     {{
-        .irq = T931_MALI_IRQ_PP,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_IRQ_PP),
         .mode = fpbus::ZirconInterruptMode::kLevelHigh,
     }},
     {{
-        .irq = T931_MALI_IRQ_GPMMU,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_IRQ_GPMMU),
         .mode = fpbus::ZirconInterruptMode::kLevelHigh,
     }},
     {{
-        .irq = T931_MALI_IRQ_GP,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_IRQ_GP),
         .mode = fpbus::ZirconInterruptMode::kLevelHigh,
     }},
 };

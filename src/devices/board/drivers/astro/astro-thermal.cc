@@ -51,7 +51,7 @@ zx::result<> CreateThermalPllNode(
 
   static const std::vector<fpbus::Irq> kIrqs{
       {{
-          .irq = S905D2_TS_PLL_IRQ,
+          .irq = fpbus::IrqSpec::WithIrq(S905D2_TS_PLL_IRQ),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };
@@ -127,7 +127,7 @@ zx::result<> CreateThermalDdrNode(
 
   static const std::vector<fpbus::Irq> kIrqs{
       {{
-          .irq = S905D2_TS_DDR_IRQ,
+          .irq = fpbus::IrqSpec::WithIrq(S905D2_TS_DDR_IRQ),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };

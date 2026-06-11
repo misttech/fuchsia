@@ -69,7 +69,7 @@ static const std::vector<fpbus::Mmio> thermal_mmios{
 
 static const std::vector<fpbus::Irq> thermal_irqs{
     {{
-        .irq = S905D3_TS_PLL_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(S905D3_TS_PLL_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

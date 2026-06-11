@@ -158,7 +158,7 @@ zx_status_t Nelson::Spi0Init() {
 
   static const std::vector<fpbus::Irq> spi_0_irqs{
       {{
-          .irq = S905D3_SPICC0_IRQ,
+          .irq = fpbus::IrqSpec::WithIrq(S905D3_SPICC0_IRQ),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };
@@ -256,7 +256,7 @@ zx_status_t Nelson::Spi1Init() {
 
   static const std::vector<fpbus::Irq> spi_1_irqs{
       {{
-          .irq = S905D3_SPICC1_IRQ,
+          .irq = fpbus::IrqSpec::WithIrq(S905D3_SPICC1_IRQ),
           .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
       }},
   };

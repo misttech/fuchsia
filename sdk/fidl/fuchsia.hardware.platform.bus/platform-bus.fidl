@@ -8,6 +8,8 @@ using zx;
 using fuchsia.driver.framework;
 using fuchsia.hardware.power;
 
+alias InterruptControllerId = uint32;
+
 const MAX_INFO_STRING_LENGTH uint32 = 32;
 const MAX_POWER_CONFIGS uint32 = 32;
 
@@ -40,8 +42,24 @@ type Mmio = table {
     3: name string:fuchsia.driver.framework.MAX_RESOURCE_NAME_LENGTH;
 };
 
-type Irq = table {
+type UserspaceIrq = struct {
+    /// The userspace irq number, unique to the interrupt controller driver that provides it.
+    irq uint32;
+
+    /// A unique identifier for the controller that provides this interrupt.
+    controller_id InterruptControllerId;
+};
+
+type IrqSpec = flexible union {
+    /// The irq number of a kernel-provided interrupt.
     1: irq uint32;
+
+    /// The specification for a userspace-provided interrupt.
+    2: userspace_irq UserspaceIrq;
+};
+
+type Irq = table {
+    1: irq IrqSpec;
 
     /// Bit flag for setting the interrupt mode.
     2: mode ZirconInterruptMode;
@@ -148,6 +166,11 @@ type Node = table {
     13: power_config
             vector<fuchsia.hardware.power.PowerElementConfiguration>:MAX_INFO_STRING_LENGTH;
     14: driver_host string:MAX;
+
+    /// The interrupt controller ID, if this node corresponds to an interrupt controller. If
+    /// specified, fuchsia.hardware.interrupt.ControllerRegistry will be served to this node. The
+    /// value must match `UserspaceIrq`s to be provided by this controller.
+    15: interrupt_controller_id InterruptControllerId;
 };
 
 /// This is originally from the Banjo fuchsia.hardware.platform.device library,

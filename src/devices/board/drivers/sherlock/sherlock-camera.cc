@@ -60,7 +60,7 @@ static const std::vector<fpbus::Bti> ge2d_btis{
 // IRQ for GE2D
 static const std::vector<fpbus::Irq> ge2d_irqs{
     {{
-        .irq = T931_MALI_GE2D_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_GE2D_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };
@@ -99,7 +99,7 @@ static const std::vector<fpbus::Bti> gdc_btis{
 // IRQ for ISP
 static const std::vector<fpbus::Irq> gdc_irqs{
     {{
-        .irq = T931_MALI_GDC_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_GDC_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };
@@ -146,7 +146,7 @@ static const std::vector<fpbus::Mmio> isp_mmios{
 // IRQ for ISP
 static const std::vector<fpbus::Irq> isp_irqs{
     {{
-        .irq = T931_MALI_ISP_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MALI_ISP_IRQ),
         .mode = fpbus::ZirconInterruptMode::kLevelHigh,
     }},
 };
@@ -196,7 +196,7 @@ static const std::vector<fpbus::Bti> mipi_btis{
 
 static const std::vector<fpbus::Irq> mipi_irqs{
     {{
-        .irq = T931_MIPI_ADAPTER_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_MIPI_ADAPTER_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };

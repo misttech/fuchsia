@@ -56,7 +56,7 @@ static const std::vector<fpbus::Bti> sherlock_video_enc_btis{
 
 static const std::vector<fpbus::Irq> sherlock_video_enc_irqs{
     {{
-        .irq = T931_DOS_MBOX_2_IRQ,
+        .irq = fpbus::IrqSpec::WithIrq(T931_DOS_MBOX_2_IRQ),
         .mode = fpbus::ZirconInterruptMode::kEdgeHigh,
     }},
 };
