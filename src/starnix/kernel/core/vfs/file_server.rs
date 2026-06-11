@@ -21,7 +21,7 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_types::convert::IntoFidl as _;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{ENOSPC, Errno};
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
@@ -434,23 +434,41 @@ impl StarnixNodeConnection {
                 offset: &'a mut off_t,
             }
             impl<'a> DirentSinkAdapter<'a> {
+                fn is_sealed(&self) -> bool {
+                    matches!(self.sink, Some(directory::dirents_sink::AppendResult::Sealed(_)))
+                }
+
                 fn append(
                     &mut self,
                     entry: &directory::entry::EntryInfo,
                     name: &str,
                 ) -> Result<(), Errno> {
+                    // We must take `self.sink` here because the Fuchsia VFS `Sink::append` method
+                    // (called on the inner sink below) consumes the sink by value.
                     let sink = self.sink.take();
-                    self.sink = match sink {
+                    match sink {
                         s @ Some(directory::dirents_sink::AppendResult::Sealed(_)) => {
                             self.sink = s;
-                            return error!(ENOSPC);
+                            error!(ENOSPC)
                         }
                         Some(directory::dirents_sink::AppendResult::Ok(sink)) => {
-                            Some(sink.append(entry, name))
+                            self.sink = Some(sink.append(entry, name));
+                            if self.is_sealed() {
+                                // The sink is sealed and the entry did not fit.
+                                //
+                                // This function is called by `readdir` to iterate through directory
+                                // entries and stops when all entries have been read or if this
+                                // returns an error. By returning `ENOSPC` here, the `readdir`
+                                // loop will halt before it advances to the next entry. This ensures
+                                // that the entry that failed to fit is not skipped, and will be
+                                // the first one processed when the client resumes reading.
+                                error!(ENOSPC)
+                            } else {
+                                Ok(())
+                            }
                         }
-                        None => return error!(ENOTSUP),
-                    };
-                    Ok(())
+                        None => error!(ENOTSUP),
+                    }
                 }
             }
             impl<'a> DirentSink for DirentSinkAdapter<'a> {
@@ -499,17 +517,30 @@ impl StarnixNodeConnection {
                     sink: Some(directory::dirents_sink::AppendResult::Ok(sink)),
                     offset: &mut *file_offset,
                 };
-                file.readdir(locked, current_task, &mut dirent_sink)?;
+                match file.readdir(locked, current_task, &mut dirent_sink) {
+                    Ok(()) => {}
+                    Err(err) if err == ENOSPC => {
+                        // We caught ENOSPC. We must distinguish between:
+                        // 1. ENOSPC sent when sink is sealed: This is expected when the buffer
+                        //    fills up. We ignore the error and return the partial results.
+                        // 2. A genuine filesystem error (sink is NOT sealed): This is a real
+                        //    failure, so we must propagate it.
+                        if !dirent_sink.is_sealed() {
+                            return Err(err);
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
                 dirent_sink.sink
             };
             let ret = match sink_result {
-                Some(directory::dirents_sink::AppendResult::Sealed(seal)) => {
-                    Ok((directory::traversal_position::TraversalPosition::End, seal))
-                }
-                Some(directory::dirents_sink::AppendResult::Ok(sink)) => Ok((
+                Some(directory::dirents_sink::AppendResult::Sealed(seal)) => Ok((
                     directory::traversal_position::TraversalPosition::Index(*file_offset as u64),
-                    sink.seal(),
+                    seal,
                 )),
+                Some(directory::dirents_sink::AppendResult::Ok(sink)) => {
+                    Ok((directory::traversal_position::TraversalPosition::End, sink.seal()))
+                }
                 None => error!(ENOTSUP),
             };
             file_offset.update();
@@ -1365,6 +1396,178 @@ mod tests {
 
             // This ensures fs cannot be captured in the thread.
             std::mem::drop(ns);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn large_directory_listing() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
+
+            let file = &fs
+                .root()
+                .open_anonymous(locked, current_task, OpenFlags::RDWR)
+                .expect("open_anonymous failed");
+
+            let ns = Namespace::new(fs);
+            let mut expected_files = vec![b".".to_vec()];
+            // Create 500 files. Through trial and error, this number was found to exceed the sink's
+            // buffer capacity.
+            for i in 0..500 {
+                let name = format!("file_{:03}", i);
+                ns.root()
+                    .open_create_node(
+                        locked,
+                        current_task,
+                        name.as_str().into(),
+                        FileMode::from_bits(0o600) | FileMode::IFREG,
+                        DeviceId::NONE,
+                        OpenFlags::empty(),
+                    )
+                    .expect("open_create_node failed");
+                expected_files.push(name.into_bytes());
+            }
+
+            let (root_handle, scope) =
+                serve_file(current_task, file, Credentials::root()).expect("serve_file failed");
+
+            std::thread::spawn(move || {
+                let root_zxio =
+                    Zxio::create(root_handle.into_channel().into()).expect("zxio create failed");
+
+                let expected = expected_files
+                    .iter()
+                    .map(|x| FsString::from(x.clone()))
+                    .collect::<HashSet<_>>();
+                let mut iterator =
+                    root_zxio.create_dirent_iterator().expect("create_dirent_iterator failed");
+                iterator.rewind().expect("rewind failed");
+
+                let mut found = HashSet::new();
+                for res in iterator {
+                    match res {
+                        Ok(dirent) => {
+                            found.insert(dirent.name.clone());
+                        }
+                        Err(status) => {
+                            panic!("Iterator returned error: {:?}", status);
+                        }
+                    }
+                }
+                assert_eq!(found, expected);
+            })
+            .join()
+            .expect("thread join failed");
+            scope.shutdown();
+            scope.wait().await;
+
+            // This ensures fs cannot be captured in the thread.
+            std::mem::drop(ns);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn readdir_propagates_genuine_nospc_error() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            use crate::vfs::{
+                DirEntry, FileOps, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
+                fs_node_impl_dir_readonly,
+            };
+            use crate::{
+                fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
+            };
+            use starnix_sync::FileOpsCore;
+
+            struct FaultyDirectory;
+            impl FileOps for FaultyDirectory {
+                fileops_impl_directory!();
+                fileops_impl_noop_sync!();
+                fileops_impl_unbounded_seek!();
+
+                fn readdir(
+                    &self,
+                    _locked: &mut Locked<FileOpsCore>,
+                    _file: &FileObject,
+                    _current_task: &CurrentTask,
+                    _sink: &mut dyn DirentSink,
+                ) -> Result<(), Errno> {
+                    error!(ENOSPC)
+                }
+            }
+
+            struct FaultyDirectoryNode;
+            impl FsNodeOps for FaultyDirectoryNode {
+                fs_node_impl_dir_readonly!();
+
+                fn create_file_ops(
+                    &self,
+                    _locked: &mut Locked<FileOpsCore>,
+                    _node: &FsNode,
+                    _current_task: &CurrentTask,
+                    _flags: OpenFlags,
+                ) -> Result<Box<dyn FileOps>, Errno> {
+                    Ok(Box::new(FaultyDirectory))
+                }
+
+                fn lookup(
+                    &self,
+                    _locked: &mut Locked<FileOpsCore>,
+                    _node: &FsNode,
+                    _current_task: &CurrentTask,
+                    _name: &FsStr,
+                ) -> Result<FsNodeHandle, Errno> {
+                    error!(ENOENT)
+                }
+            }
+
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
+
+            let ino = fs.allocate_ino();
+            let info = FsNodeInfo::new(
+                FileMode::from_bits(0o777) | FileMode::IFDIR,
+                current_task.current_fscred(),
+            );
+            let node = fs.create_node(ino, FaultyDirectoryNode, info);
+            let dir_entry = DirEntry::new(node, None, "faulty_dir".into());
+            let name = NamespaceNode::new_anonymous(dir_entry);
+            let file = FileObject::new(
+                locked,
+                current_task,
+                Box::new(FaultyDirectory),
+                name,
+                OpenFlags::DIRECTORY | OpenFlags::RDONLY,
+            )
+            .expect("FileObject::new failed");
+
+            let (root_handle, scope) =
+                serve_file(current_task, &file, Credentials::root()).expect("serve_file failed");
+
+            std::thread::spawn(move || {
+                let root_zxio =
+                    Zxio::create(root_handle.into_channel().into()).expect("zxio create failed");
+
+                let mut iterator =
+                    root_zxio.create_dirent_iterator().expect("create_dirent_iterator failed");
+                iterator.rewind().expect("rewind failed");
+
+                let mut got_error = false;
+                for res in iterator {
+                    if let Err(status) = res {
+                        assert_eq!(status, zx::Status::NO_SPACE);
+                        got_error = true;
+                        break;
+                    }
+                }
+                assert!(got_error, "Expected iterator to fail with NO_SPACE");
+            })
+            .join()
+            .expect("thread join failed");
+            scope.shutdown();
+            scope.wait().await;
         })
         .await;
     }
