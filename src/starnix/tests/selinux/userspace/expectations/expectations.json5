@@ -35,10 +35,6 @@
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
 
-                // TODO: https://fxbug.dev/492550768 - Apply filesystem { relabelfrom relabelto }
-                // checks when mounting with fscontext= or context=.
-                "MountTest.FsContextRequiresRelabelFromAndTo",
-
                 // TODO: https://fxbug.dev/334094811 - Reject SELinux mount options before a
                 // policy is loaded.
                 "MountTests/MountOptionValidationTest.RejectedBeforePolicyLoad/*",

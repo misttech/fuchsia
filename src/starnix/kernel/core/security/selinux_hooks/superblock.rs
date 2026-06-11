@@ -57,16 +57,49 @@ where
 
     let mut root_node_to_init = Option::default();
 
-    fs_state.label.get_or_init(|| {
-        // This caller is initializing the file system, so note the root node to be initialized.
-        root_node_to_init = file_system.maybe_root();
-
-        label_from_mount_options_and_name(
+    if fs_state.label.get().is_none() {
+        let requested_label = label_from_mount_options_and_name(
             security_server,
             &fs_state.mount_options,
             file_system.name(),
-        )
-    });
+        );
+
+        let default_label = label_from_mount_options_and_name(
+            security_server,
+            &FileSystemMountOptions::default(),
+            file_system.name(),
+        );
+
+        if requested_label.sid != default_label.sid {
+            let permission_check = super::build_permission_check(current_task, security_server);
+            let source_sid = current_task_state(current_task).current_sid;
+            let audit_context = [current_task.into(), file_system.as_ref().into()];
+
+            check_permission(
+                &permission_check,
+                current_task,
+                source_sid,
+                default_label.sid,
+                FileSystemPermission::RelabelFrom,
+                (&audit_context).into(),
+            )?;
+
+            check_permission(
+                &permission_check,
+                current_task,
+                source_sid,
+                requested_label.sid,
+                FileSystemPermission::RelabelTo,
+                (&audit_context).into(),
+            )?;
+        }
+
+        fs_state.label.get_or_init(|| {
+            // This caller is initializing the file system, so note the root node to be initialized.
+            root_node_to_init = file_system.maybe_root();
+            requested_label
+        });
+    }
 
     let pending_entries = {
         let pending = &mut *file_system.security_state.state.pending_entries.lock();

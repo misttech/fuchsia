@@ -1125,6 +1125,10 @@ class_permission_enum! {
         GetAttr("getattr"),
         /// Permission mount a filesystem.
         Mount("mount"),
+        /// Permission to relabel from this filesystem SID.
+        RelabelFrom("relabelfrom"),
+        /// Permission to relabel to this filesystem SID.
+        RelabelTo("relabelto"),
         /// Permission to remount a filesystem with different flags.
         Remount("remount"),
         /// Permission to unmount a filesystem.
