@@ -71,7 +71,7 @@ rust_library(
     }),
     version = "2.4.2",
     deps = [
-        "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
+        "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
         "//third_party/rust_crates/vendor/jsonway-2.0.0:jsonway",
         "//third_party/rust_crates/vendor/phf-0.7.24:phf",
         "//third_party/rust_crates/vendor/publicsuffix-1.5.6:publicsuffix",

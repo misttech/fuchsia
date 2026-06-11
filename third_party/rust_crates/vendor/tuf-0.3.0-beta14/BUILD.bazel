@@ -77,7 +77,7 @@ rust_library(
     version = "0.3.0-beta14",
     deps = [
         "//third_party/rust_crates/forks/ring-0.17.8:ring",
-        "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
+        "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
         "//third_party/rust_crates/vendor/data-encoding-2.11.0:data_encoding",
         "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
         "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",

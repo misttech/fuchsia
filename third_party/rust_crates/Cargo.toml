@@ -84,7 +84,7 @@ chacha20 = "0.9.1"
 # https://github.com/rust-lang/cargo/issues/4463. Until there's an escape
 # hatch, all we can do is document and shed a silent tear while we wait for the
 # ecosystem to migrate away from time 0.1.
-chrono = { version = "0.4.44", default-features = false }
+chrono = { version = "0.4.45", default-features = false }
 chrono-english = "0.1.8"
 ciborium = { version = "0.2.2", features = ["std"] }
 cipher = "0.4.4"

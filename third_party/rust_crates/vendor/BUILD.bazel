@@ -559,14 +559,14 @@ alias(
 )
 
 alias(
-    name = "chrono-0.4.44",
-    actual = "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
+    name = "chrono-0.4.45",
+    actual = "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
     tags = ["manual"],
 )
 
 alias(
     name = "chrono",
-    actual = "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
+    actual = "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
     tags = ["manual"],
 )
 
