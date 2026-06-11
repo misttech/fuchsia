@@ -78,6 +78,7 @@ fuchsia_driver_component("platform-bus") {
     "//src/devices/bus:drivers",
     "//src/devices/bus/drivers/platform/test/power-integration-test:*",
     "//src/devices/tests/driver-multiname-test:*",
+    "//src/power/battery-manager/tests:*",
     "//src/power/testing/fake-battery:*",
     "//src/starnix/tests/diagnostics/suspend_inspect/testing/suspend_driver_realm_proxy:*",
   ]

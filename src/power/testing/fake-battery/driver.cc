@@ -18,9 +18,18 @@ Driver::Driver() : DriverBase2("fake-battery") {}
 
 zx::result<> Driver::Start(fdf::DriverContext context) {
   protocol_server_battery_ = std::make_unique<BatteryProtocolServer>(dispatcher());
-  protocol_server_battery_->Init(outgoing());
+  zx_status_t status = protocol_server_battery_->Init(outgoing());
+  if (status != ZX_OK) {
+    fdf::error("Failed to init battery protocol server: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
   hardware_battery_server_ = std::make_unique<HardwareBatteryServer>(dispatcher());
-  hardware_battery_server_->Init(outgoing());
+  status = hardware_battery_server_->Init(outgoing());
+  if (status != ZX_OK) {
+    fdf::error("Failed to init hardware battery server: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  fdf::info("Successfully started fake-battery driver components");
   return zx::ok();
 }
 

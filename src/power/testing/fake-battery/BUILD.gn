@@ -30,6 +30,7 @@ source_set("common") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/power/testing/fake-hardware-power-control:test.hardwarepowercontrol_cpp",
   ]
 }
 

@@ -6,6 +6,7 @@
 #define SRC_POWER_TESTING_FAKE_BATTERY_BATTERY_PROTOCOL_SERVER_H_
 
 #include <fidl/fuchsia.power.battery/cpp/fidl.h>
+#include <fidl/test.hardwarepowercontrol/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <zircon/types.h>
 
@@ -36,16 +37,16 @@ class BatteryProtocolServer : public fidl::Server<fuchsia_power_battery::Battery
       .status = fuchsia_power_battery::BatteryStatus::kOk,
       .charge_status = fuchsia_power_battery::ChargeStatus::kCharging,
       .charge_source = fuchsia_power_battery::ChargeSource::kAcAdapter,
-      .level_percent = 98.7,
+      .level_percent = test_hardwarepowercontrol::kDefaultLevelPercent,
       .level_status = fuchsia_power_battery::LevelStatus::kOk,
       .health = fuchsia_power_battery::HealthStatus::kGood,
       .time_remaining =
           fuchsia_power_battery::TimeRemaining::WithFullCharge(zx::sec(59).to_nsecs()),
-      .present_voltage_mv = 4752,
-      .remaining_charge_uah = 382000,
-      .full_capacity_uah = 420000,
-      .temperature_mc = 380,
-      .present_charging_current_ua = 250014,
+      .present_voltage_mv = test_hardwarepowercontrol::kDefaultPresentVoltageMv,
+      .remaining_charge_uah = test_hardwarepowercontrol::kDefaultRemainingChargeUah,
+      .full_capacity_uah = test_hardwarepowercontrol::kDefaultFullCapacityUah,
+      .temperature_mc = test_hardwarepowercontrol::kDefaultTemperatureMc,
+      .present_charging_current_ua = test_hardwarepowercontrol::kDefaultChargingCurrentUa,
   }};
 };
 

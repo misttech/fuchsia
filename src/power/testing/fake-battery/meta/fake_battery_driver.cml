@@ -19,6 +19,7 @@
             service: [
                 "fuchsia.hardware.power.battery.Service",
                 "fuchsia.power.battery.InfoService",
+                "test.hardwarepowercontrol.Service",
             ],
         },
     ],
@@ -27,6 +28,7 @@
             service: [
                 "fuchsia.hardware.power.battery.Service",
                 "fuchsia.power.battery.InfoService",
+                "test.hardwarepowercontrol.Service",
             ],
             from: "self",
         },

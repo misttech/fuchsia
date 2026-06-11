@@ -3,36 +3,51 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/test.gni")
+import("//build/rust/rustc_test.gni")
 
-executable("bin") {
-  output_name = "battery_manager_test_cpp"
-  sources = [ "integration_test.cc" ]
+rustc_test("battery_manager_integration_test") {
+  edition = "2024"
+  source_root = "src/integration_test.rs"
+  sources = [ "src/integration_test.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp_testing",
-    "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/sys/cpp",
-    "//sdk/lib/syslog/cpp",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/loop_fixture",
+    "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_rust",
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+    "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/rust/zx",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-component-test",
+    "//src/lib/test_util",
+    "//src/power/testing/fake-hardware-power-control:test.hardwarepowercontrol_rust",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:test-case",
   ]
-  testonly = true
 }
 
-fuchsia_component("battery_manager_integration_test_component_cpp") {
-  testonly = true
+fuchsia_test_component("battery_manager_integration_test_component") {
   component_name = "battery_manager_integration_test"
   manifest = "meta/battery_manager_test.cml"
-  deps = [ ":bin" ]
+  deps = [ ":battery_manager_integration_test" ]
 }
 
 fuchsia_test_package("battery-manager-integration-tests") {
   package_name = "battery_manager_integration_test"
-  test_components = [ ":battery_manager_integration_test_component_cpp" ]
+  test_components = [ ":battery_manager_integration_test_component" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
     }
   }
-  deps = [ "//src/power/battery-manager:battery_manager" ]
+  deps = [
+    "//src/devices/bus/drivers/platform:platform-bus",
+    "//src/power/battery-manager:battery_manager",
+    "//src/power/testing/fake-battery:fake_battery_component",
+  ]
 }

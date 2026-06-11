@@ -23,7 +23,20 @@ zx_status_t HardwareBatteryServer::Init(const std::shared_ptr<fdf::OutgoingDirec
                                             fidl::kIgnoreBindingClosure);
               },
       }));
-  return result.status_value();
+  if (result.is_error()) {
+    return result.status_value();
+  }
+
+  auto control_result = outgoing->AddService<test_hardwarepowercontrol::Service>(
+      test_hardwarepowercontrol::Service::InstanceHandler({
+          .control =
+              [this](fidl::ServerEnd<test_hardwarepowercontrol::Control> server) {
+                fdf::info("Control connection request received");
+                control_bindings_.AddBinding(dispatcher_, std::move(server), this,
+                                             fidl::kIgnoreBindingClosure);
+              },
+      }));
+  return control_result.status_value();
 }
 
 void HardwareBatteryServer::GetSpec(ssource::GetSpecCompleter::Sync& completer) {
@@ -70,9 +83,10 @@ void HardwareBatteryServer::Watch(sbattery::WatchRequest& request,
   }
   watch_completer_ = completer.ToAsync();
 
-  if (first_watch_) {
+  if (first_watch_ || state_changed_) {
     NotifyOnce(battery_status_);
     first_watch_ = false;
+    state_changed_ = false;
   }
 }
 
@@ -80,6 +94,33 @@ void HardwareBatteryServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_power_battery::Battery> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   fdf::error("Unknown method called: ordinal={}", metadata.method_ordinal);
+}
+
+void HardwareBatteryServer::SetBatteryStatus(scontrol::SetBatteryStatusRequest& request,
+                                             scontrol::SetBatteryStatusCompleter::Sync& completer) {
+  fdf::info("SetBatteryStatus called");
+  auto existing_source = battery_status_.source_status();
+  battery_status_ = request.status();
+  if (!battery_status_.source_status().has_value()) {
+    battery_status_.source_status(existing_source);
+  }
+  state_changed_ = true;
+  if (watch_completer_) {
+    NotifyOnce(battery_status_);
+    state_changed_ = false;
+  }
+  completer.Reply();
+}
+
+void HardwareBatteryServer::SetSourceStatus(scontrol::SetSourceStatusRequest& request,
+                                            scontrol::SetSourceStatusCompleter::Sync& completer) {
+  battery_status_.source_status(request.status());
+  state_changed_ = true;
+  if (watch_completer_) {
+    NotifyOnce(battery_status_);
+    state_changed_ = false;
+  }
+  completer.Reply();
 }
 
 void HardwareBatteryServer::NotifyOnce(fuchsia_hardware_power_battery::Status status) {

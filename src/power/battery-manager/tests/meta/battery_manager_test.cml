@@ -1,53 +1,26 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
     include: [
-        "//src/sys/test_runners/gtest/default.shard.cml",
+        "//src/sys/test_runners/rust/default.shard.cml",
+        "driver_test_realm/realm_builder/client.shard.cml",
+        "sys/component/realm_builder.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/battery_manager_test_cpp",
+        binary: "bin/battery_manager_integration_test",
     },
-    children: [
-        {
-            name: "battery_manager",
-            url: "#meta/battery_manager.cm",
-        },
-    ],
-    use: [
-        {
-            protocol: "fuchsia.power.battery.BatteryManager",
-            from: "#battery_manager",
-        },
-    ],
     offer: [
-        {
-            dictionary: "diagnostics",
-            from: "parent",
-            to: "#battery_manager",
-        },
-        {
-            config: [ "fuchsia.power.SuspendEnabled" ],
-            from: "void",
-            to: [ "#battery_manager" ],
-            availability: "optional",
-        },
         {
             storage: "data",
             from: "parent",
-            to: [ "#battery_manager" ],
+            to: "#realm_builder",
         },
         {
             storage: "tmp",
             from: "parent",
-            to: [ "#battery_manager" ],
-        },
-        {
-            protocol: "fuchsia.feedback.CrashReporter",
-            from: "void",
-            to: [ "#battery_manager" ],
-            availability: "optional",
+            to: "#realm_builder",
         },
     ],
 }
