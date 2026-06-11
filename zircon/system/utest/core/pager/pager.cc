@@ -4434,4 +4434,20 @@ TEST(Pager, PagerDetachPinned) {
   pmt.unpin();
 }
 
+// Test that ZX_VMO_OP_ALWAYS_NEED can be applied to a pager-backed VMO with the pager detached.
+// Regression test for https://fxbug.dev/515718774.
+TEST(Pager, DetachAndAlwaysNeed) {
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  ASSERT_OK(pager.create_vmo(0, port, 1, 2u * zx_system_get_page_size(), &vmo));
+
+  EXPECT_OK(pager.detach_vmo(vmo));
+  EXPECT_OK(vmo.op_range(ZX_VMO_OP_ALWAYS_NEED, 0, 2u * zx_system_get_page_size(), nullptr, 0));
+}
+
 }  // namespace pager_tests

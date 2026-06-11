@@ -5028,6 +5028,7 @@ zx_status_t VmCowPages::ProtectRangeFromReclamation(VmCowRange range, bool set_a
       }
 
       // Ignore the error, move to the next offset.
+      page_request.CancelRequests();
       range = range.TrimmedFromStart(kPageSize);
     }
   }
