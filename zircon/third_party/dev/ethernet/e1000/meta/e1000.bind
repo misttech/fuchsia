@@ -4,10 +4,6 @@
 
 composite e1000;
 
-using fuchsia.acpi;
-using fuchsia.hardware.pci;
-using fuchsia.pci;
-using fuchsia.intel.e1000;
 
 primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;

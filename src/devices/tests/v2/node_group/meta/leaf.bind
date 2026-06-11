@@ -4,7 +4,6 @@
 
 composite leaf;
 
-using fuchsia.nodegroupbind.test;
 
 primary parent "left" {
   fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY ==

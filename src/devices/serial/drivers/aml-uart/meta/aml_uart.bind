@@ -4,11 +4,6 @@
 
 composite bt_uart;
 
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.platform;
-using fuchsia.pwm;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,bt-uart" {

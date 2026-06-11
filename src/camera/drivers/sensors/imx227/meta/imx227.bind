@@ -4,14 +4,6 @@
 
 composite imx227_sensor;
 
-using fuchsia.clock;
-using fuchsia.gpio;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.i2c;
-using fuchsia.camera;
-using fuchsia.platform;
-using fuchsia.sony.platform;
 
 primary parent "mipicsi" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.MIPICSI;

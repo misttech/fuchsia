@@ -4,8 +4,6 @@
 
 library bindlib.codegen.testlib;
 
-using fuchsia.pci;
-using bindlibparent.codegen.testlib;
 
 string kinglet;
 uint bobolink;

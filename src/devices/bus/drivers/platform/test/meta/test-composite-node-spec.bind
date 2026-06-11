@@ -4,9 +4,6 @@
 
 composite composite_node_spec;
 
-using fuchsia.platform;
-using fuchsia.test.platform;
-using fuchsia.test;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

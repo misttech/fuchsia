@@ -4,9 +4,6 @@
 
 composite vim3_mcu;
 
-using fuchsia.khadas.platform;
-using fuchsia.hardware.i2c;
-using fuchsia.devicetree;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;

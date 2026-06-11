@@ -134,6 +134,7 @@ rustc_test("bindlib-codegen-rust-test") {
   sources = [ "rust_test.rs" ]
   deps = [
     ":bindlib.codegen.testlib_rust",
+    "//src/devices/bind/fuchsia.pci:fuchsia.pci_rust",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
   ]

@@ -4,9 +4,6 @@
 
 composite max98373;
 
-using fuchsia.acpi;
-using fuchsia.hardware.interrupt;
-using fuchsia.maxim.platform;
 
 primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;

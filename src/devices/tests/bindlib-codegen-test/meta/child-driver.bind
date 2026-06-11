@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using bindlib.codegen.testlib;
 using bindlibparent.codegen.testlib as parent;
-using fuchsia.test;
 
 bindlib.codegen.testlib.kinglet == "firecrest";
 fuchsia.BIND_PROTOCOL == 3;

@@ -4,10 +4,6 @@
 
 composite mali;
 
-using fuchsia.arm.platform;
-using fuchsia.platform;
-using fuchsia.hardware.gpu.mali;
-using fuchsia.devicetree;
 
 primary parent "mali" {
   fuchsia.hardware.gpu.mali.Service == fuchsia.hardware.gpu.mali.Service.DriverTransport;

@@ -4,11 +4,6 @@
 
 composite spi_0;
 
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.registers;
-using fuchsia.platform;
 
 primary parent "gpio-cs-0" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;

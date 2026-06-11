@@ -4,9 +4,6 @@
 
 composite ti_ina231;
 
-using fuchsia.hardware.i2c;
-using fuchsia.platform;
-using fuchsia.ti.platform;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;

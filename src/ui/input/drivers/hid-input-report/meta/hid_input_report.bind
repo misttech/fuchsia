@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.hardware.input;
-using fuchsia.hid;
 
 fuchsia.hardware.input.Service == fuchsia.hardware.input.Service.ZirconTransport;
 if fuchsia.hid.CONSUMER__CONSUMER_CONTROL == true {

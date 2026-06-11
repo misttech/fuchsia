@@ -4,8 +4,6 @@
 
 composite goldfish_address_space;
 
-using fuchsia.acpi;
-using fuchsia.hardware.pci;
 
 primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;

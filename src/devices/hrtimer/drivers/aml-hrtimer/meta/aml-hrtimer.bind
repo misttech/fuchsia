@@ -4,9 +4,6 @@
 
 composite aml_hrtimer;
 
-using fuchsia.amlogic.platform;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,hrtimer" {

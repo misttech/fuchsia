@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.clock;
-using fuchsia.hardware.clockimpl;
 
 // The device must implement the clock impl protocol.
 if fuchsia.BIND_PROTOCOL == fuchsia.clock.BIND_PROTOCOL.IMPL {

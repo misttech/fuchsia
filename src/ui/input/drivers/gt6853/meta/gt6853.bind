@@ -4,12 +4,6 @@
 
 composite gt6853_touch;
 
-using fuchsia.goodix.platform;
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.i2c;
-using fuchsia.amlogic.platform.s905d3;
-using fuchsia.platform;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

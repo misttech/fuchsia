@@ -4,9 +4,6 @@
 
 composite aml_saradc;
 
-using fuchsia.amlogic.platform;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {

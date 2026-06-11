@@ -4,7 +4,6 @@
 
 composite spec_composite_2;
 
-using multibind.test;
 
 primary parent "node_d" {
   multibind.test.NODE_ID == multibind.test.NODE_ID.D;

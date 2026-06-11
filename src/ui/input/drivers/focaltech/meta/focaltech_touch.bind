@@ -4,12 +4,6 @@
 
 composite focaltech_touch;
 
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.i2c;
-using fuchsia.focaltech.platform;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;

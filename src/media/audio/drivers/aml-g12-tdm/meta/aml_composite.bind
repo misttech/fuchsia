@@ -4,13 +4,6 @@
 
 composite aml_tdm_composite;
 
-using fuchsia.amlogic.platform.a311d;
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.clock;
-using fuchsia.hardware.clock;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {

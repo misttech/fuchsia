@@ -4,10 +4,6 @@
 
 composite aml_i2c;
 
-using fuchsia.amlogic.platform;
-using fuchsia.devicetree;
-using fuchsia.gpio;
-using fuchsia.platform;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {

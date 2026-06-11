@@ -4,10 +4,6 @@
 
 composite adc_buttons;
 
-using fuchsia.adc;
-using fuchsia.hardware.adc;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,adc-buttons" {

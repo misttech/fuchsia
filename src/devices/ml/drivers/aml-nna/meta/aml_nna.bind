@@ -4,10 +4,6 @@
 
 composite aml_nna;
 
-using fuchsia.platform;
-using fuchsia.amlogic.platform;
-using fuchsia.devicetree;
-using fuchsia.hardware.registers;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {

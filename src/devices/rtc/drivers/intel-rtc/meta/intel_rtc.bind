@@ -4,8 +4,6 @@
 
 composite intel_rtc;
 
-using fuchsia.acpi;
-using fuchsia.hardware.interrupt;
 
 primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.hardware.serial;
-using fuchsia.hardware.serialimpl;
 
 fuchsia.hardware.serialimpl.Service == fuchsia.hardware.serialimpl.Service.DriverTransport;
 // Don't bind to our own node.

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 library fuchsia.intel.e1000;
-using fuchsia.pci;
 
 extend uint fuchsia.BIND_PCI_DID {
     E1000_82542 = 0x1000,

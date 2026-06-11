@@ -4,9 +4,6 @@
 
 composite aml_rawnand;
 
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.platform;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

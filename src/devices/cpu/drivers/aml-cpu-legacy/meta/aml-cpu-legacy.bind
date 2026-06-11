@@ -4,10 +4,6 @@
 
 composite aml_cpu_legacy;
 
-using fuchsia.amlogic.platform;
-using fuchsia.google.platform;
-using fuchsia.platform;
-using fuchsia.thermal;
 
 // The CPU device must bind to a legacy thermal driver to which DVFS commands are forwarded.
 // We need to specify the PLL sensor to ensure the correct bind, as there is a non-legacy thermal

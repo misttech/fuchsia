@@ -4,15 +4,6 @@
 
 composite xhci;
 
-using fuchsia.acpi;
-using fuchsia.hardware.pci;
-using fuchsia.hardware.usb.phy;
-using fuchsia.hardware.platform.device;
-using fuchsia.pci;
-using fuchsia.pci.serial;
-using fuchsia.pci.serial.usb;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport {

@@ -4,10 +4,6 @@
 
 composite ahci;
 
-using fuchsia.acpi;
-using fuchsia.hardware.pci;
-using fuchsia.pci;
-using fuchsia.pci.massstorage;
 
 primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;

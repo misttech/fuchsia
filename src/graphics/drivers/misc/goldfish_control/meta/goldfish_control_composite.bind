@@ -4,9 +4,6 @@
 
 composite goldfish_control_2;
 
-using fuchsia.google.platform;
-using fuchsia.hardware.goldfish;
-using fuchsia.hardware.goldfish.pipe;
 
 primary parent "goldfish-pipe" {
     fuchsia.hardware.goldfish.pipe.Service == fuchsia.hardware.goldfish.pipe.Service.ZirconTransport;

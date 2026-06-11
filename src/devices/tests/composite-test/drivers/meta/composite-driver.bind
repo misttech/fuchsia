@@ -4,7 +4,6 @@
 
 composite test_composite_driver;
 
-using node.group.test.lib;
 
 primary parent "test_primary" {
   fuchsia.BIND_PROTOCOL == node.group.test.lib.BIND_PROTOCOL.VALUE_1;

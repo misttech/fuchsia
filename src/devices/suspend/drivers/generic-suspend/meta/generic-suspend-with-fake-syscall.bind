@@ -4,6 +4,5 @@
 
 // For tests
 // See: https://fuchsia.dev/fuchsia-src/development/drivers/testing/driver_test_realm?hl=en#binding_drivers
-using fuchsia.test;
 
 fuchsia.BIND_PROTOCOL == fuchsia.test.BIND_PROTOCOL.PARENT;

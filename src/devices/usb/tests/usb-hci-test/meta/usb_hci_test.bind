@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.usb;
-using fuchsia.google.platform.usb;
 
 fuchsia.BIND_USB_CLASS == fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC;
 fuchsia.BIND_PROTOCOL == fuchsia.usb.BIND_PROTOCOL.INTERFACE;

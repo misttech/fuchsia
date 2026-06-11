@@ -4,7 +4,6 @@
 
 library fuchsia.amlogic.platform.a311d;
 
-using fuchsia.regulator;
 
 // Values taken from <soc/aml-a311d/a311d-gpio.h>
 

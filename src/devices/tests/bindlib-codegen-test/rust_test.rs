@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use bind_bindlib_codegen_testlib::bind_fuchsia_pci;
+use bind_fuchsia_pci;
 use fuchsia_async as fasync;
 
 #[fasync::run_singlethreaded(test)]

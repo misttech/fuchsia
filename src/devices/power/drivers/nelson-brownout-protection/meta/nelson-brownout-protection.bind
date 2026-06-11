@@ -4,12 +4,6 @@
 
 composite brownout_protection;
 
-using fuchsia.ti.platform;
-using fuchsia.amlogic.platform.s905d3;
-using fuchsia.gpio;
-using fuchsia.hardware.audio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.power.sensor;
 
 primary parent "codec" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;

@@ -4,9 +4,6 @@
 
 composite amlogic_pwm;
 
-using fuchsia.amlogic.platform;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {

@@ -4,10 +4,6 @@
 
 composite tcs3400_light;
 
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.i2c;
-using fuchsia.platform;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;

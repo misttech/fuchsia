@@ -4,11 +4,6 @@
 
 composite ot_radio;
 
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.spi;
-using fuchsia.nordic.platform;
-using fuchsia.platform;
 
 primary parent "spi" {
   fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;

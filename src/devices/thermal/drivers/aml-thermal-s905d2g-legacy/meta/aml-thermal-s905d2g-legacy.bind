@@ -4,13 +4,6 @@
 
 composite aml_thermal_pll;
 
-using fuchsia.platform;
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.pwm;
-using fuchsia.pwm;
-using fuchsia.clock;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

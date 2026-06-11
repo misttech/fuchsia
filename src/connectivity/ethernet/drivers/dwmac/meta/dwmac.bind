@@ -4,10 +4,6 @@
 
 composite dwmac;
 
-using fuchsia.designware.platform;
-using fuchsia.hardware.ethernet.board;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "eth-board" {
   fuchsia.hardware.ethernet.board.Service == fuchsia.hardware.ethernet.board.Service.ZirconTransport;

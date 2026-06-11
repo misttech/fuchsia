@@ -4,15 +4,6 @@
 
 composite aml_cpu;
 
-using fuchsia.google.platform;
-using fuchsia.amlogic.platform;
-using fuchsia.clock;
-using fuchsia.gpio;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.power;
-using fuchsia.platform;
-using fuchsia.power;
-using fuchsia.devicetree;
 
 parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,cpu" {

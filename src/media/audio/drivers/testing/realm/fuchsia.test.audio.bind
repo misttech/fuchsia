@@ -4,7 +4,6 @@
 
 library fuchsia.test.audio;
 
-using fuchsia.test;
 
 extend string fuchsia.test.TEST_CHILD {
   CODEC = "codec",

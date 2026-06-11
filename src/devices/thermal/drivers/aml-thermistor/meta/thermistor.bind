@@ -4,11 +4,6 @@
 
 composite thermistor;
 
-using fuchsia.adc;
-using fuchsia.hardware.adc;
-using fuchsia.amlogic.platform;
-using fuchsia.google.platform;
-using fuchsia.platform;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.nand;
 
 if fuchsia.BIND_AUTOBIND == 0 {
   fuchsia.BIND_PROTOCOL == fuchsia.nand.BIND_PROTOCOL.DEVICE;

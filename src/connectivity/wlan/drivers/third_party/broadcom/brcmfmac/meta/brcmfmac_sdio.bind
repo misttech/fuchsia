@@ -4,12 +4,6 @@
 
 composite brcmfmac_sdio;
 
-using fuchsia.broadcom.platform;
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.sdio;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "sdio-function-1" {
   fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;

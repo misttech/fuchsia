@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.usb;
-using fuchsia.usb.audio;
 
 fuchsia.BIND_USB_CLASS == fuchsia.usb.BIND_USB_CLASS.AUDIO;
 fuchsia.BIND_USB_PROTOCOL == 0;

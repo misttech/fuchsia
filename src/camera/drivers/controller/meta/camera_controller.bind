@@ -4,9 +4,6 @@
 
 composite camera_controller;
 
-using fuchsia.isp;
-using fuchsia.camera;
-using fuchsia.camera;
 
 primary parent "isp" {
   fuchsia.BIND_PROTOCOL == fuchsia.isp.BIND_PROTOCOL.DEVICE;

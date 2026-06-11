@@ -4,8 +4,6 @@
 
 composite generic_suspend;
 
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
     // TODO(b/374801168): Remove `amlogic,suspend` once the drive is soft transitioned.

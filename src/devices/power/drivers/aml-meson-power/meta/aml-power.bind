@@ -4,13 +4,6 @@
 
 composite aml_power_impl;
 
-using fuchsia.amlogic.platform;
-using fuchsia.amlogic.platform.a311d;
-using fuchsia.google.platform;
-using fuchsia.hardware.vreg;
-using fuchsia.hardware.pwm;
-using fuchsia.regulator;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,power" {

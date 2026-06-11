@@ -4,11 +4,6 @@
 
 composite aml_eth;
 
-using fuchsia.amlogic.platform;
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,ethernet-phy" {

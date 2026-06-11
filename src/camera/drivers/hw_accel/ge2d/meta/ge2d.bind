@@ -4,10 +4,6 @@
 
 composite ge2d;
 
-using fuchsia.hardware.amlogiccanvas;
-using fuchsia.amlogic.platform;
-using fuchsia.camera;
-using fuchsia.platform;
 
 primary parent "camera-sensor" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.CAMERA_SENSOR_2;

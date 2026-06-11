@@ -1,3 +1,2 @@
-using fuchsia.block.gpt;
 
 fuchsia.block.gpt.PARTITION_NAME == "my-part";

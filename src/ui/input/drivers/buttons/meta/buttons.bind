@@ -4,10 +4,6 @@
 
 composite buttons;
 
-using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,gpio-buttons" {

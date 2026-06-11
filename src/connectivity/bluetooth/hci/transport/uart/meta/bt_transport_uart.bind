@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.serial;
-using fuchsia.hardware.serial;
 
 fuchsia.hardware.serial.Service == fuchsia.hardware.serial.Service.ZirconTransport;
 fuchsia.BIND_SERIAL_CLASS == fuchsia.serial.BIND_SERIAL_CLASS.BLUETOOTH_HCI;

@@ -4,12 +4,6 @@
 
 composite display;
 
-using fuchsia.hardware.amlogiccanvas;
-using fuchsia.hardware.gpio;
-using fuchsia.gpio;
-using fuchsia.platform;
-using fuchsia.amlogic.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,display" {

@@ -4,12 +4,6 @@
 
 composite dw_i2c;
 
-using fuchsia.clock;
-using fuchsia.devicetree;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.reset;
-using fuchsia.hardware.powerdomain;
-using fuchsia.gpio;
 
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,i2c";

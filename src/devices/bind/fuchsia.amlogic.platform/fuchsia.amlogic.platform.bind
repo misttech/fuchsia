@@ -4,8 +4,6 @@
 
 library fuchsia.amlogic.platform;
 
-using fuchsia.register;
-using fuchsia.power;
 
 extend uint fuchsia.BIND_PLATFORM_DEV_VID {
   AMLOGIC = 0x05,

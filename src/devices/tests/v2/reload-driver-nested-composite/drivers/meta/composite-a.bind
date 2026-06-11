@@ -4,7 +4,6 @@
 
 composite F;
 
-using fuchsia.reloaddriverbind.test;
 
 primary parent "B" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==

@@ -4,13 +4,6 @@
 
 composite aml_video;
 
-using fuchsia.amlogic.platform;
-using fuchsia.clock;
-using fuchsia.hardware.amlogiccanvas;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.tee;
-using fuchsia.platform;
-using fuchsia.devicetree;
 
 primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {

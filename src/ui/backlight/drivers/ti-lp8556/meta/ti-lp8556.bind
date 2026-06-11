@@ -4,9 +4,6 @@
 
 composite backlight;
 
-using fuchsia.platform;
-using fuchsia.ti.platform;
-using fuchsia.hardware.i2c;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;

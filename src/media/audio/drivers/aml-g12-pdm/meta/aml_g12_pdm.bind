@@ -4,10 +4,6 @@
 
 composite aml_pdm;
 
-using fuchsia.platform;
-using fuchsia.amlogic.platform;
-using fuchsia.clock;
-using fuchsia.gpio;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
