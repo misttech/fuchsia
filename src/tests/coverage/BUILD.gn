@@ -229,11 +229,11 @@ if (is_host) {
     sources = [
       "$clang_prefix/llvm-cov",
       "$clang_prefix/llvm-profdata",
-      "$host_out_dir/covargs",
+      "$host_tools_dir/covargs",
       "clang_golden_coverage.json",
     ]
 
-    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs" ]
+    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs.host_tool" ]
   }
 
   host_test_data("clang_coverage_test_deps_on_host") {
@@ -249,11 +249,11 @@ if (is_host) {
   host_test_data("rust_coverage_test_deps") {
     sources = [
       "$clang_prefix/llvm-cov",
-      "$host_out_dir/covargs",
+      "$host_tools_dir/covargs",
       "rust_golden_coverage.json",
     ]
 
-    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs" ]
+    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs.host_tool" ]
   }
 
   host_test_data("rust_coverage_test_deps_on_host") {
@@ -280,7 +280,7 @@ if (is_host) {
 
     args = [
       "--covargs",
-      rebase_path("$host_out_dir/covargs", root_build_dir),
+      rebase_path("$host_tools_dir/covargs", root_build_dir),
       "--coverage-test-binary",
       rebase_path(clang_coverage_test_binary_path_on_host, root_build_dir),
       "--golden-coverage",
@@ -313,7 +313,7 @@ go_test("clang_coverage_tests_on_target") {
     environments = [ emu_env ]
     args = [
       "--covargs",
-      rebase_path("$host_out_dir/covargs", root_build_dir),
+      rebase_path("$host_tools_dir/covargs", root_build_dir),
       "--coverage-test-binary",
       rebase_path(clang_coverage_test_binary_path_on_target, root_build_dir),
       "--coverage-test-name",
@@ -344,7 +344,7 @@ if (is_host) {
 
     args = [
       "--covargs",
-      rebase_path("$host_out_dir/covargs", root_build_dir),
+      rebase_path("$host_tools_dir/covargs", root_build_dir),
       "--coverage-test-binary",
       rebase_path(rust_coverage_test_binary_path_on_host, root_build_dir),
       "--golden-coverage",
@@ -378,7 +378,7 @@ go_test("rust_coverage_tests_on_target") {
     environments = [ emu_env ]
     args = [
       "--covargs",
-      rebase_path("$host_out_dir/covargs", root_build_dir),
+      rebase_path("$host_tools_dir/covargs", root_build_dir),
       "--coverage-test-binary",
       rebase_path(rust_coverage_test_binary_path_on_target, root_build_dir),
       "--coverage-test-name",

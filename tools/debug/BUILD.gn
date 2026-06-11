@@ -6,7 +6,7 @@ group("tools") {
   testonly = true
 
   public_deps = [
-    "//build/bazel/host:bazel_root_host_tools.covargs",
+    "//build/bazel/host:bazel_root_host_tools.covargs.host_tool",
     "//build/bazel/host:bazel_root_host_tools.symbolize",
     "//tools/debug/bloatalyzer",
     "//tools/debug/buildidtool",
