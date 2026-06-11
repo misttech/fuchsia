@@ -19,7 +19,6 @@ if (toolchain_environment == "kernel.phys" ||
       ":integer-register-abi",
       ":percpu-abi",
       ":thread-pointer-abi",
-      ":shadow-call-stack-abi",
 
       # Don't use the outline atomics since we don't have the helper functions.
       # TODO(mcgrathr): use code-patching to define the outcalls for the kernel
@@ -65,27 +64,6 @@ if (toolchain_environment == "kernel.phys" ||
   custom_target_config("thread-pointer-abi") {
     common_flags = [ "-mtp=el1" ]
     rust_target_features = [ "+tpidr-el1" ]
-  }
-
-  # The shadow-call-stack ABI is enabled by default for the Fuchsia targets in
-  # Clang and Rust, but cannot be enabled for GCC.  The low-level assembly and
-  # C++ code to set up the ABI requirements matches what the C++ compiler is
-  # doing, whether that's GCC or Clang.  So when using GCC, the Rust compiler
-  # must be told to also disable it.
-  custom_target_config("shadow-call-stack-abi") {
-    if (is_gcc) {
-      if (toolchain_environment == "kernel") {
-        rust_target_edits = [
-          {
-            key = "default-sanitizers"
-            action = "erase"
-            value = [ "shadow-call-stack" ]
-          },
-        ]
-      } else {
-        rustflags = [ "-Zsanitizer=no-shadow-call-stack" ]
-      }
-    }
   }
 
   # This is used pervasively throughout the kernel on arm64.

@@ -5,14 +5,10 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/config/clang/clang_prefix.gni")
-import("//build/config/current_target_tuple.gni")
 import("//build/config/custom_target_config.gni")
-import("//build/config/linker.gni")
 import("//build/config/linker_config.gni")
 import("//build/rust/config.gni")
-import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
-import("//build/toolchain/zircon/gcc.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
 
@@ -35,120 +31,13 @@ custom_target_config("standalone") {
   if (toolchain_environment == "kernel") {
     rust_target_edits = [
       {
-        key = "pre-link-objects"
-        action = "unset"
-      },
-    ]
-    if (linker == "lld") {
-      rust_linker = "$rebased_clang_prefix/lld"
-      rust_linker_flavor = "gnu-lld"
-    } else {
-      assert(linker == "")
-      rust_linker =
-          rebase_path("$gcc_tool_dir/$clang_cpu-elf-ld", root_build_dir)
-      rust_linker_flavor = "gnu"
-      pre_link_edits = []
-      post_link_edits = []
-      foreach(flavor,
-              [
-                "gnu",
-                "gnu-lld",
-              ]) {
-        pre_link_edits += [
-          {
-            key = flavor
-            action = "erase"
-            value = [
-              "-z",
-              "rodynamic",
-            ]
-          },
-          {
-            key = flavor
-            action = "erase"
-            value = [
-              "-z",
-              "separate-loadable-segments",
-            ]
-          },
-          {
-            key = flavor
-            action = "erase"
-            value = [
-              "-z",
-              "rel",
-            ]
-          },
-          {
-            key = flavor
-            action = "erase"
-            value = [ "--pack-dyn-relocs=relr" ]
-          },
-          {
-            key = flavor
-            action = "extend"
-            value = [
-              "-z",
-              "pack-relative-relocs",
-            ]
-          },
-          {
-            key = flavor
-            action = "extend"
-            value = [ "--start-group" ]
-          },
-        ]
-        if (is_gcc && current_cpu == "arm64") {
-          pre_link_edits += [
-            {
-              key = flavor
-              action = "erase"
-              value = [ "--execute-only" ]
-            },
-            {
-              key = flavor
-              action = "erase"
-              value = [
-                "-z",
-                "--fix-cortex-a53-843419",
-              ]
-            },
-          ]
-        }
-        post_link_edits += [
-          {
-            key = flavor
-            action = "set"
-            value = [ "--end-group" ]
-          },
-        ]
-      }
-      rust_target_edits += [
-        {
-          key = "pre-link-args"
-          action = "edit"
-          value = pre_link_edits
-        },
-        {
-          key = "post-link-args"
-          action = "edit"
-          value = post_link_edits
-        },
-      ]
-    }
-    if (rust_rbe_enable) {
-      rustflags = [ "--remote-inputs=$rust_linker" ]
-    }
-    rust_target_edits += [
-      {
         key = "linker"
         action = "set"
-        value = rust_linker
+        value = "$rebased_clang_prefix/lld"
       },
       {
-        key = "linker-flavor"
-        action = "set"
-        value = rust_linker_flavor
+        key = "pre-link-objects"
+        action = "unset"
       },
     ]
   }
@@ -301,10 +190,11 @@ custom_target_config("abi") {
 # This is the top config for all kernel code.
 variant("kernel_config") {
   configs = [ ":abi" ]
-
-  # The :abi configs tree doesn't do all the work for Rust.  Instead, they
-  # contribute to the rules for creating the custom target JSON file.
-  configs += [ ":rust-target" ]
+  if (enable_rust_in_zircon) {
+    # The :abi configs tree doesn't do all the work for Rust.  Instead, they
+    # contribute to the rules for creating the custom target JSON file.
+    configs += [ ":rust-target" ]
+  }
 
   configs += [
     ":jtrace_config",
@@ -513,14 +403,6 @@ if (current_cpu == "arm64" && is_gcc) {
   got_tolerance = 32
 } else {
   got_tolerance = 0
-
-  # TODO(https://fxbug.dev/518528981): This should be 0 and none should be
-  # tolerated in production builds.  Currently Rust code produces GOT
-  # indirections it should not when thinlto is enabled.  So far, there is very
-  # little Rust code that might run into this compiler issue.  Until the
-  # compiler bug is fixed (ASAP), allow the few slots empirically seen to be
-  # produced in the build.
-  got_tolerance = 24
 }
 
 # This is implicitly added last to configs in kernel_executable().
@@ -599,12 +481,6 @@ action("rust-custom-target") {
 
   outputs = [ "$rustlib_dir/target.json" ]
   args += [ "--output=" + rebase_path(outputs[0], root_build_dir) ]
-
-  metadata = {
-    # This will roll up into the generated_file()s fed to the RBE wrapper so it
-    # knows what GN and Ninja know via the inputs list in the config() below.
-    rust_compilation_deps = rebase_path(outputs, root_build_dir)
-  }
 }
 
 # Apply the custom target.  This confers the Ninja file dependency on the
@@ -623,13 +499,6 @@ config("rust-target") {
     "--target",
     "kernel",
   ]
-  if (rust_rbe_enable) {
-    rustflags += [
-      "--remote-flag=--clang-target=$current_target_tuple",
-      "--remote-inputs=" +
-          string_join(",", rebase_path(inputs, root_build_dir)),
-    ]
-  }
 }
 
 group("rust-target.deps") {

@@ -247,7 +247,9 @@ template("kernel_switchset") {
         configs += [ "//build/config:optimize_debug" ]
       }
 
-      source_deps = [ "//zircon/kernel/switch:rust-target.deps" ]
+      if (enable_rust_in_zircon) {
+        source_deps = [ "//zircon/kernel/switch:rust-target.deps" ]
+      }
     }
   }
 }

@@ -24,13 +24,6 @@ def write_json_file(file: Path, contents) -> None:
         json.dump(contents, f, indent=2, sort_keys=True)
 
 
-def erase(full: list[str], sublist: list[str]) -> list[str]:
-    for i in range(len(full)):
-        if full[i : i + len(sublist)] == sublist:
-            return erase(full[0 : i - 1] + full[i + len(sublist) :], sublist)
-    return full
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -110,37 +103,27 @@ def main() -> int:
                     continue
             features.append(new_feature)
 
-    def apply_edits(output: dict, edits: list):
-        def apply_edit(key: str, action: str, value):
-            if action == "unset":
-                assert value is None
-                if key in output:
-                    del output[key]
-                return
-            assert value is not None, f"Bad edit: {key=}, {action=}, {value=}"
-            if action == "set":
-                output[key] = value
-                return
-            if action == "edit":
-                output[key] = apply_edits(output.get(key, {}), value)
-                return
-            if action == "erase":
-                output[key] = erase(output[key], value)
-                return
-            if action == "extend":
-                output[key].extend(value)
-                return
-            assert action == "append", f"Bad edit: {key=}, {action=}, {value=}"
-            if key == "features":
-                append_features(value)
-            else:
-                output[key].append(value)
+    output = original
 
-        for edit in edits:
-            apply_edit(edit["key"], edit["action"], edit.get("value"))
-        return output
+    def apply_edit(key, action, value):
+        if action == "unset":
+            assert value is None
+            if key in output:
+                del output[key]
+            return
+        assert value is not None, f"Bad edit: f{key=}, f{action=}, f{value=}"
+        if action == "set":
+            output[key] = value
+            return
+        assert action == "append", f"Bad edit: f{key=}, f{action=}, f{value=}"
+        if key == "features":
+            append_features(value)
+        else:
+            output[key] += value
 
-    output = apply_edits(original, edits)
+    for edit in edits:
+        apply_edit(edit["key"], edit["action"], edit.get("value"))
+
     output["features"] = ",".join(features)
 
     write_json_file(args.output, output)
