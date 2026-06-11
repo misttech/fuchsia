@@ -324,3 +324,42 @@ async fn delivery_blob_not_available() {
 
     env.stop().await;
 }
+
+#[fuchsia::test]
+#[ignore] // TODO(https://fxbug.dev/519687989): Re-enable this test after
+// Fuchsia system releases are managed in the repo.
+async fn mismatched_pinned_merkle_resolution_fails() {
+    let env = TestEnvBuilder::new().build().await;
+
+    let pkg1 = PackageBuilder::new("pinned-merkle-foo")
+        .add_resource_at("data/foo", "foo".as_bytes())
+        .build()
+        .await
+        .unwrap();
+    let pkg2 = PackageBuilder::new("pinned-merkle-bar")
+        .add_resource_at("data/bar", "bar".as_bytes())
+        .build()
+        .await
+        .unwrap();
+
+    let repo = Arc::new(
+        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
+            .add_package(&pkg1)
+            .add_package(&pkg2)
+            .build()
+            .await
+            .unwrap(),
+    );
+
+    let served_repository = repo.server().start().unwrap();
+    env.register_repo(&served_repository).await;
+
+    // Try to resolve "pinned-merkle-foo" but with the hash of "pinned-merkle-bar"
+    let pkg1_url_with_pkg2_merkle =
+        format!("fuchsia-pkg://test/pinned-merkle-foo?hash={}", pkg2.hash());
+
+    let err = env.resolve_package(&pkg1_url_with_pkg2_merkle).await.unwrap_err();
+    assert_eq!(err, fpkg::ResolveError::PackageNotFound);
+
+    env.stop().await;
+}
