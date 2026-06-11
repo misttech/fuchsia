@@ -84,14 +84,22 @@ std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(int exit_value, int 
   std::vector<ForkResult> results;
   while (wait_for_all_children_ || !child_pids_.empty()) {
     int wstatus;
-    pid_t pid = wait(&wstatus);
+    pid_t target_pid = wait_for_all_children_ ? -1 : child_pids_.back();
+    pid_t pid = waitpid(target_pid, &wstatus, 0);
     if (pid == -1) {
       if (errno == EINTR) {
         continue;
       }
       if (errno == ECHILD) {
-        // No more children, reaping is done.
-        return results;
+        if (wait_for_all_children_) {
+          // No more children, reaping is done.
+          return results;
+        }
+        // If we are waiting for specific children, ECHILD means the target_pid is not waitable.
+        // This typically happens if the child has already been reaped manually. Pop it and continue
+        // to check others.
+        child_pids_.pop_back();
+        continue;
       }
 
       // Another error is unexpected, so we'll push that to the results stack.
@@ -100,6 +108,10 @@ std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(int exit_value, int 
       results.push_back({.subprocess_id = pid,
                          .subprocess_exit_status = errno,
                          .determined_result = unexpected_failure});
+      if (!wait_for_all_children_) {
+        child_pids_.pop_back();
+      }
+      continue;
     }
 
     bool check_result = wait_for_all_children_;
