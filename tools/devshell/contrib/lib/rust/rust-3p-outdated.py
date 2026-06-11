@@ -64,7 +64,7 @@ def process_crate(
         return None
     current = versions[-1][1]
     newest = versions[0][1]
-    return (newest - current, len(versions), crate, version, versions[0])
+    return (newest - current, len(versions) - 1, crate, version, versions[0])
 
 
 if __name__ == "__main__":
