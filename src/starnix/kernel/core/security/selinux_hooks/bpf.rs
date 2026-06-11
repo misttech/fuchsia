@@ -9,8 +9,6 @@ use super::{
     BpfMapState, BpfProgState, build_permission_check, check_permission, check_self_permission,
     current_task_state,
 };
-use crate::bpf::map::BpfMap;
-use crate::bpf::program::Program;
 use crate::security::PermissionFlags;
 use crate::task::CurrentTask;
 use selinux::{BpfPermission, SecurityId, SecurityServer};
@@ -62,7 +60,7 @@ pub(in crate::security) fn check_bpf_map_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
-    bpf_map: &BpfMap,
+    bpf_map_state: &crate::security::BpfMapState,
     flags: PermissionFlags,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
@@ -72,7 +70,7 @@ pub(in crate::security) fn check_bpf_map_access(
             &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
-            bpf_map.security_state.state.sid,
+            bpf_map_state.state.sid,
             BpfPermission::MapRead,
             audit_context,
         )?;
@@ -82,7 +80,7 @@ pub(in crate::security) fn check_bpf_map_access(
             &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
-            bpf_map.security_state.state.sid,
+            bpf_map_state.state.sid,
             BpfPermission::MapWrite,
             audit_context,
         )?;
@@ -96,7 +94,7 @@ pub(in crate::security) fn check_bpf_prog_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
-    bpf_program: &Program,
+    bpf_program_state: &crate::security::BpfProgState,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
 
@@ -104,7 +102,7 @@ pub(in crate::security) fn check_bpf_prog_access(
         &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
-        bpf_program.security_state.state.sid,
+        bpf_program_state.state.sid,
         BpfPermission::ProgRun,
         audit_context,
     )

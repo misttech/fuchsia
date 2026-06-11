@@ -8,7 +8,7 @@
 use crate::bpf::syscalls::BpfTypeFormat;
 use crate::bpf::{BpfMapHandle, ProgramHandle};
 use crate::mm::memory::MemoryObject;
-use crate::mm::{PAGE_SIZE, ProtectionFlags};
+use crate::mm::{DesiredAddress, MappingOptions, PAGE_SIZE, ProtectionFlags};
 use crate::security::{self, PermissionFlags};
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, WaitCanceler, Waiter,
@@ -18,7 +18,7 @@ use crate::vfs::{
     CacheMode, CheckAccessReason, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
     MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, RenameContext, XattrStorage as _,
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
+    default_mmap, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
     fs_node_impl_xattr_delegate,
 };
 use bstr::BStr;
@@ -33,6 +33,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     BPF_FS_MAGIC, bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF, errno, error,
@@ -101,10 +102,12 @@ impl BpfHandle {
         match self {
             Self::Map(bpf_map) => security::check_bpf_map_access(
                 current_task,
-                &bpf_map,
+                &bpf_map.security_state,
                 permission_flags.unwrap_or_else(|| bpf_map.schema.flags.into()),
             ),
-            Self::Program(program) => security::check_bpf_prog_access(current_task, &program),
+            Self::Program(program) => {
+                security::check_bpf_prog_access(current_task, &program.security_state)
+            }
             _ => Ok(()),
         }
     }
@@ -229,6 +232,39 @@ impl FileOps for BpfHandle {
             // Other maps cannot be mmap'ed.
             _ => error!(ENODEV),
         }
+    }
+
+    fn mmap(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        addr: DesiredAddress,
+        memory_offset: u64,
+        length: usize,
+        prot_flags: ProtectionFlags,
+        options: MappingOptions,
+        filename: NamespaceNode,
+    ) -> Result<UserAddress, Errno> {
+        let BpfHandle::Map(bpf_map) = &self else {
+            return error!(EINVAL);
+        };
+        security::check_bpf_map_access(
+            current_task,
+            &bpf_map.security_state,
+            PermissionFlags::READ | PermissionFlags::WRITE,
+        )?;
+        default_mmap(
+            locked,
+            file,
+            current_task,
+            addr,
+            memory_offset,
+            length,
+            prot_flags,
+            options,
+            filename,
+        )
     }
 
     fn wait_async(

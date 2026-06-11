@@ -115,12 +115,15 @@ pub(in crate::security) fn file_receive(
                 security_server,
                 current_task,
                 receiving_sid,
-                map,
+                &map.security_state,
                 permission_flags,
             )?,
-            BpfHandle::Program(prog) => {
-                check_bpf_prog_access(security_server, current_task, receiving_sid, prog)?
-            }
+            BpfHandle::Program(prog) => check_bpf_prog_access(
+                security_server,
+                current_task,
+                receiving_sid,
+                &prog.security_state,
+            )?,
             _ => {}
         }
         return Ok(());
@@ -194,10 +197,6 @@ pub(in crate::security) fn check_file_lock_access(
     current_task: &CurrentTask,
     file: &FileObject,
 ) -> Result<(), Errno> {
-    // BPF supports some locking, but without the file "lock" permission.
-    if file.downcast_file::<BpfHandle>().is_some() {
-        return Ok(());
-    }
     let permission_check = build_permission_check(current_task, security_server);
     let subject_sid = current_task_state(current_task).current_sid;
     has_file_permissions(
@@ -320,28 +319,14 @@ pub(in crate::security) fn mmap_file(
 ) -> Result<(), Errno> {
     if let Some(file) = file {
         let current_sid = current_task_state(current_task).current_sid;
-        // The `map` permission shouldn't be checked for BPF handles.
-        if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
-            match *bpf_handle {
-                BpfHandle::Map(map) => check_bpf_map_access(
-                    security_server,
-                    current_task,
-                    current_sid,
-                    map,
-                    PermissionFlags::READ | PermissionFlags::WRITE,
-                )?,
-                _ => {}
-            }
-        } else {
-            has_file_permissions(
-                &build_permission_check(current_task, security_server),
-                &current_task,
-                current_sid,
-                file,
-                &[CommonFsNodePermission::Map],
-                current_task.into(),
-            )?;
-        }
+        has_file_permissions(
+            &build_permission_check(current_task, security_server),
+            &current_task,
+            current_sid,
+            file,
+            &[CommonFsNodePermission::Map],
+            current_task.into(),
+        )?;
     }
     let fs_node: Option<&FsNodeHandle> = file.map(|f| f.node());
     file_map_prot_check(security_server, current_task, fs_node, protection_flags, mapping_options)

@@ -247,72 +247,16 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         options: MappingOptions,
         filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
-        let min_memory_size = (memory_offset as usize)
-            .checked_add(round_up_to_system_page_size(length)?)
-            .ok_or_else(|| errno!(EINVAL))?;
-        let mut memory = if options.contains(MappingOptions::SHARED) {
-            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
-            self.get_memory(locked, file, current_task, Some(min_memory_size), prot_flags)?
-        } else {
-            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
-            // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
-            let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
-            let memory = self.get_memory(
-                locked,
-                file,
-                current_task,
-                Some(min_memory_size),
-                base_prot_flags,
-            )?;
-            let mut clone_flags = zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE;
-            if !prot_flags.contains(ProtectionFlags::WRITE) {
-                clone_flags |= zx::VmoChildOptions::NO_WRITE;
-            }
-            fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
-            Arc::new(
-                memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?,
-            )
-        };
-
-        // Write guard is necessary only for shared mappings. Note that this doesn't depend on
-        // `prot_flags` since these can be changed later with `mprotect()`.
-        let file_write_guard = if options.contains(MappingOptions::SHARED) && file.can_write() {
-            let node = &file.name.entry.node;
-            let state = node.write_guard_state.lock();
-
-            // `F_SEAL_FUTURE_WRITE` should allow `mmap(PROT_READ)`, but block
-            // `mprotect(PROT_WRITE)`. This is different from `F_SEAL_WRITE`, which blocks
-            // `mmap(PROT_READ)`. To handle this case correctly remove `WRITE` right from the
-            // VMO handle to ensure `mprotect(PROT_WRITE)` fails.
-            let seals = state.get_seals().unwrap_or(SealFlags::empty());
-            if seals.contains(SealFlags::FUTURE_WRITE)
-                && !seals.contains(SealFlags::WRITE)
-                && !prot_flags.contains(ProtectionFlags::WRITE)
-            {
-                let mut new_rights = zx::Rights::VMO_DEFAULT - zx::Rights::WRITE;
-                if prot_flags.contains(ProtectionFlags::EXEC) {
-                    new_rights |= zx::Rights::EXECUTE;
-                }
-                memory = Arc::new(memory.duplicate_handle(new_rights).map_err(impossible_error)?);
-
-                None
-            } else {
-                Some(FileWriteGuardMode::WriteMapping)
-            }
-        } else {
-            None
-        };
-
-        current_task.mm()?.map_memory(
+        default_mmap(
+            locked,
+            file,
+            current_task,
             addr,
-            memory,
             memory_offset,
             length,
             prot_flags,
-            file.max_access_for_memory_mapping(),
             options,
-            MappingName::File(filename.into_mapping(file_write_guard)?),
+            filename,
         )
     }
 
@@ -1173,6 +1117,84 @@ pub fn default_ioctl(
 pub fn default_fcntl(cmd: u32) -> Result<SyscallResult, Errno> {
     track_stub!(TODO("https://fxbug.dev/322875704"), "default fcntl", cmd);
     error!(EINVAL)
+}
+
+pub fn default_mmap(
+    locked: &mut Locked<FileOpsCore>,
+    file: &FileObject,
+    current_task: &CurrentTask,
+    addr: DesiredAddress,
+    memory_offset: u64,
+    length: usize,
+    prot_flags: ProtectionFlags,
+    options: MappingOptions,
+    filename: NamespaceNode,
+) -> Result<UserAddress, Errno> {
+    fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
+    let min_memory_size = (memory_offset as usize)
+        .checked_add(round_up_to_system_page_size(length)?)
+        .ok_or_else(|| errno!(EINVAL))?;
+    let mut memory = if options.contains(MappingOptions::SHARED) {
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
+        file.ops.get_memory(locked, file, current_task, Some(min_memory_size), prot_flags)?
+    } else {
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
+        // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
+        let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
+        let memory = file.ops.get_memory(
+            locked,
+            file,
+            current_task,
+            Some(min_memory_size),
+            base_prot_flags,
+        )?;
+        let mut clone_flags = zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE;
+        if !prot_flags.contains(ProtectionFlags::WRITE) {
+            clone_flags |= zx::VmoChildOptions::NO_WRITE;
+        }
+        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
+        Arc::new(memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?)
+    };
+
+    // Write guard is necessary only for shared mappings. Note that this doesn't depend on
+    // `prot_flags` since these can be changed later with `mprotect()`.
+    let file_write_guard = if options.contains(MappingOptions::SHARED) && file.can_write() {
+        let node = &file.name.entry.node;
+        let state = node.write_guard_state.lock();
+
+        // `F_SEAL_FUTURE_WRITE` should allow `mmap(PROT_READ)`, but block
+        // `mprotect(PROT_WRITE)`. This is different from `F_SEAL_WRITE`, which blocks
+        // `mmap(PROT_READ)`. To handle this case correctly remove `WRITE` right from the
+        // VMO handle to ensure `mprotect(PROT_WRITE)` fails.
+        let seals = state.get_seals().unwrap_or(SealFlags::empty());
+        if seals.contains(SealFlags::FUTURE_WRITE)
+            && !seals.contains(SealFlags::WRITE)
+            && !prot_flags.contains(ProtectionFlags::WRITE)
+        {
+            let mut new_rights = zx::Rights::VMO_DEFAULT - zx::Rights::WRITE;
+            if prot_flags.contains(ProtectionFlags::EXEC) {
+                new_rights |= zx::Rights::EXECUTE;
+            }
+            memory = Arc::new(memory.duplicate_handle(new_rights).map_err(impossible_error)?);
+
+            None
+        } else {
+            Some(FileWriteGuardMode::WriteMapping)
+        }
+    } else {
+        None
+    };
+
+    current_task.mm()?.map_memory(
+        addr,
+        memory,
+        memory_offset,
+        length,
+        prot_flags,
+        file.max_access_for_memory_mapping(),
+        options,
+        MappingName::File(filename.into_mapping(file_write_guard)?),
+    )
 }
 
 pub struct OPathOps {}

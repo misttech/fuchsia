@@ -10,8 +10,6 @@ use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
     KernelState, PerfEventState, common_cap, selinux_hooks, yama,
 };
-use crate::bpf::map::BpfMap;
-use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
 use crate::security::selinux_hooks::current_task_state;
@@ -1979,7 +1977,7 @@ pub fn check_bpf_access<Attr: FromBytes>(
 /// Corresponds to the `bpf_map()` LSM hook.
 pub fn check_bpf_map_access(
     current_task: &CurrentTask,
-    bpf_map: &BpfMap,
+    bpf_map_state: &BpfMapState,
     flags: PermissionFlags,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_bpf_map_access");
@@ -1989,7 +1987,7 @@ pub fn check_bpf_map_access(
             security_server,
             current_task,
             subject_sid,
-            bpf_map,
+            bpf_map_state,
             flags,
         )
     })
@@ -2001,7 +1999,7 @@ pub fn check_bpf_map_access(
 /// Corresponds to the `bpf_prog()` LSM hook.
 pub fn check_bpf_prog_access(
     current_task: &CurrentTask,
-    bpf_program: &Program,
+    bpf_program_state: &BpfProgState,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_bpf_prog_access");
     if_selinux_else_default_ok(current_task, |security_server| {
@@ -2010,7 +2008,7 @@ pub fn check_bpf_prog_access(
             security_server,
             current_task,
             subject_sid,
-            bpf_program,
+            bpf_program_state,
         )
     })
 }
