@@ -366,7 +366,8 @@ When porting C++ code that uses raw pointers (`T*` or `const T*`):
   the object `!Sync`.
 - Ensure traits and macros reflect this type-safety. For example, setter methods
   should accept `NonNull<T>` and take `&mut self` if they mutate the origin,
-  allowing safe mutation without `Cell` (e.g., using `Option<NonNull<T>>` directly).
+  allowing safe mutation without `Cell` (e.g., using `Option<NonNull<T>>`
+  directly).
 
 Example:
 ```rust
@@ -387,3 +388,32 @@ impl Node {
     }
 }
 ```
+
+### 11. Zircon Status and Error Handling
+
+When porting Zircon code that returns error codes (e.g., `zx_status_t` in C++):
+- **Do not** duplicate `zx_status_t` type definitions or `ZX_ERR_*` constants
+  locally in the ported Rust crate.
+- **Do** depend on the `//sdk/rust/zx-status` library.
+- **Do** use `zx_status::Status` as the error type in `Result` (e.g.,
+  `Result<(), Status>`).
+- Use the associated constants on `Status` (e.g., `Status::INVALID_ARGS`,
+  `Status::NOT_FOUND`) instead of `ZX_ERR_` prefixes.
+- Leverage the `?` operator for clean error propagation by returning `Result`
+  from internal helper methods where applicable, rather than returning raw
+  status codes and manually checking them.
+
+Example:
+```rust
+use zx_status::Status;
+
+pub fn add_region(&self, base: u64, size: u64) -> Result<(), Status> {
+    if size == 0 {
+        return Err(Status::INVALID_ARGS);
+    }
+    // ...
+    self.check_overlap(base, size)?;
+    Ok(())
+}
+```
+

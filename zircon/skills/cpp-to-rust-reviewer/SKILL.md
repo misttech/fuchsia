@@ -101,6 +101,8 @@ across the following dimensions:
 * **Error Handling and Optionals**: Does the API utilize Rust-idiomatic type
   wrappers (`Option<T>` instead of null pointers, and `Result<T, E>` instead of
   integer error codes)? Is the `?` operator used for clean error propagation?
+  Does it use `zx_status::Status` from the `zx-status` crate instead of
+  duplicating `zx_status_t` and `ZX_ERR_*` constants locally?
 * **Pattern Matching**: Are nested C-style conditional chains or `switch`
   statements replaced with Rust pattern matching (`match`, `if let`,
   `let-else`)?
@@ -142,6 +144,10 @@ When reviewing ports, pay special attention to these common issues:
     `*const T` without considering nullability. If the pointer is never null, it
     should be `NonNull<T>`. If it can be null, it should be `Option<NonNull<T>>`
     to leverage Rust's type safety and null-pointer optimization.
+8.  **Duplicated Zircon Status Constants**: Duplicating `zx_status_t` or any
+    `ZX_ERR_*` constants locally. Check if the Rust port defines these locally,
+    and instruct the implementation agent to depend on `//sdk/rust/zx-status`
+    and use `zx_status::Status` instead.
 
 ---
 
