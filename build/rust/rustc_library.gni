@@ -112,9 +112,8 @@ import("//build/rust/rustc_test.gni")
 #     compiler. These can be accessed at compile time with
 #     [`std::env!`](https://doc.rust-lang.org/stable/std/macro.env.html)
 #
-#   output_dir (optional)
-#     Directory that the resulting library should be placed in.
-#     See: `gn help output_dir`
+#   output_dir, output_prefix_override (optional)
+#     As for GN see rust_library().
 #
 #   pool (optional)
 #     Override the default concurrency pool when building the Rust library.
@@ -277,6 +276,7 @@ template("rustc_library") {
                              "inputs",
                              "output_dir",
                              "output_name",
+                             "output_prefix_override",
                              "pool",
                              "public_configs",
                              "public_deps",

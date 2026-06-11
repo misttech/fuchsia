@@ -4356,8 +4356,15 @@ template("rust_library") {
       _searchdir_path += "/" + target_name
     }
   }
-  _rlib_path = "${_searchdir_path}/lib${invoker.output_name}.rlib"
-  _rmeta_path = "${_searchdir_path}/lib${invoker.output_name}.rmeta"
+
+  if (defined(invoker.output_prefix_override) &&
+      invoker.output_prefix_override) {
+    _output_prefix = ""
+  } else {
+    _output_prefix = "lib"
+  }
+  _rlib_path = "${_searchdir_path}/$_output_prefix${invoker.output_name}.rlib"
+  _rmeta_path = "${_searchdir_path}/$_output_prefix${invoker.output_name}.rmeta"
 
   _rust_generated_files(target_name) {
     forward_variables_from(invoker,
