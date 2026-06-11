@@ -113,18 +113,6 @@ pub unsafe extern "C" fn uuid_to_string(uuid: UuidBytes, out_str: *mut core::ffi
     zx::Status::OK.into_raw()
 }
 
-/// Disconnect an L2CAP channel if one exists.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn disconnect_l2cap() -> i32 {
-    if let Err(err) = block_on(STATE.worker.disconnect_l2cap()) {
-        eprintln!("disconnect_l2cap encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 /// Write data over the L2CAP channel if one exists.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).

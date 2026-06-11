@@ -46,7 +46,10 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
     return Status(StatusCode::INTERNAL, "Connected channel has no socket");
   }
 
-  l2cap_socket_ = std::move(channel.socket().value());
+  {
+    std::scoped_lock lock(m_l2cap_socket_);
+    l2cap_socket_ = std::move(channel.socket().value());
+  }
 
   return Status::OK;
 }
@@ -70,9 +73,11 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
 ::grpc::Status L2capService::Disconnect(::grpc::ServerContext* context,
                                         const ::pandora::l2cap::DisconnectRequest* request,
                                         ::pandora::l2cap::DisconnectResponse* response) {
-  if (disconnect_l2cap() != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  std::scoped_lock lock(m_l2cap_socket_);
+  if (!l2cap_socket_.is_valid()) {
+    return Status(StatusCode::FAILED_PRECONDITION, "L2CAP channel not connected");
   }
+  l2cap_socket_.reset();
   response->mutable_success();
   return Status::OK;
 }

@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.bluetooth.bredr/cpp/fidl.h>
 #include <lib/zx/socket.h>
 
+#include <mutex>
+
 #include "third_party/github.com/google/bt-test-interfaces/src/pandora/l2cap.grpc.pb.h"
 
 class L2capService : public pandora::l2cap::L2CAP::Service {
@@ -40,6 +42,7 @@ class L2capService : public pandora::l2cap::L2CAP::Service {
  private:
   fidl::SyncClient<fuchsia_bluetooth_bredr::Profile> profile_client_;
 
+  std::mutex m_l2cap_socket_;
   zx::socket l2cap_socket_;
 };
 

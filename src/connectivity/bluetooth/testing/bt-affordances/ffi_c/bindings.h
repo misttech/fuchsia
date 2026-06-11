@@ -57,11 +57,6 @@ UuidBytes uuid_from_string(const char *uuid_str);
 /// The caller must ensure that `out_str` points to a valid buffer of at least 37 bytes.
 int32_t uuid_to_string(UuidBytes uuid, char *out_str);
 
-/// Disconnect an L2CAP channel if one exists.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t disconnect_l2cap();
-
 /// Write data over the L2CAP channel if one exists.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
