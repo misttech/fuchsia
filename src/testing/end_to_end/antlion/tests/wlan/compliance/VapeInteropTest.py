@@ -4,7 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
@@ -13,6 +12,7 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
 from openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
     Band,
     BssChannel,
     HtMode,
@@ -55,8 +55,10 @@ class VapeInteropTest(base_test.WifiBaseTest):
             raise signals.TestAbortClass("Requires at least one access point")
 
         # Same for both 2g and 5g
-        self.ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
-        self.password = utils.rand_ascii_str(
+        self.ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
+        self.password = AccessPointConfig.random_string(
             hostapd_constants.AP_PASSPHRASE_LENGTH_2G
         )
         self.security_profile_wpa2 = Security(
@@ -68,21 +70,7 @@ class VapeInteropTest(base_test.WifiBaseTest):
         if self.access_point:
             self.access_point.stop_all_aps()
 
-    def setup_test(self) -> None:
-        if hasattr(self, "android_devices"):
-            for ad in self.android_devices:
-                ad.droid.wakeLockAcquireBright()
-                ad.droid.wakeUpNow()
-        self.dut.wifi_toggle_state(True)
-
     def teardown_test(self) -> None:
-        if hasattr(self, "android_devices"):
-            for ad in self.android_devices:
-                ad.droid.wakeLockRelease()
-                ad.droid.goToSleepNow()
-        self.dut.turn_location_off_and_scan_toggle_off()
-        self.dut.disconnect()
-        self.dut.reset_wifi()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
