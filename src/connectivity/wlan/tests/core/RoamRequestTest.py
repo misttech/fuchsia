@@ -340,8 +340,6 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
-            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_5G)
         return RoamTestParameters(ssid, origin_password, target_password)
 
     async def _test_logic(

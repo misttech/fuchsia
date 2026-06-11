@@ -193,7 +193,6 @@ class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=test.channel.band)
         elif self.access_point:
             security = ConfigMapper.to_hostapd_security(test.security)
             setup_ap(

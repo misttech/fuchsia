@@ -32,7 +32,6 @@ from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     Security,
@@ -83,7 +82,6 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-            ap.verify_wifi_status(band=Band.BAND_2G)
         elif isinstance(ap, AccessPoint):
             setup_ap(
                 access_point=ap,

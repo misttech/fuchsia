@@ -284,6 +284,9 @@ class OpenWrtAP:
         self.ssh.run("uci commit wireless")
         self.start_wifi()
 
+        for radio_config in config.radios:
+            self._verify_wifi_status(radio_config.channel.band)
+
     def _set_capabilities(self, radio: str, provided_caps: list[str]) -> None:
         """Applies the Wi-Fi capabilities to the specified radio.
 
@@ -512,19 +515,19 @@ class OpenWrtAP:
             raise RuntimeError(f"Failed to send BTM request on OpenWrt: {e}")
 
     # TODO(https://fxbug.dev/487804746): Use async functions in this file.
-    def verify_wifi_status(
+    def _verify_wifi_status(
         self,
         band: Band,
         timeout_sec: int = 70,  # TODO(b/504795188): Bypass DFS wait times (60s) via custom regdb
-    ) -> bool:
+    ) -> None:
         """Polls the AP until the hostapd BSS is actively transmitting beacons.
 
         Args:
             band: The band to verify the status for.
             timeout_sec: Maximum time in seconds to wait for AP to be 'ENABLED'.
 
-        Returns:
-            True if the radios are confirmed up and ENABLED within the timeout, False otherwise.
+        Raises:
+            RuntimeError: If the AP is not 'ENABLED' or broadcasting within the timeout.
         """
         match band:
             case Band.BAND_2G:
@@ -540,9 +543,11 @@ class OpenWrtAP:
             if self._is_ap_enabled(
                 band, configured_ssids
             ) and self._is_ap_broadcasting(interface, configured_ssids):
-                return True
+                return
             time.sleep(1)
-        return False
+        raise RuntimeError(
+            f"Wi-Fi band {band} failed to start transmitting beacons within {timeout_sec}s."
+        )
 
     def start_wifi(self) -> None:
         """Starts the access point."""
@@ -602,12 +607,19 @@ class OpenWrtAP:
         self.ssh.run(f"wifi reload {radio}")
 
     def enable_radio(self, radio: Radio) -> None:
-        """Enables the given radio.
+        """Enables the given radio and verifies it starts transmitting.
 
         Args:
             radio: The radio (e.g. Radio.RADIO_2G, Radio.RADIO_5G).
         """
         self._set_radio_enabled(radio, True)
+        if radio == Radio.RADIO_2G:
+            band = Band.BAND_2G
+        elif radio == Radio.RADIO_5G:
+            band = Band.BAND_5G
+        else:
+            raise ValueError(f"Unsupported radio: {radio}")
+        self._verify_wifi_status(band)
 
     def disable_radio(self, radio: Radio) -> None:
         """Disables the given radio.

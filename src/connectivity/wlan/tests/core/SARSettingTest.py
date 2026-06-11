@@ -10,7 +10,6 @@ from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     SecurityOpen,
@@ -80,7 +79,6 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
         elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
                 access_point=self.test_kit.access_point,

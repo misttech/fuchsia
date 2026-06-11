@@ -26,7 +26,6 @@ from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     Security,
@@ -123,7 +122,6 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
         elif self.access_point:
             # Create an AP with default values other than the specified values.
             deprecated_security = ConfigMapper.to_hostapd_security(security)

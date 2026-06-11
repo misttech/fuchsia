@@ -247,7 +247,6 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
             asserts.assert_true(
                 self.dut.associate(
                     ssid,

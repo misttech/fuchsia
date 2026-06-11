@@ -236,7 +236,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif self.access_point:
             self.setup_ap(ssid, wnm_features=wnm_features)
         asserts.assert_true(
@@ -308,7 +307,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif self.access_point:
             wnm_features = frozenset(
                 [hostapd_constants.WnmFeature.BSS_TRANSITION_MANAGEMENT]
@@ -381,7 +379,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif self.access_point:
             self.setup_ap(ssid, wnm_features=wnm_features)
         asserts.assert_true(
@@ -483,9 +480,8 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
             # Disable 5 GHz radio immediately so client connects to 2G
-            self.openwrt_ap.ssh.run(f"wifi down {Radio.RADIO_5G}")
+            self.openwrt_ap.disable_radio(Radio.RADIO_5G)
         elif self.access_point:
             self.setup_ap(
                 ssid,
@@ -521,10 +517,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
 
         # Setup 5 GHz AP with same SSID.
         if self.openwrt_ap:
-            self.openwrt_ap.ssh.run(
-                "uci set wireless.radio1.disabled='0' && uci commit wireless && wifi up radio1"
-            )
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
+            self.openwrt_ap.enable_radio(Radio.RADIO_5G)
         elif self.access_point:
             self.setup_ap(
                 ssid,
@@ -672,9 +665,8 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
             # Disable 5 GHz radio immediately so client connects to 2G
-            self.openwrt_ap.ssh.run(f"wifi down {Radio.RADIO_5G}")
+            self.openwrt_ap.disable_radio(Radio.RADIO_5G)
         elif self.access_point:
             self.setup_ap(
                 ssid,
@@ -705,8 +697,7 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
 
         # Setup 5 GHz AP with same SSID.
         if self.openwrt_ap:
-            self.openwrt_ap.ssh.run(f"wifi up {Radio.RADIO_5G}")
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
+            self.openwrt_ap.enable_radio(Radio.RADIO_5G)
         elif self.access_point:
             self.setup_ap(
                 ssid,
@@ -824,7 +815,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif self.access_point:
             self.setup_ap(
                 ssid,
@@ -886,7 +876,6 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
         elif self.access_point:
             self.setup_ap(
                 ssid,

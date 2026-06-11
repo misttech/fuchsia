@@ -148,7 +148,6 @@ class BeaconLossTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=band)
             self.in_use_interface = (
                 self.openwrt_ap.wlan_5g_interface
                 if band == Band.BAND_5G

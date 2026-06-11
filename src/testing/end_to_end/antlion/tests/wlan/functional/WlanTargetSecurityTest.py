@@ -22,7 +22,6 @@ from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     Security,
@@ -103,7 +102,6 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
         else:
             assert self.access_point is not None
             hostapd_security_mode = ConfigMapper.to_hostapd_security(security)

@@ -363,7 +363,6 @@ class WlanRvrTest(base_test.WifiBaseTest):
                     ]
                 )
                 self.openwrt_ap.configure_wifi(config)
-                self.openwrt_ap.verify_wifi_status(band)
             elif self.access_point:
                 self.access_point.stop_all_aps()
                 legacy_security = HostapdSecurity(

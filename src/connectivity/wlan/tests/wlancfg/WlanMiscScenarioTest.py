@@ -86,7 +86,6 @@ class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif self.access_point:
             hostapd_band = ConfigMapper.to_hostapd_band(channel.band)
             hostapd_security = ConfigMapper.to_hostapd_security(security)

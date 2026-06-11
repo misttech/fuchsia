@@ -240,7 +240,6 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=band)
         elif self.access_point:
             legacy_security_mode = ConfigMapper.to_hostapd_security(security)
             security_profile = DeprecatedSecurity(

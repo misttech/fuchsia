@@ -25,7 +25,6 @@ from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     SecurityOpen,
@@ -123,8 +122,6 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
         elif self.access_point:
             bss_settings_2g: list[hostapd_bss_settings.BssSettings] = []
             bss_settings_5g: list[hostapd_bss_settings.BssSettings] = []

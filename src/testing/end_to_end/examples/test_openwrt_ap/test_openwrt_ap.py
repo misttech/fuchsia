@@ -66,12 +66,6 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
         bss_settings = wifi_config.radios[0].bss_settings[0]
 
         self.openwrt_ap.configure_wifi(wifi_config)
-        asserts.assert_true(
-            self.openwrt_ap.verify_wifi_status(
-                band=wifi_config.radios[0].channel.band
-            ),
-            "WiFi failed to start.",
-        )
 
         self.log.info("Starting scan for SSID: %s", bss_settings.ssid)
         bss_desc_for_ssid = None

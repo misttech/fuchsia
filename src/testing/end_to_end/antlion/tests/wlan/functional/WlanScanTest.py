@@ -32,7 +32,6 @@ from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssChannel,
     BssSettings,
     RadioConfig,
@@ -157,7 +156,6 @@ class WlanScanTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=t.channel.band)
         elif self.access_point:
             security = ConfigMapper.to_hostapd_security(t.security)
             setup_ap(
@@ -257,7 +255,6 @@ class WlanScanTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
         elif self.access_point:
             setup_ap(
                 access_point=self.access_point,

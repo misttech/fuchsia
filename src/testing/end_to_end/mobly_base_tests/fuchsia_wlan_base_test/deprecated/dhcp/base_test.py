@@ -31,7 +31,6 @@ from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     SecurityWpa2,
@@ -141,7 +140,6 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
 
             router_ip = IPv4Address(
                 self.openwrt_ap.get_addr(

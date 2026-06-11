@@ -197,7 +197,6 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=wlan_band)
         elif self.access_point:
             setup_ap(
                 access_point=self.access_point,

@@ -14,7 +14,6 @@ from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     SecurityOpen,
@@ -143,7 +142,6 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
         else:
             assert self.access_point is not None
             access_point.setup_ap(

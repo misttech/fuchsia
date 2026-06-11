@@ -169,7 +169,6 @@ class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=band)
             return ssid
         elif self.access_point:
             try:

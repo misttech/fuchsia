@@ -251,7 +251,6 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=test.original_channel.band)
 
             target_radio = (
                 Radio.RADIO_5G
@@ -325,7 +324,6 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                 else Radio.RADIO_2G
             )
             self.openwrt_ap.enable_radio(target_radio)
-            self.openwrt_ap.verify_wifi_status(band=test.target_channel.band)
         elif self.access_point:
             setup_ap(
                 access_point=self.access_point,

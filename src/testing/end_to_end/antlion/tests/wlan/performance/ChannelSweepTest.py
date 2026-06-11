@@ -335,7 +335,6 @@ class ChannelSweepTest(base_test.WifiBaseTest):
                     ]
                 )
                 self.openwrt_ap.configure_wifi(config)
-                self.openwrt_ap.verify_wifi_status(band)
             else:
                 # Legacy setup_ap expects antlion Security object
                 security_profile = DeprecatedSecurity(

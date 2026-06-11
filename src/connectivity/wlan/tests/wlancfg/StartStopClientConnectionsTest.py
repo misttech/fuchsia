@@ -25,7 +25,6 @@ from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     SecurityWpa2,
@@ -73,7 +72,6 @@ class StartStopClientConnectionsTest(
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
         elif self.access_point:
             security = hostapd_security.Security(
                 security_mode=hostapd_security.SecurityMode.WPA2,
