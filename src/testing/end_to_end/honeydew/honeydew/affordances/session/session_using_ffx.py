@@ -92,6 +92,14 @@ class SessionUsingFfx(session.Session):
             if (
                 'No matching component instance found for query "core/session-manager/session:session"'
                 in str(err)
+            ) or (
+                # ffx may return an internal command error during the initial
+                # connection, in the case, we treat the session as not started
+                # and retry the check later.
+                # LINT.IfChange
+                "BUG: An internal command error occurred."
+                # LINT.ThenChange(//src/developer/ffx/command/error/src/error.rs)
+                in str(err)
             ):
                 # session is not running.
                 return False

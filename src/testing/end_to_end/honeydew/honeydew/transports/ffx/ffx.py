@@ -500,6 +500,9 @@ class FFX:
                     ) from err
                 raise ffx_errors.FfxCommandError(err) from err
             else:
+                # TODO(b/520414073): It's worth treating the ffx internal
+                # command error i.e. "BUG: An internal command error occurred."
+                # differently and retry the command.
                 raise ffx_errors.FfxTimeoutError(err) from err
 
     def popen(  # type: ignore[no-untyped-def]
