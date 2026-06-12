@@ -8,7 +8,7 @@ use crate::vfs::buffers::{InputBuffer, MessageData, OutputBuffer};
 use crate::vfs::with_iovec_segments;
 
 use smallvec::SmallVec;
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, Mutex, TerminalLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::range_ext::RangeExt as _;
 use starnix_uapi::user_address::UserAddress;
@@ -87,7 +87,7 @@ impl VmsplicePayloadSegment {
 #[derive(Debug, Default)]
 pub struct VmsplicePayload {
     mapping: Weak<MemoryManager>,
-    segments: Mutex<SmallVec<[VmsplicePayloadSegment; 1]>>,
+    segments: LockDepMutex<SmallVec<[VmsplicePayloadSegment; 1]>, TerminalLock>,
 }
 
 impl VmsplicePayload {
@@ -100,7 +100,7 @@ impl VmsplicePayload {
         segments: SmallVec<[VmsplicePayloadSegment; 1]>,
     ) -> Arc<Self> {
         let mapping_strong = mapping.upgrade();
-        let payload = Arc::new(Self { mapping, segments: Mutex::new(segments) });
+        let payload = Arc::new(Self { mapping, segments: LockDepMutex::new(segments) });
         if let Some(mapping) = mapping_strong {
             mapping.inflight_vmspliced_payloads.handle_new_payload(&payload);
         }
