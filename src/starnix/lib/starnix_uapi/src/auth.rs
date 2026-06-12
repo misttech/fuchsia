@@ -416,34 +416,12 @@ impl Credentials {
         Ok(())
     }
 
-    pub fn exec(&mut self, maybe_set: UserAndOrGroupId) {
-        let is_suid_or_sgid = maybe_set.is_some();
-        let prev = self.clone();
-
-        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+    pub fn exec(&mut self, prev: &Credentials) -> bool {
+        // From <https://man7.org/linux/man-pages/man7/credentials.7.html>:
         //
-        //   If the set-user-ID bit is set on the program file referred to by
-        //   pathname, then the effective user ID of the calling process is
-        //   changed to that of the owner of the program file.  Similarly, if
-        //   the set-group-ID bit is set on the program file, then the
-        //   effective group ID of the calling process is set to the group of
-        //   the program file.
-        if let Some(uid) = maybe_set.uid {
-            self.euid = uid;
-        }
-
-        if let Some(gid) = maybe_set.gid {
-            self.egid = gid;
-        }
-
-        // On exec, the filesystem UIDs are always reset to the effective UIDs.
-        // See credentials(7).
+        //   On exec, the filesystem UIDs are always reset to the effective UIDs.
         self.fsuid = self.euid;
         self.fsgid = self.egid;
-
-        if is_suid_or_sgid {
-            self.update_capabilities(&prev);
-        }
 
         // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
         //
@@ -472,21 +450,31 @@ impl Credentials {
         //          execve(2)
         //   F()    denotes a file capability set
 
-        // a privileged file is one that has capabilities or
-        // has the set-user-ID or set-group-ID bit set.
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   A privileged file is one that has capabilities or has the set-user-ID
+        //   or set-group-ID bit set.
+        //
         // TODO(https://fxbug.dev/328629782): Add support for file capabilities.
-        let file_is_privileged = is_suid_or_sgid;
+        //
+        // In Linux, a SUID/SGID bit only makes the file privileged if it actually
+        // changes the effective UID/GID of the process.
+        let file_is_privileged = self.euid != prev.euid || self.egid != prev.egid;
 
-        // After having performed any changes to the process effective ID
-        // that were triggered by the set-user-ID mode bit of the binary—
-        // e.g., switching the effective user ID to 0 (root) because a set-
-        // user-ID-root program was executed—the kernel calculates the file
-        // capability sets as follows:
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   After having performed any changes to the process effective ID
+        //   that were triggered by the set-user-ID mode bit of the binary—
+        //   e.g., switching the effective user ID to 0 (root) because a set-
+        //   user-ID-root program was executed—the kernel calculates the file
+        //   capability sets as follows:
 
-        // (1)  If the real or effective user ID of the process is 0 (root),
-        //  then the file inheritable and permitted sets are ignored;
-        //  instead they are notionally considered to be all ones (i.e.,
-        //  all capabilities enabled).
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   (1)  If the real or effective user ID of the process is 0 (root),
+        //        then the file inheritable and permitted sets are ignored;
+        //        instead they are notionally considered to be all ones (i.e.,
+        //        all capabilities enabled).
         let (file_permitted, file_inheritable) =
             if (self.uid == 0 || self.euid == 0) && !self.securebits.contains(SecureBits::NOROOT) {
                 (Capabilities::all(), Capabilities::all())
@@ -494,18 +482,30 @@ impl Credentials {
                 (Capabilities::empty(), Capabilities::empty())
             };
 
-        // (2)  If the effective user ID of the process is 0 (root) or the
-        //  file effective bit is in fact enabled, then the file
-        //  effective bit is notionally defined to be one (enabled).
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   (2)  If the effective user ID of the process is 0 (root) or the
+        //        file effective bit is in fact enabled, then the file
+        //        effective bit is notionally defined to be one (enabled).
         let file_effective = self.euid == 0 && !self.securebits.contains(SecureBits::NOROOT);
 
         // TODO(https://fxbug.dev/328629782): File capabilities are honored for set-user-ID-root
         // binaries with capabilities executed by non-root users. See "Set-user-ID-root programs
         // that have file capabilities" in the man page.
 
-        //   P'(ambient)     = (file is privileged) ? 0 : P(ambient)
-        self.cap_ambient =
-            if file_is_privileged { Capabilities::empty() } else { self.cap_ambient };
+        // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
+        //
+        //   Ambient capabilities are cleared on execve(2) if the process's real
+        //   or effective user ID is changed (e.g., executing a set-user-ID
+        //   program) or if the program has file capabilities.
+        //
+        // In addition to SUID/SGID or file capabilities, Linux clears the ambient set if the exec
+        // is "secure" (secureexec), which includes cases where the real and effective UIDs/GIDs
+        // are different (split UIDs/GIDs).
+        let is_secure_exec = file_is_privileged || self.uid != self.euid || self.gid != self.egid;
+
+        //   P'(ambient)     = (exec is secure) ? 0 : P(ambient)
+        self.cap_ambient = if is_secure_exec { Capabilities::empty() } else { self.cap_ambient };
 
         //   P'(permitted)   = (P(inheritable) & F(inheritable)) |
         //                     (F(permitted) & P(bounding)) | P'(ambient)
@@ -517,6 +517,8 @@ impl Credentials {
         self.cap_effective = if file_effective { self.cap_permitted } else { self.cap_ambient };
 
         self.securebits.remove(SecureBits::KEEP_CAPS);
+
+        is_secure_exec
     }
 
     pub fn as_fscred(&self) -> FsCred {

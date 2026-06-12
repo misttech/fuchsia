@@ -36,7 +36,7 @@ use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::{
     CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER, CAP_FSETID, CAP_MKNOD,
-    CAP_SYS_ADMIN, CAP_SYS_RESOURCE, FsCred, UserAndOrGroupId,
+    CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Credentials, FsCred,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EACCES, ENOTSUP, EPERM, Errno};
@@ -256,12 +256,10 @@ impl FsNodeInfo {
         FsCred { uid: self.uid, gid: self.gid }
     }
 
-    pub fn suid_and_sgid(
-        &self,
-        current_task: &CurrentTask,
-        fs_node: &FsNode,
-    ) -> Result<UserAndOrGroupId, Errno> {
-        let uid = self.mode.contains(FileMode::ISUID).then_some(self.uid);
+    pub fn apply_suid_and_sgid(&self, creds: &mut Credentials) {
+        if self.mode.contains(FileMode::ISUID) {
+            creds.euid = self.uid;
+        }
 
         // See <https://man7.org/linux/man-pages/man7/inode.7.html>:
         //
@@ -270,22 +268,9 @@ impl FsNodeInfo {
         //   as described in execve(2).  For a file that does not have the
         //   group execution bit (S_IXGRP) set, the set-group-ID bit indicates
         //   mandatory file/record locking.
-        let gid = self.mode.contains(FileMode::ISGID | FileMode::IXGRP).then_some(self.gid);
-
-        let maybe_set_id = UserAndOrGroupId { uid, gid };
-        if maybe_set_id.is_some() {
-            // Check that uid and gid actually have execute access before
-            // returning them as the SUID or SGID.
-            check_access(
-                fs_node,
-                current_task,
-                security::PermissionFlags::EXEC,
-                self.uid,
-                self.gid,
-                self.mode,
-            )?;
+        if self.mode.contains(FileMode::ISGID | FileMode::IXGRP) {
+            creds.egid = self.gid;
         }
-        Ok(maybe_set_id)
     }
 }
 

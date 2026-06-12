@@ -36,7 +36,7 @@ use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{Releasable, release_on_error};
 use starnix_uapi::auth::{
     CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
-    PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
+    PTRACE_MODE_REALCREDS, PtraceAccessMode,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -1012,48 +1012,69 @@ impl CurrentTask {
         argv: Vec<CString>,
         environ: Vec<CString>,
     ) -> Result<(), Errno> {
-        // Executable must be a regular file
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES: The file or a script interpreter is not a regular file.
         if !executable.name.entry.node.is_reg() {
             return error!(EACCES);
         }
 
-        // File node must have EXEC mode permissions.
-        // Note that the ability to execute a file is unrelated to the flags
-        // used in the `open` call.
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES: Execute permission is denied for the file or a script or
+        //   ELF interpreter.
         executable.name.check_access(locked, self, Access::EXEC, CheckAccessReason::Exec)?;
 
-        // 1. Prepare a `ResolvedElf` to hold details of the binary to be executed, its credentials,
-        //    etc.
-        // TODO: https://fxbug.dev/483368940 - Split the initial `ResolvedElf` creation from the
-        // resolution of the interpreter binary, if any.
+        // Resolve the executable (and any interpreter) into a `ResolvedElf`.
+        // TODO(https://fxbug.dev/483368940): Split initial resolution from interpreter resolution.
         let mut resolved_elf =
             resolve_executable(locked, self, executable.clone(), path.clone(), argv, environ)?;
 
-        // 2. Allow LSMs to perform access-checks on the target `executable`, and to update the
-        //    `resolved_elf.creds` as necessary.
-        security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
+        // Serialize against ptrace_attach by holding the credentials write lock.
+        let writable_creds = self.write_creds();
 
-        // 3. Resolve details of the initial binary, whether the `executable` itself, or an
-        //    interpreter, if `executable` is a script.
-        // TODO: https://fxbug.dev/483368940 - Split the initial `ResolvedElf` creation from the
-        // resolution of the interpreter binary, if any.
-
-        // 4. Apply UID, GID and capabilities according to the attributes of the resolved binary.
-        // TODO: https://fxbug.dev/503338788 - Collate this logic into a `bprm_creds_from_file()`.
-        let maybe_set_id = if self.kernel().features.enable_suid {
-            resolved_elf.file.name.suid_and_sgid(&self)?
-        } else {
-            Default::default()
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   The aforementioned transformations of the effective IDs are not
+        //   performed (i.e., the set-user-ID and set-group-ID bits are
+        //   ignored) if any of the following is true:
+        //
+        //   * the calling thread is being ptraced (see ptrace(2));
+        //
+        //   * the calling thread has a non-zero "no-new-privs" attribute
+        //     (see prctl(2));
+        let (no_new_privs, is_ptraced) = {
+            let state = self.read();
+            (state.no_new_privs(), state.is_ptraced())
         };
+
+        let enable_suid = self.kernel().features.enable_suid && !no_new_privs && !is_ptraced;
+        if enable_suid {
+            resolved_elf.file.name.apply_suid_and_sgid(&mut resolved_elf.creds);
+        }
+
+        resolved_elf.secure_exec |= resolved_elf.creds.exec(&self.current_creds());
+
+        // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
+        // capabilities accordingly.
+        //
+        // TODO(https://fxbug.dev/503338788) - Migrate this (and other capabilities wrangling)
+        // into a `common_cap::bprm_creds_from_file()` implementation.
+        if no_new_privs {
+            resolved_elf.creds.cap_permitted &= self.current_creds().cap_permitted;
+            resolved_elf.creds.cap_effective &= resolved_elf.creds.cap_permitted;
+        }
+
+        // LSM hook: Perform access checks and allow LSM to update credentials.
+        security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
 
         if self.thread_group().read().tasks_count() > 1 {
             track_stub!(TODO("https://fxbug.dev/297434895"), "exec on multithread process");
             return error!(EINVAL);
         }
 
-        // 5. Finalize the `exec()` operation by actually updating the task state based on the
-        //    resolved details. Failures during this step are unrecoverable.
-        if let Err(err) = self.finish_exec(locked, path, resolved_elf, maybe_set_id) {
+        // Commit the exec. Failures after this point are unrecoverable.
+        if let Err(err) = self.finish_exec(locked, path, resolved_elf, writable_creds) {
             log_warn!("unrecoverable error in exec: {err:?}");
 
             send_standard_signal(locked, self, SignalInfo::forced(SIGSEGV));
@@ -1074,16 +1095,15 @@ impl CurrentTask {
         &mut self,
         locked: &mut Locked<Unlocked>,
         path: CString,
-        mut resolved_elf: ResolvedElf,
-        mut maybe_set_id: UserAndOrGroupId,
+        resolved_elf: ResolvedElf,
+        writable_creds: CurrentTaskCredentialsWriteGuard,
     ) -> Result<(), Errno> {
         // Now that the exec will definitely finish (or crash), notify owners of
         // locked futexes for the current process, which will be impossible to
         // update after process image is replaced.  See get_robust_list(2).
         self.notify_robust_list();
 
-        // If there is already a `MemoryManager` then `exec()` will tear down the underlying Zircon
-        // address-space, before creating an address-space configured ready to run `resolved_elf`.
+        // Tear down the old address space and create a new one for the resolved ELF.
         let mm = {
             let new_mm = MemoryManager::exec(
                 self.thread_group().root_vmar.unowned(),
@@ -1094,39 +1114,31 @@ impl CurrentTask {
             self.running_state().mm.update(Some(new_mm.clone()));
             new_mm
         };
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   All threads other than the calling thread are destroyed during an
+        //   execve(). Mutual exclusion locks, condition variables, and other
+        //   pthreads objects are not preserved.
+        //
+        // TODO(https://fxbug.dev/42082680): Implement thread destruction.
 
-        // TODO(https://fxbug.dev/42082680): All threads other than the calling thread are destroyed.
-
-        // TODO: POSIX timers are not preserved.
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   POSIX timers (timer_create(2)) are not preserved.
+        //
+        // TODO: Implement this.
 
         // TODO: Ensure that the filesystem context is un-shared, undoing the effect of CLONE_FS.
 
-        // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
-        // clone(2).
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   If the calling process was sharing its file descriptor table (via
+        //   the use of CLONE_FILES with clone(2)), then this sharing is undone.
         self.running_state().files.unshare();
         self.running_state().files.exec(locked, self);
 
         {
             let mut state = self.write();
-
-            // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
-            //
-            //   The aforementioned transformations of the effective IDs are not
-            //   performed (i.e., the set-user-ID and set-group-ID bits are
-            //   ignored) if any of the following is true:
-            //
-            //   * the no_new_privs attribute is set for the calling thread (see
-            //      prctl(2));
-            //
-            //   *  the underlying filesystem is mounted nosuid (the MS_NOSUID
-            //      flag for mount(2)); or
-            //
-            //   *  the calling process is being ptraced.
-            //
-            // The MS_NOSUID check is in `NamespaceNode::suid_and_sgid()`.
-            if state.no_new_privs() || state.is_ptraced() {
-                maybe_set_id.clear();
-            }
 
             // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
             //
@@ -1137,15 +1149,11 @@ impl CurrentTask {
             //   /proc/sys/fs/suid_dumpable, in the circumstances described
             //   under PR_SET_DUMPABLE in prctl(2).
             let dumpable =
-                if maybe_set_id.is_none() { DumpPolicy::User } else { DumpPolicy::Disable };
+                if resolved_elf.secure_exec { DumpPolicy::Disable } else { DumpPolicy::User };
             *mm.dumpable.lock(locked) = dumpable;
 
-            // TODO(https://fxbug.dev/433463756): Figure out whether this is the right place to
-            // take the lock.
-            let writable_creds = self.write_creds();
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
-
             // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
             //
             //   If a set-user-ID or set-group-ID
@@ -1154,17 +1162,6 @@ impl CurrentTask {
             //
             // TODO(https://fxbug.dev/356684424): Implement the behavior above once we support
             // the PR_SET_PDEATHSIG flag.
-
-            // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
-            // capabilities accordingly.
-            resolved_elf.creds.exec(maybe_set_id);
-
-            // TODO(https://fxbug.dev/503338788) - Migrate this (and other capabilities wrangling)
-            // into a `common_cap::bprm_creds_from_file()` implementation.
-            if state.no_new_privs() {
-                resolved_elf.creds.cap_permitted &= self.current_creds().cap_permitted;
-                resolved_elf.creds.cap_effective &= resolved_elf.creds.cap_permitted;
-            }
 
             security::bprm_committing_creds(locked, self, &resolved_elf)?;
 
@@ -2099,7 +2096,7 @@ impl CurrentTask {
         //
         //      -  The caller has the CAP_SYS_PTRACE capability in the user
         //         namespace of the target.
-        let target_creds = target.real_creds();
+        let target_creds = target.persistent_info.lock_creds();
         if !(target_creds.uid == uid
             && target_creds.euid == uid
             && target_creds.saved_uid == uid

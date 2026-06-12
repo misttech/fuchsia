@@ -813,3 +813,116 @@ TEST_F(CapsExecTest, SecurebitNoRootDropsCapabilitiesOnExec) {
     EXPECT_EQ(capabilities[cap].permitted, 0);
   }
 }
+
+TEST_F(CapsExecTest, RealUidRootEffectiveUidNonRootWithNoRootKeepsOnlyAmbientCaps) {
+  std::vector<capability_t> capabilities;
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      [&]() {
+        // 1. Enable SECBIT_NO_SETUID_FIXUP so that changing the EUID to non-root
+        //    does not immediately clear our permitted/ambient capabilities.
+        // 2. Enable SECBIT_NOROOT so that having real UID == 0 does not
+        //    automatically grant us all capabilities upon exec.
+        SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP | SECBIT_NOROOT));
+
+        // 3. Set CAP_NET_ADMIN in the Inheritable and Ambient sets.
+        //    (It is already in Permitted because we started as root).
+        test_helper::SetCapabilityInheritable(CAP_NET_ADMIN);
+        test_helper::SetCapabilityAmbient(CAP_NET_ADMIN);
+
+        // 4. Change effective UID to non-root (kUser1Uid), leaving real UID as root (kRootUid).
+        SAFE_SYSCALL(setresuid(kRootUid, kUser1Uid, kRootUid));
+
+        // Verify the pre-exec state
+        ASSERT_EQ(getuid(), kRootUid);
+        ASSERT_EQ(geteuid(), kUser1Uid);
+        ASSERT_TRUE(test_helper::HasCapabilityAmbient(CAP_NET_ADMIN));
+      },
+      capabilities));
+
+  // After exec:
+  // Because SECBIT_NOROOT was set, we should NOT have regained all capabilities.
+  // Furthermore, because we transitioned to a state where real UID (0) != effective UID (non-root),
+  // the kernel triggers a "secure execution" (secureexec) which clears the ambient capability set.
+  // Therefore, the new process ends up with NO capabilities at all.
+  for (int cap = 0; cap <= cap_last_cap_; cap++) {
+    EXPECT_EQ(capabilities[cap].effective, 0);
+    EXPECT_EQ(capabilities[cap].permitted, 0);
+    EXPECT_EQ(capabilities[cap].ambient, 0);
+  }
+}
+
+TEST_F(CapsExecTest, RealUidRootEffectiveUidNonRootRegainsAllCapsByDefault) {
+  std::vector<capability_t> capabilities;
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      [&]() {
+        // Enable SECBIT_NO_SETUID_FIXUP to preserve caps during the EUID change,
+        // but leave SECBIT_NOROOT disabled.
+        SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP));
+
+        // Set CAP_NET_ADMIN in Ambient.
+        test_helper::SetCapabilityInheritable(CAP_NET_ADMIN);
+        test_helper::SetCapabilityAmbient(CAP_NET_ADMIN);
+
+        // Change effective UID to non-root.
+        SAFE_SYSCALL(setresuid(kRootUid, kUser1Uid, kRootUid));
+
+        ASSERT_EQ(getuid(), kRootUid);
+        ASSERT_EQ(geteuid(), kUser1Uid);
+      },
+      capabilities));
+
+  // After exec:
+  // Because real UID is 0 and SECBIT_NOROOT was NOT set, the kernel automatically
+  // grants ALL capabilities to the permitted set of the new process.
+  // However, because the effective UID is non-zero and the ambient set was cleared
+  // (due to secureexec), the effective capability set is empty.
+  for (int cap = 0; cap <= cap_last_cap_; cap++) {
+    EXPECT_EQ(capabilities[cap].effective, 0);
+    EXPECT_EQ(capabilities[cap].permitted, 1);
+  }
+}
+
+TEST_F(CapsExecTest, SUIDBinarySameUserPreservesAmbientCapabilities) {
+  std::vector<capability_t> capabilities;
+
+  // Set print_helper to be SUID owned by kUser1Uid.
+  SAFE_SYSCALL(chown(print_helper_.c_str(), kUser1Uid, kUser1Gid));
+  SAFE_SYSCALL(chmod(print_helper_.c_str(), S_ISUID | S_IXOTH | S_IRWXU));
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      [&]() {
+        // Change to kUser1Uid.
+        SAFE_SYSCALL(setresgid(kUser1Gid, kUser1Gid, kUser1Gid));
+        SAFE_SYSCALL(setgroups(0, nullptr));
+        SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS));
+        SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, kUser1Uid));
+
+        // Set CAP_NET_ADMIN in Ambient.
+        test_helper::SetCapabilityInheritable(CAP_NET_ADMIN);
+        test_helper::SetCapabilityAmbient(CAP_NET_ADMIN);
+
+        // Verify pre-exec state.
+        ASSERT_EQ(getuid(), kUser1Uid);
+        ASSERT_EQ(geteuid(), kUser1Uid);
+        ASSERT_TRUE(test_helper::HasCapabilityAmbient(CAP_NET_ADMIN));
+      },
+      capabilities));
+
+  // After exec:
+  // Because the binary is SUID to the SAME user (kUser1Uid) and there is no
+  // UID change, the SUID bit does NOT trigger a "secure execution" (secureexec).
+  // Therefore, the ambient capability set is PRESERVED.
+  for (int cap = 0; cap <= cap_last_cap_; cap++) {
+    if (cap == CAP_NET_ADMIN) {
+      EXPECT_EQ(capabilities[cap].effective, 1);
+      EXPECT_EQ(capabilities[cap].permitted, 1);
+      EXPECT_EQ(capabilities[cap].ambient, 1);
+    } else {
+      EXPECT_EQ(capabilities[cap].effective, 0);
+      EXPECT_EQ(capabilities[cap].permitted, 0);
+      EXPECT_EQ(capabilities[cap].ambient, 0);
+    }
+  }
+}

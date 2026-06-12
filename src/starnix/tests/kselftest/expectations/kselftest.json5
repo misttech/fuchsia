@@ -12,7 +12,6 @@
             matchers: [
                 //TODO(https://fxbug.dev/445523586): failing tests in kselftest
                 "binderfs",
-                "capabilities_test_execve",
                 "kcmp_kcmp_test",
                 "mm_mremap_test",
                 "net_psock_tpacket",

@@ -628,12 +628,7 @@ pub fn load_executable(
 
     let auxv = {
         let creds = current_task.current_creds();
-        let secure =
-            if resolved_elf.secure_exec || creds.uid != creds.euid || creds.gid != creds.egid {
-                1
-            } else {
-                0
-            };
+        let secure = if resolved_elf.secure_exec { 1 } else { 0 };
 
         let hwcap = if main_elf.arch_width.is_arch32() {
             #[cfg(target_arch = "aarch64")]

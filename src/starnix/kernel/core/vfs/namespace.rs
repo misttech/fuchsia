@@ -26,7 +26,7 @@ use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
 };
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
-use starnix_uapi::auth::UserAndOrGroupId;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
@@ -1719,12 +1719,16 @@ impl NamespaceNode {
         ArcKey::ref_cast(&self.entry)
     }
 
-    pub fn suid_and_sgid(&self, current_task: &CurrentTask) -> Result<UserAndOrGroupId, Errno> {
+    pub fn apply_suid_and_sgid(&self, creds: &mut Credentials) {
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   The aforementioned transformations of the effective IDs are not
+        //   performed ... if ... the underlying filesystem is mounted nosuid
+        //   (the MS_NOSUID flag for mount(2)).
         if self.mount.flags().contains(MountFlags::NOSUID) {
-            Ok(UserAndOrGroupId::default())
-        } else {
-            self.entry.node.info().suid_and_sgid(current_task, &self.entry.node)
+            return;
         }
+        self.entry.node.info().apply_suid_and_sgid(creds)
     }
 
     pub fn update_atime(&self) {
