@@ -6,7 +6,6 @@
 
 #![no_std]
 
-#[cfg(test)]
 extern crate self as fbl;
 
 mod array;
@@ -25,6 +24,7 @@ mod ring_buffer;
 mod sentinel;
 mod singly_linked_list;
 mod size_tracker;
+mod slab_allocator;
 mod string_buffer;
 mod tag;
 mod unique_ptr;
@@ -57,8 +57,14 @@ pub use ring_buffer::RingBuffer;
 pub use sentinel::*;
 pub use singly_linked_list::{SinglyLinkedList, SinglyLinkedListContainable, SinglyLinkedListNode};
 pub use size_tracker::{NonTrackingSize, SizeTracker, TrackingSize};
+pub use slab_allocator::{
+    DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE, InstancedSlabAllocated, RawLock, SlabAllocator, SlabOrigin,
+    StaticSlabAllocated,
+};
 pub use string_buffer::StringBuffer;
 pub use tag::DefaultObjectTag;
 pub use unique_ptr::UniquePtr;
 pub use vector::Vector;
-pub use wavl_tree::{WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode};
+pub use wavl_tree::{
+    Cursor, CursorMut, WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
+};

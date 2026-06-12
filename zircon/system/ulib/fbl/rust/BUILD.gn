@@ -28,6 +28,7 @@ rustc_library("fbl") {
     "src/sentinel.rs",
     "src/singly_linked_list.rs",
     "src/size_tracker.rs",
+    "src/slab_allocator.rs",
     "src/string_buffer.rs",
     "src/tag.rs",
     "src/unique_ptr.rs",
@@ -35,10 +36,14 @@ rustc_library("fbl") {
     "src/wavl_tree.rs",
   ]
   with_unit_tests = true
-  test_deps = [ ":test_support" ]
+  test_deps = [
+    ":test_support",
+    "//third_party/rust_crates:lock_api",
+  ]
   deps = [
     "fbl-macros",
     "//src/lib/kalloc",
+    "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
   ]
