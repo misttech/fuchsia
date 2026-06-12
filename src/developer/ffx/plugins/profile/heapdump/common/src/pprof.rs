@@ -12,27 +12,51 @@ use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 use std::io::Write;
 
-// Tries to instantiate a symbolizer instance to resolve addresses in the given address space.
+// Tries to create a `Symbolizer` to resolve addresses in the given snapshot.
 //
-// Fails gracefully returning None if (at least) one of the provided ExecutableRegion entries
-// does not have the necessary information. This can happen with old heapdump collector builds
+// Returns `Err` if any of the `ExecutableRegion`s in the snapshot necessary
+// for resolving the program addresses contained in the snapshot lack the
+// necessary information. This can happen with old heapdump collector builds
 // from before the `name` and `vaddr` fields were added to the FIDL table.
 fn instantiate_symbolizer(
     context: &EnvironmentContext,
-    executable_regions: &HashMap<u64, ExecutableRegion>,
+    snapshot: &Snapshot,
 ) -> Result<ffx_symbolize::Symbolizer> {
+    let mut sorted_regions: Vec<(u64, &ExecutableRegion)> =
+        snapshot.executable_regions.iter().map(|(k, v)| (*k, v)).collect();
+    sorted_regions.sort_by_key(|(address, _)| *address);
+
+    let mut referenced_regions = HashMap::with_capacity(sorted_regions.len());
+    let mut searched_program_addresses = HashSet::new();
+    for allocation in &snapshot.allocations {
+        for program_address in &allocation.stack_trace.program_addresses {
+            if searched_program_addresses.insert(*program_address) {
+                let _ = sorted_regions.binary_search_by(|(region_starting_address, region)| {
+                    if *region_starting_address + region.size < *program_address {
+                        std::cmp::Ordering::Less
+                    } else if *program_address < *region_starting_address {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        referenced_regions.insert(*region_starting_address, region);
+                        std::cmp::Ordering::Equal
+                    }
+                });
+            }
+        }
+    }
+
     let mut symbolizer = ffx_symbolize::Symbolizer::with_context(context)?;
     let mut symbolizer_module_ids = HashMap::new();
-    for (address, info) in executable_regions {
+    for (region_starting_address, region) in referenced_regions {
         let module_id = symbolizer_module_ids
-            .entry(info.build_id.clone())
-            .or_insert_with(|| symbolizer.add_module(&info.name, &info.build_id));
+            .entry(region.build_id.clone())
+            .or_insert_with(|| symbolizer.add_module(&region.name, &region.build_id));
         symbolizer.add_mapping(
             *module_id,
             ffx_symbolize::MappingDetails {
-                start_addr: *address,
-                size: info.size,
-                vaddr: info.vaddr.context("missing vaddr")?,
+                start_addr: region_starting_address,
+                size: region.size,
+                vaddr: region.vaddr.context("missing vaddr")?,
                 flags: ffx_symbolize::MappingFlags::EXECUTE,
             },
         )?;
@@ -129,7 +153,7 @@ impl<'c> PProfProfileBuilder<'c> {
 
         // If symbolization was requested, populate its own view of the mappings too.
         let symbolizer = if self.symbolize {
-            if let Ok(symbolizer) = instantiate_symbolizer(self.ctx, &snapshot.executable_regions) {
+            if let Ok(symbolizer) = instantiate_symbolizer(self.ctx, &snapshot) {
                 Some(symbolizer)
             } else {
                 eprintln!(
