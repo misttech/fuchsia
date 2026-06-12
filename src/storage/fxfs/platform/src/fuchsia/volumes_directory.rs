@@ -933,9 +933,9 @@ impl VolumesDirectory {
     }
 
     async fn handle_set_limit(self: &Arc<Self>, store_id: u64, bytes: u64) -> Result<(), Error> {
-        let fs = self.root_volume.volume_directory().store().filesystem();
-        let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
-        fs.allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
+        let store = self.root_volume.volume_directory().store();
+        let mut transaction = store.new_transaction(lock_keys![], Options::default()).await?;
+        store.filesystem().allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
         transaction.commit().await?;
         Ok(())
     }
@@ -2596,7 +2596,7 @@ mod tests {
         let volume =
             volumes_directory.create_and_mount_volume(name, None, false, None).await.unwrap();
         let mut transaction = filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     volume.volume().store().store_object_id(),
@@ -2757,7 +2757,7 @@ mod tests {
             store_id = volume.volume().store().store_object_id();
             // Make sure the volume has some journaled mutations.
             let mut transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         volume.volume().store().store_object_id(),
@@ -2996,7 +2996,7 @@ mod tests {
                 .expect("open failed");
 
             let mut transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         vol.volume().store().store_object_id(),
@@ -3050,7 +3050,7 @@ mod tests {
                 .expect("open failed");
 
             let mut transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         vol.volume().store().store_object_id(),
@@ -3142,7 +3142,7 @@ mod tests {
             // Write some data to dirty the journal.
             {
                 let mut transaction = filesystem
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             volume.volume().store().store_object_id(),

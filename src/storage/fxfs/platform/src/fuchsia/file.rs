@@ -555,8 +555,6 @@ impl vfs::node::Node for FxFile {
         let store = self.handle.store();
         let object_id = self.object_id();
         let transaction = store
-            .filesystem()
-            .clone()
             .new_transaction(
                 lock_keys![
                     LockKey::object(store.store_object_id(), object_id),

@@ -136,7 +136,6 @@ impl DeliveryBlobWriter {
         let store = parent.store();
         let keys = lock_keys![LockKey::object(store.store_object_id(), parent.object_id())];
         let mut transaction = store
-            .filesystem()
             .new_transaction(keys, Default::default())
             .await
             .context("Failed to create transaction.")?;

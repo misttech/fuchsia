@@ -547,7 +547,6 @@ impl PagedObjectHandle {
         reservation: Option<&'a Reservation>,
     ) -> Result<Transaction<'a>, Error> {
         self.store()
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::object(
                     self.handle.store().store_object_id(),
@@ -2882,7 +2881,6 @@ mod tests {
         let fixture = TestFixture::new().await;
 
         let vol = fixture.volume().volume().clone();
-        let fs = fixture.fs().clone();
 
         // Run the test in a separate executor to avoid issues caused by stalling page_in requests
         // (see `page_in` above).
@@ -2892,7 +2890,8 @@ mod tests {
                 let root_dir = Directory::open(&vol, root_object_id).await.expect("open failed");
 
                 let file;
-                let mut transaction = fs
+                let mut transaction = vol
+                    .store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             vol.store().store_object_id(),

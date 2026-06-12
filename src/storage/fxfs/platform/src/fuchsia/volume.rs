@@ -259,7 +259,6 @@ impl FxVolume {
         // Have to do separate calls to create the profile dir if necessary.
         let mut transaction = self
             .store()
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::object(
                     self.store().store_object_id(),
@@ -2583,12 +2582,11 @@ mod tests {
 
                 // Move the file in flight to ensure a new version lands to be used next time.
                 {
-                    let store_id = fixture.volume().volume().store().store_object_id();
+                    let store = fixture.volume().volume().store();
+                    let store_id = store.store_object_id();
                     let dir = fixture.volume().volume().get_profile_directory().await.unwrap();
                     let old_file = dir.lookup("foo").await.unwrap().unwrap().0;
-                    let mut transaction = fixture
-                        .fs()
-                        .clone()
+                    let mut transaction = store
                         .new_transaction(
                             lock_keys!(
                                 LockKey::object(store_id, dir.object_id()),
@@ -2786,12 +2784,11 @@ mod tests {
 
                 // Move the file in flight to ensure a new version lands to be used next time.
                 {
-                    let store_id = fixture.volume().volume().store().store_object_id();
+                    let store = fixture.volume().volume().store();
+                    let store_id = store.store_object_id();
                     let dir = fixture.volume().volume().get_profile_directory().await.unwrap();
                     let old_file = dir.lookup("foo").await.unwrap().unwrap().0;
-                    let mut transaction = fixture
-                        .fs()
-                        .clone()
+                    let mut transaction = store
                         .new_transaction(
                             lock_keys!(
                                 LockKey::object(store_id, dir.object_id()),

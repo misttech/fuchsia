@@ -116,7 +116,7 @@ mod tests {
             Directory::open(&store, store.root_directory_object_id()).await.unwrap();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),

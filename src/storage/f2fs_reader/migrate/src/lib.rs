@@ -239,7 +239,7 @@ pub async fn migrate(
             };
 
             let mut transaction = fxfs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![
                         LockKey::object(dir.owner().store_object_id(), dir.object_id()),
@@ -903,7 +903,7 @@ pub async fn deep_copy_files(
             let len = inode.inline_data.as_ref().unwrap().len();
             let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
             let mut transaction = fxfs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(vol.store_object_id(), object_id)],
                     Options::default(),
@@ -976,7 +976,7 @@ pub async fn deep_copy_files(
                         .expect("read f2fs data block");
 
                     let mut transaction = fxfs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(vol.store_object_id(), object_id)],
                             Options::default(),
@@ -1079,7 +1079,7 @@ pub async fn migrate_device(
 
         let metadata_object_handle;
         let mut transaction = fxfs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new reserve f2fs metadata transaction");

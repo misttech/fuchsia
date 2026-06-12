@@ -26,7 +26,6 @@ impl ObjectStore {
     ) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::ProjectId {
                     store_object_id: self.store_object_id,
@@ -54,7 +53,6 @@ impl ObjectStore {
     pub async fn clear_project_limit(&self, project_id: ProjectId) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::ProjectId {
                     store_object_id: self.store_object_id,
@@ -82,7 +80,6 @@ impl ObjectStore {
     ) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::object(self.store_object_id, node_id)],
                 Options::default(),
@@ -155,7 +152,6 @@ impl ObjectStore {
     pub async fn clear_project_for_node(&self, node_id: u64) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::object(self.store_object_id, node_id)],
                 Options::default(),

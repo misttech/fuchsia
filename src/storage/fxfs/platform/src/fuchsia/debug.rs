@@ -962,9 +962,7 @@ mod tests {
 
             // Write a new file to populate the mutable layer with something.
             let root_dir = volume_and_root.root_dir();
-            let fs = fixture.fs();
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -1014,9 +1012,7 @@ mod tests {
 
             // Make some mutations in vol2 to make sure a flush will actually build a new layer.
             let root_dir = volume_and_root.root_dir();
-            let fs = fixture.fs();
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),

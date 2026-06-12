@@ -6,8 +6,11 @@ use crate::fuse_attr::{create_file_attr, to_fxfs_time};
 use crate::fuse_errors::{FuseErrorParser, FxfsResult};
 use crate::fuse_fs::{FuseFs, FuseStrParser};
 use async_trait::async_trait;
+use fidl_fuchsia_io as fio;
+use fuchsia as _;
 use fuse3::Result;
 use fuse3::raw::prelude::{Filesystem as FuseFilesystem, *};
+use futures as _;
 use futures_util::stream::Iter;
 use futures_util::{StreamExt, stream};
 use fxfs::errors::FxfsError;
@@ -22,7 +25,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec::IntoIter;
-use {fidl_fuchsia_io as fio, fuchsia as _, futures as _};
 
 /// The TTL duration of each reply.
 const TTL: Duration = Duration::from_secs(1);
@@ -58,7 +60,7 @@ impl FuseFs {
         if dir.lookup(name.osstr_to_str()?).await?.is_none() {
             let mut transaction = self
                 .fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         self.default_store.store_object_id(),
@@ -308,7 +310,7 @@ impl FuseFs {
             let handle = self.get_object_handle(inode).await?;
             let mut transaction = self
                 .fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         self.default_store.store_object_id(),
@@ -338,7 +340,7 @@ impl FuseFs {
         } else if object_type == ObjectDescriptor::Directory {
             let transaction = self
                 .fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(self.default_store.store_object_id(), inode)],
                     Options::default(),
@@ -384,7 +386,7 @@ impl FuseFs {
         if dir.lookup(name.osstr_to_str()?).await?.is_none() {
             let mut transaction = self
                 .fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         self.default_store.store_object_id(),
@@ -646,7 +648,7 @@ impl FuseFs {
         let dir = self.open_dir(parent).await?;
         let mut transaction = self
             .fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(self.default_store.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -681,7 +683,7 @@ impl FuseFs {
 
             let mut transaction = self
                 .fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![
                         LockKey::object(self.default_store.store_object_id(), dir.object_id()),

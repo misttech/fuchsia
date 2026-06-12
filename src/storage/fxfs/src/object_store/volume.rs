@@ -42,9 +42,7 @@ impl RootVolume {
     ) -> Result<Arc<ObjectStore>, Error> {
         let root_store = self.filesystem.root_store();
         let store;
-        let mut transaction = self
-            .filesystem
-            .clone()
+        let mut transaction = root_store
             .new_transaction(
                 lock_keys![LockKey::object(
                     root_store.store_object_id(),
@@ -281,7 +279,6 @@ impl RootVolume {
             transaction = Some((
                 object_id,
                 store
-                    .filesystem()
                     .new_transaction(
                         LockKeys::Vec(lock_keys.clone()),
                         Options { borrow_metadata_space: true, ..Default::default() },
@@ -395,7 +392,7 @@ mod tests {
                 .await
                 .expect("new_volume failed");
             let mut transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -460,7 +457,7 @@ mod tests {
                 .expect("new_volume failed");
             store_object_id = store.store_object_id();
             let mut transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(store_object_id, store.root_directory_object_id())],
                     Options::default(),
@@ -505,7 +502,7 @@ mod tests {
             );
             let root = root_volume(filesystem.clone()).await.expect("root_volume failed");
             let transaction = filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![
                         LockKey::object(
@@ -563,7 +560,7 @@ mod tests {
             let root = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root.new_volume("vol", NewChildStoreOptions::default()).await.unwrap();
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -586,7 +583,7 @@ mod tests {
                 .await
                 .expect("new_volume failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),

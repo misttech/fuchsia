@@ -387,7 +387,6 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     ) -> Result<Transaction<'b>, Error> {
         Ok(self
             .store()
-            .filesystem()
             .new_transaction(
                 lock_keys![
                     LockKey::object_attribute(
@@ -1898,11 +1897,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         mode: SetExtendedAttributeMode,
     ) -> Result<(), Error> {
         let store = self.store();
-        let fs = store.filesystem();
         // NB: We need to take this lock before we potentially look up the value to prevent racing
         // with another set.
         let keys = lock_keys![LockKey::object(store.store_object_id(), self.object_id())];
-        let mut transaction = fs.new_transaction(keys, Options::default()).await?;
+        let mut transaction = store.new_transaction(keys, Options::default()).await?;
         self.set_extended_attribute_impl(name, value, mode, &mut transaction).await?;
         transaction.commit().await?;
         Ok(())
@@ -2036,7 +2034,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         // we take a lock and make a transaction before we do so we don't race with other
         // operations.
         let keys = lock_keys![LockKey::object(store.store_object_id(), self.object_id())];
-        let mut transaction = store.filesystem().new_transaction(keys, Options::default()).await?;
+        let mut transaction = store.new_transaction(keys, Options::default()).await?;
 
         let attribute_to_delete =
             match tree.find(&object_key).await?.ok_or(FxfsError::NotFound)?.value {
@@ -2164,7 +2162,7 @@ mod tests {
         let store = fs.root_store();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -2528,7 +2526,7 @@ mod tests {
                 .await
                 .expect("open failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![
                     LockKey::object(store.store_object_id(), store.root_directory_object_id()),

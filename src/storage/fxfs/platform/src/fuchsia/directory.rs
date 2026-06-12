@@ -130,7 +130,7 @@ impl FxDirectory {
                     vfs::CreationMode::AllowExisting | vfs::CreationMode::Always
                 );
             let transaction_or_guard = if create_object {
-                Left(fs.clone().new_transaction(keys, Options::default()).await?)
+                Left(store.new_transaction(keys, Options::default()).await?)
             } else {
                 // When child objects are created, the object is created along with the
                 // directory entry in the same transaction, and so we need to hold a read lock
@@ -306,9 +306,8 @@ impl FxDirectory {
         create_attributes: Option<&fio::MutableNodeAttributes>,
     ) -> Result<OpenedNode<dyn FxNode>, Error> {
         let store = self.store();
-        let fs = store.filesystem();
         let keys = lock_keys![LockKey::object(store.store_object_id(), self.directory.object_id())];
-        let mut transaction = fs.clone().new_transaction(keys, Options::default()).await?;
+        let mut transaction = store.new_transaction(keys, Options::default()).await?;
         let file = FxFile::new(
             self.directory.create_child_unnamed_temporary_file(&mut transaction).await?,
         );
@@ -455,8 +454,7 @@ impl FxDirectory {
             // to update the ref count. Note, fscrypt does not require the source directory to be
             // locked because a directory's wrapping key cannot change once the directory has
             // entries.
-            let fs = store.filesystem();
-            let transaction = fs
+            let transaction = store
                 .new_transaction(
                     lock_keys![
                         LockKey::object(store.store_object_id(), self.object_id()),
@@ -747,13 +745,12 @@ impl MutableDirectory for FxDirectory {
         &self,
         attributes: fio::MutableNodeAttributes,
     ) -> Result<(), zx::Status> {
-        let fs = self.store().filesystem();
         // TODO(b/365630582): Reconsider doing this as part of the transaction below.
         if let Some(casefold) = attributes.casefold {
             self.directory.set_casefold(casefold).await.map_err(map_to_status)?;
         }
-        let transaction = fs
-            .clone()
+        let transaction = self
+            .store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     self.store().store_object_id(),
@@ -799,9 +796,8 @@ impl MutableDirectory for FxDirectory {
         let store = self.store();
         let dir = &self.directory;
         let keys = lock_keys![LockKey::object(store.store_object_id(), dir.object_id())];
-        let fs = store.filesystem();
         let mut transaction =
-            fs.new_transaction(keys, Options::default()).await.map_err(map_to_status)?;
+            store.new_transaction(keys, Options::default()).await.map_err(map_to_status)?;
         if dir.lookup(&name).await.map_err(map_to_status)?.is_some() {
             return Err(zx::Status::ALREADY_EXISTS);
         }

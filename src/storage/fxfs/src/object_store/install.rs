@@ -170,7 +170,7 @@ impl ObjectStore {
             ..Default::default()
         };
 
-        let mut transaction = fs.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
         transaction.add(self.store_object_id(), Mutation::BeginFlush);
         transaction.commit().await?;
 
@@ -178,8 +178,7 @@ impl ObjectStore {
         // For this, we need two transactions: one to create the new layer (graveyarded so it's
         // cleaned up if we crash), and another that atomically swaps in the new layer and
         // graveyards the old ones.
-        let mut create_new_layer_txn =
-            fs.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut create_new_layer_txn = self.new_transaction(lock_keys![], txn_options).await?;
         let reservation_update: ReservationUpdate; // Must outlive `activate_volume_txn`.
         let parent_store = self.parent_store.as_ref().unwrap();
 
@@ -456,7 +455,7 @@ mod tests {
             let keys = lock_keys![LockKey::object(volume.store_object_id(), inner_dir.object_id())];
             let mut transaction = volume
                 .filesystem()
-                .clone()
+                .root_store()
                 .new_transaction(keys, Default::default())
                 .await
                 .unwrap();
@@ -492,7 +491,7 @@ mod tests {
                 lock_keys![LockKey::object(volume.store_object_id(), dir.object_id())];
             let mut transaction = volume
                 .filesystem()
-                .clone()
+                .root_store()
                 .new_transaction(keys, Default::default())
                 .await
                 .unwrap();
@@ -705,7 +704,7 @@ mod tests {
                     LockKey::object(dst_volume.store_object_id(), dst_dir.object_id())
                 ];
                 let mut transaction =
-                    fs.clone().new_transaction(keys, Default::default()).await.unwrap();
+                    fs.root_store().new_transaction(keys, Default::default()).await.unwrap();
                 pending_dir.create_child_file(&mut transaction, &format!("{}", i)).await.unwrap();
                 dst_dir.create_child_file(&mut transaction, &format!("{}", i)).await.unwrap();
                 transaction.commit().await.unwrap();

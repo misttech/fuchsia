@@ -809,7 +809,7 @@ mod tests {
         const NUM_ENTRIES: u64 = 16384;
         for _ in 0..NUM_ENTRIES {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -904,7 +904,7 @@ mod tests {
         // Delete all the objects we just made.
         for object_id in created_object_ids {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -924,7 +924,7 @@ mod tests {
         // super blocks.
         for _ in 0..NUM_ENTRIES {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -1038,7 +1038,7 @@ mod tests {
             let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
             let root_store = fs.root_store();
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -1086,7 +1086,7 @@ mod tests {
             let root_store = fs.root_store();
             for _ in 0..6000 {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(lock_keys![], Options::default())
                     .await
                     .expect("new_transaction failed");
@@ -1151,7 +1151,7 @@ mod tests {
         // Generate enough work to induce a journal flush and thus a new superblock being written.
         for _ in 0..6000 {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -1216,7 +1216,7 @@ mod tests {
         // Generate enough work to induce a journal flush.
         for _ in 0..6000 {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -1272,7 +1272,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -1293,7 +1293,7 @@ mod tests {
         let root_store = fs.root_store();
         for _ in 0..6000 {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");

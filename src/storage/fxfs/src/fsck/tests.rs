@@ -149,7 +149,7 @@ async fn install_items_in_store<K: Key, V: Value>(
     let device = filesystem.device();
     let parent_store = store.parent_store().unwrap();
     let mut transaction = filesystem
-        .clone()
+        .root_store()
         .new_transaction(lock_keys![], Options::default())
         .await
         .expect("new_transaction failed");
@@ -229,9 +229,7 @@ async fn test_missing_graveyard() {
     {
         let fs = test.filesystem();
         let root_store = fs.root_store();
-        let mut transaction = fs
-            .clone()
-            .new_transaction(
+        let mut transaction = fs.root_store().new_transaction(
                 lock_keys![],
                 transaction::Options {
                     skip_journal_checks: true,
@@ -264,7 +262,7 @@ async fn test_bad_graveyard_value() {
     {
         let fs = test.filesystem();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -295,7 +293,7 @@ async fn test_extra_allocation() {
     {
         let fs = test.filesystem();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -322,7 +320,7 @@ async fn test_misaligned_allocation() {
     {
         let fs = test.filesystem();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -356,7 +354,7 @@ async fn test_malformed_allocation() {
         // allocator code checks range validity.
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -441,7 +439,7 @@ async fn test_misaligned_extent_in_child_store() {
             .unwrap();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -489,7 +487,7 @@ async fn test_malformed_extent_in_child_store() {
             .unwrap();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -578,8 +576,7 @@ async fn test_volume_allocation_mismatch() {
                 .await
                 .expect("open failed");
 
-            let mut transaction = fs
-                .clone()
+            let mut transaction = volume
                 .new_transaction(
                     lock_keys![LockKey::object(
                         volume.store_object_id(),
@@ -594,8 +591,7 @@ async fn test_volume_allocation_mismatch() {
                 .await
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
-            let mut transaction = fs
-                .clone()
+            let mut transaction = volume
                 .new_transaction(
                     lock_keys![LockKey::object(volume.store_object_id(), handle.object_id())],
                     Options::default(),
@@ -711,7 +707,7 @@ async fn test_too_many_object_refs() {
             .expect("open failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     root_store.store_object_id(),
@@ -754,7 +750,7 @@ async fn test_too_few_object_refs() {
         // Create an object but no directory entry referencing that object, so it will end up with a
         // reference count of one, but zero references.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -789,8 +785,7 @@ async fn test_missing_object_tree_layer_file() {
             )
             .await
             .unwrap();
-        let mut transaction = fs
-            .clone()
+        let mut transaction = volume
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -805,7 +800,7 @@ async fn test_missing_object_tree_layer_file() {
             layers.layers[0].handle().unwrap().object_id()
         };
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -844,7 +839,7 @@ async fn test_missing_object_store_handle() {
             volume.store_object_id()
         };
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -1085,8 +1080,7 @@ async fn test_link_to_root_directory() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1133,8 +1127,7 @@ async fn test_multiple_links_to_directory() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1173,8 +1166,7 @@ async fn test_conflicting_link_types() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1223,8 +1215,7 @@ async fn test_volume_in_child_store() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1269,8 +1260,7 @@ async fn test_children_on_file() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1838,8 +1828,7 @@ async fn test_invalid_child_in_store() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1871,8 +1860,7 @@ async fn test_link_cycle() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1915,8 +1903,7 @@ async fn test_orphaned_link_cycle() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -1965,8 +1952,7 @@ async fn test_incorrect_merkle_tree_size_empty_file() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2051,8 +2037,7 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2142,8 +2127,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2224,7 +2208,7 @@ async fn test_file_length_mismatch() {
         let store = fs.root_store();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2235,7 +2219,7 @@ async fn test_file_length_mismatch() {
         transaction.commit().await.expect("commit transaction failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2247,7 +2231,7 @@ async fn test_file_length_mismatch() {
         transaction.commit().await.expect("commit transaction failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2318,7 +2302,7 @@ async fn test_spurious_extents() {
             .unwrap();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2379,8 +2363,7 @@ async fn test_missing_encryption_key() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2455,7 +2438,7 @@ async fn test_orphaned_keys() {
         store_id = root_store.store_object_id();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![LockKey::object(store_id, 1000)], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2507,8 +2490,7 @@ async fn test_missing_encryption_keys() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2573,8 +2555,7 @@ async fn test_encrypted_symlink_has_missing_keys() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2587,7 +2568,7 @@ async fn test_encrypted_symlink_has_missing_keys() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2609,7 +2590,7 @@ async fn test_encrypted_symlink_has_missing_keys() {
             .await
             .expect("update attributes failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2673,8 +2654,7 @@ async fn test_encrypted_directory_has_unencrypted_child() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2687,7 +2667,7 @@ async fn test_encrypted_directory_has_unencrypted_child() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2709,7 +2689,7 @@ async fn test_encrypted_directory_has_unencrypted_child() {
             .await
             .expect("update attributes failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2800,8 +2780,7 @@ async fn test_encrypted_directory_has_legacy_casefold_child() {
         crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2816,7 +2795,7 @@ async fn test_encrypted_directory_has_legacy_casefold_child() {
 
         // Make the directory encrypted.
         let transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2837,7 +2816,7 @@ async fn test_encrypted_directory_has_legacy_casefold_child() {
             .expect("update attributes failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -2899,8 +2878,7 @@ async fn test_unencrypted_directory_has_encrypted_child() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -2913,7 +2891,7 @@ async fn test_unencrypted_directory_has_encrypted_child() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3006,8 +2984,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3020,7 +2997,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3042,7 +3019,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             .await
             .expect("update attributes failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3130,8 +3107,7 @@ async fn test_encrypted_directory_no_wrapping_key() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3144,7 +3120,7 @@ async fn test_encrypted_directory_no_wrapping_key() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3166,7 +3142,7 @@ async fn test_encrypted_directory_no_wrapping_key() {
             .await
             .expect("update attributes failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3253,8 +3229,7 @@ async fn test_directory_missing_encryption_key_for_large_extended_attribute() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3267,7 +3242,7 @@ async fn test_directory_missing_encryption_key_for_large_extended_attribute() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3326,8 +3301,7 @@ async fn test_directory_missing_encryption_key_for_fscrypt() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3340,7 +3314,7 @@ async fn test_directory_missing_encryption_key_for_fscrypt() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
                 Options::default(),
@@ -3429,8 +3403,7 @@ async fn test_duplicate_key() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3503,7 +3476,7 @@ async fn test_project_accounting() {
 
         // Project 3 in use on file, no info on it.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store_id, root_directory.object_id())],
                 Options::default(),
@@ -3532,7 +3505,7 @@ async fn test_project_accounting() {
 
         // Project 4 with mismatched actual and usage.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
@@ -3580,7 +3553,7 @@ async fn test_project_accounting() {
 
         // Project 5 just fine.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
@@ -3669,8 +3642,7 @@ async fn test_zombie_file() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3684,7 +3656,7 @@ async fn test_zombie_file() {
         transaction.commit().await.expect("commit failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3729,8 +3701,7 @@ async fn test_zombie_dir() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let handle;
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3744,7 +3715,7 @@ async fn test_zombie_dir() {
         transaction.commit().await.expect("commit failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3787,8 +3758,7 @@ async fn test_zombie_symlink() {
             .unwrap();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -3802,7 +3772,7 @@ async fn test_zombie_symlink() {
         transaction.commit().await.expect("commit failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3835,7 +3805,7 @@ async fn test_empty_volume() {
         let object_id = {
             let file;
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -3891,7 +3861,7 @@ async fn test_full_disk(read_only: bool) {
         let device = fs.device();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -4003,7 +3973,7 @@ async fn test_delete_volume() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store_id, root_directory.object_id())],
                 Options::default(),
@@ -4026,7 +3996,7 @@ async fn test_delete_volume() {
             async move {
                 for i in 0..50 {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(store_id, root_directory.object_id())],
                             Options::default(),
@@ -4046,6 +4016,7 @@ async fn test_delete_volume() {
         let fs = test.filesystem();
         let root_volume = root_volume(fs.clone()).await.unwrap();
         let transaction = fs
+            .root_store()
             .new_transaction(
                 lock_keys![
                     LockKey::object(
@@ -4076,8 +4047,7 @@ async fn test_casefold() {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let dirname = if dir_is_casefold { "casefolded" } else { "regular" };
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4092,7 +4062,7 @@ async fn test_casefold() {
 
         child_dir.set_casefold(dir_is_casefold).await.expect("enable casefold");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), child_dir.object_id()),],
                 Options::default(),
@@ -4145,8 +4115,7 @@ async fn test_legacy_casefold_inconsistency() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4160,7 +4129,7 @@ async fn test_legacy_casefold_inconsistency() {
         transaction.commit().await.expect("commit transaction failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), child_dir.object_id()),],
                 Options::default(),
@@ -4208,8 +4177,7 @@ async fn test_missing_overwrite_extents() {
         let store = fs.root_store();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4223,7 +4191,7 @@ async fn test_missing_overwrite_extents() {
         transaction.commit().await.expect("commit failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), file.object_id())],
                 Options::default(),
@@ -4261,8 +4229,7 @@ async fn test_overwrite_extent_flag_not_set() {
         let store = fs.root_store();
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4278,7 +4245,7 @@ async fn test_overwrite_extent_flag_not_set() {
         file.allocate(0..fs.block_size()).await.expect("allocate failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), file.object_id())],
                 Options::default(),
@@ -4313,7 +4280,7 @@ async fn test_invalid_bloom_filter_for_allocator() {
         let device = fs.device();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -4405,7 +4372,7 @@ async fn test_invalid_bloom_filter_for_volume() {
         let device = fs.device();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -4522,8 +4489,7 @@ async fn test_bad_casefold_hash() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4545,7 +4511,7 @@ async fn test_bad_casefold_hash() {
         dir.set_casefold(true).await.expect("set_casefold failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -4561,7 +4527,7 @@ async fn test_bad_casefold_hash() {
         // Create a child file "foo" so we have a valid child and key set up.
         // But we want to insert a BAD child "bar" with wrong hash.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -4574,7 +4540,7 @@ async fn test_bad_casefold_hash() {
 
         // Create another file manually with wrong hash.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -4650,8 +4616,7 @@ async fn test_bad_last_object_id() {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),

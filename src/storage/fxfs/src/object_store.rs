@@ -46,8 +46,8 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
-    AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation, Options, Transaction,
-    lock_keys,
+    AssocObj, AssociatedObject, LockKey, LockKeys, ObjectStoreMutation, Operation, Options,
+    Transaction, lock_keys,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
@@ -799,6 +799,22 @@ impl ObjectStore {
         this
     }
 
+    /// Acquires appropriate locks and starts a new transaction.  A transaction should be associated
+    /// with a store, even though it may have mutations for other objects and parent stores.
+    pub async fn new_transaction<'a>(
+        &self,
+        locks: LockKeys,
+        options: Options<'a>,
+    ) -> Result<Transaction<'a>, Error> {
+        let fs = self.filesystem();
+        let guard = if let Some(guard) = options.txn_guard.as_ref() {
+            TxnGuard::Borrowed(guard)
+        } else {
+            fs.txn_guard().await
+        };
+        Transaction::new(guard, options, locks).await
+    }
+
     /// Create a child store. It is a multi-step process:
     ///
     ///   1. Call `ObjectStore::new_child_store`.
@@ -1079,7 +1095,6 @@ impl ObjectStore {
     pub async fn get_or_create_internal_directory_id(self: &Arc<Self>) -> Result<u64, Error> {
         // Create the transaction first to use the object store lock.
         let mut transaction = self
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::InternalDirectory { store_object_id: self.store_object_id }],
                 Options::default(),
@@ -1482,11 +1497,9 @@ impl ObjectStore {
         txn_options: Options<'_>,
         _truncate_guard: &TruncateGuard<'_>,
     ) -> Result<(), Error> {
-        let fs = self.filesystem();
         let mut next_attribute = Some(AttributeId::SORTED_START);
         while let Some(attribute_id) = next_attribute.take() {
-            let mut transaction = fs
-                .clone()
+            let mut transaction = self
                 .new_transaction(
                     lock_keys![
                         LockKey::object_attribute(self.store_object_id, object_id, attribute_id),
@@ -1581,11 +1594,9 @@ impl ObjectStore {
                 .is_some(),
             "Tombstoning attribute not in graveyard"
         );
-        let fs = self.filesystem();
         let mut trim_result = TrimResult::Incomplete;
         while matches!(trim_result, TrimResult::Incomplete) {
-            let mut transaction = fs
-                .clone()
+            let mut transaction = self
                 .new_transaction(
                     lock_keys![
                         LockKey::object_attribute(self.store_object_id, object_id, attribute_id),
@@ -2255,8 +2266,7 @@ impl ObjectStore {
         //
         // NOTE: Since this can be a nested transaction, we must take care to avoid deadlocks; no
         // more locks should be taken whilst we hold this lock.
-        let mut transaction = self
-            .filesystem()
+        let mut transaction = parent_store
             .new_transaction(
                 lock_keys![LockKey::object(parent_store.store_object_id, self.store_object_id)],
                 Options {
@@ -2679,8 +2689,6 @@ impl ObjectStore {
                     - Timestamp::from(std::time::Duration::from_secs(24 * 60 * 60)).as_nanos()
         {
             let mut transaction = self
-                .filesystem()
-                .clone()
                 .new_transaction(
                     lock_keys![LockKey::object(self.store_object_id, object_id,)],
                     Options { borrow_metadata_space: true, ..Default::default() },
@@ -3092,7 +3100,7 @@ mod tests {
     async fn test_verified_file_with_verified_attribute() {
         let fs: OpenFxFilesystem = test_filesystem().await;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3146,7 +3154,7 @@ mod tests {
     async fn test_verified_file_without_verified_attribute() {
         let fs: OpenFxFilesystem = test_filesystem().await;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3300,7 +3308,7 @@ mod tests {
 
         let store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3357,7 +3365,7 @@ mod tests {
         let root_store = fs.root_store();
         let child_id = {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -3404,7 +3412,7 @@ mod tests {
             .await
             .expect("new_volume failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3429,7 +3437,7 @@ mod tests {
         let root_store = fs.root_store();
         let child_id = {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -3489,8 +3497,7 @@ mod tests {
         let fs = test_filesystem().await;
         let store = fs.root_store();
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -3550,7 +3557,7 @@ mod tests {
                     .expect("volume failed");
 
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             store.store_object_id(),
@@ -3707,8 +3714,7 @@ mod tests {
             let root_dir_id = store.root_directory_object_id();
             let root_dir =
                 Arc::new(Directory::open(&store, root_dir_id).await.expect("open failed"));
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(store.store_object_id(), root_dir_id)],
                     Options::default(),
@@ -3734,8 +3740,7 @@ mod tests {
                 }
             }
 
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -3825,8 +3830,7 @@ mod tests {
         let _executor_tasks = testing::force_executor_threads_to_run(2).await;
 
         for j in 0..100 {
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(store.store_object_id(), root_dir_id)],
                     Options::default(),
@@ -3853,8 +3857,7 @@ mod tests {
                 *id |= 0xffffffff;
             }
 
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -3916,8 +3919,7 @@ mod tests {
                 }
             }
 
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -3985,8 +3987,7 @@ mod tests {
             .await
             .expect("new_volume failed");
 
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -4046,7 +4047,7 @@ mod tests {
         let mut directories = Vec::new();
         for _ in 0..NUM_THREADS {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(store_id, root_dir_id,)],
                     Options::default(),
@@ -4076,7 +4077,7 @@ mod tests {
             let fs = fs.clone();
             scope.spawn(async move {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(store_id, dir.object_id(),)],
                         Options::default(),
@@ -4111,8 +4112,7 @@ mod tests {
             )
             .await
             .expect("new_volume failed");
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -4151,8 +4151,7 @@ mod tests {
             )
             .await
             .expect("new_volume failed");
-        let mut transaction = fs
-            .clone()
+        let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -4199,8 +4198,7 @@ mod tests {
                 )
                 .await
                 .expect("new_volume failed");
-            let mut transaction = fs
-                .clone()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -4317,7 +4315,7 @@ mod tests {
                 .await
                 .expect("open failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -4335,7 +4333,7 @@ mod tests {
 
             crypt.shutdown();
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -4388,7 +4386,7 @@ mod tests {
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
                 Options::default(),
@@ -4452,8 +4450,7 @@ mod tests {
                 let root_directory = Directory::open(store, store.root_directory_object_id())
                     .await
                     .expect("open failed");
-                let mut transaction = fs
-                    .clone()
+                let mut transaction = store
                     .new_transaction(
                         lock_keys![LockKey::object(
                             store.store_object_id(),
@@ -4537,7 +4534,7 @@ mod tests {
                 .await
                 .expect("open failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -4636,7 +4633,7 @@ mod tests {
 
             for i in 0..100 {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                         Options::default(),
@@ -4675,7 +4672,7 @@ mod tests {
         let root_dir =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                 Options::default(),

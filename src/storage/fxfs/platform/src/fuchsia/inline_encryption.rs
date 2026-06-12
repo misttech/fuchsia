@@ -189,7 +189,7 @@ mod tests {
         // Create a directory that has a wrapping key identifier.
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     starnix_vol.store_object_id(),
@@ -212,7 +212,7 @@ mod tests {
         .await;
         let transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -234,7 +234,7 @@ mod tests {
         // Files created within this directory will have wrapped key of type `FscryptInoLblk32File`.
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -290,7 +290,7 @@ mod tests {
                 .expect("open failed");
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     starnix_vol.store_object_id(),
@@ -311,7 +311,7 @@ mod tests {
         .await;
         let transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -331,7 +331,7 @@ mod tests {
         .expect("update attributes failed");
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -360,7 +360,7 @@ mod tests {
                 .expect("open failed");
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     vol_with_fxfs_crypt.store_object_id(),
@@ -377,7 +377,7 @@ mod tests {
         transaction.commit().await.expect("transaction commit failed");
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(vol_with_fxfs_crypt.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -419,7 +419,7 @@ mod tests {
             // Create a directory that has a wrapping key identifier.
             let mut transaction = fixture
                 .filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         starnix_vol.store_object_id(),
@@ -442,7 +442,7 @@ mod tests {
             .await;
             let transaction = fixture
                 .filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                     Options::default(),
@@ -463,7 +463,7 @@ mod tests {
 
             let mut transaction = fixture
                 .filesystem
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                     Options::default(),
@@ -519,7 +519,7 @@ mod tests {
                 .expect("open failed");
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     starnix_vol.store_object_id(),
@@ -541,7 +541,7 @@ mod tests {
         .await;
         let transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),
@@ -563,7 +563,7 @@ mod tests {
         // Create an inline encrypted file.
         let mut transaction = fixture
             .filesystem
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
                 Options::default(),

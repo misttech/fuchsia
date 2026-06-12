@@ -1985,7 +1985,7 @@ mod tests {
         let object;
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -2211,7 +2211,7 @@ mod tests {
 
         let store = object.owner();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2800,7 +2800,7 @@ mod tests {
     async fn test_enable_verity() {
         let fs: OpenFxFilesystem = test_filesystem().await;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2839,7 +2839,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2890,7 +2890,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -2987,7 +2987,7 @@ mod tests {
     async fn test_verify_data_corrupt_file() {
         let fs: OpenFxFilesystem = test_filesystem().await;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3028,7 +3028,7 @@ mod tests {
     async fn test_parse_f2fs_verity() {
         let fs: OpenFxFilesystem = test_filesystem().await;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3063,7 +3063,7 @@ mod tests {
         let (verity_info, root_hash) = object.get_descriptor().unwrap();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::Object {
                     store_object_id: store.store_object_id(),
@@ -3146,7 +3146,7 @@ mod tests {
         let object_id = {
             let store = fs.root_store();
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -3207,7 +3207,7 @@ mod tests {
         let fs = test_filesystem().await;
         let handle;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3444,7 +3444,7 @@ mod tests {
 
         let object;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),
@@ -3461,7 +3461,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
@@ -3497,7 +3497,7 @@ mod tests {
             shared_context.lock().object_id = Some(object.object_id());
 
             transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![
                         LockKey::object(store.store_object_id(), store.root_directory_object_id()),
@@ -3525,7 +3525,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         let store = object.owner();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
@@ -3544,7 +3544,7 @@ mod tests {
         let allocator = fs.allocator();
         let allocated_before = allocator.get_allocated_bytes();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
@@ -3575,7 +3575,7 @@ mod tests {
         // We need to remove the directory entry, too, otherwise fsck will complain
         {
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -3674,7 +3674,7 @@ mod tests {
         let fs = test_filesystem().await;
         let object;
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -3949,7 +3949,7 @@ mod tests {
         //      [ unallocated ][ extent (object with different key) ][ unallocated ]
         let store = object.owner();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -4591,7 +4591,7 @@ mod tests {
 
         object.allocate((block_size * 4)..(block_size * 6)).await.expect("Allocate failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(object.store().store_object_id(), object.object_id(),)],
                 Options::default(),

@@ -1720,7 +1720,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(4096, 1024));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let mut t = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -1740,7 +1740,7 @@ mod tests {
         futures.push(
             async {
                 let _t = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
@@ -1761,7 +1761,7 @@ mod tests {
                 recv1.await.unwrap();
                 // This should not block since it is a different key.
                 let _t = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object_attribute(2, 2, AttributeId::TEST_ID)],
                         Options::default(),
@@ -1778,7 +1778,7 @@ mod tests {
                 // This should block until the first future has completed.
                 recv3.await.unwrap();
                 let _t = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
@@ -1801,7 +1801,7 @@ mod tests {
         join!(
             async {
                 let t = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
@@ -1855,7 +1855,7 @@ mod tests {
             async {
                 recv1.await.unwrap();
                 let t = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object_attribute(1, 2, AttributeId::TEST_ID)],
                         Options::default(),
@@ -1878,7 +1878,7 @@ mod tests {
         // Dropping while there's a reader.
         {
             let _write_lock = fs
-                .clone()
+                .root_store()
                 .new_transaction(key.clone(), Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -1887,13 +1887,13 @@ mod tests {
         // Dropping while there's no reader.
         {
             let _write_lock = fs
-                .clone()
+                .root_store()
                 .new_transaction(key.clone(), Options::default())
                 .await
                 .expect("new_transaction failed");
         }
         // Make sure we can take the lock again (i.e. it was actually released).
-        fs.clone()
+        fs.root_store()
             .new_transaction(key.clone(), Options::default())
             .await
             .expect("new_transaction failed");

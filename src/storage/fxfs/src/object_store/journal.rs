@@ -1266,8 +1266,7 @@ impl Journal {
         let super_block_a_handle;
         let super_block_b_handle;
         let root_store;
-        let mut transaction = filesystem
-            .clone()
+        let mut transaction = root_parent
             .new_transaction(
                 lock_keys![],
                 Options { skip_journal_checks: true, ..Default::default() },
@@ -1363,9 +1362,8 @@ impl Journal {
     /// This is used image_builder_mode when journal allocation is done last.
     pub async fn allocate_journal(&self) -> Result<(), Error> {
         let handle = self.handle.get().unwrap();
-        let filesystem = handle.store().filesystem();
-        let mut transaction = filesystem
-            .clone()
+        let mut transaction = handle
+            .store()
             .new_transaction(
                 lock_keys![LockKey::object(handle.store().store_object_id(), handle.object_id()),],
                 Options { skip_journal_checks: true, ..Default::default() },
@@ -2134,7 +2132,7 @@ mod tests {
                     .await
                     .expect("open failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         root_store.store_object_id(),
@@ -2196,7 +2194,7 @@ mod tests {
                     .await
                     .expect("open failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         root_store.store_object_id(),
@@ -2221,7 +2219,7 @@ mod tests {
             // with a half finished transaction that cannot be replayed.
             for i in 0..1000 {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             root_store.store_object_id(),
@@ -2273,7 +2271,7 @@ mod tests {
                     .await
                     .expect("open failed");
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         root_store.store_object_id(),
@@ -2344,7 +2342,7 @@ mod tests {
             let mut i = 0;
             loop {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             store.store_object_id(),
@@ -2372,7 +2370,7 @@ mod tests {
             let mut i = 0;
             loop {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(
                             store.store_object_id(),
@@ -2413,7 +2411,7 @@ mod tests {
 
             // Write one more transaction.
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(
                         store.store_object_id(),
@@ -2551,7 +2549,7 @@ mod tests {
                         .expect("open failed");
                 for i in 0..100 {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),
@@ -2592,7 +2590,7 @@ mod tests {
                 let mut i = 0;
                 loop {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),
@@ -2694,7 +2692,7 @@ mod tests {
                         .expect("open failed");
                 for i in 0..10 {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),
@@ -2734,7 +2732,7 @@ mod tests {
                 let mut i = 0;
                 loop {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),
@@ -2814,7 +2812,7 @@ mod tests {
                         .expect("open failed");
                 for i in 0..10 {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),
@@ -2854,7 +2852,7 @@ mod tests {
                 let mut i = 0;
                 loop {
                     let mut transaction = fs
-                        .clone()
+                        .root_store()
                         .new_transaction(
                             lock_keys![LockKey::object(
                                 root_store.store_object_id(),

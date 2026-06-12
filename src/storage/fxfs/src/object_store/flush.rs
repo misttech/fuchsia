@@ -227,7 +227,7 @@ impl ObjectStore {
 
         // The BeginFlush mutation must be within a transaction that has no impact on StoreInfo
         // since we want to get an accurate snapshot of StoreInfo.
-        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
         transaction.add_with_object(
             self.store_object_id(),
             Mutation::BeginFlush,
@@ -241,7 +241,7 @@ impl ObjectStore {
         // end. Between those two transactions, there are transactions that write to the files.  In
         // the first transaction, objects are created in the graveyard. Upon success, the objects
         // are removed from the graveyard.
-        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
 
         // Create and write a new layer, compacting existing layers.
         let parent_store = self.parent_store.as_ref().unwrap();
@@ -299,8 +299,7 @@ impl ObjectStore {
         }
 
         let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
-        let mut end_transaction = filesystem
-            .clone()
+        let mut end_transaction = parent_store
             .new_transaction(
                 lock_keys![LockKey::object(
                     self.parent_store.as_ref().unwrap().store_object_id(),
@@ -428,7 +427,7 @@ impl ObjectStore {
             ..Default::default()
         };
 
-        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
         transaction.add(self.store_object_id(), Mutation::BeginFlush);
         transaction.commit().await?;
 
@@ -438,7 +437,7 @@ impl ObjectStore {
         // end. Between those two transactions, there are transactions that write to the files.  In
         // the first transaction, objects are created in the graveyard. Upon success, the objects
         // are removed from the graveyard.
-        let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
+        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
 
         let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
         let handle; // Must live longer than end_transaction.
@@ -456,8 +455,7 @@ impl ObjectStore {
             )
             .await?;
             let oid = handle.object_id();
-            end_transaction = filesystem
-                .clone()
+            end_transaction = parent_store
                 .new_transaction(
                     lock_keys![
                         LockKey::object(parent_store.store_object_id(), oid),
@@ -474,8 +472,7 @@ impl ObjectStore {
             parent_store.remove_from_graveyard(&mut end_transaction, oid);
             handle
         } else {
-            end_transaction = filesystem
-                .clone()
+            end_transaction = parent_store
                 .new_transaction(
                     lock_keys![
                         LockKey::object(
@@ -599,7 +596,7 @@ mod tests {
             let first_filename = format!("{:<200}", i);
             loop {
                 let mut transaction = fs
-                    .clone()
+                    .root_store()
                     .new_transaction(
                         lock_keys![LockKey::object(store_id, root_dir.object_id())],
                         Options::default(),
@@ -625,7 +622,7 @@ mod tests {
 
             // Write one more file to ensure the cipher has a non-zero offset.
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(
                     lock_keys![LockKey::object(store_id, root_dir.object_id())],
                     Options::default(),
@@ -710,7 +707,7 @@ mod tests {
         let root_dir =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                 Options::default(),
@@ -729,7 +726,7 @@ mod tests {
         store.flush().await.expect("flush failed");
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
                 Options::default(),

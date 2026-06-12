@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(root_store.graveyard_count(), 0);
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -469,7 +469,7 @@ mod tests {
 
         // Create and add two objects to the graveyard.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -504,7 +504,7 @@ mod tests {
 
         // Remove one of the objects.
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -542,7 +542,7 @@ mod tests {
 
             let mut object_ids = Vec::new();
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -568,7 +568,7 @@ mod tests {
 
             // Create and add two objects to the graveyard.
             let mut transaction = fs
-                .clone()
+                .root_store()
                 .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
@@ -625,7 +625,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -692,7 +692,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
@@ -781,7 +781,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_store = fs.root_store();
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");

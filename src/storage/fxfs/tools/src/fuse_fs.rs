@@ -397,7 +397,7 @@ mod tests {
         let dir = fs.root_dir().await.expect("root_dir failed");
         let mut transaction = fs
             .fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(fs.default_store.store_object_id(), dir.object_id())],
                 Options::default(),

@@ -273,7 +273,7 @@ mod tests {
         let store = fs.root_store();
 
         let mut transaction = fs
-            .clone()
+            .root_store()
             .new_transaction(
                 lock_keys![LockKey::object(
                     store.store_object_id(),

@@ -220,8 +220,8 @@ impl FxBlobBuilder {
             self.blob_directory.object_id(),
         )];
         let mut transaction = self
-            .filesystem
-            .clone()
+            .blob_directory
+            .store()
             .new_transaction(keys, Default::default())
             .await
             .context("new transaction")?;

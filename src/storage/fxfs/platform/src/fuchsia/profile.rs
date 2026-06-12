@@ -77,8 +77,7 @@ pub struct FileRecordingHandle {
 impl FileRecordingHandle {
     pub async fn new(name: &str, volume: Arc<FxVolume>) -> Result<Self, Error> {
         let store = volume.store();
-        let fs = store.filesystem();
-        let mut transaction = fs.clone().new_transaction(lock_keys![], Options::default()).await?;
+        let mut transaction = store.new_transaction(lock_keys![], Options::default()).await?;
         let handle =
             ObjectStore::create_object(&volume, &mut transaction, HandleOptions::default(), None)
                 .await?;
@@ -97,7 +96,7 @@ impl FileRecordingHandle {
             lock_keys![LockKey::object(store.store_object_id(), profile_dir.object_id())];
         let mut old_id = INVALID_OBJECT_ID;
         let mut transaction = loop {
-            let transaction = fs.clone().new_transaction(lock_keys, Options::default()).await?;
+            let transaction = store.new_transaction(lock_keys, Options::default()).await?;
             if let Some((id, descriptor, _)) = profile_dir.lookup(&self.name).await? {
                 ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
                 if id == old_id {
@@ -899,7 +898,6 @@ mod tests {
             .volume()
             .volume()
             .store()
-            .filesystem()
             .new_transaction(
                 lock_keys![LockKey::object(
                     fixture.volume().volume().store().store_object_id(),

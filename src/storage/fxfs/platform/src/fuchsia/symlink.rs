@@ -181,8 +181,6 @@ impl Node for FxSymlink {
         let dir = destination_dir.into_any().downcast::<FxDirectory>().unwrap();
         let store = self.handle.store();
         let transaction = store
-            .filesystem()
-            .clone()
             .new_transaction(
                 lock_keys![
                     LockKey::object(store.store_object_id(), self.object_id()),
