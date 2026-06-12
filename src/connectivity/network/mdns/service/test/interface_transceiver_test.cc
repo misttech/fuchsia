@@ -12,6 +12,8 @@
 #include <gtest/gtest.h>
 
 #include "src/connectivity/network/mdns/service/common/types.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_reading.h"
+#include "src/connectivity/network/mdns/service/encoding/packet_reader.h"
 #include "src/connectivity/network/mdns/service/transport/mdns_interface_transceiver.h"
 #include "src/lib/fostr/hex_dump.h"
 
@@ -489,6 +491,54 @@ TEST(InterfaceTransceiverTest, SendLeadingAWithLateAlternate) {
   EXPECT_EQ(0,
             memcmp(expected_message.data(), under_test.send_to_buffer_, under_test.send_to_size_));
   EXPECT_EQ(to_address, under_test.send_to_address_);
+}
+
+// Sends a message containing multiple A resources for different hostnames.
+TEST(InterfaceTransceiverTest, SendMultipleAddresses) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  inet::SocketAddress to_address(inet::IpAddress(4, 3, 2, 1), inet::IpPort::From_uint16_t(4321));
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+  under_test.SetInterfaceAddresses({nic_address});
+
+  auto host1_a_resource = std::make_shared<DnsResource>(DnsName("host1.local."), DnsType::kA);
+  auto host2_a_resource = std::make_shared<DnsResource>(DnsName("host2.local."), DnsType::kA);
+
+  DnsMessage message;
+  message.additionals_.push_back(host1_a_resource);
+  message.additionals_.push_back(host2_a_resource);
+  message.UpdateCounts();
+
+  under_test.SendMessage(message, to_address);
+  EXPECT_NE(nullptr, under_test.send_to_buffer_);
+
+  // Deserialize the sent message to verify that both hostnames got their placeholder records
+  // replaced.
+  std::vector<uint8_t> sent_packet(
+      reinterpret_cast<const uint8_t*>(under_test.send_to_buffer_),
+      reinterpret_cast<const uint8_t*>(under_test.send_to_buffer_) + under_test.send_to_size_);
+
+  PacketReader reader(sent_packet);
+  reader.SetBytesRemaining(under_test.send_to_size_);
+  DnsMessage sent_message;
+  reader >> sent_message;
+
+  ASSERT_TRUE(reader.complete());
+  ASSERT_EQ(2u, sent_message.additionals_.size());
+
+  auto res1 = sent_message.additionals_[0];
+  EXPECT_EQ(DnsName("host1.local."), res1->name_);
+  EXPECT_EQ(DnsType::kA, res1->type_);
+  EXPECT_EQ(nic_address, res1->a_.address_.address_);
+
+  auto res2 = sent_message.additionals_[1];
+  EXPECT_EQ(DnsName("host2.local."), res2->name_);
+  EXPECT_EQ(DnsType::kA, res2->type_);
+  EXPECT_EQ(nic_address, res2->a_.address_.address_);
 }
 
 }  // namespace mdns::test

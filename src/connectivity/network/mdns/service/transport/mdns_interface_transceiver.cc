@@ -291,10 +291,10 @@ MdnsInterfaceTransceiver::GetInterfaceAddressResources(const DnsName& host_full_
 
 std::vector<std::shared_ptr<DnsResource>> MdnsInterfaceTransceiver::FixUpAddresses(
     const std::vector<std::shared_ptr<DnsResource>>& resources) {
-  DnsName name;
+  std::vector<DnsName> placeholder_names;
   std::vector<std::shared_ptr<DnsResource>> result;
   std::copy_if(resources.begin(), resources.end(), std::back_inserter(result),
-               [&name](std::shared_ptr<DnsResource> resource) {
+               [&placeholder_names](const std::shared_ptr<DnsResource>& resource) {
                  switch (resource->type_) {
                    case DnsType::kA:
                      if (resource->a_.address_.address_.is_valid()) {
@@ -313,20 +313,18 @@ std::vector<std::shared_ptr<DnsResource>> MdnsInterfaceTransceiver::FixUpAddress
                      return true;
                  }
 
-                 if (name.empty()) {
-                   name = resource->name_;
+                 if (std::find(placeholder_names.begin(), placeholder_names.end(),
+                               resource->name_) == placeholder_names.end()) {
+                   placeholder_names.push_back(resource->name_);
                  }
 
                  return false;
                });
 
-  if (name.empty()) {
-    // No placeholder address records found.
-    return result;
+  for (const auto& name : placeholder_names) {
+    auto& addr_resources = GetInterfaceAddressResources(name);
+    std::copy(addr_resources.begin(), addr_resources.end(), std::back_inserter(result));
   }
-
-  auto& addr_resources = GetInterfaceAddressResources(name);
-  std::copy(addr_resources.begin(), addr_resources.end(), std::back_inserter(result));
 
   return result;
 }
