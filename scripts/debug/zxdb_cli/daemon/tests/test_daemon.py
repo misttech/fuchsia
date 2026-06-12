@@ -7,14 +7,12 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
-from shared.protocol import (
-    AttachRequest,
-    BaseRequest,
-    ContinueRequest,
-    PauseRequest,
-    Response,
-    ThreadsRequest,
-)
+from shared.protocol import BaseRequest, GetStateResponse, Response
+from shared.protocol.attach import AttachRequest
+from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.get_state import GetStateRequest
+from shared.protocol.pause import PauseRequest
+from shared.protocol.threads import ThreadsRequest
 
 
 class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
@@ -57,7 +55,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             mock_attach.return_value = mock_attach_resp
 
             req = AttachRequest(filter="my_process")
-            resp = await daemon.handle_attach(req)
+            resp = await daemon.registry.handle("attach", req)
 
             self.assertTrue(resp.success)
             self.assertEqual(resp.body, {"success": True})
@@ -73,7 +71,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             mock_attach.side_effect = Exception("Failed to attach")
 
             req = AttachRequest(filter="my_process")
-            resp = await daemon.handle_attach(req)
+            resp = await daemon.registry.handle("attach", req)
 
             self.assertFalse(resp.success)
             self.assertIn("Failed to attach", resp.message or "")
@@ -83,7 +81,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = None
 
         req = AttachRequest(filter="my_process")
-        resp = await daemon.handle_attach(req)
+        resp = await daemon.registry.handle("attach", req)
 
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
@@ -101,7 +99,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        resp = await daemon.handle_continue(ContinueRequest(thread_id=1))
+        resp = await daemon.registry.handle(
+            "continue", ContinueRequest(thread_id=1)
+        )
 
         self.assertTrue(resp.success)
         mock_dap_client.continue_thread.assert_called_once()
@@ -116,7 +116,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
 
         async def trigger_stopped() -> None:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
             daemon.event_waiter.notify_thread_stop(
                 1,
                 {
@@ -129,7 +129,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         loop = asyncio.get_event_loop()
         loop.create_task(trigger_stopped())
 
-        resp = await daemon.handle_pause(PauseRequest(thread_id=1))
+        resp = await daemon.registry.handle("pause", PauseRequest(thread_id=1))
 
         self.assertTrue(resp.success)
         mock_dap_client.pause_thread.assert_called_once()
@@ -162,19 +162,19 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        resp = await daemon.handle_threads(ThreadsRequest())
+        resp = await daemon.registry.handle("threads", ThreadsRequest())
 
         if not resp.success:
             print(f"Test failed with message: {resp.message}")
         self.assertTrue(resp.success)
         assert resp.body is not None
-        from shared.protocol import GetStateResponse
 
         # Double-compatibility check:
-        # Pydantic v2 union coercion automatically parses the dictionary returned by handle_threads
-        # (which matches GetStateResponse's fields) into a typed GetStateResponse object at runtime.
-        # We check the type to support both strongly-typed GetStateResponse objects and raw dictionaries
-        # in mock testing.
+        # Pydantic v2 union coercion automatically parses the dictionary
+        # returned by handle_threads (which matches GetStateResponse's fields)
+        # into a typed GetStateResponse object at runtime.
+        # We check the type to support both strongly-typed GetStateResponse
+        # objects and raw dictionaries in mock testing.
         if isinstance(resp.body, GetStateResponse):
             threads = resp.body.threads
             self.assertEqual(len(threads), 2)
@@ -192,7 +192,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_get_state(self, mock_dap_client_class: Mock) -> None:
-        """Verifies handle_get_state successfully queries threads and returns GetStateResponse."""
+        """Verifies handle_get_state successfully queries threads and returns
+        GetStateResponse.
+        """
         mock_dap_client = mock_dap_client_class.return_value
         mock_threads_resp = Mock()
         mock_body = Mock()
@@ -207,9 +209,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
         daemon.active_processes = {1234: "test_process"}
 
-        from shared.protocol import GetStateRequest, GetStateResponse
-
-        resp = await daemon.handle_get_state(GetStateRequest())
+        resp = await daemon.registry.handle("get-state", GetStateRequest())
 
         self.assertTrue(resp.success)
         state_resp = resp.body
@@ -223,7 +223,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_handle_get_state_defensive(
         self, mock_dap_client_class: Mock
     ) -> None:
-        """Verifies handle_get_state gracefully handles None threads response body."""
+        """Verifies handle_get_state gracefully handles None threads response
+        body.
+        """
         mock_dap_client = mock_dap_client_class.return_value
         mock_threads_resp = Mock()
         mock_threads_resp.body = None  # Simulate missing DAP body
@@ -233,9 +235,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
         daemon.active_processes = {1234: "test_process"}
 
-        from shared.protocol import GetStateRequest, GetStateResponse
-
-        resp = await daemon.handle_get_state(GetStateRequest())
+        resp = await daemon.registry.handle("get-state", GetStateRequest())
 
         self.assertTrue(resp.success)
         state_resp = resp.body

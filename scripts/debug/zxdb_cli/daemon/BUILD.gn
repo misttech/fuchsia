@@ -20,7 +20,20 @@ if (is_host) {
     library_name = "daemon"
     sources = [
       "__init__.py",
+      "constants.py",
       "daemon.py",
+      "handlers/__init__.py",
+      "handlers/attach.py",
+      "handlers/continue_req.py",
+      "handlers/detach.py",
+      "handlers/get_state.py",
+      "handlers/hello.py",
+      "handlers/pause.py",
+      "handlers/stack_trace.py",
+      "handlers/start.py",
+      "handlers/stop.py",
+      "handlers/threads.py",
+      "handlers/wait_for_event.py",
     ]
     deps = [
       "//scripts/debug/zxdb_cli/shared:protocol_lib",

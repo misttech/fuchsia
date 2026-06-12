@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import Daemon
-from shared.protocol import DetachRequest
+from shared.protocol.detach import DetachRequest
 from zxdb_dap import ZxdbDapMixin, ZxdbDetachArguments
 
 
@@ -39,7 +39,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.return_value = {"success": True}
 
             req = DetachRequest(all=True)
-            resp = await daemon.handle_detach(req)
+            resp = await daemon.registry.handle("detach", req)
 
             self.assertTrue(resp.success)
             mock_detach.assert_called_once()
@@ -69,7 +69,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.return_value = {"success": True}
 
             req = DetachRequest(pid=1234)
-            resp = await daemon.handle_detach(req)
+            resp = await daemon.registry.handle("detach", req)
 
             self.assertTrue(resp.success)
             mock_detach.assert_called_once()
@@ -93,7 +93,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = None
 
         req = DetachRequest(pid=1234)
-        resp = await daemon.handle_detach(req)
+        resp = await daemon.registry.handle("detach", req)
 
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
@@ -112,7 +112,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             }
 
             req = DetachRequest(pid=1234)
-            resp = await daemon.handle_detach(req)
+            resp = await daemon.registry.handle("detach", req)
 
             self.assertFalse(resp.success)
             self.assertIn("Process not found", resp.message or "")
@@ -135,7 +135,7 @@ class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):
             mock_detach.side_effect = Exception("Connection lost")
 
             req = DetachRequest(pid=1234)
-            resp = await daemon.handle_detach(req)
+            resp = await daemon.registry.handle("detach", req)
 
             self.assertFalse(resp.success)
             self.assertIn("Connection lost", resp.message or "")

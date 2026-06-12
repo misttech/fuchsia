@@ -15,7 +15,7 @@ from io import StringIO
 from typing import Any
 
 from cli.cli import main
-from daemon.daemon import UDS_PATH
+from daemon.constants import UDS_PATH
 from portpicker import portpicker
 from shared.protocol import PROTOCOL_VERSION, serialize
 from shared.protocol.hello import HelloRequest

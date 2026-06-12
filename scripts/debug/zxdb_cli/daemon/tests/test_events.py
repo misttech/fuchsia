@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import Daemon
-from shared.protocol import Response, WaitForEventRequest
+from shared.protocol import Response
+from shared.protocol.wait_for_event import WaitForEventRequest
 
 
 class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
@@ -47,8 +48,8 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         }
         daemon.latest_seq = 2
 
-        resp = await daemon.handle_wait_for_event(
-            WaitForEventRequest(last_seen_seq=1)
+        resp = await daemon.registry.handle(
+            "wait-for-event", WaitForEventRequest(last_seen_seq=1)
         )
         self.assertTrue(resp.success)
         assert resp.events is not None
@@ -68,8 +69,8 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
 
         asyncio.create_task(add_event())
 
-        resp = await daemon.handle_wait_for_event(
-            WaitForEventRequest(last_seen_seq=0)
+        resp = await daemon.registry.handle(
+            "wait-for-event", WaitForEventRequest(last_seen_seq=0)
         )
         self.assertTrue(resp.success)
         assert resp.events is not None
