@@ -8,7 +8,7 @@ import enum
 from dataclasses import dataclass
 
 from antlion.controllers.utils_lib.commands import pgrep
-from antlion.controllers.utils_lib.commands.command import LinuxCommand, require
+from antlion.controllers.utils_lib.commands.command import LinuxCommand
 from libs.proc.runner import Runner
 
 
@@ -25,10 +25,12 @@ class LinuxNmcliCommand(LinuxCommand):
 
     def __init__(self, runner: Runner, binary: str = "nmcli") -> None:
         super().__init__(runner, binary)
-        self._pgrep = require(pgrep.LinuxPgrepCommand(runner))
+        self._pgrep = pgrep.LinuxPgrepCommand(runner)
 
     def available(self) -> bool:
         if not super().available():
+            return False
+        if not self._pgrep.available():
             return False
         return self._pgrep.find("NetworkManager") is not None
 

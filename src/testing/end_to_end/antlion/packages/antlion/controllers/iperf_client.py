@@ -52,7 +52,7 @@ def create(configs: list[ControllerConfig]) -> list[IPerfClientBase]:
                         SSHConfig.from_config(c.get(dict, "ssh_config"))
                     ),
                     test_interface=c.get(str, "test_interface"),
-                    sync_date=True,
+                    sync_date=c.get(bool, "sync_date", True),
                 )
             )
         else:

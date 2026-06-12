@@ -122,6 +122,82 @@ class WmmParams:
         "wmm_ac_vo_txop_limit": 94,
     }
 
+    DEGRADED_VO: HostapdOptions = {
+        "wmm_ac_bk_cwmin": 7,
+        "wmm_ac_bk_cwmax": 15,
+        "wmm_ac_bk_aifs": 2,
+        "wmm_ac_bk_txop_limit": 0,
+        "wmm_ac_be_aifs": 2,
+        "wmm_ac_be_cwmin": 7,
+        "wmm_ac_be_cwmax": 15,
+        "wmm_ac_be_txop_limit": 0,
+        "wmm_ac_vi_aifs": 2,
+        "wmm_ac_vi_cwmin": 7,
+        "wmm_ac_vi_cwmax": 15,
+        "wmm_ac_vi_txop_limit": 94,
+        "wmm_ac_vo_aifs": 10,
+        "wmm_ac_vo_cwmin": 7,
+        "wmm_ac_vo_cwmax": 15,
+        "wmm_ac_vo_txop_limit": 47,
+    }
+
+    DEGRADED_VI: HostapdOptions = {
+        "wmm_ac_bk_cwmin": 7,
+        "wmm_ac_bk_cwmax": 15,
+        "wmm_ac_bk_aifs": 2,
+        "wmm_ac_bk_txop_limit": 0,
+        "wmm_ac_be_aifs": 2,
+        "wmm_ac_be_cwmin": 7,
+        "wmm_ac_be_cwmax": 15,
+        "wmm_ac_be_txop_limit": 0,
+        "wmm_ac_vi_aifs": 10,
+        "wmm_ac_vi_cwmin": 7,
+        "wmm_ac_vi_cwmax": 15,
+        "wmm_ac_vi_txop_limit": 94,
+        "wmm_ac_vo_aifs": 2,
+        "wmm_ac_vo_cwmin": 7,
+        "wmm_ac_vo_cwmax": 15,
+        "wmm_ac_vo_txop_limit": 47,
+    }
+
+    IMPROVE_BE: HostapdOptions = {
+        "wmm_ac_bk_cwmin": 7,
+        "wmm_ac_bk_cwmax": 15,
+        "wmm_ac_bk_aifs": 10,
+        "wmm_ac_bk_txop_limit": 0,
+        "wmm_ac_be_aifs": 2,
+        "wmm_ac_be_cwmin": 7,
+        "wmm_ac_be_cwmax": 15,
+        "wmm_ac_be_txop_limit": 0,
+        "wmm_ac_vi_aifs": 10,
+        "wmm_ac_vi_cwmin": 7,
+        "wmm_ac_vi_cwmax": 15,
+        "wmm_ac_vi_txop_limit": 94,
+        "wmm_ac_vo_aifs": 10,
+        "wmm_ac_vo_cwmin": 7,
+        "wmm_ac_vo_cwmax": 15,
+        "wmm_ac_vo_txop_limit": 47,
+    }
+
+    IMPROVE_BK: HostapdOptions = {
+        "wmm_ac_bk_cwmin": 7,
+        "wmm_ac_bk_cwmax": 15,
+        "wmm_ac_bk_aifs": 2,
+        "wmm_ac_bk_txop_limit": 0,
+        "wmm_ac_be_aifs": 10,
+        "wmm_ac_be_cwmin": 7,
+        "wmm_ac_be_cwmax": 15,
+        "wmm_ac_be_txop_limit": 0,
+        "wmm_ac_vi_aifs": 10,
+        "wmm_ac_vi_cwmin": 7,
+        "wmm_ac_vi_cwmax": 15,
+        "wmm_ac_vi_txop_limit": 94,
+        "wmm_ac_vo_aifs": 10,
+        "wmm_ac_vo_cwmin": 7,
+        "wmm_ac_vo_cwmax": 15,
+        "wmm_ac_vo_txop_limit": 47,
+    }
+
 
 class WmmAcm:
     BK: HostapdOptions = {"wmm_ac_bk_acm": True}

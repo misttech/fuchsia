@@ -10,7 +10,7 @@ import logging
 import multiprocessing
 import time
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
 from antlion import utils
@@ -19,6 +19,7 @@ from antlion.controllers.access_point import AccessPoint
 from antlion.test_utils.abstract_devices.wlan_device import SupportsWLAN
 from antlion.validation import MapValidator
 from mobly import logger, signals
+from openwrt_access_point import OpenWrtAP
 
 AC_VO = "AC_VO"
 AC_VI = "AC_VI"
@@ -52,7 +53,7 @@ def create(
     config: Mapping[str, Any],
     identifier: str | None = None,
     wlan_devices: list[SupportsWLAN] | None = None,
-    access_points: list[AccessPoint] | None = None,
+    access_points: Sequence[AccessPoint | OpenWrtAP] | None = None,
 ):
     """Creates a WmmTransceiver from a config.
 
@@ -70,7 +71,7 @@ def create(
         wlan_devices: WLAN devices from which to get the wlan_device, if any, used as
             this transceiver
         access_points: Access points from which to get the access_point, if any, used as
-            this transceiver
+            this transceiver (can contain legacy AccessPoint or OpenWrtAP objects)
     """
     try:
         iperf_config = config["iperf_config"]
@@ -132,9 +133,10 @@ def _find_wlan_device(
 
 
 def _find_access_point(
-    access_point_ip: str, access_points: list[AccessPoint]
-) -> AccessPoint:
-    """Returns AccessPoint based on string ip address
+    access_point_ip: str,
+    access_points: Sequence[AccessPoint | OpenWrtAP],
+) -> AccessPoint | OpenWrtAP:
+    """Returns AccessPoint or OpenWrtAP based on string ip address
 
     Args:
         access_point_ip: Control plane IP address of the desired AP
@@ -650,9 +652,15 @@ class WmmTransceiver(object):
             False, otherwise
         """
         if self.wlan_device:
-            return self.wlan_device.can_ping(dest_ip)
+            return self.wlan_device.ping(dest_ip).success
+
         else:
-            return self.access_point.can_ping(dest_ip)
+            assert self.access_point is not None
+            try:
+                self.access_point.ping(dest_ip)
+                return True
+            except Exception:
+                return False
 
     def _parse_stream_parameters(self, stream_parameters):
         """Parses stream_parameters from dictionary.

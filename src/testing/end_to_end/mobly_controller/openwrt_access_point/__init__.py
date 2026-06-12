@@ -557,6 +557,22 @@ class OpenWrtAP:
         """Stops the access point."""
         self.ssh.run("wifi down")
 
+    def ping(self, dest_ip: str, count: int = 3, timeout_sec: int = 1) -> None:
+        """Pings from AP to dest_ip.
+
+        Args:
+            dest_ip: IP address to ping.
+            count: Number of ping packets to send.
+            timeout_sec: Timeout in seconds.
+
+        Raises:
+            Exception: If the ping command fails (non-zero return code).
+        """
+        self.ssh.run(
+            f"ping -c {count} -W {timeout_sec} {dest_ip}",
+            ignore_status=False,
+        )
+
     def set_txpower(self, interface: str, dbm: int) -> None:
         """Sets the transmit power for the radio device associated with the interface.
 

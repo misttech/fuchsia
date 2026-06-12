@@ -10,8 +10,11 @@ import time
 from typing import Any
 
 from antlion import context, utils
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants, hostapd_security
+from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.ap_lib import hostapd_constants
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from antlion.test_utils.abstract_devices import wmm_transceiver
 from antlion.test_utils.abstract_devices.wlan_device import (
     AssociationMode,
@@ -20,13 +23,35 @@ from antlion.test_utils.abstract_devices.wlan_device import (
 from antlion.test_utils.fuchsia import wmm_test_cases
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, test_runner
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib import capabilities
+from openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    CapabilitySelection,
+    HtMode,
+    PhyMode,
+    RadioConfig,
+    SecurityOpen,
+    VhtMode,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
+from openwrt_access_point.lib.hostapd_options import (
+    HostapdOptions,
+    WmmAcm,
+    WmmParams,
+)
 
 DEFAULT_N_CAPABILITIES_20_MHZ = [
-    hostapd_constants.N_CAPABILITY_LDPC,
-    hostapd_constants.N_CAPABILITY_SGI20,
-    hostapd_constants.N_CAPABILITY_TX_STBC,
-    hostapd_constants.N_CAPABILITY_RX_STBC1,
-    hostapd_constants.N_CAPABILITY_HT20,
+    capabilities.N_CAPABILITY_LDPC,
+    capabilities.N_CAPABILITY_SHORT_GI_20,
+    capabilities.N_CAPABILITY_TX_STBC,
+    capabilities.N_CAPABILITY_RX_STBC1,
+    capabilities.N_CAPABILITY_HT20,
 ]
 
 DEFAULT_AP_PARAMS = {
@@ -158,7 +183,9 @@ class WlanWmmTest(base_test.WifiBaseTest):
         self.access_point_transceiver = wmm_transceiver.create(
             self._wmm_transceiver_configs["access_point"],
             identifier="access_point",
-            access_points=self.access_points,
+            access_points=self.openwrt_aps
+            if self.openwrt_aps
+            else self.access_points,
         )
 
         self.wmm_transceivers = [self.staut, self.access_point_transceiver]
@@ -184,7 +211,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
             if tc.wlan_device:
                 tc.wlan_device.wifi_toggle_state(True)
                 tc.wlan_device.disconnect()
-            if tc.access_point:
+            if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()
 
     def teardown_test(self) -> None:
@@ -194,7 +221,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
                 tc.wlan_device.disconnect()
                 tc.wlan_device.reset_wifi()
             self.download_logs()
-            if tc.access_point:
+            if isinstance(tc.access_point, AccessPoint):
                 tc.access_point.stop_all_aps()
         super().teardown_test()
 
@@ -204,7 +231,9 @@ class WlanWmmTest(base_test.WifiBaseTest):
         super().teardown_class()
 
     def start_ap_with_wmm_params(
-        self, ap_parameters: dict[str, Any], wmm_parameters: dict[str, Any]
+        self,
+        ap_parameters: dict[str, Any],
+        wmm_parameters: HostapdOptions,
     ) -> str:
         """Sets up WMM network on AP.
 
@@ -230,30 +259,86 @@ class WlanWmmTest(base_test.WifiBaseTest):
 
         if "n_capabilities" not in ap_parameters:
             ap_parameters["n_capabilities"] = DEFAULT_N_CAPABILITIES_20_MHZ
-
         if "additional_ap_parameters" in ap_parameters:
             ap_parameters["additional_ap_parameters"].update(wmm_parameters)
         else:
             ap_parameters["additional_ap_parameters"] = wmm_parameters
 
-        # Optional security
-        security_config = ap_parameters.get("security_config", None)
-        if security_config:
-            ap_parameters["security"] = hostapd_security.Security(
-                **security_config
+        ap = self.access_point_transceiver.access_point
+        if isinstance(ap, OpenWrtAP):
+            channel_num = ap_parameters["channel"]
+            phy_mode: PhyMode
+            if channel_num < hostapd_constants.LOWEST_5G_CHANNEL:
+                band = Band.BAND_2G
+                phy_mode = HtMode(bw=20)
+            else:
+                band = Band.BAND_5G
+                phy_mode = VhtMode(bw=80)
+
+            n_caps = ap_parameters.get("n_capabilities", [])
+            ac_caps = ap_parameters.get("ac_capabilities", [])
+
+            security = ap_parameters.get("security", SecurityOpen())
+            password = ap_parameters.get("password", None)
+
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig(
+                        channel=BssChannel(
+                            band=band, number=channel_num, phy_mode=phy_mode
+                        ),
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ap_parameters["ssid"],
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                        n_capabilities=CapabilitySelection.CUSTOM(n_caps)
+                        if n_caps
+                        else CapabilitySelection.DEFAULT(),
+                        ac_capabilities=CapabilitySelection.CUSTOM(ac_caps)
+                        if ac_caps
+                        else CapabilitySelection.DEFAULT(),
+                        custom_hostapd_options=wmm_parameters,
+                    )
+                ]
             )
-            ap_parameters.pop("security_config")
+            ap.configure_wifi(config)
+            self.log.info(f"OpenWRT Network ({ap_parameters['ssid']}) is up.")
+            return ap.default_subnet
+        elif isinstance(ap, AccessPoint):
+            security = ap_parameters.get("security")
+            if security:
+                ap_parameters["security"] = DeprecatedSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(security),
+                    password=ap_parameters.get("password", None),
+                )
 
-        # Start AP with kwargs
-        self.log.info(f"Setting up WMM network: {ap_parameters['ssid']}")
-        setup_ap(self.access_point_transceiver.access_point, **ap_parameters)
-        self.log.info(f"Network ({ap_parameters['ssid']}) is up.")
+            # Map capabilities
+            if ap_parameters.get("n_capabilities") is not None:
+                ap_parameters["n_capabilities"] = [
+                    ConfigMapper.to_hostapd_n_cap(cap)
+                    for cap in ap_parameters["n_capabilities"]
+                ]
+            if ap_parameters.get("ac_capabilities") is not None:
+                ap_parameters["ac_capabilities"] = [
+                    ConfigMapper.to_hostapd_ac_cap(cap)
+                    for cap in ap_parameters["ac_capabilities"]
+                ]
 
-        # Return subnet
-        if ap_parameters["channel"] < hostapd_constants.LOWEST_5G_CHANNEL:
-            return self.access_point_transceiver.access_point._AP_2G_SUBNET_STR
+            # Start AP with kwargs
+            self.log.info(f"Setting up WMM network: {ap_parameters['ssid']}")
+            setup_ap(ap, **ap_parameters)
+            self.log.info(f"Network ({ap_parameters['ssid']}) is up.")
+
+            # Return subnet
+            if ap_parameters["channel"] < hostapd_constants.LOWEST_5G_CHANNEL:
+                return ap._AP_2G_SUBNET_STR
+            else:
+                return ap._AP_5G_SUBNET_STR
         else:
-            return self.access_point_transceiver.access_point._AP_5G_SUBNET_STR
+            raise TypeError("Unsupported access point type.")
 
     def associate_transceiver(
         self, wmm_transceiver: Any, ap_params: dict[str, Any]
@@ -269,14 +354,9 @@ class WlanWmmTest(base_test.WifiBaseTest):
                 "Cannot associate a WmmTransceiver that does not have a WLAN device."
             )
         ssid = ap_params["ssid"]
-        password = None
-        target_security = None
-        security = ap_params.get("security")
-        if security:
-            password = security.password
-            target_security = hostapd_constants.SECURITY_STRING_TO_DEFAULT_TARGET_SECURITY.get(
-                security.security_mode_string
-            )
+        security = ap_params.get("security", SecurityOpen())
+        password = ap_params.get("password", None)
+        target_security = ConfigMapper.to_hostapd_security(security)
         associated = wmm_transceiver.wlan_device.associate(
             ssid,
             target_security,
@@ -613,9 +693,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
         self,
         phases: dict[str, Any],
         ap_parameters: dict[str, Any] = DEFAULT_AP_PARAMS,
-        wmm_parameters: dict[
-            str, Any
-        ] = hostapd_constants.WMM_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS,
+        wmm_parameters: HostapdOptions = WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS,
         stream_timeout: int = DEFAULT_STREAM_TIMEOUT,
     ) -> None:
         """Runs a WMM test case.
@@ -859,8 +937,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
 
     def test_acm_bit_on_VI(self) -> None:
         wmm_params_VI_ACM = (
-            hostapd_constants.WMM_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS
-            | hostapd_constants.WMM_ACM_VI
+            WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
         self.run_wmm_test(
             wmm_test_cases.test_acm_bit_on_VI, wmm_parameters=wmm_params_VI_ACM
@@ -871,25 +948,25 @@ class WlanWmmTest(base_test.WifiBaseTest):
     def test_ac_param_degrade_VO(self) -> None:
         self.run_wmm_test(
             wmm_test_cases.test_ac_param_degrade_VO,
-            wmm_parameters=hostapd_constants.WMM_DEGRADED_VO_PARAMS,
+            wmm_parameters=WmmParams.DEGRADED_VO,
         )
 
     def test_ac_param_degrade_VI(self) -> None:
         self.run_wmm_test(
             wmm_test_cases.test_ac_param_degrade_VI,
-            wmm_parameters=hostapd_constants.WMM_DEGRADED_VI_PARAMS,
+            wmm_parameters=WmmParams.DEGRADED_VI,
         )
 
     def test_ac_param_improve_BE(self) -> None:
         self.run_wmm_test(
             wmm_test_cases.test_ac_param_improve_BE,
-            wmm_parameters=hostapd_constants.WMM_IMPROVE_BE_PARAMS,
+            wmm_parameters=WmmParams.IMPROVE_BE,
         )
 
     def test_ac_param_improve_BK(self) -> None:
         self.run_wmm_test(
             wmm_test_cases.test_ac_param_improve_BK,
-            wmm_parameters=hostapd_constants.WMM_IMPROVE_BK_PARAMS,
+            wmm_parameters=WmmParams.IMPROVE_BK,
         )
 
     # WFA Test Plan Tests
@@ -958,8 +1035,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
     def test_wfa_acm_bit_on_VI(self) -> None:
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
         wmm_params_VI_ACM = (
-            hostapd_constants.WMM_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS
-            | hostapd_constants.WMM_ACM_VI
+            WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
         self.run_wmm_test(
             wmm_test_cases.test_wfa_acm_bit_on_VI,
@@ -972,7 +1048,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
         asserts.skip_if(not self.secondary_sta, "No secondary station.")
         self.run_wmm_test(
             wmm_test_cases.test_wfa_ac_param_degrade_VI,
-            wmm_parameters=hostapd_constants.WMM_DEGRADED_VI_PARAMS,
+            wmm_parameters=WmmParams.DEGRADED_VI,
         )
 
 

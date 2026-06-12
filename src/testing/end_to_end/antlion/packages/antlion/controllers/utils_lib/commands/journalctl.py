@@ -6,7 +6,7 @@ import shlex
 from datetime import datetime
 
 from antlion.controllers.utils_lib.commands import pgrep
-from antlion.controllers.utils_lib.commands.command import LinuxCommand, require
+from antlion.controllers.utils_lib.commands.command import LinuxCommand
 from libs.proc.runner import Runner
 
 # Timestamp format accepted by systemd.
@@ -26,12 +26,14 @@ class LinuxJournalctlCommand(LinuxCommand):
 
     def __init__(self, runner: Runner, binary: str = "journalctl") -> None:
         super().__init__(runner, binary)
-        self._pgrep = require(pgrep.LinuxPgrepCommand(runner))
+        self._pgrep = pgrep.LinuxPgrepCommand(runner)
         self._last_ran: datetime | None = None
         self._logs_before_reset: str | None = None
 
     def available(self) -> bool:
         if not super().available():
+            return False
+        if not self._pgrep.available():
             return False
         return self._pgrep.find("systemd-journal") is not None
 

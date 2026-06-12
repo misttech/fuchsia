@@ -1215,7 +1215,11 @@ class SoftApTest(base_test.WifiBaseTest):
         for transmitter in associated:
             for receiver in associated:
                 if transmitter != receiver:
-                    if not transmitter["device"].can_ping(receiver["address"]):
+                    if (
+                        not transmitter["device"]
+                        .ping(receiver["address"])
+                        .success
+                    ):
                         asserts.fail(
                             "Could not ping from one associated client "
                             f"({transmitter['address']}) to another "

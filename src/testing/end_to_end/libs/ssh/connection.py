@@ -274,9 +274,14 @@ class SshConnection(Runner):
                     raise CalledProcessTransportError(
                         "The job failed for unknown reasons"
                     ) from e
-
-                if not ignore_status:
-                    raise e
+                if ignore_status:
+                    return subprocess.CompletedProcess(
+                        terminal_command,
+                        e.returncode,
+                        e.stdout,
+                        e.stderr,
+                    )
+                raise e
 
     def run_async(self, command: str) -> subprocess.CompletedProcess[bytes]:
         """Starts up a background command over ssh.

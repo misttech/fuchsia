@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import os
+import re
 import shlex
 import subprocess
 import threading
@@ -20,7 +21,10 @@ from typing import IO
 
 from antlion import context, utils
 from antlion.controllers.utils_lib.commands import nmcli
-from antlion.controllers.utils_lib.commands.command import optional
+from antlion.controllers.utils_lib.commands.command import (
+    LinuxCommand,
+    optional,
+)
 from antlion.controllers.utils_lib.commands.journalctl import (
     LinuxJournalctlCommand,
 )
@@ -452,26 +456,26 @@ class IPerfServerOverSsh(IPerfServerBase):
             connection.SshConnection(ssh_settings)
         )
         self._journalctl = optional(LinuxJournalctlCommand(self._ssh_session))
+        self._ss = optional(LinuxCommand(self._ssh_session, "ss"))
 
         self._iperf_pid: str | None = None
         self._current_tag: str | None = None
         self._use_killall = str(use_killall).lower() == "true"
 
-        # The control and test interfaces have to be different, otherwise
-        # performing a DHCP release+renewal risks severing the SSH connection
-        # and bricking the device.
-        control_interface = utils.get_interface_based_on_ip(
-            self._ssh_session, self.hostname
-        )
-        if control_interface == test_interface:
-            raise signals.TestAbortAll(
-                f"iperf server control interface ({control_interface}) cannot be the "
-                f"same as the test interface ({test_interface})."
-            )
-
         # Disable NetworkManager on the test interface
         self._nmcli = optional(nmcli.LinuxNmcliCommand(self._ssh_session))
         if self._nmcli:
+            # The control and test interfaces have to be different, otherwise
+            # performing a DHCP release+renewal risks severing the SSH connection
+            # and bricking the device.
+            control_interface = utils.get_interface_based_on_ip(
+                self._ssh_session, self.hostname
+            )
+            if control_interface == test_interface:
+                raise signals.TestAbortAll(
+                    f"iperf server control interface ({control_interface}) cannot be the "
+                    f"same as the test interface ({test_interface})."
+                )
             self._nmcli.setup_device(self.test_interface)
 
     @property
@@ -520,17 +524,33 @@ class IPerfServerOverSsh(IPerfServerBase):
     def _cleanup_iperf_port(self) -> None:
         """Checks and kills zombie iperf servers occupying intended port."""
         assert self._ssh_session is not None
+        if not self._ss:
+            if self._use_killall:
+                self._ssh_session.run("killall iperf3", ignore_status=True)
+            else:
+                raise Exception(
+                    "Cannot clean up iperf port: 'ss' tool is unavailable on the remote host, and fallback 'killall' is disabled."
+                )
+            return
 
-        netstat = self._ssh_session.run(["netstat", "-tupln"]).stdout.decode(
+        ss_output = self._ssh_session.run(["ss", "-tupln"]).stdout.decode(
             "utf-8"
         )
-        for line in netstat.splitlines():
+        for line in ss_output.splitlines():
             if (
                 "LISTEN" in line
                 and "iperf3" in line
                 and f":{self.port}" in line
             ):
-                pid = int(line.split()[-1].split("/")[0])
+                match = re.search(r"pid=(\d+)", line)
+                if match:
+                    pid = int(match.group(1))
+                else:
+                    match = re.search(r'"iperf3",(\d+),', line)
+                    if match:
+                        pid = int(match.group(1))
+                    else:
+                        continue
                 logging.debug(
                     "Killing zombie server on port %i: %i", self.port, pid
                 )
