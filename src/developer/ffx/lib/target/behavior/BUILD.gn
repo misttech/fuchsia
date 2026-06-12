@@ -50,6 +50,7 @@ rustc_library("lib") {
 
   test_deps = [
     "//src/connectivity/overnet/lib/ascendd",
+    "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/netext:lib",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:async-lock",

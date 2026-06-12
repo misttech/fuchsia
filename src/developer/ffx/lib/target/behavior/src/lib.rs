@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 use crate::injection::Injection;
+use discovery::DiscoverySources;
+#[cfg(test)]
+use discovery::{DiscoveryBuilder, TargetEvent, TargetHandle, TargetState};
 use ffx_command_error::{Result, bug};
 use ffx_config::EnvironmentContext;
 use ffx_core::Injector;
-use ffx_target::Resolution;
+use ffx_target::{DefaultTargetResolver, Resolution, build_discovery, build_discovery_from_config};
 use fho::TryFromEnv;
 use std::fmt;
 use std::sync::Arc;
@@ -18,6 +21,7 @@ mod injection;
 struct DirectConnectorInner {
     context: EnvironmentContext,
     resolution: futures::lock::Mutex<Option<Arc<Resolution>>>,
+    resolver: futures::lock::Mutex<DefaultTargetResolver>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,9 +43,11 @@ pub struct DirectConnector(Arc<DirectConnectorInner>);
 
 impl DirectConnector {
     pub fn from_resolution_for_test(resolution: Resolution) -> Self {
+        let discovery = build_discovery(DiscoverySources::all(), &EnvironmentContext::default());
         DirectConnector(Arc::new(DirectConnectorInner {
             context: EnvironmentContext::default(),
             resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
+            resolver: futures::lock::Mutex::new(DefaultTargetResolver::new(discovery)),
         }))
     }
 
@@ -56,7 +62,7 @@ impl DirectConnector {
             let mut resolution = self.0.resolution.lock().await;
 
             let use_cache = if let Some(resolution) = &*resolution {
-                if resolution.ensure_not_terminated().await.is_ok() {
+                if resolution.is_usable().await {
                     return Ok(Arc::clone(resolution));
                 }
                 false
@@ -64,8 +70,14 @@ impl DirectConnector {
                 true
             };
 
+            let resolver = self.0.resolver.lock().await;
             let new = Arc::new(
-                Resolution::try_from_env_context_with_cache(&self.0.context, use_cache).await?,
+                Resolution::try_from_env_context_with_resolver(
+                    &*resolver,
+                    &self.0.context,
+                    use_cache,
+                )
+                .await?,
             );
             *resolution = Some(Arc::clone(&new));
 
@@ -276,9 +288,12 @@ impl FhoTargetEnvironmentInner {
         let behavior = self
             .initialize_behavior_with(|| async {
                 log::info!("Initializing ConnectionBehavior::DirectConnector");
+                let discovery = build_discovery_from_config(context);
+                let resolver = DefaultTargetResolver::new(discovery);
                 let connector = DirectConnector(Arc::new(DirectConnectorInner {
                     context: context.clone(),
                     resolution: futures::lock::Mutex::new(None),
+                    resolver: futures::lock::Mutex::new(resolver),
                 }));
                 Ok(ConnectionBehavior::DirectConnector(connector))
             })
@@ -523,9 +538,12 @@ mod tests {
 
         write_test_cache(&env.context, "test-target", "127.0.0.1:8082");
 
+        let discovery = build_discovery(DiscoverySources::all(), &env.context);
+        let resolver = DefaultTargetResolver::new(discovery);
         let connector = DirectConnector(Arc::new(DirectConnectorInner {
             context: env.context.clone(),
             resolution: futures::lock::Mutex::new(None),
+            resolver: futures::lock::Mutex::new(resolver),
         }));
 
         let res = connector.resolution().await;
@@ -566,9 +584,12 @@ mod tests {
 
         resolution.set_connection_for_test(Some(conn)).await;
 
+        let discovery = build_discovery(DiscoverySources::all(), &env.context);
+        let resolver = DefaultTargetResolver::new(discovery);
         let connector = DirectConnector(Arc::new(DirectConnectorInner {
             context: env.context.clone(),
             resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
+            resolver: futures::lock::Mutex::new(resolver),
         }));
 
         let res = connector.resolution().await;
@@ -608,9 +629,12 @@ mod tests {
 
         initial_resolution.set_connection_for_test(Some(conn)).await;
 
+        let discovery = build_discovery(DiscoverySources::all(), &env.context);
+        let resolver = DefaultTargetResolver::new(discovery);
         let connector = DirectConnector(Arc::new(DirectConnectorInner {
             context: env.context.clone(),
             resolution: futures::lock::Mutex::new(Some(Arc::new(initial_resolution))),
+            resolver: futures::lock::Mutex::new(resolver),
         }));
 
         let res = connector.resolution().await;
@@ -622,5 +646,135 @@ mod tests {
             !reconnect_called.load(Ordering::SeqCst),
             "Expected no reconnection attempt on terminated connection"
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_failed_connection_bypasses_cache() {
+        let mut builder = test_env();
+        let cache_dir = builder.isolate_root().join("cache");
+        let env = builder
+            .runtime_config("target.default", "test-target")
+            .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
+            .build()
+            .unwrap();
+
+        // 1. Create a mocked resolution that fails to connect
+        let resolution = Resolution::mock(|| Err(anyhow::anyhow!("connect failed").into()));
+
+        // Call get_connection to trigger the failure
+        let conn_res = resolution.get_connection(&env.context).await;
+        assert!(conn_res.is_err());
+
+        // 2. Put it in the connector
+        let discovery = build_discovery(DiscoverySources::all(), &env.context);
+        let resolver = DefaultTargetResolver::new(discovery);
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
+            resolver: futures::lock::Mutex::new(resolver),
+        }));
+
+        // 3. Resolve. Since the connection failed, it should bypass the cache.
+        // Bypassing the cache will try to resolve "test-target" via discovery,
+        // which fails in the test environment, so we expect an Err.
+        // If it did NOT bypass the cache, it would return Ok(cached_resolution).
+        let res = connector.resolution().await;
+        assert!(
+            res.is_err(),
+            "Expected resolution to fail (cache bypassed), but got Ok: {:?}",
+            res
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_reconnect_re_resolves_to_new_address() {
+        use std::str::FromStr;
+        let mut builder = test_env();
+        let cache_dir = builder.isolate_root().join("cache");
+        let env = builder
+            .runtime_config("target.default", "test-target")
+            .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
+            // Set "ssh.priv" to an invalid path to force SshConnector to fail instantly with a
+            // Fatal error. This simulates a connection failure without getting stuck in the
+            // infinite NonFatal retry loop (e.g. on connection refused/timeout), which would
+            // hang the test.
+            .runtime_config("ssh.priv", "/invalid/nonexistent/ssh/path")
+            .build()
+            .unwrap();
+
+        // Define two target handles representing the device before and after reboot (with different ports)
+        let addr1 = addr::TargetAddr::from_str("127.0.0.1:8082").unwrap();
+        let handle1 = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Product { addrs: vec![addr1], serial: None },
+            manual: false,
+        };
+
+        let addr2 = addr::TargetAddr::from_str("127.0.0.1:8083").unwrap();
+        let handle2 = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Product { addrs: vec![addr2], serial: None },
+            manual: false,
+        };
+
+        // 1. Target appears at Address 1
+        let (tx1, rx1) = futures::channel::mpsc::unbounded::<TargetEvent>();
+        tx1.unbounded_send(TargetEvent::Added(handle1.clone())).unwrap();
+        drop(tx1); // Close the stream so discovery terminates immediately
+        let discovery1 = DiscoveryBuilder::default().build_with_stream(&env.context, rx1);
+        let resolver1 = DefaultTargetResolver::new(discovery1);
+
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(None),
+            resolver: futures::lock::Mutex::new(resolver1),
+        }));
+
+        // Resolve first time - should find Address 1
+        let res1 = connector.resolution().await;
+        assert!(res1.is_ok());
+        let res1 = res1.unwrap();
+        assert_eq!(res1.target_spec(), "127.0.0.1:8082");
+
+        // 2. Mock a successful connection
+        #[derive(Debug)]
+        struct PlaceholderConnector;
+        impl ffx_target::TargetConnector for PlaceholderConnector {
+            const CONNECTION_TYPE: &'static str = "placeholder";
+            async fn connect(
+                &mut self,
+            ) -> Result<ffx_target::TargetConnection, ffx_target::TargetConnectionError>
+            {
+                Ok(ffx_target::TargetConnection::FDomain(ffx_target::FDomainConnection::invalid()))
+            }
+        }
+        let conn = ffx_target::Connection::new(PlaceholderConnector).await.unwrap();
+        res1.set_connection_for_test(Some(conn)).await;
+
+        // Verify we can get the connection
+        assert!(res1.get_connection(&env.context).await.is_ok());
+
+        // 3. Simulate device going away (connection lost / rebooted)
+        // Clear the cached connection
+        res1.set_connection_for_test(None).await;
+
+        // Attempt connection, which fails immediately because ssh.priv is invalid
+        let conn_res = res1.get_connection(&env.context).await;
+        assert!(conn_res.is_err());
+
+        // 4. Target reappears at Address 2
+        let (tx2, rx2) = futures::channel::mpsc::unbounded::<TargetEvent>();
+        tx2.unbounded_send(TargetEvent::Added(handle2)).unwrap();
+        drop(tx2); // Close the stream so discovery terminates immediately
+        let discovery2 = DiscoveryBuilder::default().build_with_stream(&env.context, rx2);
+        let resolver2 = DefaultTargetResolver::new(discovery2);
+        *connector.0.resolver.lock().await = resolver2;
+
+        // Call resolution again - since the connection failed, it should re-resolve
+        // and find the new Address 2
+        let res2 = connector.resolution().await;
+        assert!(res2.is_ok());
+        let res2 = res2.unwrap();
+        assert_eq!(res2.target_spec(), "127.0.0.1:8083");
     }
 }

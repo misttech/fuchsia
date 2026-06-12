@@ -57,8 +57,8 @@ pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
-    discover_single_default_target, get_discovered_targets, get_discovery_stream,
-    maybe_locally_resolve_target_spec, resolve_target_address,
+    build_discovery_from_config, discover_single_default_target, get_discovered_targets,
+    get_discovery_stream, maybe_locally_resolve_target_spec, resolve_target_address,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
@@ -616,7 +616,8 @@ pub(crate) async fn knock_target_daemonless_impl(
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
-        let resolver = resolve::DefaultTargetResolver;
+        let discovery = build_discovery_from_config(context);
+        let resolver = resolve::DefaultTargetResolver::new(discovery);
         let res = resolver.resolve_target_address(target_spec, use_cache, context).await.map_err(
             |e| match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry

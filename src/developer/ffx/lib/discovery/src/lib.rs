@@ -284,6 +284,10 @@ pub struct Discovery {
 }
 
 impl Discovery {
+    pub fn sources(&self) -> DiscoverySources {
+        self.sources
+    }
+
     // Discover devices via mDNS broadcast, etc, with a time limit
     fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent> + Send>>> {
         if let Some(stream) = self.stream.lock().unwrap().take() {

@@ -166,8 +166,8 @@ where
     loop {
         let target_spec = {
             let resolution = dc.resolution().await.map_err(|e| e.into_command_error())?;
-            resolution
-                .ensure_connected(env.environment_context())
+            let _ = resolution
+                .get_connection(env.environment_context())
                 .await
                 .map_err(|e| e.into_command_error())?;
             resolution.target_spec()

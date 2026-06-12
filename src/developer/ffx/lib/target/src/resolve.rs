@@ -30,7 +30,7 @@ use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
 use crate::vsock_connector::VSockConnector;
-use crate::{TargetInfo, UNSPECIFIED_TARGET_NAME, get_target_specifier};
+use crate::{TargetInfo, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 
@@ -55,8 +55,9 @@ pub async fn maybe_locally_resolve_target_spec(
             ffx_config::is_mdns_discovery_disabled(env_context)
         );
 
-        locally_resolve_target_spec(target_spec, &DefaultTargetResolver::default(), env_context)
-            .await
+        let discovery = build_discovery_from_config(env_context);
+        let resolver = DefaultTargetResolver::new(discovery);
+        locally_resolve_target_spec(target_spec, &resolver, env_context).await
     }
 }
 
@@ -176,12 +177,11 @@ pub async fn discover_single_default_target(
 /// Implementors of this trait are responsible for searching for targets,
 /// handling ambiguity, and returning a `Resolution` object that can be used
 /// to connect to the target.
-pub trait TargetResolver: Default {
+pub trait TargetResolver {
     /// Gets a set of handles from the resolver's sources that match the query
     fn discovered_targets(
         &self,
         query: TargetInfoQuery,
-        ctx: &EnvironmentContext,
     ) -> impl Future<Output = Result<Vec<TargetHandle>>>;
 
     /// Attempts to resolve a target by name from a manually configured list.
@@ -229,7 +229,7 @@ pub trait TargetResolver: Default {
         env_context: &EnvironmentContext,
     ) -> impl Future<Output = Result<Vec<Resolution>, FfxTargetError>> {
         async move {
-            let handles_fut = self.discovered_targets(target_spec.clone(), env_context).fuse();
+            let handles_fut = self.discovered_targets(target_spec.clone()).fuse();
             pin_mut!(handles_fut);
             let mut discovered: Option<Vec<TargetHandle>> = None;
 
@@ -355,7 +355,6 @@ mock! {
         async fn discovered_targets(
             &self,
             query: TargetInfoQuery,
-            ctx: &EnvironmentContext,
         ) -> Result<Vec<TargetHandle>>;
 
         async fn try_resolve_manual_target(
@@ -398,6 +397,17 @@ pub fn build_discovery(sources: DiscoverySources, ctx: &EnvironmentContext) -> D
     builder.build(ctx)
 }
 
+pub fn build_discovery_from_config(ctx: &EnvironmentContext) -> Discovery {
+    let mut sources = DiscoverySources::all();
+    if !ctx.get(ffx_config::keys::USB_ENABLED).unwrap_or(false) {
+        sources.remove(DiscoverySources::USB_VSOCK);
+    }
+    if !ctx.get(ffx_config::keys::NETWORK_ENABLED).unwrap_or(true) {
+        sources.remove(DiscoverySources::MDNS);
+    }
+    build_discovery(sources, ctx)
+}
+
 // Return a stream of TargetHandles that come from the specified sources, and
 // match the query. The discovery will return early if a result "perfectly"
 // matches the query (e.g. an mDNS response with the exact name requested).
@@ -435,11 +445,20 @@ pub async fn resolve_target_address(
     use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<Resolution, FfxTargetError> {
-    DefaultTargetResolver::default().resolve_target_address(target_spec, use_cache, ctx).await
+    let discovery = build_discovery_from_config(ctx);
+    let resolver = DefaultTargetResolver::new(discovery);
+    resolver.resolve_target_address(target_spec, use_cache, ctx).await
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct DefaultTargetResolver;
+pub struct DefaultTargetResolver {
+    discovery: Discovery,
+}
+
+impl DefaultTargetResolver {
+    pub fn new(discovery: Discovery) -> Self {
+        Self { discovery }
+    }
+}
 
 /// Return a stream of handles matching the query. If a target matches the query
 /// exactly (i.e. the query is the full name of the target, not a substring),
@@ -495,23 +514,14 @@ pub async fn get_discovered_targets(
 }
 
 impl TargetResolver for DefaultTargetResolver {
-    async fn discovered_targets(
-        &self,
-        query: TargetInfoQuery,
-        ctx: &EnvironmentContext,
-    ) -> Result<Vec<TargetHandle>> {
-        let mut sources = DiscoverySources::all();
-        if !ctx.get(keys::USB_ENABLED).unwrap_or(false) {
-            sources.remove(DiscoverySources::USB_VSOCK);
-        }
-        if !ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
-            sources.remove(DiscoverySources::MDNS);
-        }
-        get_discovered_targets_with_sources(query.clone(), sources, ctx)
+    async fn discovered_targets(&self, query: TargetInfoQuery) -> Result<Vec<TargetHandle>> {
+        self.discovery
+            .discover_devices(query.clone())
             .await
+            .map_err(|e| anyhow::anyhow!(e))
             .or_analytics(PointOfFailure::DiscoveryFailure {
                 query: Some(query.to_analytics_tag()),
-                discovery_sources: sources,
+                discovery_sources: self.discovery.sources(),
             })
             .await
     }
@@ -674,6 +684,13 @@ impl ResolutionTarget {
     }
 }
 
+#[derive(Debug)]
+enum ConnectionState {
+    Uninitialized,
+    Connected(Arc<Connection>),
+    Failed,
+}
+
 // Group the information collected when resolving the address. (This is
 // particularly important for the rcs_proxy, which we may need when resolving
 // a manual target -- we don't want make an RCS connection just to resolve the
@@ -682,7 +699,7 @@ impl ResolutionTarget {
 pub struct Resolution {
     target: ResolutionTarget,
     discovered: Option<TargetHandle>,
-    connection: Mutex<Option<Arc<Connection>>>,
+    connection: Mutex<ConnectionState>,
     rcs_proxy: Mutex<Option<RemoteControlProxy>>,
     identify_host_response: Mutex<Option<IdentifyHostResponse>>,
 }
@@ -702,7 +719,7 @@ impl Resolution {
         Self {
             target,
             discovered: None,
-            connection: Mutex::new(None),
+            connection: Mutex::new(ConnectionState::Uninitialized),
             rcs_proxy: Mutex::new(None),
             identify_host_response: Mutex::new(None),
         }
@@ -740,7 +757,10 @@ impl Resolution {
     }
 
     pub async fn set_connection_for_test(&self, connection: Option<Connection>) {
-        *self.connection.lock().await = connection.map(Arc::new);
+        *self.connection.lock().await = match connection {
+            Some(conn) => ConnectionState::Connected(Arc::new(conn)),
+            None => ConnectionState::Uninitialized,
+        };
     }
 
     pub fn usb_cid(&self) -> Option<u32> {
@@ -755,22 +775,49 @@ impl Resolution {
         self.target.to_spec()
     }
 
-    pub async fn ensure_connected(
-        &self,
-        context: &EnvironmentContext,
-    ) -> std::result::Result<(), crate::FfxTargetCrateError> {
-        self.get_connection(context).await.map(|_| ())
-    }
-
-    pub async fn ensure_not_terminated(
-        &self,
-    ) -> std::result::Result<(), crate::FfxTargetCrateError> {
-        if let Some(conn) = self.connection.lock().await.as_ref() {
-            if conn.is_terminated() {
-                return Err(crate::error::TargetResolutionError::ConnectionTerminated.into());
+    pub async fn is_usable(&self) -> bool {
+        // Acquire the lock to read the connection state. Note that this may suspend/block if a
+        // connection attempt is currently in progress (which holds the lock). This blocking is
+        // correct and desirable: it prevents duplicate, parallel connection attempts by forcing
+        // us to wait and see if the in-progress attempt succeeds.
+        match &*self.connection.lock().await {
+            // We lazily connect to the target (some callers like SshAddrHolder only query the
+            // address without connecting). An Uninitialized state is still considered healthy/usable
+            // because we haven't failed any connection attempts yet.
+            ConnectionState::Uninitialized => {
+                log::debug!(
+                    "Resolution::is_usable(): connection is uninitialized for target {:?}",
+                    self.target
+                );
+                true
+            }
+            ConnectionState::Connected(conn) => {
+                if conn.is_terminated() {
+                    log::debug!(
+                        "Resolution::is_usable(): connection is terminated for target {:?}",
+                        self.target
+                    );
+                    false
+                } else {
+                    log::debug!(
+                        "Resolution::is_usable(): connection is active for target {:?}",
+                        self.target
+                    );
+                    true
+                }
+            }
+            // If connection failed, we treat the cache entry as unusable to force eviction and
+            // re-resolution. Even if this results in a false positive (e.g. the target recovered
+            // at the same address by the time we check), re-resolution is safe and necessary in
+            // cases where the target address has changed.
+            ConnectionState::Failed => {
+                log::debug!(
+                    "Resolution::is_usable(): previous connection attempt failed for target {:?}",
+                    self.target
+                );
+                false
             }
         }
-        Ok(())
     }
 
     pub async fn get_connection(
@@ -782,12 +829,28 @@ impl Resolution {
         // await points.
         let mut conn_guard = self.connection.lock().await;
 
-        if let Some(conn) = conn_guard.as_ref()
+        if let ConnectionState::Connected(conn) = &*conn_guard
             && !conn.is_terminated()
         {
             return Ok(conn.clone());
         }
 
+        let conn_res = self.connect_new(context).await;
+        match &conn_res {
+            Ok(conn) => {
+                *conn_guard = ConnectionState::Connected(conn.clone());
+            }
+            Err(_) => {
+                *conn_guard = ConnectionState::Failed;
+            }
+        }
+        conn_res
+    }
+
+    async fn connect_new(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<Arc<Connection>, crate::FfxTargetCrateError> {
         let conn =
             match &self.target {
                 ResolutionTarget::Addr(socket_addr) => {
@@ -832,13 +895,18 @@ impl Resolution {
                 ResolutionTarget::TestMock(f) => f()?,
             };
 
-        let conn = Arc::new(conn);
-        *conn_guard = Some(conn.clone());
-        Ok(conn)
+        Ok(Arc::new(conn))
     }
 
     pub fn get_connection_if_already_established(&self) -> Option<Arc<Connection>> {
-        if let Ok(guard) = self.connection.try_lock() { guard.as_ref().cloned() } else { None }
+        if let Ok(guard) = self.connection.try_lock() {
+            match &*guard {
+                ConnectionState::Connected(conn) => Some(conn.clone()),
+                _ => None,
+            }
+        } else {
+            None
+        }
     }
 
     async fn get_rcs_proxy(
@@ -915,27 +983,35 @@ async fn emit_target_connection_event(ty: &str) {
 }
 
 impl Resolution {
+    pub async fn try_from_env_context_with_resolver<R: TargetResolver>(
+        resolver: &R,
+        env: &EnvironmentContext,
+        use_cache: bool,
+    ) -> ffx_command_error::Result<Self> {
+        let target_spec = get_target_specifier(env)?;
+        if env.is_strict() && target_spec.is_none() {
+            return Err(user_error!(
+                "You must specify a target via `-t <target_name>` before any command arguments"
+            )
+            .into());
+        }
+        let spec: TargetInfoQuery = TargetInfoQuery::try_from(target_spec)
+            .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
+
+        let resolution = resolver
+            .resolve_target_address(&spec, use_cache, env)
+            .await
+            .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
+        Ok(resolution)
+    }
+
     pub async fn try_from_env_context_with_cache(
         env: &EnvironmentContext,
         use_cache: bool,
     ) -> ffx_command_error::Result<Self> {
-        let unspecified_target = UNSPECIFIED_TARGET_NAME.to_owned();
-        let target_spec = get_target_specifier(env)?;
-        let target_spec_unwrapped = if env.is_strict() {
-            target_spec.as_ref().ok_or(user_error!(
-                "You must specify a target via `-t <target_name>` before any command arguments"
-            ))?
-        } else {
-            target_spec.as_ref().unwrap_or(&unspecified_target)
-        };
-        log::trace!("resolving target spec address from {}", target_spec_unwrapped);
-        let spec: TargetInfoQuery = TargetInfoQuery::try_from(target_spec)
-            .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
-
-        let resolution = resolve_target_address(&spec, use_cache, env)
-            .await
-            .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
-        Ok(resolution)
+        let discovery = build_discovery_from_config(env);
+        let resolver = DefaultTargetResolver::new(discovery);
+        Self::try_from_env_context_with_resolver(&resolver, env, use_cache).await
     }
 }
 
@@ -1079,7 +1155,7 @@ mod test {
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product(&name, sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th]));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
         let target_spec =
             locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
                 .await
@@ -1102,7 +1178,7 @@ mod test {
             manual: false,
         };
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th]));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
         let target_spec = locally_resolve_target_spec(
             &(TargetInfoQuery::try_from(sn.clone()).unwrap()),
             &resolver,
@@ -1122,7 +1198,7 @@ mod test {
         let th1 = make_target_handle_for_product(&name, sa);
         let th2 = make_target_handle_for_product(&name, sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th1, th2]));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th1, th2]));
         let target_spec_res = locally_resolve_target_spec(
             &(TargetInfoQuery::try_from("foo".to_string()).unwrap()),
             &resolver,
@@ -1142,7 +1218,7 @@ mod test {
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product("foo", sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th]));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
         let target_spec =
             locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await.unwrap();
         assert_eq!(target_spec, addr_spec);
@@ -1158,7 +1234,7 @@ mod test {
         let th1 = make_target_handle_for_product(&name, sa);
         let th2 = make_target_handle_for_product(&name, sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th1, th2]));
+        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th1, th2]));
         let first_spec = TargetInfoQuery::First;
         let target_spec_res =
             locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await;
@@ -1218,5 +1294,23 @@ mod test {
         let info = resolution.get_target_info(addr, &test_env.context).await.unwrap();
 
         assert_eq!(info.serial_number, Some("test_serial_123".to_string()));
+    }
+
+    #[fuchsia::test]
+    async fn test_resolution_tracks_failed_connection() {
+        let test_env = ffx_config::test_init().unwrap();
+        let resolution = Resolution::from_target(ResolutionTarget::TestMock(Box::new(|| {
+            Err(anyhow::anyhow!("Mock connection failure"))
+        })));
+
+        // Initially it is usable
+        assert!(resolution.is_usable().await);
+
+        // Attempt to connect, which fails
+        let res = resolution.get_connection(&test_env.context).await;
+        assert!(res.is_err());
+
+        // Now it should not be usable
+        assert!(!resolution.is_usable().await);
     }
 }
