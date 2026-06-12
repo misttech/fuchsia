@@ -183,7 +183,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::FilterState<Ipv6>>
         bindings_ctx: &mut BC,
         device_id: &EthernetDeviceId<BC>,
         lookup_addr: SpecifiedAddr<Ipv6Addr>,
-        remote_link_addr: Option<Mac>,
+        remote_link_addr: Option<UnicastAddr<Mac>>,
     ) {
         let dst_ip = match remote_link_addr {
             // TODO(https://fxbug.dev/42081683): once `send_ndp_packet` does not go through

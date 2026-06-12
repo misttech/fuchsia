@@ -294,7 +294,7 @@ where
                 bindings_ctx,
                 &device_id,
                 neighbor,
-                Some(link_addr.get()),
+                Some(link_addr),
             ),
             None => {}
         }

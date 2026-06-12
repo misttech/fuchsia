@@ -288,7 +288,7 @@ where
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         lookup_addr: SpecifiedAddr<<Ipv4 as net_types::ip::Ip>::Addr>,
-        remote_link_addr: Option<<D as LinkDevice>::Address>,
+        remote_link_addr: Option<UnicastAddr<<D as LinkDevice>::Address>>,
     ) {
         let Self(core_ctx) = self;
 
@@ -653,10 +653,10 @@ pub fn send_arp_request<
     device_id: &CC::DeviceId,
     sender_addr: Ipv4Addr,
     lookup_addr: Ipv4Addr,
-    remote_link_addr: Option<D::Address>,
+    remote_link_addr: Option<UnicastAddr<D::Address>>,
 ) {
     let self_hw_addr = core_ctx.get_hardware_addr(bindings_ctx, device_id);
-    let dst_addr = remote_link_addr.unwrap_or(D::Address::BROADCAST);
+    let dst_addr = remote_link_addr.map(|a| a.get()).unwrap_or(D::Address::BROADCAST);
     core_ctx.counters().tx_requests.increment();
     debug!("sending ARP request for {lookup_addr} to {dst_addr:?}");
     SendFrameContext::send_frame(
@@ -676,7 +676,7 @@ pub fn send_arp_request<
             // or otherwise the unspecified address. Notably this makes the
             // ARP target hardware address field differ from the destination
             // address in the Frame Metadata.
-            remote_link_addr.unwrap_or(D::Address::UNSPECIFIED),
+            remote_link_addr.map(|a| a.get()).unwrap_or(D::Address::UNSPECIFIED),
             lookup_addr,
         )
         .into_serializer(),

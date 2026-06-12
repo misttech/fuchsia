@@ -779,7 +779,7 @@ impl<D: LinkDevice> Unreachable<D> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-    ) -> Option<TransmitProbe<D::Address>>
+    ) -> Option<TransmitProbe<UnicastAddr<D::Address>>>
     where
         I: Ip,
         DeviceId: StrongDeviceIdentifier,
@@ -1940,7 +1940,7 @@ pub trait NudContext<I: Ip, D: LinkDevice, BC: NudBindingsTypes<D>>: DeviceIdCon
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         lookup_addr: SpecifiedAddr<I::Addr>,
-        remote_link_addr: Option<D::Address>,
+        remote_link_addr: Option<UnicastAddr<D::Address>>,
     );
 }
 
@@ -2005,7 +2005,7 @@ where
         bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         lookup_addr: SpecifiedAddr<I::Addr>,
-        remote_link_addr: Option<D::Address>,
+        remote_link_addr: Option<UnicastAddr<D::Address>>,
     ) {
         self.wrap().send_neighbor_solicitation(
             bindings_ctx,
@@ -2372,7 +2372,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                         lookup_addr,
                     ) {
                         Some(Action::TransmitProbe {
-                            probe: TransmitProbe::Unicast(link_address.get()),
+                            probe: TransmitProbe::Unicast(link_address),
                             to: lookup_addr,
                         })
                     } else {
@@ -2463,7 +2463,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                     ));
 
                     Some(Action::TransmitProbe {
-                        probe: TransmitProbe::Unicast(link_address.get()),
+                        probe: TransmitProbe::Unicast(link_address),
                         to: lookup_addr,
                     })
                 }
@@ -2990,7 +2990,7 @@ mod tests {
     enum FakeNudMessageMeta<I: Ip> {
         NeighborSolicitation {
             lookup_addr: SpecifiedAddr<I::Addr>,
-            remote_link_addr: Option<FakeLinkAddress>,
+            remote_link_addr: Option<UnicastAddr<FakeLinkAddress>>,
         },
         IpFrame {
             dst_link_address: UnicastAddr<FakeLinkAddress>,
@@ -3091,7 +3091,7 @@ mod tests {
             bindings_ctx: &mut FakeBindingsCtxImpl<I>,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
             lookup_addr: SpecifiedAddr<I::Addr>,
-            remote_link_addr: Option<FakeLinkAddress>,
+            remote_link_addr: Option<UnicastAddr<FakeLinkAddress>>,
         ) {
             self.inner
                 .send_frame(
@@ -3744,7 +3744,7 @@ mod tests {
             [(
                 FakeNudMessageMeta::NeighborSolicitation {
                     lookup_addr: ip_address,
-                    remote_link_addr: link_address.map(|addr| addr.get()),
+                    remote_link_addr: link_address,
                 },
                 Vec::new()
             )]
