@@ -157,6 +157,7 @@ impl RemoteFs {
 }
 
 const REMOTE_FS_MAGIC: u32 = u32::from_be_bytes(*b"f.io");
+const DYNAMIC_FS_BYTES_PER_INODE_FALLBACK: u64 = 16384; // 16 KiB
 const SYNC_IOC_FILE_INFO: u8 = 4;
 const SYNC_IOC_MERGE: u8 = 3;
 
@@ -188,6 +189,12 @@ impl FileSystemOps for RemoteFs {
                     (0, 0)
                 };
 
+                let total_nodes = std::cmp::min(
+                    info.total_nodes,
+                    info.total_bytes / DYNAMIC_FS_BYTES_PER_INODE_FALLBACK,
+                );
+                let free_nodes = total_nodes.saturating_sub(info.used_nodes);
+
                 let fsid = __kernel_fsid_t {
                     val: [
                         (info.fs_id & 0xffffffff) as i32,
@@ -201,10 +208,8 @@ impl FileSystemOps for RemoteFs {
                     f_blocks: total_blocks,
                     f_bfree: free_blocks,
                     f_bavail: free_blocks,
-                    f_files: info.total_nodes.try_into().unwrap_or(i64::MAX),
-                    f_ffree: (info.total_nodes.saturating_sub(info.used_nodes))
-                        .try_into()
-                        .unwrap_or(i64::MAX),
+                    f_files: total_nodes.try_into().unwrap_or(i64::MAX),
+                    f_ffree: free_nodes.try_into().unwrap_or(i64::MAX),
                     f_fsid: fsid,
                     f_namelen: info.max_filename_size.try_into().unwrap_or(0),
                     f_frsize: info.block_size.into(),
