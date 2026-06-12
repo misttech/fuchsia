@@ -59,6 +59,9 @@
 
                 // TODO(https://fxbug.dev/493895527): Hangs; Fix and re-enable.
                 "PerfEventOpenTest.SampleIdIsValid",
+
+                // TODO(https://fxbug.dev/522500185): Enable after reparenting races are fixed.
+                "WaitpidExitSignalTest.StoppedChildInOrphanedGroup",
             ],
         },
         {
