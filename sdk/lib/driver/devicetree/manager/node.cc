@@ -334,4 +334,9 @@ template zx::result<std::vector<uint32_t>> Node::GetProperty<std::vector<uint32_
 template zx::result<std::vector<std::string>> Node::GetProperty<std::vector<std::string>>(
     std::string_view property_name) const;
 
+void Node::set_interrupt_controller_id(uint32_t id) {
+  pbus_node_.interrupt_controller_id(id);
+  add_platform_device_ = true;
+}
+
 }  // namespace fdf_devicetree

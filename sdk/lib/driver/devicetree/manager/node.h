@@ -140,6 +140,8 @@ class Node {
 
   void set_register_type(RegisterType type) { register_type_ = type; }
 
+  void set_interrupt_controller_id(uint32_t id);
+
  private:
   Node* parent_;
   std::string name_;
