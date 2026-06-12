@@ -189,6 +189,29 @@ func (c *FFXStrictClient) EmuStop(ctx context.Context) error {
 	return nil
 }
 
+func (c *FFXStrictClient) RepositoryCreate(ctx context.Context, repoDir string) error {
+	if err := c.ffxInst.Run(ctx, "repository", "create", repoDir); err != nil {
+		return fmt.Errorf("repository create failed: %w", err)
+	}
+	return nil
+}
+
+func (c *FFXStrictClient) RepositoryPublish(ctx context.Context, repoDir string, productDir string, packageArchives []string) error {
+	if err := c.ffxInst.Run(ctx, "repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
+		return fmt.Errorf("repository publish (product-bundle) failed: %w", err)
+	}
+	if len(packageArchives) > 0 {
+		args := []string{"repository", "publish", repoDir}
+		for _, far := range packageArchives {
+			args = append(args, "--package-archive", far)
+		}
+		if err := c.ffxInst.Run(ctx, args...); err != nil {
+			return fmt.Errorf("repository publish (package-archives) failed: %w", err)
+		}
+	}
+	return nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {
