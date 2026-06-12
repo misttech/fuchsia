@@ -23,4 +23,5 @@ kernel_rust_crate("trivial_tests") {
   visibility = [ ":*" ]
   sources = [ "src/lib.rs" ]
   deps = [ "test_macro" ]
+  deps += [ "//zircon/kernel/arch:arch-rs" ]
 }

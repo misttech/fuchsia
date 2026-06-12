@@ -35,3 +35,20 @@ pub extern "C" fn fetch_add_var_exported_to_rust(x: i32) -> i32 {
         old
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn test_rust_interrupt_ops() -> bool {
+    let initially_disabled = arch_rs::ints_disabled();
+    if initially_disabled {
+        return false;
+    }
+    arch_rs::disable_ints();
+    if !arch_rs::ints_disabled() {
+        return false;
+    }
+    arch_rs::enable_ints();
+    if arch_rs::ints_disabled() {
+        return false;
+    }
+    true
+}

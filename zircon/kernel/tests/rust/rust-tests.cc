@@ -20,6 +20,7 @@ int32_t get_const_var_exported_to_rust();
 
 int32_t gVarExportedToRust;
 int32_t fetch_add_var_exported_to_rust(int32_t);
+bool test_rust_interrupt_ops();
 
 }  // extern "C"
 
@@ -57,12 +58,19 @@ bool exported_var_test() {
   END_TEST;
 }
 
+bool rust_interrupt_ops_test() {
+  BEGIN_TEST;
+  EXPECT_TRUE(test_rust_interrupt_ops());
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(rust_tests)
 UNITTEST("test a trivial Rust function called from C++", add_one_test)
 UNITTEST("test a Rust-defined global variable read from C++", defined_const_test)
 UNITTEST("test a C++-defined global variable read from Rust", exported_const_test)
 UNITTEST("test a Rust-defined global variable written from C++", defined_var_test)
 UNITTEST("test a C++-defined global variable written from Rust", exported_var_test)
+UNITTEST("test Rust interrupt enable/disable/disabled ops", rust_interrupt_ops_test)
 UNITTEST_END_TESTCASE(rust_tests, "rust", "Tests for Rust")
 
 }  // namespace

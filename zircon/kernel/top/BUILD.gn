@@ -50,6 +50,7 @@ source_set("top") {
     # code is not actually used by the kernel.
     deps += [
       "//src/lib/ksync",
+      "//zircon/kernel/arch:arch-rs",
       "//zircon/kernel/lib/counters:counters-rs",
       "//zircon/kernel/lib/flow-id:flow-id-rs",
     ]
