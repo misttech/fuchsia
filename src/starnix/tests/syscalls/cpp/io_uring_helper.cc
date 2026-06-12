@@ -4,6 +4,8 @@
 
 #include "src/starnix/tests/syscalls/cpp/io_uring_helper.h"
 
+#include <string.h>
+
 #include <utility>
 
 namespace io_uring_helper {
@@ -15,6 +17,10 @@ int io_uring_setup(uint32_t entries, io_uring_params* params) {
 int io_uring_enter(int fd, int to_submit, int min_complete, int flags, sigset_t* sigset) {
   return static_cast<int>(
       syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sigset, sizeof(sigset_t)));
+}
+
+int io_uring_register(int fd, unsigned int opcode, void* arg, unsigned int nr_args) {
+  return static_cast<int>(syscall(__NR_io_uring_register, fd, opcode, arg, nr_args));
 }
 
 fit::result<int, std::unique_ptr<IoUring>> IoUring::Create(uint32_t entries,
@@ -82,5 +88,15 @@ IoUring::IoUring(fbl::unique_fd ring_fd, io_uring_params params, test_helper::Sc
       sq_tail_ptr_(sq_tail_ptr),
       cq_head_ptr_(cq_head_ptr),
       cq_tail_ptr_(cq_tail_ptr) {}
+
+void IoUring::SubmitSqe(fit::function<void(Sqe*)> fill_request) {
+  uint32_t tail = sq_tail_ptr_->load(std::memory_order_acquire);
+  uint32_t index = tail & (params_.sq_entries - 1);
+  Sqe* sqe = reinterpret_cast<Sqe*>(&sqes_[index]);
+  memset(sqe, 0, sizeof(Sqe));
+  fill_request(sqe);
+  sq_array_[index] = index;
+  sq_tail_ptr_->store(tail + 1, std::memory_order_release);
+}
 
 }  // namespace io_uring_helper

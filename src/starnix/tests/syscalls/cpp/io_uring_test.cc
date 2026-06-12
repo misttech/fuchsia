@@ -34,30 +34,26 @@ TEST(IoUringTest, IoUringReadWrite) {
   // Write to the file
   char write_data[] = "hello";
   struct iovec write_iov = {.iov_base = write_data, .iov_len = sizeof(write_data)};
-  uint32_t tail = ring->sq_tail_ptr()->load(std::memory_order_acquire);
-  uint32_t write_index = tail & (params.sq_entries - 1);
-  ring->sqes()[write_index].opcode = IORING_OP_WRITEV;
-  ring->sqes()[write_index].fd = temp_fd.fd();
-  ring->sqes()[write_index].addr = (uint64_t)&write_iov;
-  ring->sqes()[write_index].len = 1;
-  ring->sqes()[write_index].off = 0;
-  ring->sqes()[write_index].user_data = 1;
-  ring->sq_array()[write_index] = write_index;
-  ring->sq_tail_ptr()->store(tail + 1, std::memory_order_release);
+  ring->SubmitSqe([&temp_fd, &write_iov](io_uring_helper::Sqe* sqe) {
+    sqe->opcode = IORING_OP_WRITEV;
+    sqe->fd = temp_fd.fd();
+    sqe->addr = (uint64_t)&write_iov;
+    sqe->len = 1;
+    sqe->off = 0;
+    sqe->user_data = 1;
+  });
 
   // Read from the file
   char read_data[sizeof(write_data)];
   struct iovec read_iov = {.iov_base = read_data, .iov_len = sizeof(read_data)};
-  tail = ring->sq_tail_ptr()->load(std::memory_order_acquire);
-  uint32_t read_index = tail & (params.sq_entries - 1);
-  ring->sqes()[read_index].opcode = IORING_OP_READV;
-  ring->sqes()[read_index].fd = temp_fd.fd();
-  ring->sqes()[read_index].addr = (uint64_t)&read_iov;
-  ring->sqes()[read_index].len = 1;
-  ring->sqes()[read_index].off = 0;
-  ring->sqes()[read_index].user_data = 2;
-  ring->sq_array()[read_index] = read_index;
-  ring->sq_tail_ptr()->store(tail + 1, std::memory_order_release);
+  ring->SubmitSqe([&temp_fd, &read_iov](io_uring_helper::Sqe* sqe) {
+    sqe->opcode = IORING_OP_READV;
+    sqe->fd = temp_fd.fd();
+    sqe->addr = (uint64_t)&read_iov;
+    sqe->len = 1;
+    sqe->off = 0;
+    sqe->user_data = 2;
+  });
 
   // Submit and wait for both operations
   ASSERT_EQ(io_uring_enter(ring->fd(), 2, 2, IORING_ENTER_GETEVENTS, nullptr), 2);
