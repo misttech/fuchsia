@@ -199,6 +199,17 @@ mod tracking {
         fn target_value(&self) -> usize {
             self.inner.target_value
         }
+
+        pub(super) fn check_maximal(&self) {
+            STATE.with(|state| {
+                if let Some(last) = state.borrow().held_locks.last() {
+                    assert_eq!(
+                        last.encoded_value, self.inner.target_value,
+                        "Condvar wait requires the lock to be the latest acquired lock.",
+                    );
+                }
+            })
+        }
     }
 
     /// Tracking information for dynamic locks.
@@ -330,6 +341,8 @@ mod tracking {
         pub(super) fn new(_lock_id: usize, _name: &'static str) -> Self {
             Self {}
         }
+
+        pub(super) fn check_maximal(&self) {}
     }
 
     /// Tracking information for dynamic locks.
@@ -455,6 +468,19 @@ impl<'a, T> std::ops::Deref for LockDepGuard<'a, T> {
 impl<'a, T> std::ops::DerefMut for LockDepGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.inner.deref_mut()
+    }
+}
+
+impl<'a, T> LockDepGuard<'a, T> {
+    pub(super) fn check_maximal(&self) {
+        self.token.check_maximal();
+    }
+}
+
+impl<'a, T> crate::condvar::WaitableMutexGuard<'a, T> for LockDepGuard<'a, T> {
+    fn inner_guard(&mut self, _token: crate::condvar::WaitToken) -> &mut MutexGuard<'a, T> {
+        self.check_maximal();
+        &mut self.inner
     }
 }
 

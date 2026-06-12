@@ -5,6 +5,7 @@
 //! Synchronization objects used by Starnix
 
 mod atomic_time;
+mod condvar;
 mod interruptible_event;
 mod lock_dep_mutex;
 mod lock_ordering;
@@ -15,6 +16,7 @@ mod locks;
 mod port_event;
 
 pub use atomic_time::*;
+pub use condvar::*;
 pub use interruptible_event::*;
 pub use lock_dep_mutex::*;
 pub use lock_ordering::*;

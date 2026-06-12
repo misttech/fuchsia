@@ -45,6 +45,7 @@ rustc_library("starnix_sync") {
 
   sources = [
     "src/atomic_time.rs",
+    "src/condvar.rs",
     "src/interruptible_event.rs",
     "src/lib.rs",
     "src/lock_dep_mutex.rs",
