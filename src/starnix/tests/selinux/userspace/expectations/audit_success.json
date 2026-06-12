@@ -408,6 +408,30 @@
             ]
         },
         {
+            "name": "FsSecurity/FsSecurityTest.Sendfile/test_fs_no_read_t",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_yubUkr\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_fs_no_read_t:s0 tcontext=test_u:object_r:test_fs_sendfile_src_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "FsSecurity/FsSecurityTest.Sendfile/test_fs_no_write_t",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_fj4YiH\" dev=\"tmpfs\" ino=11 scontext=test_u:test_r:test_fs_no_write_t:s0 tcontext=test_u:object_r:test_fs_sendfile_dst_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "FsSecurity/FsSecurityTest.SpliceFromSrc/test_fs_no_read_t",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_vyM6XR\" dev=\"tmpfs\" ino=13 scontext=test_u:test_r:test_fs_no_read_t:s0 tcontext=test_u:object_r:test_fs_sendfile_src_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "FsSecurity/FsSecurityTest.SpliceToDst/test_fs_no_write_t",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_vbWIld\" dev=\"tmpfs\" ino=17 scontext=test_u:test_r:test_fs_no_write_t:s0 tcontext=test_u:object_r:test_fs_sendfile_dst_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "FsTest.FallocateDenied",
             "audit_expectations": [
                 "avc:  denied  { write } for path=\"/tmp/proc_test_file_MdJDk7\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_fs_no_write_t:s0 tcontext=test_u:object_r:test_fs_fallocate_file_t:s0 tclass=file permissive=0"
