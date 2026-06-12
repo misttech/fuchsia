@@ -14,8 +14,10 @@
 #include <zircon/status.h>
 
 #include <filesystem>
+#include <system_error>
 
 constexpr char kHrtimerClassDir[] = "/dev/class/hrtimer";
+constexpr char kHrtimerServiceDir[] = "/exposed/fuchsia.hardware.hrtimer.Service";
 
 constexpr char kUsageSummary[] = R"""(
 High resolution timers driver control.
@@ -108,17 +110,46 @@ void ShowUsage(bool show_details) {
 }
 
 fidl::SyncClient<fuchsia_hardware_hrtimer::Device> GetHrtimerClient(std::string path) {
-  if (!path.size()) {
-    for (const auto& entry : std::filesystem::directory_iterator(kHrtimerClassDir)) {
-      path = entry.path().string();
-      break;
+  if (path.empty()) {
+    std::error_code ec;
+    if (std::filesystem::exists(kHrtimerClassDir, ec) &&
+        std::filesystem::is_directory(kHrtimerClassDir, ec)) {
+      for (const auto& entry : std::filesystem::directory_iterator(kHrtimerClassDir, ec)) {
+        path = entry.path().string();
+        break;
+      }
     }
+    if (path.empty()) {
+      if (std::filesystem::exists(kHrtimerServiceDir, ec) &&
+          std::filesystem::is_directory(kHrtimerServiceDir, ec)) {
+        std::string default_device_path = std::string(kHrtimerServiceDir) + "/default/device";
+        if (std::filesystem::exists(default_device_path, ec)) {
+          path = default_device_path;
+        } else {
+          for (const auto& entry : std::filesystem::directory_iterator(kHrtimerServiceDir, ec)) {
+            if (entry.is_directory()) {
+              std::string candidate = entry.path().string() + "/device";
+              if (std::filesystem::exists(candidate, ec)) {
+                path = candidate;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (path.empty()) {
+    std::cerr << "No hrtimer device found" << std::endl;
+    return {};
   }
 
   std::cout << "Executing on device " << path << std::endl;
   zx::result connector = component::Connect<fuchsia_hardware_hrtimer::Device>(path.c_str());
   if (connector.is_error()) {
-    std::cerr << "could not connect to:" << path << " status:" << connector.status_string();
+    std::cerr << "could not connect to:" << path << " status:" << connector.status_string()
+              << std::endl;
     return {};
   }
 
@@ -128,6 +159,10 @@ fidl::SyncClient<fuchsia_hardware_hrtimer::Device> GetHrtimerClient(std::string 
 int StartTimer(std::string path, std::optional<uint64_t> id, TimerType type, int64_t timer_seconds,
                std::optional<uint64_t> keep_alive_seconds) {
   auto client = GetHrtimerClient(path);
+  if (!client.is_valid()) {
+    std::cerr << "Failed to get HRTimer client." << std::endl;
+    return -1;
+  }
 
   bool supports_event = false;
   bool supports_wait = false;
@@ -287,7 +322,12 @@ int main(int argc, char** argv) {
           break;
         }
 
-        auto result = GetHrtimerClient(path)->GetTicksLeft(*id);
+        auto client = GetHrtimerClient(path);
+        if (!client.is_valid()) {
+          std::cerr << "Failed to get HRTimer client." << std::endl;
+          return -1;
+        }
+        auto result = client->GetTicksLeft(*id);
         if (result.is_error()) {
           std::cerr << "GetTicksLeft failed: " << result.error_value().FormatDescription()
                     << std::endl;
@@ -302,7 +342,12 @@ int main(int argc, char** argv) {
           break;
         }
 
-        auto result = GetHrtimerClient(path)->Stop(*id);
+        auto client = GetHrtimerClient(path);
+        if (!client.is_valid()) {
+          std::cerr << "Failed to get HRTimer client." << std::endl;
+          return -1;
+        }
+        auto result = client->Stop(*id);
         if (result.is_error()) {
           std::cerr << "Stop failed: " << result.error_value().FormatDescription() << std::endl;
           return -1;
@@ -342,7 +387,12 @@ int main(int argc, char** argv) {
       }
 
       case 'p': {
-        auto result = GetHrtimerClient(path)->GetProperties();
+        auto client = GetHrtimerClient(path);
+        if (!client.is_valid()) {
+          std::cerr << "Failed to get HRTimer client." << std::endl;
+          return -1;
+        }
+        auto result = client->GetProperties();
         if (result.is_error()) {
           std::cerr << "Get properties failed: " << result.error_value().FormatDescription()
                     << std::endl;
