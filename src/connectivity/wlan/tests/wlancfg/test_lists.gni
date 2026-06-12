@@ -45,6 +45,7 @@ wlancfg_tests_for_wlan_cq = [
 wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
+  "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
 ]

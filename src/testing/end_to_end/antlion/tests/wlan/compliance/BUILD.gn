@@ -491,12 +491,6 @@ antlion_host_test("wlan_phy_compliance_abg_test") {
   timeout_secs = 1200
 }
 
-antlion_host_test("vape_interop_test") {
-  main_source = "VapeInteropTest.py"
-  environments = wlan_ap_envs
-  timeout_secs = 900
-}
-
 antlion_host_test("wlan_security_compliance_abg_test_quick") {
   main_source = "WlanSecurityComplianceABGTest.py"
   environments = wlan_ap_envs
@@ -517,7 +511,6 @@ antlion_host_test("wlan_security_compliance_abg_test_quick") {
 group("e2e_tests") {
   testonly = true
   public_deps = [
-    ":vape_interop_test",
     ":wlan_phy_compliance_11n_2g_ht20_open_test",
     ":wlan_phy_compliance_11n_2g_ht20_wpa2_test",
     ":wlan_phy_compliance_11n_2g_ht40lower_open_test",

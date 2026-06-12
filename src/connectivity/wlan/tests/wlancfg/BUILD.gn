@@ -93,6 +93,16 @@ antlion_host_test("wlan_target_security_test") {
   ]
 }
 
+antlion_host_test("vape_interop_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/VapeInteropTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+  ]
+  timeout_secs = 900
+}
+
 # This is a helper group so developers can easily add all tests to their build.
 # It is not run by infra. You should not directly add tests here, but rather to
 # one of the other groups below so it runs in infra.
