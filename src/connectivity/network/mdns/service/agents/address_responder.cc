@@ -66,29 +66,32 @@ void AddressResponder::ReceiveQuestion(const DnsQuestion& question,
 
 void AddressResponder::MaybeSendAddresses(ReplyAddress reply_address) {
   // We only throttle multicast sends. A V4 multicast reply address indicates V4 and V6 multicast.
-  if (reply_address.is_multicast_placeholder()) {
-    // Replace the general multicast placeholder with one that's restricted to the desired |Media|
-    // and |IpVersions|.
-    reply_address = ReplyAddress::Multicast(media_, ip_versions_);
+  if (!reply_address.is_multicast_placeholder()) {
+    SendAddressResources(reply_address);
+    return;
+  }
 
-    if (throttle_state_ == kThrottleStatePending) {
-      // The send is already happening.
-      return;
-    }
+  if (throttle_state_ == kThrottleStatePending) {
+    // The send is already happening.
+    return;
+  }
 
-    if (throttle_state_ + kMinMulticastInterval > now()) {
-      // A send happened less than a second ago, and no send is currently scheduled. We need to
-      // schedule a multicast send for one second after the previous one.
-      PostTaskForTime(
-          [this, reply_address]() {
-            SendAddressResources(reply_address);
-            throttle_state_ = now();
-          },
-          throttle_state_ + kMinMulticastInterval);
+  // Replace the general multicast placeholder with one that's restricted to the desired |Media|
+  // and |IpVersions|.
+  reply_address = ReplyAddress::Multicast(media_, ip_versions_);
 
-      throttle_state_ = kThrottleStatePending;
-      return;
-    }
+  if (throttle_state_ + kMinMulticastInterval > now()) {
+    // A send happened less than a second ago, and no send is currently scheduled. We need to
+    // schedule a multicast send for one second after the previous one.
+    PostTaskForTime(
+        [this, reply_address]() {
+          SendAddressResources(reply_address);
+          throttle_state_ = now();
+        },
+        throttle_state_ + kMinMulticastInterval);
+
+    throttle_state_ = kThrottleStatePending;
+    return;
   }
 
   SendAddressResources(reply_address);

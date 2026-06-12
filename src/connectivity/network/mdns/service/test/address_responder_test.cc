@@ -25,6 +25,13 @@ class AddressResponderTest : public AgentTest {
     ExpectNoOtherQuestionOrResource(message.get());
   }
 
+  // Expects that local addresses are transmitted to |reply_address|.
+  void ExpectAddresses(const ReplyAddress& reply_address) {
+    auto message = ExpectOutboundMessage(reply_address);
+    ExpectAddressPlaceholder(message.get(), MdnsResourceSection::kAnswer);
+    ExpectNoOtherQuestionOrResource(message.get());
+  }
+
   // Expects that |addresses| for |host_full_name| are transmitted to the multicast address.
   void ExpectAddresses(const DnsName& host_full_name, const std::vector<inet::IpAddress>& addresses,
                        Media media, IpVersions ip_versions) {
@@ -88,6 +95,54 @@ TEST_F(AddressResponderTest, MulticastRateLimit) {
   under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA),
                              ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
                              sender_address1);
+  ExpectPostTaskForTimeAndInvoke(zx::sec(1), zx::sec(1));
+  ExpectAddresses(Media::kBoth, IpVersions::kBoth);
+  ExpectNoOther();
+}
+
+// Tests that unicast requests do not interfere with multicast rate-limiting.
+TEST_F(AddressResponderTest, MulticastRateLimitInterveningUnicast) {
+  AddressResponder under_test(this, Media::kBoth, IpVersions::kBoth);
+  SetAgent(under_test);
+
+  // Normal startup.
+  under_test.Start(kLocalHostFullName);
+  ExpectNoOther();
+
+  ReplyAddress sender_address0(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWireless, IpVersions::kV4);
+
+  // First question (multicast). Answered immediately via multicast.
+  under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA),
+                             ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                             sender_address0);
+  ExpectAddresses(Media::kBoth, IpVersions::kBoth);
+  ExpectNoOther();
+
+  // Second question (unicast). Answered immediately via unicast, throttle state unaffected.
+  under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA), sender_address0,
+                             sender_address0);
+  ExpectAddresses(sender_address0);
+  ExpectNoOther();
+
+  // Third question (multicast). Multicast answer should be delayed 1s.
+  under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA),
+                             ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                             sender_address0);
+
+  // Fourth question (unicast). Answered immediately via unicast, throttle state unaffected.
+  under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA), sender_address0,
+                             sender_address0);
+  ExpectAddresses(sender_address0);
+  ExpectNoOutboundMessage();
+
+  // Fifth question (multicast). Should be dropped because a multicast send is already pending.
+  under_test.ReceiveQuestion(DnsQuestion(kLocalHostFullName, DnsType::kA),
+                             ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                             sender_address0);
+  ExpectNoOutboundMessage();
+
   ExpectPostTaskForTimeAndInvoke(zx::sec(1), zx::sec(1));
   ExpectAddresses(Media::kBoth, IpVersions::kBoth);
   ExpectNoOther();
