@@ -68,9 +68,9 @@ void Log::AppendToLog(ktl::string_view str) {
 }
 
 FILE Log::LogOnlyFile() {
-  return FILE{[](void* log, ktl::string_view str) {
-                static_cast<Log*>(log)->AppendToLog(str);
-                return static_cast<int>(str.size());
+  return FILE{[](void* log, const char* str, size_t len) -> int {
+                static_cast<Log*>(log)->AppendToLog({str, len});
+                return static_cast<int>(len);
               },
               this};
 }
