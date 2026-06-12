@@ -5,6 +5,7 @@
 use crate::v1::FlashManifest as FlashManifestV1;
 use crate::v2::FlashManifest as FlashManifestV2;
 use crate::v3::{Condition, FlashManifest as FlashManifestV3, Partition, Product};
+use crate::v4::FlashManifest as FlashManifestV4;
 use assembly_partitions_config::{PartitionAndImage, PartitionImageMapper, Slot};
 use product_bundle::{ProductBundle, ProductBundleV2};
 use serde::{Deserialize, Serialize};
@@ -16,8 +17,12 @@ use std::path::{Path, PathBuf};
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 pub const UNKNOWN_VERSION: &str = "Unknown flash manifest version";
+
+// The default OEM command to process the staged SSH keys.
+pub const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
 
 #[derive(thiserror::Error, Debug)]
 pub enum FlashManifestError {
@@ -62,6 +67,7 @@ pub struct ManifestParams {
     pub op: Command,
     pub flash_timeout_rate_mb_per_second: f64,
     pub flash_min_timeout_seconds: u64,
+    pub ssh_key: Option<String>,
 }
 
 impl Default for ManifestParams {
@@ -76,6 +82,7 @@ impl Default for ManifestParams {
             op: Command::Flash,
             flash_timeout_rate_mb_per_second: 5000.0,
             flash_min_timeout_seconds: 200,
+            ssh_key: None,
         }
     }
 }
@@ -140,10 +147,12 @@ impl std::str::FromStr for OemFile {
     }
 }
 
+#[derive(Debug)]
 pub enum FlashManifestVersion {
     V1(FlashManifestV1),
     V2(FlashManifestV2),
     V3(FlashManifestV3),
+    V4(FlashManifestV4),
 }
 
 impl FlashManifestVersion {
@@ -159,6 +168,10 @@ impl FlashManifestVersion {
             },
             FlashManifestVersion::V3(manifest) => ManifestFile {
                 version: 3,
+                manifest: to_value(manifest).map_err(FlashManifestError::Serialize)?,
+            },
+            FlashManifestVersion::V4(manifest) => ManifestFile {
+                version: 4,
                 manifest: to_value(manifest).map_err(FlashManifestError::Serialize)?,
             },
         };
@@ -183,6 +196,9 @@ impl FlashManifestVersion {
                 from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
             )),
             3 => Ok(Self::V3(
+                from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
+            )),
+            4 => Ok(Self::V4(
                 from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
             )),
             _ => return Err(FlashManifestError::UnknownVersion),
@@ -297,17 +313,27 @@ impl FlashManifestVersion {
             });
         }
 
-        // Create the flash manifest.
-        let ret = FlashManifestV3 {
+        let v3 = FlashManifestV3 {
             hw_revision: product_bundle.partitions.hardware_revision.clone(),
             product_matches: product_bundle.partitions.product_matches.clone(),
             credentials,
             products,
         };
 
+        // For backwards compatibility create a V3 manifest if possible, only use V4 if the PB
+        // contains the SSH key upload method which didn't exist in V3. This will allow older
+        // versions of FFX to use this flash manifest as long as it didn't use V4-only features.
+        let ret = match &product_bundle.partitions.ssh_key_upload_method {
+            Some(ssh_key_upload_method) => Self::V4(FlashManifestV4 {
+                v3,
+                ssh_key_upload_method: Some(ssh_key_upload_method.clone()),
+            }),
+            None => Self::V3(v3),
+        };
+
         log::debug!("Created FlashManifest: {:#?}", ret);
 
-        Ok(Self::V3(ret))
+        Ok(ret)
     }
 }
 

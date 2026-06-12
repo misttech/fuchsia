@@ -119,6 +119,7 @@ impl FlashCommand {
             op: Command::Flash,
             flash_min_timeout_seconds,
             flash_timeout_rate_mb_per_second,
+            ssh_key: self.authorized_keys,
         }
     }
 }

@@ -80,7 +80,11 @@ pub struct SparseSubcommand {
     note = "Sends a Fuchsia-specific OEM command to the target to upload the
 ssh authorized keys and continue boot for the Target."
 )]
-pub struct AuthorizeSubcommand {}
+pub struct AuthorizeSubcommand {
+    #[argh(option, short = 'p')]
+    /// path to a product bundle to extract SSH key upload method from
+    pub product_bundle: Option<String>,
+}
 
 #[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]
 /// Get Variable subcommand

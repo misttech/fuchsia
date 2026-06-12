@@ -833,6 +833,7 @@ mod tests {
                 hardware_revision: "board".into(),
                 unlock_credentials: vec![],
                 product_matches: vec![],
+                ssh_key_upload_method: None,
             },
             sdk_version: "".to_string(),
             system_a: Some(vec![

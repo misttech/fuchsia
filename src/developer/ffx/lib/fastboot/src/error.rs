@@ -169,4 +169,7 @@ pub enum FfxFastbootError {
 
     #[error("Invalid archive file name")]
     InvalidArchiveFileName,
+
+    #[error("Upload prefix '{prefix}' is too large for the max command size ({max_len})")]
+    InlineUploadOverflow { prefix: String, max_len: usize },
 }

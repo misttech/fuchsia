@@ -10,6 +10,7 @@ load(
     ":providers.bzl",
     "FuchsiaPartitionInfo",
     "FuchsiaPartitionsConfigInfo",
+    "FuchsiaSshKeyUploadMethodInfo",
 )
 load(":utils.bzl", "select_root_dir_with_file")
 
@@ -24,6 +25,8 @@ def _fuchsia_partitions_configuration(ctx):
         "partitions": [partition[FuchsiaPartitionInfo].partition for partition in ctx.attr.partitions],
         "unlock_credentials": [f.path for f in ctx.files.unlock_credentials],
     }
+    if ctx.attr.ssh_key_upload_method:
+        partitions_config["ssh_key_upload_method"] = ctx.attr.ssh_key_upload_method[FuchsiaSshKeyUploadMethodInfo].method
     content = json.encode_indent(partitions_config, indent = "  ")
     partitions_config_file = ctx.actions.declare_file(ctx.label.name + "_partitions_config.json")
     ctx.actions.write(partitions_config_file, content)
@@ -82,6 +85,67 @@ fuchsia_partitions_configuration = rule(
         "unlock_credentials": attr.label_list(
             doc = "List of zip files containing the fastboot unlock credentials.",
             allow_files = [".zip"],
+        ),
+        "ssh_key_upload_method": attr.label(
+            doc = "Optional configuration for uploading SSH keys during flash.",
+            providers = [FuchsiaSshKeyUploadMethodInfo],
+        ),
+    },
+)
+
+def _fuchsia_ssh_key_upload_method_staged_impl(ctx):
+    return [
+        FuchsiaSshKeyUploadMethodInfo(
+            method = {
+                "type": "staged",
+                "command": ctx.attr.command,
+            },
+        ),
+    ]
+
+fuchsia_ssh_key_upload_method_staged = rule(
+    doc = "Defines an OEM-staged SSH key upload method.",
+    implementation = _fuchsia_ssh_key_upload_method_staged_impl,
+    attrs = {
+        "command": attr.string(
+            doc = "OEM command to execute after staging the SSH key.",
+            mandatory = True,
+        ),
+    },
+)
+
+def _fuchsia_ssh_key_upload_method_inline_impl(ctx):
+    method = {
+        "type": "inline",
+        "command_prefix": ctx.attr.command_prefix,
+        "command_max_length": ctx.attr.command_max_length,
+    }
+    if ctx.attr.init_command:
+        method["init_command"] = ctx.attr.init_command
+    if ctx.attr.finalize_command:
+        method["finalize_command"] = ctx.attr.finalize_command
+
+    return [
+        FuchsiaSshKeyUploadMethodInfo(method = method),
+    ]
+
+fuchsia_ssh_key_upload_method_inline = rule(
+    doc = "Defines an inline SSH key upload method.",
+    implementation = _fuchsia_ssh_key_upload_method_inline_impl,
+    attrs = {
+        "command_prefix": attr.string(
+            doc = "OEM command prefix for each data chunk.",
+            mandatory = True,
+        ),
+        "command_max_length": attr.int(
+            doc = "Maximum command length in bytes.",
+            default = 64,
+        ),
+        "init_command": attr.string(
+            doc = "Optional command to send once before chunks.",
+        ),
+        "finalize_command": attr.string(
+            doc = "Optional command to send after all chunks.",
         ),
     },
 )

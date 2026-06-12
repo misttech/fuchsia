@@ -9,13 +9,16 @@ use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::manifest::{from_in_tree, from_local_product_bundle, from_path, from_sdk};
 use crate::util::Event;
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
-use ffx_flash_manifest::{ManifestParams, OemFile};
+use ffx_flash_manifest::{ManifestParams, OemFile, SSH_OEM_COMMAND};
 use futures::prelude::*;
 use futures::try_join;
 use pbms::is_local_product_bundle;
@@ -55,6 +58,7 @@ pub trait Flash {
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
+        ssh_key_upload_method: Option<&UploadMethod>,
     ) -> Result<()>
     where
         F: FileResolver + Sync + Send,
@@ -373,6 +377,94 @@ pub async fn reboot_bootloader<F: FastbootInterface>(
     Ok(())
 }
 
+/// Uploads a file using the given [UploadMethod].
+pub async fn upload_file<F: FileResolver + Sync, T: FastbootInterface>(
+    messenger: &Sender<Event>,
+    file_resolver: &mut F,
+    resolve: bool,
+    file: &str,
+    method: &UploadMethod,
+    fastboot_interface: &mut T,
+) -> Result<()> {
+    let file_path = match resolve {
+        true => file_resolver.get_file(file).await?,
+        false => file.to_string(),
+    };
+
+    match method {
+        // Staged: stage the data then issue the command.
+        UploadMethod::Staged { command } => {
+            let (client, mut server) = mpsc::channel(1);
+            try_join!(
+                async {
+                    fastboot_interface
+                        .stage(&file_path, client)
+                        .await
+                        .map_err(FfxFastbootError::Interface)
+                },
+                async {
+                    loop {
+                        match server.recv().await {
+                            Some(e) => {
+                                messenger.send(Event::Upload(e)).await?;
+                            }
+                            None => {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            )?;
+
+            messenger.send(Event::Oem { oem_command: command.clone() }).await?;
+            fastboot_interface.oem(command).await?;
+        }
+        // Inline: chunk the data into consecutive OEM commands.
+        UploadMethod::Inline {
+            command_prefix,
+            command_max_length,
+            init_command,
+            finalize_command,
+        } => {
+            let file_content = std::fs::read(&file_path).map_err(|e| {
+                FfxFastbootError::FileOpen { path: PathBuf::from(&file_path), source: e }
+            })?;
+            let encoded = BASE64_STANDARD.encode(file_content);
+
+            // Determine how much data we can fit in each command.
+            let data_len =
+                method.command_data_length(fastboot::MAX_COMMAND_LENGTH).map_err(|_| {
+                    FfxFastbootError::InlineUploadOverflow {
+                        prefix: command_prefix.clone(),
+                        max_len: *command_max_length,
+                    }
+                })?;
+
+            // If the device needs an initialization command, send it first.
+            if let Some(init_cmd) = init_command {
+                messenger.send(Event::Oem { oem_command: init_cmd.clone() }).await?;
+                fastboot_interface.oem(init_cmd).await?;
+            }
+
+            for chunk in encoded.as_bytes().chunks(data_len) {
+                // `unwrap()` will always succeed here because Base64 only uses single-byte data,
+                // so no matter where the chunk splits the result is always valid UTF-8.
+                let chunk_str = std::str::from_utf8(chunk).unwrap();
+                let cmd = format!("{}{}", command_prefix, chunk_str);
+                messenger.send(Event::Oem { oem_command: cmd.clone() }).await?;
+                fastboot_interface.oem(&cmd).await?;
+            }
+
+            // If the device needs a finalization command, send it at the end.
+            if let Some(finalize_command) = finalize_command {
+                messenger.send(Event::Oem { oem_command: finalize_command.clone() }).await?;
+                fastboot_interface.oem(finalize_command).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn stage_oem_files<F: FileResolver + Sync, T: FastbootInterface>(
     messenger: &Sender<Event>,
     file_resolver: &mut F,
@@ -381,25 +473,15 @@ pub async fn stage_oem_files<F: FileResolver + Sync, T: FastbootInterface>(
     fastboot_interface: &mut T,
 ) -> Result<()> {
     for oem_file in oem_files {
-        let (prog_client, mut prog_server) = mpsc::channel(1);
-        try_join!(
-            stage_file(prog_client, file_resolver, resolve, oem_file.file(), fastboot_interface),
-            async {
-                loop {
-                    match prog_server.recv().await {
-                        Some(e) => {
-                            messenger.send(Event::Upload(e)).await?;
-                        }
-                        None => {
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        )?;
-
-        messenger.send(Event::Oem { oem_command: oem_file.command().to_string() }).await?;
-        fastboot_interface.oem(oem_file.command()).await?;
+        upload_file(
+            messenger,
+            file_resolver,
+            resolve,
+            oem_file.file(),
+            &UploadMethod::Staged { command: oem_file.command().to_string() },
+            fastboot_interface,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -459,6 +541,7 @@ pub async fn flash<F, Part, P, T>(
     product: &P,
     fastboot_interface: &mut T,
     cmd: ManifestParams,
+    ssh_key_upload_method: Option<&UploadMethod>,
 ) -> Result<()>
 where
     F: FileResolver + Sync,
@@ -473,7 +556,15 @@ where
         })
         .await?;
     flash_bootloader(messenger, file_resolver, product, fastboot_interface, &cmd).await?;
-    flash_product(messenger, file_resolver, product, fastboot_interface, &cmd).await
+    flash_product(
+        messenger,
+        file_resolver,
+        product,
+        fastboot_interface,
+        &cmd,
+        ssh_key_upload_method,
+    )
+    .await
 }
 
 pub async fn is_userspace_fastboot(
@@ -523,6 +614,7 @@ pub async fn flash_product<F, Part, P, T>(
     product: &P,
     fastboot_interface: &mut T,
     cmd: &ManifestParams,
+    ssh_key_upload_method: Option<&UploadMethod>,
 ) -> Result<()>
 where
     F: FileResolver + Sync,
@@ -542,7 +634,19 @@ where
     if !cmd.no_bootloader_reboot && is_userspace_fastboot(fastboot_interface).await? {
         reboot_bootloader(messenger, fastboot_interface).await?;
     }
+
+    // Upload OEM files from the commandline.
     stage_oem_files(messenger, file_resolver, false, &cmd.oem_stage, fastboot_interface).await?;
+
+    // Upload the SSH key OEM file.
+    if let Some(ssh_key) = &cmd.ssh_key {
+        // Upload the SSH keys using the mechanism indicated by the product being flashed.
+        let default_method = UploadMethod::Staged { command: SSH_OEM_COMMAND.to_string() };
+        let method = ssh_key_upload_method.unwrap_or(&default_method);
+        upload_file(messenger, file_resolver, false, ssh_key, method, fastboot_interface).await?;
+    }
+
+    // Upload the OEM files from the product.
     stage_oem_files(messenger, file_resolver, true, product.oem_files(), fastboot_interface).await
 }
 
@@ -552,6 +656,7 @@ pub async fn flash_and_reboot<F, Part, P, T>(
     product: &P,
     fastboot_interface: &mut T,
     cmd: ManifestParams,
+    ssh_key_upload_method: Option<&UploadMethod>,
 ) -> Result<()>
 where
     F: FileResolver + Sync,
@@ -559,7 +664,8 @@ where
     P: Product<Part>,
     T: FastbootInterface,
 {
-    flash(messenger, file_resolver, product, fastboot_interface, cmd).await?;
+    flash(messenger, file_resolver, product, fastboot_interface, cmd, ssh_key_upload_method)
+        .await?;
     finish(fastboot_interface).await
 }
 
@@ -622,5 +728,157 @@ where
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::file_resolver::test::TestResolver;
+    use ffx_fastboot_interface::test::setup;
+    use tempfile::NamedTempFile;
+
+    /// Runs a fastboot sequence of uploading a file via inline upload.
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: the data to upload
+    /// * `method`: [UploadMethod] parameters
+    ///
+    /// # Returns
+    ///
+    /// The resulting list of commands issued to the device, or `Err` if [upload_file] failed.
+    async fn run_upload_file(data: &[u8], method: UploadMethod) -> Result<Vec<String>> {
+        let (state, mut mock) = setup();
+
+        let data_file = NamedTempFile::new().unwrap();
+        std::fs::write(data_file.path(), data).unwrap();
+
+        let (messenger, _receiver) = mpsc::channel(100);
+
+        upload_file(
+            &messenger,
+            &mut TestResolver::new(),
+            false,
+            &data_file.path().to_string_lossy(),
+            &method,
+            &mut mock,
+        )
+        .await?;
+
+        let state = state.lock().unwrap();
+        Ok(state.oem_commands.clone())
+    }
+
+    #[fuchsia::test]
+    async fn upload_inline() {
+        let cmds = run_upload_file(
+            b"foo bar baz",
+            UploadMethod::Inline {
+                command_prefix: "write-chunk ".to_string(),
+                command_max_length: 24,
+                init_command: Some("init-write".to_string()),
+                finalize_command: Some("done-write".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Base64("foo bar baz") == "Zm9vIGJhciBiYXo=" (16 bytes)
+        // "oem write-chunk " command prefix is 16 bytes.
+        // 24 max length - 16 prefix = 8 data per command, so we fill exactly 2 commands.
+        assert_eq!(
+            cmds,
+            [
+                "oem init-write",
+                "oem write-chunk Zm9vIGJh",
+                "oem write-chunk ciBiYXo=",
+                "oem done-write"
+            ]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn upload_inline_partial_command() {
+        let cmds = run_upload_file(
+            b"foo bar",
+            UploadMethod::Inline {
+                command_prefix: "write-chunk ".to_string(),
+                command_max_length: 24,
+                init_command: Some("init-write".to_string()),
+                finalize_command: Some("done-write".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Base64("foo bar") == "Zm9vIGJhcg==" (12 bytes)
+        // "oem write-chunk " command prefix is 16 bytes.
+        // 24 max length - 16 prefix = 8 data per command, so we send 1 full and 1 partial command.
+        assert_eq!(
+            cmds,
+            [
+                "oem init-write",
+                "oem write-chunk Zm9vIGJh",
+                "oem write-chunk cg==",
+                "oem done-write"
+            ]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn upload_inline_no_init_or_finalize() {
+        let cmds = run_upload_file(
+            b"foo bar baz",
+            UploadMethod::Inline {
+                command_prefix: "write-chunk ".to_string(),
+                command_max_length: 24,
+                init_command: None,
+                finalize_command: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Base64("foo bar baz") == "Zm9vIGJhciBiYXo=" (16 bytes)
+        // "oem write-chunk " command prefix is 16 bytes.
+        // 24 max length - 16 prefix = 8 data per command, so we fill exactly 2 commands.
+        assert_eq!(cmds, ["oem write-chunk Zm9vIGJh", "oem write-chunk ciBiYXo=",]);
+    }
+
+    #[fuchsia::test]
+    async fn upload_inline_single_chunk() {
+        let cmds = run_upload_file(
+            b"1234\nABCD",
+            UploadMethod::Inline {
+                command_prefix: "write-chunk ".to_string(),
+                command_max_length: 64,
+                init_command: Some("init-write".to_string()),
+                finalize_command: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Base64("1234\nABCD") == "MTIzNApBQkNE"
+        assert_eq!(cmds, ["oem init-write", "oem write-chunk MTIzNApBQkNE"]);
+    }
+
+    #[fuchsia::test]
+    async fn upload_inline_overflow() {
+        let err = run_upload_file(
+            b"foo",
+            UploadMethod::Inline {
+                command_prefix: "write-chunk ".to_string(),
+                // Command length is too short to fit the prefix with any data.
+                command_max_length: 10,
+                init_command: None,
+                finalize_command: None,
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, FfxFastbootError::InlineUploadOverflow { .. }));
     }
 }

@@ -87,7 +87,8 @@ pub enum Command {
     Oem(String),
 }
 
-const MAX_COMMAND_LENGTH: usize = 64;
+/// The maximum length for outgoing fastboot commands to the device.
+pub const MAX_COMMAND_LENGTH: usize = 64;
 
 #[derive(Debug, Error)]
 #[error("Client Variable name is too long: {}", client_variable)]

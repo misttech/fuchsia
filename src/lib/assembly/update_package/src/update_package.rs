@@ -520,6 +520,7 @@ mod tests {
             }],
             hardware_revision: "hw".into(),
             product_matches: vec![],
+            ssh_key_upload_method: None,
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
         let mut fake_version = NamedTempFile::new().unwrap();
@@ -658,6 +659,7 @@ mod tests {
             ],
             hardware_revision: "hw".into(),
             product_matches: vec![],
+            ssh_key_upload_method: None,
         };
         let epoch = EpochFile::Version1 { epoch: 0 };
         let mut fake_version = NamedTempFile::new().unwrap();

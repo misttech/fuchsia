@@ -22,7 +22,7 @@ use ffx_fastboot_connection_factory::{
 };
 use ffx_fastboot_interface::fastboot_interface::UploadProgress;
 use ffx_flash_args::FlashCommand;
-use ffx_flash_manifest::OemFile;
+use ffx_flash_manifest::SSH_OEM_COMMAND;
 use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxError, FfxMain, FfxTool, deferred, return_bug, return_user_error};
@@ -46,8 +46,6 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use url::Url;
-
-const SSH_OEM_COMMAND: &str = "add-staged-bootloader-file ssh.authorized_keys";
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -418,11 +416,12 @@ async fn preprocess_flash_cmd(
             if cmd.skip_authorized_keys {
                 return Err(ProductBundleError::SshKeyAndSkipUploadSet);
             }
-            let ssh_path_string = ssh_file
-                .into_os_string()
-                .into_string()
-                .map_err(|s| ProductBundleError::SshKeyPathInvalidUtf8 { path: s })?;
-            cmd.oem_stage.push(OemFile::new(SSH_OEM_COMMAND.to_string(), ssh_path_string));
+            cmd.authorized_keys = Some(
+                ssh_file
+                    .into_os_string()
+                    .into_string()
+                    .map_err(|s| ProductBundleError::SshKeyPathInvalidUtf8 { path: s })?,
+            );
         }
         None => {
             if !cmd.oem_stage.iter().any(|f| f.command() == SSH_OEM_COMMAND) {
@@ -434,7 +433,7 @@ async fn preprocess_flash_cmd(
                     if ssh_keys.authorized_keys.exists() {
                         let k = ssh_keys.authorized_keys.display().to_string();
                         log::debug!("No `--authorized-keys` flag, using {}", k);
-                        cmd.oem_stage.push(OemFile::new(SSH_OEM_COMMAND.to_string(), k));
+                        cmd.authorized_keys = Some(k);
                     } else {
                         // Since the key will be initialized, this should never happen.
                         return Err(ProductBundleError::SshKeysNotCreated);
@@ -1004,6 +1003,7 @@ async fn handle_event_machine(
 mod test {
     use super::*;
     use ffx_config::environment::TestEnvBuilder;
+    use ffx_flash_manifest::OemFile;
     use ffx_writer::{Format, TestBuffers};
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;

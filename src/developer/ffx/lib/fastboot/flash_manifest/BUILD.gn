@@ -29,6 +29,7 @@ rustc_library("lib") {
     "src/v1.rs",
     "src/v2.rs",
     "src/v3.rs",
+    "src/v4.rs",
   ]
 }
 

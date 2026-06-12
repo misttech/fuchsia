@@ -13,6 +13,7 @@ use crate::unlock::unlock;
 use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::ManifestParams;
@@ -27,6 +28,7 @@ impl Flash for FlashManifest {
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
+        ssh_key_upload_method: Option<&UploadMethod>,
     ) -> Result<()>
     where
         F: FileResolver + Sync + Send,
@@ -57,7 +59,15 @@ impl Flash for FlashManifest {
         if product.requires_unlock && !is_locked(fastboot_interface).await? {
             lock_device(fastboot_interface).await?;
         }
-        flash_product(&messenger, file_resolver, product, fastboot_interface, &cmd).await?;
+        flash_product(
+            &messenger,
+            file_resolver,
+            product,
+            fastboot_interface,
+            &cmd,
+            ssh_key_upload_method,
+        )
+        .await?;
         finish(fastboot_interface).await
     }
 }
@@ -197,6 +207,7 @@ mod test {
                 product: "zedboot".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -223,7 +234,8 @@ mod test {
                     manifest: Some(PathBuf::from(tmp_file_name)),
                     product: "zedboot".to_string(),
                     ..Default::default()
-                }
+                },
+                None,
             )
             .await
             .is_err()
@@ -253,7 +265,8 @@ mod test {
                     manifest: Some(PathBuf::from(tmp_file_name)),
                     product: "zedboot".to_string(),
                     ..Default::default()
-                }
+                },
+                None,
             )
             .await
             .is_err()
@@ -309,6 +322,7 @@ mod test {
                 op: Command::Boot(BootParams { zbi: None, vbmeta: None, slot: "a".to_string() }),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())

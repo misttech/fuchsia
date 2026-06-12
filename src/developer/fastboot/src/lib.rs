@@ -19,6 +19,8 @@ pub mod command;
 pub mod reply;
 pub mod test_transport;
 
+pub use crate::command::MAX_COMMAND_LENGTH;
+
 const MAX_PACKET_SIZE: usize = 64;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
 const BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50 MB

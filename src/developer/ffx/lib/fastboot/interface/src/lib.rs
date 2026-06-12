@@ -20,6 +20,8 @@ pub mod test {
     #[derive(Default, Debug)]
     pub struct FakeServiceCommands {
         pub staged_files: Vec<String>,
+        /// All transmitted OEM commands; each will have the "oem " prefix automatically inserted
+        /// to match real fastboot behavior.
         pub oem_commands: Vec<String>,
         pub bootloader_reboots: usize,
         pub boots: usize,
@@ -158,7 +160,7 @@ pub mod test {
 
         async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
             let mut state = self.state.lock().unwrap();
-            state.oem_commands.push(command.to_string());
+            state.oem_commands.push(format!("oem {}", command));
             Ok(())
         }
     }

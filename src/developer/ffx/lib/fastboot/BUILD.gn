@@ -25,11 +25,13 @@ rustc_library("lib") {
   ]
 
   deps = [
+    "//src/developer/fastboot:lib",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/fastboot/flash_manifest:lib",
     "//src/developer/ffx/lib/fastboot/interface:lib",
     "//src/developer/ffx/lib/pbms:lib",
     "//src/developer/ffx/lib/sdk:lib",
+    "//src/lib/assembly/partitions_config",
     "//src/lib/assembly/product_bundle",
     "//src/storage/lib/sparse/rust:lib",
     "//third_party/rust_crates:async-fs",
@@ -74,6 +76,7 @@ rustc_library("lib") {
     "src/manifest/v1.rs",
     "src/manifest/v2.rs",
     "src/manifest/v3.rs",
+    "src/manifest/v4.rs",
     "src/unlock/mod.rs",
     "src/util.rs",
   ]

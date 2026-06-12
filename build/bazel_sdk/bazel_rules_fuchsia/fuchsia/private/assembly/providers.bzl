@@ -159,3 +159,10 @@ FuchsiaAssemblyDeveloperOverridesInfo = provider(
         "inputs": "A File list pointing to extra inputs listed in the manifest that will be used by ffx when applying the overrides.",
     },
 )
+
+FuchsiaSshKeyUploadMethodInfo = provider(
+    doc = "Configuration for uploading SSH keys during flash.",
+    fields = {
+        "method": "A dict representing the upload method configuration.",
+    },
+)

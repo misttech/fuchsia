@@ -8,6 +8,7 @@ use crate::manifest::{Boot, Flash, Unlock};
 use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::ManifestParams;
@@ -23,13 +24,14 @@ impl Flash for FlashManifest {
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
+        ssh_key_upload_method: Option<&UploadMethod>,
     ) -> Result<()>
     where
         F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
-        v2.flash(messenger, file_resolver, fastboot_interface, cmd).await
+        v2.flash(messenger, file_resolver, fastboot_interface, cmd, ssh_key_upload_method).await
     }
 }
 
@@ -136,6 +138,7 @@ mod test {
                 product: "zedboot".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -206,6 +209,7 @@ mod test {
                 product: "zedboot".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -254,6 +258,7 @@ mod test {
                 product: "zedboot".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -302,6 +307,7 @@ mod test {
                     product: "zedboot".to_string(),
                     ..Default::default()
                 },
+                None,
             )
             .await;
         assert!(res.is_err());

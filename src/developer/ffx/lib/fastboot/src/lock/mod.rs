@@ -70,7 +70,7 @@ mod test {
         lock(&mut proxy).await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.oem_commands.len());
-        assert_eq!("vx-lock", state.oem_commands[0]);
+        assert_eq!("oem vx-lock", state.oem_commands[0]);
         Ok(())
     }
 }

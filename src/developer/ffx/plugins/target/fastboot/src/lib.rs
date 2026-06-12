@@ -4,20 +4,23 @@
 
 use addr::TargetIpAddr;
 use anyhow::{Result, anyhow};
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetState};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
-use ffx_fastboot::common::flash_partition_impl;
 use ffx_fastboot::common::vars::MAX_DOWNLOAD_SIZE_VAR;
+use ffx_fastboot::common::{flash_partition_impl, upload_file};
 use ffx_fastboot_connection_factory::{
     FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
 };
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use ffx_fastboot_tool_args::{FastbootCommand, FastbootSubcommand};
+use ffx_flash_manifest::SSH_OEM_COMMAND;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool};
 use futures::{TryFutureExt, try_join};
+use product_bundle::ProductBundle;
 use schemars::JsonSchema;
 use serde::Serialize;
 use sparse::reader::SparseReader;
@@ -215,33 +218,53 @@ where
                 log::debug!("Keeping file: {:?}", out_path);
             }
         }
-        FastbootSubcommand::Authorize(_) => {
+        FastbootSubcommand::Authorize(cmd) => {
             let keys = ffx_ssh::SshKeyFiles::load(ctx).map_err(|e| anyhow!(e))?;
-            // Stage the file
-            let (client, server) = mpsc::channel(1);
-            try_join!(
-                async {
-                    interface
-                        .stage(
-                            &keys.authorized_keys.as_os_str().to_str().ok_or_else(|| {
-                                anyhow!("Authorized keys file path should be a str")
-                            })?,
-                            client,
-                        )
-                        .await
-                        .map_err(|e| anyhow!(e))
-                },
-                sink(server)
-            )
-            .map_err(fho::Error::from)?;
-            log::debug!("Uploaded authorized keys file: {}", keys.authorized_keys.display());
-            // Send the command
-            interface
-                .oem("add-staged-bootloader-file ssh.authorized_keys")
-                .await
+
+            // If a product bundle was given, look inside to see if there's a specified SSH key
+            // upload method.
+            let method = match &cmd.product_bundle {
+                Some(path) => {
+                    let pb = ProductBundle::try_load_from(path).map_err(|e| anyhow!(e))?;
+                    match pb {
+                        ProductBundle::V2(pb_v2) => pb_v2.partitions.ssh_key_upload_method,
+                    }
+                }
+                None => None,
+            };
+
+            // If no upload method was specified, default to the OEM stage command.
+            let method = match method {
+                Some(m) => m,
+                None => UploadMethod::Staged { command: SSH_OEM_COMMAND.to_string() },
+            };
+
+            let keys_path = keys.authorized_keys.to_string_lossy().to_string();
+
+            let mut resolver = ffx_fastboot::file_resolver::resolvers::EmptyResolver::new()
                 .map_err(|e| anyhow!(e))
                 .map_err(fho::Error::from)?;
-            log::debug!("Sent oem command");
+
+            let (messenger, rx) = mpsc::channel(1);
+            try_join!(
+                async {
+                    let result = upload_file(
+                        &messenger,
+                        &mut resolver,
+                        /*resolve=*/ false,
+                        &keys_path,
+                        &method,
+                        interface,
+                    )
+                    .await;
+                    // Drop `messenger` so `sink(rx)` running asynchronously doesn't hang forever.
+                    drop(messenger);
+                    result.map_err(|e| anyhow!(e))
+                },
+                sink(rx)
+            )
+            .map_err(fho::Error::from)?;
+
             interface.continue_boot().await.map_err(|e| anyhow!(e)).map_err(fho::Error::from)?;
             log::debug!("Sent continue boot command");
         }
@@ -336,6 +359,7 @@ mod test {
     use ffx_fastboot_interface::fastboot_interface::*;
     use ffx_fastboot_tool_args::AuthorizeSubcommand;
     use ffx_writer::{Format, TestBuffers};
+    use serde_json::json;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
     use tempfile::NamedTempFile;
@@ -400,6 +424,8 @@ mod test {
     #[derive(Default, Debug, Clone)]
     struct MockInterface {
         staged_path: Arc<Mutex<Option<String>>>,
+        /// All transmitted OEM commands; each will have the "oem " prefix automatically inserted
+        /// to match real fastboot behavior.
         oem_commands: Arc<Mutex<Vec<String>>>,
         continue_boot_called: Arc<Mutex<bool>>,
     }
@@ -418,7 +444,7 @@ mod test {
         }
 
         async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
-            self.oem_commands.lock().unwrap().push(command.to_string());
+            self.oem_commands.lock().unwrap().push(format!("oem {}", command));
             Ok(())
         }
 
@@ -481,8 +507,9 @@ mod test {
             .unwrap();
 
         let mut interface = MockInterface::default();
-        let command =
-            FastbootCommand { subcommand: FastbootSubcommand::Authorize(AuthorizeSubcommand {}) };
+        let command = FastbootCommand {
+            subcommand: FastbootSubcommand::Authorize(AuthorizeSubcommand { product_bundle: None }),
+        };
         let buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
 
@@ -494,8 +521,67 @@ mod test {
         );
         assert_eq!(
             *interface.oem_commands.lock().unwrap(),
-            vec!["add-staged-bootloader-file ssh.authorized_keys"]
+            vec!["oem add-staged-bootloader-file ssh.authorized_keys"]
         );
+        assert!(*interface.continue_boot_called.lock().unwrap());
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_authorize_inline() -> Result<()> {
+        let temp_ssh_priv = NamedTempFile::new().expect("creating temp file for ssh.priv");
+        let temp_ssh_pub = NamedTempFile::new().expect("creating temp file for ssh.pub");
+        std::fs::write(temp_ssh_pub.path(), vec![b'a'; 100])?;
+
+        let env = ffx_config::test_env()
+            .user_config("ssh.priv", temp_ssh_priv.path().to_str().unwrap())
+            .user_config("ssh.pub", temp_ssh_pub.path().to_str().unwrap())
+            .build()
+            .unwrap();
+
+        let pb_dir = tempfile::tempdir()?;
+        let pb_path = pb_dir.path().to_string_lossy().to_string();
+        let pb_json = json!({
+            "version": "2",
+            "product_name": "test",
+            "product_version": "test",
+            "sdk_version": "test",
+            "partitions": {
+                "hardware_revision": "board",
+                "bootstrap_partitions": [],
+                "bootloader_partitions": [],
+                "partitions": [],
+                "unlock_credentials": [],
+                "ssh_key_upload_method": {
+                    "type": "inline",
+                    "command_prefix": "inline_command=",
+                    "command_max_length": 64,
+                    "init_command": "init_command"
+                }
+            }
+        });
+        std::fs::write(
+            pb_dir.path().join("product_bundle.json"),
+            serde_json::to_string_pretty(&pb_json)?,
+        )?;
+
+        let mut interface = MockInterface::default();
+        let command = FastbootCommand {
+            subcommand: FastbootSubcommand::Authorize(AuthorizeSubcommand {
+                product_bundle: Some(pb_path),
+            }),
+        };
+        let buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
+
+        fastboot_impl(&env.context, &mut writer, &command, &mut interface).await?;
+
+        let cmds = interface.oem_commands.lock().unwrap();
+        // Verify that the SSH parameters were passed through correctly.
+        assert!(cmds.len() >= 2);
+        assert_eq!(cmds[0], "oem init_command");
+        assert!(cmds[1].starts_with("oem inline_command="));
+        assert_eq!(cmds[1].len(), 64);
         assert!(*interface.continue_boot_called.lock().unwrap());
         Ok(())
     }

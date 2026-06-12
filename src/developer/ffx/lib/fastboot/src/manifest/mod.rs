@@ -12,6 +12,7 @@ use crate::manifest::resolvers::{
 use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use camino::Utf8Path;
 use ffx_config::EnvironmentContext;
@@ -29,6 +30,7 @@ pub mod resolvers;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Default, Deserialize)]
 pub struct Image {
@@ -45,15 +47,29 @@ impl Flash for FlashManifestVersion {
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
+        ssh_key_upload_method: Option<&UploadMethod>,
     ) -> Result<()>
     where
         F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         match self {
-            Self::V1(v) => v.flash(messenger, file_resolver, fastboot_interface, cmd).await?,
-            Self::V2(v) => v.flash(messenger, file_resolver, fastboot_interface, cmd).await?,
-            Self::V3(v) => v.flash(messenger, file_resolver, fastboot_interface, cmd).await?,
+            Self::V1(v) => {
+                v.flash(messenger, file_resolver, fastboot_interface, cmd, ssh_key_upload_method)
+                    .await?
+            }
+            Self::V2(v) => {
+                v.flash(messenger, file_resolver, fastboot_interface, cmd, ssh_key_upload_method)
+                    .await?
+            }
+            Self::V3(v) => {
+                v.flash(messenger, file_resolver, fastboot_interface, cmd, ssh_key_upload_method)
+                    .await?
+            }
+            Self::V4(v) => {
+                v.flash(messenger, file_resolver, fastboot_interface, cmd, ssh_key_upload_method)
+                    .await?
+            }
         };
         Ok(())
     }
@@ -75,6 +91,7 @@ impl Unlock for FlashManifestVersion {
             Self::V1(v) => v.unlock(messenger, file_resolver, fastboot_interface).await?,
             Self::V2(v) => v.unlock(messenger, file_resolver, fastboot_interface).await?,
             Self::V3(v) => v.unlock(messenger, file_resolver, fastboot_interface).await?,
+            Self::V4(v) => v.unlock(messenger, file_resolver, fastboot_interface).await?,
         };
         Ok(())
     }
@@ -98,6 +115,7 @@ impl Boot for FlashManifestVersion {
             Self::V1(v) => v.boot(messenger, file_resolver, slot, fastboot_interface, cmd).await?,
             Self::V2(v) => v.boot(messenger, file_resolver, slot, fastboot_interface, cmd).await?,
             Self::V3(v) => v.boot(messenger, file_resolver, slot, fastboot_interface, cmd).await?,
+            Self::V4(v) => v.boot(messenger, file_resolver, slot, fastboot_interface, cmd).await?,
         };
         Ok(())
     }
@@ -252,7 +270,9 @@ impl<F: FileResolver + Sync + Send> FlashManifest<F> {
     ) -> Result<()> {
         match &cmd.op {
             Command::Flash => {
-                self.version.flash(messenger, &mut self.resolver, fastboot_interface, cmd).await
+                self.version
+                    .flash(messenger, &mut self.resolver, fastboot_interface, cmd, None)
+                    .await
             }
             Command::Unlock(_) => {
                 // Using the manifest, don't need the unlock credential from the UnlockCommand
@@ -333,6 +353,38 @@ mod test {
     }
 
     #[test]
+    fn test_serialization_v4() -> Result<()> {
+        use assembly_partitions_config::UploadMethod;
+        use ffx_flash_manifest::v4::FlashManifest as FlashManifestV4;
+        let manifest = FlashManifestVersion::V4(FlashManifestV4 {
+            v3: FlashManifestV3 {
+                hw_revision: "board".into(),
+                product_matches: vec![],
+                credentials: vec![],
+                products: vec![],
+            },
+            ssh_key_upload_method: Some(UploadMethod::Staged { command: "test".to_string() }),
+        });
+        let mut buf = Vec::new();
+        manifest.write(&mut buf).unwrap();
+        let str = String::from_utf8(buf).unwrap();
+        assert_eq!(
+            str,
+            r#"{
+  "manifest": {
+    "hw_revision": "board",
+    "ssh_key_upload_method": {
+      "command": "test",
+      "type": "staged"
+    }
+  },
+  "version": 4
+}"#
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_loading_unknown_version() {
         let manifest_contents = UNKNOWN_VERSION.to_string();
         let result = FlashManifestVersion::load(BufReader::new(manifest_contents.as_bytes()));
@@ -373,6 +425,7 @@ mod test {
                 hardware_revision: String::default(),
                 product_matches: vec![],
                 unlock_credentials: vec![],
+                ssh_key_upload_method: None,
             },
             sdk_version: String::default(),
             system_a: None,
@@ -407,6 +460,41 @@ mod test {
                 },
             ]
         )
+    }
+
+    #[test]
+    fn test_from_product_bundle_v4() {
+        use assembly_partitions_config::UploadMethod;
+        let pb = ProductBundle::V2(ProductBundleV2 {
+            product_name: String::default(),
+            product_version: String::default(),
+            partitions: PartitionsConfig {
+                ssh_key_upload_method: Some(UploadMethod::Staged {
+                    command: "oem custom-ssh".into(),
+                }),
+                ..Default::default()
+            },
+            sdk_version: String::default(),
+            system_a: None,
+            system_b: None,
+            system_r: None,
+            platform_tools_a: vec![],
+            platform_tools_b: vec![],
+            platform_tools_r: vec![],
+            repositories: vec![],
+            update_package_hash: None,
+            virtual_devices_path: None,
+            release_info: None,
+        });
+
+        let manifest = match FlashManifestVersion::from_product_bundle(&pb).unwrap() {
+            FlashManifestVersion::V4(manifest) => manifest,
+            _ => panic!("Expected a V4 FlashManifest"),
+        };
+        assert_eq!(
+            manifest.ssh_key_upload_method,
+            Some(UploadMethod::Staged { command: "oem custom-ssh".into() })
+        );
     }
 
     #[fuchsia::test]

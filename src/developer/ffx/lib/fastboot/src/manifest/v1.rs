@@ -12,6 +12,7 @@ use crate::file_resolver::FileResolver;
 use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
+use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::v1::{FlashManifest, Partition, Product};
@@ -63,6 +64,7 @@ impl Flash for FlashManifest {
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
+        ssh_key_upload_method: Option<&UploadMethod>,
     ) -> Result<()>
     where
         F: FileResolver + Sync + Send,
@@ -75,7 +77,15 @@ impl Flash for FlashManifest {
         if product.requires_unlock && is_locked(fastboot_interface).await? {
             return Err(FfxFastbootError::UnlockRequired);
         }
-        flash_and_reboot(messenger, file_resolver, product, fastboot_interface, cmd).await
+        flash_and_reboot(
+            messenger,
+            file_resolver,
+            product,
+            fastboot_interface,
+            cmd,
+            ssh_key_upload_method,
+        )
+        .await
     }
 }
 
@@ -248,7 +258,8 @@ mod test {
                     manifest: Some(PathBuf::from(tmp_file_name)),
                     product: "Unknown".to_string(),
                     ..Default::default()
-                }
+                },
+                None,
             )
             .await
             .is_err()
@@ -317,6 +328,7 @@ mod test {
                 product: "fuchsia".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -371,12 +383,13 @@ mod test {
                 oem_stage: vec![test_staged_file],
                 ..Default::default()
             },
+            None,
         )
         .await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.staged_files.len());
         assert_eq!(1, state.oem_commands.len());
-        assert_eq!(test_oem_cmd, state.oem_commands[0]);
+        assert_eq!(format!("oem {}", test_oem_cmd), state.oem_commands[0]);
         Ok(())
     }
 
@@ -421,6 +434,7 @@ mod test {
                 product: "zedboot".to_string(),
                 ..Default::default()
             },
+            None,
         )
         .await?;
         Ok(())
@@ -488,6 +502,7 @@ mod test {
                 no_bootloader_reboot: true,
                 ..Default::default()
             },
+            None,
         )
         .await?;
         let state = state.lock().unwrap();
@@ -517,6 +532,7 @@ mod test {
                     product: "zedboot".to_string(),
                     ..Default::default()
                 },
+                None,
             )
             .await;
         assert_eq!(true, res.is_err());

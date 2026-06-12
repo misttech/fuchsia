@@ -666,7 +666,7 @@ mod test {
         .await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.oem_commands.len());
-        assert_eq!("vx-lock".to_string(), state.oem_commands[0]);
+        assert_eq!("oem vx-lock".to_string(), state.oem_commands[0]);
         Ok(())
     }
 }

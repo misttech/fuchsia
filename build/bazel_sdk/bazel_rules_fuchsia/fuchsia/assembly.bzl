@@ -72,6 +72,8 @@ load(
     "//fuchsia/private/assembly:fuchsia_partitions_configuration.bzl",
     _fuchsia_partitions_configuration = "fuchsia_partitions_configuration",
     _fuchsia_prebuilt_partitions_configuration = "fuchsia_prebuilt_partitions_configuration",
+    _fuchsia_ssh_key_upload_method_inline = "fuchsia_ssh_key_upload_method_inline",
+    _fuchsia_ssh_key_upload_method_staged = "fuchsia_ssh_key_upload_method_staged",
 )
 load(
     "//fuchsia/private/assembly:fuchsia_platform_artifacts.bzl",
@@ -177,6 +179,8 @@ fuchsia_hybrid_board_configuration = _fuchsia_hybrid_board_configuration
 fuchsia_hybrid_product_configuration = _fuchsia_hybrid_product_configuration
 fuchsia_product = _fuchsia_product
 fuchsia_partitions_configuration = _fuchsia_partitions_configuration
+fuchsia_ssh_key_upload_method_inline = _fuchsia_ssh_key_upload_method_inline
+fuchsia_ssh_key_upload_method_staged = _fuchsia_ssh_key_upload_method_staged
 fuchsia_prebuilt_partitions_configuration = _fuchsia_prebuilt_partitions_configuration
 fuchsia_product_bundle = _fuchsia_product_bundle
 fuchsia_test_product_bundle = _fuchsia_test_product_bundle

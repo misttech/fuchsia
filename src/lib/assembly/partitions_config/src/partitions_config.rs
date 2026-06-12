@@ -42,6 +42,72 @@ pub struct PartitionsConfig {
     #[serde(default)]
     #[walk_paths]
     pub unlock_credentials: Vec<Utf8PathBuf>,
+
+    /// Optional configuration for sending SSH keys via fastboot OEM commands.
+    ///
+    /// If not provided, the configuration will use the default Fuchsia mechanism of passing SSH
+    /// keys via `oem add-staged-bootloader-file ssh.authorized_keys`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_key_upload_method: Option<UploadMethod>,
+}
+
+/// The different mechanisms that can be used to upload data via fastboot OEM commands.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UploadMethod {
+    /// Stage the data in RAM, then issue the OEM `command` to process it.
+    Staged {
+        /// The OEM command to run after staging the data.
+        command: String,
+    },
+    /// Write the data as Base64 chunks directly embedded in consecutive OEM commands.
+    Inline {
+        /// The OEM command prefix for each data chunk, e.g. `my_command append=` will result in
+        /// a message `oem my_command append=<base64_data>`.
+        command_prefix: String,
+        /// The maximum command length the device can receive in bytes including "oem ",
+        /// `command_prefix`, and Base64 data. The actual message length may be less if the host
+        /// transmit buffer is smaller.
+        command_max_length: usize,
+        /// Optional command to send once before the chunks, e.g. `my_command init`
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        init_command: Option<String>,
+        /// Optional command to send after all chunks have finished, e.g. `my_command done`
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        finalize_command: Option<String>,
+    },
+}
+
+impl UploadMethod {
+    /// Calculates the available bytes for Base64 data in a message.
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer_size`: the host TX buffer size.
+    ///
+    /// # Returns
+    ///
+    /// Returns the available data length per inline command, or error if either:
+    ///
+    /// * `command_prefix` takes up the entire buffer, leaving no room for data
+    /// * `self` is not [UploadMethod::Inline]
+    pub fn command_data_length(&self, buffer_size: usize) -> Result<usize> {
+        match self {
+            Self::Staged { .. } => bail!("Staged upload methods do not chunk data by length"),
+            Self::Inline { command_prefix, command_max_length, .. } => {
+                // Reserve 4 bytes for the "oem " command prefix.
+                let available = std::cmp::min(*command_max_length, buffer_size).saturating_sub(4);
+                if available <= command_prefix.len() {
+                    bail!(
+                        "Upload method command prefix '{}' is too large for available space ({})",
+                        command_prefix.len(),
+                        available
+                    );
+                }
+                Ok(available - command_prefix.len())
+            }
+        }
+    }
 }
 
 impl PartitionsConfig {
@@ -408,6 +474,105 @@ mod tests {
         assert_eq!(config.unlock_credentials[0], test_dir.join("unlock_credentials.zip"));
         assert_eq!(config.partitions.len(), 8);
         assert_eq!(config.hardware_revision, "hw");
+        assert_eq!(config.ssh_key_upload_method, None);
+    }
+
+    #[test]
+    fn from_json_with_ssh_upload_method() {
+        let json = r#"
+            {
+                bootloader_partitions: [],
+                partitions: [],
+                hardware_revision: "hw",
+                ssh_key_upload_method: {
+                    type: "inline",
+                    init_command: "oem foo init",
+                    command_prefix: "oem foo data=",
+                    command_max_length: 64,
+                    finalize_command: "oem foo finish"
+                }
+            }
+        "#;
+        let temp_dir =
+            write_partition_config(json, &["tpl_image", "unlock_credentials.zip"], false);
+        let test_dir = Utf8Path::from_path(temp_dir.path()).unwrap();
+
+        let config = PartitionsConfig::from_dir(test_dir).unwrap();
+        assert_eq!(
+            config.ssh_key_upload_method,
+            Some(UploadMethod::Inline {
+                command_prefix: "oem foo data=".to_string(),
+                command_max_length: 64,
+                init_command: Some("oem foo init".to_string()),
+                finalize_command: Some("oem foo finish".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn from_json_with_ssh_upload_method_omit_init_and_finalize() {
+        let json = r#"
+            {
+                bootloader_partitions: [],
+                partitions: [],
+                hardware_revision: "hw",
+                ssh_key_upload_method: {
+                    type: "inline",
+                    command_prefix: "oem foo data=",
+                    command_max_length: 64,
+                }
+            }
+        "#;
+        let temp_dir =
+            write_partition_config(json, &["tpl_image", "unlock_credentials.zip"], false);
+        let test_dir = Utf8Path::from_path(temp_dir.path()).unwrap();
+
+        let config = PartitionsConfig::from_dir(test_dir).unwrap();
+        assert_eq!(
+            config.ssh_key_upload_method,
+            Some(UploadMethod::Inline {
+                command_prefix: "oem foo data=".to_string(),
+                command_max_length: 64,
+                init_command: None,
+                finalize_command: None,
+            })
+        );
+    }
+
+    #[test]
+    fn upload_method_command_data_length_max_length_bottleneck() {
+        let method = UploadMethod::Inline {
+            command_prefix: "1234567890".to_string(),
+            command_max_length: 64,
+            init_command: None,
+            finalize_command: None,
+        };
+        // `command_max_length` bottleneck: 64 bytes - 10 `command_prefix` - 4 "oem " = 50.
+        assert_eq!(method.command_data_length(256).unwrap(), 50);
+    }
+
+    #[test]
+    fn upload_method_command_data_length_buffer_size_bottleneck() {
+        let method = UploadMethod::Inline {
+            command_prefix: "1234567890".to_string(),
+            command_max_length: 50,
+            init_command: None,
+            finalize_command: None,
+        };
+        // Buffer size bottleneck: 40 bytes - 10 `command_prefix` - 4 "oem " = 26.
+        assert_eq!(method.command_data_length(40).unwrap(), 26);
+    }
+
+    #[test]
+    fn upload_method_command_data_length_error() {
+        let method_overflow = UploadMethod::Inline {
+            command_prefix: "1234567890".to_string(),
+            command_max_length: 12,
+            init_command: None,
+            finalize_command: None,
+        };
+        // Can't fit 10-byte `command_prefix` + 4-byte "oem " in 12 bytes.
+        assert!(method_overflow.command_data_length(64).is_err());
     }
 
     #[test]

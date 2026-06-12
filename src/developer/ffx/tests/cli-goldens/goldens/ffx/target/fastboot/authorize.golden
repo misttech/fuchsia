@@ -10,6 +10,18 @@
       "short": null,
       "description": "display usage information",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "product-bundle"
+        }
+      },
+      "optionality": "optional",
+      "long": "--product-bundle",
+      "short": "p",
+      "description": "path to a product bundle to extract SSH key upload method from",
+      "hidden": false
     }
   ],
   "notes": [
