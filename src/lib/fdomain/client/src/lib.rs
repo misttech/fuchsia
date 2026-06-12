@@ -112,7 +112,19 @@ fn write_fdomain_error(error: &FDomainError, f: &mut std::fmt::Formatter<'_>) ->
         FDomainError::ClosedDuringRead(proto::ClosedDuringRead {}) => {
             write!(f, "Handle closed while being read")
         }
-        _ => todo!(),
+        FDomainError::SignalsUnknown(signals_unknown) => {
+            write!(f, "Unknown signals: {:x}", signals_unknown.signals)
+        }
+        FDomainError::RightsUnknown(rights_unknown) => {
+            write!(f, "Unknown rights: {:x}", rights_unknown.rights)
+        }
+        FDomainError::SocketDispositionUnknown(socket_disposition_unknown) => {
+            write!(f, "Unknown socket disposition: {:?}", socket_disposition_unknown.disposition)
+        }
+        FDomainError::SocketTypeUnknown(socket_type_unknown) => {
+            write!(f, "Unknown socket type: {:?}", socket_type_unknown.type_)
+        }
+        e => write!(f, "Unknown FDomain error: {e:?}"),
     }
 }
 
