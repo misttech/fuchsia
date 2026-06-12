@@ -4,7 +4,11 @@
 
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
+#include <lib/fidl/cpp/binding.h>
 #include <lib/stdcompat/string_view.h>
+#include <lib/syslog/cpp/log_message_impl.h>
 
 #include <cinttypes>
 #include <optional>
@@ -21,6 +25,177 @@ using diagnostics::accessor2logger::ConvertFormattedContentToLogMessages;
 using fuchsia::diagnostics::FormattedContent;
 
 namespace {
+
+class FakeBatchIterator : public fuchsia::diagnostics::BatchIterator {
+ public:
+  void GetNext(GetNextCallback callback) override {
+    if (should_error_) {
+      fuchsia::diagnostics::BatchIterator_GetNext_Result result;
+      result.set_err(error_to_return_);
+      callback(std::move(result));
+      return;
+    }
+
+    fuchsia::diagnostics::BatchIterator_GetNext_Result result;
+    fuchsia::diagnostics::BatchIterator_GetNext_Response response;
+    response.batch = std::move(batch_);
+    result.set_response(std::move(response));
+    callback(std::move(result));
+  }
+
+  void WaitForReady(WaitForReadyCallback callback) override {
+    fuchsia::diagnostics::BatchIterator_WaitForReady_Result result;
+    fuchsia::diagnostics::BatchIterator_WaitForReady_Response response;
+    result.set_response(std::move(response));
+    callback(std::move(result));
+  }
+
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
+    // No-op
+  }
+
+  void SetBatch(std::vector<fuchsia::diagnostics::FormattedContent> batch) {
+    batch_ = std::move(batch);
+    should_error_ = false;
+  }
+
+  void SetError(fuchsia::diagnostics::ReaderError error) {
+    error_to_return_ = error;
+    should_error_ = true;
+  }
+
+ private:
+  std::vector<fuchsia::diagnostics::FormattedContent> batch_;
+  bool should_error_ = false;
+  fuchsia::diagnostics::ReaderError error_to_return_;
+};
+
+class LogBatchIteratorTestHelper {
+ public:
+  LogBatchIteratorTestHelper()
+      : loop_(&kAsyncLoopConfigNoAttachToCurrentThread), binding_(&fake_iterator_) {
+    fuchsia::diagnostics::BatchIteratorPtr ptr;
+    auto request = ptr.NewRequest(loop_.dispatcher());
+    binding_.Bind(std::move(request), loop_.dispatcher());
+    iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(std::move(ptr));
+  }
+
+  void SetBatch(std::vector<fuchsia::diagnostics::FormattedContent> batch) {
+    fake_iterator_.SetBatch(std::move(batch));
+  }
+
+  void SetError(fuchsia::diagnostics::ReaderError error) { fake_iterator_.SetError(error); }
+
+  fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                   std::string>
+  GetNext() {
+    fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                     std::string>
+        out_result;
+    bool done = false;
+    iterator_->GetNext([&](auto result) {
+      out_result = std::move(result);
+      done = true;
+    });
+
+    while (!done) {
+      loop_.Run(zx::deadline_after(zx::msec(10)), true);
+    }
+    return out_result;
+  }
+
+ private:
+  async::Loop loop_;
+  FakeBatchIterator fake_iterator_;
+  fidl::Binding<fuchsia::diagnostics::BatchIterator> binding_;
+  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> iterator_;
+};
+
+class FxtToLogMessageTranscoderForTest {
+ public:
+  explicit FxtToLogMessageTranscoderForTest(LogBatchIteratorTestHelper* helper) : helper_(helper) {}
+  explicit FxtToLogMessageTranscoderForTest(std::nullptr_t)
+      : owned_helper_(std::make_unique<LogBatchIteratorTestHelper>()) {}
+
+  fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                   std::string>
+  Transcode(FormattedContent content) {
+    if (content.Which() == FormattedContent::Tag::Invalid) {
+      return fpromise::error("Expected json or FXT content");
+    }
+    LogBatchIteratorTestHelper* helper = helper_ ? helper_ : owned_helper_.get();
+    std::vector<FormattedContent> batch;
+    batch.push_back(std::move(content));
+    helper->SetBatch(std::move(batch));
+    return helper->GetNext();
+  }
+
+ private:
+  LogBatchIteratorTestHelper* helper_ = nullptr;
+  std::unique_ptr<LogBatchIteratorTestHelper> owned_helper_;
+};
+
+TEST(LogMessage, StatePersistence) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  constexpr char kTestMoniker[] = "some_moniker";
+  constexpr char kTestUrl[] = "fuchsia-pkg://fuchsia.com/test#test.cm";
+
+  // 1. Build Manifest Record
+  fuchsia_logging::LogBufferBuilder manifest_builder(fuchsia_logging::LogSeverity::Info);
+  auto manifest_buffer = manifest_builder.Build();
+  manifest_buffer.WriteKeyValue("moniker", kTestMoniker);
+  manifest_buffer.WriteKeyValue("url", kTestUrl);
+  std::span<const uint8_t> manifest_span = manifest_buffer.EndRecord();
+
+  // 2. Build Log Record
+  fuchsia_logging::LogBufferBuilder log_builder(fuchsia_logging::LogSeverity::Info);
+  auto log_buffer = log_builder.WithMsg("test message").Build();
+  std::span<const uint8_t> log_span = log_buffer.EndRecord();
+
+  // 3. Prep Manifest Content (with LOG_CONTROL_BIT flipped)
+  std::vector<uint8_t> manifest_raw(manifest_span.size());
+  memcpy(manifest_raw.data(), manifest_span.data(), manifest_span.size());
+  uint64_t* header_ptr = reinterpret_cast<uint64_t*>(manifest_raw.data());
+  *header_ptr |= (1ULL << 47);
+
+  LogBatchIteratorTestHelper helper;
+
+  // 4. Send Manifest
+  {
+    FormattedContent content;
+    zx::vmo vmo;
+    zx::vmo::create(manifest_raw.size(), 0, &vmo);
+    vmo.write(manifest_raw.data(), 0, manifest_raw.size());
+    uint64_t size = manifest_raw.size();
+    vmo.set_property(ZX_PROP_VMO_CONTENT_SIZE, &size, sizeof(size));
+    content.set_fxt(std::move(vmo));
+
+    auto results = FxtToLogMessageTranscoderForTest(&helper).Transcode(std::move(content));
+    ASSERT_TRUE(results.is_ok());
+    // Manifest records don't produce log messages, they just update state.
+    EXPECT_EQ(0u, results.value().size());
+  }
+
+  // 5. Send Log Message (it should use the persisted state)
+  {
+    FormattedContent content;
+    zx::vmo vmo;
+    zx::vmo::create(log_span.size(), 0, &vmo);
+    vmo.write(log_span.data(), 0, log_span.size());
+    uint64_t size = log_span.size();
+    vmo.set_property(ZX_PROP_VMO_CONTENT_SIZE, &size, sizeof(size));
+    content.set_fxt(std::move(vmo));
+
+    auto results = FxtToLogMessageTranscoderForTest(&helper).Transcode(std::move(content));
+    ASSERT_TRUE(results.is_ok());
+    ASSERT_EQ(1u, results.value().size());
+    ASSERT_TRUE(results.value()[0].is_ok());
+    auto& msg = results.value()[0].value();
+    EXPECT_EQ("test message", msg.msg);
+    ASSERT_EQ(1u, msg.tags.size());
+    EXPECT_EQ(kTestMoniker, msg.tags[0]);
+  }
+}
 
 TEST(LogMessage, Empty) {
   FormattedContent content;

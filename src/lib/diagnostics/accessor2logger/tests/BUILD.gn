@@ -8,6 +8,8 @@ import("//build/test.gni")
 test("stream_cpp_unittests") {
   sources = [ "log_message_unittest.cc" ]
   deps = [
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/stdcompat",
     "//src/lib/diagnostics/accessor2logger",
     "//src/lib/fsl",

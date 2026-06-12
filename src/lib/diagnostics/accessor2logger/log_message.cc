@@ -3,12 +3,15 @@
 // found in the LICENSE file.
 
 #include <assert.h>
+#include <lib/async/default.h>
+#include <lib/async/task.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/stream.h>
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <mutex>
 #include <sstream>
 
 #include <rapidjson/document.h>
@@ -24,6 +27,7 @@ using fuchsia::diagnostics::FormattedContent;
 namespace diagnostics::accessor2logger {
 
 namespace {
+
 const char kPidLabel[] = "pid";
 const char kTidLabel[] = "tid";
 const char kFileLabel[] = "file";
@@ -263,13 +267,11 @@ inline fpromise::result<fuchsia::logger::LogMessage, std::string> JsonToLogMessa
   return fpromise::ok(std::move(ret));
 }
 
-}  // namespace
-
-fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
-                 std::string>
-ConvertFormattedFXTToLogMessages(uint8_t* data, size_t size, bool expect_extended_attribution) {
-  auto log_messages =
-      fuchsia_decode_log_messages_to_struct(data, size, expect_extended_attribution, nullptr);
+fpromise::result<void, std::string> ConvertFormattedFxtToLogMessagesInternal(
+    std::span<const uint8_t> data, bool expect_extended_attribution, MessageParser* parser,
+    std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>& output) {
+  auto log_messages = fuchsia_decode_log_messages_to_struct(data.data(), data.size(),
+                                                            expect_extended_attribution, parser);
   if (log_messages.error_str) {
     // Copy the error string so that we can free it before returning
     std::string copied_error_str = log_messages.error_str;
@@ -277,28 +279,34 @@ ConvertFormattedFXTToLogMessages(uint8_t* data, size_t size, bool expect_extende
     fuchsia_free_log_messages(log_messages);
     return fpromise::error(copied_error_str);
   }
-  std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> output;
-  output.reserve(log_messages.messages.len);
+  output.reserve(log_messages.messages.len + output.size());
   for (size_t i = 0; i < log_messages.messages.len; i++) {
     auto msg = log_messages.messages.ptr[i];
     output.emplace_back(log_tester::ToFidlLogMessage(msg));
   }
   fuchsia_free_log_messages(log_messages);
-  return fpromise::ok(std::move(output));
+  return fpromise::ok();
 }
 
-fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
-                 std::string>
-ConvertFormattedContentToLogMessages(FormattedContent content) {
-  std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> output;
-
+fpromise::result<void, std::string> ConvertFormattedContentToLogMessagesInternal(
+    FormattedContent content, MessageParser* parser,
+    std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>& output) {
   if (content.is_fxt()) {
     uint64_t size = 0;
-    content.fxt().get_prop_content_size(&size);
+    zx_status_t status = content.fxt().get_prop_content_size(&size);
+    if (status != ZX_OK) {
+      return fpromise::error("Failed to get content size from FXT VMO: " + std::to_string(status));
+    }
     std::unique_ptr<unsigned char[]> data = std::make_unique<unsigned char[]>(size);
-    content.fxt().read(data.get(), 0, size);
-    auto ret = ConvertFormattedFXTToLogMessages(data.get(), size, true);
-    return ret;
+    status = content.fxt().read(data.get(), 0, size);
+    if (status != ZX_OK) {
+      return fpromise::error("Failed to read from FXT VMO: " + std::to_string(status));
+    }
+    // Note: If |parser| is non-null, |expect_extended_attribution| is ignored.
+    // If |parser| is null, |expect_extended_attribution| is used to determine
+    // whether extended attribution is expected.
+    return ConvertFormattedFxtToLogMessagesInternal(std::span<const uint8_t>(data.get(), size),
+                                                    true, parser, output);
   } else if (content.is_json()) {
     std::string data;
     if (!fsl::StringFromVmo(content.json(), &data)) {
@@ -323,11 +331,65 @@ ConvertFormattedContentToLogMessages(FormattedContent content) {
       output.emplace_back(JsonToLogMessage(d[i]));
     }
 
-    return fpromise::ok(std::move(output));
+    return fpromise::ok();
   } else {
     // Expecting JSON or FXT in all cases.
     return fpromise::error("Expected json or FXT content");
   }
+}
+}  // namespace
+
+LogBatchIterator::LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator)
+    : iterator_(std::move(iterator)), parser_(fuchsia_new_message_parser()) {}
+
+LogBatchIterator::~LogBatchIterator() {
+  if (parser_) {
+    fuchsia_free_message_parser(parser_);
+  }
+}
+
+void LogBatchIterator::GetNext(GetNextCallback callback) {
+  iterator_->GetNext([this, callback = std::move(callback)](auto result) mutable {
+    if (result.is_err()) {
+      callback(fpromise::error("BatchIterator error: " +
+                               std::to_string(static_cast<int32_t>(result.err()))));
+      return;
+    }
+
+    std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> all_messages;
+    for (auto& content : result.response().batch) {
+      auto formatted =
+          ConvertFormattedContentToLogMessagesInternal(std::move(content), parser_, all_messages);
+      if (formatted.is_error()) {
+        callback(fpromise::error(formatted.error()));
+        return;
+      }
+    }
+    callback(fpromise::ok(std::move(all_messages)));
+  });
+}
+
+fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                 std::string>
+ConvertFormattedFxtToLogMessages(std::span<const uint8_t> data, bool expect_extended_attribution) {
+  std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> messages;
+  auto ret = ConvertFormattedFxtToLogMessagesInternal(data, expect_extended_attribution, nullptr,
+                                                      messages);
+  if (ret.is_error()) {
+    return fpromise::error(ret.take_error());
+  }
+  return fpromise::ok(std::move(messages));
+}
+
+fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                 std::string>
+ConvertFormattedContentToLogMessages(FormattedContent content) {
+  std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> messages;
+  auto ret = ConvertFormattedContentToLogMessagesInternal(std::move(content), nullptr, messages);
+  if (ret.is_error()) {
+    return fpromise::error(ret.take_error());
+  }
+  return fpromise::ok(std::move(messages));
 }
 
 fuchsia_logging::RawLogSeverity GetSeverityFromVerbosity(uint8_t verbosity) {
