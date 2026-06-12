@@ -399,7 +399,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceConfigurat
         bindings_ctx: &mut BC,
         device_id: &EthernetDeviceId<BC>,
         frame_src: Mac,
-        sender_hwaddr: Mac,
+        sender_hwaddr: UnicastAddr<Mac>,
         sender_addr: Ipv4Addr,
         target_addr: Ipv4Addr,
         is_arp_probe: bool,
