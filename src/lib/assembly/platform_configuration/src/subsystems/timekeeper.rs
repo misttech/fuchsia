@@ -52,7 +52,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             builder.platform_bundle("timekeeper_persistence")?;
         }
 
-        let has_aml_timer = context.board_config.provides_feature(BoardFeature::AmlHrtimer);
+        let has_hrtimer = context.board_config.provides_feature(BoardFeature::Hrtimer);
 
         // If set, Timekeeper will serve `fuchsia.time.alarms` and will connect
         // to the appropriate hardware device to do so.
@@ -61,7 +61,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
         // is requested, and the underlying driver is available.
         //
         // The same information is offered as a config capability to other components.
-        let serve_fuchsia_time_alarms = config.serve_fuchsia_time_alarms && has_aml_timer;
+        let serve_fuchsia_time_alarms = config.serve_fuchsia_time_alarms && has_hrtimer;
         builder.set_config_capability(
             "fuchsia.time.config.HasWakeAlarms",
             //TODO: b/416081776 - replace `true` with serve_fuchsia_time_alarms.
@@ -156,6 +156,14 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             // timekeeper will set this to true for monitor time sources.
             .field("is_monitor_time_source", false)?;
 
+        if has_hrtimer && matches!(context.build_type, BuildType::Eng) {
+            match context.feature_set_level {
+                FeatureSetLevel::Embeddable | FeatureSetLevel::Bootstrap => {}
+                FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
+                    builder.platform_bundle("hrtimer-ctl")?;
+                }
+            }
+        }
         Ok(())
     }
 }

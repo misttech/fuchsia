@@ -5,7 +5,7 @@
 load("@fuchsia_build_info//:args.bzl", "compilation_mode")
 
 BASE_PROVIDED_FEATURES = [
-    "fuchsia::aml-hrtimer",
+    "fuchsia::hrtimer",
     "fuchsia::paver",
     "fuchsia::pmm_checker",
     "fuchsia::power",

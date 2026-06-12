@@ -372,6 +372,9 @@ platform_aib_names = bringup_platform_aib_names + [
     # Development and debug tools for power framework
     "power_framework_development_support",
 
+    # Development and debug tools for hrtimer
+    "hrtimer-ctl",
+
     # Sensors support with playback.
     "sensors_framework_eng",
 

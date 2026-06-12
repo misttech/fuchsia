@@ -11,8 +11,8 @@
 pub enum BoardFeature {
     /// Always-on counter used for timekeeping instead of a persistent RTC.
     AlwaysOnCounter,
-    /// Amlogic High-Resolution Timer support.
-    AmlHrtimer,
+    /// High-Resolution Timer support.
+    Hrtimer,
     /// Bluetooth transport support over UART.
     BtTransportUart,
     /// User-space PCI bus support.
@@ -113,7 +113,7 @@ impl AsRef<str> for BoardFeature {
     fn as_ref(&self) -> &str {
         match self {
             Self::AlwaysOnCounter => "fuchsia::always_on_counter",
-            Self::AmlHrtimer => "fuchsia::aml-hrtimer",
+            Self::Hrtimer => "fuchsia::hrtimer",
             Self::BtTransportUart => "fuchsia::bt_transport_uart",
             Self::BusPci => "fuchsia::bus_pci",
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",

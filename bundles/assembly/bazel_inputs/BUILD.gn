@@ -412,6 +412,11 @@ group("bootstrap_eng") {
   ]
 }
 
+group("hrtimer-ctl") {
+  deps =
+      [ "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl" ]
+}
+
 fuchsia_package("bootstrap_eng.bootfs_files_package") {
   testonly = true
   deps = [
@@ -1595,7 +1600,6 @@ group("power_test_platform_drivers") {
 
 group("power_framework_development_support") {
   deps = [
-    "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl",
     "//bundles/assembly/bazel_inputs/src/power/system-activity-governor-controller:package",
     "//bundles/assembly/bazel_inputs/src/power/tools/cli:package",
   ]

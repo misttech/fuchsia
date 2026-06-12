@@ -897,6 +897,20 @@ assembly_input_bundle(
     ],
 )
 
+# hrtimer-ctl shell utility. Used in products that use hrtimer and have shell commands enabled.
+#
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "hrtimer-ctl",
+    allowed_in = [
+        "standard::eng",
+        "utility::eng",
+    ],
+    bootfs_packages = [
+        "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl",
+    ],
+)
+
 # lspci shell utility. Used in products that use PCI and have shell commands enabled.
 #
 # buildifier: leave-alone
@@ -4569,7 +4583,6 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/power/tools/cli:package",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl",
         "//bundles/assembly/bazel_inputs/src/power/system-activity-governor-controller:package",
     ],
     # When the power framework becomes available on user builds by default,
@@ -4582,10 +4595,6 @@ assembly_input_bundle(
             "bootfs_package": True,
             "package": "powerutil",
             "components": ["powerutil"],
-        },
-        {
-            "package": "hrtimer-ctl",
-            "components": ["hrtimer-ctl"],
         },
     ],
 )
