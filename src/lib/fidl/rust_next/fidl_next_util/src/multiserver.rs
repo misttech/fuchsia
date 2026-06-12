@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::cell::RefCell;
 use core::marker::PhantomData;
 
 use futures::channel::mpsc;
+use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt as _, select_biased};
 use thiserror::Error;
@@ -68,16 +68,16 @@ impl<P, T: Transport> Multiserver<P, T> {
     }
 }
 
-struct RefCellServerHandler<'a, H> {
-    handler: &'a RefCell<H>,
+struct MutexServerHandler<'a, H> {
+    handler: &'a Mutex<H>,
 }
 
-impl<H, T: Transport> LocalServerHandler<T> for RefCellServerHandler<'_, H>
+impl<H, T: Transport> LocalServerHandler<T> for MutexServerHandler<'_, H>
 where
     H: LocalServerHandler<T>,
 {
     async fn on_one_way(&mut self, message: Message<T>) -> Result<(), ProtocolError<T::Error>> {
-        self.handler.borrow_mut().on_one_way(message).await
+        self.handler.lock().await.on_one_way(message).await
     }
 
     async fn on_two_way(
@@ -85,7 +85,7 @@ where
         message: Message<T>,
         responder: Responder<T>,
     ) -> Result<(), ProtocolError<T::Error>> {
-        self.handler.borrow_mut().on_two_way(message, responder).await
+        self.handler.lock().await.on_two_way(message, responder).await
     }
 }
 
@@ -138,7 +138,7 @@ impl<P, T: Transport> MultiserverDispatcher<P, T> {
     where
         H: LocalServerHandler<T>,
     {
-        let handler = RefCell::new(handler);
+        let handler = Mutex::new(handler);
         let mut futures = FuturesUnordered::new();
 
         let mut is_closed = false;
@@ -147,7 +147,7 @@ impl<P, T: Transport> MultiserverDispatcher<P, T> {
                 transport = self.receiver.next() => {
                     if let Some(transport) = transport {
                         let dispatcher = ServerDispatcher::new(transport.into_untyped());
-                        futures.push(dispatcher.run_local(RefCellServerHandler {
+                        futures.push(dispatcher.run_local(MutexServerHandler {
                             handler: &handler,
                         }));
                     } else {
