@@ -9,7 +9,7 @@ by product or board configurations.
 This codelab assumes you are familiar with:
 
 *   Fuchsia's [source tree](/docs/development/source_code/layout.md) and build
-    system ([GN](/docs/development/build/build_system/index.md) and
+    system ([GN](/docs/development/build/overview.md) and
     [Bazel](/docs/development/build/bazel_concepts/project_layout.md)).
 *   Rust programming language.
 *   [Fuchsia components concepts][components-concepts].

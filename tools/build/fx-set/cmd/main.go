@@ -479,7 +479,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 
 	balancedNudge, _ := isNudgeOn(env, "balanced")
 	if cmd.compilationMode == "release" && balancedNudge {
-		message += "[Nudge] You have set --release, consider --balanced: https://fuchsia.dev/fuchsia-src/development/build/build_system/fuchsia_build_system_overview#quick_comparison\n"
+		message += "[Nudge] You have set --release, consider --balanced: https://fuchsia.dev/fuchsia-src/development/build/overview#quick_comparison\n"
 		message += "(Silence nudge with `ffx config set ffx.ui.nudges.balanced false`)\n"
 	}
 	fmt.Printf(message)

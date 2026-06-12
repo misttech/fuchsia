@@ -1,5 +1,10 @@
 # Introduction to GN
 
+> **Note:**
+> Most developers should interact with the build system through [`fx` workflows](../fx.md)
+> (such as `fx build` and `fx set`) rather than running GN, Ninja, or Bazel directly
+> (even via wrappers like `fx gn` or `fx ninja`).
+
 This is an introduction to GN's terms and way of thinking. This should be
 sufficient background to get your bearings in GN and how it's used in Fuchsia.
 GN (and the Fuchsia build) are more complicated than the below will discuss, but

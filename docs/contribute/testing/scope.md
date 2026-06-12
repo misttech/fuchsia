@@ -326,7 +326,7 @@ See also:
 [best-practices]: /docs/contribute/testing/best-practices.md
 [testing-principles]: /docs/contribute/testing/principles.md
 [audio-effects-example-test]: /src/media/audio/examples/effects/test/audio_effects_example_test.cc
-[build-bringup]: /docs/development/build/build_system/bringup.md
+[build-bringup]: /docs/development/build/software_assembly/bringup.md
 [capabilities-protocol]: /docs/concepts/components/v2/capabilities/protocol.md
 [cf]: /docs/concepts/components/v2/README.md
 [cf-capabilities]: /docs/concepts/components/v2/capabilities/README.md

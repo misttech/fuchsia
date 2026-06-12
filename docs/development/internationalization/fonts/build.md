@@ -265,7 +265,7 @@ Example:
 ## Product-specific font configurations {#product-specific}
 
 Finally, every
-[product target](/docs/development/build/build_system/boards_and_products.md#products)
+[product target](/docs/development/build/software_assembly/build_configuration.md#products)
 that uses fonts needs to be configured with the specific font assets and
 metadata that it will include.
 

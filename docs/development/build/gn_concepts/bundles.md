@@ -1,8 +1,7 @@
 # Bundles
 
 Bundles are GN group labels that provide common major groups of features.
-They can be included into one of the [dependency
-sets](boards_and_products.md#dependency-sets).
+They can be included into one of the [dependency sets][dep-sets].
 
 When using the `fx set` command, bundles are most commonly added to the
 `universe` dependency set by use of the `--with` flag. See [fx build
@@ -32,3 +31,4 @@ More information on the currently available bundles can be found in
   least 2GB of storage on the target device (size estimates from Q1/2019).
 
 [fx-build-config]: /docs/development/build/fx.md#configure-a-build
+[dep-sets]: /docs/development/build/software_assembly/build_configuration.md#dependency-sets

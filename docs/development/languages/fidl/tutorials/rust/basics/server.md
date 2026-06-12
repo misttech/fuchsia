@@ -372,7 +372,7 @@ the [component instance tree][glossary.component-instance-tree]
 [fidl-crates]: /docs/development/languages/fidl/tutorials/rust/basics/using-fidl.md
 [fuchsia-main]: /src/lib/fuchsia/macro/src/lib.rs#23
 [building-components]: /docs/development/components/build.md
-[products]: /docs/development/build/build_system/boards_and_products.md
+[products]: /docs/development/build/software_assembly/build_configuration.md
 [control-handle]: /docs/reference/fidl/bindings/rust-bindings.md#protocol-control-handle
 [declaring-fidl]: /docs/development/languages/fidl/tutorials/fidl.md
 [component-manager]: /docs/concepts/components/v2/component_manager.md

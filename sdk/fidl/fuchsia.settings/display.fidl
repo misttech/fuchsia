@@ -106,7 +106,7 @@ type LowLightMode = strict enum {
 @strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ThemeType = strict enum {
     /// When `ThemeType` is set to `DEFAULT` it is up to the specific
-    /// [product](https://fuchsia.dev/fuchsia-src/concepts/build_system/boards_and_products#products)
+    /// [product](https://fuchsia.dev/fuchsia-src/development/build/software_assembly/build_configuration#products)
     /// to determine what that actually means.
     DEFAULT = 0;
     LIGHT = 1;

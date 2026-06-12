@@ -124,8 +124,8 @@ The `--with-base` option adds all of the dependencies listed in
 [`//bundles/tools/BUILD.gn`] as [base packages] in your Fuchsia image.
 Most of Fuchsia's hardware testing tools are in this bundle.
 
-[product]: /docs/development/build/build_system/boards_and_products.md#products
-[board]: /docs/development/build/build_system/boards_and_products.md#boards
+[product]: /docs/development/build/software_assembly/build_configuration.md#products
+[board]: /docs/development/build/software_assembly/build_configuration.md#boards
 
 Caution: {{"<var>"}}PRODUCT{{"</var>"}} and {{"<var>"}}BOARD{{"</var>"}}
 are placeholder values. You need to replace them with real [product]

@@ -125,7 +125,7 @@ template("copy_to_target") {
 Templates and variables whose name begins with an underscore (e.g. `template("_private")`)
 are considered private and won’t be visible to other files that `import()` them, but can be
 used in the same file that they’re defined. This is useful for internal helper templates or
-“local global variables” that you might define for instance to share logic between two templates,
+"local global variables" that you might define for instance to share logic between two templates,
 where the helper is not useful to the user.
 
 ```gn
@@ -587,7 +587,7 @@ Though note, that this will crash if the type is *not* a list or is empty.
 GN offers lists and scopes as aggregate data types, but not associative
 types like maps or sets. Sometimes lists are used instead of sets. The
 example below has a list of build variants, and checks if one of them
-is the “profile” variant:
+is the "profile" variant:
 
 ```gn
 if (variants + [ "profile" ] - [ "profile" ] != variants) {

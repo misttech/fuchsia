@@ -53,5 +53,5 @@ handle their own communication with the host:
 <!-- Reference links -->
 
 [environments]: /docs/contribute/testing/environments.md
-[tests-bundle]: /docs/development/build/build_system/bundles.md
+[tests-bundle]: /docs/development/build/gn_concepts/bundles.md
 [sl4f]: /docs/development/testing/sl4f.md

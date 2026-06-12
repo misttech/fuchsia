@@ -254,7 +254,7 @@ root hash and put in a directory at the root of the TUF file tree called `blobs`
 [fuchsia-packages]: /docs/concepts/packages/package.md
 [pkg-struct]: /docs/concepts/packages/package.md#structure-of-a-package
 [TUF-home]: https://theupdateframework.github.io "TUF Homepage"
-[pkg-doc]: /docs/development/build/build_system/fuchsia_build_system_overview.md
+[pkg-doc]: /docs/development/build/overview.md
 [fuchsia-build]: /docs/get-started/learn/build/build-system.md
 [ffx-target-repo-list]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_target_repository_list
 [ffx-target-repo-register]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_target_repository_register

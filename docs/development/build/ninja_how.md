@@ -3,6 +3,11 @@
 This page provides an overview of how [Ninja][ninja]{:.external} works in
 Fuchsia.
 
+> **Note:**
+> Most developers should interact with the build system through [`fx` workflows](fx.md)
+> (such as `fx build` and `fx set`) rather than running GN, Ninja, or Bazel directly
+> (even via wrappers like `fx gn` or `fx ninja`).
+
 ## General overview
 
 The Fuchsia build system uses Ninja to launch build commands in parallel.

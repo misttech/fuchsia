@@ -87,7 +87,7 @@ import("//build/rust/rustc_test.gni")
 #   exclude_toolchain_tags (optional)
 #     [strings] A list of tags that corresponds to toolchain variants that
 #     this target should not be built with.
-#     See: //docs/development/build/concepts/build_system/internals/toolchains/build_variants.md.
+#     See: //docs/development/build/development/build/gn_concepts/internals/toolchains/build_variants.md.
 #
 #   original_target_name (optional)
 #     The name of the target as it appears in the BUILD file. Enables tooling

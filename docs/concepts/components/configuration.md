@@ -166,7 +166,7 @@ types but runtime modifiable in others.
 <!-- TODO(https://fxbug.dev/42055979): Update link once better documentation exists -->
 [rfc0115]: /docs/contribute/governance/rfcs/0115_build_types.md
 
-[board]: /docs/development/build/build_system/boards_and_products.md#boards
+[board]: /docs/development/build/software_assembly/build_configuration.md#boards
 [channel]: /docs/concepts/packages/ota.md#update-omaha
 [config_mechanisms]: /docs/development/components/configuration/mechanisms.md
-[product]: /docs/development/build/build_system/boards_and_products.md#products
+[product]: /docs/development/build/software_assembly/build_configuration.md#products

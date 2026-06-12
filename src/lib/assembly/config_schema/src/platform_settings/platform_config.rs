@@ -290,7 +290,7 @@ pub enum FeatureSetLevel {
     /// netstack, no storage drivers, etc.  This is one of the smallest bootable
     /// systems created by assembly, and is primarily used for board-level bringup.
     ///
-    /// https://fuchsia.dev/fuchsia-src/development/build/build_system/bringup
+    /// https://fuchsia.dev/fuchsia-src/development/build/software_assembly/bringup
     Bootstrap,
 
     /// This is the smallest configuration that includes the `/core` realm, and

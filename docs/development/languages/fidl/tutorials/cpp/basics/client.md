@@ -369,7 +369,7 @@ checkout at [`//examples/fidl/cpp/client/wire`][cpp-wire-client-src].
 [open]: https://fuchsia.dev/reference/fidl/fuchsia.io#Directory.Open
 [pipelining]: /docs/development/api/fidl.md#request-pipelining
 [pipelining-tut]: /docs/development/languages/fidl/tutorials/cpp/topics/request-pipelining.md
-[products]: /docs/development/build/build_system/boards_and_products.md
+[products]: /docs/development/build/software_assembly/build_configuration.md
 [natural-types]: /docs/development/languages/fidl/tutorials/cpp/basics/domain-objects.md#using-natural
 [natural-structs]: /docs/development/languages/fidl/tutorials/cpp/basics/domain-objects.md#natural_structs
 [natural-tables]: /docs/development/languages/fidl/tutorials/cpp/basics/domain-objects.md#natural_tables

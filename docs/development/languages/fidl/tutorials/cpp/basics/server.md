@@ -277,7 +277,7 @@ at [`//examples/fidl/cpp/server/wire`][cpp-wire-server-src].
 [cpp-wire-server-src]: /examples/fidl/cpp/server/wire
 [domain-objects]: /docs/development/languages/fidl/tutorials/cpp/basics/domain-objects.md
 [build-components]: /docs/development/components/build.md
-[products]: /docs/development/build/build_system/boards_and_products.md
+[products]: /docs/development/build/software_assembly/build_configuration.md
 [protocol-open]: /docs/concepts/components/v2/capabilities/life_of_a_protocol_open.md#binding_to_a_component_and_sending_a_protocol_channel
 [compiling-fidl]: /docs/development/languages/fidl/tutorials/fidl.md
 [async-loop]: /sdk/lib/async-loop/include/lib/async-loop/cpp/loop.h

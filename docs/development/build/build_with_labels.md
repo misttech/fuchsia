@@ -127,4 +127,4 @@ fx build -- host_x64/zbi host_x64/ffx
 However, as our Bazel migration carries on, this will not work for any
 Bazel-generated outputs in the future.
 
-[gn-root-targets]: /docs/development/build/gn_root_targets.md
+[gn-root-targets]: /docs/development/build/gn_concepts/root_targets.md

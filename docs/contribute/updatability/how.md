@@ -187,8 +187,8 @@ platform interfaces are observed and respected.
 
 [acts]: https://android.googlesource.com/platform/tools/test/connectivity/+/HEAD/acts
 [archiveaccessor]: https://fuchsia.dev/reference/fidl/fuchsia.diagnostics#ArchiveAccessor
-[build-info]: /docs/development/build/build_information.md
-[build-info-old]: https://fuchsia.googlesource.com/fuchsia/+/1b21e5d7b36df3f5dde647684dd321f1aee21372/docs/development/build/build_information.md
+[build-info]: /docs/development/build/software_assembly/runtime_build_info.md
+[build-info-old]: https://fuchsia.googlesource.com/fuchsia/+/1b21e5d7b36df3f5dde647684dd321f1aee21372/docs/development/build/software_assembly/runtime_build_info.md
 [capabilities]: /docs/concepts/components/v2/capabilities/README.md
 [cf-design-ambient]: /docs/concepts/components/v2/design_principles.md#no-ambient-authority
 [cf-design-isolation]: /docs/concepts/components/v2/design_principles.md#isolation

@@ -20,7 +20,7 @@ For more information on configuring the emulator
 see, [Start the Fuchsia emulator](/docs/get-started/set_up_femu.md).
 
 Your device must be running a `core`
-[product configuration](/docs/development/build/build_system/boards_and_products.md)
+[product configuration](/docs/development/build/software_assembly/build_configuration.md)
 or a product configuration that extends `core` (such as `workstation_eng`).
 
 Optionally, you can run `ffx log`, which will provide some additional information
@@ -468,7 +468,7 @@ Instance ID: eb345fb7dcaa4260ee0c65bb73ef0ec5341b15a4f603f358d6631c4be6bf7080
 The `component run` command can create and launch components in a given isolated collection.
 
 Note: `fx serve` must be running in order to run a package that is not
-[in base or cached](/docs/development/build/build_system/boards_and_products.md#dependency_sets).
+[in base or cached](/docs/development/build/software_assembly/build_configuration.md#dependency_sets).
 
 Here's an example of running the Rust `hello-world` component in the `/core/ffx-laboratory`
 collection. First, you'll need the hello-world package in your universe:

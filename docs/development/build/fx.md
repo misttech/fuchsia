@@ -234,7 +234,7 @@ important configurations to be familiar with:
 ### Key additional build targets {#key-bundles}
 
 The `--with` and `--with-test` flags for `fx set` take in arbitrary
-[build targets](/docs/development/build/build_system/fuchsia_build_system_overview.md#build-targets).
+[build targets](/docs/development/build/overview.md#build-targets).
 For convenience, a number of bundles are defined, which include a variety of
 commonly used build targets. It is important to be familiarized with the
 following bundles:
@@ -700,7 +700,7 @@ To suppress the inclusion of `local/args.gn`, run `fx set ... --skip-local-args`
 
 <!-- Reference links -->
 
-[build-overview]: /docs/development/build/build_system/fuchsia_build_system_overview.md
+[build-overview]: /docs/development/build/overview.md
 [build-with-labels]: /docs/development/build/build_with_labels.md
 [executing-tests]: /docs/development/testing/run_fuchsia_tests.md
 [ffx-target-flash]: /reference/tools/sdk/ffx.md#flash

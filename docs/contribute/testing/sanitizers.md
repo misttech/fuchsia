@@ -329,4 +329,4 @@ See also: [sanitizers in the 2021 roadmap][sanitizers-2021-roadmap].
 [syzkaller]: https://github.com/google/syzkaller
 [test-coverage]: /docs/contribute/testing/coverage.md
 [testing-flakiness]: /docs/development/testing/testing_for_flakiness_in_cq.md
-[variants]: /docs/development/build/build_system/variants.md
+[variants]: /docs/development/build/gn_concepts/variants.md

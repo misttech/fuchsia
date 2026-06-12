@@ -5,6 +5,12 @@ packages for various devices. The Fuchsia build system uses [GN][gn-main], a
 meta-build system that generates build files consumed by [Ninja][ninja-main],
 which executes the actual build.
 
+> **Note:**
+> Most developers should interact with the build system through [`fx` workflows](fx.md)
+> (such as `fx build` and `fx set`) rather than running GN, Ninja, or Bazel directly
+> (even via wrappers like `fx gn` or `fx ninja`).
+
+
 Note: Zircon uses a different build system, but it also uses GN and
 Ninja.
 
@@ -15,13 +21,14 @@ build][gn-preso], which outlines the basic principles of the GN build system.
 
 The following sections cover several concepts around Fuchsia's build system.
 
-### Boards and products
+### Build configuration
 
-The contents of the generated Fuchsia images are controlled by a combination of
-a board and a product. **Boards and products are build targets that define the
-packages and dependencies** that are included in images. For more information
-on the structure and usage of these build configurations, see
-[boards and products](boards_and_products.md).
+The contents of the generated Fuchsia images are controlled by a build
+configuration, which is a combination of a board and a product.
+**Boards and products are build targets that define the packages and
+dependencies** that are included in images. For more information on the
+structure and usage of these build configurations, see
+[Build configuration](software_assembly/build_configuration.md).
 
 ### Build targets
 

@@ -834,7 +834,7 @@ Linked at relevant points in the document.
 
 [aib-docs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:bundles/assembly/BUILD.gn
 [antlion-builders]: https://ci.chromium.org/p/fuchsia/builders/global.ci/workstation_eng_paused.qemu-x64-debug-antlion
-[board-definition]: /docs/development/build/build_system/boards_and_products.md#boards
+[board-definition]: /docs/development/build/software_assembly/build_configuration.md#boards
 [chrome-test-realm]: https://source.chromium.org/chromium/chromium/src/+/main:fuchsia_web/common/test/test_realm_support.cc;drc=78920be75f4920a643dcece7ab29742a99377e2c;l=123
 [churn-policy]: /docs/contribute/governance/rfcs/0214_fuchsia_churn_policy.md
 [core-audio]: https://cs.opensource.google/fuchsia/fuchsia/+/main:products/common/core.gni;l=29;drc=c1946eee7aef8fe008361979a4d380e41809ca5e
@@ -857,7 +857,7 @@ Linked at relevant points in the document.
 [ota-updates]: /docs/concepts/packages/ota.md
 [package-repository-oot]: https://bugs.chromium.org/p/chromium/issues/detail?id=1033794#c20
 [product-assembly-process]: /docs/contribute/governance/rfcs/0072_standalone_image_assembly_tool.md
-[product-definition]: /docs/development/build/build_system/boards_and_products.md#products
+[product-definition]: /docs/development/build/software_assembly/build_configuration.md#products
 [products-dir]: https://cs.opensource.google/fuchsia/fuchsia/+/main:products/
 [rfc-0095]: /docs/contribute/governance/rfcs/0095_build_and_assemble_workstation_out_of_tree.md
 [rfc-0115]: /docs/contribute/governance/rfcs/0115_build_types.md

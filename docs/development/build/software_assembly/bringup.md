@@ -3,8 +3,8 @@
 The `bringup` product is the most minimal viable target for development. It is
 a minimal feature set product that is focused on being very simple and very lean.
 
-Note that the name `bringup` build should not imply “only used during bringup of
-a new platform”, the name is historical.
+Note that the name `bringup` build should not imply "only used during bringup of
+a new platform", the name is historical.
 
 The bringup product serves at least these purposes:
 

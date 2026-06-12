@@ -1,8 +1,6 @@
-# Products and Boards
+# Build configuration
 
-[**Products**][products-source] and [**Boards**][boards-source] are GN
-includes used in combination to provide a baseline configuration for a
-Fuchsia build.
+A build configuration uses a combination of a [**product**][products-source] and a [**board**][boards-source] (which are GN includes) to provide a baseline configuration for a Fuchsia build.
 
 It is expected that a GN build configuration include exactly one board GNI
 file, and one product GNI file. In [fx][fx] this pair is the primary argument
@@ -81,7 +79,7 @@ cannot use the `fx` commands, such as
 <code>[fx shell](/docs/development/build/fx.md#connect-to-a-target-shell)</code>,
 that require network connectivity.
 
-For more see [Bringup Product Definition](/docs/development/build/build_system/bringup.md)
+For more see [Bringup product definition](/docs/development/build/software_assembly/bringup.md)
 
 ### Core {#core-product}
 

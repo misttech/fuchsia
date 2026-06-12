@@ -161,7 +161,7 @@ Is there any background material that might be helpful when reading this
 proposal? For instance, do other operating systems address the same problem this
 proposal addresses?
 
-[build-products]: /docs/development/build/build_system/boards_and_products.md#products
+[build-products]: /docs/development/build/software_assembly/build_configuration.md#products
 [contributor-guide]: /CONTRIBUTING.md
 [fec]: /docs/contribute/governance/eng_council.md
 [fuchsia-abi]: /docs/concepts/kernel/system.md

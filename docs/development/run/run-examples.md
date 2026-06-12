@@ -72,7 +72,7 @@ The `BUILD.gn` file declares the build targets for a `fuchsia_component()` and
 `fuchsia_package()`.
 
 Note: If you aren't familiar with GN, see
-[Introduction to GN](/docs/development/build/build_system/intro.md).
+[Introduction to GN](/docs/development/build/gn_concepts/intro.md).
 
 * {C++}
 
@@ -128,7 +128,7 @@ fx build
 ```
 
 You now have a build that includes the example package that can be
-[fetched and launched on demand](/docs/development/build/build_system/boards_and_products.md#universe).
+[fetched and launched on demand](/docs/development/build/software_assembly/build_configuration.md#universe).
 
 ### Explore your product configuration {#explore-your-product-configuration}
 

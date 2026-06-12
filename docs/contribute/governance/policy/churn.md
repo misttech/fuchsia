@@ -82,7 +82,7 @@ others, including changes initiated by an RFC:
     quarters, so notify teams more than a week before the quarter begins.
  3. Proceed with the migration.
 
-[build-products]: /docs/development/build/build_system/boards_and_products.md#products
+[build-products]: /docs/development/build/software_assembly/build_configuration.md#products
 [fec]: /docs/contribute/governance/eng_council.md
 [fuchsia-abi]: /docs/concepts/kernel/system.md
 [fuchsia-sdk]: /docs/development/sdk/index.md

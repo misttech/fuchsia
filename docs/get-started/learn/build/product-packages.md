@@ -63,7 +63,7 @@ services into the disk image for the target device. The examples would only be
 available on demand from a package server.
 
 Note: For more details on product configurations and dependencies, see
-[Products and Boards](/docs/development/build/build_system/boards_and_products.md).
+[Products and boards](/docs/development/build/software_assembly/build_configuration.md).
 
 ## Manual build customization
 

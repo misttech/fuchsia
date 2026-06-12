@@ -45,7 +45,7 @@ class ParseResult:
 
 # This supports distribution manifest as JSON files which are lists of objects
 # (dictionaries in Python), fully documented at:
-# //docs/concepts/build_system/internals/manifest_formats.md
+# //docs/development/build/gn_concepts/internals/manifest_formats.md
 #
 # Note that it is possible for an expanded manifest to have several entries
 # for the same destination path. If all entries have the same source

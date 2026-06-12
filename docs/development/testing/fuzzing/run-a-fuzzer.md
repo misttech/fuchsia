@@ -171,7 +171,7 @@ See [Handling results found through fuzzing](handle-results.md#clusterfuzz-bugs)
 [component-resolvers]: /docs/concepts/components/v2/capabilities/resolver.md
 [clusterfuzz]: https://google.github.io/clusterfuzz/
 
-[fuchsia-gn]: /docs/development/build/build_system/intro.md
+[fuchsia-gn]: /docs/development/build/gn_concepts/intro.md
 [fx-serve]: /tools/devshell/serve
 [glossary.component_url]: /docs/glossary/README.md#component_url
 [options]: https://llvm.org/docs/LibFuzzer.html#options

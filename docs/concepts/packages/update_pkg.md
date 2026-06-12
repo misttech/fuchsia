@@ -98,4 +98,4 @@ The structure of the update package, `fuchsia-pkg://fuchsia.com/update`, contain
     ```
 <!-- Reference links -->
 
-[build_info]: /docs/development/build/build_system/build_information.md
+[build_info]: /docs/development/build/software_assembly/runtime_build_info.md

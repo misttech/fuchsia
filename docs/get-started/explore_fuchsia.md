@@ -76,7 +76,7 @@ check out the following resources:
 *   [Workflow tips and questions](/docs/development/source_code/workflow_tips_and_faq.md)
 *   [Configure editors](/docs/reference/tools/editors/README.md)
 *   [Source code layout](/docs/development/source_code/layout.md)
-*   [Build system](/docs/development/build/build_system/index.md)
+*   [Build system](/docs/development/build/overview.md)
 
 <!-- Reference links -->
 

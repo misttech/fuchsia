@@ -222,4 +222,4 @@ For the `url` parameter provide a URL in the form of
 
 <!-- Reference links -->
 
-[build-manifest-file]: /docs/development/build/build_system/internals/manifest_formats.md
+[build-manifest-file]: /docs/development/build/gn_concepts/internals/manifest_formats.md

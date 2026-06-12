@@ -96,7 +96,7 @@ template("renamed_binary") {
 
       # Used by the distribution_manifest() template.
       # This create a 'renaming entry' as described in
-      # //docs/concepts/build_system/internals/manifest_formats.mg.
+      # //docs/development/build/gn_concepts/internals/manifest_formats.mg.
       distribution_entries = [
         {
           renamed_source = _rebased_source

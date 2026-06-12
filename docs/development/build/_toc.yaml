@@ -14,9 +14,14 @@ toc:
   path: /docs/development/build/fx.md
 - title: "Developing with Fuchsia packages"
   path: /docs/development/build/package_update.md
-- title: "Build system"
+- title: "Fuchsia build system overview"
+  path: /docs/development/build/overview.md
+- title: "Build system (GN)"
   section:
-  - include: /docs/development/build/build_system/_toc.yaml
+  - include: /docs/development/build/gn_concepts/_toc.yaml
+- title: "Build system (Bazel)"
+  section:
+  - include: /docs/development/build/bazel_concepts/_toc.yaml
 - title: "Software assembly"
   section:
   - include: /docs/development/build/software_assembly/_toc.yaml
@@ -44,8 +49,3 @@ toc:
     path: /docs/development/build/ninja_fuchsia_improvements.md
   - title: "Hermetic actions check"
     path: /docs/development/build/hermetic_actions.md
-  - title: "GN root targets"
-    path: /docs/development/build/gn_root_targets.md
-  - title: "Bazel concepts"
-    section:
-    - include: /docs/development/build/bazel_concepts/_toc.yaml

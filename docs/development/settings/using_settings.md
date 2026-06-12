@@ -206,7 +206,7 @@ ffx setui privacy -u true
 <!-- link labels -->
 [sdk]: /sdk/fidl/fuchsia.settings/
 [fidl]: /docs/concepts/fidl/overview.md
-[build]: /docs/development/build/build_system/fuchsia_build_system_overview.md
+[build]: /docs/development/build/overview.md
 [accessibility]: /sdk/fidl/fuchsia.settings/accessibility.fidl
 [manifest]: /docs/concepts/components/v2/component_manifests.md
 [hanging-get]: /docs/development/api/fidl.md#hanging-get

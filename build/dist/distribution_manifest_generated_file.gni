@@ -14,7 +14,8 @@ template("distribution_manifest_generated_file") {
                              "visibility",
                            ])
 
-    # See //docs/concepts/build_system/internals/distribution_manifest.md
+    # See
+    # //docs/development/build/gn_concepts/internals/distribution_manifest.md
     # for the schema of `distribution_entries` and `distribution_entries_files`,
     # which correspond to "regular" and "file" entries, respectively.
     data_keys = [

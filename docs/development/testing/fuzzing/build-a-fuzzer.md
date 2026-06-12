@@ -287,7 +287,7 @@ Additional `ffx fuzz` commands can be used to [run a fuzzer](run-a-fuzzer.md).
 [asan-uaf]: https://github.com/google/sanitizers/wiki/AddressSanitizerExampleUseAfterFree
 [asan-uar]: https://github.com/google/sanitizers/wiki/AddressSanitizerExampleUseAfterReturn
 [corpus]: https://llvm.org/docs/LibFuzzer.html#corpus
-[fuchsia-gn]: /docs/development/build/build_system/intro.md
+[fuchsia-gn]: /docs/development/build/gn_concepts/intro.md
 [fuchsia_library_fuzzer.gni]: /build/fuzzing/fuchsia_library_fuzzer.gni
 [fuchsia_fuzzer_component.gni]: /build/fuzzing/fuchsia_fuzzer_component.gni
 [fuzz-target]: https://llvm.org/docs/LibFuzzer.html#fuzz-target
@@ -306,4 +306,4 @@ Additional `ffx fuzz` commands can be used to [run a fuzzer](run-a-fuzzer.md).
 [ubsan]: https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
 [ubsan-sio]: https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#usage
 [ubsan-all]: https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#available-checks
-[variants]: /docs/development/build/build_system/variants.md
+[variants]: /docs/development/build/gn_concepts/variants.md

@@ -327,4 +327,4 @@ early on, and it turned out to be a bad idea. For example, we used to have
 `rust_toolchain` but later removed it. We are also [planning to
 remove](https://fxbug.dev/42059770) the `fidl_toolchain`.
 
-[gn-toolchains-overview]: /docs//development/build/build_system/internals/toolchains/gn_toolchains_overview.md
+[gn-toolchains-overview]: /docs//development/build/gn_concepts/internals/toolchains/gn_toolchains_overview.md

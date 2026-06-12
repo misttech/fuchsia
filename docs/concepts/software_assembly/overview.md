@@ -55,6 +55,8 @@ or GN build rules to construct and use these inputs.
     [https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/platform][cipd-platform].
     To learn how to add to the platform, see the
     [Codelab: Implementing a platform feature](/docs/development/build/software_assembly/implementing_platform_feature.md).
+    For development purposes, you can temporarily override platform configuration values, see
+    [Use developer overrides for assembly of a Fuchsia product](/docs/development/build/software_assembly/developer_overrides.md).
 
 *   The **product config** is produced by a developer defining the end-user
     experience. It may contain flags indicating which features of the platform to

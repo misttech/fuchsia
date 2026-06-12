@@ -9618,7 +9618,7 @@ From //build/config/clang/time_trace.gni:8
 
 *This should never be set as a build argument.* It exists only to be set in
 `toolchain_args`. See
-//docs/concepts/build_system/internals/toolchains/build_arguments.md#toolchain_variant
+//docs/development/build/gn_concepts/internals/toolchains/build_arguments.md#toolchain_variant
 for details and documentation for each field.
 
 **Current value (from the default):**

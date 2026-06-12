@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 # Extracts a zip file and writes a partial distribution manifest.
-# See //docs/development/build/build_system/internals/manifest_formats.md
+# See //docs/development/build/gn_concepts/internals/manifest_formats.md
 
 import json
 import sys
