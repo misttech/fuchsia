@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, anyhow};
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_starnix_binder as fbinder;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
@@ -11,10 +14,7 @@ use log::{error, warn};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, fuchsia_async as fasync,
-    zx,
-};
+use zx;
 
 enum Services {
     LutexController(fbinder::LutexControllerRequestStream),
@@ -103,6 +103,20 @@ impl LutexState {
         });
         Ok(woken as u64)
     }
+
+    async fn requeue(
+        &self,
+        _first_vmo: zx::Vmo,
+        _first_offset: u64,
+        _second_vmo: Option<zx::Vmo>,
+        _second_offset: u64,
+        _wake_count: u32,
+        _requeue_count: u32,
+        _expected_value: Option<u32>,
+    ) -> Result<u64, fposix::Errno> {
+        // no current need for this impl
+        panic!("not yet implemented");
+    }
 }
 
 async fn serve_lutex_controller(
@@ -137,6 +151,37 @@ async fn serve_lutex_controller(
                         }
                     }))
                     .context("Unable to send LutexControllerRequest::WaitBitset response")
+            }
+            fbinder::LutexControllerRequest::CmpRequeue { payload, responder } => {
+                let first_vmo = payload.first_vmo.ok_or_else(|| anyhow!("no first_vmo"))?;
+                let first_offset =
+                    payload.first_offset.ok_or_else(|| anyhow!("no first_offset"))?;
+                let second_vmo = payload.second_vmo;
+                let second_offset =
+                    payload.second_offset.ok_or_else(|| anyhow!("no second_offset"))?;
+                let wake_count = payload.wake_count.ok_or_else(|| anyhow!("no wake_count"))?;
+                let requeue_count =
+                    payload.requeue_count.ok_or_else(|| anyhow!("no requeue_count"))?;
+                let cmp_val = payload.cmp_val;
+                responder
+                    .send(
+                        state
+                            .requeue(
+                                first_vmo,
+                                first_offset,
+                                second_vmo,
+                                second_offset,
+                                wake_count,
+                                requeue_count,
+                                cmp_val,
+                            )
+                            .await
+                            .map(|count| fbinder::CmpRequeueResponse {
+                                count: Some(count as u64),
+                                ..fbinder::CmpRequeueResponse::default()
+                            }),
+                    )
+                    .context("Unable to send LutexControllerRequest::Requeue response")
             }
             fbinder::LutexControllerRequest::_UnknownMethod { ordinal, .. } => {
                 warn!("Unknown LutexController ordinal: {}", ordinal);

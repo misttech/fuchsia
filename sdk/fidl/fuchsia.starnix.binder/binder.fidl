@@ -220,6 +220,47 @@ open protocol LutexController {
         /// The number of waiters that were woken up.
         1: count uint64;
     }) error fuchsia.posix.Errno;
+
+    /// FUTEX_CMP_REQUEUE and FUTEX_REQUEUE commands
+    flexible CmpRequeue(@generated_name("CmpRequeueRequest") resource table {
+        /// The vmo containing the first futex's word.
+        /// Mandatory
+        1: first_vmo zx.Handle:VMO;
+        /// The offset in first_vmo of the first futex's word.
+        /// Mandatory
+        2: first_offset uint64;
+        /// The vmo containing the second futex's word.
+        /// Optional. If not present, the first_vmo is also used as the
+        /// second_vmo.
+        3: second_vmo zx.Handle:VMO;
+        /// The offset in second_vmo of the second futex's word.
+        /// Mandatory
+        4: second_offset uint64;
+        /// Maximum number of waiters to wake. Waiters beyond this count are
+        /// moved to be waiting on the second futex instead, up to
+        /// max_requeue_count.
+        /// Mandatory
+        5: wake_count uint32;
+        /// Maximum number of waiters to re-queue (among those which were not
+        /// woken) on the second futex. In other words, maximum number of
+        /// waiters which get changed from waiting on the first futex to waiting
+        /// on the second futex instead. Waiters beyond this are left waiting on
+        /// the first futex.
+        /// Mandatory
+        6: requeue_count uint32;
+        /// Value that must match the uint32_t at first_vmo first_offset for the
+        /// requeue to occur, else no requeue occurs and error will be EAGAIN.
+        /// Optional. If not present, the requeue proceeds regardless of the
+        /// value of the uint32_t at first_vmo first_offset. In other words,
+        /// this field set/un-set chooses FUTEX_CMP_REQUEUE/FUTEX_REQUEUE
+        /// semantics respectively. In addition, this controls the semantics of
+        /// the "count" field in a success response, per differing semantics of
+        /// FUTEX_CMP_REQUEUE and FUTEX_REQUEUE return values.
+        7: cmp_val uint32;
+    }) -> (@generated_name("CmpRequeueResponse") resource table {
+        /// The number of waiters that were woken up plus the number re-queued.
+        1: count uint64;
+    }) error fuchsia.posix.Errno;
 };
 
 /// The location and size of reads or writes for an ioctl.

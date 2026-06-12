@@ -179,29 +179,7 @@ impl<Key: FutexKey> FutexTable<Key> {
             }
         }
 
-        let woken;
-        let to_requeue;
-        match state.waiters.entry(key) {
-            Entry::Vacant(_) => return Ok(0),
-            Entry::Occupied(mut entry) => {
-                // Wake up at most `wake_count` waiters.
-                woken = entry.get_mut().notify(FUTEX_BITSET_MATCH_ANY, wake_count);
-
-                // Dequeue up to `requeue_count` waiters to requeue below.
-                to_requeue = entry.get_mut().split_for_requeue(requeue_count);
-
-                if entry.get().is_empty() {
-                    entry.remove();
-                }
-            }
-        }
-
-        let requeued = to_requeue.0.len();
-        if !to_requeue.is_empty() {
-            state.get_waiters_or_default(new_key).transfer(to_requeue);
-        }
-
-        Ok(woken + requeued)
+        Ok(state.requeue(key, new_key, wake_count, requeue_count))
     }
 
     /// Lock the futex at the given address.
@@ -420,6 +398,39 @@ impl FutexTable<SharedFutexKey> {
         Ok(self.state.lock(locked).wake(SharedFutexKey::new(&memory, offset), count, mask))
     }
 
+    pub fn external_requeue<L>(
+        &self,
+        locked: &mut Locked<L>,
+        first_memory: MemoryObject,
+        first_offset: u64,
+        second_memory: Option<MemoryObject>,
+        second_offset: u64,
+        wake_count: usize,
+        requeue_count: usize,
+        expected_value: Option<u32>,
+    ) -> Result<usize, Errno>
+    where
+        L: LockBefore<TerminalLock>,
+    {
+        let first_key = SharedFutexKey::new(&first_memory, first_offset);
+        let second_key = match second_memory.as_ref() {
+            Some(second_memory) => SharedFutexKey::new(second_memory, second_offset),
+            None => SharedFutexKey::new(&first_memory, second_offset),
+        };
+        // If/when we move from a single table mutex to a mutex per futex, we'll likely want to
+        // define a consistent SharedFutexKey sort order independent of which is "first" and which
+        // is "second" in this call. Then we can acquire each of the two mutexes corresponding to
+        // each of the two futexes per that sort order. This way, we can be holding both mutexes to
+        // make the requeue atomic despite each futex having its own mutex, while avoiding
+        // deadlocks. But for now we lock the whole FutexTable.
+        let mut state = self.state.lock(locked);
+        if let Some(expected) = expected_value {
+            // The state being locked is how this is included in the set of atomic changes.
+            Self::external_check_futex_value(&first_memory, first_offset, expected)?;
+        }
+        Ok(state.requeue(first_key, second_key, wake_count, requeue_count))
+    }
+
     fn external_check_futex_value(
         memory: &MemoryObject,
         offset: u64,
@@ -512,6 +523,38 @@ impl<Key: FutexKey> FutexTableState<Key> {
                 count
             }
         }
+    }
+
+    fn requeue(
+        &mut self,
+        key: Key,
+        new_key: Key,
+        wake_count: usize,
+        requeue_count: usize,
+    ) -> usize {
+        let woken;
+        let to_requeue;
+        match self.waiters.entry(key) {
+            Entry::Vacant(_) => return 0,
+            Entry::Occupied(mut entry) => {
+                // Wake up at most `wake_count` waiters.
+                woken = entry.get_mut().notify(FUTEX_BITSET_MATCH_ANY, wake_count);
+
+                // Dequeue up to `requeue_count` waiters to requeue below.
+                to_requeue = entry.get_mut().split_for_requeue(requeue_count);
+
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+            }
+        }
+
+        let requeued = to_requeue.0.len();
+        if !to_requeue.is_empty() {
+            self.get_waiters_or_default(new_key).transfer(to_requeue);
+        }
+
+        woken + requeued
     }
 
     /// Returns the RT-Mutex waiters queue for a given address, creating an empty queue if none is

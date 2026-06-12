@@ -564,6 +564,40 @@ pub async fn serve_lutex_controller(
                         .send(result)
                         .context("Unable to send LutexControllerRequest::WakeBitset response")?;
                 }
+                fbinder::LutexControllerRequest::CmpRequeue { payload, responder } => {
+                    let result = (|| {
+                        let mut unlocked = kernel.kthreads.unlocked_for_async();
+                        let first_vmo = payload.first_vmo.ok_or_else(|| errno!(EINVAL))?;
+                        let first_offset = payload.first_offset.ok_or_else(|| errno!(EINVAL))?;
+                        let second_vmo = payload.second_vmo;
+                        let second_offset = payload.second_offset.ok_or_else(|| errno!(EINVAL))?;
+                        let wake_count = payload.wake_count.ok_or_else(|| errno!(EINVAL))?;
+                        let requeue_count = payload.requeue_count.ok_or_else(|| errno!(EINVAL))?;
+                        let cmp_val = payload.cmp_val;
+                        kernel.shared_futexes.external_requeue(
+                            &mut unlocked,
+                            first_vmo.into(),
+                            first_offset,
+                            second_vmo.map(Into::into),
+                            second_offset,
+                            wake_count as usize,
+                            requeue_count as usize,
+                            cmp_val,
+                        )
+                    })();
+                    let result = result
+                        .map(|count| fbinder::CmpRequeueResponse {
+                            count: Some(count as u64),
+                            ..fbinder::CmpRequeueResponse::default()
+                        })
+                        .map_err(|e: Errno| {
+                            fposix::Errno::from_primitive(e.code.error_code() as i32)
+                                .unwrap_or(fposix::Errno::Einval)
+                        });
+                    responder
+                        .send(result)
+                        .context("Unable to send LutexControllerRequest::Requeue response")?;
+                }
                 fbinder::LutexControllerRequest::_UnknownMethod { ordinal, .. } => {
                     log_warn!("Unknown LutexController ordinal: {}", ordinal);
                 }
@@ -665,6 +699,124 @@ mod tests {
 
                             // The wait should now return.
                             assert!(wait.await.expect("await_answer").is_ok());
+
+                            // test cmp_requeue
+                            {
+                                let vmo2 = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
+                                let mut wait1 = Box::pin(
+                                    lutex_controller.wait_bitset(fbinder::WaitBitsetRequest {
+                                        vmo: Some(
+                                            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                .expect("duplicate vmo"),
+                                        ),
+                                        offset: Some(4),
+                                        value: Some(0),
+                                        deadline: None,
+                                        ..Default::default()
+                                    }),
+                                );
+                                let mut wait2 = Box::pin(
+                                    lutex_controller.wait_bitset(fbinder::WaitBitsetRequest {
+                                        vmo: Some(
+                                            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                .expect("duplicate vmo"),
+                                        ),
+                                        offset: Some(4),
+                                        value: Some(0),
+                                        deadline: None,
+                                        ..Default::default()
+                                    }),
+                                );
+                                let cmp_requeue_response = lutex_controller
+                                    .cmp_requeue(fbinder::CmpRequeueRequest {
+                                        first_vmo: Some(
+                                            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                .expect("duplicate vmo"),
+                                        ),
+                                        first_offset: Some(4),
+                                        second_vmo: Some(
+                                            vmo2.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                .expect("duplicate vmo"),
+                                        ),
+                                        second_offset: Some(8),
+                                        wake_count: Some(1),
+                                        requeue_count: Some(1),
+                                        cmp_val: Some(0xBAD),
+                                        ..Default::default()
+                                    })
+                                    .await
+                                    .expect("got_answer")
+                                    .unwrap_err();
+                                // 0xBAD is not 0x0, so EAGAIN expected
+                                assert_matches!(cmp_requeue_response, fposix::Errno::Eagain);
+                                let cmp_requeue_response2: fbinder::CmpRequeueResponse =
+                                    lutex_controller
+                                        .cmp_requeue(fbinder::CmpRequeueRequest {
+                                            first_vmo: Some(
+                                                vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                    .expect("duplicate vmo"),
+                                            ),
+                                            first_offset: Some(4),
+                                            second_vmo: Some(
+                                                vmo2.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                    .expect("duplicate vmo"),
+                                            ),
+                                            second_offset: Some(8),
+                                            wake_count: Some(1),
+                                            requeue_count: Some(1),
+                                            cmp_val: Some(0x0),
+                                            ..Default::default()
+                                        })
+                                        .await
+                                        .expect("got_answer")
+                                        .expect("got_response");
+                                // 1 woken, 1 re-queued
+                                assert_matches!(cmp_requeue_response2.count, Some(2));
+                                // give wait1 and wait2 a chance to complete; we don't rely on this
+                                // being long enough however
+                                fasync::Timer::new(
+                                    fasync::MonotonicDuration::from_millis(100).after_now(),
+                                )
+                                .await;
+                                let mut still_pending_count: u32 = 0;
+                                // Up to one of wait1 and wait2 can be completed by this point, so at
+                                // least one must still be pending.
+                                let wait1_poll = futures::poll!(&mut wait1);
+                                if wait1_poll.is_pending() {
+                                    still_pending_count += 1;
+                                }
+                                let wait2_poll = futures::poll!(&mut wait2);
+                                if wait2_poll.is_pending() {
+                                    still_pending_count += 1;
+                                }
+                                assert!(still_pending_count >= 1);
+                                // at this point exactly one of wait1 or wait2 will remain pending until
+                                // we wake it via vmo2 - we don't know which of wait1 or wait2 we're
+                                // waking here (which is fine)
+                                let vmo2_wake_response: fbinder::WakeResponse = lutex_controller
+                                    .wake_bitset(fbinder::WakeBitsetRequest {
+                                        vmo: Some(
+                                            vmo2.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                                .expect("duplicate vmo"),
+                                        ),
+                                        offset: Some(8),
+                                        count: Some(1),
+                                        mask: None,
+                                        ..Default::default()
+                                    })
+                                    .await
+                                    .expect("wake_answer")
+                                    .expect("wake_response");
+                                assert_eq!(vmo2_wake_response.count, Some(1));
+                                // Now we know that both wait1 and wait2 are unblocked, so we can
+                                // wait on both of them.
+                                if wait1_poll.is_pending() {
+                                    assert!(wait1.await.expect("await_answer").is_ok());
+                                }
+                                if wait2_poll.is_pending() {
+                                    assert!(wait2.await.expect("await_answer").is_ok());
+                                }
+                            }
                         };
 
                         let (server_res, _) = futures::join!(server_fut, client_fut);
