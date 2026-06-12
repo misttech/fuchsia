@@ -781,11 +781,14 @@ struct SupplicantStaNetworkState {
     ssid: Option<Vec<u8>>,
     credential: Credential,
     bssid: Option<Bssid>,
+    // This is set through the HAL. If it is not set, there will be no restrictions on the security
+    // type used.
+    key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
 }
 
 impl Default for SupplicantStaNetworkState {
     fn default() -> Self {
-        Self { ssid: None, credential: Credential::None, bssid: None }
+        Self { ssid: None, credential: Credential::None, bssid: None, key_mgmt: None }
     }
 }
 
@@ -1081,8 +1084,16 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                 sta_network_state.lock().ssid.replace(ssid);
             }
         }
-        fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt { .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt");
+        fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt { payload, .. } => {
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
+            if let Some(key_mgmt_mask) = payload.key_mgmt_mask {
+                sta_network_state.lock().key_mgmt.replace(key_mgmt_mask);
+            }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase { payload, .. } => {
             let _ = get_iface_and_log(
@@ -1167,64 +1178,66 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                 &iface_name,
             )
             .await?;
-            let (ssid, credential, bssid) = {
+            let (ssid, credential, bssid, key_mgmt) = {
                 let state = sta_network_state.lock();
                 let credential = state.credential.clone();
-                (state.ssid.clone(), credential, state.bssid)
+                (state.ssid.clone(), credential, state.bssid, state.key_mgmt)
             };
 
             let (result, status_code, connected_bssid, connection_ctx) = match ssid {
-                Some(ssid) => match iface.connect_to_network(&ssid[..], credential, bssid).await {
-                    Ok(ConnectResult::Success(connected)) => {
-                        info!("Connected to requested network");
-                        // Report the requested SSID for OWE transition networks.
-                        let is_owe_transition = connected.ssid_if_owe_transition.is_some();
-                        let ssid = connected
-                            .ssid_if_owe_transition
-                            .unwrap_or_else(|| connected.bss.ssid.clone());
+                Some(ssid) => {
+                    match iface.connect_to_network(&ssid[..], credential, bssid, key_mgmt).await {
+                        Ok(ConnectResult::Success(connected)) => {
+                            info!("Connected to requested network");
+                            // Report the requested SSID for OWE transition networks.
+                            let is_owe_transition = connected.ssid_if_owe_transition.is_some();
+                            let ssid = connected
+                                .ssid_if_owe_transition
+                                .unwrap_or_else(|| connected.bss.ssid.clone());
 
-                        telemetry_sender.send(TelemetryEvent::ConnectResult {
-                            result: fidl_ieee80211::StatusCode::Success,
-                            bss: connected.bss.clone(),
-                            is_credential_rejected: false,
-                            is_owe_transition,
-                        });
-                        let event = fidl_wlanix::SupplicantStaIfaceCallbackOnStateChangedRequest {
-                            new_state: Some(fidl_wlanix::StaIfaceCallbackState::Completed),
-                            bssid: Some(connected.bss.bssid.to_array()),
-                            // TODO(b/316034688): do we need to keep track of actual id?
-                            id: Some(1),
-                            ssid: Some(ssid.into()),
-                            ..Default::default()
-                        };
-                        maybe_run_callback(
-                            "SupplicantStaIfaceCallbackProxy::onStateChanged",
-                            |callback_proxy| callback_proxy.on_state_changed(&event),
-                            &mut sta_iface_state.lock().callback,
-                        );
-                        (
-                            Ok(()),
-                            fidl_ieee80211::StatusCode::Success,
-                            Some(connected.bss.bssid),
-                            Some(ConnectionContext {
-                                stream: connected.transaction_stream,
-                                original_bss_desc: connected.bss.clone(),
-                                most_recent_connect_time: fasync::BootInstant::now(),
-                                current_rssi_dbm: connected.bss.rssi_dbm,
-                                current_snr_db: connected.bss.snr_db,
-                                current_channel: connected.bss.channel,
-                            }),
-                        )
-                    }
-                    Ok(ConnectResult::Fail(fail)) => {
-                        warn!("Connection failed with status code: {:?}", fail.status_code);
-                        telemetry_sender.send(TelemetryEvent::ConnectResult {
-                            result: fail.status_code,
-                            bss: fail.bss.clone(),
-                            is_credential_rejected: fail.is_credential_rejected,
-                            is_owe_transition: fail.is_owe_transition,
-                        });
-                        let event =
+                            telemetry_sender.send(TelemetryEvent::ConnectResult {
+                                result: fidl_ieee80211::StatusCode::Success,
+                                bss: connected.bss.clone(),
+                                is_credential_rejected: false,
+                                is_owe_transition,
+                            });
+                            let event =
+                                fidl_wlanix::SupplicantStaIfaceCallbackOnStateChangedRequest {
+                                    new_state: Some(fidl_wlanix::StaIfaceCallbackState::Completed),
+                                    bssid: Some(connected.bss.bssid.to_array()),
+                                    // TODO(b/316034688): do we need to keep track of actual id?
+                                    id: Some(1),
+                                    ssid: Some(ssid.into()),
+                                    ..Default::default()
+                                };
+                            maybe_run_callback(
+                                "SupplicantStaIfaceCallbackProxy::onStateChanged",
+                                |callback_proxy| callback_proxy.on_state_changed(&event),
+                                &mut sta_iface_state.lock().callback,
+                            );
+                            (
+                                Ok(()),
+                                fidl_ieee80211::StatusCode::Success,
+                                Some(connected.bss.bssid),
+                                Some(ConnectionContext {
+                                    stream: connected.transaction_stream,
+                                    original_bss_desc: connected.bss.clone(),
+                                    most_recent_connect_time: fasync::BootInstant::now(),
+                                    current_rssi_dbm: connected.bss.rssi_dbm,
+                                    current_snr_db: connected.bss.snr_db,
+                                    current_channel: connected.bss.channel,
+                                }),
+                            )
+                        }
+                        Ok(ConnectResult::Fail(fail)) => {
+                            warn!("Connection failed with status code: {:?}", fail.status_code);
+                            telemetry_sender.send(TelemetryEvent::ConnectResult {
+                                result: fail.status_code,
+                                bss: fail.bss.clone(),
+                                is_credential_rejected: fail.is_credential_rejected,
+                                is_owe_transition: fail.is_owe_transition,
+                            });
+                            let event =
                             fidl_wlanix::SupplicantStaIfaceCallbackOnAssociationRejectedRequest {
                                 ssid: Some(fail.bss.ssid.to_vec()),
                                 bssid: Some(fail.bss.bssid.to_array()),
@@ -1232,23 +1245,24 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                                 timed_out: Some(fail.timed_out),
                                 ..Default::default()
                             };
-                        maybe_run_callback(
-                            "SupplicantStaIfaceCallbackProxy::onAssociationRejected",
-                            |callback_proxy| callback_proxy.on_association_rejected(&event),
-                            &mut sta_iface_state.lock().callback,
-                        );
-                        (Ok(()), fail.status_code, None, None)
+                            maybe_run_callback(
+                                "SupplicantStaIfaceCallbackProxy::onAssociationRejected",
+                                |callback_proxy| callback_proxy.on_association_rejected(&event),
+                                &mut sta_iface_state.lock().callback,
+                            );
+                            (Ok(()), fail.status_code, None, None)
+                        }
+                        Err(e) => {
+                            error!("Error while connecting to network: {}", e);
+                            (
+                                Err(zx::sys::ZX_ERR_INTERNAL),
+                                fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                                None,
+                                None,
+                            )
+                        }
                     }
-                    Err(e) => {
-                        error!("Error while connecting to network: {}", e);
-                        (
-                            Err(zx::sys::ZX_ERR_INTERNAL),
-                            fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
-                            None,
-                            None,
-                        )
-                    }
-                },
+                }
                 None => {
                     warn!("No SSID set. fidl_wlanix::SupplicantStaNetworkRequest::Select ignored");
                     (
@@ -4289,7 +4303,7 @@ mod tests {
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
             iface_calls.lock()[0].clone(),
-            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid, .. } => (ssid, credential, bssid)
         );
         assert_eq!(ssid, vec![b'f', b'o', b'o']);
         assert_eq!(credential, Credential::None);
@@ -4354,7 +4368,7 @@ mod tests {
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
             iface_calls.lock()[0].clone(),
-            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid, .. } => (ssid, credential, bssid)
         );
         assert_eq!(ssid, vec![b'f', b'o', b'o']);
         assert_eq!(credential, Credential::Password(passphrase));
@@ -4406,7 +4420,7 @@ mod tests {
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
             iface_calls.lock()[0].clone(),
-            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid, .. } => (ssid, credential, bssid)
         );
         assert_eq!(ssid, vec![b'f', b'o', b'o']);
         assert_eq!(credential, Credential::SaePassword(password));
@@ -4481,7 +4495,7 @@ mod tests {
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
             iface_calls.lock()[0].clone(),
-            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid, .. } => (ssid, credential, bssid)
         );
         assert_eq!(ssid, vec![b'f', b'o', b'o']);
         // Verify that the credential to use is the one that was designated as the index to use.
@@ -4534,7 +4548,7 @@ mod tests {
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
             iface_calls.lock()[0].clone(),
-            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid } => (ssid, credential, bssid)
+            ClientIfaceCall::ConnectToNetwork { ssid, credential, bssid, .. } => (ssid, credential, bssid)
         );
         assert_eq!(ssid, vec![b'f', b'o', b'o']);
         assert_eq!(credential, Credential::None);
@@ -4595,6 +4609,44 @@ mod tests {
         let on_state_changed = assert_matches!(test_helper.exec.run_until_stalled(&mut next_callback_fut), Poll::Ready(Some(Ok(fidl_wlanix::SupplicantStaIfaceCallbackRequest::OnStateChanged { payload, .. }))) => payload);
         assert_eq!(on_state_changed.new_state, Some(fidl_wlanix::StaIfaceCallbackState::Completed));
         assert_eq!(on_state_changed.bssid, Some([42, 42, 42, 42, 42, 42]));
+    }
+
+    #[fuchsia::test]
+    fn test_supplicant_sta_network_set_key_mgmt() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let result = test_helper.supplicant_sta_network_proxy.set_key_mgmt(
+            &fidl_wlanix::SupplicantStaNetworkSetKeyMgmtRequest {
+                key_mgmt_mask: Some(fidl_wlanix::KeyMgmtMask::WPA_PSK),
+                ..Default::default()
+            },
+        );
+        assert_matches!(result, Ok(()));
+
+        let result = test_helper.supplicant_sta_network_proxy.set_ssid(
+            &fidl_wlanix::SupplicantStaNetworkSetSsidRequest {
+                ssid: Some(vec![b'f', b'o', b'o']),
+                ..Default::default()
+            },
+        );
+        assert_matches!(result, Ok(()));
+        assert_matches!(test_helper.supplicant_sta_network_proxy.clear_bssid(), Ok(()));
+
+        let mut network_select_fut = test_helper.supplicant_sta_network_proxy.select();
+        assert_matches!(test_helper.exec.run_until_stalled(&mut network_select_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut network_select_fut),
+            Poll::Ready(Ok(Ok(())))
+        );
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        let key_mgmt = assert_matches!(
+            iface_calls.lock()[0].clone(),
+            ClientIfaceCall::ConnectToNetwork { key_mgmt, .. } => key_mgmt
+        );
+        assert_eq!(key_mgmt, Some(fidl_wlanix::KeyMgmtMask::WPA_PSK));
     }
 
     fn establish_open_connection(

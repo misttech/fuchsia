@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::bss_scorer::BssScorer;
-use crate::security::{Credential, get_authenticator};
+use crate::security::{Credential, get_authenticator, security_matches_key_mgmt};
 use anyhow::{Context, Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
@@ -382,6 +382,7 @@ pub(crate) trait ClientIface: Sync + Send {
         ssid: &[u8],
         credential: Credential,
         requested_bssid: Option<Bssid>,
+        key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
     ) -> Result<ConnectResult, Error>;
     async fn disconnect(&self) -> Result<(), Error>;
     fn get_connected_network(&self) -> Option<ConnectedNetwork>;
@@ -619,6 +620,7 @@ impl SmeClientIface {
         find_matching_network_in_scan(
             &owe_ie.ssid,
             &None,
+            &None,
             last_scan_results.results,
             &self.bss_scorer,
         )
@@ -710,6 +712,7 @@ impl ClientIface for SmeClientIface {
         ssid: &[u8],
         credential: Credential,
         bssid: Option<Bssid>,
+        key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
     ) -> Result<ConnectResult, Error> {
         // Sometimes a connect request is sent before the first scan.
         let refresh_scan = match &*self.last_scan_results.lock() {
@@ -730,8 +733,13 @@ impl ClientIface for SmeClientIface {
             None => bail!("No scan results available for connect attempt"),
         };
         info!("Checking for network in last scan: {} access points", last_scan_results.len());
-        let chosen_scan =
-            find_matching_network_in_scan(ssid, &bssid, last_scan_results, &self.bss_scorer);
+        let chosen_scan = find_matching_network_in_scan(
+            ssid,
+            &bssid,
+            &key_mgmt,
+            last_scan_results,
+            &self.bss_scorer,
+        );
 
         let (bss_description, compatible, ssid_if_owe_transition) = match chosen_scan {
             Some((bss_description, compatible)) => {
@@ -752,8 +760,12 @@ impl ClientIface for SmeClientIface {
             None => bail!("Requested network not found"),
         };
 
-        let authenticator = match get_authenticator(bss_description.bssid, compatible, &credential)
-        {
+        let authenticator = match get_authenticator(
+            bss_description.bssid,
+            compatible,
+            &credential,
+            key_mgmt,
+        ) {
             Some(authenticator) => authenticator,
             None => bail!(
                 "Failed to create authenticator for requested network. Unsupported security type, channel, or data rate."
@@ -1001,34 +1013,70 @@ impl ClientIface for SmeClientIface {
     }
 }
 
+fn check_scan_result_matches(
+    bss: &BssDescription,
+    compatible: &Compatible,
+    ssid: &[u8],
+    bssid: &Option<Bssid>,
+    key_mgmt: &Option<fidl_wlanix::KeyMgmtMask>,
+) -> bool {
+    if bss.ssid != *ssid {
+        return false;
+    }
+    if let Some(target_bssid) = bssid
+        && bss.bssid != *target_bssid
+    {
+        return false;
+    }
+    if let Some(mask) = key_mgmt {
+        let has_matching_protocol = compatible
+            .mutual_security_protocols()
+            .iter()
+            .any(|proto| security_matches_key_mgmt(proto, *mask));
+        if !has_matching_protocol {
+            let label = if bssid.is_some() { "SSID and BSSID" } else { "SSID" };
+            warn!(
+                "Scan result has matching {} but its compatible security {:?} do not match the requested key management mask: {:?}",
+                label,
+                compatible.mutual_security_protocols(),
+                mask
+            );
+            return false;
+        }
+    }
+    true
+}
+
 fn find_matching_network_in_scan(
     ssid: &[u8],
     bssid: &Option<Bssid>,
+    key_mgmt: &Option<fidl_wlanix::KeyMgmtMask>,
     scan_results: Vec<fidl_sme::ScanResult>,
     bss_scorer: &BssScorer,
 ) -> Option<(BssDescription, Compatible)> {
     let mut scan_results = scan_results
         .iter()
         .filter_map(|r| {
-            let bss_description = BssDescription::try_from(r.bss_description.clone());
-            let compatibility = Compatibility::try_from_fidl(r.compatibility.clone());
-            match (bss_description, compatibility) {
-                (Ok(bss_description), Ok(compatibility)) if bss_description.ssid == *ssid => {
-                    match compatibility {
-                        Ok(compatible) => match bssid {
-                            Some(bssid) if bss_description.bssid != *bssid => None,
-                            _ => Some((bss_description, compatible)),
-                        },
-                        Err(incompatible) => {
-                            error!(
-                                "BSS ({:?}) is incompatible: {}",
-                                bss_description.bssid, incompatible,
-                            );
-                            None
-                        }
+            let bss_description = BssDescription::try_from(r.bss_description.clone()).ok()?;
+            let compatibility = Compatibility::try_from_fidl(r.compatibility.clone()).ok()?;
+            match compatibility {
+                Ok(compatible) => {
+                    if check_scan_result_matches(
+                        &bss_description,
+                        &compatible,
+                        ssid,
+                        bssid,
+                        key_mgmt,
+                    ) {
+                        Some((bss_description, compatible))
+                    } else {
+                        None
                     }
                 }
-                _ => None,
+                Err(incompatible) => {
+                    error!("BSS ({:?}) is incompatible: {}", bss_description.bssid, incompatible,);
+                    None
+                }
             }
         })
         .collect::<Vec<_>>();
@@ -1136,6 +1184,7 @@ pub mod test_utils {
             ssid: Vec<u8>,
             credential: Credential,
             bssid: Option<Bssid>,
+            key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
         },
         Disconnect,
         GetConnectedNetworkRssi,
@@ -1234,11 +1283,13 @@ pub mod test_utils {
             ssid: &[u8],
             credential: Credential,
             bssid: Option<Bssid>,
+            key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
         ) -> Result<ConnectResult, Error> {
             self.calls.lock().push(ClientIfaceCall::ConnectToNetwork {
                 ssid: ssid.to_vec(),
                 credential: credential.clone(),
                 bssid,
+                key_mgmt,
             });
             if *self.connect_success.lock() {
                 let (proxy, server) =
@@ -2439,7 +2490,7 @@ mod tests {
         assert_matches!(test_values.iface.get_connected_network(), None);
 
         let bssid = if bssid_specified { Some(Bssid::from([1, 2, 3, 4, 5, 6])) } else { None };
-        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid);
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid, None);
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, connect_txn) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2552,6 +2603,7 @@ mod tests {
             transition_ssid.as_bytes(),
             Credential::None,
             None,
+            Some(fidl_wlanix::KeyMgmtMask::OWE),
         );
 
         // Verify that the connect request is sent immediately for the OWE BSS without any active scan.
@@ -2696,6 +2748,7 @@ mod tests {
             transition_ssid.as_bytes(),
             Credential::None,
             None,
+            Some(fidl_wlanix::KeyMgmtMask::OWE),
         );
 
         // Verify that an active scan is triggered for the OWE SSID.
@@ -2769,6 +2822,7 @@ mod tests {
             b"foo",
             Credential::None,
             Some(Bssid::from(bssid)),
+            None,
         );
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
@@ -2835,6 +2889,7 @@ mod tests {
             b"foo",
             Credential::None,
             Some(Bssid::from(bssid)),
+            None,
         );
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
@@ -2932,7 +2987,7 @@ mod tests {
                 Some(LastScanResults::new(fasync::BootInstant::now(), vec![]));
         }
 
-        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid);
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid, None);
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(Err(_e)));
     }
 
@@ -2955,7 +3010,8 @@ mod tests {
             }],
         ));
 
-        let mut connect_fut = test_values.iface.connect_to_network(b"foo", Credential::None, None);
+        let mut connect_fut =
+            test_values.iface.connect_to_network(b"foo", Credential::None, None, None);
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, connect_txn) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -3002,7 +3058,8 @@ mod tests {
             }],
         ));
 
-        let mut connect_fut = test_values.iface.connect_to_network(b"foo", Credential::None, None);
+        let mut connect_fut =
+            test_values.iface.connect_to_network(b"foo", Credential::None, None, None);
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, _connect_txn) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -3104,7 +3161,7 @@ mod tests {
                 }],
             ));
 
-            let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
+            let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None, None);
             assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
             let (_req, connect_txn) = assert_matches!(
                 test_values.exec.run_until_stalled(&mut sme_stream.next()),
@@ -3131,7 +3188,7 @@ mod tests {
                 .collect::<Vec<_>>(),
         ));
 
-        let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
+        let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None, None);
         assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, _connect_txn) = assert_matches!(
             test_values.exec.run_until_stalled(&mut sme_stream.next()),
@@ -3799,5 +3856,238 @@ mod tests {
             .expect("Failed to respond to ResetPhy");
 
         assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+    }
+
+    #[test]
+    fn test_scan_successfully_matches_key_mgmt() {
+        use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
+
+        let bss_scorer = BssScorer::new();
+        let ssid = b"foo";
+
+        let bss_open = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+        );
+        let bss_wpa2 = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Wpa2,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 7],
+        );
+
+        let scan_results = vec![
+            fidl_sme::ScanResult {
+                bss_description: bss_open.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Open],
+                }),
+                timestamp_nanos: 1,
+            },
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa2.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+        ];
+
+        // Check filtering for Open
+        let match_open = find_matching_network_in_scan(
+            ssid,
+            &None,
+            &Some(fidl_wlanix::KeyMgmtMask::NONE),
+            scan_results.clone(),
+            &bss_scorer,
+        );
+        assert!(match_open.is_some());
+        assert_eq!(match_open.unwrap().0.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
+
+        // Check filtering for WPA2 (WPA_PSK)
+        let match_wpa2 = find_matching_network_in_scan(
+            ssid,
+            &None,
+            &Some(fidl_wlanix::KeyMgmtMask::WPA_PSK),
+            scan_results.clone(),
+            &bss_scorer,
+        );
+        assert!(match_wpa2.is_some());
+        assert_eq!(match_wpa2.unwrap().0.bssid, Bssid::from([1, 2, 3, 4, 5, 7]));
+    }
+
+    #[test]
+    fn test_find_matching_network_in_scan_fails_if_no_matching_key_mgmt() {
+        use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
+
+        let bss_scorer = BssScorer::new();
+        let ssid = b"foo";
+
+        let bss_open = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+        );
+        let bss_wpa2 = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Wpa2,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 7],
+        );
+
+        let scan_results = vec![
+            fidl_sme::ScanResult {
+                bss_description: bss_open.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Open],
+                }),
+                timestamp_nanos: 1,
+            },
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa2.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+        ];
+
+        // Check filtering for WPA3 (SAE) returns None when only Open and WPA2 are present
+        let match_wpa3 = find_matching_network_in_scan(
+            ssid,
+            &None,
+            &Some(fidl_wlanix::KeyMgmtMask::SAE),
+            scan_results,
+            &bss_scorer,
+        );
+        assert!(match_wpa3.is_none());
+    }
+
+    #[test]
+    fn test_find_matching_networks_in_scan_with_multiple_key_mgmt() {
+        // This tests that if multiple BSS's match different bits in the key management mask,
+        // both can be returned as matching if they have the highest score.
+        use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
+
+        let bss_scorer = BssScorer::new();
+        let ssid = b"foo";
+
+        let bss_wpa2 = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Wpa2,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 7],
+            rssi_dbm: -30,
+        );
+        let mut bss_wpa3 = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Wpa3,
+            ssid: Ssid::try_from(&ssid[..]).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 8],
+            rssi_dbm: -20,
+        );
+
+        let scan_results = vec![
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa2.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa3.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+        ];
+
+        // Check filtering with a mask of multiple bits
+        let multiple_mask = fidl_wlanix::KeyMgmtMask::WPA_PSK | fidl_wlanix::KeyMgmtMask::SAE;
+
+        let (bss, _compatible) = find_matching_network_in_scan(
+            ssid,
+            &None,
+            &Some(multiple_mask),
+            scan_results.clone(),
+            &bss_scorer,
+        )
+        .expect("Failed to find any matching BSS");
+        assert_eq!(bss.bssid, bss_wpa3.bssid.into());
+        assert_eq!(bss.protection(), bss::Protection::Wpa3Personal);
+
+        // Modify the RSSI's on the scan results so that the WPA3 network has weak signal.
+        // Now the WPA2 network should be selected.
+        bss_wpa3.rssi_dbm = -75;
+        let scan_results = vec![
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa2.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+            fidl_sme::ScanResult {
+                bss_description: bss_wpa3.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                }),
+                timestamp_nanos: 1,
+            },
+        ];
+        let (bss, _compatible) = find_matching_network_in_scan(
+            ssid,
+            &None,
+            &Some(multiple_mask),
+            scan_results.clone(),
+            &bss_scorer,
+        )
+        .expect("Failed to find any matching BSS");
+        assert_eq!(bss.bssid, bss_wpa2.bssid.into());
+        assert_eq!(bss.protection(), bss::Protection::Wpa2Personal);
+    }
+
+    #[fuchsia::test]
+    fn test_connect_to_network_respects_key_mgmt() {
+        use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
+
+        let mut test_values = setup_test_manager_with_iface();
+
+        // AP supports WPA2 and WPA3 Personal mixed mode.
+        let bss_description = fake_fidl_bss_description!(
+            protection => FakeProtectionCfg::Wpa2Wpa3,
+            ssid: Ssid::try_from("foo").unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -30,
+        );
+
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
+            fasync::BootInstant::now(),
+            vec![fidl_sme::ScanResult {
+                bss_description: bss_description.clone(),
+                compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
+                    mutual_security_protocols: vec![
+                        fidl_security::Protocol::Wpa2Personal,
+                        fidl_security::Protocol::Wpa3Personal,
+                    ],
+                }),
+                timestamp_nanos: 1,
+            }],
+        ));
+
+        // Client explicitly restricts connection to WPA2 Personal (WPA_PSK) only.
+        let key_mgmt = Some(fidl_wlanix::KeyMgmtMask::WPA_PSK);
+        let credential = Credential::Password(b"password".to_vec());
+
+        let mut connect_fut =
+            test_values.iface.connect_to_network(b"foo", credential, None, key_mgmt);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+
+        let req = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, .. }))) => req
+        );
+
+        // Wlanix must request WPA2 Personal (not WPA3 Personal) because of the key_mgmt restriction.
+        assert_eq!(req.authentication.protocol, fidl_security::Protocol::Wpa2Personal);
     }
 }

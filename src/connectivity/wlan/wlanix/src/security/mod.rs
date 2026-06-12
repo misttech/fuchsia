@@ -7,15 +7,56 @@
 pub mod wep;
 
 use crate::security::wep::WepKeys;
+use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use ieee80211::Bssid;
 use log::warn;
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use wlan_common::scan::Compatible;
-use wlan_common::security::wpa::WpaDescriptor;
 use wlan_common::security::wpa::credential::Passphrase;
+use wlan_common::security::wpa::{Authentication, WpaDescriptor};
 use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
+
+pub fn security_matches_key_mgmt(
+    security: &SecurityDescriptor,
+    mask: fidl_wlanix::KeyMgmtMask,
+) -> bool {
+    match security {
+        SecurityDescriptor::Open => mask.contains(fidl_wlanix::KeyMgmtMask::NONE),
+        SecurityDescriptor::Owe => mask.contains(fidl_wlanix::KeyMgmtMask::OWE),
+        SecurityDescriptor::Wep => mask.contains(fidl_wlanix::KeyMgmtMask::NONE),
+        SecurityDescriptor::Wpa(wpa) => match wpa {
+            WpaDescriptor::Wpa1 { .. } => {
+                mask.contains(fidl_wlanix::KeyMgmtMask::WPA_PSK)
+                    || mask.contains(fidl_wlanix::KeyMgmtMask::WPA_PSK_SHA256)
+                    || mask.contains(fidl_wlanix::KeyMgmtMask::FT_PSK)
+            }
+            WpaDescriptor::Wpa2 { authentication, .. } => match authentication {
+                Authentication::Personal(_) => {
+                    mask.contains(fidl_wlanix::KeyMgmtMask::WPA_PSK)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::WPA_PSK_SHA256)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::FT_PSK)
+                }
+                Authentication::Enterprise(_) => {
+                    mask.contains(fidl_wlanix::KeyMgmtMask::WPA_EAP)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::WPA_EAP_SHA256)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::FT_EAP)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::IEEE8021_X)
+                }
+            },
+            WpaDescriptor::Wpa3 { authentication, .. } => match authentication {
+                Authentication::Personal(_) => mask.contains(fidl_wlanix::KeyMgmtMask::SAE),
+                Authentication::Enterprise(_) => {
+                    mask.contains(fidl_wlanix::KeyMgmtMask::WPA_EAP)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::WPA_EAP_SHA256)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::FT_EAP)
+                        || mask.contains(fidl_wlanix::KeyMgmtMask::IEEE8021_X)
+                }
+            },
+        },
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Credential {
@@ -42,9 +83,10 @@ pub fn get_authenticator(
     bssid: Bssid,
     compatible: Compatible,
     credential: &Credential,
+    key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
 ) -> Option<SecurityAuthenticator> {
     let mutual_security_protocols = compatible.mutual_security_protocols().clone();
-    match select_authentication_method(mutual_security_protocols.clone(), credential) {
+    match select_authentication_method(mutual_security_protocols.clone(), credential, key_mgmt) {
         Some(authenticator) => Some(authenticator),
         None => {
             warn!(
@@ -120,6 +162,7 @@ fn bind_credential_to_protocol(
 pub fn select_authentication_method(
     mutual_security_protocols: HashSet<SecurityDescriptor>,
     credential: &Credential,
+    key_mgmt: Option<fidl_wlanix::KeyMgmtMask>,
 ) -> Option<SecurityAuthenticator> {
     let mut protocols: Vec<_> = mutual_security_protocols.into_iter().collect();
     protocols.sort_by_key(|protocol| {
@@ -136,6 +179,68 @@ pub fn select_authentication_method(
     });
     protocols
         .into_iter()
+        .filter(|protocol| match key_mgmt {
+            Some(mask) => security_matches_key_mgmt(protocol, mask),
+            None => true,
+        })
         .flat_map(|protocol| bind_credential_to_protocol(protocol, credential))
         .next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wlan_common::security::wpa::{Authentication, WpaAuthenticator};
+
+    #[test]
+    fn test_select_authentication_method_sae_key_mgmt() {
+        let wpa2 = SecurityDescriptor::Wpa(WpaDescriptor::Wpa2 {
+            cipher: None,
+            authentication: Authentication::Personal(()),
+        });
+        let wpa3 = SecurityDescriptor::Wpa(WpaDescriptor::Wpa3 {
+            cipher: None,
+            authentication: Authentication::Personal(()),
+        });
+
+        let mutual_protocols: HashSet<SecurityDescriptor> = [wpa2, wpa3].into_iter().collect();
+
+        // Client allows only WPA3 (SAE) -> should select WPA3
+        let method = select_authentication_method(
+            mutual_protocols,
+            &Credential::SaePassword(b"password123".to_vec()),
+            Some(fidl_wlanix::KeyMgmtMask::SAE),
+        );
+        assert!(method.is_some());
+        assert!(matches!(
+            method.unwrap(),
+            SecurityAuthenticator::Wpa(WpaAuthenticator::Wpa3 { .. })
+        ));
+    }
+
+    #[test]
+    fn test_select_authentication_method_wpa2_key_mgmt() {
+        let wpa2 = SecurityDescriptor::Wpa(WpaDescriptor::Wpa2 {
+            cipher: None,
+            authentication: Authentication::Personal(()),
+        });
+        let wpa3 = SecurityDescriptor::Wpa(WpaDescriptor::Wpa3 {
+            cipher: None,
+            authentication: Authentication::Personal(()),
+        });
+
+        let mutual_protocols: HashSet<SecurityDescriptor> = [wpa2, wpa3].into_iter().collect();
+
+        // Client allows only WPA2 (WPA_PSK) -> should select WPA2
+        let method = select_authentication_method(
+            mutual_protocols,
+            &Credential::Password(b"password123".to_vec()),
+            Some(fidl_wlanix::KeyMgmtMask::WPA_PSK),
+        );
+        assert!(method.is_some());
+        assert!(matches!(
+            method.unwrap(),
+            SecurityAuthenticator::Wpa(WpaAuthenticator::Wpa2 { .. })
+        ));
+    }
 }
