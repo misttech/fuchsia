@@ -115,11 +115,11 @@ TEST_F(TrustedFlatlandFactoryTest, CreateFlatland) {
   // Check that a new Flatland instance was created and is still alive.
   EXPECT_EQ(flatland_manager_->GetSessionCount(), 1ul);
 
-  auto session_ids = flatland_manager_->GetSessionIds();
+  auto session_ids = flatland_manager_->GetSessionIdsForTest();
   ASSERT_EQ(session_ids.size(), 1ul);
 
   // Assert that the Flatland instance is running on scenic's main thread.
-  EXPECT_EQ(flatland_manager_->GetSessionDispatcher(session_ids[0]), this->dispatcher());
+  EXPECT_EQ(flatland_manager_->GetSessionDispatcherForTest(session_ids[0]), this->dispatcher());
 }
 
 TEST_F(TrustedFlatlandFactoryTest, ToInternalConfig) {

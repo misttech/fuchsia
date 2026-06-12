@@ -80,12 +80,13 @@ class FlatlandManager {
   size_t GetSessionCount() const;
   // Sessions still alive (but which might have been remove from FlatlandManager).
   size_t GetAliveSessionCount() const { return alive_sessions_; }
-  async_dispatcher_t* GetSessionDispatcher(scheduling::SessionId session_id) const;
-  std::vector<scheduling::SessionId> GetSessionIds() const;
 
   // TODO(https://fxbug.dev/42156949): This is method assumes that there are either 0 or 1
   // displays with attached Flatland content.
   std::shared_ptr<FlatlandDisplay> GetPrimaryFlatlandDisplayForRendering();
+
+  async_dispatcher_t* GetSessionDispatcherForTest(scheduling::SessionId session_id) const;
+  std::vector<scheduling::SessionId> GetSessionIdsForTest() const;
 
  private:
   // Represents an individual Flatland session for a client.

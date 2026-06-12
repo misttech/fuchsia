@@ -271,7 +271,7 @@ TEST_F(FlatlandManagerTest, UntrustedFlatlandRunsOnIndependentThread) {
   RunLoopUntilIdle();
 
   // The session dispatcher should NOT be the main thread's dispatcher.
-  auto session_dispatcher = manager_->GetSessionDispatcher(id);
+  auto session_dispatcher = manager_->GetSessionDispatcherForTest(id);
   ASSERT_NE(session_dispatcher, nullptr);
   EXPECT_NE(session_dispatcher, dispatcher());
 }
@@ -284,7 +284,7 @@ TEST_F(FlatlandManagerTest, TrustedFlatlandRunsOnMainThread) {
   RunLoopUntilIdle();
 
   // The session dispatcher SHOULD be the main thread's dispatcher.
-  auto session_dispatcher = manager_->GetSessionDispatcher(id);
+  auto session_dispatcher = manager_->GetSessionDispatcherForTest(id);
   ASSERT_NE(session_dispatcher, nullptr);
   EXPECT_EQ(session_dispatcher, dispatcher());
 }

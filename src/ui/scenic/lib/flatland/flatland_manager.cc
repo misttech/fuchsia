@@ -356,7 +356,8 @@ void FlatlandManager::OnFramePresented(
 
 size_t FlatlandManager::GetSessionCount() const { return flatland_instances_.size(); }
 
-async_dispatcher_t* FlatlandManager::GetSessionDispatcher(scheduling::SessionId session_id) const {
+async_dispatcher_t* FlatlandManager::GetSessionDispatcherForTest(
+    scheduling::SessionId session_id) const {
   auto it = flatland_instances_.find(session_id);
   if (it == flatland_instances_.end()) {
     return nullptr;
@@ -364,7 +365,7 @@ async_dispatcher_t* FlatlandManager::GetSessionDispatcher(scheduling::SessionId 
   return it->second->loop->dispatcher();
 }
 
-std::vector<scheduling::SessionId> FlatlandManager::GetSessionIds() const {
+std::vector<scheduling::SessionId> FlatlandManager::GetSessionIdsForTest() const {
   std::vector<scheduling::SessionId> ids;
   for (const auto& [id, _] : flatland_instances_) {
     ids.push_back(id);
