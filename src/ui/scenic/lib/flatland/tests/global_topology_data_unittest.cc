@@ -98,7 +98,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyUnknownGraph) {
   auto output =
       GlobalTopologyData::ComputeGlobalTopologyData({}, {}, kLinkInstanceId, unknown_handle);
   EXPECT_TRUE(output.topology_vector.empty());
-  EXPECT_TRUE(output.child_counts.empty());
+  EXPECT_TRUE(output.ComputeChildCountVector().empty());
   EXPECT_TRUE(output.parent_indices.empty());
   EXPECT_TRUE(output.live_handles.empty());
 }
@@ -132,7 +132,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyLinkExpansion) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -172,7 +172,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyIncompleteLink) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 
   // With the second vector updated, we still get the same result because the two are not linked.
@@ -189,7 +189,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyIncompleteLink) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 
   // When the link becomes available, the full topology is available, excluding the link handle.
@@ -210,7 +210,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyIncompleteLink) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -243,7 +243,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyLinksMismatchedUberStruct) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 
   // Changing the link to the right root handle of 2:0 completes the topology.
@@ -261,7 +261,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyLinksMismatchedUberStruct) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -308,7 +308,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyDiamondInheritance) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -1640,8 +1640,9 @@ TEST(GlobalTopologyDataTest, LastChildEdgeCase_NoLink) {
   // Since we are purposefully not creating the link, the global topology
   // should just be the following:
   // 1:0 - 1:1
+  //     \ - 1:2
   GlobalTopologyData::TopologyVector expected_topology = {{1, 0}, {1, 1}, {1, 2}};
-  GlobalTopologyData::ChildCountVector expected_child_counts = {1, 0, 0};
+  GlobalTopologyData::ChildCountVector expected_child_counts = {2, 0, 0};
   GlobalTopologyData::ParentIndexVector expected_parent_indices = {0, 0, 0};
 
   auto uber_struct = std::make_unique<UberStruct>();
@@ -1657,7 +1658,7 @@ TEST(GlobalTopologyDataTest, LastChildEdgeCase_NoLink) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -1691,8 +1692,9 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest2_NoUberStruct) {
   // Since we are purposefully not creating the second uber struct, the global topology
   // should just be the following:
   // 1:0 - 1:1
+  //     \ - 1:2
   GlobalTopologyData::TopologyVector expected_topology = {{1, 0}, {1, 1}, {1, 2}};
-  GlobalTopologyData::ChildCountVector expected_child_counts = {1, 0, 0};
+  GlobalTopologyData::ChildCountVector expected_child_counts = {2, 0, 0};
   GlobalTopologyData::ParentIndexVector expected_parent_indices = {0, 0, 0};
 
   auto output =
@@ -1700,7 +1702,7 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest2_NoUberStruct) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 
@@ -1731,8 +1733,9 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest3_WrongHandle) {
 
   // Since we gave the wrong link handle, the topology should just be:
   // 1:0 - 1:1
+  //     \ - 1:2
   GlobalTopologyData::TopologyVector expected_topology = {{1, 0}, {1, 1}, {1, 2}};
-  GlobalTopologyData::ChildCountVector expected_child_counts = {1, 0, 0};
+  GlobalTopologyData::ChildCountVector expected_child_counts = {2, 0, 0};
   GlobalTopologyData::ParentIndexVector expected_parent_indices = {0, 0, 0};
 
   auto output =
@@ -1740,7 +1743,7 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest3_WrongHandle) {
   CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
   EXPECT_THAT(output.topology_vector, ::testing::ElementsAreArray(expected_topology));
-  EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+  EXPECT_THAT(output.ComputeChildCountVector(), ::testing::ElementsAreArray(expected_child_counts));
   EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 }
 

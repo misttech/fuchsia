@@ -395,7 +395,6 @@ void GlobalTopologyData::Clear() {
   {
     TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[vectors]");
     topology_vector.clear();
-    child_counts.clear();
     parent_indices.clear();
   }
   {
@@ -405,8 +404,7 @@ void GlobalTopologyData::Clear() {
 }
 
 bool GlobalTopologyData::IsCleared() const {
-  return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
-         live_handles.empty();
+  return topology_vector.empty() && parent_indices.empty() && live_handles.empty();
 }
 
 // static
@@ -452,7 +450,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   };
   std::vector<ParentChildIterator> parent_counts;
 
-  auto& [topology_vector, child_counts, parent_indices, live_handles] = output;
+  auto& [topology_vector, parent_indices, live_handles] = output;
 
   // If we don't have the root in the map, the topology will be empty.
   const auto root_uber_struct_kv = uber_structs.find(root.GetInstanceId());
@@ -493,12 +491,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 
     // If we are processing a link transform, find the other end of the link (if it exists).
     if (current_entry.handle.GetInstanceId() == link_instance_id) {
-      // Decrement the parent's child count until the link is successfully resolved. An unresolved
-      // link effectively means the parent had one fewer child.
-      FX_DCHECK(!parent_counts.empty());
-      auto& parent_child_count = child_counts[parent_counts.back().parent_index];
-      --parent_child_count;
-
       // If the link doesn't exist, skip the link handle.
       const auto link_kv = links.find(current_entry.handle);
       if (link_kv == links.end()) {
@@ -552,7 +544,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
       // At this point, the link is resolved. This means the link did actually result in the parent
       // having an additional child, but that child needs to be processed, so the stack of remaining
       // children to process for each parent needs to be increment as well.
-      ++parent_child_count;
       ++parent_counts.back().children_left;
 
       vector_stack.emplace_back(new_vector, 0);
@@ -563,7 +554,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     const size_t new_parent_index = topology_vector.size();
     topology_vector.push_back(current_entry.handle);
 
-    child_counts.push_back(current_entry.child_count);
     parent_indices.push_back(parent_counts.empty() ? 0 : parent_counts.back().parent_index);
     live_handles.insert(current_entry.handle);
 
@@ -684,6 +674,18 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
   }
 
   return output;
+}
+
+GlobalTopologyData::ChildCountVector GlobalTopologyData::ComputeChildCountVector() const {
+  if (parent_indices.empty()) {
+    return {};
+  }
+  ChildCountVector child_counts(parent_indices.size(), 0);
+  // Start at index 1 because the root at index 0 has no parent to add children to.
+  for (size_t i = 1; i < parent_indices.size(); ++i) {
+    child_counts[parent_indices[i]]++;
+  }
+  return child_counts;
 }
 
 }  // namespace flatland

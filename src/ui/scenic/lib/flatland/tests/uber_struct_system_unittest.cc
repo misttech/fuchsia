@@ -495,7 +495,8 @@ TEST(UberStructSystemTest, GlobalTopologyMultithreadedUpdates) {
                                                                 kLinkInstanceId, {1, 0});
     CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
-    EXPECT_THAT(output.child_counts, ::testing::ElementsAreArray(expected_child_counts));
+    EXPECT_THAT(output.ComputeChildCountVector(),
+                ::testing::ElementsAreArray(expected_child_counts));
     EXPECT_THAT(output.parent_indices, ::testing::ElementsAreArray(expected_parent_indices));
 
     // This sleep triggers the Compute call at a random point in the middle of all of the

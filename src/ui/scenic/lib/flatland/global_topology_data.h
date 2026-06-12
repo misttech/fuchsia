@@ -30,7 +30,6 @@ struct GlobalTopologyData {
   GlobalTopologyData(GlobalTopologyData&& other) = default;
   GlobalTopologyData& operator=(GlobalTopologyData&& other) {
     topology_vector = std::move(other.topology_vector);
-    child_counts = std::move(other.child_counts);
     parent_indices = std::move(other.parent_indices);
     // TODO(https://fxbug.dev/42076105): Investigate why move is slow.
     {
@@ -57,10 +56,6 @@ struct GlobalTopologyData {
   using TopologyVector = std::vector<TransformHandle>;
   TopologyVector topology_vector;
 
-  // The list of direct child counts for each entry in the |topology_vector|.
-  using ChildCountVector = std::vector<uint64_t>;
-  ChildCountVector child_counts;
-
   // The list of parent indices for each entry in the |topology_vector|. The first entry will
   // always be zero to indicate that the first TransformHandle has no parent.
   using ParentIndexVector = std::vector<size_t>;
@@ -74,6 +69,10 @@ struct GlobalTopologyData {
 
   // Return true if all fields are cleared/empty.
   bool IsCleared() const;
+
+  // The list of direct child counts for each entry in the |topology_vector|.
+  using ChildCountVector = std::vector<uint64_t>;
+  ChildCountVector ComputeChildCountVector() const;
 
   // Computes the GlobalTopologyData consisting of all TransformHandles reachable from |root|.
   //

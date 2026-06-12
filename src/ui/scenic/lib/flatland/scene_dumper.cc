@@ -46,10 +46,11 @@ void DumpTopology(const flatland::UberStruct::InstanceMap& snapshot,
   output << "Topology:\n";
   std::stack<size_t> indentation_levels;
   std::stack<uint64_t> parent_session_ids;
+  const auto child_counts = topology_data.ComputeChildCountVector();
   for (size_t transform_index = 0; transform_index < topology_data.topology_vector.size();
        transform_index++) {
     auto& transform = topology_data.topology_vector[transform_index];
-    const auto children = topology_data.child_counts[transform_index];
+    const auto children = child_counts[transform_index];
     auto current_indentation_level = indentation_levels.size();
 
     // Print indented, no-parentheses transform.
