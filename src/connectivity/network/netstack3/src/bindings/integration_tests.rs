@@ -1107,7 +1107,8 @@ async fn add_remove_neighbor_entry<I: IpExt>() {
         observer
             .await
             .expect("address resolution should not be cancelled")
-            .expect("address resolution should succeed after adding static entry"),
+            .expect("address resolution should succeed after adding static entry")
+            .get(),
         MAC,
     );
 
@@ -1219,7 +1220,7 @@ async fn clear_entries<I: IpExt>() {
         ctx.api()
            .neighbor::<I::OtherIp, EthernetLinkDevice>()
            .resolve_link_addr(&ethernet_device_id, &I::OtherIp::ADDR),
-        LinkResolutionResult::Resolved(mac) => assert_eq!(mac, MAC)
+        LinkResolutionResult::Resolved(mac) => assert_eq!(mac.get(), MAC)
     );
 
     t

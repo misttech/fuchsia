@@ -15,9 +15,9 @@ use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::{TryStream, TryStreamExt as _};
 use log::{error, info, warn};
-use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{GenericOverIp, Ip, IpAddr, IpAddress, Ipv4, Ipv6};
+use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_core::device::{DeviceId, EthernetDeviceId, EthernetLinkDevice};
 use netstack3_core::error::AddressResolutionFailed;
 use netstack3_core::ip::WrapBroadcastMarker;
@@ -39,19 +39,21 @@ impl LinkResolutionContext<EthernetLinkDevice> for BindingsCtx {
 }
 
 #[derive(Debug)]
-pub(crate) struct LinkResolutionNotifier(oneshot::Sender<Result<Mac, AddressResolutionFailed>>);
+pub(crate) struct LinkResolutionNotifier(
+    oneshot::Sender<Result<UnicastAddr<Mac>, AddressResolutionFailed>>,
+);
 
 impl netstack3_core::neighbor::LinkResolutionNotifier<EthernetLinkDevice>
     for LinkResolutionNotifier
 {
-    type Observer = oneshot::Receiver<Result<Mac, AddressResolutionFailed>>;
+    type Observer = oneshot::Receiver<Result<UnicastAddr<Mac>, AddressResolutionFailed>>;
 
     fn new() -> (Self, Self::Observer) {
         let (tx, rx) = oneshot::channel();
         (Self(tx), rx)
     }
 
-    fn notify(self, result: Result<Mac, AddressResolutionFailed>) {
+    fn notify(self, result: Result<UnicastAddr<Mac>, AddressResolutionFailed>) {
         let Self(tx) = self;
         tx.send(result).unwrap_or_else(|_| {
             error!("link address observer was dropped before resolution completed")
@@ -202,7 +204,7 @@ where
         let address =
             next_hop_addr.map_or(A::Version::UNSPECIFIED_ADDRESS, |a| *a).to_ip_addr().into_fidl();
         let source_address = src_addr.addr().to_ip_addr().into_fidl();
-        let mac = remote_mac.map(|mac| mac.into_fidl());
+        let mac = remote_mac.map(|mac| mac.get().into_fidl());
         let interface_id = ctx.bindings_ctx().get_binding_id(device);
         fnet_routes::Destination {
             address: Some(address),
@@ -222,7 +224,7 @@ async fn resolve_ethernet_link_addr<A: IpAddress>(
     ctx: &mut Ctx,
     device: &EthernetDeviceId<BindingsCtx>,
     remote: &SpecifiedAddr<A>,
-) -> Result<Mac, fnet_routes::ResolveError>
+) -> Result<UnicastAddr<Mac>, fnet_routes::ResolveError>
 where
     A::Version: IpExt,
 {

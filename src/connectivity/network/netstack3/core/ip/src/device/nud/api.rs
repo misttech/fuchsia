@@ -123,7 +123,7 @@ where
     // TODO(https://fxbug.dev/42083952): Use NeighborAddr when available.
         dst: &SpecifiedAddr<I::Addr>,
     ) -> LinkResolutionResult<
-        D::Address,
+        UnicastAddr<D::Address>,
         <<C::BindingsContext as LinkResolutionContext<D>>::Notifier as LinkResolutionNotifier<
             D,
         >>::Observer,
@@ -156,7 +156,7 @@ where
                     }
                     Entry::Occupied(e) => match e.into_mut() {
                         NeighborState::Static(link_address) => {
-                            (LinkResolutionResult::Resolved(link_address.get()), false)
+                            (LinkResolutionResult::Resolved(*link_address), false)
                         }
                         NeighborState::Dynamic(e) => {
                             e.resolve_link_addr(core_ctx, bindings_ctx, timer_heap, device_id, *dst)

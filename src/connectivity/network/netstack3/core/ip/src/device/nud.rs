@@ -17,12 +17,12 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use log::{debug, error, warn};
 use net_types::ip::{GenericOverIp, Ip, IpMarked, Ipv4, Ipv6};
-use net_types::{SpecifiedAddr, UnicastAddr, Witness};
+use net_types::{SpecifiedAddr, UnicastAddr};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
     DeviceIdentifier, ErrorAndSerializer, EventContext, HandleableTimer, Instant,
-    InstantBindingsTypes, LinkAddress, LinkDevice, LinkDeviceAddress, LocalTimerHeap,
+    InstantBindingsTypes, LinkDevice, LinkDeviceAddress, LocalTimerHeap,
     NetworkSerializationContext, NetworkSerializer, SendFrameError, StrongDeviceIdentifier,
     TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
@@ -576,7 +576,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
                 })
         }
         for notifier in notifiers.drain(..) {
-            notifier.notify(Ok(link_address.get()));
+            notifier.notify(Ok(link_address));
         }
     }
 }
@@ -1186,7 +1186,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         neighbor: SpecifiedAddr<I::Addr>,
     ) -> (
         LinkResolutionResult<
-            D::Address,
+            UnicastAddr<D::Address>,
             <<BC as LinkResolutionContext<D>>::Notifier as LinkResolutionNotifier<D>>::Observer,
         >,
         bool,
@@ -1229,12 +1229,12 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     bindings_ctx.now(),
                 ));
 
-                (LinkResolutionResult::Resolved(link_address.get()), false)
+                (LinkResolutionResult::Resolved(link_address), false)
             }
             DynamicNeighborState::Reachable(Reachable { link_address, last_confirmed_at: _ })
             | DynamicNeighborState::Delay(Delay { link_address })
             | DynamicNeighborState::Probe(Probe { link_address, transmit_counter: _ }) => {
-                (LinkResolutionResult::Resolved(link_address.get()), false)
+                (LinkResolutionResult::Resolved(*link_address), false)
             }
             DynamicNeighborState::Unreachable(unreachable) => {
                 let Unreachable { link_address, mode: _ } = unreachable;
@@ -1247,7 +1247,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     timers,
                     neighbor,
                 );
-                (LinkResolutionResult::Resolved(link_address.get()), do_multicast_solicit)
+                (LinkResolutionResult::Resolved(link_address), do_multicast_solicit)
             }
         }
     }
@@ -1644,18 +1644,19 @@ pub(crate) mod testutil {
     /// A fake implementation of [`LinkResolutionNotifier`].
     #[derive(Debug)]
     pub struct FakeLinkResolutionNotifier<D: LinkDevice>(
-        Arc<Mutex<Option<Result<D::Address, AddressResolutionFailed>>>>,
+        Arc<Mutex<Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>>>,
     );
 
     impl<D: LinkDevice> LinkResolutionNotifier<D> for FakeLinkResolutionNotifier<D> {
-        type Observer = Arc<Mutex<Option<Result<D::Address, AddressResolutionFailed>>>>;
+        type Observer =
+            Arc<Mutex<Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>>>;
 
         fn new() -> (Self, Self::Observer) {
             let inner = Arc::new(Mutex::new(None));
             (Self(inner.clone()), inner)
         }
 
-        fn notify(self, result: Result<D::Address, AddressResolutionFailed>) {
+        fn notify(self, result: Result<UnicastAddr<D::Address>, AddressResolutionFailed>) {
             let Self(inner) = self;
             let mut inner = inner.lock();
             assert_eq!(*inner, None, "resolved link address was set more than once");
@@ -1895,7 +1896,7 @@ pub trait LinkResolutionNotifier<D: LinkDevice>: Debug + Sized + Send {
 
     /// Signal to Bindings that link address resolution has completed for a
     /// neighbor.
-    fn notify(self, result: Result<D::Address, AddressResolutionFailed>);
+    fn notify(self, result: Result<UnicastAddr<D::Address>, AddressResolutionFailed>);
 }
 
 /// The execution context for NUD for a link device.
@@ -2227,7 +2228,7 @@ pub trait NudIpHandler<I: Ip, BC>: DeviceIdContext<AnyDevice> {
 
 /// Specifies the link-layer address of a neighbor.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum LinkResolutionResult<A: LinkAddress, Observer> {
+pub enum LinkResolutionResult<A, Observer> {
     /// The destination is a known neighbor with the given link-layer address.
     Resolved(A),
     /// The destination is pending neighbor resolution.
@@ -4867,7 +4868,7 @@ mod tests {
             ),
             LinkResolutionResult::Resolved(addr) => addr
         );
-        assert_eq!(link_addr, LINK_ADDR1.get());
+        assert_eq!(link_addr, LINK_ADDR1);
         if initial_state == InitialState::Stale {
             assert_eq!(
                 ctx.bindings_ctx.take_events(),
@@ -4959,7 +4960,7 @@ mod tests {
 
         // Each observer should have been notified of successful link resolution.
         for observer in observers {
-            assert_eq!(*observer.lock(), Some(Ok(LINK_ADDR1.get())));
+            assert_eq!(*observer.lock(), Some(Ok(LINK_ADDR1)));
         }
     }
 

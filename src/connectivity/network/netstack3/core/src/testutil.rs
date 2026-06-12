@@ -1044,7 +1044,7 @@ impl<D: LinkDevice> LinkResolutionNotifier<D> for NoOpLinkResolutionNotifier {
         (NoOpLinkResolutionNotifier, ())
     }
 
-    fn notify(self, _result: Result<D::Address, AddressResolutionFailed>) {}
+    fn notify(self, _result: Result<UnicastAddr<D::Address>, AddressResolutionFailed>) {}
 }
 
 #[derive(Clone)]

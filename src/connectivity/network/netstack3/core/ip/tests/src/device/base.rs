@@ -120,7 +120,7 @@ fn enable_disable_ipv4() {
             &ethernet_device_id,
             &addr,
         ),
-        LinkResolutionResult::Resolved(got) => assert_eq!(got, mac)
+        LinkResolutionResult::Resolved(got) => assert_eq!(got.get(), mac)
     );
 
     set_ipv4_enabled(&mut ctx, false, true);
@@ -398,7 +398,7 @@ fn enable_disable_ipv6() {
             &ethernet_device_id,
             &addr,
         ),
-        LinkResolutionResult::Resolved(got) => assert_eq!(got, mac)
+        LinkResolutionResult::Resolved(got) => assert_eq!(got.get(), mac)
     );
 
     let test_disable_device = |ctx: &mut FakeCtx, expected_prev| {
