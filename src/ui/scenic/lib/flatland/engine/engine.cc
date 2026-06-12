@@ -198,7 +198,6 @@ void Engine::UpdateLinkWatchersAfterViewTreePublished() {
 
   const auto& scene_state = *current_scene_state_;
   link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
-                                   scene_state.topology_data.live_handles,
                                    scene_state.global_matrices, scene_state.snapshot.map);
 }
 

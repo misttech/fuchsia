@@ -52,14 +52,11 @@ namespace flatland::test {
 // particular call in a unit test.
 //
 // |data| is a :GlobalTopologyData object. |link_id| is the instance ID for link handles.
-#define CHECK_GLOBAL_TOPOLOGY_DATA(data, link_id)    \
-  {                                                  \
-    std::unordered_set<TransformHandle> all_handles; \
-    for (auto handle : (data).topology_vector) {     \
-      all_handles.insert(handle);                    \
-      EXPECT_NE(handle.GetInstanceId(), link_id);    \
-    }                                                \
-    EXPECT_EQ(all_handles, (data).live_handles);     \
+#define CHECK_GLOBAL_TOPOLOGY_DATA(data, link_id) \
+  {                                               \
+    for (auto handle : (data).topology_vector) {  \
+      EXPECT_NE(handle.GetInstanceId(), link_id); \
+    }                                             \
   }
 
 std::unique_ptr<view_tree::SubtreeSnapshot> GenerateSnapshot(
@@ -100,7 +97,6 @@ TEST(GlobalTopologyDataTest, GlobalTopologyUnknownGraph) {
   EXPECT_TRUE(output.topology_vector.empty());
   EXPECT_TRUE(output.ComputeChildCountVector().empty());
   EXPECT_TRUE(output.parent_indices.empty());
-  EXPECT_TRUE(output.live_handles.empty());
 }
 
 TEST(GlobalTopologyDataTest, GlobalTopologyLinkExpansion) {

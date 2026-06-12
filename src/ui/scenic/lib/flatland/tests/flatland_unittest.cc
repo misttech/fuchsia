@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <unordered_set>
 
 #include <gtest/gtest.h>
 
@@ -571,8 +572,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     const auto matrices =
         flatland::ComputeGlobalMatrices(data.topology_vector, data.parent_indices, snapshot.map);
 
-    link_system_->UpdateLinkWatchers(data.topology_vector, data.live_handles, matrices,
-                                     snapshot.map);
+    link_system_->UpdateLinkWatchers(data.topology_vector, matrices, snapshot.map);
     link_system_->UpdateDevicePixelRatio(display_pixel_ratio_);
 
     // Run the looper again to process any queued FIDL events (i.e., Link callbacks).

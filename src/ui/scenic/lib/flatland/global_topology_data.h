@@ -7,8 +7,6 @@
 
 #include <lib/trace/event.h>
 
-#include <unordered_set>
-
 #include "src/ui/scenic/lib/flatland/transform_handle.h"
 #include "src/ui/scenic/lib/flatland/uber_struct.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
@@ -28,17 +26,7 @@ struct GlobalTopologyData {
   GlobalTopologyData& operator=(const GlobalTopologyData&) = delete;
   // Allow move ctors.
   GlobalTopologyData(GlobalTopologyData&& other) = default;
-  GlobalTopologyData& operator=(GlobalTopologyData&& other) {
-    topology_vector = std::move(other.topology_vector);
-    parent_indices = std::move(other.parent_indices);
-    // TODO(https://fxbug.dev/42076105): Investigate why move is slow.
-    {
-      TRACE_DURATION("gfx", "GlobalTopologyData[move]", "length", other.live_handles.size());
-      live_handles = std::move(other.live_handles);
-    }
-
-    return *this;
-  }
+  GlobalTopologyData& operator=(GlobalTopologyData&& other) = default;
 
   // The LinkSystem stores topology links as a key-value pair of TransformHandles. This type alias
   // is declared because while this map is created by the LinkSystem, it is only ever consumed
@@ -60,9 +48,6 @@ struct GlobalTopologyData {
   // always be zero to indicate that the first TransformHandle has no parent.
   using ParentIndexVector = std::vector<size_t>;
   ParentIndexVector parent_indices;
-
-  // The set of TransformHandles in the |topology_vector| (provided for convenience).
-  std::unordered_set<TransformHandle> live_handles;
 
   // Clear all fields without freeing memory, so that it avoid reallocation when reused.
   void Clear();

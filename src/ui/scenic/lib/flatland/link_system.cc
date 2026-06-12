@@ -7,6 +7,10 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
+#include <array>
+#include <cstddef>
+#include <memory_resource>
+
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/task_utils.h"
@@ -199,11 +203,19 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
 }
 
 void LinkSystem::UpdateLinkWatchers(const GlobalTopologyData::TopologyVector& global_topology,
-                                    const std::unordered_set<TransformHandle>& live_handles,
                                     const GlobalMatrixVector& global_matrices,
                                     const UberStruct::InstanceMap& uber_structs) const {
   TRACE_DURATION("gfx", "LinkSystem::UpdateLinkWatchers");
   std::scoped_lock lock(mutex_);
+
+  // Use a stack-allocated buffer to back the polymorphic memory resource.
+  // 16KB is extremely safe for a tree of 200+ nodes.
+  alignas(std::max_align_t) std::array<std::byte, 16384> stack_buffer;
+  std::pmr::monotonic_buffer_resource mem_resource(stack_buffer.data(), stack_buffer.size());
+
+  std::pmr::unordered_set<TransformHandle> live_handles(
+      global_topology.begin(), global_topology.end(),
+      /*bucket_count=*/global_topology.size(), &mem_resource);
 
   // Since the global topology may not contain every Flatland instance, manually update the
   // ParentViewportStatus of every ParentViewportWatcher.

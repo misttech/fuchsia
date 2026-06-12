@@ -397,14 +397,10 @@ void GlobalTopologyData::Clear() {
     topology_vector.clear();
     parent_indices.clear();
   }
-  {
-    TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[unordered]");
-    live_handles.clear();
-  }
 }
 
 bool GlobalTopologyData::IsCleared() const {
-  return topology_vector.empty() && parent_indices.empty() && live_handles.empty();
+  return topology_vector.empty() && parent_indices.empty();
 }
 
 // static
@@ -450,7 +446,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   };
   std::vector<ParentChildIterator> parent_counts;
 
-  auto& [topology_vector, parent_indices, live_handles] = output;
+  auto& [topology_vector, parent_indices] = output;
 
   // If we don't have the root in the map, the topology will be empty.
   const auto root_uber_struct_kv = uber_structs.find(root.GetInstanceId());
@@ -574,7 +570,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     topology_vector.push_back(current_entry.handle);
 
     parent_indices.push_back(parent_counts.empty() ? 0 : parent_counts.back().parent_index);
-    live_handles.insert(current_entry.handle);
 
     // If this entry was the last child for the previous parent, pop that off the stack.
     if (!parent_counts.empty() && parent_counts.back().children_left == 0) {

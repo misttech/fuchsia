@@ -378,7 +378,6 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // list of global matrices, one per handle in |global_topology|. |uber_structs| is the set of
   // UberStructs used to generate the global topology.
   void UpdateLinkWatchers(const GlobalTopologyData::TopologyVector& global_topology,
-                          const std::unordered_set<TransformHandle>& live_handles,
                           const GlobalMatrixVector& global_matrices,
                           const UberStruct::InstanceMap& uber_structs) const;
 
