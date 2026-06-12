@@ -5,15 +5,19 @@
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
+use assembly_config_schema::platform_settings::ui_config::PlatformUiConfig;
 use assembly_constants::BoardFeature;
 
 pub(crate) struct GraphicsSubsystemConfig;
-impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
+impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
+    for GraphicsSubsystemConfig
+{
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        graphics_config: &GraphicsConfig,
+        config: &(&GraphicsConfig, &PlatformUiConfig),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
+        let (graphics_config, ui_config) = *config;
         let virtcon_config = &graphics_config.virtual_console;
 
         let enable_virtual_console =
@@ -38,7 +42,7 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
             builder.platform_bundle("vulkan_loader")?;
         }
 
-        if context.board_config.provides_feature(BoardFeature::FakeDisplay) {
+        if context.board_config.provides_feature(BoardFeature::FakeDisplay) && ui_config.enabled {
             builder.platform_bundle("fake_display_stack_host")?;
         }
 
@@ -121,6 +125,7 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
 mod tests {
     use super::*;
     use crate::common::ConfigurationBuilderImpl;
+    use assembly_config_schema::BoardConfig;
     use assembly_config_schema::platform_settings::graphics_config::VirtconConfig;
 
     #[test]
@@ -132,7 +137,12 @@ mod tests {
         };
         let config = GraphicsConfig { ..Default::default() };
         let mut builder = ConfigurationBuilderImpl::default();
-        GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
         let config = builder.build();
         assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
     }
@@ -148,7 +158,12 @@ mod tests {
             virtual_console: VirtconConfig { enable: Some(false), ..Default::default() },
         };
         let mut builder = ConfigurationBuilderImpl::default();
-        GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
         let config = builder.build();
         assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
     }
@@ -164,11 +179,63 @@ mod tests {
             virtual_console: VirtconConfig { enable: Some(true), ..Default::default() },
         };
         let mut builder = ConfigurationBuilderImpl::default();
-        GraphicsSubsystemConfig::define_configuration(&context, &config, &mut builder).unwrap();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
         let config = builder.build();
         assert_eq!(
             config.bundles,
             ["display_drivers_base".to_string(), "virtcon".to_string()].into()
         );
+    }
+
+    #[test]
+    fn test_fake_display_ui_enabled() {
+        let board_config = BoardConfig {
+            provided_features: vec!["fuchsia::fake_display".to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig { ..Default::default() };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: true, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(
+            config.bundles,
+            ["display_drivers_base".to_string(), "fake_display_stack_host".to_string()].into()
+        );
+    }
+
+    #[test]
+    fn test_fake_display_ui_disabled() {
+        let board_config = BoardConfig {
+            provided_features: vec!["fuchsia::fake_display".to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig { ..Default::default() };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig { enabled: false, ..Default::default() }),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
     }
 }

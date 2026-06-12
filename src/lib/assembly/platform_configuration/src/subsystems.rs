@@ -219,7 +219,7 @@ fn configure_subsystems(
 
     graphics::GraphicsSubsystemConfig::define_configuration(
         &context_base.for_subsystem("graphics"),
-        &platform.graphics,
+        &(&platform.graphics, &platform.ui),
         builder,
     )
     .context("Configuring the 'graphics' subsystem")?;
