@@ -130,7 +130,7 @@ fn handle_message_3<B: SplitByteSlice>(
         match (element, &protection) {
             (key_data::Element::Gtk(_, e), _) => gtk = Some(e),
             (key_data::Element::Igtk(_, e), _) => {
-                igtk = Some(Igtk::from_kde(e, negotiated_protection.group_mgmt_cipher()))
+                igtk = Some(Igtk::from_kde(e, negotiated_protection.group_mgmt_cipher())?)
             }
             (key_data::Element::Rsne(e), None) => protection = Some(ProtectionInfo::Rsne(e)),
             (key_data::Element::Rsne(e), Some(_)) => {

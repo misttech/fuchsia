@@ -4,7 +4,7 @@
 
 use crate::key::Tk;
 use crate::key_data::kde;
-use crate::Error;
+use crate::{Error, rsn_ensure};
 use mundane::bytes;
 use wlan_common::ie::rsn::cipher::Cipher;
 
@@ -53,8 +53,16 @@ pub struct Igtk {
 }
 
 impl Igtk {
-    pub fn from_kde(element: kde::Igtk, cipher: Cipher) -> Self {
-        Self { igtk: element.igtk, key_id: element.id, ipn: element.ipn, cipher }
+    #[allow(clippy::result_large_err, reason = "large Error enum")]
+    pub fn from_kde(element: kde::Igtk, cipher: Cipher) -> Result<Self, Error> {
+        let tk_len: usize =
+            cipher.tk_bytes().ok_or(Error::IgtkHierarchyUnsupportedCipherError)?.into();
+        // TODO(https://fxbug.dev/523310267): Handle the case where `element.igtk.len() > tk_len`
+        rsn_ensure!(
+            element.igtk.len() >= tk_len,
+            Error::InvalidKeyLength(element.igtk.len(), tk_len)
+        );
+        Ok(Self { igtk: element.igtk, key_id: element.id, ipn: element.ipn, cipher })
     }
 }
 
@@ -82,5 +90,25 @@ mod tests {
             }
         }
         panic!("IGTK key rotation always generates the same key!");
+    }
+
+    #[test]
+    fn test_igtk_from_kde_validation() {
+        // DEFAULT_GROUP_MGMT_CIPHER is BIP-CMAC-128, which expects a 16-byte key.
+        let ipn = [0u8; 6];
+
+        // 1. Correct key size (16 bytes)
+        let exact_key = vec![0xaa; 16];
+        let element = kde::Igtk::new(1, &ipn[..], &exact_key[..]);
+        let igtk = Igtk::from_kde(element, DEFAULT_GROUP_MGMT_CIPHER);
+        assert!(igtk.is_ok());
+        let igtk = igtk.unwrap();
+        assert_eq!(igtk.igtk, exact_key);
+
+        // 2. Shorter key size (e.g. 15 bytes) -> should fail.
+        let short_key = vec![0xcc; 15];
+        let element = kde::Igtk::new(1, &ipn[..], &short_key[..]);
+        let igtk = Igtk::from_kde(element, DEFAULT_GROUP_MGMT_CIPHER);
+        assert!(igtk.is_err());
     }
 }

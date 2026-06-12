@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::key::Tk;
-use crate::{rsn_ensure, Error};
+use crate::{Error, rsn_ensure};
 use mundane::bytes;
 use std::hash::{Hash, Hasher};
 use wlan_common::ie::rsn::cipher::Cipher;
@@ -86,6 +86,7 @@ impl Gtk {
 
         let tk_len: usize =
             cipher.tk_bytes().ok_or(Error::GtkHierarchyUnsupportedCipherError)?.into();
+        // TODO(https://fxbug.dev/523310267): Handle the case where `gtk_bytes.len() > tk_len`
         rsn_ensure!(gtk_bytes.len() >= tk_len, "GTK must be larger than the resulting TK");
 
         Ok(Gtk { bytes: gtk_bytes, cipher, tk_len, key_id, key_rsc })

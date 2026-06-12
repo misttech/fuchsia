@@ -125,7 +125,8 @@ impl Supplicant {
                 gtk.info.key_id(),
                 key_rsc,
             )?,
-            igtk.map(|element| Igtk::from_kde(element, self.cfg.protection.group_mgmt_cipher())),
+            igtk.map(|element| Igtk::from_kde(element, self.cfg.protection.group_mgmt_cipher()))
+                .transpose()?,
         ))
     }
 
