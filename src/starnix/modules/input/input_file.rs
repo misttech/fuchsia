@@ -710,7 +710,7 @@ impl FileOps for InputFile {
         let limit = data.available() / input_event_size;
         let events = self.read_events(limit);
         if events.is_empty() {
-            // TODO: b/498956542 - ensure this is the correct behavior for input files
+            // Returns `EAGAIN` for file is opened with or without `O_NONBLOCK`.
             log_info!("read() returning EAGAIN");
             return error!(EAGAIN);
         }
