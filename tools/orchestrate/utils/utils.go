@@ -48,3 +48,23 @@ func AppendPath(environ []string, dirs ...string) []string {
 	}
 	return result
 }
+
+// Prepends a file path to the PATH variable inside an environ. If PATH isn't in the environment it
+// will be created. This also assumes that there is at most one PATH in the environment.
+func PrependPath(environ []string, dirs ...string) []string {
+	var result []string
+	pathFound := false
+	for _, e := range environ {
+		if strings.HasPrefix(e, "PATH=") {
+			pathFound = true
+			pathVal := strings.TrimPrefix(e, "PATH=")
+			result = append(result, fmt.Sprintf("PATH=%s:%s", strings.Join(dirs, ":"), pathVal))
+		} else {
+			result = append(result, e)
+		}
+	}
+	if !pathFound && len(dirs) > 0 {
+		result = append(result, fmt.Sprintf("PATH=%s", strings.Join(dirs, ":")))
+	}
+	return result
+}

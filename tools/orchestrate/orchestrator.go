@@ -90,9 +90,23 @@ func (r *TestOrchestrator) instantiateFfx(ctx context.Context, in *RunInput) err
 		}
 		ffxPath = filepath.Join(wd, ffxPath)
 	}
+
+	outputsDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if in.HasExperiment("orchestrate-ffx-strict") {
+		client, err := NewFFXStrictClient(ctx, ffxPath, outputsDir, r.repoName)
+		if err != nil {
+			return fmt.Errorf("NewFFXStrictClient: %w", err)
+		}
+		r.ffx = client
+		if r.deviceConfig != nil && r.deviceConfig.Network.IPv4 != "" {
+			r.ffx.SetDefaultTarget(&r.deviceConfig.Network.IPv4)
+		}
+		return nil
+	}
+
 	ffxOpt := &ffx.Option{
 		ExePath: ffxPath,
-		LogDir:  os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"),
+		LogDir:  outputsDir,
 	}
 	f, err := ffx.New(ctx, ffxOpt)
 	if err != nil {
