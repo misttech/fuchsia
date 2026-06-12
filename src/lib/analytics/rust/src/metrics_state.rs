@@ -242,35 +242,38 @@ impl MetricsState {
     }
 
     fn init_status_for_googler(&mut self) {
-        match read_analytics_status_internal(&self.metrics_dir) {
-            Ok(status) => {
-                log::trace!("Found status in analytics-status-internal");
-                match status {
-                    MetricsStatus::OptedIn
-                    | MetricsStatus::OptedInEnhanced
-                    | MetricsStatus::OptedOut => {
-                        self.status = status;
-                    }
-                    _ => {
-                        log::trace!("Empty value found in analytics-status-internal");
-                        self.status = MetricsStatus::GooglerNeedsNotice;
-                    }
+        if let Ok(status) = read_analytics_status_internal(&self.metrics_dir) {
+            log::trace!("Found status in analytics-status-internal");
+            match status {
+                MetricsStatus::OptedIn
+                | MetricsStatus::OptedInEnhanced
+                | MetricsStatus::OptedOut => {
+                    self.status = status;
                 }
+                _ => {
+                    log::trace!("Empty value found in analytics-status-internal");
+                    self.status = MetricsStatus::GooglerNeedsNotice;
+                }
+            }
+            if self.status != MetricsStatus::OptedOut {
                 self.init_uuid();
-                return;
             }
-            Err(_) => {
-                log::trace!("No value found in analytics-status-internal.");
-                self.status = MetricsStatus::GooglerNeedsNotice;
-                self.set_internal_new_user();
-            }
+            return;
         }
+
+        log::trace!("No value found in analytics-status-internal.");
         // if analytics-internal-status was not found, look for older, analytics-status file
         match read_opt_in_status(Path::new(&self.metrics_dir)) {
-            Ok(true) => self.status = MetricsStatus::GooglerOptedInAndNeedsNotice,
-            Ok(false) => self.status = MetricsStatus::OptedOut,
+            Ok(true) => {
+                self.status = MetricsStatus::GooglerOptedInAndNeedsNotice;
+                self.init_uuid();
+            }
+            Ok(false) => {
+                self.status = MetricsStatus::OptedOut;
+            }
             Err(_) => {
                 self.status = MetricsStatus::GooglerNeedsNotice;
+                self.set_internal_new_user();
             }
         }
         // write the state to the new analytics-internal-status if it is already settled.
@@ -284,12 +287,6 @@ impl MetricsState {
             if let Err(e) = write_analytics_status_internal(&self.metrics_dir, &self.status) {
                 eprintln!("Could not write opt in status to analytics-status-internal {:}", e);
             }
-        }
-
-        if self.status != MetricsStatus::OptedOut
-            && self.status != MetricsStatus::GooglerNeedsNotice
-        {
-            self.init_uuid();
         }
         // Do not set app_status. It is not a valid state for a googler.
     }
@@ -490,20 +487,11 @@ mod tests {
             assert_eq!(m.status, MetricsStatus::GooglerNeedsNotice);
         }
         let result = read_uuid_file(&dir);
-        if !is_googler() {
-            match result {
-                Ok(uuid) => {
-                    assert_eq!(m.uuid, Some(uuid));
-                }
-                Err(_) => panic!("Could not read uuid"),
+        match result {
+            Ok(uuid) => {
+                assert_eq!(m.uuid, Some(uuid));
             }
-        } else {
-            match result {
-                Ok(_) => {
-                    panic!("When is_googler, should not have generated uuid file")
-                }
-                Err(_) => assert_eq!(true, true),
-            }
+            Err(_) => panic!("Could not read uuid"),
         }
 
         drop(dir);
