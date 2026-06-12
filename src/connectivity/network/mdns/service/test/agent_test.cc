@@ -47,7 +47,7 @@ void AgentTest::SendResource(std::shared_ptr<DnsResource> resource, MdnsResource
   EXPECT_NE(nullptr, resource);
 
   if (section == MdnsResourceSection::kExpired) {
-    expirations_.push_back(*resource);
+    expirations_.push_back(resource);
     return;
   }
 
@@ -77,7 +77,7 @@ void AgentTest::SendAddresses(MdnsResourceSection section, const ReplyAddress& r
 }
 
 void AgentTest::Renew(const DnsResource& resource, Media media, IpVersions ip_versions) {
-  renew_calls_.push_back(RenewCall{.resource_ = resource});
+  renew_calls_.push_back(RenewCall{.resource_ = std::make_shared<DnsResource>(resource)});
 }
 
 void AgentTest::Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
@@ -99,8 +99,9 @@ void AgentTest::Query(DnsType type, const DnsName& name, Media media, IpVersions
 
 void AgentTest::ExpectRenewCall(DnsResource resource) {
   for (auto iter = renew_calls_.begin(); iter != renew_calls_.end(); ++iter) {
-    if (iter->resource_.type_ == resource.type_ && iter->resource_.name_ == resource.name_ &&
-        iter->resource_.time_to_live_ == resource.time_to_live_) {
+    if (iter->resource_ && iter->resource_->type_ == resource.type_ &&
+        iter->resource_->name_ == resource.name_ &&
+        iter->resource_->time_to_live_ == resource.time_to_live_) {
       renew_calls_.erase(iter);
       return;
     }
@@ -131,7 +132,7 @@ void AgentTest::ExpectQueryCall(DnsType type, const DnsName& name, Media media,
 
 void AgentTest::ExpectExpiration(DnsResource resource) {
   for (auto iter = expirations_.begin(); iter != expirations_.end(); ++iter) {
-    if (*iter == resource) {
+    if (*iter && **iter == resource) {
       expirations_.erase(iter);
       return;
     }

@@ -7,6 +7,7 @@
 
 #include <lib/zx/time.h>
 
+#include <memory>
 #include <queue>
 #include <unordered_map>
 
@@ -184,7 +185,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   };
 
   struct RenewCall {
-    DnsResource resource_;
+    std::shared_ptr<DnsResource> resource_;
   };
 
   struct QueryCall {
@@ -256,7 +257,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
       outbound_messages_by_reply_address_;
   std::vector<RenewCall> renew_calls_;
   std::vector<QueryCall> query_calls_;
-  std::vector<DnsResource> expirations_;
+  std::vector<std::shared_ptr<DnsResource>> expirations_;
   bool remove_agent_called_ = false;
   bool maybe_send_messages_called_ = false;
   bool add_local_service_instance_called_ = false;

@@ -364,8 +364,6 @@ struct DnsResource {
   DnsResource(const DnsResource& other);
   ~DnsResource();
 
-  DnsResource& operator=(const DnsResource& other);
-
   bool operator==(const DnsResource& other) const {
     if (name_ != other.name_ || type_ != other.type_ || class_ != other.class_ ||
         cache_flush_ != other.cache_flush_ || time_to_live_ != other.time_to_live_) {

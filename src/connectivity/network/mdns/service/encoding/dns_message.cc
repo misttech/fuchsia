@@ -250,57 +250,6 @@ DnsResource::DnsResource(const DnsResource& other) {
   }
 }
 
-DnsResource& DnsResource::operator=(const DnsResource& other) {
-  name_ = other.name_;
-  type_ = other.type_;
-  class_ = other.class_;
-  cache_flush_ = other.cache_flush_;
-  time_to_live_ = other.time_to_live_;
-
-  switch (type_) {
-    case DnsType::kA:
-      new (&a_) DnsResourceDataA();
-      a_ = other.a_;
-      break;
-    case DnsType::kNs:
-      new (&ns_) DnsResourceDataNs();
-      ns_ = other.ns_;
-      break;
-    case DnsType::kCName:
-      new (&cname_) DnsResourceDataCName();
-      cname_ = other.cname_;
-      break;
-    case DnsType::kPtr:
-      new (&ptr_) DnsResourceDataPtr();
-      ptr_ = other.ptr_;
-      break;
-    case DnsType::kTxt:
-      new (&txt_) DnsResourceDataTxt();
-      txt_ = other.txt_;
-      break;
-    case DnsType::kAaaa:
-      new (&aaaa_) DnsResourceDataAaaa();
-      aaaa_ = other.aaaa_;
-      break;
-    case DnsType::kSrv:
-      new (&srv_) DnsResourceDataSrv();
-      srv_ = other.srv_;
-      break;
-    case DnsType::kOpt:
-      new (&opt_) DnsResourceDataOpt();
-      opt_ = other.opt_;
-      break;
-    case DnsType::kNSec:
-      new (&nsec_) DnsResourceDataNSec();
-      nsec_ = other.nsec_;
-      break;
-    default:
-      break;
-  }
-
-  return *this;
-}
-
 DnsResource::~DnsResource() {
   switch (type_) {
     case DnsType::kA:
