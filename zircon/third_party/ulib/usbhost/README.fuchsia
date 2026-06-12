@@ -1,8 +1,0 @@
-Name: libusbhost
-URL: https://android.googlesource.com/platform/system/core
-Revision: 7163045f7d068a2cc04458a9fc4a357fd8e14223
-License: Apache 2
-License File: LICENSE.txt
-Description: libusbhost is a simple library for userspace USB support on Linux.
-Local Modifications: compiler specific edits
-Branch URL is https://android.googlesource.com/platform/system/core/+/master/libusbhost/
