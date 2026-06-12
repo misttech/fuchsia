@@ -12,6 +12,7 @@ fidl_library(
     enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [
+        "//sdk/fidl/fuchsia.hardware.platform.bus",
         "//zircon/vdso/zx",
     ],
 )

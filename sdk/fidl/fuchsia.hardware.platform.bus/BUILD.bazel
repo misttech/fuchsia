@@ -13,6 +13,7 @@ fidl_library(
     api_area = "Drivers",
     category = "partner",
     contains_drivers = True,
+    enable_rust_next = True,
     stable = False,
     visibility = ["//visibility:public"],
     deps = [
