@@ -298,7 +298,7 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::AllDeviceSocke
     fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
         bindings_ctx: &mut BC,
-        dst_mac: Mac,
+        dst_mac: UnicastAddr<Mac>,
         body: S,
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
@@ -311,7 +311,7 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::AllDeviceSocke
             *core_ctx,
             bindings_ctx,
             device_id,
-            dst_mac,
+            dst_mac.get(),
             body,
             EtherType::Ipv6,
             meta,
@@ -485,7 +485,7 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::AllDeviceSocke
     fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
         bindings_ctx: &mut BC,
-        dst_mac: Mac,
+        dst_mac: UnicastAddr<Mac>,
         body: S,
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
@@ -498,7 +498,7 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::AllDeviceSocke
             *core_ctx,
             bindings_ctx,
             device_id,
-            dst_mac,
+            dst_mac.get(),
             body,
             EtherType::Ipv4,
             meta,

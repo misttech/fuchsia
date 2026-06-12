@@ -1297,7 +1297,7 @@ mod tests {
         fn send_ip_packet_to_neighbor_link_addr<S>(
             &mut self,
             bindings_ctx: &mut FakeBindingsCtx,
-            link_addr: Mac,
+            link_addr: UnicastAddr<Mac>,
             body: S,
             tx_meta: FakeTxMetadata,
         ) -> Result<(), SendFrameError<S>>
@@ -1310,7 +1310,7 @@ mod tests {
                 *core_ctx,
                 bindings_ctx,
                 device_id,
-                link_addr,
+                link_addr.get(),
                 body,
                 EtherType::Ipv4,
                 tx_meta,

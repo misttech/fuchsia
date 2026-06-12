@@ -570,7 +570,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
             // is not actionable for the caller: failing to send a previously-queued packet
             // doesn't mean that updating the neighbor entry should fail.
             core_ctx
-                .send_ip_packet_to_neighbor_link_addr(bindings_ctx, link_address.get(), body, meta)
+                .send_ip_packet_to_neighbor_link_addr(bindings_ctx, link_address, body, meta)
                 .unwrap_or_else(|err| {
                     error!("failed to send pending IP packet to neighbor {link_address:?} {err:?}")
                 })
@@ -1305,7 +1305,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
 
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    link_address.get(),
+                    link_address,
                     body,
                     meta,
                 )?;
@@ -1317,7 +1317,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
             | DynamicNeighborState::Probe(Probe { link_address, transmit_counter: _ }) => {
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    link_address.get(),
+                    *link_address,
                     body,
                     meta,
                 )?;
@@ -1328,7 +1328,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 let Unreachable { link_address, mode: _ } = unreachable;
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    link_address.get(),
+                    *link_address,
                     body,
                     meta,
                 )?;
@@ -2186,7 +2186,7 @@ pub trait NudSenderContext<I: Ip, D: LinkDevice, BC: NudBindingsTypes<D>>:
     fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
         bindings_ctx: &mut BC,
-        neighbor_link_addr: D::Address,
+        neighbor_link_addr: UnicastAddr<D::Address>,
         body: S,
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
@@ -2687,7 +2687,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                                 // device.
                                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                                     bindings_ctx,
-                                    link_address.get(),
+                                    *link_address,
                                     body,
                                     meta,
                                 )?;
@@ -2993,7 +2993,7 @@ mod tests {
             remote_link_addr: Option<FakeLinkAddress>,
         },
         IpFrame {
-            dst_link_address: FakeLinkAddress,
+            dst_link_address: UnicastAddr<FakeLinkAddress>,
         },
         IcmpDestUnreachable,
     }
@@ -3147,7 +3147,7 @@ mod tests {
         fn send_ip_packet_to_neighbor_link_addr<S>(
             &mut self,
             bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-            dst_link_address: FakeLinkAddress,
+            dst_link_address: UnicastAddr<FakeLinkAddress>,
             body: S,
             _tx_meta: FakeTxMetadata,
         ) -> Result<(), SendFrameError<S>>
@@ -3439,7 +3439,7 @@ mod tests {
             }),
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(core_ctx, queued_frame, link_address.get());
+        assert_pending_frame_sent(core_ctx, queued_frame, link_address);
     }
 
     fn init_reachable_neighbor<I: TestIpExt>(
@@ -3477,7 +3477,7 @@ mod tests {
         );
         assert_eq!(
             core_ctx.inner.take_frames(),
-            vec![(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![1])],
+            vec![(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![1])],
         );
     }
 
@@ -3719,7 +3719,7 @@ mod tests {
     fn assert_pending_frame_sent<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         pending_frames: VecDeque<Buf<Vec<u8>>>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         assert_eq!(
             core_ctx.inner.take_frames(),
@@ -3823,7 +3823,7 @@ mod tests {
             DynamicNeighborState::Stale(Stale { link_address: LINK_ADDR1 }),
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1.get());
+        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1);
     }
 
     #[ip_test(I)]
@@ -3863,7 +3863,7 @@ mod tests {
             expected_state,
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1.get());
+        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1);
     }
 
     #[ip_test(I)]
@@ -4228,7 +4228,7 @@ mod tests {
         assert_pending_frame_sent(
             &mut core_ctx,
             VecDeque::from([Buf::new(vec![body], ..)]),
-            LINK_ADDR1.get(),
+            LINK_ADDR1,
         );
     }
 
@@ -4318,7 +4318,7 @@ mod tests {
         assert_eq!(
             core_ctx.inner.take_frames(),
             [
-                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![BODY]),
+                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY]),
                 (
                     FakeNudMessageMeta::NeighborSolicitation {
                         lookup_addr: I::LOOKUP_ADDR1,
@@ -4357,10 +4357,7 @@ mod tests {
             );
             assert_eq!(
                 core_ctx.inner.take_frames(),
-                [(
-                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
-                    vec![BODY + i]
-                )]
+                [(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY + i])]
             );
 
             // Fast forward until the current retransmit timer should fire, taking
@@ -4404,7 +4401,7 @@ mod tests {
         assert_eq!(
             core_ctx.inner.take_frames(),
             [
-                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![BODY]),
+                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY]),
                 (
                     FakeNudMessageMeta::NeighborSolicitation {
                         lookup_addr: I::LOOKUP_ADDR1,
@@ -4552,7 +4549,7 @@ mod tests {
             expected_pending_frames
                 .into_iter()
                 .map(|(p, FakeTxMetadata)| (
-                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
+                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 },
                     p.as_ref().to_vec()
                 ))
                 .collect::<Vec<_>>()
@@ -4678,7 +4675,7 @@ mod tests {
             pending_frames
                 .into_iter()
                 .map(|f| (
-                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
+                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 },
                     f.as_ref().to_vec(),
                 ))
                 .collect::<Vec<_>>()

@@ -80,7 +80,7 @@ pub trait ArpSenderContext<D: ArpDevice, BC: ArpBindingsContext<D, Self::DeviceI
     fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
         bindings_ctx: &mut BC,
-        dst_link_address: D::Address,
+        dst_link_address: UnicastAddr<D::Address>,
         body: S,
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
@@ -337,7 +337,7 @@ impl<D: ArpDevice, BC: ArpBindingsContext<D, CC::DeviceId>, CC: ArpSenderContext
     fn send_ip_packet_to_neighbor_link_addr<S>(
         &mut self,
         bindings_ctx: &mut BC,
-        dst_mac: D::Address,
+        dst_mac: UnicastAddr<D::Address>,
         body: S,
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
@@ -962,7 +962,7 @@ mod tests {
         fn send_ip_packet_to_neighbor_link_addr<S>(
             &mut self,
             _bindings_ctx: &mut FakeBindingsCtxImpl,
-            _dst_link_address: Mac,
+            _dst_link_address: UnicastAddr<Mac>,
             _body: S,
             _tx_meta: FakeTxMetadata,
         ) -> Result<(), SendFrameError<S>> {
