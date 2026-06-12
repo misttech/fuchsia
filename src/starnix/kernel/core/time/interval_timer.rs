@@ -16,7 +16,7 @@ use futures::channel::mpsc;
 use futures::stream::AbortHandle;
 use futures::{FutureExt, StreamExt, select};
 use starnix_logging::{log_debug, log_error, log_trace, log_warn, track_stub};
-use starnix_sync::Mutex;
+use starnix_sync::{IntervalTimerState, LockDepMutex};
 use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{SI_TIMER, itimerspec};
@@ -53,7 +53,7 @@ pub struct IntervalTimer {
 
     pub signal_event: SignalEvent,
 
-    state: Mutex<IntervalTimerMutableState>,
+    state: LockDepMutex<IntervalTimerMutableState, IntervalTimerState>,
 }
 pub type IntervalTimerHandle = Arc<IntervalTimer>;
 
@@ -220,7 +220,7 @@ impl IntervalTimer {
             hr_timer,
             timeline,
             signal_event,
-            state: Mutex::new(IntervalTimerMutableState {
+            state: LockDepMutex::new(IntervalTimerMutableState {
                 target_time: timeline.zero_time(),
                 abort_handle: Default::default(),
                 armed: Default::default(),

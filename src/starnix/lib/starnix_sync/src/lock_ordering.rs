@@ -97,4 +97,8 @@ lock_ordering! {
     UninterruptibleLock => EbpfMapStateLevel,
     EbpfStateLock => EbpfSuspendLock,
     EbpfMapStateLevel => EbpfSuspendLock,
+
+    // Timer locks
+    UninterruptibleLock => IntervalTimerState,
+    IntervalTimerState => TerminalLock,
 }
