@@ -13,12 +13,18 @@ config("include") {
 
 source_set("boot-shim-utils") {
   sources = [
+    "commandline-bootloader-file-item.cc",
     "devicetree-bootloader-files-item.cc",
+    "include/lib/boot-shim-utils/commandline-bootloader-file-item.h",
     "include/lib/boot-shim-utils/devicetree-bootloader-files-item.h",
   ]
 
+  # Needed to locate modp_b64 headers.
+  include_dirs = [ "//" ]
+
   public_deps = [
     "//sdk/lib/fit",
+    "//third_party/modp_b64:modp_b64_c",
     "//zircon/kernel/phys/lib/boot-shim",
   ]
 
@@ -58,7 +64,10 @@ if (!is_kernel) {
   }
 
   test("boot-shim-utils-unittests") {
-    sources = [ "devicetree-bootloader-files-item-tests.cc" ]
+    sources = [
+      "commandline-bootloader-file-item-test.cc",
+      "devicetree-bootloader-files-item-tests.cc",
+    ]
     deps = [
       ":boot-shim-utils",
       ":chosen_bootloader_files_blob",
