@@ -10,6 +10,7 @@
 #include <lib/fpromise/promise.h>
 #include <lib/zx/clock.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 
 #include <optional>
 
@@ -259,7 +260,7 @@ fpromise::promise<void, zx_status_t> EventRing::HandlePortStatusChangeEvent(uint
     hci_->GetPortState()[port_id - 1].is_connected = false;
     hci_->GetPortState()[port_id - 1].is_USB3 = false;
     if (hci_->GetPortState()[port_id - 1].slot_id) {
-      ScheduleTask(hci_->DeviceOffline(hci_->GetPortState()[port_id - 1].slot_id).box());
+      ScheduleTask(hci_->DeviceOffline(hci_->GetPortState()[port_id - 1].slot_id));
     }
   }
 
@@ -379,9 +380,8 @@ void EventRing::SchedulePortStatusChange(uint8_t port_id, bool preempt) {
   ctx->port_number = port_id;
   fpromise::bridge<TRB*, zx_status_t> bridge;
   ctx->completer = std::move(bridge.completer);
-  ScheduleTask(bridge.consumer.promise()
-                   .then([=](fpromise::result<TRB*, zx_status_t>& result) { return result; })
-                   .box());
+  ScheduleTask(bridge.consumer.promise().then(
+      [=](fpromise::result<TRB*, zx_status_t>& result) { return result; }));
   if (preempt) {
     enumeration_queue_.push_front(std::move(ctx));
   } else {
@@ -407,6 +407,8 @@ void EventRing::ScheduleTask(fpromise::promise<void, zx_status_t> promise) {
     if (status == ZX_ERR_BAD_STATE) {
       fdf::error("Scheduled task returned a fatal error, shutting down");
       hci_->Shutdown(status);
+    } else if (status != ZX_ERR_IO_NOT_PRESENT) {
+      fdf::warn("Scheduled task failed: {}", zx_status_get_string(status));
     }
   });
   executor_.schedule_task(std::move(continuation));
@@ -425,11 +427,16 @@ bool EventRing::StallWorkaroundForDefectiveHubs(std::unique_ptr<TRBContext>& con
         (request->header.length >= sizeof(desc))) {
       desc->b_device_protocol =
           0;  // Don't support multi-TT unless we're sure the device supports it.
-      ScheduleTask(hci_->UsbHciResetEndpointAsync(request->header.device_id, 0)
-                       .and_then([ctx = std::move(context)]() {
-                         std::get<Request>(*ctx->request).Complete(ZX_OK, sizeof(*desc));
-                         return fpromise::ok();
-                       }));
+      ScheduleTask(
+          hci_->UsbHciResetEndpointAsync(request->header.device_id, 0)
+              .then([ctx = std::move(context)](fpromise::result<void, zx_status_t>& result) {
+                if (result.is_ok()) {
+                  std::get<Request>(*ctx->request).Complete(ZX_OK, sizeof(*desc));
+                } else {
+                  std::get<Request>(*ctx->request).Complete(result.error(), 0);
+                }
+                return fpromise::result<void, zx_status_t>(fpromise::ok());
+              }));
 
       return true;
     }

@@ -494,8 +494,12 @@ fpromise::promise<void, zx_status_t> UsbXhci::ConfigureHubAsync(uint32_t device_
     context = command_ring_.AllocateContext();
   }
   return SubmitCommand(cmd, std::move(context))
-      .and_then([=, this](TRB*& trb) -> fpromise::promise<void, zx_status_t> {
-        auto completion = reinterpret_cast<CommandCompletionEvent*>(trb);
+      .then([=, this](fpromise::result<TRB*, zx_status_t>& result)
+                -> fpromise::promise<void, zx_status_t> {
+        if (result.is_error()) {
+          return fpromise::make_error_promise<zx_status_t>(result.error());
+        }
+        auto completion = reinterpret_cast<CommandCompletionEvent*>(result.value());
         if (completion->CompletionCode() != CommandCompletionEvent::Success) {
           fdf::error("Failed to configure endpoint: CompletionCode() == {}",
                      completion->CompletionCode());
@@ -1061,10 +1065,14 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciResetEndpointAsync(uint32_t 
     }
   }
   return SubmitCommand(reset_command, std::move(context))
-      .and_then([=, this](TRB*& trb) -> TRBPromise {
-        CommandCompletionEvent* evt = static_cast<CommandCompletionEvent*>(trb);
+      .then([=, this](fpromise::result<TRB*, zx_status_t>& result)
+                -> fpromise::promise<void, zx_status_t> {
+        if (result.is_error()) {
+          return fpromise::make_error_promise<zx_status_t>(result.error());
+        }
+        CommandCompletionEvent* evt = static_cast<CommandCompletionEvent*>(result.value());
         if (evt->CompletionCode() != CommandCompletionEvent::Success) {
-          return fpromise::make_error_promise(ZX_ERR_IO);
+          return fpromise::make_error_promise<zx_status_t>(ZX_ERR_IO);
         }
 
         SetTRDequeuePointer cmd;
@@ -1072,23 +1080,25 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciResetEndpointAsync(uint32_t 
         cmd.set_SLOT(state->GetSlot());
         auto res = ring->PeekCommandRingControlRegister(CapLength());
         if (res.is_error()) {
-          return fpromise::make_error_promise(res.error_value());
+          return fpromise::make_error_promise<zx_status_t>(res.error_value());
         }
         cmd.SetPtr(res.value());
         auto context = command_ring_.AllocateContext();
         return SubmitCommand(cmd, std::move(context))
-            .and_then([=](TRB*& result) {
-              CommandCompletionEvent* evt = static_cast<CommandCompletionEvent*>(result);
+            .then([=](fpromise::result<TRB*, zx_status_t>& result)
+                      -> fpromise::result<void, zx_status_t> {
+              if (result.is_error()) {
+                return fpromise::error(result.error());
+              }
+              CommandCompletionEvent* evt = static_cast<CommandCompletionEvent*>(result.value());
               if (evt->CompletionCode() != CommandCompletionEvent::Success) {
-                return fpromise::make_error_promise(ZX_ERR_IO);
+                return fpromise::error(ZX_ERR_IO);
               }
               fbl::AutoLock l(&state->transaction_lock());
               ring->set_stall(false);
-              return fpromise::make_ok_promise(result);
-            })
-            .box();
+              return fpromise::ok();
+            });
       })
-      .discard_value()
       .box();
 }
 
@@ -1142,8 +1152,12 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciCancelAllAsync(uint32_t devi
   }
   auto context = command_ring_.AllocateContext();
   return SubmitCommand(stop, std::move(context))
-      .and_then([=, this](TRB*& trb) -> fpromise::promise<void, zx_status_t> {
-        auto completion_event = static_cast<CommandCompletionEvent*>(trb);
+      .then([=, this](fpromise::result<TRB*, zx_status_t>& result)
+                -> fpromise::promise<void, zx_status_t> {
+        if (result.is_error()) {
+          return fpromise::make_error_promise<zx_status_t>(result.error());
+        }
+        auto completion_event = static_cast<CommandCompletionEvent*>(result.value());
         auto completion_code = completion_event->CompletionCode();
         zx_status_t status =
             (completion_code == CommandCompletionEvent::Success) ? ZX_OK : ZX_ERR_IO;
@@ -1192,8 +1206,12 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciCancelAllAsync(uint32_t devi
         cmd.ptr = new_ptr_phys;
         auto context = command_ring_.AllocateContext();
         return SubmitCommand(cmd, std::move(context))
-            .and_then([=](TRB*& trb) -> fpromise::result<void, zx_status_t> {
-              auto completion_event = static_cast<CommandCompletionEvent*>(trb);
+            .then([=](fpromise::result<TRB*, zx_status_t>& result)
+                      -> fpromise::result<void, zx_status_t> {
+              if (result.is_error()) {
+                return fpromise::error(result.error());
+              }
+              auto completion_event = static_cast<CommandCompletionEvent*>(result.value());
               auto completion_code = completion_event->CompletionCode();
               bool command_success = completion_code == CommandCompletionEvent::Success;
               zx_status_t status = command_success ? ZX_OK : ZX_ERR_IO;

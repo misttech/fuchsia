@@ -124,15 +124,7 @@ class EnumerationTests : public ::testing::Test {
 
 // EventRing Methods
 void EventRing::ScheduleTask(fpromise::promise<void, zx_status_t> promise) {
-  auto continuation = promise.or_else([=](const zx_status_t& status) {
-    // ZX_ERR_BAD_STATE is a special value that we use to signal
-    // a fatal error in xHCI. When this occurs, we should immediately
-    // attempt to shutdown the controller. This error cannot be recovered from.
-    if (status == ZX_ERR_BAD_STATE) {
-      hci_->Shutdown(ZX_ERR_BAD_STATE);
-    }
-  });
-  executor_.schedule_task(std::move(continuation));
+  SchedulePromiseWithXhciExecutorPolicy(executor_, hci_, std::move(promise));
 }
 
 void EventRing::RunUntilIdle() { executor_.run_until_idle(); }

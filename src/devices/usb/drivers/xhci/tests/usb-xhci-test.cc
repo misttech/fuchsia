@@ -16,6 +16,7 @@
 #include <fake-dma-buffer/fake-dma-buffer.h>
 #include <gtest/gtest.h>
 
+#include "src/devices/usb/drivers/xhci/tests/test-env.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace usb_xhci {
@@ -480,15 +481,7 @@ zx::result<> UsbXhci::TestInit(void* test_harness) {
 }
 
 void EventRing::ScheduleTask(fpromise::promise<void, zx_status_t> promise) {
-  auto continuation = promise.or_else([=](const zx_status_t& status) {
-    // ZX_ERR_BAD_STATE is a special value that we use to signal
-    // a fatal error in xHCI. When this occurs, we should immediately
-    // attempt to shutdown the controller. This error cannot be recovered from.
-    if (status == ZX_ERR_BAD_STATE) {
-      hci_->Shutdown(ZX_ERR_BAD_STATE);
-    }
-  });
-  executor_.schedule_task(std::move(continuation));
+  SchedulePromiseWithXhciExecutorPolicy(executor_, hci_, std::move(promise));
 }
 
 void EventRing::RunUntilIdle() { executor_.run_until_idle(); }
@@ -880,10 +873,10 @@ TEST_F(XhciMmioHarness, CancelAllOnDisabledEndpoint) {
   zx_status_t cancel_status;
   auto cr = crcr_next();
   Control control_trb = Control::FromTRB(cr);
-  ASSERT_EQ(control_trb.Type(), Control::AddressDeviceCommand);
+  EXPECT_EQ(control_trb.Type(), Control::AddressDeviceCommand);
   CommandCompletionEvent event;
   event.set_CompletionCode(CommandCompletionEvent::Success);
-  ASSERT_OK(CompleteCommand(cr, &event));
+  EXPECT_OK(CompleteCommand(cr, &event));
   bool got_stop_endpoint = false;
   SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
     if (doorbell == 0) {
@@ -892,17 +885,17 @@ TEST_F(XhciMmioHarness, CancelAllOnDisabledEndpoint) {
       switch (control.Type()) {
         case Control::StopEndpointCommand: {
           auto cancel_command = reinterpret_cast<StopEndpoint*>(cr);
-          ASSERT_EQ(cancel_command->ENDPOINT(), 2UL);
-          ASSERT_EQ(cancel_command->SLOT(), 1UL);
+          EXPECT_EQ(cancel_command->ENDPOINT(), 2UL);
+          EXPECT_EQ(cancel_command->SLOT(), 1UL);
           got_stop_endpoint = true;
-          ASSERT_OK(CompleteCommand(cr, &event));
+          EXPECT_OK(CompleteCommand(cr, &event));
         } break;
       }
     }
   });
   cancel_status = driver_test().driver()->UsbHciCancelAll(0, 1);
-  ASSERT_TRUE(got_stop_endpoint);
-  ASSERT_EQ(cancel_status, ZX_ERR_IO_NOT_PRESENT);
+  EXPECT_TRUE(got_stop_endpoint);
+  EXPECT_EQ(cancel_status, ZX_ERR_IO_NOT_PRESENT);
 }
 
 TEST_F(XhciMmioHarness, ResetEndpointTestSuccessCase) {
@@ -917,17 +910,19 @@ TEST_F(XhciMmioHarness, ResetEndpointTestSuccessCase) {
     transfer_ring.set_stall(true);
     paddr = transfer_ring.PeekCommandRingControlRegister(0).value().reg_value();
   }
+
   zx_status_t reset_status;
   auto cr = crcr_next();
   Control control_trb = Control::FromTRB(cr);
-  ASSERT_EQ(control_trb.Type(), Control::AddressDeviceCommand);
+  EXPECT_EQ(control_trb.Type(), Control::AddressDeviceCommand);
   CommandCompletionEvent event;
   event.set_CompletionCode(CommandCompletionEvent::Success);
-  ASSERT_OK(CompleteCommand(cr, &event));
+  EXPECT_OK(CompleteCommand(cr, &event));
   cr = FakeTRB::get(cr->next);
   control_trb = Control::FromTRB(cr);
-  ASSERT_EQ(control_trb.Type(), Control::ConfigureEndpointCommand);
-  ASSERT_OK(CompleteCommand(cr, &event));
+  EXPECT_EQ(control_trb.Type(), Control::ConfigureEndpointCommand);
+  EXPECT_OK(CompleteCommand(cr, &event));
+
   bool got_reset_endpoint = false;
   bool got_set_tr_dequeue_ptr = false;
   SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
@@ -937,27 +932,29 @@ TEST_F(XhciMmioHarness, ResetEndpointTestSuccessCase) {
       switch (control.Type()) {
         case Control::ResetEndpointCommand: {
           auto reset_command = reinterpret_cast<ResetEndpoint*>(cr);
-          ASSERT_EQ(reset_command->ENDPOINT(), 2UL);
-          ASSERT_EQ(reset_command->SLOT(), 1UL);
+          EXPECT_EQ(reset_command->ENDPOINT(), 2UL);
+          EXPECT_EQ(reset_command->SLOT(), 1UL);
           got_reset_endpoint = true;
-          ASSERT_OK(CompleteCommand(cr, &event));
+          EXPECT_OK(CompleteCommand(cr, &event));
         } break;
         case Control::SetTrDequeuePointerCommand: {
           // ResetEndpoint should be sent prior to SetTrDequeuePointer
-          ASSERT_TRUE(got_reset_endpoint);
+          EXPECT_TRUE(got_reset_endpoint);
           auto set_cmd = reinterpret_cast<SetTRDequeuePointer*>(cr);
-          ASSERT_EQ(set_cmd->ENDPOINT(), 2UL);
-          ASSERT_EQ(set_cmd->ptr, paddr);
-          ASSERT_OK(CompleteCommand(cr, &event));
+          EXPECT_EQ(set_cmd->ENDPOINT(), 2UL);
+          EXPECT_EQ(set_cmd->ptr, paddr);
+          EXPECT_OK(CompleteCommand(cr, &event));
           got_set_tr_dequeue_ptr = true;
         } break;
       }
     }
   });
+
   reset_status = driver_test().driver()->UsbHciResetEndpoint(0, 1);
-  ASSERT_TRUE(got_reset_endpoint);
-  ASSERT_TRUE(got_set_tr_dequeue_ptr);
-  ASSERT_OK(reset_status);
+
+  EXPECT_TRUE(got_reset_endpoint);
+  EXPECT_TRUE(got_set_tr_dequeue_ptr);
+  EXPECT_OK(reset_status);
 }
 
 TEST_F(XhciMmioHarness, ResetEndpointFailsIfNotStalled) {
@@ -970,6 +967,90 @@ TEST_F(XhciMmioHarness, ResetEndpointFailsIfNotStalled) {
     state->GetEndpoint(0).transfer_ring().set_stall(false);
   }
   ASSERT_EQ(driver_test().driver()->UsbHciResetEndpoint(0, 1), ZX_ERR_INVALID_ARGS);
+}
+
+// ResetEndpoint propagates TR dequeue pointer failure to the caller (doorbell completions are
+// synchronous in this harness).
+TEST_F(XhciMmioHarness, ResetEndpointSetDequeuePointerFails) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+  EnableEndpoint(0, 1, false);
+  {
+    auto& state = driver_test().driver()->GetDeviceState()[0];
+    ASSERT_TRUE(state);
+    fbl::AutoLock l(&state->transaction_lock());
+    state->GetEndpoint(0).transfer_ring().set_stall(true);
+  }
+
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+  CommandCompletionEvent fail_event;
+  fail_event.set_CompletionCode(CommandCompletionEvent::ContextStateError);
+  auto cr = crcr_next();
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::AddressDeviceCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+  cr = FakeTRB::get(cr->next);
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::ConfigureEndpointCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+
+  bool got_reset_endpoint = false;
+  bool got_set_tr_dequeue_ptr = false;
+  SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
+    if (doorbell != 0) {
+      return;
+    }
+    cr = FakeTRB::get(cr->next);
+    switch (Control::FromTRB(cr).Type()) {
+      case Control::ResetEndpointCommand:
+        got_reset_endpoint = true;
+        EXPECT_OK(CompleteCommand(cr, &success_event));
+        break;
+      case Control::SetTrDequeuePointerCommand:
+        EXPECT_TRUE(got_reset_endpoint);
+        got_set_tr_dequeue_ptr = true;
+        EXPECT_OK(CompleteCommand(cr, &fail_event));
+        break;
+    }
+  });
+
+  zx_status_t reset_status = driver_test().driver()->UsbHciResetEndpoint(0, 1);
+
+  EXPECT_TRUE(got_reset_endpoint);
+  EXPECT_TRUE(got_set_tr_dequeue_ptr);
+  EXPECT_EQ(reset_status, ZX_ERR_IO);
+}
+
+// CancelAll propagates StopEndpoint command failure to the caller.
+TEST_F(XhciMmioHarness, CancelAllStopEndpointFails) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+  EnableEndpoint(0, 1, false);
+
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+  CommandCompletionEvent fail_event;
+  fail_event.set_CompletionCode(CommandCompletionEvent::ContextStateError);
+  auto cr = crcr_next();
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::AddressDeviceCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+  cr = FakeTRB::get(cr->next);
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::ConfigureEndpointCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+
+  bool got_stop_endpoint = false;
+  SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
+    if (doorbell != 0) {
+      return;
+    }
+    cr = FakeTRB::get(cr->next);
+    if (Control::FromTRB(cr).Type() == Control::StopEndpointCommand) {
+      got_stop_endpoint = true;
+      EXPECT_OK(CompleteCommand(cr, &fail_event));
+    }
+  });
+
+  zx_status_t cancel_status = driver_test().driver()->UsbHciCancelAll(0, 1);
+
+  EXPECT_TRUE(got_stop_endpoint);
+  EXPECT_EQ(cancel_status, ZX_ERR_IO);
 }
 
 TEST_F(XhciMmioHarness, GetMaxDeviceCount) { ASSERT_EQ(GetMaxDeviceCount(), 34UL); }
