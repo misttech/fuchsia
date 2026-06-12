@@ -17746,7 +17746,9 @@ pub struct ktermios {
     pub c_ospeed: speed_t,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq,
+)]
 pub struct winsize {
     pub ws_row: crate::types::c_ushort,
     pub ws_col: crate::types::c_ushort,

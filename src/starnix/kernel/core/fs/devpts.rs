@@ -679,9 +679,13 @@ where
             Ok(SUCCESS)
         }
         TIOCSWINSZ => {
+            // If the window is already the required size, do nothing.
+            let new_winsize = current_task.read_object(UserRef::<uapi::winsize>::new(user_addr))?;
+            if terminal.read().line_discipline.window_size == new_winsize {
+                return Ok(SUCCESS);
+            }
             // Set the window size
-            terminal.write().line_discipline.window_size =
-                current_task.read_object(UserRef::<uapi::winsize>::new(user_addr))?;
+            terminal.write().line_discipline.window_size = new_winsize;
 
             // Send a SIGWINCH signal to the foreground process group.
             let foreground_process_group =
