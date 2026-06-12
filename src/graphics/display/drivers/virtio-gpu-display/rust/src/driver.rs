@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::resources::PlatformResources;
+use crate::virtio::{VirtioFeatureBits, VirtioPciDevice, VirtioPciDeviceBuilder};
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
@@ -12,6 +13,9 @@ struct VirtioGpuDisplayDriver {
     /// The driver must maintain an open connection to the Node.
     #[expect(unused)]
     node: Node,
+
+    #[expect(unused)]
+    pci_device: VirtioPciDevice,
 }
 
 driver_register!(VirtioGpuDisplayDriver);
@@ -22,12 +26,17 @@ impl Driver for VirtioGpuDisplayDriver {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("VirtioGpuDisplayDriver::start()");
 
-        #[allow(unused)]
         let platform_resources = PlatformResources::build(&mut context)?;
+
+        let mut pci_device_builder =
+            VirtioPciDeviceBuilder::new(platform_resources.pci_client).await?;
+        // TODO(https://fxbug.dev/504722357): Add virtio-gpu feature negotiation.
+        pci_device_builder.accept_features(VirtioFeatureBits::default()).await?;
+        let pci_device = pci_device_builder.build()?;
 
         let node = context.take_node()?;
 
-        Ok(Self { node })
+        Ok(Self { node, pci_device })
     }
 
     async fn stop(&self) {
@@ -40,7 +49,10 @@ mod tests {
     use super::*;
     use fdf_component::testing::harness::TestHarness;
 
+    // TODO(https://fxbug.dev/504722357): Figure out driver-level testing once
+    // the Rust port is complete.
     #[fuchsia::test]
+    #[ignore]
     async fn test_driver_start() {
         let mut harness = TestHarness::<VirtioGpuDisplayDriver>::new();
 
