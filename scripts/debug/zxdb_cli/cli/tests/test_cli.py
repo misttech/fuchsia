@@ -15,25 +15,23 @@ from daemon_manager.manager import (
     DaemonHandshakeError,
     DaemonStartupTimeoutError,
 )
-from shared.protocol import (
-    AttachRequest,
-    ContinueRequest,
-    PauseRequest,
-    StackTraceRequest,
-    StopRequest,
-    ThreadsRequest,
-)
+from shared.protocol.attach import AttachRequest
+from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.pause import PauseRequest
+from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.stop import StopRequest
+from shared.protocol.threads import ThreadsRequest
 
 
 class TestCLI(unittest.IsolatedAsyncioTestCase):
-    @patch("cli.cli.start_daemon")
+    @patch("cli.commands.start.start_daemon")
     async def test_start_command(self, mock_start: Mock) -> None:
         mock_start.return_value = 0
         exit_code = await main(["start"])
         self.assertEqual(exit_code, 0)
         mock_start.assert_called_once()
 
-    @patch("cli.cli.stop_daemon")
+    @patch("cli.commands.stop.stop_daemon")
     async def test_stop_command(self, mock_stop: Mock) -> None:
         mock_stop.return_value = 0
         exit_code = await main(["stop"])
@@ -74,7 +72,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 1)
         mock_send.assert_not_called()
 
-    @patch("cli.cli.stop_daemon")
+    @patch("cli.commands.stop.stop_daemon")
     @patch("cli.cli.send_command")
     async def test_json_option_valid(
         self, mock_send: Mock, mock_stop: Mock
@@ -132,7 +130,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(AttachRequest(filter="my_process"))
 
-    @patch("cli.cli.DaemonManager")
+    @patch("cli.commands.start.DaemonManager")
     async def test_start_command_errors_formatting(
         self, mock_manager_class: Mock
     ) -> None:
@@ -157,7 +155,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(output["success"])
             self.assertEqual(output["message"], str(exc))
 
-    @patch("cli.cli.DaemonManager")
+    @patch("cli.commands.start.DaemonManager")
     async def test_start_command_generic_exception_formatting(
         self, mock_manager_class: Mock
     ) -> None:

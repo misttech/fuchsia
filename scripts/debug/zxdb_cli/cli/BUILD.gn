@@ -17,6 +17,19 @@ if (is_host) {
     sources = [
       "__init__.py",
       "cli.py",
+      "commands/__init__.py",
+      "commands/attach.py",
+      "commands/base.py",
+      "commands/continue_cmd.py",
+      "commands/detach.py",
+      "commands/get_state.py",
+      "commands/pause.py",
+      "commands/schema.py",
+      "commands/stack_trace.py",
+      "commands/start.py",
+      "commands/stop.py",
+      "commands/threads.py",
+      "commands/wait_for_event.py",
     ]
     deps = [
       "//scripts/debug/zxdb_cli/daemon_manager",
