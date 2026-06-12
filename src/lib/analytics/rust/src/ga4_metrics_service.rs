@@ -220,7 +220,10 @@ impl GA4MetricsService {
         if !self.metrics_state.is_new_internal_user {
             return;
         }
-        let uuid = self.metrics_state.uuid.unwrap();
+        let Some(uuid) = &self.metrics_state.uuid else {
+            log::warn!("UUID is missing when sending signal for new internal user");
+            return;
+        };
         // For a new user, a full functional metrics service is not ready yet.
         // We need to send the signal with more low level functions.
         let client = GA4AnalyticsClient::new(
