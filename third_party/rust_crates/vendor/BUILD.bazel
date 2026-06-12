@@ -175,14 +175,14 @@ alias(
 )
 
 alias(
-    name = "ash-0.37.0+1.3.209",
-    actual = "//third_party/rust_crates/vendor/ash-0.37.0-1.3.209:ash",
+    name = "ash-0.38.0+1.3.281",
+    actual = "//third_party/rust_crates/vendor/ash-0.38.0-1.3.281:ash",
     tags = ["manual"],
 )
 
 alias(
     name = "ash",
-    actual = "//third_party/rust_crates/vendor/ash-0.37.0-1.3.209:ash",
+    actual = "//third_party/rust_crates/vendor/ash-0.38.0-1.3.281:ash",
     tags = ["manual"],
 )
 

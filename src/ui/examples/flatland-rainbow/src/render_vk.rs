@@ -5,19 +5,17 @@
 use crate::ash_extensions::fuchsia;
 use crate::render::Renderer;
 use anyhow::Error;
-use ash::extensions::ext;
 use ash::vk;
 use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
+use fidl_fuchsia_images2 as fimages2;
+use fidl_fuchsia_sysmem2 as fsysmem2;
+use fidl_fuchsia_ui_composition as fland;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_scenic::{
     BufferCollectionTokenPair, duplicate_buffer_collection_import_token,
     duplicate_buffer_collection_token,
 };
 use std::ffi::{CString, c_char, c_void};
-use {
-    fidl_fuchsia_images2 as fimages2, fidl_fuchsia_sysmem2 as fsysmem2,
-    fidl_fuchsia_ui_composition as fland,
-};
 
 // Constants
 pub const APPLICATION_VERSION: u32 = vk::make_api_version(0, 1, 0, 0);
@@ -153,7 +151,7 @@ impl Renderer for VulkanRenderer {
         ];
         let clear_color_value = vk::ClearColorValue { float32: first_color };
         let image = self.framebuffers[buffer_index].image;
-        let image_barrier_for_clear = vk::ImageMemoryBarrier::builder()
+        let image_barrier_for_clear = vk::ImageMemoryBarrier::default()
             // empty() because it was last used by foreign queue (i.e. Scenic).
             .src_access_mask(vk::AccessFlags::empty())
             .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
@@ -161,9 +159,8 @@ impl Renderer for VulkanRenderer {
             .src_queue_family_index(vk::QUEUE_FAMILY_FOREIGN_EXT)
             .dst_queue_family_index(self.queue_family_index)
             .image(image)
-            .subresource_range(VulkanRenderer::standard_image_subresource_range())
-            .build();
-        let image_barrier_for_present = vk::ImageMemoryBarrier::builder()
+            .subresource_range(VulkanRenderer::standard_image_subresource_range());
+        let image_barrier_for_present = vk::ImageMemoryBarrier::default()
             .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
             // empty() because next use will be by foreign queue (i.e. Scenic).
             .dst_access_mask(vk::AccessFlags::empty())
@@ -172,8 +169,7 @@ impl Renderer for VulkanRenderer {
             .src_queue_family_index(self.queue_family_index)
             .dst_queue_family_index(vk::QUEUE_FAMILY_FOREIGN_EXT)
             .image(image)
-            .subresource_range(VulkanRenderer::standard_image_subresource_range())
-            .build();
+            .subresource_range(VulkanRenderer::standard_image_subresource_range());
         unsafe {
             device.cmd_pipeline_barrier(
                 command_buffer,
@@ -210,7 +206,8 @@ impl Renderer for VulkanRenderer {
         // TODO(https://fxbug.dev/42055867): we wait on the CPU for the fence to finish.  It would be more
         // optimal to pass a signal semaphore here, which corresponds to a `zx::event` which would
         // be passed to Flatland via `PresentArgs.server_wait_fences`.
-        let submit_info = [vk::SubmitInfo::builder().command_buffers(&[command_buffer]).build()];
+        let command_buffers = [command_buffer];
+        let submit_info = [vk::SubmitInfo::default().command_buffers(&command_buffers)];
         unsafe {
             device
                 .queue_submit(self.queue, &submit_info, self.fence)
@@ -272,18 +269,17 @@ impl VulkanRenderer {
     fn create_instance(entry: &ash::Entry) -> ash::Instance {
         let app_name = CString::new("flatland-rainbow example").unwrap();
         let engine_name = CString::new("(no engine)").unwrap();
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(&app_name)
             .application_version(APPLICATION_VERSION)
             .engine_name(&engine_name)
             .engine_version(ENGINE_VERSION)
-            .api_version(API_VERSION)
-            .build();
+            .api_version(API_VERSION);
 
         let pp_enabled_extension_names: Vec<*const c_char> = vec![
-            ext::DebugUtils::name().as_ptr(),
-            vk::KhrExternalMemoryCapabilitiesFn::name().as_ptr(),
-            vk::KhrExternalSemaphoreCapabilitiesFn::name().as_ptr(),
+            vk::EXT_DEBUG_UTILS_NAME.as_ptr(),
+            vk::KHR_EXTERNAL_MEMORY_CAPABILITIES_NAME.as_ptr(),
+            vk::KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_NAME.as_ptr(),
         ];
 
         let enabled_layer_names: Vec<CString> = ["VK_LAYER_KHRONOS_validation"]
@@ -294,13 +290,12 @@ impl VulkanRenderer {
             enabled_layer_names.iter().map(|layer_name| layer_name.as_ptr()).collect();
 
         // Enable synchronization validation in the `VkInstance` we're about to create.
-        let mut validation_features = vk::ValidationFeaturesEXT::builder()
+        let mut validation_features = vk::ValidationFeaturesEXT::default()
             .enabled_validation_features(&[
                 vk::ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
-            ])
-            .build();
+            ]);
 
-        let create_info = vk::InstanceCreateInfo::builder()
+        let create_info = vk::InstanceCreateInfo::default()
             .push_next(&mut validation_features)
             .application_info(&app_info)
             .enabled_layer_names(&pp_enabled_layer_names)
@@ -333,34 +328,25 @@ impl VulkanRenderer {
         physical_device: &SuitablePhysicalDevice,
     ) -> (ash::Device, vk::Queue) {
         let queue_priorities = [1.0_f32];
-        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
+        let queue_create_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(physical_device.graphics_queue_family_index)
-            .queue_priorities(&queue_priorities)
-            .build();
-
-        let enabled_layer_names: Vec<CString> = ["VK_LAYER_KHRONOS_validation"]
-            .iter()
-            .map(|layer_name| CString::new(*layer_name).unwrap())
-            .collect();
-        let pp_enabled_layer_names: Vec<*const c_char> =
-            enabled_layer_names.iter().map(|layer_name| layer_name.as_ptr()).collect();
+            .queue_priorities(&queue_priorities);
 
         let pp_enabled_extension_names: Vec<*const c_char> = vec![
-            vk::ExtQueueFamilyForeignFn::name().as_ptr(),
-            vk::FuchsiaBufferCollectionFn::name().as_ptr(),
-            vk::FuchsiaExternalMemoryFn::name().as_ptr(),
-            vk::KhrExternalMemoryFn::name().as_ptr(),
+            vk::EXT_QUEUE_FAMILY_FOREIGN_NAME.as_ptr(),
+            vk::FUCHSIA_BUFFER_COLLECTION_NAME.as_ptr(),
+            vk::FUCHSIA_EXTERNAL_MEMORY_NAME.as_ptr(),
+            vk::KHR_EXTERNAL_MEMORY_NAME.as_ptr(),
             // TODO(https://fxbug.dev/42055867): see the comment in `render_rgba()` about using semaphores
             // instead of a VkFence.  To this, we need to add the external semaphore extensions.
-            // vk::KhrExternalSemaphoreFn::name().as_ptr(),
-            // vk::FuchsiaExternalSemaphoreFn::name().as_ptr(),
+            // vk::KHR_EXTERNAL_SEMAPHORE_NAME.as_ptr(),
+            // vk::FUCHSIA_EXTERNAL_SEMAPHORE_NAME.as_ptr(),
         ];
 
-        let device_create_info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(&[queue_create_info])
-            .enabled_layer_names(&pp_enabled_layer_names)
-            .enabled_extension_names(&pp_enabled_extension_names)
-            .build();
+        let queue_create_infos = [queue_create_info];
+        let device_create_info = vk::DeviceCreateInfo::default()
+            .queue_create_infos(&queue_create_infos)
+            .enabled_extension_names(&pp_enabled_extension_names);
 
         let device: ash::Device = unsafe {
             instance
@@ -465,7 +451,7 @@ impl VulkanRenderer {
         //   - to specify constraints to set on the `VkBufferCollectionFUCHSIA`
         //   - to create `VkImages` once the buffer collection has been allocated; the only change
         //     is chaining a `VkBufferCollectionImageCreateInfoFUCHSIA` via the `p_next` slot.
-        let vk_image_create_info = vk::ImageCreateInfo::builder()
+        let vk_image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(FRAMEBUFFER_FORMAT)
             .extent(vk::Extent3D { width, height, depth: 1 })
@@ -478,16 +464,14 @@ impl VulkanRenderer {
             // we'll need to add COLOR_ATTACHMENT to the usage flags.
             .usage(vk::ImageUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .build();
+            .initial_layout(vk::ImageLayout::UNDEFINED);
 
         // Also used to set buffer collection constraints.
-        let p_color_spaces = [vk::SysmemColorSpaceFUCHSIA::builder()
-            .color_space(FRAMEBUFFER_COLOR_SPACE.into_primitive())
-            .build()];
+        let p_color_spaces = [vk::SysmemColorSpaceFUCHSIA::default()
+            .color_space(FRAMEBUFFER_COLOR_SPACE.into_primitive())];
 
         // Also used to set buffer collection constraints.
-        let vk_image_format_constraints_info = [vk::ImageFormatConstraintsInfoFUCHSIA::builder()
+        let vk_image_format_constraints_info = [vk::ImageFormatConstraintsInfoFUCHSIA::default()
             .image_create_info(vk_image_create_info)
             // TODO(https://fxbug.dev/42055867): if we start using shader pipelines to render into the image,
             // we'll need to add COLOR_ATTACHMENT to the usage flags.
@@ -499,21 +483,16 @@ impl VulkanRenderer {
             // declares this as optional, so 0 is an acceptable value.  This is interpreted as us
             // not having an opinion about the pixel format type.
             .sysmem_pixel_format(0)
-            .color_spaces(&p_color_spaces)
-            .build()];
+            .color_spaces(&p_color_spaces)];
 
         // Also used to set buffer collection constraints.
-        let vk_image_constraints_info = vk::ImageConstraintsInfoFUCHSIA::builder()
+        let vk_image_constraints_info = vk::ImageConstraintsInfoFUCHSIA::default()
             .format_constraints(&vk_image_format_constraints_info)
             .buffer_collection_constraints(
-                vk::BufferCollectionConstraintsInfoFUCHSIA::builder()
+                vk::BufferCollectionConstraintsInfoFUCHSIA::default()
                     .min_buffer_count(image_count as u32)
-                    .max_buffer_count(image_count as u32)
-                    .build(),
-            )
-            // No `ImageConstraintsInfoFlagsFUCHSIA` required, because we have no need for protected
-            // memory; if we wanted to display DRM-protected video this would be different.
-            .build();
+                    .max_buffer_count(image_count as u32),
+            );
 
         let vk_buffer_collection_create_info = vk::BufferCollectionCreateInfoFUCHSIA {
             collection_token: buffer_collection_token_for_vulkan.into_channel().into_raw(),
@@ -524,18 +503,24 @@ impl VulkanRenderer {
         let ext_buffer_collection = fuchsia::BufferCollection::new(instance, device);
         let vk_buffer_collection = unsafe {
             ext_buffer_collection.create_buffer_collection(&vk_buffer_collection_create_info, None)
-        }?;
+        }
+        .map_err(|e| anyhow::anyhow!("failed to create buffer collection: {:?}", e))?;
         unsafe {
             ext_buffer_collection.set_buffer_collection_image_constraints(
                 vk_buffer_collection,
                 &vk_image_constraints_info,
             )
-        }?;
+        }
+        .map_err(|e| {
+            anyhow::anyhow!("failed to set buffer collection image constraints: {:?}", e)
+        })?;
 
         // This provides the `memory_type_index` that we will use to allocate memory for the image.
-        let vk_buffer_collection_properties = unsafe {
-            ext_buffer_collection.get_buffer_collection_properties(vk_buffer_collection)
-        }?;
+        let vk_buffer_collection_properties =
+            unsafe { ext_buffer_collection.get_buffer_collection_properties(vk_buffer_collection) }
+                .map_err(|e| {
+                    anyhow::anyhow!("failed to get buffer collection properties: {:?}", e)
+                })?;
 
         // Since we obtained the properties anyway, might as well verify that we allocated the
         // expected number of images.
@@ -562,23 +547,22 @@ impl VulkanRenderer {
                 ..vk_image_create_info
             };
 
-            let image = unsafe { device.create_image(&vk_image_create_info, None) }?;
+            let image = unsafe { device.create_image(&vk_image_create_info, None) }
+                .map_err(|e| anyhow::anyhow!("failed to create image: {:?}", e))?;
 
             // Import memory from the buffer collection to bind to the image we just created.
             let allocation_size = unsafe { device.get_image_memory_requirements(image).size };
 
-            let mut import_memory_extension = vk::ImportMemoryBufferCollectionFUCHSIA::builder()
+            let mut import_memory_extension = vk::ImportMemoryBufferCollectionFUCHSIA::default()
                 .collection(vk_buffer_collection)
-                .index(index)
-                .build();
-            let memory_allocate_info = vk::MemoryAllocateInfo::builder()
+                .index(index);
+            let memory_allocate_info = vk::MemoryAllocateInfo::default()
                 .push_next(&mut import_memory_extension)
                 .allocation_size(allocation_size)
                 .memory_type_index(
                     first_bit_index(vk_buffer_collection_properties.memory_type_bits)
                         .expect("no valid memory types available"),
-                )
-                .build();
+                );
             let device_memory = unsafe {
                 device
                     .allocate_memory(&memory_allocate_info, None)
@@ -607,13 +591,12 @@ impl VulkanRenderer {
     }
 
     fn standard_image_subresource_range() -> vk::ImageSubresourceRange {
-        vk::ImageSubresourceRange::builder()
+        vk::ImageSubresourceRange::default()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_mip_level(0)
             .level_count(1)
             .base_array_layer(0)
             .layer_count(1)
-            .build()
     }
 }
 

@@ -305,7 +305,7 @@ _NORMAL_DEPENDENCIES = {
             "argh_complete": Label("//third_party/rust_crates/vendor/argh_complete-0.1.19:argh_complete"),
             "arrayref": Label("//third_party/rust_crates/vendor/arrayref-0.3.9:arrayref"),
             "arrayvec": Label("//third_party/rust_crates/vendor/arrayvec-0.7.6:arrayvec"),
-            "ash": Label("//third_party/rust_crates/vendor/ash-0.37.0+1.3.209:ash"),
+            "ash": Label("//third_party/rust_crates/vendor/ash-0.38.0+1.3.281:ash"),
             "assert_matches": Label("//third_party/rust_crates/vendor/assert_matches-1.5.0:assert_matches"),
             "async-channel": Label("//third_party/rust_crates/vendor/async-channel-1.8.0:async_channel"),
             "async-lock": Label("//third_party/rust_crates/vendor/async-lock-3.4.2:async_lock"),
