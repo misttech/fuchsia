@@ -521,6 +521,23 @@ impl InspectDiagnostics {
             }
             .boxed()
         });
+        node.record_lazy_child("time_stats", move || {
+            async move {
+                let inspector = Inspector::default();
+                let mono = zx::MonotonicInstant::get().into_nanos();
+                let boot = zx::BootInstant::get().into_nanos();
+                let offset = boot - mono;
+                let clamped_offset = if offset < 1000 { 0 } else { offset };
+                // Monotonic time at the time of the Inspect read.
+                inspector.root().record_int("mono_time_now", mono);
+                // Boot time at the time of the Inspect read.
+                inspector.root().record_int("boot_time_now", boot);
+                // Difference between boot and monotonic time (clamped to 0 if < 1us).
+                inspector.root().record_int("mono_to_boot_offset", clamped_offset);
+                Ok(inspector)
+            }
+            .boxed()
+        });
         diagnostics
     }
 
@@ -1053,6 +1070,22 @@ mod tests {
                     clock_correction_1: contains {},
                     clock_correction_2: contains {},
                 },
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn time_stats() {
+        let inspector = &Inspector::default();
+        let (_inspect_diagnostics, _) = create_test_object(&inspector, false);
+        assert_data_tree!(
+            inspector,
+            root: contains {
+                time_stats: contains {
+                    mono_time_now: AnyProperty,
+                    boot_time_now: AnyProperty,
+                    mono_to_boot_offset: AnyProperty,
+                }
             }
         );
     }
