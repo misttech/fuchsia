@@ -66,6 +66,18 @@ zx_status_t Snapshot::Create(const zx::vmo& vmo, Options options, ReadObserver r
   BackingBuffer maybe_frozen(vmo);
   Snapshot::ParseHeader(maybe_frozen.Data(), &generation);
   if (generation == internal::kVmoFrozen) {
+    zx_info_vmo_t info;
+    zx_status_t status = vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      return status;
+    }
+    if (!(info.flags & ZX_INFO_VMO_IMMUTABLE)) {
+      // The sender is responsible for ensuring that frozen VMOs are always read
+      // only, otherwise they may be able to edit it while this read process is
+      // ongoing, causing a corrupted view.
+      return ZX_ERR_BAD_STATE;
+    }
+
     if (read_observer) {
       read_observer(maybe_frozen.Data(), maybe_frozen.Size());
     }

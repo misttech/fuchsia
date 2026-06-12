@@ -67,10 +67,17 @@ impl Snapshot {
             return Err(ReaderError::InvalidVmo);
         };
         let generation = header_block.generation_count();
-        if generation == constants::VMO_FROZEN
-            && let Ok(buffer) = BackingBuffer::try_from(source)
-        {
-            return Ok(Snapshot { buffer });
+        if generation == constants::VMO_FROZEN {
+            #[cfg(target_os = "fuchsia")]
+            {
+                let info = source.info().map_err(ReaderError::Vmo)?;
+                if !info.flags.contains(zx::VmoInfoFlags::IMMUTABLE) {
+                    return Err(ReaderError::Vmo(zx::Status::BAD_STATE));
+                }
+            }
+            if let Ok(buffer) = BackingBuffer::try_from(source) {
+                return Ok(Snapshot { buffer });
+            }
         }
 
         // Read the buffer
@@ -499,14 +506,14 @@ mod tests {
 
     #[cfg(target_os = "fuchsia")]
     macro_rules! get_snapshot {
-        ($container:ident, $storage:ident, $callback:expr) => {
+        ($container:ident, $storage:expr, $callback:expr) => {
             Snapshot::try_from_with_callback(&$storage, $callback)
         };
     }
 
     #[cfg(not(target_os = "fuchsia"))]
     macro_rules! get_snapshot {
-        ($container:ident, $storage:ident, $callback:expr) => {{
+        ($container:ident, $storage:expr, $callback:expr) => {{
             let _storage = $storage;
             let slice = $container.get_slice($container.len()).unwrap().to_vec();
             Snapshot::try_from_with_callback(&slice, $callback)
@@ -677,6 +684,58 @@ mod tests {
     #[fuchsia::test]
     fn snapshot_frozen_vmo() -> Result<(), Error> {
         let size = 4096;
+        let (mut container, parent_storage) = Container::read_and_write(size).unwrap();
+        let _ = Block::free(
+            &mut container,
+            BlockIndex::HEADER,
+            constants::HEADER_ORDER,
+            BlockIndex::EMPTY,
+        )?
+        .become_reserved()
+        .become_header(size)?;
+        container.copy_from_slice_at(8, &[0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+        let snapshot;
+        #[cfg(target_os = "fuchsia")]
+        {
+            let storage = parent_storage.create_child(
+                zx::VmoChildOptions::SNAPSHOT | zx::VmoChildOptions::NO_WRITE,
+                0,
+                size as u64,
+            )?;
+            snapshot = get_snapshot!(container, storage, || {})?;
+        };
+        #[cfg(not(target_os = "fuchsia"))]
+        {
+            // Silence unused variable warning, which happens to be set to a unit value.
+            #[allow(clippy::let_unit_value)]
+            let _ = parent_storage;
+            snapshot = get_snapshot!(container, (), || {})?
+        };
+        assert!(matches!(snapshot.buffer, BackingBuffer::Container(_)));
+
+        let (mut container2, storage2) = Container::read_and_write(size).unwrap();
+        let _ = Block::free(
+            &mut container2,
+            BlockIndex::HEADER,
+            constants::HEADER_ORDER,
+            BlockIndex::EMPTY,
+        )?
+        .become_reserved()
+        .become_header(size)?;
+        container2.copy_from_slice_at(8, &[2u8; 8]);
+        let snapshot = get_snapshot!(container2, storage2, || {})?;
+        assert!(matches!(snapshot.buffer, BackingBuffer::Bytes(_)));
+
+        Ok(())
+    }
+
+    // Check that snapshot fails if the VMO is frozen but not immutable.
+    // This test is only valid on Fuchsia, where VMOs can be used.
+    #[cfg(target_os = "fuchsia")]
+    #[fuchsia::test]
+    fn snapshot_frozen_mutable_vmo_fails() -> Result<(), Error> {
+        let size = 4096;
         let (mut container, storage) = Container::read_and_write(size).unwrap();
         let _ = Block::free(
             &mut container,
@@ -688,13 +747,10 @@ mod tests {
         .become_header(size)?;
         container.copy_from_slice_at(8, &[0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
 
-        let snapshot = get_snapshot!(container, storage, || {})?;
-
-        assert!(matches!(snapshot.buffer, BackingBuffer::Container(_)));
-
-        container.copy_from_slice_at(8, &[2u8; 8]);
-        let snapshot = get_snapshot!(container, storage, || {})?;
-        assert!(matches!(snapshot.buffer, BackingBuffer::Bytes(_)));
+        assert_matches!(
+            get_snapshot!(container, storage, || {}),
+            Err(ReaderError::Vmo(zx::Status::BAD_STATE))
+        );
 
         Ok(())
     }

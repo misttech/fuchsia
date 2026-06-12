@@ -263,9 +263,12 @@ TEST(Snapshot, FrozenVmo) {
   memcpy(&header->header_data[4], kMagicNumber, 4);
   header->payload.u64 = inspect::internal::kVmoFrozen;
 
+  zx::vmo child;
+  ASSERT_OK(vmo.vmo().create_child(ZX_VMO_CHILD_SNAPSHOT | ZX_VMO_CHILD_NO_WRITE, 0, 4096, &child));
+
   Snapshot snapshot;
-  zx_status_t status = Snapshot::Create(
-      vmo.vmo(), {.read_attempts = 100, .skip_consistency_check = true}, &snapshot);
+  zx_status_t status =
+      Snapshot::Create(child, {.read_attempts = 100, .skip_consistency_check = true}, &snapshot);
 
   EXPECT_EQ(ZX_OK, status);
 
@@ -347,6 +350,22 @@ TEST(Snapshot, HeaderWithoutSizeInfo) {
   buf.resize(size - kVmoHeaderBlockSize);
   memset(buf.data(), 'a', buf.size());
   EXPECT_EQ(0, memcmp(snapshot.data() + kVmoHeaderBlockSize, buf.data(), buf.size()));
+}
+
+TEST(Snapshot, FrozenMutableVmoFails) {
+  fzl::OwnedVmoMapper vmo;
+  ASSERT_OK(vmo.CreateAndMap(4096, "test"));
+  Block* header = reinterpret_cast<Block*>(vmo.start());
+  header->header = HeaderBlockFields::Order::Make(kVmoHeaderOrder) |
+                   HeaderBlockFields::Type::Make(BlockType::kHeader) |
+                   HeaderBlockFields::Version::Make(0);
+  memcpy(&header->header_data[4], kMagicNumber, 4);
+  header->payload.u64 = inspect::internal::kVmoFrozen;
+
+  Snapshot snapshot;
+  zx_status_t status = Snapshot::Create(vmo.vmo(), Snapshot::Options{}, &snapshot);
+
+  EXPECT_EQ(ZX_ERR_BAD_STATE, status);
 }
 
 }  // namespace
