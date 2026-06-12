@@ -45,3 +45,27 @@ pub unsafe trait Recyclable: Sized {
         }
     }
 }
+
+/// Trait for types that can be allocated in an uninitialized state.
+///
+/// # Safety
+///
+/// Implementing this trait is unsafe because the implementer must ensure that:
+/// - `allocate_uninit` returns a valid pointer to uninitialized memory that can
+///   be safely deallocated by `recycle_uninit`.
+/// - `recycle_uninit` correctly deallocates the pointer without dropping the content
+///   (as it is uninitialized) and does not cause double-free or use-after-free.
+pub unsafe trait UninitRecyclable: Recyclable {
+    /// Allocates a new uninitialized instance of `Self`.
+    fn allocate_uninit() -> Result<NonNull<core::mem::MaybeUninit<Self>>, AllocError>;
+
+    /// Recycles an uninitialized object.
+    ///
+    /// # Safety
+    ///
+    /// - The caller must ensure that `ptr` points to a valid (but possibly uninitialized)
+    ///   instance of `Self` that has no other references.
+    /// - The caller must not use the pointer or any references derived from it
+    ///   after this call.
+    unsafe fn recycle_uninit(ptr: NonNull<core::mem::MaybeUninit<Self>>);
+}

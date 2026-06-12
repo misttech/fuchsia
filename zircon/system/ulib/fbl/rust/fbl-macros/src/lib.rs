@@ -99,6 +99,23 @@ pub fn derive_recyclable(item: TokenStream) -> TokenStream {
                 unsafe { Ok(::core::ptr::NonNull::new_unchecked(raw)) }
             }
         }
+
+        unsafe impl ::fbl::UninitRecyclable for #name {
+            unsafe fn recycle_uninit(ptr: ::core::ptr::NonNull<::core::mem::MaybeUninit<Self>>) {
+                // SAFETY: The caller of `recycle_uninit` must ensure that `ptr` was allocated
+                // by a mechanism compatible with `kalloc::Box`.
+                unsafe {
+                    let _ = ::kalloc::Box::from_non_null(ptr);
+                }
+            }
+
+            fn allocate_uninit() -> Result<::core::ptr::NonNull<::core::mem::MaybeUninit<Self>>, ::kalloc::AllocError> {
+                let boxed = ::kalloc::Box::try_new_uninit()?;
+                let raw = ::kalloc::Box::into_raw(boxed);
+                // SAFETY: Box::into_raw returns a valid, non-null pointer.
+                unsafe { Ok(::core::ptr::NonNull::new_unchecked(raw)) }
+            }
+        }
     };
 
     TokenStream::from(expanded)

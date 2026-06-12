@@ -4,11 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::recyclable::Recyclable;
+use crate::recyclable::{Recyclable, UninitRecyclable};
 use crate::ref_counted::HasRefCount;
+use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use kalloc::AllocError;
+
+use pin_init::{Init, PinInit};
 
 /// `RefPtr<T>` holds a reference to an intrusively-refcounted object of type
 /// T that deletes the object when the refcount drops to 0.
@@ -74,6 +77,69 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         core::mem::forget(this);
         ptr.as_ptr()
     }
+
+    /// Use the given pin-initializer to pin-initialize a `T` inside of a new `RefPtr`.
+    pub fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Self, E>
+    where
+        T: UninitRecyclable,
+        E: From<AllocError>,
+    {
+        let ptr = T::allocate_uninit()?;
+        let guard = UninitRefGuard { ptr };
+        let slot = guard.ptr.as_ptr() as *mut T;
+        // SAFETY: `slot` is valid and will not be moved.
+        unsafe { init.__pinned_init(slot)? };
+        // SAFETY: The object is now initialized, so we can access its ref_count.
+        unsafe { (*slot).ref_count().adopt() };
+        let initialized_ptr = guard.ptr.cast::<T>();
+        core::mem::forget(guard);
+        let initialized_ref = RefPtr { ptr: initialized_ptr };
+        Ok(initialized_ref)
+    }
+
+    /// Use the given initializer to in-place initialize a `T` inside of a new `RefPtr`.
+    pub fn try_init<E>(init: impl Init<T, E>) -> Result<Self, E>
+    where
+        T: UninitRecyclable,
+        E: From<AllocError>,
+    {
+        let ptr = T::allocate_uninit()?;
+        let guard = UninitRefGuard { ptr };
+        let slot = guard.ptr.as_ptr() as *mut T;
+        // SAFETY: `slot` is valid.
+        unsafe { init.__init(slot)? };
+        // SAFETY: The object is now initialized, so we can access its ref_count.
+        unsafe { (*slot).ref_count().adopt() };
+        let initialized_ptr = guard.ptr.cast::<T>();
+        core::mem::forget(guard);
+        Ok(RefPtr { ptr: initialized_ptr })
+    }
+
+    /// Use the given pin-initializer to pin-initialize a `T` inside of a new `RefPtr`.
+    #[inline]
+    pub fn pin_init(init: impl PinInit<T, core::convert::Infallible>) -> Result<Self, AllocError>
+    where
+        T: UninitRecyclable,
+    {
+        let init = unsafe {
+            ::pin_init::pin_init_from_closure(|slot| {
+                init.__pinned_init(slot).map_err(|i| match i {})
+            })
+        };
+        Self::try_pin_init(init)
+    }
+
+    /// Use the given initializer to in-place initialize a `T` inside of a new `RefPtr`.
+    #[inline]
+    pub fn init(init: impl Init<T, core::convert::Infallible>) -> Result<Self, AllocError>
+    where
+        T: UninitRecyclable,
+    {
+        let init = unsafe {
+            ::pin_init::init_from_closure(|slot| init.__init(slot).map_err(|i| match i {}))
+        };
+        Self::try_init(init)
+    }
 }
 
 impl<T: HasRefCount + Recyclable> Deref for RefPtr<T> {
@@ -111,6 +177,18 @@ impl<T: HasRefCount + Recyclable> Eq for RefPtr<T> {}
 unsafe impl<T: HasRefCount + Recyclable + Send + Sync> Send for RefPtr<T> {}
 unsafe impl<T: HasRefCount + Recyclable + Send + Sync> Sync for RefPtr<T> {}
 
+struct UninitRefGuard<T: UninitRecyclable> {
+    ptr: NonNull<MaybeUninit<T>>,
+}
+
+impl<T: UninitRecyclable> Drop for UninitRefGuard<T> {
+    fn drop(&mut self) {
+        unsafe {
+            T::recycle_uninit(self.ptr);
+        }
+    }
+}
+
 /// Macro to construct a RefPtr, automatically populating the ref_count field.
 #[macro_export]
 macro_rules! make_ref_counted {
@@ -126,10 +204,35 @@ macro_rules! make_ref_counted {
     };
 }
 
+/// Macro to construct a RefPtr with pin-initialization, automatically populating the ref_count field.
+#[macro_export]
+macro_rules! pin_make_ref_counted {
+    ($ty:ident { $($field:tt)* }) => {
+        $crate::RefPtr::pin_init($crate::pin_init::pin_init!($ty {
+            ref_count: $crate::RefCounted::new(),
+            __fbl_ref_counted_guard: (),
+            $($field)*
+        }))
+    };
+}
+
+/// Macro to construct a RefPtr with fallible pin-initialization, automatically populating the ref_count field.
+#[macro_export]
+macro_rules! try_pin_make_ref_counted {
+    ($ty:ident { $($field:tt)* }) => {
+        $crate::RefPtr::try_pin_init($crate::pin_init::pin_init!($ty {
+            ref_count: $crate::RefCounted::new(),
+            __fbl_ref_counted_guard: (),
+            $($field)*
+        }))
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use core::ffi::c_void;
+    use core::pin::Pin;
     use core::sync::atomic::{AtomicBool, Ordering};
 
     extern crate alloc;
@@ -145,6 +248,7 @@ mod tests {
     }
 
     #[fbl::ref_counted]
+    #[pin_init::pin_data(PinnedDrop)]
     #[derive(crate::Recyclable)]
     #[repr(C)]
     pub struct TestRustRefCounted {
@@ -156,8 +260,9 @@ mod tests {
     ::zr::static_assert!(core::mem::size_of::<Option<RefPtr<TestRustRefCounted>>>() == 8);
     ::zr::static_assert!(core::mem::align_of::<Option<RefPtr<TestRustRefCounted>>>() == 8);
 
-    impl Drop for TestRustRefCounted {
-        fn drop(&mut self) {
+    #[pin_init::pinned_drop]
+    impl pin_init::PinnedDrop for TestRustRefCounted {
+        fn drop(self: Pin<&mut Self>) {
             self.destroyed.store(true, Ordering::Relaxed);
         }
     }
@@ -206,5 +311,39 @@ mod tests {
         assert!(ptr1 == ptr1);
         assert!(ptr1 != ptr2);
         assert!(ptr1 == ptr1_clone);
+    }
+
+    #[test]
+    fn test_rust_pin_init() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        let destroyed_clone = destroyed.clone();
+        {
+            let ref_ptr =
+                pin_make_ref_counted!(TestRustRefCounted { destroyed: destroyed_clone }).unwrap();
+            assert!(!destroyed.load(Ordering::Relaxed));
+            let ref_ptr_clone = ref_ptr.clone();
+            drop(ref_ptr_clone);
+            assert!(!destroyed.load(Ordering::Relaxed));
+        } // Drop ref_ptr
+        assert!(destroyed.load(Ordering::Relaxed));
+    }
+
+    #[fbl::ref_counted]
+    #[pin_init::pin_data]
+    #[derive(crate::Recyclable)]
+    #[repr(C)]
+    struct FallibleInit {
+        value: i32,
+    }
+
+    #[test]
+    fn test_rust_try_pin_init_fail() {
+        let init = unsafe {
+            ::pin_init::pin_init_from_closure(
+                |_slot: *mut FallibleInit| -> Result<(), AllocError> { Err(AllocError) },
+            )
+        };
+        let res = RefPtr::try_pin_init(init);
+        assert!(res.is_err());
     }
 }
