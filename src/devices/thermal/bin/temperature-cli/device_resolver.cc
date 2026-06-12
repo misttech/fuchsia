@@ -21,8 +21,6 @@
 #include <vector>
 
 namespace FidlTemperature = fuchsia_hardware_temperature;
-namespace FidlAdc = fuchsia_hardware_adc;
-namespace FidlTrippoint = fuchsia_hardware_trippoint;
 
 namespace {
 
@@ -76,8 +74,12 @@ bool HasServiceMember(std::string_view path) {
 
 std::string GetPathForDevice(const DiscoveredDevice& dev, std::string_view command) {
   if (dev.is_service) {
-    for (auto service_dir : {kTemperatureServiceDir, kAdcServiceDir, kTrippointServiceDir,
-                             kTrippointDebugServiceDir}) {
+    for (auto service_dir : {
+             kTemperatureServiceDir,
+             kAdcServiceDir,
+             kTrippointServiceDir,
+             kTrippointDebugServiceDir,
+         }) {
       if (dev.path.starts_with(service_dir)) {
         std::string_view member = GetMemberForService(service_dir, command);
         if (!member.empty()) {
@@ -130,7 +132,7 @@ zx::result<size_t> PromptUserSelection(const std::vector<std::string>& display_i
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  unsigned long selection;
+  uint64_t selection;
   auto [p, ec] = std::from_chars(input_sv.data(), input_sv.data() + input_sv.size(), selection);
   if (ec != std::errc() || p != input_sv.data() + input_sv.size() || selection < 1 ||
       selection > display_items.size()) {
@@ -267,6 +269,7 @@ zx::result<std::string> ResolveDeviceFromList(const std::vector<DiscoveredDevice
   }
 
   std::vector<std::string> display_items;
+  display_items.reserve(devices.size());
   for (const auto& dev : devices) {
     display_items.push_back(dev.name + " (" + dev.path + ")");
   }
@@ -291,7 +294,7 @@ zx::result<std::string> ResolveTemperatureDevice(std::string_view provided_path_
 
 zx::result<std::string> ResolveTrippointDevice(std::string_view provided_path_or_name,
                                                std::string_view command) {
-  bool is_trip = (command == kCmdTrip);
+  bool is_trip = command == kCmdTrip;
   auto devices = is_trip ? GetTrippointDebugDevices() : GetTrippointDevices();
   std::string_view type_name = is_trip ? "trippoint debug" : ToString(DeviceType::kTrippoint);
   return ResolveDeviceFromList(devices, provided_path_or_name, command, type_name);
@@ -355,8 +358,10 @@ bool IsInteger(std::string_view s) {
 }
 
 bool IsKnownCommand(std::string_view arg) {
+  // All commands except kCmdHelp
   static constexpr std::array kKnownCommands = {
-      kCmdList, kCmdResolution, kCmdRead, kCmdReadNorm, kCmdTripPoint, kCmdWait, kCmdName, kCmdTrip,
+      kCmdList, kCmdResolution, kCmdRead, kCmdReadNorm, kCmdTripPoint,
+      kCmdWait, kCmdName,       kCmdTrip, kCmdReadAll,
   };
   return std::find(kKnownCommands.begin(), kKnownCommands.end(), arg) != kKnownCommands.end();
 }
@@ -379,14 +384,18 @@ zx::result<ResolvedDevice> ResolveDevice(std::string_view provided_path_or_name,
   if (!path.empty() && path.starts_with('/')) {
     DeviceType dev_type = DeduceDeviceTypeFromPathAndCommand(path, command);
     // It's a path. Check if it needs a service member.
-    for (auto service_dir : {kTemperatureServiceDir, kAdcServiceDir, kTrippointServiceDir,
-                             kTrippointDebugServiceDir}) {
+    for (auto service_dir : {
+             kTemperatureServiceDir,
+             kAdcServiceDir,
+             kTrippointServiceDir,
+             kTrippointDebugServiceDir,
+         }) {
       if (path.starts_with(service_dir)) {
         if (!HasServiceMember(path)) {
           std::string_view member = GetMemberForService(service_dir, command);
           if (!member.empty()) {
             if (!path.ends_with('/')) {
-              path += "/";
+              path += '/';
             }
             path += member;
           }
@@ -430,4 +439,17 @@ zx::result<ResolvedDevice> ResolveDevice(std::string_view provided_path_or_name,
   if (path_res.is_error())
     return path_res.take_error();
   return zx::ok(ResolvedDevice{path_res.value(), DeviceType::kTemperature});
+}
+
+std::vector<DeviceInfo> GetTemperatureDevicesForReading() {
+  auto devices = GetTemperatureDevices();
+  std::vector<DeviceInfo> result;
+  result.reserve(devices.size());
+  for (const auto& dev : devices) {
+    result.push_back({
+        .name = dev.name,
+        .path = GetPathForDevice(dev, kCmdRead),
+    });
+  }
+  return result;
 }

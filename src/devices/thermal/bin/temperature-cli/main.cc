@@ -19,6 +19,7 @@
 constexpr char kUsageMessage[] =
     R"""(Usage: temperature-cli [device_path_or_name] <command> [args...]
        temperature-cli list
+       temperature-cli readall
        temperature-cli --help
 
     [device_path_or_name] can be:
@@ -31,11 +32,13 @@ constexpr char kUsageMessage[] =
     - If multiple devices match, you will be prompted to select one.
 
     Commands:
-        list - List all temperature device paths and their friendly names
+        list             - List all temperature device paths and their friendly names
 
         (For temperature class devices)
-        read             - Read temperature in Celsius
         name             - Get sensor name
+        read             - Read temperature in Celsius
+                           If no command is specified, "read" is assumed.
+        readall          - Read all temperature devices found
 
         (For ADC class devices)
         resolution       - Get ADC resolution
@@ -53,7 +56,8 @@ constexpr char kUsageMessage[] =
 
     Examples:
         temperature-cli list
-        temperature-cli read
+        temperature-cli readall
+        temperature-cli LITTLE
         temperature-cli soc-thermal read
         temperature-cli soc-thermal name
         temperature-cli /dev/class/adc/000 read
@@ -70,6 +74,12 @@ constexpr char kTripTypeAbove[] = "above";
 constexpr char kTripTypeBelow[] = "below";
 constexpr char kTripConfigCleared[] = "cleared";
 
+namespace {
+
+// Not commands, but additional flags that map to kCmdHelp
+constexpr std::string_view kShortFlagHelp = "-h";
+constexpr std::string_view kLongFlagHelp = "--help";
+
 struct CmdArgs {
   std::string device_path_or_name;
   std::string command;
@@ -83,13 +93,8 @@ zx::result<CmdArgs> ParseArgs(int argc, char** argv) {
   }
 
   std::string_view argv1(argv[1]);
-  if (argv1 == "help" || argv1 == "-h" || argv1 == "--help") {
-    args.command = "help";
-    return zx::ok(args);
-  }
-
-  if (argv1 == kCmdList) {
-    args.command = kCmdList;
+  if (argv1 == kCmdHelp || argv1 == kShortFlagHelp || argv1 == kLongFlagHelp) {
+    args.command = kCmdHelp;
     return zx::ok(args);
   }
 
@@ -200,10 +205,12 @@ std::vector<FidlTrippoint::wire::TripPointDescriptor> parse_set_trippoints_args(
     FidlTrippoint::wire::TripPointDescriptor desc;
     if (type == kTripTypeAbove) {
       if (configuration == kTripConfigCleared) {
-        desc = {.type = FidlTrippoint::wire::TripPointType::kOneshotTempAbove,
-                .index = index_val,
-                .configuration = FidlTrippoint::wire::TripPointValue::WithClearedTripPoint(
-                    FidlTrippoint::wire::ClearedTripPoint())};
+        desc = {
+            .type = FidlTrippoint::wire::TripPointType::kOneshotTempAbove,
+            .index = index_val,
+            .configuration = FidlTrippoint::wire::TripPointValue::WithClearedTripPoint(
+                FidlTrippoint::wire::ClearedTripPoint()),
+        };
       } else {
         float config_val;
         auto [p2, ec2] = std::from_chars(configuration.data(),
@@ -211,17 +218,21 @@ std::vector<FidlTrippoint::wire::TripPointDescriptor> parse_set_trippoints_args(
         if (ec2 != std::errc() || p2 != configuration.data() + configuration.size()) {
           return {};
         }
-        desc = {.type = FidlTrippoint::wire::TripPointType::kOneshotTempAbove,
-                .index = index_val,
-                .configuration = FidlTrippoint::wire::TripPointValue::WithOneshotTempAboveTripPoint(
-                    FidlTrippoint::wire::OneshotTempAboveTripPoint(config_val))};
+        desc = {
+            .type = FidlTrippoint::wire::TripPointType::kOneshotTempAbove,
+            .index = index_val,
+            .configuration = FidlTrippoint::wire::TripPointValue::WithOneshotTempAboveTripPoint(
+                FidlTrippoint::wire::OneshotTempAboveTripPoint(config_val)),
+        };
       }
     } else if (type == kTripTypeBelow) {
       if (configuration == kTripConfigCleared) {
-        desc = {.type = FidlTrippoint::wire::TripPointType::kOneshotTempBelow,
-                .index = index_val,
-                .configuration = FidlTrippoint::wire::TripPointValue::WithClearedTripPoint(
-                    FidlTrippoint::wire::ClearedTripPoint())};
+        desc = {
+            .type = FidlTrippoint::wire::TripPointType::kOneshotTempBelow,
+            .index = index_val,
+            .configuration = FidlTrippoint::wire::TripPointValue::WithClearedTripPoint(
+                FidlTrippoint::wire::ClearedTripPoint()),
+        };
       } else {
         float config_val;
         auto [p2, ec2] = std::from_chars(configuration.data(),
@@ -229,10 +240,12 @@ std::vector<FidlTrippoint::wire::TripPointDescriptor> parse_set_trippoints_args(
         if (ec2 != std::errc() || p2 != configuration.data() + configuration.size()) {
           return {};
         }
-        desc = {.type = FidlTrippoint::wire::TripPointType::kOneshotTempBelow,
-                .index = index_val,
-                .configuration = FidlTrippoint::wire::TripPointValue::WithOneshotTempBelowTripPoint(
-                    FidlTrippoint::wire::OneshotTempBelowTripPoint(config_val))};
+        desc = {
+            .type = FidlTrippoint::wire::TripPointType::kOneshotTempBelow,
+            .index = index_val,
+            .configuration = FidlTrippoint::wire::TripPointValue::WithOneshotTempBelowTripPoint(
+                FidlTrippoint::wire::OneshotTempBelowTripPoint(config_val)),
+        };
       }
     } else {
       return {};
@@ -293,9 +306,8 @@ int HandleAdcResolution(std::string_view device_path) {
     if (response->is_error()) {
       printf("GetResolution failed: status = %d\n", response->error_value());
       return -1;
-    } else {
-      printf("adc resolution = %u\n", response->value()->resolution);
     }
+    printf("adc resolution = %u\n", response->value()->resolution);
   } else {
     printf("GetResolution FIDL call failed: %s\n", response.status_string());
     return -1;
@@ -314,9 +326,8 @@ int HandleAdcRead(std::string_view device_path) {
     if (response->is_error()) {
       printf("GetSample failed: status = %d\n", response->error_value());
       return -1;
-    } else {
-      printf("Value = %u\n", response->value()->value);
     }
+    printf("Value = %u\n", response->value()->value);
   } else {
     printf("GetSample FIDL call failed: %s\n", response.status_string());
     return -1;
@@ -335,9 +346,8 @@ int HandleAdcReadNorm(std::string_view device_path) {
     if (response->is_error()) {
       printf("GetNormalizedSample failed: status = %d\n", response->error_value());
       return -1;
-    } else {
-      printf("Value = %f\n", response->value()->value);
     }
+    printf("Value = %f\n", response->value()->value);
   } else {
     printf("GetNormalizedSample FIDL call failed: %s\n", response.status_string());
     return -1;
@@ -358,9 +368,8 @@ int HandleTripPoint(std::string_view device_path, const std::vector<std::string>
       if (response->is_error()) {
         printf("GetTripPointDescriptors failed: status = %d\n", response->error_value());
         return -1;
-      } else {
-        print_trippoint(response->value()->descriptors);
       }
+      print_trippoint(response->value()->descriptors);
     } else {
       printf("GetTripPointDescriptors FIDL call failed: %s\n", response.status_string());
       return -1;
@@ -401,11 +410,9 @@ int HandleWait(std::string_view device_path) {
     if (response->is_error()) {
       printf("WaitForAnyTripPoint failed: status = %d\n", response->error_value());
       return -1;
-    } else {
-      printf("TripPoint indexed %u was tripped. Measured temperature was %f C\n",
-             response->value()->result.index,
-             response->value()->result.measured_temperature_celsius);
     }
+    printf("TripPoint indexed %u was tripped. Measured temperature was %f C\n",
+           response->value()->result.index, response->value()->result.measured_temperature_celsius);
   } else {
     printf("WaitForAnyTripPoint FIDL call failed: %s\n", response.status_string());
     return -1;
@@ -438,6 +445,8 @@ int HandleTrip(std::string_view device_path, const std::vector<std::string>& ext
   return 0;
 }
 
+}  // namespace
+
 int main(int argc, char** argv) {
   auto args_res = ParseArgs(argc, argv);
   if (args_res.is_error()) {
@@ -450,26 +459,56 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  if (args.command == "help") {
+  if (args.command == kCmdHelp) {
     printf("%s", kUsageMessage);
     return 0;
   }
 
   if (args.command == kCmdList) {
+    if (!args.extra_args.empty()) {
+      printf("%.*s: additional arguments will be ignored\n", static_cast<int>(kCmdList.size()),
+             kCmdList.data());
+    }
     do_list();
     return 0;
+  }
+
+  if (args.command == kCmdReadAll) {
+    if (!args.extra_args.empty()) {
+      printf("%.*s: additional arguments will be ignored\n", static_cast<int>(kCmdReadAll.size()),
+             kCmdReadAll.data());
+    }
+    auto devices = GetTemperatureDevicesForReading();
+    if (devices.empty()) {
+      printf("No temperature devices found.\n");
+      return 0;
+    }
+    printf("Found %zu temperature devices:\n", devices.size());
+    for (const auto& dev : devices) {
+      printf("  %-20s (%s)\n", dev.name.c_str(), dev.path.c_str());
+    }
+    printf("\n");
+    int ret = 0;
+    for (const auto& dev : devices) {
+      printf("Reading %s ...\n", dev.name.c_str());
+      if (HandleTemperatureRead(dev.path) != 0) {
+        ret = -1;
+      }
+    }
+    return ret;
   }
 
   auto resolved_res = ResolveDevice(args.device_path_or_name, args.command);
   if (resolved_res.is_error()) {
     return -1;
   }
-  auto resolved = resolved_res.value();
+  const auto& resolved = resolved_res.value();
 
   if (args.command == kCmdRead) {
     if (resolved.type == DeviceType::kTemperature) {
       return HandleTemperatureRead(resolved.path);
-    } else if (resolved.type == DeviceType::kAdc) {
+    }
+    if (resolved.type == DeviceType::kAdc) {
       return HandleAdcRead(resolved.path);
     }
   } else if (args.command == kCmdName) {

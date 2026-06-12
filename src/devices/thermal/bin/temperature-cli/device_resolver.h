@@ -11,16 +11,26 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
+
+struct DeviceInfo {
+  std::string name;
+  std::string path;
+};
+
+std::vector<DeviceInfo> GetTemperatureDevicesForReading();
 
 // Commands
 inline constexpr std::string_view kCmdList = "list";
 inline constexpr std::string_view kCmdResolution = "resolution";
 inline constexpr std::string_view kCmdRead = "read";
 inline constexpr std::string_view kCmdReadNorm = "readnorm";
+inline constexpr std::string_view kCmdReadAll = "readall";
 inline constexpr std::string_view kCmdTripPoint = "trippoint";
 inline constexpr std::string_view kCmdWait = "wait";
 inline constexpr std::string_view kCmdName = "name";
 inline constexpr std::string_view kCmdTrip = "trip";
+inline constexpr std::string_view kCmdHelp = "help";
 
 template <typename Protocol>
 zx::result<fidl::WireSyncClient<Protocol>> ConnectToDevice(std::string_view path,
@@ -37,8 +47,8 @@ zx::result<fidl::WireSyncClient<Protocol>> ConnectToDevice(std::string_view path
   return zx::ok(fidl::WireSyncClient<Protocol>(std::move(client_end.value())));
 }
 
-enum class DeviceType {
-  kTemperature,
+enum class DeviceType : uint8_t {
+  kTemperature = 0,
   kAdc,
   kTrippoint,
 };
