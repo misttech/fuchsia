@@ -190,7 +190,7 @@
     },
     {
         name: "EngTools",
-        process: "/boot/bin/sh|/pkg/bin/sshd|overnetstack\\.cm|remote.*|sh:console|sshd-host\\.cm",
+        process: "/boot/bin/sh|/pkg/bin/sshd|developer-console\\.cm|overnetstack\\.cm|remote.*|sh:console|sshd-host\\.cm",
         vmo: "",
         event_code: 64,
     },
