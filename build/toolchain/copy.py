@@ -7,6 +7,7 @@ to preserve nanoseconds of mtime. See https://fxbug.dev/42134108#c5."""
 
 import os
 import shutil
+import stat
 import sys
 
 
