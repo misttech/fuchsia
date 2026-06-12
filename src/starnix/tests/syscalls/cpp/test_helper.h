@@ -525,6 +525,7 @@ testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType 
 class ScopedPipe {
  public:
   ScopedPipe();
+  explicit ScopedPipe(int flags);
   ScopedPipe(ScopedPipe &&o);
   ScopedPipe &operator=(ScopedPipe &&o);
   ScopedPipe(const ScopedPipe &) = delete;

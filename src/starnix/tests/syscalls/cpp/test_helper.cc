@@ -725,6 +725,13 @@ ScopedPipe::ScopedPipe() {
   write_side_ = fbl::unique_fd(pipe_fds[1]);
 }
 
+ScopedPipe::ScopedPipe(int flags) {
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, flags));
+  read_side_ = fbl::unique_fd(pipe_fds[0]);
+  write_side_ = fbl::unique_fd(pipe_fds[1]);
+}
+
 ScopedPipe::ScopedPipe(ScopedPipe &&o)
     : read_side_(std::move(o.read_side_)), write_side_(std::move(o.write_side_)) {}
 
