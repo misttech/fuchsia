@@ -4,7 +4,7 @@
 
 use bt_avctp::{AvcCommandType, AvcOpCode, AvcPacketType};
 use fidl_fuchsia_bluetooth_avrcp::AvcPanelCommand;
-use log::{trace, warn};
+use log::{debug, warn};
 use packet_encoding::{Decodable, Encodable};
 use thiserror::Error;
 
@@ -68,11 +68,11 @@ macro_rules! decoder_enum {
                 match match_pdu() {
                     Ok(Some(command)) => Ok(command),
                     Ok(None) => {
-                        trace!("Received unimplemented vendor command {:?}", pdu_id);
+                        debug!("Received unimplemented vendor command {:?}", pdu_id);
                         Err(DecodeError::VendorPduNotImplemented(u8::from(&pdu_id)))
                     }
                     Err(e) => {
-                        trace!("Unable to decode vendor packet {:?}", pdu_id);
+                        debug!("Unable to decode vendor packet {:?}", pdu_id);
                         Err(DecodeError::VendorPacketDecodeError(AvcCommandType::$cmd_type, pdu_id, e))
                     }
                 }
@@ -158,7 +158,7 @@ impl VendorSpecificCommand {
         // error.
         match packet_type {
             AvcPacketType::Command(AvcCommandType::Notify) => {
-                trace!("Received ctype=notify command {:?}", pdu_id);
+                debug!("Received ctype=notify command {:?}", pdu_id);
 
                 // The only PDU that you can send a Notify on is RegisterNotification.
                 if pdu_id != PduId::RegisterNotification {
@@ -173,15 +173,15 @@ impl VendorSpecificCommand {
                 }
             }
             AvcPacketType::Command(AvcCommandType::Status) => {
-                trace!("Received ctype=status command {:?}", pdu_id);
+                debug!("Received ctype=status command {:?}", pdu_id);
                 Ok(VendorSpecificCommand::Status(StatusCommand::decode_command(pdu_id, body)?))
             }
             AvcPacketType::Command(AvcCommandType::Control) => {
-                trace!("Received ctype=command command {:?}", pdu_id);
+                debug!("Received ctype=command command {:?}", pdu_id);
                 Ok(VendorSpecificCommand::Control(ControlCommand::decode_command(pdu_id, body)?))
             }
             _ => {
-                trace!("Received unhandled packet type");
+                debug!("Received unhandled packet type");
                 Err(DecodeError::VendorPacketTypeNotImplemented(packet_type))
             }
         }

@@ -7,7 +7,7 @@ use bt_avctp::{AvcCommandResponse, AvcCommandType, AvcResponseType, Error as Avc
 use fuchsia_sync::RwLock;
 use futures::stream::{FusedStream, StreamExt};
 use futures::{Stream, ready};
-use log::trace;
+use log::debug;
 use packet_encoding::{Decodable, Encodable};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -134,7 +134,7 @@ impl Stream for NotificationStream {
             let result = ready!(stream.poll_next(cx));
             let return_result = match result {
                 Some(Ok(response)) => {
-                    trace!("received event response {:?}", response);
+                    debug!("received event response {:?}", response);
                     match self.handle_response(response) {
                         Ok(response) => Ok(Some(response)),
                         Err(e) => {

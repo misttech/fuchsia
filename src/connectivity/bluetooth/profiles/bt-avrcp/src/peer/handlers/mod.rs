@@ -10,7 +10,7 @@ use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::future::Either;
 use futures::{Future, FutureExt};
-use log::{trace, warn};
+use log::{debug, warn};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, VecDeque};
 use std::pin::pin;
@@ -148,7 +148,7 @@ impl ControlChannelHandler {
         &self,
         command: T,
     ) -> impl Future<Output = Result<(), Error>> + use<T> {
-        trace!("handle_command {:#?}", command);
+        debug!("handle_command {:?}", command);
         let inner = self.inner.clone();
 
         let supports_browsing =
@@ -211,7 +211,7 @@ fn send_decode_error_response(
     decode_error: DecodeError,
     command: impl IncomingTargetCommand,
 ) -> Result<(), Error> {
-    trace!("target incoming command decode error {:?}", decode_error);
+    debug!("target incoming command decode error {:?}", decode_error);
     match decode_error {
         DecodeError::PassthroughInvalidPanelKey => command
             .send_response(AvcResponseType::NotImplemented, &[])
@@ -442,7 +442,7 @@ async fn handle_get_capabilities(
     cmd: GetCapabilitiesCommand,
     target_delegate: Arc<TargetDelegate>,
 ) -> Result<Box<dyn PacketEncodable>, StatusCode> {
-    trace!("Received GetCapabilities Command {:#?}", cmd);
+    debug!("Received GetCapabilities Command {:?}", cmd);
 
     match cmd.capability_id() {
         GetCapabilitiesCapabilityId::CompanyId => {
@@ -749,7 +749,7 @@ async fn handle_set_player_application_setting_value(
         .await?;
 
     // Log the resulting set_settings, as it is valid for it to be different than the `requested_settings`.
-    trace!("Media set player application settings: {:?}", set_settings);
+    debug!("Media set player application settings: {:?}", set_settings);
 
     let response = SetPlayerApplicationSettingValueResponse::new();
     Ok(Box::new(response))

@@ -6,7 +6,7 @@ use anyhow::format_err;
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt};
-use log::trace;
+use log::debug;
 use packet_encoding::{Decodable, Encodable};
 use std::collections::HashSet;
 
@@ -119,10 +119,10 @@ impl Controller {
     /// Returns the volume as reported by the peer.
     pub async fn set_absolute_volume(&self, volume: u8) -> Result<u8, Error> {
         let cmd = SetAbsoluteVolumeCommand::new(volume)?;
-        trace!("set_absolute_volume send command {:#?}", cmd);
+        debug!("set_absolute_volume send command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = SetAbsoluteVolumeResponse::decode(&buf[..])?;
-        trace!("set_absolute_volume received response {:#?}", response);
+        debug!("set_absolute_volume received response {:?}", response);
         Ok(response.volume())
     }
 
@@ -130,10 +130,10 @@ impl Controller {
     /// Returns all the media attributes received as a response or an error.
     pub async fn get_media_attributes(&self) -> Result<fidl_avrcp::MediaAttributes, Error> {
         let cmd = GetElementAttributesCommand::all_attributes();
-        trace!("get_media_attributes send command {:#?}", cmd);
+        debug!("get_media_attributes send command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = GetElementAttributesResponse::decode(&buf[..])?;
-        trace!("get_media_attributes received response {:#?}", response);
+        debug!("get_media_attributes received response {:?}", response);
         Ok(fidl_avrcp::MediaAttributes {
             title: response.0.title.clone(),
             artist_name: response.0.artist_name.clone(),
@@ -156,10 +156,10 @@ impl Controller {
     /// Returns the PlayStatus of current media on the peer, or an error.
     pub async fn get_play_status(&self) -> Result<fidl_avrcp::PlayStatus, Error> {
         let cmd = GetPlayStatusCommand::new();
-        trace!("get_play_status send command {:?}", cmd);
+        debug!("get_play_status send command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = GetPlayStatusResponse::decode(&buf[..])?;
-        trace!("get_play_status received response {:?}", response);
+        debug!("get_play_status received response {:?}", response);
         let mut play_status = fidl_avrcp::PlayStatus::default();
         play_status.song_length = if response.song_length != SONG_LENGTH_NOT_SUPPORTED {
             Some(response.song_length)
@@ -180,7 +180,7 @@ impl Controller {
         attribute_ids: Vec<PlayerApplicationSettingAttributeId>,
     ) -> Result<PlayerApplicationSettings, Error> {
         let cmd = GetCurrentPlayerApplicationSettingValueCommand::new(attribute_ids);
-        trace!("get_current_player_application_settings command {:?}", cmd);
+        debug!("get_current_player_application_settings command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = GetCurrentPlayerApplicationSettingValueResponse::decode(&buf[..])?;
         Ok(response.try_into()?)
@@ -191,7 +191,7 @@ impl Controller {
     ) -> Result<PlayerApplicationSettings, Error> {
         // Get all the supported attributes.
         let cmd = ListPlayerApplicationSettingAttributesCommand::new();
-        trace!("list_player_application_setting_attributes command {:?}", cmd);
+        debug!("list_player_application_setting_attributes command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = ListPlayerApplicationSettingAttributesResponse::decode(&buf[..])?;
 
@@ -200,14 +200,14 @@ impl Controller {
         let cmd = GetPlayerApplicationSettingAttributeTextCommand::new(
             response.player_application_setting_attribute_ids(),
         );
-        trace!("get_player_application_setting_attribute_text command {:?}", cmd);
+        debug!("get_player_application_setting_attribute_text command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let _text_response = GetPlayerApplicationSettingAttributeTextResponse::decode(&buf[..])?;
 
         // For each attribute returned, get the set of possible values and text.
         for attribute in response.player_application_setting_attribute_ids() {
             let cmd = ListPlayerApplicationSettingValuesCommand::new(attribute);
-            trace!("list_player_application_setting_values command {:?}", cmd);
+            debug!("list_player_application_setting_values command {:?}", cmd);
             let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
             let list_response = ListPlayerApplicationSettingValuesResponse::decode(&buf[..])?;
 
@@ -216,11 +216,11 @@ impl Controller {
                 attribute,
                 list_response.player_application_setting_value_ids(),
             );
-            trace!("get_player_application_setting_value_text command {:?}", cmd);
+            debug!("get_player_application_setting_value_text command {:?}", cmd);
             let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
             let value_text_response =
                 GetPlayerApplicationSettingValueTextResponse::decode(&buf[..])?;
-            trace!(
+            debug!(
                 "Response from get_player_application_setting_value_text: {:?}",
                 value_text_response
             );
@@ -258,7 +258,7 @@ impl Controller {
         // this in the returned `set_settings`.
         for setting in settings_vec {
             let cmd = SetPlayerApplicationSettingValueCommand::new(vec![setting]);
-            trace!("set_player_application_settings command {:?}", cmd);
+            debug!("set_player_application_settings command {:?}", cmd);
             let response_buf = self.peer.send_vendor_dependent_command(&cmd).await;
 
             match response_buf {
@@ -278,10 +278,10 @@ impl Controller {
         battery_status: fidl_avrcp::BatteryStatus,
     ) -> Result<(), Error> {
         let cmd = InformBatteryStatusOfCtCommand::new(battery_status);
-        trace!("inform_battery_status_of_ct command {:?}", cmd);
+        debug!("inform_battery_status_of_ct command {:?}", cmd);
         let buf = self.peer.send_vendor_dependent_command(&cmd).await?;
         let response = InformBatteryStatusOfCtResponse::decode(&buf[..])?;
-        trace!("inform_battery_status_of_ct received response {:?}", response);
+        debug!("inform_battery_status_of_ct received response {:?}", response);
         Ok(())
     }
 
@@ -339,7 +339,7 @@ impl Controller {
     ) -> Result<GetFolderItemsResponseParams, fidl_avrcp::BrowseControllerError> {
         let buf = self.send_browse_command(PduId::GetFolderItems, cmd).await?;
         let response = GetFolderItemsResponse::decode(&buf[..])?;
-        trace!("get_folder_items received response {:?}", response);
+        debug!("get_folder_items received response {:?}", response);
         match response {
             GetFolderItemsResponse::Failure(status) => Err(status.into()),
             GetFolderItemsResponse::Success(r) => Ok(r),
@@ -422,7 +422,7 @@ impl Controller {
             .map_err(|_| fidl_avrcp::BrowseControllerError::PacketEncoding)?;
         let buf = self.send_browse_command(PduId::ChangePath, cmd).await?;
         let response = ChangePathResponse::decode(&buf[..])?;
-        trace!("change_directory received response {:?}", response);
+        debug!("change_directory received response {:?}", response);
         match response {
             ChangePathResponse::Failure(status) => Err(status.into()),
             ChangePathResponse::Success { num_of_items } => Ok(num_of_items),
@@ -443,7 +443,7 @@ impl Controller {
             .await
             .map_err(Into::<fidl_avrcp::BrowseControllerError>::into)?;
         let response = PlayItemResponse::decode(&buf[..]).map_err(|e| Error::PacketError(e))?;
-        trace!("play_item received response {:?}", response);
+        debug!("play_item received response {:?}", response);
 
         match response.status() {
             StatusCode::Success => Ok(()),
@@ -462,7 +462,7 @@ impl Controller {
             GetItemAttributesCommand::from_now_playing_list(uid, player.uid_counter(), vec![]);
         let buf = self.send_browse_command(PduId::GetItemAttributes, cmd).await?;
         let response = GetItemAttributesResponse::decode(&buf[..])?;
-        trace!("get_item_attributes received response {:?}", response);
+        debug!("get_item_attributes received response {:?}", response);
         match response {
             GetItemAttributesResponse::Failure(status) => Err(status.into()),
             GetItemAttributesResponse::Success(attributes) => Ok(attributes.into()),

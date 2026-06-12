@@ -4,7 +4,7 @@
 
 use bt_avctp::{self as avctp, AvctpCommand};
 use futures::Future;
-use log::{info, trace, warn};
+use log::{debug, info, warn};
 use packet_encoding::{Decodable, Encodable};
 use std::sync::Arc;
 
@@ -75,7 +75,7 @@ impl BrowseChannelHandler {
             PduId::GetFolderItems => {
                 let get_folder_items_cmd = GetFolderItemsCommand::decode(&parameters)
                     .map_err(|_| StatusCode::InvalidParameter)?;
-                trace!("Received GetFolderItems Command {:?}", get_folder_items_cmd);
+                debug!("Received GetFolderItems Command {:?}", get_folder_items_cmd);
 
                 // TODO(fxbug.dev/332331774): currently, we only support
                 // MediaPlayerList scope since none of the players are
@@ -102,7 +102,7 @@ impl BrowseChannelHandler {
             PduId::GetTotalNumberOfItems => {
                 let get_total_items_cmd = GetTotalNumberOfItemsCommand::decode(&parameters)
                     .map_err(|_| StatusCode::InvalidParameter)?;
-                trace!("Received GetTotalNumberOfItems Command {:?}", get_total_items_cmd);
+                debug!("Received GetTotalNumberOfItems Command {:?}", get_total_items_cmd);
 
                 // TODO(b/343223304): currently, we only support
                 // MediaPlayerList scope since none of the players are

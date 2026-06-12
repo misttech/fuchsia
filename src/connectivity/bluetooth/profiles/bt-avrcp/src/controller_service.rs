@@ -9,7 +9,7 @@ use fidl_fuchsia_bluetooth_avrcp_test::*;
 use fuchsia_async as fasync;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::StreamExt;
-use log::{error, trace, warn};
+use log::{debug, error, warn};
 use std::collections::VecDeque;
 
 use crate::packets::PlaybackStatus as PacketPlaybackStatus;
@@ -230,12 +230,12 @@ impl ControllerService {
             PeerControllerEvent::AvailablePlayersChanged => {
                 // TODO(https://fxbug.dev/42081024): get all the available players instead of just 10.
                 if let Err(e) = self.controller.get_media_player_items(0, 9, true).await {
-                    trace!(e:?; "Failed to get updated media player items");
+                    debug!(e:?; "Failed to get updated media player items");
                 }
             }
             PeerControllerEvent::AddressedPlayerChanged(id) => {
                 if let Err(e) = self.controller.set_browsed_player(id).await {
-                    trace!(e:?; "Failed to set browsed player to addressed player {id:?}. Clearing previously set browsed player");
+                    debug!(e:?; "Failed to set browsed player to addressed player {id:?}. Clearing previously set browsed player");
                 }
             }
             _ => {}

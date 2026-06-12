@@ -15,7 +15,7 @@ use fuchsia_sync::RwLock;
 use futures::Future;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use packet_encoding::{Decodable, Encodable};
 use std::collections::{HashMap, HashSet};
 use std::mem::{Discriminant, discriminant};
@@ -56,18 +56,33 @@ const MAX_CONNECTION_EST_TIME: zx::MonotonicDuration = zx::MonotonicDuration::fr
 /// to account for radio delay and other factors that impede connection establishment.
 const CONNECTION_THRESHOLD: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(750);
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum PeerChannelState<T> {
     Connected(Arc<T>),
     Connecting,
     Disconnected,
 }
 
-#[derive(Debug)]
+impl<T> std::fmt::Debug for PeerChannelState<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Connected(_) => write!(f, "Connected"),
+            Self::Connecting => write!(f, "Connecting"),
+            Self::Disconnected => write!(f, "Disconnected"),
+        }
+    }
+}
+
 pub struct PeerChannel<T> {
     /// The state of this channel.
     state: PeerChannelState<T>,
     inspect: fuchsia_inspect::StringProperty,
+}
+
+impl<T> std::fmt::Debug for PeerChannel<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeerChannel").field("state", &self.state).finish()
+    }
 }
 
 impl<T> PeerChannel<T> {
@@ -514,7 +529,7 @@ impl RemotePeer {
 
     fn set_control_connection(&mut self, peer: AvcPeer) {
         let current_time = fasync::MonotonicInstant::now();
-        trace!("Set control connection for {} at: {}", self.peer_id, current_time.into_nanos());
+        debug!("Set control connection for {} at: {}", self.peer_id, current_time.into_nanos());
 
         // If the current connection establishment is within a threshold amount of time from the
         // most recent connection establishment, both connections should be dropped, and should
@@ -522,7 +537,7 @@ impl RemotePeer {
         if let Some(previous_time) = self.last_control_connected_time.take() {
             let diff = (current_time - previous_time).into_nanos().abs();
             if diff < CONNECTION_THRESHOLD.into_nanos() {
-                trace!(
+                debug!(
                     "Collision in control connection establishment for {}. Time diff: {}",
                     self.peer_id, diff
                 );
@@ -572,7 +587,7 @@ impl RemotePeer {
 
     fn set_browse_connection(&mut self, peer: AvctpPeer) {
         let current_time = fasync::MonotonicInstant::now();
-        trace!("Set browse connection for {} at: {}", self.peer_id, current_time.into_nanos());
+        debug!("Set browse connection for {} at: {}", self.peer_id, current_time.into_nanos());
 
         // If the current connection establishment is within a threshold amount of time from the
         // most recent connection establishment, both connections should be dropped, and should
@@ -580,7 +595,7 @@ impl RemotePeer {
         if let Some(previous_time) = self.last_browse_connected_time.take() {
             let diff = (current_time - previous_time).into_nanos().abs();
             if diff < CONNECTION_THRESHOLD.into_nanos() {
-                trace!(
+                debug!(
                     "Collision in browse connection establishment for {}. Time diff: {}",
                     self.peer_id, diff
                 );
@@ -612,7 +627,7 @@ impl RemotePeer {
     }
 
     fn set_target_descriptor(&mut self, service: AvrcpService) {
-        trace!("Set target descriptor for {}", self.peer_id);
+        debug!("Set target descriptor for {}", self.peer_id);
         self.target_descriptor = Some(service);
         // Record inspect target features.
         self.inspect.record_target_features(service);
@@ -620,7 +635,7 @@ impl RemotePeer {
     }
 
     fn set_controller_descriptor(&mut self, service: AvrcpService) {
-        trace!("Set controller descriptor for {}", self.peer_id);
+        debug!("Set controller descriptor for {}", self.peer_id);
         self.controller_descriptor = Some(service);
         self.control_command_handler.set_controller_descriptor(service);
         // Record inspect controller features.
@@ -641,13 +656,13 @@ impl RemotePeer {
     }
 
     fn wake_state_watcher(&self) {
-        trace!("Waking state watcher for {}", self.peer_id);
+        debug!("Waking state watcher for {}", self.peer_id);
         self.state_change_listener.state_changed();
     }
 
     fn update_available_players(&mut self, players: &[MediaPlayerItem]) {
         self.available_players.clear();
-        trace!(peer_id:% = self.peer_id; "Available players updated: {players:?}");
+        debug!(peer_id:% = self.peer_id; "Available players updated: {players:?}");
         players.iter().for_each(|p| {
             let _ = self.available_players.insert(p.player_id(), p.clone());
         });
@@ -776,7 +791,7 @@ async fn get_supported_events_internal(
     peer: Arc<RwLock<RemotePeer>>,
 ) -> Result<HashSet<NotificationEventId>, Error> {
     let cmd = GetCapabilitiesCommand::new(GetCapabilitiesCapabilityId::EventsId);
-    trace!("Getting supported events: {:?}", cmd);
+    debug!("Getting supported events: {:?}", cmd);
     let buf = send_vendor_dependent_command_internal(peer.clone(), &cmd).await?;
     let capabilities = GetCapabilitiesResponse::decode(&buf[..])?;
     let mut event_ids = HashSet::new();

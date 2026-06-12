@@ -8,7 +8,7 @@ use fuchsia_async::DurationExt;
 use fuchsia_sync::RwLock;
 use futures::future::FutureExt;
 use futures::stream::{SelectAll, StreamExt, TryStreamExt};
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use notification_stream::NotificationStream;
 use packet_encoding::{Decodable, Encodable};
 use std::collections::HashSet;
@@ -42,7 +42,7 @@ async fn get_available_players(
     let pdu_id = PduId::GetFolderItems;
     let peer_id = peer.read().id();
 
-    trace!(peer_id:%; "Fetching available players for target peer");
+    debug!(peer_id:%; "Fetching available players for target peer");
     let resp_buf: Vec<u8> =
         { send_browse_command_internal(peer.clone(), u8::from(&pdu_id), &payload).await? };
     let response = GetFolderItemsResponse::decode(&resp_buf[..])?;
@@ -75,7 +75,7 @@ async fn set_browsed_player(peer: Arc<RwLock<RemotePeer>>) -> Result<(), Error> 
     // Record player features.
     {
         let mut lock = peer.write();
-        trace!(peer_id:%; "Recording player capabilities for target peer");
+        debug!(peer_id:%; "Recording player capabilities for target peer");
         lock.inspect.metrics().target_player_features(peer_id, &players);
         lock.update_available_players(&players);
     }
@@ -248,7 +248,7 @@ async fn make_connection(peer: Arc<RwLock<RemotePeer>>, conn_type: AVCTPConnecti
         zx::MonotonicDuration::from_nanos(rand::random_range(
             MIN_CONNECTION_EST_TIME.into_nanos()..MAX_CONNECTION_EST_TIME.into_nanos(),
         ));
-    trace!("AVRCP waiting {:?} millis before establishing connection", random_delay.into_millis());
+    debug!("AVRCP waiting {:?} millis before establishing connection", random_delay.into_millis());
     fuchsia_async::Timer::new(random_delay.after_now()).await;
 
     // While waiting to initiate an outgoing connection, if there was an incoming connection, don't
@@ -322,7 +322,7 @@ async fn pump_notifications(peer: Arc<RwLock<RemotePeer>>) {
     let mut notification_streams = SelectAll::new();
 
     for notif in supported_notifications {
-        trace!("creating notification stream for {:?}", notif);
+        debug!("creating notification stream for {:?}", notif);
         let stream = NotificationStream::new(peer.clone(), notif.clone(), 1)
             .map_ok(move |data| (notif, data));
         notification_streams.push(stream);
@@ -340,7 +340,7 @@ async fn pump_notifications(peer: Arc<RwLock<RemotePeer>>) {
             Ok(Ok(false)) => continue,
         }
     }
-    trace!("stopping notifications for {:?}", peer.read().peer_id);
+    debug!("stopping notifications for {:?}", peer.read().peer_id);
 }
 
 /// Starts a task to poll notifications on the remote peer. Aborted when the peer connection is
@@ -380,7 +380,7 @@ fn run_post_browse_setup_task(peer: Arc<RwLock<RemotePeer>>) -> fasync::Task<()>
 /// connections, processing the incoming control messages, and registering for notifications on the
 /// remote peer.
 pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
-    trace!("state_watcher starting");
+    debug!("state_watcher starting");
     let mut change_stream = peer.read().state_change_listener.take_change_stream();
     let id = peer.read().id();
     let peer_weak = Arc::downgrade(&peer);
@@ -395,7 +395,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
     let mut notification_poll_task: Option<fasync::Task<()>> = None;
 
     while let Some(_) = change_stream.next().await {
-        trace!("state_watcher command received");
+        debug!("state_watcher command received");
         let peer = match peer_weak.upgrade() {
             Some(peer) => peer,
             None => break,
@@ -408,28 +408,28 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
         // into a loop of constantly clearing the tasks.
         if peer_guard.cancel_browse_task {
             if post_browse_setup_task.take().is_some() {
-                trace!("state_watcher: clearing previous post browse setup task.");
+                debug!("state_watcher: clearing previous post browse setup task.");
             }
             if browse_channel_task.take().is_some() {
-                trace!("state_watcher: clearing previous browse channel task.");
+                debug!("state_watcher: clearing previous browse channel task.");
             }
             peer_guard.cancel_browse_task = false;
         }
         if peer_guard.cancel_control_task {
             if control_channel_task.take().is_some() {
-                trace!("state_watcher: clearing previous control channel task.");
+                debug!("state_watcher: clearing previous control channel task.");
             }
             notification_poll_task = None;
             peer_guard.cancel_control_task = false;
         }
 
-        trace!("state_watcher control channel {:?}", peer_guard.control_channel);
+        debug!("state_watcher control channel {:?}", peer_guard.control_channel);
         match peer_guard.control_channel.state() {
             &PeerChannelState::Connecting => {}
             &PeerChannelState::Disconnected => {
                 // Have we discovered service profile data on the peer?
                 if peer_guard.discovered() && peer_guard.attempt_control_connection {
-                    trace!("Starting make_connection task for peer {}", id);
+                    debug!("Starting make_connection task for peer {}", id);
                     peer_guard.attempt_control_connection = false;
                     make_control_channel_task = fasync::Task::spawn(make_connection(
                         peer.clone(),
@@ -441,7 +441,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
                 // If we have discovered profile data on this peer, start processing requests
                 // over the control stream.
                 if peer_guard.discovered() && control_channel_task.is_none() {
-                    trace!("state_watcher: Starting control stream task for peer {}", id);
+                    debug!("state_watcher: Starting control stream task for peer {}", id);
                     control_channel_task = Some(start_control_stream_processing_task(peer.clone()));
                 }
 
@@ -452,7 +452,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
             }
         }
 
-        trace!("state_watcher browse channel {:?}", peer_guard.browse_channel);
+        debug!("state_watcher browse channel {:?}", peer_guard.browse_channel);
         let target_supports_browsing = peer_guard.supports_target_browsing()
             && CONTROLLER_SUPPORTED_FEATURES.contains(AvrcpControllerFeatures::SUPPORTSBROWSING);
         let controller_supports_browsing = peer_guard.supports_controller_browsing()
@@ -466,7 +466,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
                     && (target_supports_browsing || controller_supports_browsing)
                     && peer_guard.attempt_browse_connection
                 {
-                    trace!("Starting make_connection task for browse channel on peer {}", id);
+                    debug!("Starting make_connection task for browse channel on peer {}", id);
                     peer_guard.attempt_browse_connection = false;
                     make_browse_channel_task = fasync::Task::spawn(make_connection(
                         peer.clone(),
@@ -478,12 +478,12 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
                 // The Browse channel must be established after the control channel.
                 // Ensure that the control channel exists before starting the browse task.
                 if !peer_guard.control_connected() {
-                    trace!("Received Browse connection before Control .. disconnecting");
+                    debug!("Received Browse connection before Control .. disconnecting");
                     peer_guard.browse_channel.disconnect();
                     continue;
                 }
                 if browse_channel_task.is_none() {
-                    trace!("state_watcher: Starting browse stream task for peer {}", id);
+                    debug!("state_watcher: Starting browse stream task for peer {}", id);
                     browse_channel_task = Some(start_browse_stream_processing_task(peer.clone()));
                 }
 
@@ -492,7 +492,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
         }
     }
 
-    trace!("state_watcher shutting down. aborting processors");
+    debug!("state_watcher shutting down. aborting processors");
 
     let _ = make_control_channel_task.abort();
     let _ = make_browse_channel_task.abort();

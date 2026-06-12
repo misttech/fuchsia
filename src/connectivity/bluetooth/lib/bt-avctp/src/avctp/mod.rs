@@ -332,11 +332,19 @@ impl Drop for CommandStream {
     }
 }
 
-#[derive(Debug)]
 pub struct Command {
     peer: Arc<PeerInner>,
     avctp_header: Header,
     body: Vec<u8>,
+}
+
+impl std::fmt::Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Command")
+            .field("avctp_header", &self.avctp_header)
+            .field("body_len", &self.body.len())
+            .finish()
+    }
 }
 
 impl Command {
