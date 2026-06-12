@@ -11,7 +11,9 @@ use derivative::Derivative;
 use macro_rules_attribute::apply;
 
 use line_discipline::{LineDiscipline, PendingSignals};
-use starnix_sync::{LockBefore, LockDepMutex, Locked, ProcessGroupState, RwLock, TerminalLock};
+use starnix_sync::{
+    LockBefore, LockDepMutex, LockDepRwLock, Locked, ProcessGroupState, RwLock, TerminalLock,
+};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -23,7 +25,7 @@ use std::sync::{Arc, Weak};
 /// Global state of the devpts filesystem.
 pub struct TtyState {
     /// The terminal objects indexed by their identifier.
-    pub terminals: RwLock<HashMap<u32, Weak<Terminal>>>,
+    pub terminals: LockDepRwLock<HashMap<u32, Weak<Terminal>>, TerminalLock>,
 
     /// The set of available terminal identifier.
     pts_ids_set: LockDepMutex<PtsIdsSet, TerminalLock>,
@@ -56,7 +58,7 @@ impl TtyState {
 impl Default for TtyState {
     fn default() -> Self {
         Self {
-            terminals: RwLock::new(HashMap::new()),
+            terminals: LockDepRwLock::new(HashMap::new()),
             pts_ids_set: LockDepMutex::new(PtsIdsSet::new(DEVPTS_COUNT)),
         }
     }
