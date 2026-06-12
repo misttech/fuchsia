@@ -289,3 +289,120 @@ exit 0
 `, tmpDir)
 	return createFakeFfx(t, tmpDir, script)
 }
+
+func TestFFXStrictClient_Flash(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.Flash(ctx, "serial123", "path/to/product", "path/to/pubkey")
+	if err != nil {
+		t.Fatalf("Flash failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "target flash") {
+		t.Errorf("Expected 'target flash' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "path/to/product") {
+		t.Errorf("Expected 'path/to/product' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "path/to/pubkey") {
+		t.Errorf("Expected 'path/to/pubkey' in args, got: %s", args)
+	}
+}
+
+func TestFFXStrictClient_EmuStart(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.EmuStart(ctx, "path/to/emu/product", "my-emu-name")
+	if err != nil {
+		t.Fatalf("EmuStart failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "emu start") {
+		t.Errorf("Expected 'emu start' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "path/to/emu/product") {
+		t.Errorf("Expected 'path/to/emu/product' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--name my-emu-name") {
+		t.Errorf("Expected '--name my-emu-name' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--headless") {
+		t.Errorf("Expected '--headless' in args, got: %s", args)
+	}
+}
+
+func TestFFXStrictClient_EmuStop(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.EmuStop(ctx)
+	if err != nil {
+		t.Fatalf("EmuStop failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "emu stop --all") {
+		t.Errorf("Expected 'emu stop --all' in args, got: %s", args)
+	}
+}

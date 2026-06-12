@@ -161,6 +161,34 @@ func (c *FFXStrictClient) SetDefaultTarget(target *string) {
 	}
 }
 
+func (c *FFXStrictClient) Flash(ctx context.Context, fastbootSerial, productDir, pubKeyPath string) error {
+	if err := c.ffxInst.Flash(ctx, fastbootSerial, pubKeyPath, productDir, false); err != nil {
+		return fmt.Errorf("ffx flash failed: %w", err)
+	}
+	return nil
+}
+
+func (c *FFXStrictClient) EmuStart(ctx context.Context, productDir, name string) error {
+	args := []string{
+		"emu", "start", productDir,
+		"--net", "user",
+		"--headless",
+		"--startup-timeout", "300",
+		"--name", name,
+	}
+	if err := c.ffxInst.Run(ctx, args...); err != nil {
+		return fmt.Errorf("emu start failed: %w", err)
+	}
+	return nil
+}
+
+func (c *FFXStrictClient) EmuStop(ctx context.Context) error {
+	if err := c.ffxInst.Run(ctx, "emu", "stop", "--all"); err != nil {
+		return fmt.Errorf("emu stop failed: %w", err)
+	}
+	return nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {
