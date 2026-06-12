@@ -11,6 +11,7 @@ use crate::vfs::{
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
 use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
+use fuchsia_sync::ResetDependencies;
 use starnix_rcu::RcuString;
 use starnix_sync::{
     DirEntryChildrenLevel, DirEntryChildrenRecursiveLevel, DynamicLockDepRwLock, FileOpsCore,
@@ -28,8 +29,6 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
-#[cfg(detect_lock_cycles)]
-use tracing_mutex::util;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -916,12 +915,17 @@ impl DirEntry {
                 .children
                 .insert(new_basename.into(), Arc::downgrade(&renamed));
 
-            #[cfg(detect_lock_cycles)]
+            // Lock ordering is enforced from parent-to-child, and therefore we need to
+            // reset the lock ordering constraints when we reorder the tree nodes.
+            // SAFETY: We manually clear the dependency graph for these locks.
+            // This is safe because `fs.rename_mutex` is held during this operation, which
+            // prevents the tree topology from changing concurrently. This allows us to safely
+            // dynamically enforce a sound locking order (e.g. by memory address in `RenameGuard`)
+            // to avoid deadlocks. Clearing the graph prevents false-positive cycle panics from `tracing-mutex`
+            // after the node is reparented.
             unsafe {
-                // Lock ordering is enforced from parent-to-child, and therefore we need to
-                // reset the lock ordering constraints when we reorder the tree nodes.
-                util::reset_dependencies(renamed.children.raw());
-                util::reset_dependencies(renamed.node.info.raw());
+                renamed.children.reset_dependencies();
+                renamed.node.info_lock().reset_dependencies();
             }
 
             if flags.contains(RenameFlags::EXCHANGE) {
@@ -935,12 +939,12 @@ impl DirEntry {
                     .children
                     .insert(old_basename.into(), Arc::downgrade(replaced));
 
-                #[cfg(detect_lock_cycles)]
+                // Lock ordering is enforced from parent-to-child, and therefore we need to
+                // reset the lock ordering constraints when we reorder the tree nodes.
+                // SAFETY: See the comment above for `renamed` lock resetting.
                 unsafe {
-                    // Lock ordering is enforced from parent-to-child, and therefore we need to
-                    // reset the lock ordering constraints when we reorder the tree nodes.
-                    util::reset_dependencies(replaced.children.raw());
-                    util::reset_dependencies(replaced.node.info.raw());
+                    replaced.children.reset_dependencies();
+                    replaced.node.info_lock().reset_dependencies();
                 }
             } else {
                 // Remove the renamed child from the old_parent's child list.

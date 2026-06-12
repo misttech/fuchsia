@@ -1119,3 +1119,35 @@ mod tests {
         let _g2 = l2.lock();
     }
 }
+
+impl<T> fuchsia_sync::ResetDependencies for DynamicLockDepMutex<T> {
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe { fuchsia_sync::ResetDependencies::reset_dependencies(&self.inner) }
+    }
+}
+
+impl<T, L> fuchsia_sync::ResetDependencies for LockDepMutex<T, L> {
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe { fuchsia_sync::ResetDependencies::reset_dependencies(&self.inner) }
+    }
+}
+
+impl<T> fuchsia_sync::ResetDependencies for DynamicLockDepRwLock<T> {
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe { fuchsia_sync::ResetDependencies::reset_dependencies(&self.inner) }
+    }
+}
+
+impl<T, L> fuchsia_sync::ResetDependencies for LockDepRwLock<T, L> {
+    #[inline(always)]
+    unsafe fn reset_dependencies(&self) {
+        // SAFETY: The caller must uphold the safety requirements of `ResetDependencies`.
+        unsafe { fuchsia_sync::ResetDependencies::reset_dependencies(&self.inner) }
+    }
+}
