@@ -23,15 +23,17 @@ using flatland::UberStruct;
 
 namespace {
 
+using ViewRefMap =
+    std::unordered_map<flatland::TransformHandle, std::shared_ptr<const flatland::ViewRef>>;
+
 struct pair_hash {
   size_t operator()(const std::pair<flatland::TransformHandle, uint64_t>& p) const noexcept {
     return std::hash<flatland::TransformHandle>{}(p.first) ^ std::hash<uint64_t>{}(p.second);
   }
 };
 
-std::optional<zx_koid_t> GetViewRefKoid(
-    const flatland::TransformHandle& handle,
-    const flatland::GlobalTopologyData::ViewRefMap& view_ref_map) {
+std::optional<zx_koid_t> GetViewRefKoid(const flatland::TransformHandle& handle,
+                                        const ViewRefMap& view_ref_map) {
   const auto kv = view_ref_map.find(handle);
   if (kv == view_ref_map.end() || kv->second == nullptr) {
     return std::nullopt;
@@ -42,7 +44,7 @@ std::optional<zx_koid_t> GetViewRefKoid(
 
 std::optional<size_t> GetViewRefIndex(zx_koid_t view_ref_koid,
                                       const std::vector<flatland::TransformHandle>& transforms,
-                                      const flatland::GlobalTopologyData::ViewRefMap& view_refs) {
+                                      const ViewRefMap& view_refs) {
   TRACE_DURATION("gfx", "flatland::HitTest[GetViewRefIndex]");
   for (const auto& [transform, view_ref] : view_refs) {
     if (view_ref != nullptr && view_ref_koid == view_ref->koid()) {
@@ -138,7 +140,7 @@ struct HitTestingData {
   const GlobalTopologyData::TopologyVector transforms;
   const GlobalTopologyData::ParentIndexVector parent_indices;
   const std::vector<flatland::TransformHandle> root_transforms;
-  const GlobalTopologyData::ViewRefMap view_refs;
+  const ViewRefMap view_refs;
   const flatland::HitRegions hit_regions;
   const std::vector<flatland::TransformClipRegion> global_clip_regions;
 };
@@ -209,8 +211,7 @@ view_tree::SubtreeHitTestResult HitTest(const HitTestingData& data, zx_koid_t st
 }
 
 // Returns whether the transform at |index| has an anonymous ancestor.
-bool HasAnonymousAncestor(const size_t index, const size_t root_index,
-                          const GlobalTopologyData::ViewRefMap& view_refs,
+bool HasAnonymousAncestor(const size_t index, const size_t root_index, const ViewRefMap& view_refs,
                           const GlobalTopologyData::TopologyVector& topology_vector,
                           const GlobalTopologyData::ParentIndexVector& parent_indices) {
   if (index == root_index) {
@@ -236,8 +237,7 @@ bool HasAnonymousAncestor(const size_t index, const size_t root_index,
 // Returns the index and ViewRef koid first node in the topology with a ViewRef set.
 // If none is found it returns std::nullopt, indicating an empty ViewTree.
 std::optional<std::pair<size_t, zx_koid_t>> FindRoot(
-    const GlobalTopologyData::TopologyVector& topology_vector,
-    const GlobalTopologyData::ViewRefMap& view_refs) {
+    const GlobalTopologyData::TopologyVector& topology_vector, const ViewRefMap& view_refs) {
   for (size_t index = 0; index < topology_vector.size(); ++index) {
     // TODO(https://fxbug.dev/42060740): Make sure the root view is not anonymous?
     if (const auto koid = GetViewRefKoid(topology_vector[index], view_refs)) {
@@ -253,7 +253,7 @@ std::optional<std::pair<size_t, zx_koid_t>> FindRoot(
 zx_koid_t FindParentView(const size_t index, const zx_koid_t view_ref_koid, const zx_koid_t root,
                          const GlobalTopologyData::TopologyVector& topology_vector,
                          const GlobalTopologyData::ParentIndexVector& parent_indices,
-                         const GlobalTopologyData::ViewRefMap& view_refs) {
+                         const ViewRefMap& view_refs) {
   zx_koid_t parent_koid = ZX_KOID_INVALID;
   if (view_ref_koid != root) {
     size_t parent_index = parent_indices[index];
@@ -329,8 +329,7 @@ struct ViewTreeData {
 ViewTreeData ComputeViewTree(const zx_koid_t root, const size_t root_index,
                              const GlobalTopologyData::TopologyVector& topology_vector,
                              const GlobalTopologyData::ParentIndexVector& parent_indices,
-                             const GlobalTopologyData::ViewRefMap& view_refs,
-                             const std::unordered_map<TransformHandle, std::string>& debug_names,
+                             const ViewRefMap& view_refs,
                              const UberStruct::InstanceMap& uber_structs,
                              const std::vector<glm::mat3>& global_matrix_vector,
                              const std::unordered_map<TransformHandle, TransformHandle>&
@@ -358,8 +357,9 @@ ViewTreeData ComputeViewTree(const zx_koid_t root, const size_t root_index,
     }
 
     std::string debug_name;
-    if (auto debug_it = debug_names.find(transform_handle); debug_it != debug_names.end()) {
-      debug_name = debug_it->second;
+    if (const auto uber_it = uber_structs.find(transform_handle.GetInstanceId());
+        uber_it != uber_structs.end()) {
+      debug_name = uber_it->second->debug_name;
     }
 
     const zx_koid_t parent_koid =
@@ -401,14 +401,12 @@ void GlobalTopologyData::Clear() {
   {
     TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[unordered]");
     live_handles.clear();
-    view_refs.clear();
-    debug_names.clear();
   }
 }
 
 bool GlobalTopologyData::IsCleared() const {
   return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
-         live_handles.empty() && view_refs.empty() && debug_names.empty();
+         live_handles.empty();
 }
 
 // static
@@ -454,16 +452,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   };
   std::vector<ParentChildIterator> parent_counts;
 
-  auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, debug_names] =
-      output;
-
-  // For the root of each local topology (i.e. the View), save the ViewRef, whether they're
-  // currently attached to the scene or not.
-  for (const auto& [_, uber_struct] : uber_structs) {
-    if (!uber_struct->local_topology.empty()) {
-      view_refs.emplace(uber_struct->local_topology[0].handle, uber_struct->view_ref);
-    }
-  }
+  auto& [topology_vector, child_counts, parent_indices, live_handles] = output;
 
   // If we don't have the root in the map, the topology will be empty.
   const auto root_uber_struct_kv = uber_structs.find(root.GetInstanceId());
@@ -578,13 +567,6 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     parent_indices.push_back(parent_counts.empty() ? 0 : parent_counts.back().parent_index);
     live_handles.insert(current_entry.handle);
 
-    // For the root of each local topology (i.e. the View), save the debug name if it is not empty.
-    if (current_entry == vector[0] &&
-        !uber_structs.at(current_entry.handle.GetInstanceId())->debug_name.empty()) {
-      debug_names.emplace(current_entry.handle,
-                          uber_structs.at(current_entry.handle.GetInstanceId())->debug_name);
-    }
-
     // If this entry was the last child for the previous parent, pop that off the stack.
     if (!parent_counts.empty() && parent_counts.back().children_left == 0) {
       parent_counts.pop_back();
@@ -624,7 +606,17 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
     const std::unordered_map<TransformHandle, TransformHandle>&
         link_child_to_parent_transform_map) {
   TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot");
-  const auto root_values = FindRoot(data.topology_vector, data.view_refs);
+
+  // Compute the view_refs map on demand from uber_structs.
+  ViewRefMap view_refs;
+  view_refs.reserve(uber_structs.size());
+  for (const auto& [_, uber_struct] : uber_structs) {
+    if (!uber_struct->local_topology.empty()) {
+      view_refs.emplace(uber_struct->local_topology[0].handle, uber_struct->view_ref);
+    }
+  }
+
+  const auto root_values = FindRoot(data.topology_vector, view_refs);
   if (!root_values.has_value()) {
     // No root -> Empty ViewTree.
     return std::make_unique<view_tree::SubtreeSnapshot>();
@@ -635,15 +627,15 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
 
   const auto [root_index, root_koid] = root_values.value();
   root = root_koid;
-  auto [view_tree_temp, implicitly_anonymous_views] = ComputeViewTree(
-      root_koid, root_index, data.topology_vector, data.parent_indices, data.view_refs,
-      data.debug_names, uber_structs, global_matrix_vector, link_child_to_parent_transform_map);
+  auto [view_tree_temp, implicitly_anonymous_views] =
+      ComputeViewTree(root_koid, root_index, data.topology_vector, data.parent_indices, view_refs,
+                      uber_structs, global_matrix_vector, link_child_to_parent_transform_map);
   view_tree = std::move(view_tree_temp);
 
   // Unconnected_views = all non-anonymous views (those with ViewRefs) not in the ViewTree.
   {
     TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot[unconnected_views]");
-    for (const auto& [_, view_ref] : data.view_refs) {
+    for (const auto& [_, view_ref] : view_refs) {
       if (view_ref != nullptr) {
         if (!view_tree.contains(view_ref->koid())) {
           unconnected_views.emplace(view_ref->koid());
@@ -656,8 +648,8 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
   ViewRefMap named_view_refs;
   {
     TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot[named_views]");
-    named_view_refs.reserve(data.view_refs.size());
-    for (auto& [key, value] : data.view_refs) {
+    named_view_refs.reserve(view_refs.size());
+    for (auto& [key, value] : view_refs) {
       if (!implicitly_anonymous_views.contains(key)) {
         named_view_refs.emplace(key, value);
       }

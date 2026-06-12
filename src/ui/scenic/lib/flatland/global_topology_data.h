@@ -7,7 +7,6 @@
 
 #include <lib/trace/event.h>
 
-#include <string>
 #include <unordered_set>
 
 #include "src/ui/scenic/lib/flatland/transform_handle.h"
@@ -38,8 +37,6 @@ struct GlobalTopologyData {
       TRACE_DURATION("gfx", "GlobalTopologyData[move]", "length", other.live_handles.size());
       live_handles = std::move(other.live_handles);
     }
-    view_refs = std::move(other.view_refs);
-    debug_names = std::move(other.debug_names);
 
     return *this;
   }
@@ -71,13 +68,6 @@ struct GlobalTopologyData {
 
   // The set of TransformHandles in the |topology_vector| (provided for convenience).
   std::unordered_set<TransformHandle> live_handles;
-
-  // ViewRef for each root TransformHandle. nullptr for anonymous Views.
-  using ViewRefMap = std::unordered_map<TransformHandle, std::shared_ptr<const ViewRef>>;
-  ViewRefMap view_refs;
-
-  // Debug name for each transform handle, if present.
-  std::unordered_map<TransformHandle, std::string> debug_names;
 
   // Clear all fields without freeing memory, so that it avoid reallocation when reused.
   void Clear();
