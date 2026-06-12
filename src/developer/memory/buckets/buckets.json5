@@ -140,7 +140,7 @@
     },
     {
         name: "Power",
-        process: "power-manager\\.cm|shutdown-shim\\.cm",
+        process: "power-broker\\.cm|power-manager\\.cm|shutdown-shim\\.cm|system-activity-governor\\.cm",
         vmo: "",
         event_code: 65,
     },
