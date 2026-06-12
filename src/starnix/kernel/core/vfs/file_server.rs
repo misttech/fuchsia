@@ -17,7 +17,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use itertools::Either;
 use starnix_logging::{log_error, track_stub};
-use starnix_sync::{Locked, Unlocked};
+use starnix_sync::{LockDepMutex, Locked, TerminalLock, Unlocked};
 use starnix_types::convert::IntoFidl as _;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -55,7 +55,7 @@ struct FileServerStats {
 }
 
 struct FileServerRegistry {
-    stats: starnix_sync::Mutex<HashMap<&'static str, Arc<FileServerStats>>>,
+    stats: LockDepMutex<HashMap<&'static str, Arc<FileServerStats>>, TerminalLock>,
 }
 
 impl FileServerRegistry {
@@ -63,7 +63,7 @@ impl FileServerRegistry {
         let mut is_new = false;
         let registry = kernel.expando.get_or_init(|| {
             is_new = true;
-            Self { stats: starnix_sync::Mutex::new(HashMap::new()) }
+            Self { stats: LockDepMutex::new(HashMap::new()) }
         });
         if is_new {
             let registry_weak = Arc::downgrade(&registry);
