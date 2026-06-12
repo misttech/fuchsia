@@ -53,7 +53,7 @@ pub use device::address::{
     AssignedAddrIpExt, IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext, Ipv4DeviceAddr,
     Ipv6DeviceAddr, WeakIpAddressId,
 };
-pub use device::link::{LinkAddress, LinkDevice, LinkUnicastAddress};
+pub use device::link::{LinkAddress, LinkDevice, LinkDeviceAddress};
 pub use device::{
     AnyDevice, Device, DeviceIdAnyCompatContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId,
     StrongDeviceIdentifier, WeakDeviceIdentifier,

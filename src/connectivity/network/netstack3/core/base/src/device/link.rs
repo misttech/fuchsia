@@ -9,8 +9,8 @@
 
 use core::fmt::Debug;
 
-use net_types::UnicastAddress;
 use net_types::ethernet::Mac;
+use net_types::{MulticastAddress, UnicastAddress};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::Device;
@@ -60,9 +60,9 @@ impl LinkAddress for Mac {
     }
 }
 
-/// A link address that can be unicast.
-pub trait LinkUnicastAddress: LinkAddress + UnicastAddress {}
-impl<L: LinkAddress + UnicastAddress> LinkUnicastAddress for L {}
+/// A link address that can be unicast and multicast.
+pub trait LinkDeviceAddress: LinkAddress + UnicastAddress + MulticastAddress {}
+impl<L: LinkAddress + UnicastAddress + MulticastAddress> LinkDeviceAddress for L {}
 
 /// A link device.
 ///
@@ -70,12 +70,13 @@ impl<L: LinkAddress + UnicastAddress> LinkUnicastAddress for L {}
 /// is only intended to exist at the type level, never instantiated at runtime.
 pub trait LinkDevice: Device + Debug {
     /// The type of address used to address link devices of this type.
-    type Address: LinkUnicastAddress;
+    type Address: LinkDeviceAddress;
 }
 
 /// Utilities for testing link devices.
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
+    use net_types::BroadcastAddress;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
     use super::*;
@@ -90,7 +91,7 @@ pub(crate) mod testutil {
 
     /// A fake [`LinkAddress`].
     ///
-    /// The value 0xFF is the broadcast address.
+    /// The value 0xFF is the broadcast address. The LSB is the individual/group bit.
     #[derive(
         KnownLayout,
         FromBytes,
@@ -107,10 +108,28 @@ pub(crate) mod testutil {
     #[repr(transparent)]
     pub struct FakeLinkAddress(pub [u8; FAKE_LINK_ADDRESS_LEN]);
 
+    impl FakeLinkAddress {
+        const BROADCAST: Self = Self([0xff; FAKE_LINK_ADDRESS_LEN]);
+    }
+
     impl UnicastAddress for FakeLinkAddress {
+        #[inline]
         fn is_unicast(&self) -> bool {
-            let Self(bytes) = self;
-            bytes != &[0xff]
+            self.0[0] & 1 == 0
+        }
+    }
+
+    impl MulticastAddress for FakeLinkAddress {
+        #[inline]
+        fn is_multicast(&self) -> bool {
+            (self.0[0] & 1 == 1) && !self.is_broadcast()
+        }
+    }
+
+    impl BroadcastAddress for FakeLinkAddress {
+        #[inline]
+        fn is_broadcast(&self) -> bool {
+            *self == Self::BROADCAST
         }
     }
 

@@ -22,7 +22,7 @@ use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
     DeviceIdentifier, ErrorAndSerializer, EventContext, HandleableTimer, Instant,
-    InstantBindingsTypes, LinkAddress, LinkDevice, LinkUnicastAddress, LocalTimerHeap,
+    InstantBindingsTypes, LinkAddress, LinkDevice, LinkDeviceAddress, LocalTimerHeap,
     NetworkSerializationContext, NetworkSerializer, SendFrameError, StrongDeviceIdentifier,
     TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
@@ -239,7 +239,7 @@ pub enum DynamicNeighborState<D: LinkDevice, BT: NudBindingsTypes<D>> {
 /// | Reachability Confirmation | ARP Reply   | Neighbor Advertisement |
 /// `---------------------------+-------------+------------------------'
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum EventDynamicState<L: LinkUnicastAddress> {
+pub enum EventDynamicState<L: LinkDeviceAddress> {
     /// Reachability is in the process of being confirmed for a newly
     /// created entry.
     Incomplete,
@@ -281,7 +281,7 @@ pub enum EventDynamicState<L: LinkUnicastAddress> {
 /// Either a dynamic state within the Neighbor Unreachability Detection (NUD)
 /// state machine, or a static entry that never expires.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
-pub enum EventState<L: LinkUnicastAddress> {
+pub enum EventState<L: LinkDeviceAddress> {
     /// Dynamic neighbor state.
     Dynamic(EventDynamicState<L>),
     /// Static neighbor state.
@@ -290,7 +290,7 @@ pub enum EventState<L: LinkUnicastAddress> {
 
 /// Neighbor event kind.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
-pub enum EventKind<L: LinkUnicastAddress> {
+pub enum EventKind<L: LinkDeviceAddress> {
     /// A neighbor entry was added.
     Added(EventState<L>),
     /// A neighbor entry has changed.
@@ -302,7 +302,7 @@ pub enum EventKind<L: LinkUnicastAddress> {
 /// Neighbor event.
 #[derive(Debug, Eq, Hash, PartialEq, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-pub struct Event<L: LinkUnicastAddress, DeviceId, I: Ip, Instant> {
+pub struct Event<L: LinkDeviceAddress, DeviceId, I: Ip, Instant> {
     /// The device.
     pub device: DeviceId,
     /// The neighbor's address.
@@ -313,7 +313,7 @@ pub struct Event<L: LinkUnicastAddress, DeviceId, I: Ip, Instant> {
     pub at: Instant,
 }
 
-impl<L: LinkUnicastAddress, DeviceId, I: Ip, Instant> Event<L, DeviceId, I, Instant> {
+impl<L: LinkDeviceAddress, DeviceId, I: Ip, Instant> Event<L, DeviceId, I, Instant> {
     /// Changes the device id type with `map`.
     pub fn map_device<N, F: FnOnce(DeviceId) -> N>(self, map: F) -> Event<L, N, I, Instant> {
         let Self { device, kind, addr, at } = self;
@@ -321,7 +321,7 @@ impl<L: LinkUnicastAddress, DeviceId, I: Ip, Instant> Event<L, DeviceId, I, Inst
     }
 }
 
-impl<L: LinkUnicastAddress, DeviceId: Clone, I: Ip, Instant> Event<L, DeviceId, I, Instant> {
+impl<L: LinkDeviceAddress, DeviceId: Clone, I: Ip, Instant> Event<L, DeviceId, I, Instant> {
     fn changed(
         device: &DeviceId,
         event_state: EventState<L>,
@@ -3280,9 +3280,9 @@ mod tests {
             unsafe { SpecifiedAddr::new_unchecked(net_ip_v6!("fe80::3")) };
     }
 
-    const LINK_ADDR1: FakeLinkAddress = FakeLinkAddress([1]);
-    const LINK_ADDR2: FakeLinkAddress = FakeLinkAddress([2]);
-    const LINK_ADDR3: FakeLinkAddress = FakeLinkAddress([3]);
+    const LINK_ADDR1: FakeLinkAddress = FakeLinkAddress([2]);
+    const LINK_ADDR2: FakeLinkAddress = FakeLinkAddress([4]);
+    const LINK_ADDR3: FakeLinkAddress = FakeLinkAddress([6]);
 
     impl<I: Ip, L: LinkDevice> NudTimerId<I, L, FakeWeakDeviceId<FakeLinkDeviceId>> {
         fn neighbor() -> Self {
