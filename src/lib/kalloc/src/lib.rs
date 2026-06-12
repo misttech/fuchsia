@@ -15,7 +15,7 @@ use core::ptr::NonNull;
 mod allocator;
 mod boxed;
 
-pub use allocator::{AllocError, Allocator, DefaultAllocator};
+pub use allocator::{AllocError, Allocator, DefaultAllocator, NoOpAllocator};
 pub use boxed::Box;
 
 /// Fallible allocation matching standard alloc interface.

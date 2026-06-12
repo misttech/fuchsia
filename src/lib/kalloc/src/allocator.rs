@@ -147,6 +147,46 @@ impl Allocator for DefaultAllocator {
     }
 }
 
+/// An allocator that does not perform any actual allocation or deallocation.
+///
+/// This is useful when constructing Box and other dynamically allocated collections from raw
+/// pointers to pre-existing memory that is owned and managed elsewhere (e.g., by C++ code), to
+/// ensure that dropping the collection does not deallocate the underlying memory.
+#[derive(Clone, Default)]
+pub struct NoOpAllocator;
+
+impl Allocator for NoOpAllocator {
+    fn allocate(&self, _layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        Err(AllocError)
+    }
+
+    unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {
+        // No-op.
+    }
+
+    unsafe fn grow(
+        &self,
+        _ptr: NonNull<u8>,
+        _old_layout: Layout,
+        _new_layout: Layout,
+    ) -> Result<NonNull<[u8]>, AllocError> {
+        Err(AllocError)
+    }
+
+    unsafe fn shrink(
+        &self,
+        _ptr: NonNull<u8>,
+        _old_layout: Layout,
+        _new_layout: Layout,
+    ) -> Result<NonNull<[u8]>, AllocError> {
+        Err(AllocError)
+    }
+
+    fn allocate_zeroed(&self, _layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        Err(AllocError)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +269,25 @@ mod tests {
         let shrunk0_again =
             unsafe { allocator.shrink(ptr0.cast::<u8>(), layout0, layout0).unwrap() };
         assert_eq!(shrunk0_again.len(), 0);
+    }
+
+    #[test]
+    fn test_no_op_allocator() {
+        let allocator = NoOpAllocator;
+        let layout = Layout::from_size_align(10, 1).unwrap();
+
+        // allocate and allocate_zeroed should return Err
+        assert_eq!(allocator.allocate(layout), Err(AllocError));
+        assert_eq!(allocator.allocate_zeroed(layout), Err(AllocError));
+
+        // grow and shrink should return Err
+        let ptr = NonNull::dangling();
+        assert_eq!(unsafe { allocator.grow(ptr, layout, layout) }, Err(AllocError));
+        assert_eq!(unsafe { allocator.shrink(ptr, layout, layout) }, Err(AllocError));
+
+        // deallocate should not panic or do anything (no-op)
+        unsafe {
+            allocator.deallocate(ptr, layout);
+        }
     }
 }
