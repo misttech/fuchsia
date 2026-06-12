@@ -186,6 +186,7 @@ template("rustc_macro") {
                                "rustflags",
                                "sources",
                                "testonly",
+                               "validations",
                                "zip_rustdoc_to",
                              ])
 
@@ -251,6 +252,7 @@ template("rustc_macro") {
                                [
                                  "name",
                                  "test_disable_rbe",
+                                 "validations",
                                ])
         configs += [ "//build/config/rust:proc_macro_test" ]
         if (defined(invoker.test_disable_rbe)) {

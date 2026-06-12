@@ -1,0 +1,290 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/clang/clang_prefix.gni")
+import("//build/config/clang/clang_target_toolchain_info.gni")
+import("//build/rust/config.gni")
+import("//build/testing/config.gni")
+import("//build/testing/golden_files.gni")
+
+# Defines a target that runs rust bindgen on C header files.
+#
+# Parameters
+#
+#   headers (required)
+#     List of paths to the input C header files.
+#
+#   output (optional)
+#     Name of the output Rust file (relative to target_gen_dir).
+#     Defaults to "${target_name}.rs".
+#
+#   rustfmt_config (optional)
+#     Path to rustfmt.toml config file.
+#
+#   expect_lints (optional)
+#     List of lints to expect in the generated code (generates #![expect(lint)]).
+#
+#   Config parameters forwarded to bindgen:
+#     use_core, etc. (see template implementation for details)
+#
+template("rustc_bindgen") {
+  assert(defined(invoker.headers), "Must specify headers")
+
+  if (defined(invoker.output)) {
+    _output_file = invoker.output
+  } else {
+    _output_file = "${target_name}.rs"
+  }
+
+  _output_path = "$target_gen_dir/$_output_file"
+  _bindgen_bin = "//prebuilt/third_party/rust_bindgen/$host_platform/bindgen"
+  _rustfmt_bin = "//prebuilt/third_party/rust/$host_platform/bin/rustfmt"
+  _rustfmt_config = "//rustfmt.toml"
+
+  action(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+
+    script = "//build/rust/new-bindgen.py"
+
+    deps = []
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    inputs = invoker.headers + [
+               _bindgen_bin,
+               _rustfmt_bin,
+               _rustfmt_config,
+             ]
+
+    outputs = [ _output_path ]
+
+    _depfile = "${_output_path}.d"
+    depfile = _depfile
+
+    args = []
+    foreach(header, invoker.headers) {
+      args += [
+        "--input",
+        rebase_path(header, root_build_dir),
+      ]
+    }
+    args += [
+      "--output",
+      rebase_path(_output_path, root_build_dir),
+      "--depfile",
+      rebase_path(_depfile, root_build_dir),
+      "--bindgen",
+      rebase_path(_bindgen_bin, root_build_dir),
+      "--rustfmt",
+      rebase_path(_rustfmt_bin, root_build_dir),
+    ]
+
+    if (defined(invoker.expect_lints)) {
+      foreach(x, invoker.expect_lints) {
+        args += [ "--expect-lint=${x}" ]
+      }
+    }
+    if (defined(invoker.notice_year)) {
+      args += [
+        "--notice-year",
+        "${invoker.notice_year}",
+      ]
+    }
+
+    _generator_label = ""
+    if (defined(invoker.generator_label)) {
+      _generator_label = invoker.generator_label
+    } else {
+      _generator_label = get_label_info(":$target_name", "label_no_toolchain")
+    }
+    args += [
+      "--generator-label",
+      _generator_label,
+    ]
+
+    if (defined(invoker.raw_lines)) {
+      foreach(x, invoker.raw_lines) {
+        args += [ "--raw-line=${x}" ]
+      }
+    }
+    if (defined(invoker.explicit_padding)) {
+      if (invoker.explicit_padding) {
+        args += [ "--explicit-padding" ]
+      } else {
+        args += [ "--no-explicit-padding" ]
+      }
+    }
+    if (defined(invoker.layout_tests)) {
+      if (invoker.layout_tests) {
+        args += [ "--layout-tests" ]
+      } else {
+        args += [ "--no-layout-tests" ]
+      }
+    }
+    if (defined(invoker.include_dirs)) {
+      foreach(x, invoker.include_dirs) {
+        args += [ "--include-dir=" + rebase_path(x, root_build_dir) ]
+      }
+    }
+    if (defined(invoker.std_impls)) {
+      foreach(x, invoker.std_impls) {
+        args += [ "--std-impl=${x}" ]
+      }
+    }
+    if (defined(invoker.std_derives)) {
+      foreach(x, invoker.std_derives) {
+        args += [ "--std-derive=${x}" ]
+      }
+    }
+    if (defined(invoker.auto_derive_traits)) {
+      foreach(x, invoker.auto_derive_traits) {
+        _traits = ""
+        foreach(t, x[1]) {
+          if (_traits != "") {
+            _traits += ","
+          }
+          _traits += t
+        }
+        args += [
+          "--auto-derive-trait",
+          "${x[0]}=${_traits}",
+        ]
+      }
+    }
+    if (defined(invoker.replacements)) {
+      foreach(x, invoker.replacements) {
+        if (x[1] == "") {
+          args += [
+            "--replacement",
+            x[0],
+          ]
+        } else {
+          args += [
+            "--replacement",
+            x[0],
+            x[1],
+          ]
+        }
+      }
+    }
+    if (defined(invoker.function_allowlist)) {
+      foreach(x, invoker.function_allowlist) {
+        args += [ "--allowlist-function=${x}" ]
+      }
+    }
+    if (defined(invoker.var_allowlist)) {
+      foreach(x, invoker.var_allowlist) {
+        args += [ "--allowlist-var=${x}" ]
+      }
+    }
+    if (defined(invoker.type_allowlist)) {
+      foreach(x, invoker.type_allowlist) {
+        args += [ "--allowlist-type=${x}" ]
+      }
+    }
+    if (defined(invoker.function_blocklist)) {
+      foreach(x, invoker.function_blocklist) {
+        args += [ "--blocklist-function=${x}" ]
+      }
+    }
+    if (defined(invoker.type_blocklist)) {
+      foreach(x, invoker.type_blocklist) {
+        args += [ "--blocklist-type=${x}" ]
+      }
+    }
+    if (defined(invoker.no_debug_types)) {
+      foreach(x, invoker.no_debug_types) {
+        args += [ "--no-debug=${x}" ]
+      }
+    }
+    if (defined(invoker.use_core)) {
+      if (invoker.use_core) {
+        args += [ "--use-core" ]
+      } else {
+        args += [ "--no-use-core" ]
+      }
+    }
+    if (defined(invoker.additional_bindgen_flags)) {
+      foreach(x, invoker.additional_bindgen_flags) {
+        args += [ "--bindgen-flag=${x}" ]
+      }
+    }
+    if (defined(invoker.fuchsia_api_level)) {
+      _api_level = invoker.fuchsia_api_level
+      if (_api_level == "NEXT") {
+        _api_level = "4291821568"
+      } else if (_api_level == "HEAD") {
+        _api_level = "4292870144"
+      } else if (_api_level == "PLATFORM") {
+        _api_level = "4293918720"
+      }
+      args += [
+        "--fuchsia-api-level",
+        _api_level,
+      ]
+    }
+    if (defined(invoker.additional_clang_flags)) {
+      foreach(x, invoker.additional_clang_flags) {
+        args += [ "--clang-flag=${x}" ]
+      }
+    }
+    _clang_resource_dir =
+        "${rebased_clang_dir}/${clang_target_toolchain_info.resource_dir}"
+    args += [
+      "--clang-resource-dir",
+      _clang_resource_dir,
+    ]
+  }
+}
+
+# Defines a target that compares generated bindgen with checked-in golden file.
+#
+# Parameters
+#
+#   checked_in_source (required)
+#     Path to the checked-in Rust file to compare against.
+#
+#   Other parameters are forwarded to rustc_bindgen.
+#
+template("rustc_bindgen_golden") {
+  assert(defined(invoker.headers), "Must specify headers")
+  assert(defined(invoker.checked_in_source), "Must specify checked_in_source")
+
+  generated_target_name = "${target_name}_generated"
+  generated_file_path = "$target_gen_dir/${target_name}_generated.rs"
+
+  rustc_bindgen(generated_target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "checked_in_source",
+                             "output",
+                           ])
+    output = "${invoker.target_name}_generated.rs"
+    generator_label = get_label_info(":$target_name", "label_no_toolchain")
+  }
+
+  golden_files(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    deps = [ ":$generated_target_name" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    comparisons = [
+      {
+        golden = invoker.checked_in_source
+        candidate = generated_file_path
+      },
+    ]
+  }
+}

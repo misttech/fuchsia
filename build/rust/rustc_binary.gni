@@ -267,6 +267,7 @@ template("rustc_binary") {
                                "source_root",
                                "test_disable_rbe",
                                "non_test_deps",
+                               "validations",
                              ])
       if (defined(invoker.test_disable_rbe)) {
         disable_rbe = invoker.test_disable_rbe
@@ -304,6 +305,7 @@ template("rustc_binary") {
                              "rustenv",
                              "sources",
                              "testonly",
+                             "validations",
                              "visibility",
                              "define_rustdoc_test_override",
                            ])

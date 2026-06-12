@@ -147,6 +147,7 @@ template("rustc_cdylib") {
                                "metatada",
                                "variant_selector_target_type",
                                "is_loadable_module",
+                               "validations",
                              ])
       original_target_name = _original_target_name
     }
@@ -180,6 +181,7 @@ template("rustc_cdylib") {
                              "rustenv",
                              "sources",
                              "testonly",
+                             "validations",
                              "variant_selector_target_type",
                              "visibility",
                            ])

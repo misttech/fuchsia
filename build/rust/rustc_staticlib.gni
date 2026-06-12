@@ -141,6 +141,7 @@ template("rustc_staticlib") {
                                "test_configs",
                                "test_deps",
                                "dynamic_libstd",
+                               "validations",
                              ])
 
       # Use a different visibility for this test target if specified.
@@ -192,6 +193,7 @@ template("rustc_staticlib") {
                              "rustenv",
                              "sources",
                              "testonly",
+                             "validations",
                              "visibility",
                            ])
 

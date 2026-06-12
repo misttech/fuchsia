@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/rust/rustc_bindgen.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("sys") {
@@ -10,6 +11,7 @@ rustc_library("sys") {
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
+  validations = [ ":async_sys_bindgen_golden" ]
 
   deps = [ "//sdk/rust/zx-types" ]
 
@@ -23,6 +25,51 @@ rustc_library("sys") {
     "//sdk/lib/async/rust/*",
     "//sdk/lib/driver/runtime/rust/fdf_sys/*",
   ]
+}
+
+rustc_bindgen_golden("async_sys_bindgen_golden") {
+  headers = [
+    "//sdk/lib/async/include/lib/async/dispatcher.h",
+    "//sdk/lib/async/include/lib/async/paged_vmo.h",
+    "//sdk/lib/async/include/lib/async/receiver.h",
+    "//sdk/lib/async/include/lib/async/sequence_id.h",
+    "//sdk/lib/async/include/lib/async/task.h",
+    "//sdk/lib/async/include/lib/async/time.h",
+    "//sdk/lib/async/include/lib/async/trap.h",
+    "//sdk/lib/async/include/lib/async/wait.h",
+  ]
+  checked_in_source = "src/bindings.rs"
+  expect_lints = [ "non_camel_case_types" ]
+
+  # Match bindgen.sh defaults
+  layout_tests = true
+  explicit_padding = false
+
+  use_core = true
+  std_derives = [ "default" ]
+  std_impls = [ "debug" ]
+
+  function_allowlist = [ "async_.*" ]
+  var_allowlist = [
+    "ASYNC_.*",
+    "async_.*",
+  ]
+  type_allowlist = [
+    "async_.*",
+    "ASYNC_.*",
+  ]
+
+  type_blocklist = [ "zx_.*" ]
+
+  include_dirs = [
+    "//zircon/system/public",
+    "//sdk/lib/async/include",
+  ]
+
+  fuchsia_api_level = "HEAD"
+
+  notice_year = 2025
+  raw_lines = [ "use zx_types::*;" ]
 }
 
 fuchsia_unittest_package("sys_tests") {

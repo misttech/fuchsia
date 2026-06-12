@@ -296,6 +296,7 @@ template("rustc_artifact") {
                              "runtime_deps",
                              "rustenv",
                              "testonly",
+                             "validations",
                              "variant_selector_target_type",
                              "visibility",
                            ])

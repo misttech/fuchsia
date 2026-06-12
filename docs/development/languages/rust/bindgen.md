@@ -1,27 +1,71 @@
 # Integrating C/C++ using `bindgen`
 
-If you need to call some C or C++ APIs from Rust, you can use [`bindgen`] which generates Rust code from C & C++ headers. For more documentation, see [the `bindgen` User Guide](https://rust-lang.github.io/rust-bindgen/).
+If you need to call some C or C++ APIs from Rust, you can use [`bindgen`] which generates Rust code
+from C & C++ headers. For more documentation, see [the `bindgen` User
+Guide](https://rust-lang.github.io/rust-bindgen/).
 
-## Requirements
+## Generating Rust bindings
 
-> Note: This requirement will be lifted when [https://fxbug.dev/42159024][static-link-bug] is resolved.
+Fuchsia provides the `rustc_bindgen_golden` GN template to generate Rust bindings from C/C++ headers
+and ensure they remain up-to-date. This template runs `bindgen` during the build and compares the
+output against a checked-in "golden" file.
 
-Our `bindgen` prebuilt currently links dynamically to clang, which means you need `libclang.so` available in your library search path.
+### 1. Define the GN target
 
-On Debian-based systems this can usually be achieved with `sudo apt install llvm-dev libclang-dev clang`.
+Import the template and define a `rustc_bindgen_golden` target in your `BUILD.gn`.
 
-## Generating Rust code
+For example, see [`//src/lib/usb_rs/BUILD.gn`](/src/lib/usb_rs/BUILD.gn):
 
-> Note: This section and the next will be simplified when [https://fxbug.dev/42153476][gn-template-bug] is resolved.
+```gn
+import("//build/rust/rustc_bindgen.gni")
 
-While the generated code will be checked in to git, it is important that it is easy for any contributor to update the generated code. The first step here is to make an executable file in your target's directory called `bindgen.sh`. See [`//src/lib/usb_rs/bindgen.sh`](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/lib/usb_rs/bindgen.sh) for an example which uses our prebuilt `bindgen` binary and further customizes the output.
+rustc_bindgen_golden("my_bindings_golden") {
+  header = "my_header.h"
+  checked_in_source = "src/bindings.rs"
 
-Run the script on your development machine to generate a Rust file that will be committed with your build target.
+  # Optional: configure bindgen behavior
+  # e.g., allowlist, denylist, raw_lines, etc.
+  # see //build/rust/rustc_bindgen.gni for all options
+}
+```
 
-## Building generated code
+### 2. Configure the Rust target
 
-Once you have a script that can reliably generate a Rust file from your C++ headers, it needs to be added to the build. The generated file can be its own `rust_library` target or it can be included as a submodule of another Rust target, as it is in [the `//src/lib/usb_rs` example](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/lib/usb_rs/BUILD.gn). Make sure that the library target which includes the file from `bindgen` also includes the appropriate external deps in `non_rust_deps`.
+You must add the golden target to the `validations` parameter of the Rust target that uses the
+bindings to ensure the check runs as part of the build:
+
+```gn
+rustc_library("my_library") {
+  edition = "2024"
+  sources = [
+    "src/lib.rs",
+    "src/bindings.rs",
+  ]
+  # ...
+
+  validations = [ ":my_bindings_golden" ]
+}
+```
+
+In your Rust code, you can then use the generated bindings (e.g., `mod bindings;`).
+
+### 3. Updating the checked-in bindings
+
+If the C header changes, the build will fail because the generated bindings will no longer match the
+checked-in file. The build output will display a diff and instructions on how to update the file.
+
+To update the checked-in file, you can either:
+
+* Copy the generated file over the checked-in file using the `cp` command provided in the build
+  failure message.
+* Rebuild with the `update_goldens` GN argument set to `true`:
+
+  ```bash
+  fx set ... --args=update_goldens=true
+  fx build
+  ```
+
+  After the build completes and updates the files, revert the `update_goldens` argument to `false`
+  (or remove it) to ensure future mismatches are caught.
 
 [`bindgen`]: https://github.com/rust-lang/rust-bindgen
-[static-link-bug]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=78852
-[gn-template-bug]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=73858

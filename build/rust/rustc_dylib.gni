@@ -124,6 +124,7 @@ template("rustc_dylib") {
                                "name",
                                "output_name",
                                "public_deps",
+                               "validations",
                              ])
     }
   }
@@ -147,6 +148,7 @@ template("rustc_dylib") {
                              "rustflags",
                              "sources",
                              "testonly",
+                             "validations",
                              "visibility",
                            ])
 
