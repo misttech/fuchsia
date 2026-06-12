@@ -168,22 +168,22 @@ fn new_fidl_entry(
                 (fnet_neighbor::EntryState::Incomplete, None)
             }
             neighbor::EventDynamicState::Reachable(mac) => {
-                (fnet_neighbor::EntryState::Reachable, Some(mac))
+                (fnet_neighbor::EntryState::Reachable, Some(mac.get()))
             }
             neighbor::EventDynamicState::Stale(mac) => {
-                (fnet_neighbor::EntryState::Stale, Some(mac))
+                (fnet_neighbor::EntryState::Stale, Some(mac.get()))
             }
             neighbor::EventDynamicState::Delay(mac) => {
-                (fnet_neighbor::EntryState::Delay, Some(mac))
+                (fnet_neighbor::EntryState::Delay, Some(mac.get()))
             }
             neighbor::EventDynamicState::Probe(mac) => {
-                (fnet_neighbor::EntryState::Probe, Some(mac))
+                (fnet_neighbor::EntryState::Probe, Some(mac.get()))
             }
             neighbor::EventDynamicState::Unreachable(mac) => {
-                (fnet_neighbor::EntryState::Unreachable, Some(mac))
+                (fnet_neighbor::EntryState::Unreachable, Some(mac.get()))
             }
         },
-        neighbor::EventState::Static(mac) => (fnet_neighbor::EntryState::Static, Some(mac)),
+        neighbor::EventState::Static(mac) => (fnet_neighbor::EntryState::Static, Some(mac.get())),
     };
     fnet_neighbor_ext::Entry {
         interface: binding_id,

@@ -111,7 +111,7 @@ fn enable_disable_ipv4() {
         [DispatchedEvent::NeighborIpv4(nud::Event {
             device: ethernet_device_id.downgrade(),
             addr,
-            kind: nud::EventKind::Added(nud::EventState::Static(mac)),
+            kind: nud::EventKind::Added(nud::EventState::Static(UnicastAddr::new(mac).unwrap())),
             at: ctx.bindings_ctx.now(),
         })]
     );
@@ -389,7 +389,7 @@ fn enable_disable_ipv6() {
         [DispatchedEvent::NeighborIpv6(nud::Event {
             device: ethernet_device_id.downgrade(),
             addr,
-            kind: nud::EventKind::Added(nud::EventState::Static(mac)),
+            kind: nud::EventKind::Added(nud::EventState::Static(UnicastAddr::new(mac).unwrap())),
             at: ctx.bindings_ctx.now(),
         })]
     );

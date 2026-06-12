@@ -243,7 +243,7 @@ pub enum EventDynamicState<L: LinkDeviceAddress> {
     Incomplete,
     /// Forward reachability has been confirmed; the path to the neighbor
     /// is functioning properly.
-    Reachable(L),
+    Reachable(UnicastAddr<L>),
     /// Reachability is considered unknown.
     ///
     /// Occurs in one of two ways:
@@ -251,7 +251,7 @@ pub enum EventDynamicState<L: LinkDeviceAddress> {
     ///      confirmation was received.
     ///   2. Received a reachability confirmation from a neighbor with a
     ///      different MAC address than the one cached.
-    Stale(L),
+    Stale(UnicastAddr<L>),
     /// A packet was recently sent while reachability was considered
     /// unknown.
     ///
@@ -259,16 +259,16 @@ pub enum EventDynamicState<L: LinkDeviceAddress> {
     /// related protocols time to confirm reachability after the last
     /// confirmation of reachability has expired due to lack of recent
     /// traffic.
-    Delay(L),
+    Delay(UnicastAddr<L>),
     /// A reachability confirmation is actively sought by periodically
     /// retransmitting unicast reachability probes until a reachability
     /// confirmation is received, or until the maximum number of probes has
     /// been sent.
-    Probe(L),
+    Probe(UnicastAddr<L>),
     /// Target is considered unreachable. A reachability confirmation was not
     /// received after transmitting the maximum number of reachability
     /// probes.
-    Unreachable(L),
+    Unreachable(UnicastAddr<L>),
 }
 
 /// Neighbor state published via events.
@@ -283,7 +283,7 @@ pub enum EventState<L: LinkDeviceAddress> {
     /// Dynamic neighbor state.
     Dynamic(EventDynamicState<L>),
     /// Static neighbor state.
-    Static(L),
+    Static(UnicastAddr<L>),
 }
 
 /// Neighbor event kind.
@@ -895,7 +895,7 @@ impl<D: LinkDevice, BT: NudBindingsTypes<D>> NeighborState<D, BT> {
             NeighborState::Dynamic(dynamic_state) => {
                 EventState::Dynamic(dynamic_state.to_event_dynamic_state())
             }
-            NeighborState::Static(addr) => EventState::Static(addr.get()),
+            NeighborState::Static(addr) => EventState::Static(*addr),
         }
     }
 
@@ -1053,15 +1053,15 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         match self {
             Self::Incomplete(_) => EventDynamicState::Incomplete,
             Self::Reachable(Reachable { link_address, last_confirmed_at: _ }) => {
-                EventDynamicState::Reachable(link_address.get())
+                EventDynamicState::Reachable(*link_address)
             }
-            Self::Stale(Stale { link_address }) => EventDynamicState::Stale(link_address.get()),
-            Self::Delay(Delay { link_address }) => EventDynamicState::Delay(link_address.get()),
+            Self::Stale(Stale { link_address }) => EventDynamicState::Stale(*link_address),
+            Self::Delay(Delay { link_address }) => EventDynamicState::Delay(*link_address),
             Self::Probe(Probe { link_address, transmit_counter: _ }) => {
-                EventDynamicState::Probe(link_address.get())
+                EventDynamicState::Probe(*link_address)
             }
             Self::Unreachable(Unreachable { link_address, mode: _ }) => {
-                EventDynamicState::Unreachable(link_address.get())
+                EventDynamicState::Unreachable(*link_address)
             }
         }
     }
@@ -3628,10 +3628,8 @@ mod tests {
                 device: FakeLinkDeviceId,
                 addr: ip_address,
                 kind: match expected_event {
-                    ExpectedEvent::Added =>
-                        EventKind::Added(EventState::Static(link_address.get())),
-                    ExpectedEvent::Changed =>
-                        EventKind::Changed(EventState::Static(link_address.get())),
+                    ExpectedEvent::Added => EventKind::Added(EventState::Static(link_address)),
+                    ExpectedEvent::Changed => EventKind::Changed(EventState::Static(link_address)),
                 },
                 at: ctx.bindings_ctx.now(),
             }],
@@ -4875,7 +4873,7 @@ mod tests {
                 ctx.bindings_ctx.take_events(),
                 [Event::changed(
                     &FakeLinkDeviceId,
-                    EventState::Dynamic(EventDynamicState::Delay(LINK_ADDR1.get())),
+                    EventState::Dynamic(EventDynamicState::Delay(LINK_ADDR1)),
                     I::LOOKUP_ADDR1,
                     ctx.bindings_ctx.now(),
                 )],
