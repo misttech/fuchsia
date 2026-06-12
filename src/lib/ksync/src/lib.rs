@@ -49,7 +49,7 @@ mod raw_userspace_mutex;
 #[cfg(feature = "kernel")]
 mod raw_kernel_mutex;
 
-pub use kcell::KCell;
+pub use kcell::{KCell, KCellInit, kcell_init};
 pub use kmutex::{KMutex, KMutexGuard};
 pub use lock_token::LockToken;
 pub use lockdep::{LockClass, LockClassRegistration};

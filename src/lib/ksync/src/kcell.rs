@@ -115,6 +115,28 @@ impl<T, Class> core::fmt::Debug for KCell<T, Class> {
     }
 }
 
+/// Creates a `PinInit` wrapper for initializing a `KCell` with an inner initializer.
+#[inline]
+pub fn kcell_init<I, Class>(init: I) -> KCellInit<I, Class> {
+    KCellInit(init, PhantomData)
+}
+
+/// Initializer for `KCell`.
+pub struct KCellInit<I, Class>(I, PhantomData<Class>);
+
+// SAFETY: KCell is repr(transparent) and contains T at the same address.
+// Pinning is preserved because KCell doesn't move T.
+unsafe impl<T, Class, I, E> pin_init::PinInit<KCell<T, Class>, E> for KCellInit<I, Class>
+where
+    I: pin_init::PinInit<T, E>,
+{
+    unsafe fn __pinned_init(self, slot: *mut KCell<T, Class>) -> Result<(), E> {
+        // SAFETY: The caller guarantees slot is valid. KCell is repr(transparent)
+        // so slot has the same address and layout as T.
+        unsafe { self.0.__pinned_init(slot as *mut T) }
+    }
+}
+
 #[cfg(not(feature = "kernel"))]
 #[cfg(test)]
 mod tests {
@@ -163,5 +185,25 @@ mod tests {
         assert!(debug_str.contains("KCell"));
         assert!(debug_str.contains("<locked>"));
         assert!(debug_str.contains("MyClass"));
+    }
+
+    #[test]
+    fn test_kcell_init() {
+        let init = unsafe {
+            pin_init::pin_init_from_closure(|slot: *mut u32| {
+                slot.write(42);
+                Ok::<(), core::convert::Infallible>(())
+            })
+        };
+        let cell_init = kcell_init::<_, MyClass>(init);
+
+        pin_init::stack_pin_init!(let cell = cell_init);
+        let cell: core::pin::Pin<&mut KCell<u32, MyClass>> = cell;
+
+        unsafe {
+            let token = LockToken::<MyClass>::new();
+            let val = cell.as_ref().get_ref().get(&token);
+            assert_eq!(*val, 42);
+        }
     }
 }
