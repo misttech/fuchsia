@@ -832,6 +832,14 @@ impl_nested_witness!(MulticastAddress, NonMulticastAddr, SpecifiedAddress, Speci
 impl_nested_witness!(MulticastAddress, NonMulticastAddr, UnicastAddress, UnicastAddr);
 impl_nested_witness!(MulticastAddress, NonMulticastAddr, BroadcastAddress, BroadcastAddr);
 impl_nested_witness!(MulticastAddress, NonMulticastAddr, MappedAddress, NonMappedAddr);
+
+impl<A: MulticastAddress + UnicastAddress> From<UnicastAddr<A>> for NonMulticastAddr<A> {
+    #[inline]
+    fn from(addr: UnicastAddr<A>) -> Self {
+        // Safe because a unicast address is guaranteed to not be multicast.
+        unsafe { NonMulticastAddr::new_unchecked(addr.into_addr()) }
+    }
+}
 // NB: Implement nested witness to a depth of three, only for the types that are
 // actually used by consumers of this library.
 impl_nested_witness!(

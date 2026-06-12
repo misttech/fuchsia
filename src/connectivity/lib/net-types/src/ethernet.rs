@@ -190,12 +190,14 @@ impl UnicastAddress for Mac {
 impl MulticastAddress for Mac {
     /// Is this a multicast MAC address?
     ///
-    /// Returns true if the least significant bit of the first byte of the
-    /// address is 1.
+    /// Returns true if the [inividual/group] bit (the least significant bit
+    /// of the first byte of the address) is 1 and the address is not the
+    /// broadcast address.
+    ///
+    /// [individual/group]: https://en.wikipedia.org/wiki/MAC_address#Unicast_vs._multicast_(I/G_bit)
     #[inline]
     fn is_multicast(&self) -> bool {
-        // https://en.wikipedia.org/wiki/MAC_address#Unicast_vs._multicast
-        self.0[0] & 1 == 1
+        (self.0[0] & 1 == 1) && !self.is_broadcast()
     }
 }
 
@@ -203,8 +205,7 @@ impl BroadcastAddress for Mac {
     /// Is this the broadcast MAC address?
     ///
     /// Returns true if this is the broadcast MAC address, FF:FF:FF:FF:FF:FF.
-    /// Note that the broadcast address is also considered a multicast address,
-    /// so `addr.is_broadcast()` implies `addr.is_multicast()`.
+    /// Note that the broadcast address is not considered a multicast address.
     #[inline]
     fn is_broadcast(&self) -> bool {
         // https://en.wikipedia.org/wiki/MAC_address#Unicast_vs._multicast
