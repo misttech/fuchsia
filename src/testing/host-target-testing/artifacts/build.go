@@ -184,7 +184,7 @@ func (b *ArtifactsBuild) GetFfx(
 		return nil, fmt.Errorf("failed to make ffxPath executable: %w", err)
 	}
 
-	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version, "")
 }
 
 func (b *ArtifactsBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -697,7 +697,7 @@ func (b *FuchsiaDirBuild) GetFfx(
 	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
 	ffxPath := filepath.Join(b.dir, "host_x64/ffx")
-	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version, "")
 }
 
 func (b *FuchsiaDirBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -813,7 +813,7 @@ func (b *ProductBundleDirBuild) GetFfx(
 	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
 	ffxPath := filepath.Join(b.productBundleDir, "ffx")
-	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version, "")
 }
 
 func (b *ProductBundleDirBuild) GetFlashManifest(ctx context.Context) (string, error) {

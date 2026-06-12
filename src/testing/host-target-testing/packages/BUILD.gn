@@ -42,6 +42,7 @@ if (is_host) {
     data_deps = [
       "//src/developer/ffx:test_data",
       "//src/developer/ffx/lib/pkg:empty-repo-keys",
+      "//src/developer/ffx/plugins/package:ffx_package_tool_test_data",
       "//src/developer/ffx/plugins/repository:ffx_repository_tool_test_data",
     ]
   }

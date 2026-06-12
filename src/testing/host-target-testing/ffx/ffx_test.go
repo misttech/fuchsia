@@ -105,7 +105,7 @@ func TestTargetListStrict(t *testing.T) {
 	runDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
 
 	// We must call newFfxStrict directly because NewFFXToolForVersion still defaults to daemon mode.
-	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir)
+	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir, "")
 	if err != nil {
 		t.Fatalf("Failed to create ffx strict: %s", err)
 	}
@@ -121,7 +121,7 @@ func TestTargetListStrict(t *testing.T) {
 func TestCloseDaemon(t *testing.T) {
 	ffxtoolScript := createScript(t, "")
 	runDir := RunDir{path: t.TempDir()}
-	ffx, err := newFfxDaemon(context.Background(), ffxtoolScript, runDir)
+	ffx, err := newFfxDaemon(context.Background(), ffxtoolScript, runDir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestCloseDaemon(t *testing.T) {
 func TestCloseStrict(t *testing.T) {
 	ffxtoolScript := createScript(t, "")
 	runDir := RunDir{path: t.TempDir()}
-	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir)
+	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir, "")
 	if err != nil {
 		t.Fatal(err)
 	}

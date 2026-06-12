@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -106,8 +107,9 @@ type FFXTool struct {
 	impl         FFXToolImpl
 }
 
-func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, versionPolicy FfxVersionPolicy) (*FFXTool, error) {
+func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, versionPolicy FfxVersionPolicy, subtoolsSearchPath string) (*FFXTool, error) {
 	logger.Infof(ctx, "NewFFXToolForVersion called with version policy: %q", versionPolicy)
+
 	// Query the build version and API level of the ffx binary.
 	// Fallback to "unknown" if it fails (robustness).
 	buildVersion := "unknown (likely old)"
@@ -137,18 +139,18 @@ func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, ve
 	var err error
 	if versionPolicy == FfxVersionPolicyLatest {
 		logger.Infof(ctx, "Using strict mode directly for version policy: latest")
-		impl, err = newFfxStrict(ctx, ffxPath, runDir)
+		impl, err = newFfxStrict(ctx, ffxPath, runDir, subtoolsSearchPath)
 	} else if versionPolicy == FfxVersionPolicyFromApiLevel {
 		if apiLevel > strictModeApiLevelThreshold {
 			logger.Infof(ctx, "API Level > %d, using strict mode", strictModeApiLevelThreshold)
-			impl, err = newFfxStrict(ctx, ffxPath, runDir)
+			impl, err = newFfxStrict(ctx, ffxPath, runDir, subtoolsSearchPath)
 		} else {
 			logger.Infof(ctx, "API Level <= %d, using daemon mode", strictModeApiLevelThreshold)
-			impl, err = newFfxDaemon(ctx, ffxPath, runDir)
+			impl, err = newFfxDaemon(ctx, ffxPath, runDir, subtoolsSearchPath)
 		}
 	} else {
 		logger.Infof(ctx, "Falling back to daemon mode for version policy: %q", versionPolicy)
-		impl, err = newFfxDaemon(ctx, ffxPath, runDir)
+		impl, err = newFfxDaemon(ctx, ffxPath, runDir, subtoolsSearchPath)
 	}
 	if err != nil {
 		return nil, err
@@ -162,7 +164,7 @@ func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, ve
 }
 
 func NewFFXTool(ffxPath string, runDir RunDir) (*FFXTool, error) {
-	return NewFFXToolForVersion(context.Background(), ffxPath, runDir, FfxVersionPolicyLatest)
+	return NewFFXToolForVersion(context.Background(), ffxPath, runDir, FfxVersionPolicyLatest, "")
 }
 
 func (t *FFXTool) runFFXCmd(ctx context.Context, args ...string) ([]byte, error) {
@@ -276,4 +278,21 @@ func (t *FFXTool) TargetWait(ctx context.Context, target string) error {
 
 func (t *FFXTool) RebootToBootloader(ctx context.Context, target string) error {
 	return t.impl.RebootToBootloader(ctx, target)
+}
+
+// resolveSubtoolsSearchPath returns the provided subtoolsSearchPath if it is not empty.
+// Otherwise, it resolves the absolute directory of the ffxToolPath and returns it,
+// defaulting the subtool search path to the directory containing the ffx binary.
+func resolveSubtoolsSearchPath(ffxToolPath string, subtoolsSearchPath string) string {
+	if subtoolsSearchPath != "" {
+		return subtoolsSearchPath
+	}
+	path := ffxToolPath
+	if p, err := exec.LookPath(ffxToolPath); err == nil {
+		path = p
+	}
+	if absPath, err := filepath.Abs(path); err == nil {
+		path = absPath
+	}
+	return filepath.Dir(path)
 }

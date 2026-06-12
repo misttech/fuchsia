@@ -15,15 +15,17 @@ import (
 )
 
 type FfxConfig struct {
-	ffxPath       string
-	ffxRunDirPath string
-	ffx           *ffx.FFXTool
+	ffxPath               string
+	ffxRunDirPath         string
+	ffxSubtoolsSearchPath string
+	ffx                   *ffx.FFXTool
 }
 
 func NewFfxConfig(fs *flag.FlagSet) *FfxConfig {
 	c := &FfxConfig{}
 	fs.StringVar(&c.ffxPath, "ffx-path", "host-tools/ffx", "ffx tool path")
 	fs.StringVar(&c.ffxRunDirPath, "ffx-run-dir", "", "ffx run dir path")
+	fs.StringVar(&c.ffxSubtoolsSearchPath, "ffx-subtools-search-path", "", "ffx subtools search path")
 
 	return c
 }
@@ -58,7 +60,7 @@ func (c *FfxConfig) NewFfxTool(ctx context.Context, sshPrivateKeyPath string) (*
 	}
 
 	runDir := ffx.NewRunDirWithPrivKey(outputDir, sshPrivateKeyPath)
-	ffxTool, err := ffx.NewFFXToolForVersion(ctx, c.ffxPath, runDir, ffx.FfxVersionPolicyLatest)
+	ffxTool, err := ffx.NewFFXToolForVersion(ctx, c.ffxPath, runDir, ffx.FfxVersionPolicyLatest, c.ffxSubtoolsSearchPath)
 	if err != nil {
 		cleanupDir()
 		return nil, func() {}, err

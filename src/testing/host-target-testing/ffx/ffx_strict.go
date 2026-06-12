@@ -32,7 +32,7 @@ type ffxStrict struct {
 	hasPlaceholderKey   bool
 }
 
-func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir) (*ffxStrict, error) {
+func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir, subtoolsSearchPath string) (*ffxStrict, error) {
 	if _, err := os.Stat(ffxToolPath); err != nil {
 		return nil, fmt.Errorf("error accessing %v: %w", ffxToolPath, err)
 	}
@@ -67,7 +67,18 @@ func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir) (*ffxS
 		hasPlaceholderKey = true
 	}
 
-	ffxInst, err := ffxutil.NewFFXInstance(ctx, ffxToolPath, "", []string{}, "", sshInfo, outputDir, ffxutil.UseFFXStrict)
+	resolvedSubtoolsSearchPath := resolveSubtoolsSearchPath(ffxToolPath, subtoolsSearchPath)
+
+	extraConfigSettings := []ffxutil.ConfigSettings{
+		{
+			Level: "user",
+			Settings: map[string]any{
+				"ffx.subtool-search-paths": resolvedSubtoolsSearchPath,
+			},
+		},
+	}
+
+	ffxInst, err := ffxutil.NewFFXInstance(ctx, ffxToolPath, "", []string{}, "", sshInfo, outputDir, ffxutil.UseFFXStrict, extraConfigSettings...)
 	if err != nil {
 		os.RemoveAll(outputDir)
 		return nil, err

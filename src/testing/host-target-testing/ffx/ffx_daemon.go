@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,11 +29,12 @@ type ffxDaemon struct {
 	supportsPackageBlob *bool
 	supportsDirect      bool
 	target              string
+	subtoolsSearchPath  string
 }
 
 var directSupportCache sync.Map
 
-func newFfxDaemon(ctx context.Context, ffxToolPath string, runDir RunDir) (*ffxDaemon, error) {
+func newFfxDaemon(ctx context.Context, ffxToolPath string, runDir RunDir, subtoolsSearchPath string) (*ffxDaemon, error) {
 	if _, err := os.Stat(ffxToolPath); err != nil {
 		return nil, fmt.Errorf("error accessing %v: %w", ffxToolPath, err)
 	}
@@ -59,11 +59,14 @@ func newFfxDaemon(ctx context.Context, ffxToolPath string, runDir RunDir) (*ffxD
 		directSupportCache.Store(ffxToolPath, supportsDirect)
 	}
 
+	resolvedSubtoolsSearchPath := resolveSubtoolsSearchPath(ffxToolPath, subtoolsSearchPath)
+
 	return &ffxDaemon{
 		ffxToolPath:         ffxToolPath,
 		runDir:              runDir,
 		supportsPackageBlob: nil,
 		supportsDirect:      supportsDirect,
+		subtoolsSearchPath:  resolvedSubtoolsSearchPath,
 	}, nil
 }
 
@@ -346,7 +349,7 @@ func (f *ffxDaemon) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 		[]string{
 			"--log-level", "trace",
 			"--isolate-dir", f.runDir.path,
-			"--config", fmt.Sprintf("ffx.subtool-search-paths=%s", filepath.Dir(path)),
+			"--config", fmt.Sprintf("ffx.subtool-search-paths=%s", f.subtoolsSearchPath),
 		},
 		args...,
 	)
