@@ -39,12 +39,6 @@ type BuildInfo struct {
 	Version string `json:"version"`
 }
 
-// A portion of the JSON file, the pieces needed below.
-type productBundleMetadataV2 struct {
-	Version     string `json:"version"`
-	ProductName string `json:"product_name"`
-}
-
 type productListCmd struct {
 	gcsBucket                 string
 	buildIDs                  string

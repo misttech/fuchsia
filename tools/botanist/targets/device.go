@@ -22,6 +22,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/botanist"
 	"go.fuchsia.dev/fuchsia/tools/lib/iomisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
 	serialconstants "go.fuchsia.dev/fuchsia/tools/lib/serial/constants"
@@ -427,32 +428,6 @@ func parseOutSigners(keyPaths []string) ([]ssh.Signer, error) {
 	return signers, nil
 }
 
-type bootloaderPartition struct {
-	Type  string `json:"type"`
-	Name  string `json:"name"`
-	Image string `json:"image"`
-}
-
-type pbPartition struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-	Slot string `json:"slot"`
-}
-
-type systemImage struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-type productBundle struct {
-	Partitions struct {
-		BootloaderPartitions []bootloaderPartition `json:"bootloader_partitions"`
-		Partitions           []pbPartition         `json:"partitions"`
-	} `json:"partitions"`
-	SystemA []systemImage `json:"system_a"`
-}
-
 func (t *Device) findFastboot() (string, error) {
 	if path, err := exec.LookPath("fastboot"); err == nil {
 		return path, nil
@@ -506,7 +481,7 @@ func GetFastbootFlashImages(pbPath string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read product_bundle.json: %w", err)
 	}
-	var pb productBundle
+	var pb productbundle.ProductBundle
 	if err := json.Unmarshal(data, &pb); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal product_bundle.json: %w", err)
 	}

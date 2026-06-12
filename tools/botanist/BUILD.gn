@@ -151,6 +151,7 @@ if (is_host) {
       "//tools/lib/jsonutil",
       "//tools/lib/logger",
       "//tools/lib/osmisc",
+      "//tools/lib/productbundle",
       "//tools/lib/retry",
       "//tools/lib/serial",
       "//tools/lib/serial:constants",
