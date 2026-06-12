@@ -99,3 +99,27 @@ TEST(TimerFD, NoWakeAlarmCap) {
 }
 
 TEST(TimerFD, DeleteTimerThatDoesNotExist) { ASSERT_EQ(syscall(__NR_timer_delete, 0), -1); }
+
+TEST(TimerFD, NoWakeAlarmCapSetTime) {
+  if (!test_helper::HasCapability(CAP_WAKE_ALARM)) {
+    GTEST_SKIP() << "The CAP_WAKE_ALARM capability is required to run this test.";
+  }
+
+  // Create the alarm timer while we have the capability.
+  int fd = timerfd_create(CLOCK_REALTIME_ALARM, 0);
+  ASSERT_NE(-1, fd) << strerror(errno);
+
+  // Run the rest in a forked process where we drop the capability.
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapability(CAP_WAKE_ALARM);
+
+    struct itimerspec its = {};
+    its.it_value.tv_sec = 1;
+    int ret = timerfd_settime(fd, 0, &its, nullptr);
+    EXPECT_EQ(-1, ret);
+    EXPECT_EQ(EPERM, errno);
+  });
+
+  close(fd);
+}

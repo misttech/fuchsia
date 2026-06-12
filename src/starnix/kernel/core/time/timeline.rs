@@ -51,7 +51,7 @@ impl Timeline {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerWakeup {
     /// A regular timer that does not wake the system if it is suspended.
     Regular,

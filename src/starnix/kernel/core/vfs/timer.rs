@@ -203,6 +203,9 @@ pub struct TimerFile {
     /// The type of clock this file was created with.
     timeline: Timeline,
 
+    /// Whether this timer can wake up the system.
+    wakeup_type: TimerWakeup,
+
     /// Details about the timeline, deadline and cancel behavior requested from this
     /// [TimerFile].
     timer_file_info: Arc<Mutex<TimerFileInfo>>,
@@ -253,11 +256,16 @@ impl TimerFile {
             Box::new(TimerFile {
                 timer,
                 timeline,
+                wakeup_type,
                 timer_file_info: Arc::new(Mutex::new(timer_file_info)),
             }),
             flags,
             "[timerfd]",
         ))
+    }
+
+    pub fn wakeup_type(&self) -> TimerWakeup {
+        self.wakeup_type
     }
 
     /// Returns the current `itimerspec` for the file.

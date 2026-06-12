@@ -2260,6 +2260,10 @@ pub fn sys_timerfd_settime(
     let file = current_task.get_file(fd)?;
     let timer_file = file.downcast_file::<TimerFile>().ok_or_else(|| errno!(EINVAL))?;
 
+    if timer_file.wakeup_type() == TimerWakeup::Alarm {
+        security::check_task_capable(current_task, CAP_WAKE_ALARM)?;
+    }
+
     let new_timer_spec = current_task.read_multi_arch_object(user_new_value)?;
     let old_timer_spec = timer_file.set_timer_spec(current_task, &file, new_timer_spec, flags)?;
     log_trace!(
