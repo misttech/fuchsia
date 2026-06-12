@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use bitfield::bitfield;
-use packet_encoding::{decodable_enum, Decodable, Encodable};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 
 /// The DLC PN frame definition.
 mod dlc_parameter_negotiation;
 pub use dlc_parameter_negotiation::{
-    CreditBasedFlowHandshake, ParameterNegotiationParams, DEFAULT_INITIAL_CREDITS,
+    CreditBasedFlowHandshake, DEFAULT_INITIAL_CREDITS, ParameterNegotiationParams,
 };
 
 /// The Flow Control On/Off frame definitions.
@@ -35,8 +35,8 @@ pub use remote_port_negotiation::RemotePortNegotiationParams;
 mod test_command;
 pub use test_command::TestCommandParams;
 
-use crate::frame::{CommandResponse, FrameParseError};
 use crate::DLCI;
+use crate::frame::{CommandResponse, FrameParseError};
 
 decodable_enum! {
     /// The supported Multiplexer Commands in RFCOMM. These commands are sent/received
@@ -77,11 +77,7 @@ impl TypeField {
 
     fn command_response(&self) -> CommandResponse {
         // C/R bit is always set for commands - see GSM 7.10 Section 5.4.6.2.
-        if self.cr_bit() {
-            CommandResponse::Command
-        } else {
-            CommandResponse::Response
-        }
+        if self.cr_bit() { CommandResponse::Command } else { CommandResponse::Response }
     }
 }
 
@@ -506,7 +502,7 @@ mod tests {
     #[test]
     fn test_decode_rpn_command() {
         let buf = [
-            0b10010011, // Type field - Test Command, C/R = Command.
+            0b10010011, // Type field - RPN Command, C/R = Command.
             0b00000011, // Length field - 1 octet. Length = 1.
             0b00011111, // Data octet1: DLCI = 7 is OK, E/A = 1, Bit2 = 1 always.
         ];
@@ -523,7 +519,7 @@ mod tests {
     #[test]
     fn test_decode_rls_command() {
         let buf = [
-            0b01010011, // Type field - Test Command, C/R = Command.
+            0b01010011, // Type field - RLS Command, C/R = Command.
             0b00000101, // Length field - 1 octet. Length = 2.
             0b00011111, // Data octet1: DLCI = 7, E/A = 1, Bit2 = 1 always.
             0b00000000, // Data octet2: Bit1 = 0 -> No Status.

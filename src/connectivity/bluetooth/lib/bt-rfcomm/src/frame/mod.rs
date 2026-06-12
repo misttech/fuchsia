@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use packet_encoding::{decodable_enum, Decodable, Encodable};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 
 /// The command or response classification used when parsing an RFCOMM frame.
 mod command_response;
@@ -20,7 +20,7 @@ pub mod mux_commands;
 use self::fcs::{calculate_fcs, verify_fcs};
 use self::field::*;
 use self::mux_commands::MuxCommand;
-use crate::{Role, DLCI};
+use crate::{DLCI, Role};
 
 decodable_enum! {
     /// The type of frame provided in the Control field.
@@ -51,11 +51,7 @@ impl FrameTypeMarker {
     fn fcs_octets(&self) -> usize {
         // For UIH frames, the first 2 bytes of the buffer are used to calculate the FCS.
         // Otherwise, the first 3. Defined in RFCOMM 5.1.1.
-        if *self == FrameTypeMarker::UnnumberedInfoHeaderCheck {
-            2
-        } else {
-            3
-        }
+        if *self == FrameTypeMarker::UnnumberedInfoHeaderCheck { 2 } else { 3 }
     }
 
     /// Returns true if the `frame_type` is expected to contain a credit octet.
@@ -1068,5 +1064,23 @@ mod tests {
         // Add the precomputed FCS.
         expected.push(0b0000_1100);
         assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn test_parse_frame_with_invalid_fcs() {
+        let role = Role::Responder;
+        let frame_type = FrameTypeMarker::SetAsynchronousBalancedMode;
+        let mut buf = vec![
+            0b00001111, // Address Field - EA = 1, C/R = 1, User DLCI = 3.
+            0b00101111, // Control Field - SABM command with P/F = 0.
+            0b00000001, // Length Field - Bit1 = 1 Indicates one octet length - no info.
+        ];
+        // Calculate the correct FCS.
+        let correct_fcs = calculate_fcs(&buf[..frame_type.fcs_octets()]);
+        // Mutate the FCS to make it invalid.
+        let invalid_fcs = correct_fcs ^ 0xFF;
+        buf.push(invalid_fcs);
+
+        assert_matches!(Frame::parse(role, false, &buf[..]), Err(FrameParseError::FCSCheckFailed));
     }
 }
