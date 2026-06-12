@@ -11,6 +11,7 @@ if (is_host) {
     deps = [
       "//src/testing/host-target-testing/build",
       "//tools/lib/logger",
+      "//tools/lib/productbundle",
     ]
     sources = [
       "util.go",

@@ -24,6 +24,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
+	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 )
 
 // RunCommand executes a command on the host and returns the stdout and stderr
@@ -86,7 +87,7 @@ func untarNext(dst string, tr *tar.Reader, header *tar.Header) error {
 			return err
 		}
 	} else {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
 
@@ -227,7 +228,7 @@ func UpdateHashValuePackagesJSON(
 	pkgUrlPath string,
 	merkle build.MerkleRoot,
 ) error {
-	if err := AtomicallyWriteFile(path, 0600, func(f *os.File) error {
+	if err := AtomicallyWriteFile(path, 0o600, func(f *os.File) error {
 		src, err := os.Open(path)
 		if err != nil {
 			return fmt.Errorf("failed to open packages.json %q: %w", path, err)
@@ -280,7 +281,7 @@ func UpdateImagesJSON(
 	path string,
 	images ImagesManifest,
 ) error {
-	return AtomicallyWriteFile(path, 0600, func(f *os.File) error {
+	return AtomicallyWriteFile(path, 0o600, func(f *os.File) error {
 		return json.NewEncoder(f).Encode(images)
 	})
 }
@@ -432,82 +433,39 @@ type ImageFirmware struct {
 	Url  string `json:"url"`
 }
 
-type ProductBundle struct {
-	Version            string                    `json:"version"`
-	ProductName        string                    `json:"product_name"`
-	ProductVersion     string                    `json:"product_version"`
-	Partitions         json.RawMessage           `json:"partitions"`
-	SdkVersion         *string                   `json:"sdk_version"`
-	SystemA            []ProductBundleImage      `json:"system_a"`
-	SystemB            []ProductBundleImage      `json:"system_b"`
-	SystemR            []ProductBundleImage      `json:"system_r"`
-	Repositories       []ProductBundleRepository `json:"repositories"`
-	UpdatePackageHash  *string                   `json:"update_package_hash"`
-	VirtualDevicesPath *string                   `json:"virtual_devices_path"`
-}
-
-type ProductBundleImage struct {
-	Type     string          `json:"type"`
-	Name     string          `json:"name"`
-	Path     string          `json:"path"`
-	Signed   *bool           `json:"signed,omitempty"`
-	Contents json.RawMessage `json:"contents,omitempty"`
-}
-
-type ProductBundleRepository struct {
-	Name                    string `json:"name"`
-	MetadataPath            string `json:"metadata_path"`
-	BlobsPath               string `json:"blobs_path"`
-	DeliveryBlobPath        uint   `json:"delivery_blob_type"`
-	RootPrivateKeyPath      string `json:"root_private_key_path"`
-	TargetsPrivateKeyPath   string `json:"targets_private_key_path"`
-	SnapshotPrivateKeyPath  string `json:"snapshot_private_key_path"`
-	TimestampPrivateKeyPath string `json:"timestamp_private_key_path"`
-}
-
-func (pb *ProductBundle) GetSystemAImage(imageType string, imageName string) (string, error) {
-	for _, image := range pb.SystemA {
-		if image.Type == imageType && image.Name == imageName {
-			return image.Path, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to find system_a %s %s", imageType, imageName)
-}
-
-func ParseProductBundle(path string) (ProductBundle, error) {
+func ParseProductBundle(path string) (*productbundle.ProductBundle, error) {
 	// We need to create a new product bundle that points at our modified
 	// vbmeta.
 	productBundlePath := filepath.Join(path, "product_bundle.json")
 	f, err := os.Open(productBundlePath)
 	if err != nil {
-		return ProductBundle{}, fmt.Errorf("failed to open product bundle %s: %w", productBundlePath, err)
+		return nil, fmt.Errorf("failed to open product bundle %s: %w", productBundlePath, err)
 	}
 	defer f.Close()
 
-	var productBundle ProductBundle
+	var productBundle productbundle.ProductBundle
 
 	decoder := json.NewDecoder(f)
 
 	// TODO(https://fxbug.dev/428006070): Re-enable once all relevant tests
 	// are using the updated PB manifest format.
-	//decoder.DisallowUnknownFields()
+	// decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&productBundle); err != nil {
-		return ProductBundle{}, fmt.Errorf("failed to parse product bundle %s: %w", productBundlePath, err)
+		return nil, fmt.Errorf("failed to parse product bundle %s: %w", productBundlePath, err)
 	}
 
 	if productBundle.Version != "2" {
-		return ProductBundle{}, fmt.Errorf("Unknown product bundle version %s", productBundle.Version)
+		return nil, fmt.Errorf("Unknown product bundle version %s", productBundle.Version)
 	}
 
-	return productBundle, nil
+	return &productBundle, nil
 }
 
-func UpdateProductBundle(productBundleDir string, productBundle ProductBundle) error {
+func UpdateProductBundle(productBundleDir string, productBundle *productbundle.ProductBundle) error {
 	return AtomicallyWriteFile(
 		filepath.Join(productBundleDir, "product_bundle.json"),
-		0600,
+		0o600,
 		func(f *os.File) error {
 			return json.NewEncoder(f).Encode(productBundle)
 		},
