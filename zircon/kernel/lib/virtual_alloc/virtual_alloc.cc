@@ -210,9 +210,12 @@ zx::result<vaddr_t> VirtualAlloc::AllocPages(size_t pages) {
 
 void VirtualAlloc::BitmapFree(size_t start, size_t num_pages) {
   ZX_ASSERT(start >= BitmapPages());
+  ZX_ASSERT(start < bitmap_.size());
+  ZX_ASSERT(num_pages <= bitmap_.size() - start);
   ZX_DEBUG_ASSERT(bitmap_.Scan(start, start + num_pages, true, nullptr));
 
-  bitmap_.Clear(start, start + num_pages);
+  zx_status_t status = bitmap_.Clear(start, start + num_pages);
+  ZX_ASSERT(status == ZX_OK);
   if (start < next_search_start_) {
     next_search_start_ = start;
     // To attempt to keep allocations compact check alloc_guard_ bits backwards, and move our
@@ -237,13 +240,14 @@ void VirtualAlloc::BitmapFree(size_t start, size_t num_pages) {
 void VirtualAlloc::FreePages(vaddr_t vaddr, size_t pages) {
   ZX_ASSERT(alloc_base_ != 0);
   ZX_ASSERT(pages > 0);
-  ZX_DEBUG_ASSERT(IsPageRounded(vaddr));
+  ZX_ASSERT(IsPageRounded(vaddr));
   canary_.Assert();
 
   LTRACEF("Free %zu pages at %p\n", pages, (void *)vaddr);
 
   // Release the bitmap range prior to unmapping to ensure any attempts to free an invalid range are
   // caught before attempting to unmap 'random' memory.
+  ZX_ASSERT(vaddr >= alloc_base_);
   BitmapFree((vaddr - alloc_base_) / kPageSize, pages);
   UnmapFreePages(vaddr, pages);
 }

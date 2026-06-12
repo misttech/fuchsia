@@ -509,7 +509,7 @@ bool virtual_alloc_aligned_alloc_test() {
   END_TEST;
 }
 
-bool vritual_alloc_large_allocs_are_contiguous_test() {
+bool virtual_alloc_large_allocs_are_contiguous_test() {
   BEGIN_TEST;
 
   AutoVmScannerDisable scanner_disable;
@@ -568,6 +568,31 @@ bool virtual_alloc_contiguous_fallback_test() {
   END_TEST;
 }
 
+bool virtual_alloc_free_boundary_test() {
+  BEGIN_TEST;
+
+  TestVmar vmar;
+
+  VirtualAlloc alloc(vm_page_state::ALLOC);
+  ASSERT_OK(alloc.Init(vmar->base(), vmar->size(), 1, kPageShift));
+
+  const size_t bitmap_pages = alloc.DebugBitmapPages();
+  const vaddr_t first_page_vaddr = vmar->base() + bitmap_pages * kPageSize;
+  const vaddr_t last_page_vaddr = vmar->base() + vmar->size() - kPageSize;
+
+  // Allocate and free the first valid page
+  alloc.DebugAllocateVaddrRange(first_page_vaddr, 1);
+  ASSERT_TRUE(TouchPages(first_page_vaddr, 1));
+  alloc.FreePages(first_page_vaddr, 1);
+
+  // Allocate and free the last valid page
+  alloc.DebugAllocateVaddrRange(last_page_vaddr, 1);
+  ASSERT_TRUE(TouchPages(last_page_vaddr, 1));
+  alloc.FreePages(last_page_vaddr, 1);
+
+  END_TEST;
+}
+
 }  // anonymous namespace
 
 // Use the function name as the test name
@@ -583,6 +608,7 @@ VA_UNITTEST(virtual_alloc_arch_alloc_failure_test)
 VA_UNITTEST(virtual_alloc_zero_pages_test)
 VA_UNITTEST(virtual_alloc_init_test)
 VA_UNITTEST(virtual_alloc_aligned_alloc_test)
-VA_UNITTEST(vritual_alloc_large_allocs_are_contiguous_test)
+VA_UNITTEST(virtual_alloc_large_allocs_are_contiguous_test)
 VA_UNITTEST(virtual_alloc_contiguous_fallback_test)
+VA_UNITTEST(virtual_alloc_free_boundary_test)
 UNITTEST_END_TESTCASE(virtual_alloc_tests, "virtual_alloc", "virtual_alloc tests")
