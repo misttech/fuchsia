@@ -458,6 +458,80 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     vector_stack.emplace_back(root_uber_struct_kv->second->local_topology, 0);
   }
 
+  // Helper lambda to resolve a link handle (viewport) or skip it if broken.
+  // Resolving a link pushes its target session's subtree local topology vector onto
+  // `vector_stack` to continue DFS traversal. Both outcomes skip the rest of the
+  // outer loop body, modifying the traversal stack and iterator state directly.
+  auto resolve_or_skip_link = [&links, &uber_structs, &parent_counts,
+                               &vector_stack](const TransformHandle& link_handle) {
+    // NOTE: there are a number of cases below where the link is skipped:
+    //   - the link doesn't exist
+    //   - the link exists, but there is no corresponding UberStruct
+    //   - the link exists and there is an UberStruct, but the UberStruct root doesn't match
+    //
+    // In all of these cases, special care must be taken when the skipped link was the parent's last
+    // expected child (children_left == 0), because there are no subsequent siblings to trigger the
+    // standard pop cleanup.  We must manually pop the parent here to prevent it from being stranded
+    // on the stack, which would fail the final DFS validation checks.
+
+    // Skip the link if it doesn't exist.
+    const auto link_kv = links.find(link_handle);
+    if (link_kv == links.end()) {
+      FLATLAND_VERBOSE_LOG << "GlobalTopologyData link doesn't exist for handle=" << link_handle
+                           << ", skipping ";
+
+      // No next sibling; must manually pop the parent (see comment above).
+      if (parent_counts.back().children_left == 0) {
+        parent_counts.pop_back();
+      }
+      return;
+    }
+    const TransformHandle& link_transform = link_kv->second;
+
+    // Skip the link if its target UberStruct doesn't exist.
+    const auto uber_struct_kv = uber_structs.find(link_transform.GetInstanceId());
+    if (uber_struct_kv == uber_structs.end()) {
+      FLATLAND_VERBOSE_LOG << "GlobalTopologyData link doesn't exist for instance_id="
+                           << link_transform.GetInstanceId() << ", skipping";
+
+      // No next sibling; must manually pop the parent (see comment above).
+      if (parent_counts.back().children_left == 0) {
+        parent_counts.pop_back();
+      }
+      return;
+    }
+
+    // Skip the link if its target UberStruct has a mismatched root handle (e.g. if the new
+    // UberStruct hasn't been registered yet).
+    const auto& new_vector = uber_struct_kv->second->local_topology;
+    FX_DCHECK(!new_vector.empty()) << "Valid UberStructs cannot have empty local_topology";
+    if (new_vector[0].handle != link_transform) {
+      FLATLAND_VERBOSE_LOG << "GlobalTopologyData link mismatch with "
+                              "existing UberStruct ("
+                           << new_vector[0].handle << " vs. " << link_transform << "), skipping";
+
+      // No next sibling; must manually pop the parent (see comment above).
+      if (parent_counts.back().children_left == 0) {
+        parent_counts.pop_back();
+      }
+      return;
+    }
+
+    // Thanks to one-view-per-session semantics, we should never cycle through the
+    // topological vectors, so we don't need to handle cycles.  We DCHECK here just to be sure.
+    FX_DCHECK(std::find_if(vector_stack.cbegin(), vector_stack.cend(), [&](const auto& entry) {
+                return entry.first == new_vector;
+              }) == vector_stack.cend());
+
+    // The link is now resolved!  The resolved link actually resulted in a new nested
+    // topology subtree.  We increment parent's children_left because this link now expands
+    // into the child topology vector.
+    ++parent_counts.back().children_left;
+
+    vector_stack.emplace_back(new_vector, 0);
+  };
+
+  // Main DFS traversal loop to produce the flattened topological scene graph.
   while (!vector_stack.empty()) {
     auto& [vector, iterator_index] = vector_stack.back();
 
@@ -489,64 +563,9 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
       FLATLAND_VERBOSE_LOG << "GlobalTopologyData       no parent";
     }
 
-    // If we are processing a link transform, find the other end of the link (if it exists).
+    // If we are processing a link transform, resolve or skip it and move to the next entry.
     if (current_entry.handle.GetInstanceId() == link_instance_id) {
-      // If the link doesn't exist, skip the link handle.
-      const auto link_kv = links.find(current_entry.handle);
-      if (link_kv == links.end()) {
-        FLATLAND_VERBOSE_LOG << "GlobalTopologyData link doesn't exist for handle="
-                             << current_entry.handle << ", skipping ";
-
-        if (parent_counts.back().children_left == 0) {
-          parent_counts.pop_back();
-        }
-
-        continue;
-      }
-      const TransformHandle& link_transform = link_kv->second;
-
-      // If the link exists but doesn't have an UberStruct, skip the link handle.
-      const auto uber_struct_kv = uber_structs.find(link_transform.GetInstanceId());
-      if (uber_struct_kv == uber_structs.end()) {
-        FLATLAND_VERBOSE_LOG << "GlobalTopologyData link doesn't exist for instance_id="
-                             << link_transform.GetInstanceId() << ", skipping";
-
-        if (parent_counts.back().children_left == 0) {
-          parent_counts.pop_back();
-        }
-
-        continue;
-      }
-
-      // If the link exists and has an UberStruct but does not begin with the specified handle, skip
-      // the new topology. This can occur if a new UberStruct has not been registered for the
-      // corresponding instance ID but the link to it has resolved.
-      const auto& new_vector = uber_struct_kv->second->local_topology;
-      FX_DCHECK(!new_vector.empty()) << "Valid UberStructs cannot have empty local_topology";
-      if (new_vector[0].handle != link_transform) {
-        FLATLAND_VERBOSE_LOG << "GlobalTopologyData link mismatch with "
-                                "existing UberStruct ("
-                             << new_vector[0].handle << " vs. " << link_transform << "), skipping";
-
-        if (parent_counts.back().children_left == 0) {
-          parent_counts.pop_back();
-        }
-
-        continue;
-      }
-
-      // Thanks to one-view-per-session semantics, we should never cycle through the
-      // topological vectors, so we don't need to handle cycles. We DCHECK here just to be sure.
-      FX_DCHECK(std::find_if(vector_stack.cbegin(), vector_stack.cend(), [&](const auto& entry) {
-                  return entry.first == new_vector;
-                }) == vector_stack.cend());
-
-      // At this point, the link is resolved. This means the link did actually result in the parent
-      // having an additional child, but that child needs to be processed, so the stack of remaining
-      // children to process for each parent needs to be increment as well.
-      ++parent_counts.back().children_left;
-
-      vector_stack.emplace_back(new_vector, 0);
+      resolve_or_skip_link(current_entry.handle);
       continue;
     }
 
