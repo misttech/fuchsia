@@ -190,20 +190,19 @@ pub enum TracingConfig {
     #[default]
     Disabled,
     /// Tracing is enabled.
-    Enabled {
-        /// Whether component manager will be instrumented with tracing.
-        ///
-        /// WARNING: If this is true, there is a small, but nonzero, chance that component manager
-        /// will deadlock during system boot due to a reentrant blocking call from
-        /// libtrace-provider. This should be left false in CQ builds to avoid flakes.
-        #[serde(default)]
-        component_manager: bool,
-    },
+    Enabled {},
 }
 
 impl HeapdumpConfig {
     /// Tells if at least one program will be instrumented.
     pub fn is_enabled(&self) -> bool {
         self.component_manager || self.driver_framework || !self.monikers.is_empty()
+    }
+}
+
+impl DevelopmentSupportConfig {
+    /// Tells if at least one program will have tracing enabled.
+    pub fn tracing_enabled(&self) -> bool {
+        self.include_tracing || matches!(self.tracing, TracingConfig::Enabled { .. })
     }
 }

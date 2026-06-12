@@ -51,6 +51,7 @@ lib/libc++abi.so.1
 lib/libcrypto.so
 lib/libfdio.so
 lib/libinspector.so
+?lib/librust-trace-provider.so
 lib/libssl.so
 lib/libstd-*
 lib/libsvc.so

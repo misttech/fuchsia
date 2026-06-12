@@ -14,6 +14,7 @@ bringup_platform_aib_names = [
     # component_manager is separate from embeddable so that
     # component_manager_with_tracing can be used instead.
     "component_manager",
+    "component_manager_with_tracing",
 
     # The bootstrap feature-set-level
     "bootstrap",
@@ -398,7 +399,6 @@ platform_aib_names = bringup_platform_aib_names + [
 
     # This isn't in all eng builds, but is in some,
     # and not in any non-eng builds.
-    "component_manager_with_tracing",
     "component_manager_with_tracing_and_heapdump",
 
     # The minimal additions for eng build-type assemblies

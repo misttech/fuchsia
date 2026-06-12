@@ -153,6 +153,7 @@ assembly_input_bundle(
     name = "component_manager_with_tracing",
     allowed_in = [
         "eng",
+        "userdebug",
     ],
     bootfs_files_package = "//bundles/assembly/bazel_inputs:component_manager_with_tracing.bootfs_files_package",
     root_shards = [

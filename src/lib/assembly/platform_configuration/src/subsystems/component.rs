@@ -4,9 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::{Context, Result};
-use assembly_config_schema::platform_settings::development_support_config::{
-    DevelopmentSupportConfig, TracingConfig,
-};
+use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
 use assembly_config_schema::platform_settings::health_check_config::HealthCheckConfig;
 use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
 use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
@@ -56,10 +54,9 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         }
 
         // Select the component manager bundle to use.
-        let tracing_config = &config.development_support.tracing;
         if heapdump_config.component_manager {
             builder.platform_bundle("component_manager_with_tracing_and_heapdump")?;
-        } else if matches!(tracing_config, TracingConfig::Enabled { component_manager: true, .. }) {
+        } else if config.development_support.tracing_enabled() {
             builder.platform_bundle("component_manager_with_tracing")?;
         } else {
             builder.platform_bundle("component_manager")?;

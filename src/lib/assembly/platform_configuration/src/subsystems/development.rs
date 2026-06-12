@@ -4,9 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::Context;
-use assembly_config_schema::platform_settings::development_support_config::{
-    DevelopmentSupportConfig, TracingConfig,
-};
+use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
 use assembly_constants::{BootfsDestination, FileEntry, KernelArg};
 
 pub(crate) struct DevelopmentConfig;
@@ -47,8 +45,6 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.kernel_arg(KernelArg::NetsvcNetboot(true));
         };
 
-        let config_enabled_tracing =
-            config.include_tracing || matches!(config.tracing, TracingConfig::Enabled { .. });
         match (context.feature_set_level, context.build_type) {
             // Tracing is always enabled on standard eng.
             (FeatureSetLevel::Standard, BuildType::Eng) => {
@@ -58,14 +54,14 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             // Tracing is enabled on userdebug or eng for other feature set levels
             // if the user explicitly requests it.
             (_, BuildType::UserDebug | BuildType::Eng) => {
-                if config_enabled_tracing {
+                if config.tracing_enabled() {
                     builder.platform_bundle("tracing")?;
                 }
             }
 
             // Tracing is never enabled on user.
             (_, BuildType::User) => {
-                if config_enabled_tracing {
+                if config.tracing_enabled() {
                     anyhow::bail!("tracing can't be included in user builds");
                 }
             }
