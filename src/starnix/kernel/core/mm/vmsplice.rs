@@ -26,6 +26,8 @@ pub struct VmsplicePayloadSegment {
     pub memory: Arc<MemoryObject>,
     /// The offset in the `MemoryObject` that corresponds to the base address.
     pub memory_offset: u64,
+    /// Whether this segment should be snapshotted on unmap.
+    pub should_snapshot_on_unmap: bool,
 }
 
 impl VmsplicePayloadSegment {
@@ -319,22 +321,26 @@ impl InflightVmsplicedPayloads {
                 let tail = segment
                     .split_off(segment.length - (segment_range.end - segment_unmapped_range.end));
 
-                // Snapshot the middle, actually unmapped, region.
+                // Snapshot the middle, actually unmapped, region if it should be snapshotted.
+                // For file-backed mappings, we want to keep referencing the shared VMO so that
+                // subsequent writes are visible.
                 //
                 // NB: we can't use `zx_vmo_transfer_data` because
                 // there may be multiple vmsplice payloads mapped
                 // to the same VMO region.
-                let memory = segment
-                    .memory
-                    .create_child(
-                        zx::VmoChildOptions::SNAPSHOT_MODIFIED | zx::VmoChildOptions::NO_WRITE,
-                        segment.memory_offset,
-                        segment.length as u64,
-                    )
-                    .map_err(|_| errno!(EFAULT))?;
+                if segment.should_snapshot_on_unmap {
+                    let memory = segment
+                        .memory
+                        .create_child(
+                            zx::VmoChildOptions::SNAPSHOT_MODIFIED | zx::VmoChildOptions::NO_WRITE,
+                            segment.memory_offset,
+                            segment.length as u64,
+                        )
+                        .map_err(|_| errno!(EFAULT))?;
 
-                segment.memory = Arc::new(memory);
-                segment.memory_offset = 0;
+                    segment.memory = Arc::new(memory);
+                    segment.memory_offset = 0;
+                }
                 new_segments.push(segment);
 
                 if let Some(tail) = tail {
@@ -381,6 +387,7 @@ mod tests {
                     length: (page_size * NUM_PAGES) as usize,
                     memory: Arc::clone(&memory),
                     memory_offset: 0,
+                    should_snapshot_on_unmap: true,
                 },
             );
             assert_eq!(mm.inflight_vmspliced_payloads.payloads.lock().len(), 1);

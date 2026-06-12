@@ -1816,12 +1816,14 @@ impl MemoryManagerState {
                         length,
                         memory: m.memory().clone(),
                         memory_offset: m.address_to_offset(address),
+                        should_snapshot_on_unmap: false,
                     },
                     MappingBacking::PrivateAnonymous => VmsplicePayloadSegment {
                         addr_offset: address,
                         length,
                         memory: mm.mapping_context.private_anonymous.backing.clone(),
                         memory_offset: address.ptr() as u64,
+                        should_snapshot_on_unmap: true,
                     },
                 };
                 vmsplice_mappings.push(VmsplicePayload::new(Arc::downgrade(mm), vmsplice_payload));
