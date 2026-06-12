@@ -146,9 +146,7 @@ fn router_advertisement_with_source_link_layer_option_should_add_neighbor() {
                 let src_ip: UnicastAddr<_> = src_ip.into_addr();
                 src_ip.into_specified()
             },
-            NeighborState::Dynamic(DynamicNeighborState::Stale(Stale {
-                link_address: remote_mac.get(),
-            })),
+            NeighborState::Dynamic(DynamicNeighborState::Stale(Stale { link_address: remote_mac })),
         )]),
     );
 }
@@ -224,9 +222,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
         &link_device_id,
         HashMap::from([(
             neighbor_ip,
-            NeighborState::Dynamic(DynamicNeighborState::Delay(Delay {
-                link_address: remote_mac.get(),
-            })),
+            NeighborState::Dynamic(DynamicNeighborState::Delay(Delay { link_address: remote_mac })),
         )]),
     );
 
@@ -267,7 +263,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
         HashMap::from([(
             neighbor_ip,
             NeighborState::Dynamic(DynamicNeighborState::Reachable(Reachable {
-                link_address: remote_mac.get(),
+                link_address: remote_mac,
                 last_confirmed_at: now,
             })),
         )]),
@@ -372,12 +368,12 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
         CoreTxMetadata::default(),
     )
     .unwrap();
-    send_neighbor_confirmation(&mut ctx, /* solicited */ true, *remote_mac);
+    send_neighbor_confirmation(&mut ctx, /* solicited */ true, remote_mac.get());
     let now = ctx.bindings_ctx.now();
     assert_state(
         &mut ctx,
         DynamicNeighborState::Reachable(Reachable {
-            link_address: *remote_mac,
+            link_address: remote_mac,
             last_confirmed_at: now,
         }),
     );
@@ -390,17 +386,17 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
     let new_remote_mac = {
         let mut mac = *remote_mac;
         mac.as_mut()[5] ^= 0xFF;
-        mac
+        UnicastAddr::new(mac).unwrap()
     };
 
     // New ARP responses are expected to be rejected for 1 second after the
     // previous one.
     if solicited && I::VERSION == IpVersion::V4 {
-        send_neighbor_confirmation(&mut ctx, true, new_remote_mac);
+        send_neighbor_confirmation(&mut ctx, true, new_remote_mac.get());
         assert_state(
             &mut ctx,
             DynamicNeighborState::Reachable(Reachable {
-                link_address: *remote_mac,
+                link_address: remote_mac,
                 last_confirmed_at: now,
             }),
         );
@@ -409,7 +405,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
         ctx.bindings_ctx.sleep(ARP_OVERRIDE_LOCK_TIME);
     }
 
-    send_neighbor_confirmation(&mut ctx, solicited, new_remote_mac);
+    send_neighbor_confirmation(&mut ctx, solicited, new_remote_mac.get());
     let expected_state = if solicited {
         let now = ctx.bindings_ctx.now();
         DynamicNeighborState::Reachable(Reachable {
@@ -538,9 +534,7 @@ fn ns_response(target_addr: Ipv6Addr, dad_transmits: Option<NonZeroU16>, expect_
             },
             // TODO(https://fxbug.dev/42081683): expect STALE instead once we correctly do not
             // go through NUD to send NDP packets.
-            NeighborState::Dynamic(DynamicNeighborState::Delay(Delay {
-                link_address: remote_mac.get(),
-            })),
+            NeighborState::Dynamic(DynamicNeighborState::Delay(Delay { link_address: remote_mac })),
         )])
     } else {
         assert_matches!(&ctx.bindings_ctx.take_ethernet_frames()[..], []);
@@ -702,7 +696,7 @@ fn ipv6_integration() {
         HashMap::from([(
             neighbor_ip.into_specified(),
             NeighborState::Dynamic(DynamicNeighborState::Reachable(Reachable {
-                link_address: remote_mac.get(),
+                link_address: remote_mac,
                 last_confirmed_at: now,
             })),
         )]),
@@ -814,13 +808,13 @@ where
                 bindings_ctx,
                 &device,
                 neighbor,
-                DynamicNeighborUpdateSource::Probe { link_address: link_addr.get() },
+                DynamicNeighborUpdateSource::Probe { link_address: link_addr },
             );
             nud::testutil::assert_dynamic_neighbor_state(
                 &mut core_ctx.context(),
                 device.clone(),
                 neighbor,
-                DynamicNeighborState::Stale(Stale { link_address: link_addr.get() }),
+                DynamicNeighborState::Stale(Stale { link_address: link_addr }),
             );
         });
     }
@@ -841,7 +835,7 @@ where
             local_device.clone(),
             remote_ip,
             DynamicNeighborState::Reachable(Reachable {
-                link_address: remote_mac.get(),
+                link_address: remote_mac,
                 last_confirmed_at: bindings_ctx.now(),
             }),
         );
@@ -881,7 +875,7 @@ where
             &mut core_ctx.context(),
             local_device.clone(),
             remote_ip,
-            DynamicNeighborState::Stale(Stale { link_address: remote_mac.get() }),
+            DynamicNeighborState::Stale(Stale { link_address: remote_mac }),
         );
     });
 
@@ -904,7 +898,7 @@ where
             local_device.clone(),
             remote_ip,
             DynamicNeighborState::Reachable(Reachable {
-                link_address: remote_mac.get(),
+                link_address: remote_mac,
                 last_confirmed_at: bindings_ctx.now(),
             }),
         );
@@ -1161,14 +1155,14 @@ fn setup_nud_state<I: TestIpExt + IpExt>(
                 bindings_ctx,
                 device_id,
                 remote_ip,
-                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+                DynamicNeighborUpdateSource::Probe { link_address: remote_mac },
             );
             core_ctx.handle_neighbor_update(
                 bindings_ctx,
                 device_id,
                 remote_ip,
                 DynamicNeighborUpdateSource::Confirmation {
-                    link_address: Some(*remote_mac),
+                    link_address: Some(remote_mac),
                     flags: ConfirmationFlags { solicited_flag: true, override_flag: true },
                 },
             );
@@ -1178,7 +1172,7 @@ fn setup_nud_state<I: TestIpExt + IpExt>(
                 bindings_ctx,
                 device_id,
                 remote_ip,
-                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+                DynamicNeighborUpdateSource::Probe { link_address: remote_mac },
             );
         }
         TestNudState::Delay => {
@@ -1186,7 +1180,7 @@ fn setup_nud_state<I: TestIpExt + IpExt>(
                 bindings_ctx,
                 device_id,
                 remote_ip,
-                DynamicNeighborUpdateSource::Probe { link_address: *remote_mac },
+                DynamicNeighborUpdateSource::Probe { link_address: remote_mac },
             );
             let _ = core_ctx.send_ip_packet_to_neighbor(
                 bindings_ctx,
@@ -1289,7 +1283,7 @@ fn nud_ignores_non_unicast_macs_integration<I: TestIpExt + IpExt>(
                     assert_matches!(
                         actual,
                         Some(NeighborState::Dynamic(DynamicNeighborState::Reachable(r)))
-                            if r.link_address == *remote_mac
+                            if r.link_address == remote_mac
                     );
                 }
                 TestNudState::Stale => {
@@ -1299,13 +1293,13 @@ fn nud_ignores_non_unicast_macs_integration<I: TestIpExt + IpExt>(
                         assert_matches!(
                             actual,
                             Some(NeighborState::Dynamic(DynamicNeighborState::Delay(d)))
-                                if d.link_address == *remote_mac
+                                if d.link_address == remote_mac
                         );
                     } else {
                         assert_matches!(
                             actual,
                             Some(NeighborState::Dynamic(DynamicNeighborState::Stale(s)))
-                                if s.link_address == *remote_mac
+                                if s.link_address == remote_mac
                         );
                     }
                 }
@@ -1313,7 +1307,7 @@ fn nud_ignores_non_unicast_macs_integration<I: TestIpExt + IpExt>(
                     assert_matches!(
                         actual,
                         Some(NeighborState::Dynamic(DynamicNeighborState::Delay(d)))
-                            if d.link_address == *remote_mac
+                            if d.link_address == remote_mac
                     );
                 }
             }

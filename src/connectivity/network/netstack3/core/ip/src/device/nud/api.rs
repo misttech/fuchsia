@@ -8,7 +8,7 @@ use core::fmt::Display;
 use core::marker::PhantomData;
 
 use net_types::ip::{Ip, IpAddress, IpVersionMarker, Ipv4, Ipv6};
-use net_types::{SpecifiedAddr, UnicastAddress as _, Witness as _};
+use net_types::{SpecifiedAddr, UnicastAddr, UnicastAddress as _, Witness as _};
 use netstack3_base::{
     ContextPair, DeviceIdContext, EventContext as _, Inspector, InstantContext as _, LinkDevice,
     NotFoundError,
@@ -156,7 +156,7 @@ where
                     }
                     Entry::Occupied(e) => match e.into_mut() {
                         NeighborState::Static(link_address) => {
-                            (LinkResolutionResult::Resolved(*link_address), false)
+                            (LinkResolutionResult::Resolved(link_address.get()), false)
                         }
                         NeighborState::Dynamic(e) => {
                             e.resolve_link_addr(core_ctx, bindings_ctx, timer_heap, device_id, *dst)
@@ -201,9 +201,8 @@ where
         // TODO(https://fxbug.dev/42083952): Use NeighborAddr when available.
         link_address: D::Address,
     ) -> Result<(), StaticNeighborInsertionError> {
-        if !link_address.is_unicast() {
-            return Err(StaticNeighborInsertionError::MacAddressNotUnicast);
-        }
+        let link_address = UnicastAddr::new(link_address)
+            .ok_or(StaticNeighborInsertionError::MacAddressNotUnicast)?;
         let neighbor = validate_neighbor_addr(neighbor)
             .ok_or(StaticNeighborInsertionError::IpAddressInvalid)?;
         let (core_ctx, bindings_ctx) = self.contexts();
@@ -291,9 +290,12 @@ where
                 })
         })?;
         match probe_to_send {
-            link_addr @ Some(_) => {
-                core_ctx.send_neighbor_solicitation(bindings_ctx, &device_id, neighbor, link_addr)
-            }
+            Some(link_addr) => core_ctx.send_neighbor_solicitation(
+                bindings_ctx,
+                &device_id,
+                neighbor,
+                Some(link_addr.get()),
+            ),
             None => {}
         }
         Ok(())

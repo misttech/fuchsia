@@ -16,7 +16,7 @@ use net_types::ip::{
     AddrSubnet, Ip, IpAddress, IpInvariant, IpVersion, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6,
     Ipv6Addr, Mtu,
 };
-use net_types::{MulticastAddr, SpecifiedAddr, UnicastAddress as _, Witness as _, map_ip_twice};
+use net_types::{MulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _, map_ip_twice};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CounterContext, DeviceIdContext, ExistsError, IpAddressId,
     IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NetworkSerializer, NotFoundError,
@@ -61,14 +61,14 @@ use crate::context::{CoreCtxAndResource, Locked, WrapLockLevel};
 use crate::ip::integration::CoreCtxWithIpDeviceConfiguration;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, StackState};
 
-fn bytes_to_mac(b: &[u8]) -> Option<Mac> {
-    (b.len() >= Mac::BYTES).then(|| {
-        Mac::new({
+fn bytes_to_unicast_mac(b: &[u8]) -> Option<UnicastAddr<Mac>> {
+    (b.len() >= Mac::BYTES)
+        .then(|| {
             let mut bytes = [0; Mac::BYTES];
             bytes.copy_from_slice(&b[..Mac::BYTES]);
-            bytes
+            Mac::new(bytes)
         })
-    })
+        .and_then(UnicastAddr::new)
 }
 
 impl<
@@ -90,15 +90,7 @@ where
     ) {
         match device_id {
             DeviceId::Ethernet(id) => {
-                if let Some(link_address) = bytes_to_mac(link_addr) {
-                    // TODO(https://fxbug.dev/42083958): Actually use UnicastAddr everywhere.
-                    if !link_address.is_unicast() {
-                        debug!(
-                            "dropping NDP neighbor probe with non-unicast address: {:?}",
-                            link_address
-                        );
-                        return;
-                    }
+                if let Some(link_address) = bytes_to_unicast_mac(link_addr) {
                     NudHandler::<I, EthernetLinkDevice, _>::handle_neighbor_update(
                         self,
                         bindings_ctx,
@@ -127,18 +119,11 @@ where
             DeviceId::Ethernet(id) => {
                 let link_address = match link_addr {
                     Some(link_addr) => {
-                        // Drop a confirmation with a link address that is not long enough.
-                        let Some(link_addr) = bytes_to_mac(link_addr) else {
+                        // Drop a confirmation with a link address that is not long enough or
+                        // not unicast.
+                        let Some(link_addr) = bytes_to_unicast_mac(link_addr) else {
                             return;
                         };
-                        // TODO(https://fxbug.dev/42083958): Actually use UnicastAddr everywhere.
-                        if !link_addr.is_unicast() {
-                            debug!(
-                                "dropping NDP neighbor confirmation with non-unicast address: {:?}",
-                                link_addr
-                            );
-                            return;
-                        }
                         Some(link_addr)
                     }
                     None => None,

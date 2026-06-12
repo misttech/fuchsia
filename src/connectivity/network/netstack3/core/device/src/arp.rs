@@ -10,7 +10,7 @@ use alloc::fmt::Debug;
 
 use log::{debug, trace, warn};
 use net_types::ip::{Ip, Ipv4, Ipv4Addr};
-use net_types::{SpecifiedAddr, UnicastAddr, UnicastAddress as _, Witness as _};
+use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_base::{
     CoreTimerContext, Counter, CounterContext, DeviceIdContext, EventContext, FrameDestination,
     InstantBindingsTypes, LinkDevice, NetworkSerializer, SendFrameContext, SendFrameError,
@@ -431,6 +431,11 @@ fn handle_packet<
         }
     };
 
+    let sender_hw_addr = packet.sender_hardware_address();
+    let Some(sender_hw_addr) = UnicastAddr::new(sender_hw_addr) else {
+        debug!("dropping ARP packet with non-unicast sender HW addr: {:?}", sender_hw_addr);
+        return;
+    };
     // If the sender's hardware address is *our* hardware address, this is
     // an echoed ARP packet (e.g. the network reflected back an ARP packet that
     // we sent). Here we deviate from the behavior specified in RFC 826 (which
@@ -438,16 +443,7 @@ fn handle_packet<
     // There's no benefit to tracking our own ARP packets in the ARP table, and
     // some RFCs built on top of ARP (i.e. RFC 5227 - IPv4 Address Conflict
     // Detection) explicitly call out that echoed ARP packets should be ignored.
-    let sender_hw_addr = packet.sender_hardware_address();
-    // TODO(https://fxbug.dev/42083958): Actually use UnicastAddr everywhere.
-    if !sender_hw_addr.is_unicast() {
-        debug!(
-            "dropping arp packet with non-unicast sender hardware address: {:?}",
-            sender_hw_addr
-        );
-        return;
-    }
-    if sender_hw_addr == *core_ctx.get_hardware_addr(bindings_ctx, &device_id) {
+    if sender_hw_addr == core_ctx.get_hardware_addr(bindings_ctx, &device_id) {
         core_ctx.counters().rx_echoed_packets.increment();
         debug!("dropping an echoed ARP packet: {op:?}");
         return;
@@ -469,7 +465,7 @@ fn handle_packet<
         bindings_ctx,
         &device_id,
         frame_src,
-        sender_hw_addr,
+        sender_hw_addr.get(),
         sender_addr,
         target_addr,
         is_arp_probe,
@@ -621,12 +617,12 @@ fn handle_packet<
                 SendFrameContext::send_frame(
                     core_ctx,
                     bindings_ctx,
-                    ArpFrameMetadata { device_id, dst_addr: sender_hw_addr },
+                    ArpFrameMetadata { device_id, dst_addr: sender_hw_addr.get() },
                     ArpPacketBuilder::new(
                         ArpOp::Response,
                         self_hw_addr.get(),
                         target_addr,
-                        sender_hw_addr,
+                        sender_hw_addr.get(),
                         sender_addr,
                     )
                     .into_serializer_with(buffer),
@@ -1072,7 +1068,7 @@ mod tests {
             &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-            TEST_REMOTE_MAC,
+            UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
         );
         // Gratuitous ARPs should not prompt a response.
         assert_empty(core_ctx.frames().iter());
@@ -1100,7 +1096,7 @@ mod tests {
             &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-            TEST_REMOTE_MAC,
+            UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
         );
         // Gratuitous ARPs should not send a response.
         assert_empty(core_ctx.frames().iter());
@@ -1148,7 +1144,7 @@ mod tests {
             &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-            TEST_REMOTE_MAC,
+            UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
         );
 
         // Gratuitous ARPs should not send a response (the 1 frame is for the
@@ -1180,7 +1176,7 @@ mod tests {
             &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-            TEST_REMOTE_MAC,
+            UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
         );
 
         // We should have sent an ARP response.
@@ -1327,7 +1323,7 @@ mod tests {
                 core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(local_proto_addr).unwrap(),
-                LOCAL_HOST_CFG.hw_addr,
+                UnicastAddr::new(LOCAL_HOST_CFG.hw_addr).unwrap(),
             );
 
             // The requested remote should have sent an ARP response.
@@ -1355,7 +1351,7 @@ mod tests {
                 core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(requested_remote_proto_addr).unwrap(),
-                requested_remote_hw_addr,
+                UnicastAddr::new(requested_remote_hw_addr).unwrap(),
             );
         });
 
@@ -1427,11 +1423,13 @@ mod tests {
         // marked as REACHABLE; otherwise, it should have transitioned to STALE.
         let expected_state = if expect_solicited {
             DynamicNeighborState::Reachable(Reachable {
-                link_address: TEST_REMOTE_MAC,
+                link_address: UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
                 last_confirmed_at: bindings_ctx.now(),
             })
         } else {
-            DynamicNeighborState::Stale(Stale { link_address: TEST_REMOTE_MAC })
+            DynamicNeighborState::Stale(Stale {
+                link_address: UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
+            })
         };
         assert_dynamic_neighbor_state(
             &mut core_ctx,
@@ -1576,7 +1574,7 @@ mod tests {
                 core_ctx,
                 FakeLinkDeviceId,
                 SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-                mac,
+                UnicastAddr::new(mac).unwrap(),
             );
         };
 
@@ -1645,7 +1643,7 @@ mod tests {
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
             DynamicNeighborState::Reachable(Reachable {
-                link_address: TEST_REMOTE_MAC,
+                link_address: UnicastAddr::new(TEST_REMOTE_MAC).unwrap(),
                 last_confirmed_at: bindings_ctx.now(),
             }),
         );
@@ -1670,7 +1668,7 @@ mod tests {
             &mut core_ctx,
             FakeLinkDeviceId,
             SpecifiedAddr::new(TEST_REMOTE_IPV4).unwrap(),
-            DynamicNeighborState::Stale(Stale { link_address: NEW_MAC }),
+            DynamicNeighborState::Stale(Stale { link_address: UnicastAddr::new(NEW_MAC).unwrap() }),
         );
     }
 }

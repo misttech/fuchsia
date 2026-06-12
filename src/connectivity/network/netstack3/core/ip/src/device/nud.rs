@@ -16,8 +16,8 @@ use core::time::Duration;
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use log::{debug, error, warn};
-use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, IpMarked, Ipv4, Ipv6};
+use net_types::{SpecifiedAddr, UnicastAddr, Witness};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
@@ -122,8 +122,7 @@ pub enum DynamicNeighborUpdateSource<A> {
     /// E.g. NDP Neighbor Solicitation.
     Probe {
         /// The source link-layer address option.
-        // TODO(https://fxbug.dev/42083958): Wrap in `UnicastAddr`.
-        link_address: A,
+        link_address: UnicastAddr<A>,
     },
 
     /// Indicates an update from a neighbor confirmation message.
@@ -131,8 +130,7 @@ pub enum DynamicNeighborUpdateSource<A> {
     /// E.g. NDP Neighbor Advertisement.
     Confirmation {
         /// The target link-layer address option.
-        // TODO(https://fxbug.dev/42083958): Wrap in `UnicastAddr`.
-        link_address: Option<A>,
+        link_address: Option<UnicastAddr<A>>,
         /// The flags set on the neighbor confirmation.
         flags: ConfirmationFlags,
     },
@@ -152,7 +150,7 @@ pub enum DynamicNeighborUpdateSource<A> {
 #[allow(missing_docs)]
 pub enum NeighborState<D: LinkDevice, BT: NudBindingsTypes<D>> {
     Dynamic(DynamicNeighborState<D, BT>),
-    Static(D::Address),
+    Static(UnicastAddr<D::Address>),
 }
 
 /// The state of a dynamic entry in the neighbor cache within the Neighbor
@@ -551,7 +549,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
         &mut self,
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
     ) where
         I: Ip,
         D: LinkDevice,
@@ -572,13 +570,13 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
             // is not actionable for the caller: failing to send a previously-queued packet
             // doesn't mean that updating the neighbor entry should fail.
             core_ctx
-                .send_ip_packet_to_neighbor_link_addr(bindings_ctx, link_address, body, meta)
+                .send_ip_packet_to_neighbor_link_addr(bindings_ctx, link_address.get(), body, meta)
                 .unwrap_or_else(|err| {
                     error!("failed to send pending IP packet to neighbor {link_address:?} {err:?}")
                 })
         }
         for notifier in notifiers.drain(..) {
-            notifier.notify(Ok(link_address));
+            notifier.notify(Ok(link_address.get()));
         }
     }
 }
@@ -588,7 +586,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
 #[cfg_attr(any(test, feature = "testutils"), derivative(Clone, PartialEq, Eq))]
 pub struct Reachable<D: LinkDevice, I: Instant> {
     /// The resolved link address.
-    pub link_address: D::Address,
+    pub link_address: UnicastAddr<D::Address>,
     /// The last confirmed instant.
     pub last_confirmed_at: I,
 }
@@ -598,7 +596,7 @@ pub struct Reachable<D: LinkDevice, I: Instant> {
 #[cfg_attr(any(test, feature = "testutils"), derivative(Clone, PartialEq, Eq))]
 pub struct Stale<D: LinkDevice> {
     /// The resolved link address.
-    pub link_address: D::Address,
+    pub link_address: UnicastAddr<D::Address>,
 }
 
 impl<D: LinkDevice> Stale<D> {
@@ -632,7 +630,7 @@ impl<D: LinkDevice> Stale<D> {
 #[cfg_attr(any(test, feature = "testutils"), derivative(Clone, PartialEq, Eq))]
 pub struct Delay<D: LinkDevice> {
     /// The resolved link address.
-    pub link_address: D::Address,
+    pub link_address: UnicastAddr<D::Address>,
 }
 
 impl<D: LinkDevice> Delay<D> {
@@ -672,7 +670,7 @@ impl<D: LinkDevice> Delay<D> {
 #[derive(Debug, Derivative)]
 #[cfg_attr(any(test, feature = "testutils"), derivative(Clone, PartialEq, Eq))]
 pub struct Probe<D: LinkDevice> {
-    link_address: D::Address,
+    link_address: UnicastAddr<D::Address>,
     transmit_counter: Option<NonZeroU16>,
 }
 
@@ -726,7 +724,7 @@ impl<D: LinkDevice> Probe<D> {
 #[derive(Debug, Derivative)]
 #[cfg_attr(any(test, feature = "testutils"), derivative(Clone, PartialEq, Eq))]
 pub struct Unreachable<D: LinkDevice> {
-    link_address: D::Address,
+    link_address: UnicastAddr<D::Address>,
     mode: UnreachableMode,
 }
 
@@ -897,7 +895,7 @@ impl<D: LinkDevice, BT: NudBindingsTypes<D>> NeighborState<D, BT> {
             NeighborState::Dynamic(dynamic_state) => {
                 EventState::Dynamic(dynamic_state.to_event_dynamic_state())
             }
-            NeighborState::Static(addr) => EventState::Static(*addr),
+            NeighborState::Static(addr) => EventState::Static(addr.get()),
         }
     }
 
@@ -917,7 +915,7 @@ impl<D: LinkDevice, BT: NudBindingsTypes<D>> NeighborState<D, BT> {
         timers: &mut TimerHeap<I, BT>,
         neighbor: SpecifiedAddr<I::Addr>,
         device_id: &DeviceId,
-    ) -> Result<Option<D::Address>, EnterProbeError>
+    ) -> Result<Option<UnicastAddr<D::Address>>, EnterProbeError>
     where
         I: Ip,
         DeviceId: StrongDeviceIdentifier,
@@ -1031,7 +1029,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         bindings_ctx: &mut BC,
         timers: &mut TimerHeap<I, BC>,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
     ) where
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
@@ -1055,15 +1053,15 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         match self {
             Self::Incomplete(_) => EventDynamicState::Incomplete,
             Self::Reachable(Reachable { link_address, last_confirmed_at: _ }) => {
-                EventDynamicState::Reachable(*link_address)
+                EventDynamicState::Reachable(link_address.get())
             }
-            Self::Stale(Stale { link_address }) => EventDynamicState::Stale(*link_address),
-            Self::Delay(Delay { link_address }) => EventDynamicState::Delay(*link_address),
+            Self::Stale(Stale { link_address }) => EventDynamicState::Stale(link_address.get()),
+            Self::Delay(Delay { link_address }) => EventDynamicState::Delay(link_address.get()),
             Self::Probe(Probe { link_address, transmit_counter: _ }) => {
-                EventDynamicState::Probe(*link_address)
+                EventDynamicState::Probe(link_address.get())
             }
             Self::Unreachable(Unreachable { link_address, mode: _ }) => {
-                EventDynamicState::Unreachable(*link_address)
+                EventDynamicState::Unreachable(link_address.get())
             }
         }
     }
@@ -1076,7 +1074,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
     ) where
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
@@ -1141,7 +1139,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
         num_entries: usize,
         last_gc: &mut Option<BC::Instant>,
     ) where
@@ -1231,12 +1229,12 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     bindings_ctx.now(),
                 ));
 
-                (LinkResolutionResult::Resolved(link_address), false)
+                (LinkResolutionResult::Resolved(link_address.get()), false)
             }
             DynamicNeighborState::Reachable(Reachable { link_address, last_confirmed_at: _ })
             | DynamicNeighborState::Delay(Delay { link_address })
             | DynamicNeighborState::Probe(Probe { link_address, transmit_counter: _ }) => {
-                (LinkResolutionResult::Resolved(*link_address), false)
+                (LinkResolutionResult::Resolved(link_address.get()), false)
             }
             DynamicNeighborState::Unreachable(unreachable) => {
                 let Unreachable { link_address, mode: _ } = unreachable;
@@ -1249,7 +1247,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                     timers,
                     neighbor,
                 );
-                (LinkResolutionResult::Resolved(link_address), do_multicast_solicit)
+                (LinkResolutionResult::Resolved(link_address.get()), do_multicast_solicit)
             }
         }
     }
@@ -1307,7 +1305,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
 
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    link_address,
+                    link_address.get(),
                     body,
                     meta,
                 )?;
@@ -1319,7 +1317,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
             | DynamicNeighborState::Probe(Probe { link_address, transmit_counter: _ }) => {
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    *link_address,
+                    link_address.get(),
                     body,
                     meta,
                 )?;
@@ -1330,7 +1328,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 let Unreachable { link_address, mode: _ } = unreachable;
                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                     bindings_ctx,
-                    *link_address,
+                    link_address.get(),
                     body,
                     meta,
                 )?;
@@ -1353,7 +1351,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
         num_entries: usize,
         last_gc: &mut Option<BC::Instant>,
     ) where
@@ -1403,7 +1401,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         timers: &mut TimerHeap<I, BC>,
         device_id: &CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        link_address: Option<D::Address>,
+        link_address: Option<UnicastAddr<D::Address>>,
         flags: ConfirmationFlags,
         num_entries: usize,
         last_gc: &mut Option<BC::Instant>,
@@ -1493,7 +1491,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 // from neighbor confirmations, we must be tolerant of its absence. In the case
                 // of absence, we use the cached link-layer address if one is available.
                 let updated_link_address = link_address
-                    .and_then(|link_address| (current != &link_address).then_some(link_address));
+                    .and_then(|link_address| (*current != link_address).then_some(link_address));
 
                 match (solicited_flag, updated_link_address, override_flag) {
                     // Per RFC 4861 section 7.2.5:
@@ -1584,7 +1582,7 @@ pub(crate) mod testutil {
         core_ctx: &mut CC,
         device_id: CC::DeviceId,
         neighbor: SpecifiedAddr<I::Addr>,
-        expected_link_addr: D::Address,
+        expected_link_addr: UnicastAddr<D::Address>,
     ) {
         core_ctx.with_nud_state_mut(&device_id, |NudState { neighbors, .. }, _config| {
             assert_matches!(
@@ -2374,7 +2372,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                         lookup_addr,
                     ) {
                         Some(Action::TransmitProbe {
-                            probe: TransmitProbe::Unicast(link_address),
+                            probe: TransmitProbe::Unicast(link_address.get()),
                             to: lookup_addr,
                         })
                     } else {
@@ -2465,7 +2463,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                     ));
 
                     Some(Action::TransmitProbe {
-                        probe: TransmitProbe::Unicast(link_address),
+                        probe: TransmitProbe::Unicast(link_address.get()),
                         to: lookup_addr,
                     })
                 }
@@ -2689,7 +2687,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                                 // device.
                                 core_ctx.send_ip_packet_to_neighbor_link_addr(
                                     bindings_ctx,
-                                    *link_address,
+                                    link_address.get(),
                                     body,
                                     meta,
                                 )?;
@@ -2955,6 +2953,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ipv4Addr, Ipv6Addr};
+    use net_types::{UnicastAddr, Witness};
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeInstant, FakeLinkAddress, FakeLinkDevice,
         FakeLinkDeviceId, FakeTimerCtxExt as _, FakeTxMetadata, FakeWeakDeviceId,
@@ -3181,7 +3180,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         lookup_addr: SpecifiedAddr<I::Addr>,
-        expected_link_addr: FakeLinkAddress,
+        expected_link_addr: UnicastAddr<FakeLinkAddress>,
     ) {
         let entry = assert_matches!(
             core_ctx.nud.state.neighbors.get(&lookup_addr),
@@ -3280,9 +3279,12 @@ mod tests {
             unsafe { SpecifiedAddr::new_unchecked(net_ip_v6!("fe80::3")) };
     }
 
-    const LINK_ADDR1: FakeLinkAddress = FakeLinkAddress([2]);
-    const LINK_ADDR2: FakeLinkAddress = FakeLinkAddress([4]);
-    const LINK_ADDR3: FakeLinkAddress = FakeLinkAddress([6]);
+    const LINK_ADDR1: UnicastAddr<FakeLinkAddress> =
+        unsafe { UnicastAddr::new_unchecked(FakeLinkAddress([2])) };
+    const LINK_ADDR2: UnicastAddr<FakeLinkAddress> =
+        unsafe { UnicastAddr::new_unchecked(FakeLinkAddress([4])) };
+    const LINK_ADDR3: UnicastAddr<FakeLinkAddress> =
+        unsafe { UnicastAddr::new_unchecked(FakeLinkAddress([6])) };
 
     impl<I: Ip, L: LinkDevice> NudTimerId<I, L, FakeWeakDeviceId<FakeLinkDeviceId>> {
         fn neighbor() -> Self {
@@ -3383,7 +3385,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         NudHandler::handle_neighbor_update(
             core_ctx,
@@ -3404,7 +3406,7 @@ mod tests {
     fn init_stale_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_stale_neighbor_with_ip(core_ctx, bindings_ctx, I::LOOKUP_ADDR1, link_address);
     }
@@ -3413,7 +3415,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         let queued_frame =
             init_incomplete_neighbor_with_ip(core_ctx, bindings_ctx, ip_address, true);
@@ -3437,13 +3439,13 @@ mod tests {
             }),
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(core_ctx, queued_frame, link_address);
+        assert_pending_frame_sent(core_ctx, queued_frame, link_address.get());
     }
 
     fn init_reachable_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_reachable_neighbor_with_ip(core_ctx, bindings_ctx, I::LOOKUP_ADDR1, link_address);
     }
@@ -3452,7 +3454,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_stale_neighbor_with_ip(core_ctx, bindings_ctx, ip_address, link_address);
         assert_eq!(
@@ -3475,14 +3477,14 @@ mod tests {
         );
         assert_eq!(
             core_ctx.inner.take_frames(),
-            vec![(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![1])],
+            vec![(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![1])],
         );
     }
 
     fn init_delay_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_delay_neighbor_with_ip(core_ctx, bindings_ctx, I::LOOKUP_ADDR1, link_address);
     }
@@ -3491,7 +3493,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
         take_probe: bool,
     ) {
         init_delay_neighbor_with_ip(core_ctx, bindings_ctx, ip_address, link_address);
@@ -3519,7 +3521,7 @@ mod tests {
     fn init_probe_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
         take_probe: bool,
     ) {
         init_probe_neighbor_with_ip(
@@ -3535,7 +3537,7 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_probe_neighbor_with_ip(core_ctx, bindings_ctx, ip_address, link_address, false);
         let retransmit_timeout = core_ctx.inner.retransmit_timeout();
@@ -3562,7 +3564,7 @@ mod tests {
     fn init_unreachable_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
     ) {
         init_unreachable_neighbor_with_ip(core_ctx, bindings_ctx, I::LOOKUP_ADDR1, link_address);
     }
@@ -3613,12 +3615,12 @@ mod tests {
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
         expected_event: ExpectedEvent,
     ) {
         let mut ctx = CtxPair { core_ctx, bindings_ctx };
         NeighborApi::new(&mut ctx)
-            .insert_static_entry(&FakeLinkDeviceId, *ip_address, link_address)
+            .insert_static_entry(&FakeLinkDeviceId, *ip_address, link_address.get())
             .unwrap();
         assert_eq!(
             ctx.bindings_ctx.take_events(),
@@ -3626,8 +3628,10 @@ mod tests {
                 device: FakeLinkDeviceId,
                 addr: ip_address,
                 kind: match expected_event {
-                    ExpectedEvent::Added => EventKind::Added(EventState::Static(link_address)),
-                    ExpectedEvent::Changed => EventKind::Changed(EventState::Static(link_address)),
+                    ExpectedEvent::Added =>
+                        EventKind::Added(EventState::Static(link_address.get())),
+                    ExpectedEvent::Changed =>
+                        EventKind::Changed(EventState::Static(link_address.get())),
                 },
                 at: ctx.bindings_ctx.now(),
             }],
@@ -3638,7 +3642,7 @@ mod tests {
     fn init_static_neighbor<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         bindings_ctx: &mut FakeBindingsCtxImpl<I>,
-        link_address: FakeLinkAddress,
+        link_address: UnicastAddr<FakeLinkAddress>,
         expected_event: ExpectedEvent,
     ) {
         init_static_neighbor_with_ip(
@@ -3733,14 +3737,14 @@ mod tests {
     fn assert_neighbor_probe_sent_for_ip<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
         ip_address: SpecifiedAddr<I::Addr>,
-        link_address: Option<FakeLinkAddress>,
+        link_address: Option<UnicastAddr<FakeLinkAddress>>,
     ) {
         assert_eq!(
             core_ctx.inner.take_frames(),
             [(
                 FakeNudMessageMeta::NeighborSolicitation {
                     lookup_addr: ip_address,
-                    remote_link_addr: link_address,
+                    remote_link_addr: link_address.map(|addr| addr.get()),
                 },
                 Vec::new()
             )]
@@ -3750,7 +3754,7 @@ mod tests {
     #[track_caller]
     fn assert_neighbor_probe_sent<I: TestIpExt>(
         core_ctx: &mut FakeCoreCtxImpl<I>,
-        link_address: Option<FakeLinkAddress>,
+        link_address: Option<UnicastAddr<FakeLinkAddress>>,
     ) {
         assert_neighbor_probe_sent_for_ip(core_ctx, I::LOOKUP_ADDR1, link_address);
     }
@@ -3819,7 +3823,7 @@ mod tests {
             DynamicNeighborState::Stale(Stale { link_address: LINK_ADDR1 }),
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1);
+        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1.get());
     }
 
     #[ip_test(I)]
@@ -3859,7 +3863,7 @@ mod tests {
             expected_state,
             Some(ExpectedEvent::Changed),
         );
-        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1);
+        assert_pending_frame_sent(&mut core_ctx, queued_frame, LINK_ADDR1.get());
     }
 
     #[ip_test(I)]
@@ -4224,7 +4228,7 @@ mod tests {
         assert_pending_frame_sent(
             &mut core_ctx,
             VecDeque::from([Buf::new(vec![body], ..)]),
-            LINK_ADDR1,
+            LINK_ADDR1.get(),
         );
     }
 
@@ -4314,7 +4318,7 @@ mod tests {
         assert_eq!(
             core_ctx.inner.take_frames(),
             [
-                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY]),
+                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![BODY]),
                 (
                     FakeNudMessageMeta::NeighborSolicitation {
                         lookup_addr: I::LOOKUP_ADDR1,
@@ -4353,7 +4357,10 @@ mod tests {
             );
             assert_eq!(
                 core_ctx.inner.take_frames(),
-                [(FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY + i])]
+                [(
+                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
+                    vec![BODY + i]
+                )]
             );
 
             // Fast forward until the current retransmit timer should fire, taking
@@ -4397,7 +4404,7 @@ mod tests {
         assert_eq!(
             core_ctx.inner.take_frames(),
             [
-                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 }, vec![BODY]),
+                (FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() }, vec![BODY]),
                 (
                     FakeNudMessageMeta::NeighborSolicitation {
                         lookup_addr: I::LOOKUP_ADDR1,
@@ -4419,7 +4426,7 @@ mod tests {
     fn confirmation_should_not_create_entry<I: TestIpExt>(solicited_flag: bool) {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
 
-        let link_address = Some(FakeLinkAddress([1]));
+        let link_address = Some(LINK_ADDR1);
         NudHandler::handle_neighbor_update(
             &mut core_ctx,
             &mut bindings_ctx,
@@ -4545,7 +4552,7 @@ mod tests {
             expected_pending_frames
                 .into_iter()
                 .map(|(p, FakeTxMetadata)| (
-                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 },
+                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
                     p.as_ref().to_vec()
                 ))
                 .collect::<Vec<_>>()
@@ -4671,7 +4678,7 @@ mod tests {
             pending_frames
                 .into_iter()
                 .map(|f| (
-                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1 },
+                    FakeNudMessageMeta::IpFrame { dst_link_address: LINK_ADDR1.get() },
                     f.as_ref().to_vec(),
                 ))
                 .collect::<Vec<_>>()
@@ -4865,13 +4872,13 @@ mod tests {
             ),
             LinkResolutionResult::Resolved(addr) => addr
         );
-        assert_eq!(link_addr, LINK_ADDR1);
+        assert_eq!(link_addr, LINK_ADDR1.get());
         if initial_state == InitialState::Stale {
             assert_eq!(
                 ctx.bindings_ctx.take_events(),
                 [Event::changed(
                     &FakeLinkDeviceId,
-                    EventState::Dynamic(EventDynamicState::Delay(LINK_ADDR1)),
+                    EventState::Dynamic(EventDynamicState::Delay(LINK_ADDR1.get())),
                     I::LOOKUP_ADDR1,
                     ctx.bindings_ctx.now(),
                 )],
@@ -4957,7 +4964,7 @@ mod tests {
 
         // Each observer should have been notified of successful link resolution.
         for observer in observers {
-            assert_eq!(*observer.lock(), Some(Ok(LINK_ADDR1)));
+            assert_eq!(*observer.lock(), Some(Ok(LINK_ADDR1.get())));
         }
     }
 
