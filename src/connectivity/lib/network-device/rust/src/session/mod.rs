@@ -425,12 +425,6 @@ pub struct DeviceBaseInfo {
     /// network device.
     #[fidl_field_type(optional)]
     pub min_rx_buffers: Option<NonZeroU16>,
-    /// Available rx acceleration flags for this device.
-    #[fidl_field_type(default)]
-    pub rx_accel: Vec<netdev::RxAcceleration>,
-    /// Available tx acceleration flags for this device.
-    #[fidl_field_type(default)]
-    pub tx_accel: Vec<netdev::TxAcceleration>,
 }
 
 /// Network device information with all required fields.
@@ -496,8 +490,6 @@ impl DeviceInfo {
                     min_tx_buffer_tail,
                     max_buffer_parts: _,
                     min_rx_buffers: _,
-                    rx_accel: _,
-                    tx_accel: _,
                 },
         } = self;
         if NETWORK_DEVICE_DESCRIPTOR_VERSION != *descriptor_version {
@@ -883,8 +875,6 @@ mod tests {
         min_tx_buffer_tail: 0,
         max_buffer_parts: fidl_fuchsia_hardware_network::MAX_DESCRIPTOR_CHAIN,
         min_rx_buffers: None,
-        rx_accel: Vec::new(),
-        tx_accel: Vec::new(),
     };
 
     const DEFAULT_DEVICE_INFO: DeviceInfo = DeviceInfo {

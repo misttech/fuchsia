@@ -565,12 +565,6 @@ void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
   const uint8_t descriptor_version = NETWORK_DEVICE_DESCRIPTOR_VERSION;
   const uint16_t rx_depth = rx_fifo_depth();
   const uint16_t tx_depth = tx_fifo_depth();
-  const auto tx_accel = fidl::VectorView<netdev::wire::TxAcceleration>::FromExternal(
-      device_info_.tx_accel().has_value() ? device_info_.tx_accel()->data() : nullptr,
-      device_info_.tx_accel().has_value() ? device_info_.tx_accel()->size() : 0);
-  const auto rx_accel = fidl::VectorView<netdev::wire::RxAcceleration>::FromExternal(
-      device_info_.rx_accel().has_value() ? device_info_.rx_accel()->data() : nullptr,
-      device_info_.rx_accel().has_value() ? device_info_.rx_accel()->size() : 0);
   const uint32_t buffer_alignment =
       device_info_.buffer_alignment().value_or(kDefaultBufferAlignment);
   const uint8_t max_buffer_parts = device_info_.max_buffer_parts().value_or(kDefaultMaxBufferParts);
@@ -591,9 +585,7 @@ void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
                                       .min_rx_buffer_length(min_rx_buffer_length)
                                       .min_tx_buffer_length(min_tx_buffer_length)
                                       .min_tx_buffer_head(min_tx_buffer_head)
-                                      .min_tx_buffer_tail(min_tx_buffer_tail)
-                                      .tx_accel(tx_accel)
-                                      .rx_accel(rx_accel);
+                                      .min_tx_buffer_tail(min_tx_buffer_tail);
 
   const std::optional<uint32_t>& max_buffer_length = device_info_.max_buffer_length();
   if (max_buffer_length.has_value() && max_buffer_length.value() != 0) {

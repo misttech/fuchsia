@@ -375,8 +375,6 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   std::unique_ptr<NetworkDeviceImplBinder> binder_;
   std::optional<fdf::ServerBindingRef<netdriver::NetworkDeviceIfc>> ifc_binding_;
   fdf::WireSharedClient<netdriver::NetworkDeviceImpl> device_impl_;
-  std::array<netdev::wire::RxAcceleration, netdev::wire::kMaxAccelFlags> accel_rx_;
-  std::array<netdev::wire::TxAcceleration, netdev::wire::kMaxAccelFlags> accel_tx_;
 
   std::unique_ptr<Session> session_ __TA_GUARDED(control_lock_);
 

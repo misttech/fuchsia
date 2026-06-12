@@ -63,15 +63,6 @@ zx::result<DeviceInfo> DeviceInfo::Create(const netdev::wire::DeviceInfo& fidl) 
       .max_buffer_parts = base_info.max_buffer_parts(),
   };
 
-  if (base_info.has_rx_accel()) {
-    auto& rx_accel = base_info.rx_accel();
-    std::copy(rx_accel.begin(), rx_accel.end(), std::back_inserter(info.rx_accel));
-  }
-  if (base_info.has_tx_accel()) {
-    auto& tx_accel = base_info.tx_accel();
-    std::copy(tx_accel.begin(), tx_accel.end(), std::back_inserter(info.tx_accel));
-  }
-
   return zx::ok(std::move(info));
 }
 

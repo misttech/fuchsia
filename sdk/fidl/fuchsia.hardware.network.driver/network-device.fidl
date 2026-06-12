@@ -502,28 +502,12 @@ type DeviceImplInfo = table {
     /// be informed.
     /// Required.
     11: tx_tail_length uint16;
-    /// Available Rx acceleration flags for this device, as defined in
-    /// [`fuchsia.hardware.network/RxAcceleration`].
-    ///
-    /// `rx_accel` maps the `RX_ACCEL_*` flags in the frame descriptors with
-    /// semantic acceleration features described by `RxAcceleration`. Position
-    /// `n` of `rx_accel` conveys the meaning of the `RX_ACCEL_n` flag.
-    /// Required.
-    12: rx_accel vector<fuchsia.hardware.network.RxAcceleration>:MAX;
-    /// Available tx acceleration flags for this device, as defined in
-    /// [`fuchsia.hardware.network/TxAcceleration`].
-    ///
-    /// `tx_accel` maps the `TX_ACCEL_*` flags in the frame descriptors with
-    /// semantic acceleration features described by `TxAcceleration`. Position
-    /// `n` of `tx_accel` conveys the meaning of the `TX_ACCEL_n` flag.
-    /// Required.
-    13: tx_accel vector<fuchsia.hardware.network.TxAcceleration>:MAX;
     /// Minimum amount of Rx buffers to be queued. If unset, rx_threshold
     /// is assumed to be the minimum.
-    14: min_rx_buffers uint16;
+    12: min_rx_buffers uint16;
     /// Initial Rx buffer management parameters.
     /// If unset, `static` is assumed for Rx buffer managing.
-    15: rx_buffer_management RxBufferManagement;
+    13: rx_buffer_management RxBufferManagement;
 };
 
 /// The maximum number of `TxBuffer` structs that could be sent in a single FIDL

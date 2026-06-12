@@ -62,8 +62,6 @@ struct DeviceInfo {
   uint16_t min_tx_buffer_head;
   uint16_t min_tx_buffer_tail;
   uint8_t max_buffer_parts;
-  std::vector<fuchsia_hardware_network::wire::RxAcceleration> rx_accel;
-  std::vector<fuchsia_hardware_network::wire::TxAcceleration> tx_accel;
 };
 
 // Port and Mac address information.

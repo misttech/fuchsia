@@ -58,6 +58,8 @@ type FrameTypeSupport = struct {
     /// The frame type-specific features supported.
     features uint32;
     /// The flags supported for the given frame type.
+    // TODO(https://fxbug.dev/521885145): support enabling/disabling supported
+    // hardware offloading feature flags.
     supported_flags TxFlags;
 };
 
@@ -75,71 +77,16 @@ type InfoType = strict enum : uint32 {
     NO_INFO = 0x00;
 };
 
-/// Available rx acceleration features.
-///
-/// Features are mapped to the `RX_ACCEL_*` bits in descriptors by the available
-/// values reported in [`Info.rx_accel`].
-@available(added=HEAD)
-type RxAcceleration = flexible enum : uint8 {
-    /// Inbound rx frame validated the Ethernet Frame Check Sequence.
-    VALIDATED_ETHERNET_FCS = 0;
-    /// Inbound rx frame validated the IPv4 checksum.
-    VALIDATED_IPV4_CHECKSUM = 1;
-    /// Inbound rx frame validated the TCP checksum.
-    VALIDATED_TCP_CHECKSUM = 2;
-    /// Inbound rx frame validated the UDP checksum.
-    VALIDATED_UDP_CHECKSUM = 3;
-};
-
-/// Available tx acceleration features.
-///
-/// Features are mapped to the `TX_ACCEL_*` bits in descriptors by the available
-/// values reported in [`Info.tx_accel`].
-@available(added=HEAD)
-type TxAcceleration = flexible enum : uint8 {
-    /// Request that device calculate the Ethernet Frame Check Sequence and
-    /// write it in place.
-    COMPUTE_ETHERNET_FCS = 0;
-    /// Request that the device calculate the IPv4 checksum and write it in
-    /// place.
-    COMPUTE_IPV4_CHECKSUM = 1;
-    /// Request that the device calculate the TCP checksum and write it in
-    /// place.
-    COMPUTE_TCP_CHECKSUM = 2;
-    /// Request that the device calculate the UDP checksum and write it in
-    /// place.
-    COMPUTE_UDP_CHECKSUM = 3;
-    // Future expansions: TCP segmentation acceleration
-};
-
 /// Flags set by a Device when handing a buffer to a client on the rx path.
 ///
 /// Set by devices on the `inbound_flags` field of an rx descriptor.
 @available(added=HEAD)
 type RxFlags = strict bits : uint32 {
-    /// Acceleration flag 0.
-    ///
-    /// Acceleration flags are mapped to the acceleration features reported by
-    /// the [`Device`] in [`Info.rx_accel`]. The n-th feature in `rx_accel` maps
-    /// to the `RX_ACCEL_n` `RxFlag`.
-    RX_ACCEL_0 = 0x00000001;
-    RX_ACCEL_1 = 0x00000002;
-    RX_ACCEL_2 = 0x00000004;
-    RX_ACCEL_3 = 0x00000008;
-    RX_ACCEL_4 = 0x00000010;
-    RX_ACCEL_5 = 0x00000020;
-    RX_ACCEL_6 = 0x00000040;
-    RX_ACCEL_7 = 0x00000080;
-    RX_ACCEL_8 = 0x00000100;
-    RX_ACCEL_9 = 0x00000200;
-    RX_ACCEL_10 = 0x00000400;
-    RX_ACCEL_11 = 0x00000800;
-    RX_ACCEL_12 = 0x00001000;
-    RX_ACCEL_13 = 0x00002000;
-    RX_ACCEL_14 = 0x00004000;
-    RX_ACCEL_15 = 0x00008000;
-
-    // RESERVED - bits 16 to 28 reserved for future expansions
+    /// The device verified one or more "full" checksums (meaning an Internet
+    /// Checksum over the full contents of e.g. a UDP or TCP packet).
+    // TODO(https://fxbug.dev/512101182): Update this comment to describe where
+    // the checksum count must be indicated on the buffer descriptor.
+    FULL_CHECKSUMS_VERIFIED = 0x00000001;
 
     /// Device experienced a hardware rx overrun.
     ///
@@ -159,32 +106,18 @@ type RxFlags = strict bits : uint32 {
     RX_VALIDATION_ERROR = 0x40000000;
 };
 
-/// Flags set by a Client when handing a buffer to a client on the tx path.
+/// Flags set by a Client when handing a buffer to a device on the tx path.
 ///
 /// Set by Clients on the `inbound_flags` field of a tx descriptor.
 @available(added=HEAD)
 type TxFlags = flexible bits : uint32 {
-    /// Acceleration flag 0.
-    ///
-    /// Acceleration flags are mapped to the acceleration features reported by
-    /// the [`Device`] in [`Info.tx_accel`]. The n-th feature in `tx_accel` maps
-    /// to the `TX_ACCEL_n` `TxFlag`.
-    TX_ACCEL_0 = 0x00000001;
-    TX_ACCEL_1 = 0x00000002;
-    TX_ACCEL_2 = 0x00000004;
-    TX_ACCEL_3 = 0x00000008;
-    TX_ACCEL_4 = 0x00000010;
-    TX_ACCEL_5 = 0x00000020;
-    TX_ACCEL_6 = 0x00000040;
-    TX_ACCEL_7 = 0x00000080;
-    TX_ACCEL_8 = 0x00000100;
-    TX_ACCEL_9 = 0x00000200;
-    TX_ACCEL_10 = 0x00000400;
-    TX_ACCEL_11 = 0x00000800;
-    TX_ACCEL_12 = 0x00001000;
-    TX_ACCEL_13 = 0x00002000;
-    TX_ACCEL_14 = 0x00004000;
-    TX_ACCEL_15 = 0x00008000;
+    /// Requests that the device compute a generic Internet Checksum based on a
+    /// starting byte index relative to the start of the frame and a byte offset
+    /// indicating the the offset from the starting index to the checksum field
+    /// where the result must be placed.
+    // TODO(https://fxbug.dev/512101182): Update this comment to describe how
+    // the start and offset are indicated in the buffer descriptor.
+    COMPUTE_GENERIC_CHECKSUM = 0x00000001;
 };
 
 /// Flags set by a Device when returning a tx buffer back to a client.
@@ -207,6 +140,6 @@ type TxReturnFlags = flexible bits : uint32 {
     /// Always set in conjunction with `TX_RET_ERROR`.
     TX_RET_NOT_AVAILABLE = 4;
 
-    // An error occurred sending this frame.
+    /// An error occurred sending this frame.
     TX_RET_ERROR = 0x80000000;
 };

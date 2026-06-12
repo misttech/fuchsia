@@ -26,7 +26,7 @@ use netstack3_core::device::{
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
-use netstack3_core::{ChecksumOffloadResult, NetworkParsingContext};
+use netstack3_core::{ChecksumOffloadResult, ChecksumOffloadSpec, NetworkParsingContext};
 use thiserror::Error;
 
 use crate::bindings::devices::{NetdeviceAllocator, StaticCommonInfo, TxTask};
@@ -397,6 +397,37 @@ impl PortWireFormat {
     }
 }
 
+/// Calculates the tx checksum offload spec based on the supported frame types'
+/// supported flags.
+///
+/// Note that this function is more restrictive than the shape of the API allows
+/// in order to support a simplified internal representation. See inline
+/// comments for details.
+fn tx_offload_spec_from_port_info(
+    info: &netdevice_client::client::PortBaseInfo,
+) -> ChecksumOffloadSpec {
+    let netdevice_client::client::PortBaseInfo { port_class: _, rx_types: _, tx_types } = info;
+    if tx_types.is_empty() {
+        return ChecksumOffloadSpec::none();
+    }
+    let mut tx_flags = tx_types.iter().map(
+        |fhardware_network::FrameTypeSupport { type_: _, features: _, supported_flags }| {
+            supported_flags
+        },
+    );
+    // Generic checksum offloading is only supported if all frame types support
+    // it.
+    if tx_flags.clone().all(|f| f.contains(fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM)) {
+        return ChecksumOffloadSpec::generic();
+    } else if tx_flags.any(|f| f.contains(fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM)) {
+        warn!("ignoring tx feature COMPUTE_GENERIC_CHECKSUM enabled on only some frame types");
+    }
+    // Protocol-specific offloading, when supported, may be enabled on a
+    // per-protocol basis (e.g. TCP/UDP-over-IPv4 and TCP/UDP-over-IPv6 may be
+    // enabled independently).
+    ChecksumOffloadSpec::none()
+}
+
 impl DeviceHandler {
     pub(crate) async fn add_port(
         &self,
@@ -435,6 +466,8 @@ impl DeviceHandler {
                 Error::ConfigurationNotSupported
             },
         )?;
+
+        let tx_offload_spec = tx_offload_spec_from_port_info(&base_info);
 
         let netdevice_client::client::PortStatus { flags, mtu } =
             status_stream.try_next().await?.ok_or_else(|| Error::PortClosed)?;
@@ -607,11 +640,7 @@ impl DeviceHandler {
                     };
                     let core_ethernet_id = ctx.api().device::<EthernetLinkDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
-                        EthernetCreationProperties {
-                            mac,
-                            max_frame_size,
-                            tx_offload_spec: Default::default(),
-                        },
+                        EthernetCreationProperties { mac, max_frame_size, tx_offload_spec },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
                         tx_allocator,
@@ -637,10 +666,7 @@ impl DeviceHandler {
                     };
                     let core_pure_ip_id = ctx.api().device::<PureIpDevice>().add_device(
                         devices::DeviceIdAndName { id: binding_id, name: name.clone() },
-                        PureIpDeviceCreationProperties {
-                            mtu: max_frame_size,
-                            tx_offload_spec: Default::default(),
-                        },
+                        PureIpDeviceCreationProperties { mtu: max_frame_size, tx_offload_spec },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
                         tx_allocator,
@@ -923,5 +949,94 @@ impl LinkMulticastWorker {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(vec![], ChecksumOffloadSpec::none(); "empty")]
+    #[test_case(
+        vec![
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ethernet,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::empty(),
+            },
+        ],
+        ChecksumOffloadSpec::none();
+        "single frame type, no generic support"
+    )]
+    #[test_case(
+        vec![
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ethernet,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM,
+            },
+        ],
+        ChecksumOffloadSpec::generic();
+        "single frame type, generic support"
+    )]
+    #[test_case(
+        vec![
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv6,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::empty(),
+            },
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv4,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::empty(),
+            },
+        ],
+        ChecksumOffloadSpec::none();
+        "multiple frame types, no generic support"
+    )]
+    #[test_case(
+        vec![
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv6,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM,
+            },
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv4,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM,
+            },
+        ],
+        ChecksumOffloadSpec::generic();
+        "multiple frame types, generic support"
+    )]
+    #[test_case(
+        vec![
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv6,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::COMPUTE_GENERIC_CHECKSUM,
+            },
+            fhardware_network::FrameTypeSupport {
+                type_: fhardware_network::FrameType::Ipv4,
+                features: 0,
+                supported_flags: fhardware_network::TxFlags::empty(),
+            },
+        ],
+        ChecksumOffloadSpec::none();
+        "multiple frame types, no unanimous generic support"
+    )]
+    fn test_tx_offload_spec_from_port_info(
+        tx_types: Vec<fhardware_network::FrameTypeSupport>,
+        expected: ChecksumOffloadSpec,
+    ) {
+        let info = netdevice_client::client::PortBaseInfo {
+            port_class: fhardware_network::PortClass::Ethernet,
+            rx_types: vec![],
+            tx_types,
+        };
+        assert_eq!(tx_offload_spec_from_port_info(&info), expected);
     }
 }

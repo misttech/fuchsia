@@ -62,7 +62,8 @@ TEST_F(BufferTest, TestBufferBuildTx) {
           regions),
       .meta =
           {
-              .flags = static_cast<uint32_t>(fuchsia_hardware_network::wire::TxFlags::kTxAccel0),
+              .flags = static_cast<uint32_t>(
+                  fuchsia_hardware_network::wire::TxFlags::kComputeGenericChecksum),
               .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
           },
   };
@@ -72,7 +73,8 @@ TEST_F(BufferTest, TestBufferBuildTx) {
   auto meta = b.TakeMetadata();
   EXPECT_EQ(meta->info_type, fuchsia_hardware_network::wire::InfoType::kNoInfo);
   EXPECT_TRUE(meta->info.empty());
-  EXPECT_EQ(meta->flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::TxFlags::kTxAccel0));
+  EXPECT_EQ(meta->flags, static_cast<uint32_t>(
+                             fuchsia_hardware_network::wire::TxFlags::kComputeGenericChecksum));
   std::vector<uint8_t> data;
   ASSERT_OK(b.Read(data));
   EXPECT_EQ(data, std::vector<uint8_t>({0x00, 0x01, 0x02, 0x03, 0x04, 0x00, 0x01, 0x02}));

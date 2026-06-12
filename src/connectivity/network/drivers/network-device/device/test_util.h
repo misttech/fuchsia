@@ -228,8 +228,6 @@ struct DeviceInfo {
   uint32_t min_tx_buffer_length;
   uint16_t tx_head_length;
   uint16_t tx_tail_length;
-  std::vector<netdev::wire::RxAcceleration> rx_accel;
-  std::vector<netdev::wire::TxAcceleration> tx_accel;
 };
 
 class FakeNetworkDeviceImpl

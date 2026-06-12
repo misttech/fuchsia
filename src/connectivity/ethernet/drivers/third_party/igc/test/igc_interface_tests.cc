@@ -291,8 +291,6 @@ TEST_F(IgcInterfaceTest, NetworkDeviceImplGetInfo) {
   EXPECT_EQ(info.min_tx_buffer_length(), 60U);
   EXPECT_EQ(info.tx_head_length(), 0U);
   EXPECT_EQ(info.tx_tail_length(), 0U);
-  EXPECT_FALSE(info.has_rx_accel());
-  EXPECT_FALSE(info.has_tx_accel());
 }
 
 TEST_F(IgcInterfaceTest, NetworkDeviceImplPrepareVmo) {

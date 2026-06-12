@@ -329,9 +329,6 @@ void FakeNetworkDeviceImpl::GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& c
   fidl::Arena fidl_arena;
   auto builder = fuchsia_hardware_network_driver::wire::DeviceImplInfo::Builder(fidl_arena);
 
-  auto tx_accel = fidl::VectorView<netdev::wire::TxAcceleration>::FromExternal(info_.tx_accel);
-  auto rx_accel = fidl::VectorView<netdev::wire::RxAcceleration>::FromExternal(info_.rx_accel);
-
   builder.device_features(info_.device_features)
       .tx_depth(info_.tx_depth)
       .rx_depth(info_.rx_depth)
@@ -343,9 +340,7 @@ void FakeNetworkDeviceImpl::GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& c
       .min_rx_buffer_length(info_.min_rx_buffer_length)
       .min_tx_buffer_length(info_.min_tx_buffer_length)
       .tx_head_length(info_.tx_head_length)
-      .tx_tail_length(info_.tx_tail_length)
-      .tx_accel(fidl::ObjectView<decltype(tx_accel)>::FromExternal(&tx_accel))
-      .rx_accel(fidl::ObjectView<decltype(rx_accel)>::FromExternal(&rx_accel));
+      .tx_tail_length(info_.tx_tail_length);
 
   completer.buffer(arena).Reply(builder.Build());
 }

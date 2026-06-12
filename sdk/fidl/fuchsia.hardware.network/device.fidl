@@ -17,17 +17,6 @@ const MAX_FRAME_TYPES uint32 = 4;
 @available(added=HEAD)
 const MAX_SESSION_NAME uint32 = 64;
 
-/// Maximum number of acceleration flags.
-///
-/// Each descriptor has 16 bits of space for acceleration flags ([`RxFlags`] and
-/// [`TxFlags`]) thus the maximum number of reported accelerations is 16. Each
-/// descriptor reports which accelerations were applied (`RxFlags`) or are
-/// requested (`TxFlags`) by mapping indexes in the vector of supported
-/// accelerations ([`Info.rx_accel`] and ([`Info.tx_accel`]) to bits in the
-/// respective acceleration flags bitfield.
-@available(added=HEAD)
-const MAX_ACCEL_FLAGS uint32 = 16;
-
 /// Network device base info.
 @available(added=HEAD)
 type DeviceBaseInfo = table {
@@ -69,22 +58,6 @@ type DeviceBaseInfo = table {
     8: min_tx_buffer_tail uint16;
     /// Maximum descriptor chain length accepted by the device. Required.
     9: max_buffer_parts uint8;
-    /// Available rx acceleration flags for this device.
-    ///
-    /// `rx_accel` maps the `RX_ACCEL_*` flags in the frame descriptors with
-    /// semantic acceleration features described by [`RxAcceleration`]. Position
-    /// `n` of `rx_accel` conveys the meaning of the `RX_ACCEL_n` flag.
-    ///
-    /// Interpreted as empty if not provided.
-    10: rx_accel vector<RxAcceleration>:MAX_ACCEL_FLAGS;
-    /// Available tx acceleration flags for this device.
-    ///
-    /// `tx_accel` maps the `TX_ACCEL_*` flags in the frame descriptors with
-    /// semantic acceleration features described by [`TxAcceleration`]. Position
-    /// `n` of `tx_accel` conveys the meaning of the `TX_ACCEL_n` flag.
-    ///
-    /// Interpreted as empty if not provided.
-    11: tx_accel vector<TxAcceleration>:MAX_ACCEL_FLAGS;
     /// Minimum amount of Rx buffers the client needs to prepare for the
     /// network device. Client should use this information to select its
     /// VMO sizes if using multi-VMO support.

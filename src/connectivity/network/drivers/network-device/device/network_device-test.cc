@@ -391,9 +391,6 @@ TEST_F(NetworkDeviceTest, GetInfo) {
   EXPECT_EQ(base_info.min_tx_buffer_head(), impl_.info().tx_head_length);
   ASSERT_TRUE(base_info.has_buffer_alignment());
   EXPECT_EQ(base_info.buffer_alignment(), impl_.info().buffer_alignment);
-  EXPECT_EQ(base_info.tx_accel().size(), impl_.info().tx_accel.size());
-  ASSERT_TRUE(base_info.has_rx_accel());
-  EXPECT_EQ(base_info.rx_accel().size(), impl_.info().rx_accel.size());
 }
 
 TEST_F(NetworkDeviceTest, OptionalMaxBufferLength) {
@@ -499,14 +496,12 @@ TEST_F(NetworkDeviceTest, RxBufferBuild) {
                               .descriptor = kDescriptor0,
                               .length = 64,
                               .chain = false,
-                              .flags = RxFlags::kRxAccel0,
                           },
                           {
                               .space_head = 16,
                               .descriptor = kDescriptor1,
                               .length = 15,
                               .chain = true,
-                              .flags = RxFlags::kRxAccel1,
                           },
                           {
                               .space_tail = 32,
@@ -567,7 +562,6 @@ TEST_F(NetworkDeviceTest, RxBufferBuild) {
     }
   }
   chained_return->buffer().meta.port = kPort13;
-  chained_return->buffer().meta.flags = static_cast<uint32_t>(RxFlags::kRxAccel1);
   return_session.Enqueue(std::move(chained_return));
   // Ensure no more rx buffers were actually returned:
   ASSERT_TRUE(buffers.is_empty());

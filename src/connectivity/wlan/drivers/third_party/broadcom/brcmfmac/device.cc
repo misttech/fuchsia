@@ -721,9 +721,6 @@ void Device::NetDevGetInfo(fuchsia_hardware_network_driver::DeviceImplInfo* out_
   out_info->min_rx_buffer_length() = IEEE80211_MSDU_SIZE_MAX;
   out_info->tx_head_length() = drvr()->hdrlen;
   out_info->tx_tail_length() = tx_tail_length;
-  // No hardware acceleration supported yet.
-  out_info->rx_accel() = std::nullopt;
-  out_info->tx_accel() = std::nullopt;
 }
 
 void Device::NetDevQueueTx(cpp20::span<wlan::drivers::components::Frame> frames) {
