@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
 #include <lib/zx/interrupt.h>
@@ -18,11 +19,12 @@
 
 #include <fbl/macros.h>
 
-#include "src/devices/usb/drivers/aml-usb-phy/aml-usb-phy-device.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy2.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy3.h"
 
 namespace aml_usb_phy {
+
+class AmlUsbPhyDevice;
 
 class AmlUsbPhy : public fidl::Server<fuchsia_hardware_usb_phy::UsbPhy> {
  public:

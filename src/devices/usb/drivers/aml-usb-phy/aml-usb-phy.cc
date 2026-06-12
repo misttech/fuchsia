@@ -8,6 +8,7 @@
 
 #include <soc/aml-common/aml-registers.h>
 
+#include "src/devices/usb/drivers/aml-usb-phy/aml-usb-phy-device.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy-regs.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy2-regs.h"
 

@@ -13,9 +13,10 @@
 #include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <mutex>
-namespace aml_usb_phy {
 
-class AmlUsbPhy;
+#include "src/devices/usb/drivers/aml-usb-phy/aml-usb-phy.h"
+
+namespace aml_usb_phy {
 
 class AmlUsbPhyDevice : public fdf::DriverBase2 {
  public:

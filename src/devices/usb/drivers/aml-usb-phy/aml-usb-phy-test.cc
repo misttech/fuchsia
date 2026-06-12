@@ -17,6 +17,7 @@
 #include <soc/aml-common/aml-registers.h>
 
 #include "src/devices/registers/testing/mock-registers/mock-registers.h"
+#include "src/devices/usb/drivers/aml-usb-phy/aml-usb-phy-device.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy-regs.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy3-regs.h"
 #include "src/lib/testing/predicates/status.h"
