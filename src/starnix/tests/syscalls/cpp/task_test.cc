@@ -1140,7 +1140,7 @@ TEST(Task, CantWriteLowAddresses) {
 
 class CloneAndExecTest : public ::testing::Test {
  protected:
-  void SetUp() { clone_exec_helper_ = GetTestResourcePath(kCloneExecHelperBinary); }
+  void SetUp() { clone_exec_helper_ = test_helper::GetTestResourcePath(kCloneExecHelperBinary); }
 
   void CloneAndExec(int clone_flags, const std::vector<std::string>& arguments) {
     // Clone the process, with the caller-supplied flags.
@@ -1178,23 +1178,6 @@ class CloneAndExecTest : public ::testing::Test {
       _exit(EXIT_FAILURE);
     }
     return cwd;
-  }
-
-  static std::string GetTestResourcePath(const std::string& resource) {
-    std::filesystem::path test_file = std::filesystem::path("data/tests/deps") / resource;
-
-    std::error_code ec;
-    bool file_exists = std::filesystem::exists(test_file, ec);
-    EXPECT_FALSE(ec) << "failed to check if file exists: " << ec;
-
-    if (!file_exists) {
-      char self_path[PATH_MAX];
-      realpath("/proc/self/exe", self_path);
-      std::filesystem::path directory = std::filesystem::path(self_path).parent_path();
-      return directory / resource;
-    }
-
-    return test_file;
   }
 
   static constexpr char kCloneExecHelperBinary[] = "clone_exec_helper";
@@ -1294,7 +1277,7 @@ TEST_F(CloneAndExecTest, ChildWithCloneFsCanChangeCwd) {
 TEST_F(CloneAndExecTest, ExecveRequiresCallerCanExecuteScriptAndInterp) {
   test_helper::ScopedTempDir temp_dir;
 
-  const std::string exit_zero_path = GetTestResourcePath("exit_zero");
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
   std::string exit_zero_content;
   ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content)) << exit_zero_path;
 
@@ -1356,7 +1339,7 @@ TEST_F(CloneAndExecTest, ExecveAsRootRequiresAnyExecutableBitSet) {
   char* const argv[] = {const_cast<char*>(binary_path.c_str()), nullptr};
   char* const envp[] = {nullptr};
 
-  const std::string exit_zero_path = GetTestResourcePath("exit_zero");
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
   std::string exit_zero_content;
   ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content));
   ASSERT_TRUE(files::WriteFile(binary_path, exit_zero_content));

@@ -81,23 +81,6 @@ testing::AssertionResult RunSimpleProgram(std::function<void()> prelude, std::st
   return result;
 }
 
-std::string GetTestResourcePath(const std::string &resource) {
-  std::filesystem::path test_file = std::filesystem::path("data/tests/deps") / resource;
-
-  std::error_code ec;
-  bool file_exists = std::filesystem::exists(test_file, ec);
-  EXPECT_FALSE(ec) << "failed to check if file exists: " << ec;
-
-  if (!file_exists) {
-    char self_path[PATH_MAX];
-    realpath("/proc/self/exe", self_path);
-    std::filesystem::path directory = std::filesystem::path(self_path).parent_path();
-    return directory / resource;
-  }
-
-  return test_file;
-}
-
 class CapsExecTest : public ::testing::Test {
  protected:
   void SetUp() {
@@ -129,7 +112,8 @@ class CapsExecTest : public ::testing::Test {
     SAFE_SYSCALL(chmod(path_.c_str(), kDirPerms));
 
     // Copy out the test binary into the temporary directory.
-    std::filesystem::path print_helper_binary = GetTestResourcePath(kPrintHelperBinary);
+    std::filesystem::path print_helper_binary =
+        test_helper::GetTestResourcePath(kPrintHelperBinary);
 
     print_helper_ = path_ / kPrintHelperBinary;
     std::filesystem::copy_file(print_helper_binary.c_str(), print_helper_.c_str(), ec);

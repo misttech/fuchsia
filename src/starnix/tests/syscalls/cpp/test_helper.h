@@ -224,6 +224,12 @@ void waitForChildFails(unsigned int waitFlag, int cloneFlags, int (*childRunFunc
 
 std::string get_tmp_path();
 
+// Returns the path to a test resource.
+//
+// Looks for the resource under "data/tests/deps" first. If not found, looks for it in the same
+// directory as the current executable.
+std::string GetTestResourcePath(const std::string &resource);
+
 struct MemoryMapping {
   uintptr_t start;
   uintptr_t end;
