@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryAccessorExt;
-use crate::signals::SignalInfo;
+use crate::signals::{SignalDetail, SignalInfo};
 use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::signals::{SIGBUS, SIGFPE, SIGILL, SIGTRAP};
@@ -49,10 +49,15 @@ pub fn handle_hardware_exception(
     current_task: &CurrentTask,
     report: &zx::ExceptionReport,
 ) -> Option<ExceptionResult> {
+    let ip = current_task.thread_state.registers.instruction_pointer_register();
     match report.ty {
         zx::ExceptionType::General => match get_ec_from_exception_context(&report.arch) {
             // Floating point exception.
-            0b101000 | 0b101100 => Some(ExceptionResult::Signal(SignalInfo::kernel(SIGFPE))),
+            0b101000 | 0b101100 => Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                SIGFPE,
+                linux_uapi::FPE_FLTINV as i32,
+                SignalDetail::SigFault { addr: ip },
+            ))),
             _ => None,
         },
         zx::ExceptionType::FatalPageFault { status } => {
@@ -61,16 +66,39 @@ pub fn handle_hardware_exception(
         }
         zx::ExceptionType::UndefinedInstruction => {
             if is_arm32_breakpoint(current_task) {
-                Some(ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP)))
+                Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                    SIGTRAP,
+                    linux_uapi::TRAP_BRKPT as i32,
+                    SignalDetail::SigFault { addr: ip },
+                )))
             } else {
-                Some(ExceptionResult::Signal(SignalInfo::kernel(SIGILL)))
+                Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                    SIGILL,
+                    linux_uapi::ILL_ILLOPC as i32,
+                    SignalDetail::SigFault { addr: ip },
+                )))
             }
         }
         zx::ExceptionType::UnalignedAccess => {
-            Some(ExceptionResult::Signal(SignalInfo::kernel(SIGBUS)))
+            Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                SIGBUS,
+                linux_uapi::BUS_ADRALN as i32,
+                SignalDetail::SigFault { addr: report.arch.far },
+            )))
         }
-        zx::ExceptionType::SoftwareBreakpoint | zx::ExceptionType::HardwareBreakpoint => {
-            Some(ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP)))
+        zx::ExceptionType::SoftwareBreakpoint => {
+            Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                SIGTRAP,
+                linux_uapi::TRAP_BRKPT as i32,
+                SignalDetail::SigFault { addr: ip },
+            )))
+        }
+        zx::ExceptionType::HardwareBreakpoint => {
+            Some(ExceptionResult::Signal(SignalInfo::with_detail(
+                SIGTRAP,
+                linux_uapi::TRAP_HWBKPT as i32,
+                SignalDetail::SigFault { addr: ip },
+            )))
         }
         _ => None,
     }

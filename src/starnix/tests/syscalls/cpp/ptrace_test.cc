@@ -1420,7 +1420,11 @@ TEST_F(SoftwareBreakpointTest, Waitpid) {
   // Wait for breakpoint.
   WaitForChildStop(SIGTRAP);
 
+#if defined(__x86_64__)
   CheckSignalInfo(SIGTRAP, SI_KERNEL);
+#else
+  CheckSignalInfo(SIGTRAP, TRAP_BRKPT);
+#endif
 }
 
 TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
@@ -1449,7 +1453,11 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGTRAP);
 
+#if defined(__x86_64__)
   CheckSignalInfo(SIGTRAP, SI_KERNEL);
+#else
+  CheckSignalInfo(SIGTRAP, TRAP_BRKPT);
+#endif
 }
 
 // Similar to SignalHandlerWithPipe, but waits on a ppoll of the pipe, instead of a blocking read.
@@ -1487,7 +1495,11 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPoll) {
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGTRAP);
 
+#if defined(__x86_64__)
   CheckSignalInfo(SIGTRAP, SI_KERNEL);
+#else
+  CheckSignalInfo(SIGTRAP, TRAP_BRKPT);
+#endif
 }
 
 TEST_F(SoftwareBreakpointTest, Signalfd) {
@@ -1516,7 +1528,11 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   EXPECT_EQ(ssi.ssi_status, SIGTRAP);
 
   WaitForChildStop(SIGTRAP);
+#if defined(__x86_64__)
   CheckSignalInfo(SIGTRAP, SI_KERNEL);
+#else
+  CheckSignalInfo(SIGTRAP, TRAP_BRKPT);
+#endif
 
   close(sfd);
 }

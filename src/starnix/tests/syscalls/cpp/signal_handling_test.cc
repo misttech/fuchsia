@@ -1589,4 +1589,50 @@ TEST(SignalHandling, FaultingAddress) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+TEST(SignalHandling, SigillAddress) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([] {
+    struct sigaction sa{};
+    sa.sa_sigaction = [](int signum, siginfo_t *siginfo, void *ucontext_ptr) {
+      if (signum != SIGILL) {
+        abort();
+      }
+      ucontext_t *ucontext = reinterpret_cast<ucontext_t *>(ucontext_ptr);
+      uintptr_t pc = 0;
+#ifdef __x86_64__
+      pc = ucontext->uc_mcontext.gregs[REG_RIP];
+#elif defined(__aarch64__)
+      pc = ucontext->uc_mcontext.pc;
+#elif defined(__arm__)
+      pc = ucontext->uc_mcontext.arm_pc;
+#elif defined(__riscv)
+      pc = ucontext->uc_mcontext.__gregs[0];
+#else
+#error "unsupported arch"
+#endif
+
+      if (reinterpret_cast<uintptr_t>(siginfo->si_addr) != pc) {
+        abort();
+      }
+      _exit(0);
+    };
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    SAFE_SYSCALL(sigaction(SIGILL, &sa, nullptr));
+
+#if defined(__x86_64__)
+    __asm__("ud2");
+#elif defined(__aarch64__) || defined(__arm__)
+    __asm__("udf #0");
+#elif defined(__riscv)
+    __asm__("unimp");
+#else
+#error "unsupported arch"
+#endif
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace
