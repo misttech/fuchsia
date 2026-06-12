@@ -4,7 +4,7 @@
 
 use crate::mm::PAGE_SIZE;
 use crate::vfs::inotify::InotifyLimits;
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, TerminalLock};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize};
 
@@ -14,7 +14,7 @@ pub struct SocketLimits {
     pub max_connections: AtomicI32,
 
     // Range of GIDs that can create ICMP Ping sockets.
-    pub icmp_ping_gids: Mutex<Range<u32>>,
+    pub icmp_ping_gids: LockDepMutex<Range<u32>, TerminalLock>,
 }
 
 #[derive(Debug)]
@@ -59,7 +59,7 @@ impl Default for SystemLimits {
             },
             socket: SocketLimits {
                 max_connections: AtomicI32::new(4096),
-                icmp_ping_gids: Mutex::new(1..1),
+                icmp_ping_gids: LockDepMutex::new(1..1),
             },
             pipe_max_size: AtomicUsize::new((*PAGE_SIZE * 256) as usize),
             io_uring_disabled: AtomicI32::new(0),
