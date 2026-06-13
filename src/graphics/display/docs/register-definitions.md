@@ -247,7 +247,8 @@ The function would be used in the (fairly boilerplate) specialization below.
 template <>
 struct std::formatter<DisplayPortType> : std::formatter<std::string_view> {
   auto format(DisplayPortType display_port_type, auto& ctx) const {
-    return std::formatter<std::string_view>::format(DisplayPortTypeToString(source), ctx);
+    return std::formatter<std::string_view>::format(
+      DisplayPortTypeToString(display_port_type), ctx);
 };
 ```
 
