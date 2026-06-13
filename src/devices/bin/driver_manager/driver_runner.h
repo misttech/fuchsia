@@ -240,8 +240,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
     return driver_hosts_;
   }
 
-  void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) override;
-  void ClearBootupLeases() { bootup_leases_.clear(); }
   std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() override;
 
   void CreateStoragePowerElement(fuchsia_power_broker::DependencyToken driver_token,
@@ -309,6 +307,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      std::optional<zx::eventpair> initial_lease_token,
       fit::callback<void(zx::result<bool>)> cb) override;
 
   void CreateAllDriversPowerElement();
@@ -361,7 +360,6 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::Client<fuchsia_power_broker::Topology> power_topology_;
 
   fidl::ClientEnd<fuchsia_power_broker::Lessor> storage_lessor_;
-  std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> bootup_leases_;
 
   MemoryAttributor memory_attributor_;
 

@@ -462,6 +462,7 @@ void DriverDevelopmentService::RemoveTestNode(RemoveTestNodeRequestView request,
     return;
   }
 
+  node->SetShouldDestroy();
   node->Remove(driver_manager::RemovalSet::kAll, nullptr);
   test_nodes_.erase(name);
   completer.ReplySuccess();

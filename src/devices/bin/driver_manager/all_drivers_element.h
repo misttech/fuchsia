@@ -9,9 +9,6 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fit/defer.h>
 
-#include <variant>
-#include <vector>
-
 #include "src/devices/bin/driver_manager/node.h"
 
 namespace driver_manager {
@@ -22,6 +19,8 @@ class DriverRunner;
 // the system.
 class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementRunner> {
  public:
+  friend class AllDriversElementTest;
+
   AllDriversElement(DriverRunner* runner, std::shared_ptr<Node> root);
 
   void SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) override;
@@ -37,18 +36,34 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   void OnNodeBound(std::shared_ptr<const Node> node);
 
  private:
+  // Transfers startup leases from leaf nodes over to this element. Should only be called once
+  // when the system first switches to the "on" level, marking the end of the boot phase.
+  //
+  // It traverses the topology bottom-up (post-order) to identify leaf driver nodes and
+  // extracts the startup lease from every bound node:
+  //   - Leaves: Are added to |leaf_driver_instances_|. Their startup lease is kept in |leases_|
+  //             or a new lease is asynchronously requested.
+  //   - Non-leaves: Their startup lease is temporarily placed into a list so it is
+  //                 kept alive until all leaf asynchronous acquisitions finish.
+  void CompleteStartupTransition();
+
+  // Processes startup transition logic for a single |node|:
+  // If the node is not bound, does nothing.
+  // Otherwise, retrieves the node's startup lease.
+  //   - If |has_bound_descendant| is false (the node is a leaf driver instance), adds it to
+  //     |leaf_driver_instances_|. If it has a valid startup lease, transfers it to |leases_|.
+  //   - If |has_bound_descendant| is true, the node is not a leaf; its startup lease is dropped.
+  void ProcessStartupNode(const std::shared_ptr<const Node>& node, bool has_bound_descendant);
+
   // Asynchronously acquires a lease for the given node. |deferred| will be executed when the
   // operation completes (and all references to its shared pointer are destroyed).
   void AcquireLease(std::shared_ptr<const Node> node,
                     std::shared_ptr<fit::deferred_callback> deferred);
-  void RemoveAncestors(std::shared_ptr<const Node> node);
+  void RemoveAncestors(const std::shared_ptr<const Node>& node);
 
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> element_runner_bindings_;
   fidl::Client<fuchsia_power_broker::ElementControl> element_control_;
   fidl::Client<fuchsia_power_broker::Lessor> lessor_;
-
-  // Set to false after the first time the level is set to 1.
-  bool first_time_level_1_ = true;
 
   // Contains all leaf driver instances in the node topology. Maps the node's weak pointer to
   // its topological path.
@@ -60,7 +75,19 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   // The keys in |leases_| must match with |leaf_driver_instances_|.
   std::unordered_map<std::string, zx::eventpair> leases_;
 
+  // The current power level of this element. 0 represents low power, 1 represents the active/on
+  // state.
   uint32_t current_level_ = 0;
+
+  // Set to true after the initial startup transition has finished.
+  // During boot, this is false. The startup transition is completed when the element's power
+  // level is first set to 1, at which point all startup leases are transferred from the leaf nodes
+  // to this element.
+  bool transition_complete_ = false;
+
+  // A weak pointer to the root of the node topology, used to discover all nodes during the
+  // startup transition.
+  std::weak_ptr<Node> root_;
 
   // Owns this AllDriversElement.
   DriverRunner* driver_runner_;

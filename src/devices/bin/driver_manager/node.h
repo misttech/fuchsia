@@ -173,14 +173,8 @@ class NodeManager {
       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-      fit::callback<void(zx::result<bool>)> cb) {
+      std::optional<zx::eventpair> initial_lease_token, fit::callback<void(zx::result<bool>)> cb) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  // Store the `fuchsia.power.broker/LeaseControl` channel associated with the power element for
-  // this element.
-  virtual void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) {
-    ZX_PANIC("Unimplemented AddLeaseControlChannel");
   }
 
   virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
@@ -240,7 +234,15 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool HasDriverComponentController() const override { return component_controller_.is_valid(); }
 
-  bool is_bound() const { return std::holds_alternative<DriverComponent>(state_); }
+  bool is_bound() const {
+    if (is_bound_override_.has_value()) {
+      return *is_bound_override_;
+    }
+    return std::holds_alternative<DriverComponent>(state_);
+  }
+
+  // Exposed for testing.
+  void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
 
   // Begin the removal process for a Node. This function ensures that a Node is
   // only removed after all of its children are removed. It also ensures that
@@ -290,8 +292,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
       fit::callback<void(zx::result<>)> cb);
 
-  void LeaseDriverPowerElement(fit::callback<void(zx::result<>)> cb);
-
   // ComponentOwner
   void SetController(fidl::ClientEnd<fuchsia_component::Controller> component_controller) override;
   void OnComponentStarted(const std::weak_ptr<BootupTracker>& bootup_tracker,
@@ -338,6 +338,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     zx_status_t dupe_result = power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
     ZX_ASSERT_MSG(dupe_result == ZX_OK, "Element token duplication failed.");
     return dupe;
+  }
+
+  std::optional<zx::eventpair> TakeStartupLease() { return std::move(startup_lease_); }
+
+  // Exposed for testing.
+  void set_startup_lease_for_testing(std::optional<zx::eventpair> lease) {
+    startup_lease_ = std::move(lease);
   }
 
   // Exposed for testing.
@@ -476,6 +483,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   DevfsDevice& devfs_device() { return devfs_device_; }
 
   bool can_multibind_composites() const { return can_multibind_composites_; }
+
+  bool IsHermeticPowerTest() const {
+    return subtree_dictionary_ref_.has_value() || power_dependency_overrides_.has_value() ||
+           cpu_token_override_.has_value();
+  }
 
   void set_collection(Collection collection) { collection_ = collection; }
 
@@ -791,6 +803,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   fuchsia_power_broker::DependencyToken power_element_token_;
   std::optional<PowerElementHandles> pe_handles_;
+  std::optional<zx::eventpair> startup_lease_;
+  std::optional<bool> is_bound_override_;
 };
 
 }  // namespace driver_manager

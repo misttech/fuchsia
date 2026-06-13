@@ -257,7 +257,8 @@ fuchsia_power_broker::ElementSchema CreateElementSchema(
     fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_channel,
     fidl::ServerEnd<fuchsia_power_broker::ElementControl> element_control,
     fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner,
-    std::vector<fuchsia_power_broker::LevelDependency> dependencies = {}) {
+    std::vector<fuchsia_power_broker::LevelDependency> dependencies = {},
+    std::optional<zx::eventpair> initial_lease_token = std::nullopt) {
   return fuchsia_power_broker::ElementSchema{{
       .element_name = std::string(name),
       .initial_current_level = initial_level,
@@ -266,6 +267,7 @@ fuchsia_power_broker::ElementSchema CreateElementSchema(
       .lessor_channel = std::move(lessor_channel),
       .element_control = std::move(element_control),
       .element_runner = std::move(element_runner),
+      .initial_lease_token = std::move(initial_lease_token),
   }};
 }
 
@@ -1079,15 +1081,6 @@ void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
   bind_manager_.Bind(node, driver_url_suffix, std::move(result_tracker));
 }
 
-void DriverRunner::AddLeaseControlChannel(
-    fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) {
-  if (bootup_tracker_->BootupComplete()) {
-    return;
-  }
-
-  bootup_leases_.push_back(std::move(lease));
-}
-
 void DriverRunner::RebindComposite(std::string spec, std::optional<std::string> driver_url,
                                    fit::callback<void(zx::result<>)> callback) {
   composite_node_spec_manager_.Rebind(spec, driver_url, std::move(callback));
@@ -1292,7 +1285,7 @@ void DriverRunner::CreatePowerElement(
     fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
     fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
     std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
-    fit::callback<void(zx::result<bool>)> cb) {
+    std::optional<zx::eventpair> initial_lease_token, fit::callback<void(zx::result<bool>)> cb) {
   if (!SuspendEnabled() && !topology_client.has_value()) {
     cb(zx::ok(false));
     return;
@@ -1301,22 +1294,22 @@ void DriverRunner::CreatePowerElement(
   PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
   if (!cpu_token && !cpu_token_override.has_value() && SuspendEnabled()) {
     std::get<CallbackSet>(cpu_callbacks_or_token_)
-        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
-                    name, element_token = std::move(element_token), deps = std::move(deps),
-                    control = std::move(control), runner = std::move(runner),
-                    lessor = std::move(lessor), for_collection,
-                    cpu_token_override = std::move(cpu_token_override),
-                    cb = std::move(cb)]() mutable {
-          auto self = weak_self.lock();
-          if (!self) {
-            return;
-          }
+        .push_back(
+            [weak_self = weak_from_this(), topology_client = std::move(topology_client), name,
+             element_token = std::move(element_token), deps = std::move(deps),
+             control = std::move(control), runner = std::move(runner), lessor = std::move(lessor),
+             for_collection, cpu_token_override = std::move(cpu_token_override),
+             initial_lease_token = std::move(initial_lease_token), cb = std::move(cb)]() mutable {
+              auto self = weak_self.lock();
+              if (!self) {
+                return;
+              }
 
-          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
-                                   std::move(deps), std::move(control), std::move(runner),
-                                   std::move(lessor), for_collection, std::move(cpu_token_override),
-                                   std::move(cb));
-        });
+              self->CreatePowerElement(
+                  std::move(topology_client), name, std::move(element_token), std::move(deps),
+                  std::move(control), std::move(runner), std::move(lessor), for_collection,
+                  std::move(cpu_token_override), std::move(initial_lease_token), std::move(cb));
+            });
     return;
   }
 
@@ -1327,22 +1320,22 @@ void DriverRunner::CreatePowerElement(
   PowerDependencyToken* token = std::get_if<PowerDependencyToken>(&storage_callbacks_or_token_);
   if (for_collection != Collection::kBoot && !token && SuspendEnabled()) {
     std::get<CallbackSet>(storage_callbacks_or_token_)
-        .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
-                    name, element_token = std::move(element_token), deps = std::move(deps),
-                    control = std::move(control), runner = std::move(runner),
-                    lessor = std::move(lessor), for_collection,
-                    cpu_token_override = std::move(cpu_token_override),
-                    cb = std::move(cb)]() mutable {
-          auto self = weak_self.lock();
-          if (!self) {
-            return;
-          }
+        .push_back(
+            [weak_self = weak_from_this(), topology_client = std::move(topology_client), name,
+             element_token = std::move(element_token), deps = std::move(deps),
+             control = std::move(control), runner = std::move(runner), lessor = std::move(lessor),
+             for_collection, cpu_token_override = std::move(cpu_token_override),
+             initial_lease_token = std::move(initial_lease_token), cb = std::move(cb)]() mutable {
+              auto self = weak_self.lock();
+              if (!self) {
+                return;
+              }
 
-          self->CreatePowerElement(std::move(topology_client), name, std::move(element_token),
-                                   std::move(deps), std::move(control), std::move(runner),
-                                   std::move(lessor), for_collection, std::move(cpu_token_override),
-                                   std::move(cb));
-        });
+              self->CreatePowerElement(
+                  std::move(topology_client), name, std::move(element_token), std::move(deps),
+                  std::move(control), std::move(runner), std::move(lessor), for_collection,
+                  std::move(cpu_token_override), std::move(initial_lease_token), std::move(cb));
+            });
     return;
   }
 
@@ -1386,9 +1379,9 @@ void DriverRunner::CreatePowerElement(
     level_deps.push_back(CreateLevelDependency(1, std::move(*token), {1}));
   }
 
-  fuchsia_power_broker::ElementSchema schema =
-      CreateElementSchema(name, /* initial_current_level */ 1, {0, 1}, std::move(lessor),
-                          std::move(control), std::move(runner), std::move(level_deps));
+  fuchsia_power_broker::ElementSchema schema = CreateElementSchema(
+      name, /* initial_current_level */ 1, {0, 1}, std::move(lessor), std::move(control),
+      std::move(runner), std::move(level_deps), std::move(initial_lease_token));
 
   // Select the right fidl client to use. If we found a Topology instance in
   // the driver's namespace, we want to use that one, otherwise use the
@@ -1679,14 +1672,20 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
     });
 
     if (restarted_node != nullptr) {
+      std::weak_ptr<driver_manager::Node> weak_restarted_node = restarted_node;
       std::unique_ptr<async::WaitOnce> wait = std::make_unique<async::WaitOnce>(
           reset_eventpair.release(), ZX_EVENTPAIR_PEER_CLOSED | ZX_EVENTPAIR_SIGNALED);
       async::WaitOnce* wait_ptr = wait.get();
       zx_status_t status = wait_ptr->Begin(
-          dispatcher_, [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
-                           async_dispatcher_t* dispatcher, async::WaitOnce* wait,
-                           zx_status_t status, const zx_packet_signal_t* signal) {
+          dispatcher_,
+          [weak_restarted_node = std::move(weak_restarted_node), moved_wait = std::move(wait)](
+              async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
+              const zx_packet_signal_t* signal) {
             fdf_log::info("RestartWithDictionary operation released.");
+            auto restarted_node = weak_restarted_node.lock();
+            if (!restarted_node) {
+              return;
+            }
             restarted_node->SetSubtreeDictionaryRef(std::nullopt);
             restarted_node->RestartNode();
           });
@@ -1770,14 +1769,20 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
     });
 
     if (restarted_node != nullptr) {
+      std::weak_ptr<driver_manager::Node> weak_restarted_node = restarted_node;
       std::unique_ptr<async::WaitOnce> wait = std::make_unique<async::WaitOnce>(
           release_fence.release(), ZX_EVENTPAIR_PEER_CLOSED | ZX_EVENTPAIR_SIGNALED);
       async::WaitOnce* wait_ptr = wait.get();
       zx_status_t status = wait_ptr->Begin(
-          dispatcher_, [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
-                           async_dispatcher_t* dispatcher, async::WaitOnce* wait,
-                           zx_status_t status, const zx_packet_signal_t* signal) {
+          dispatcher_,
+          [weak_restarted_node = std::move(weak_restarted_node), moved_wait = std::move(wait)](
+              async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
+              const zx_packet_signal_t* signal) {
             fdf_log::info("RestartWithDictionaryAndPowerDependencies operation released.");
+            auto restarted_node = weak_restarted_node.lock();
+            if (!restarted_node) {
+              return;
+            }
             restarted_node->SetSubtreeDictionaryRef(std::nullopt);
             restarted_node->SetPowerDependencyOverrides(std::nullopt);
             restarted_node->SetCpuTokenOverride(std::nullopt);

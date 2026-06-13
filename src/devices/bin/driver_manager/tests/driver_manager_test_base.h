@@ -31,6 +31,7 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
       driver_manager::Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
+      std::optional<zx::eventpair> initial_lease_token,
       fit::callback<void(zx::result<bool>)> cb) override {
     cb(zx::ok(false));
   }

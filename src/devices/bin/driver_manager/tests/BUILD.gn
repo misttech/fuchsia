@@ -96,6 +96,15 @@ fuchsia_unittest_component("driver-runner-test") {
   deps = [ ":driver_runner_test" ]
 }
 
+test("all_drivers_element_test") {
+  sources = [ "all_drivers_element_test.cc" ]
+  deps = [ ":driver_manager_test_base" ]
+}
+
+fuchsia_unittest_component("all-drivers-element-test") {
+  deps = [ ":all_drivers_element_test" ]
+}
+
 cc_test_executable("bind_manager_test") {
   testonly = true
   sources = [
@@ -187,6 +196,7 @@ fuchsia_test_package("driver-runner-tests") {
 
   test_components = [
     ":driver_runner_death_test_component",
+    ":all-drivers-element-test",
     ":bind-manager-test",
     ":composite-node-spec-impl-test",
     ":driver-runner-test",

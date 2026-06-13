@@ -604,6 +604,12 @@ void Node::OnBind() {
         zx::ok(fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(node_token.value()))));
   }
   node_manager_.value()->OnNodeBound(shared_from_this());
+
+  // Manually drop our lease if there is no all_drivers but we are a hermetic
+  // power test node.
+  if (!(*node_manager_)->SuspendEnabled() && IsHermeticPowerTest()) {
+    TakeStartupLease();
+  }
 }
 
 void Node::OnMatchError(zx_status_t status) {
@@ -1608,40 +1614,6 @@ void Node::handle_unknown_method(
                 metadata.method_ordinal);
 }
 
-void Node::LeaseDriverPowerElement(fit::callback<void(zx::result<>)> cb) {
-  pe_handles_->lessor->Lease({{.level = 1}})
-      .Then([this, cb = std::move(cb)](
-                fidl::Result<fuchsia_power_broker::Lessor::Lease>& lease_result) mutable {
-        if (lease_result.is_error() && lease_result.error_value().is_framework_error()) {
-          cb(zx::error(lease_result.error_value().framework_error().status()));
-          return;
-        }
-
-        if (lease_result.is_error()) {
-          zx_status_t status;
-          switch (static_cast<uint32_t>(lease_result.error_value().domain_error())) {
-            case static_cast<uint32_t>(fuchsia_power_broker::LeaseError::kInternal):
-              status = ZX_ERR_INTERNAL;
-              break;
-            case static_cast<uint32_t>(fuchsia_power_broker::LeaseError::kInvalidLevel):
-              status = ZX_ERR_INVALID_ARGS;
-              break;
-            case static_cast<uint32_t>(fuchsia_power_broker::LeaseError::kNotAuthorized):
-              status = ZX_ERR_ACCESS_DENIED;
-              break;
-            default:
-              status = ZX_ERR_OUT_OF_RANGE;
-              break;
-          }
-          cb(zx::error(status));
-          return;
-        }
-
-        (*node_manager_)->AddLeaseControlChannel(std::move(lease_result->lease_control()));
-        cb(zx::ok());
-      });
-}
-
 // This structure is based on the definition in fuchsia.io/Directory in the doc
 // comment for Directory.ReadDirents.
 struct dir_ent {
@@ -1848,9 +1820,7 @@ void Node::StartDriver(
       DriverHost::DriverStartArgs(properties, symbols, offers, start_info);
   std::vector<fuchsia_power_broker::DependencyToken> deps;
 
-  bool suspend_enabled_for_node = (*node_manager_)->SuspendEnabled() ||
-                                  power_dependency_overrides_.has_value() ||
-                                  cpu_token_override_.has_value();
+  bool suspend_enabled_for_node = (*node_manager_)->SuspendEnabled() || IsHermeticPowerTest();
 
   // Only create a series of dependencies if this is a suspend-enabled platform. On non-enabled
   // platforms we'll use an empty vector for the rest of this function, which is valid. The
@@ -1977,11 +1947,23 @@ void Node::StartDriver(
           topology_channel = std::move(topology_client.value());
         }
 
+        bool suspend_enabled =
+            (*self->node_manager_)->SuspendEnabled() || self->IsHermeticPowerTest();
+        std::optional<zx::eventpair> startup_lease_peer;
+        if (suspend_enabled) {
+          zx::eventpair startup_lease, lease_peer;
+          zx_status_t status = zx::eventpair::create(0, &startup_lease, &lease_peer);
+          ZX_ASSERT(status == ZX_OK);
+          self->startup_lease_ = std::move(startup_lease);
+          startup_lease_peer = std::move(lease_peer);
+        }
+
         (*self->node_manager_)
             ->CreatePowerElement(
                 std::move(topology_channel), self->name_, std::move(clone), std::move(deps),
                 std::move(element_control_server), std::move(element_runner_client),
                 std::move(lessor_server), self->collection(), std::move(cpu_token_override),
+                std::move(startup_lease_peer),
                 [weak_self = self->weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
                  use_dynamic_linker = use_dynamic_linker, url = url,
                  found_driver_host = found_driver_host,
@@ -2148,17 +2130,6 @@ void Node::StartDriver(
                             });
                       };
 
-                  fit::callback<void(fit::callback<void(zx::result<>)>)>
-                      post_dependency_registration =
-                          [weak_self = self->weak_from_this()](
-                              fit::callback<void(zx::result<>)> post_lease) mutable {
-                            std::shared_ptr<driver_manager::Node> self = weak_self.lock();
-                            if (!self) {
-                              return;
-                            }
-                            self->LeaseDriverPowerElement(std::move(post_lease));
-                          };
-
                   // If this is a suspend-enabled platform, CreatePowerElement returns
                   // zx::result<true>. If suspend isn't enabled, we get a zx::result<false>, which
                   // is not an error, but the element channels are not valid, so we shouldn't stash
@@ -2169,15 +2140,12 @@ void Node::StartDriver(
                     self->pe_handles_ = std::move(*handles_ptr);
 
                     // Register a dependency token on the power element so other elements can depend
-                    // on it. After doing this we'll call `post_dependency_registration`, which
-                    // leases the element.
+                    // on it. After doing this we'll call the start callback.
                     self->pe_handles_->element_control
                         ->RegisterDependencyToken({{
                             .token = std::move(copy),
                         }})
                         .Then([weak_self = self->weak_from_this(),
-                               post_dependency_registration =
-                                   std::move(post_dependency_registration),
                                create_host_and_start_driver_cb =
                                    std::move(create_host_and_start_driver_cb),
                                url](fidl::Result<
@@ -2202,7 +2170,7 @@ void Node::StartDriver(
                             }
                             return;
                           }
-                          post_dependency_registration(std::move(create_host_and_start_driver_cb));
+                          create_host_and_start_driver_cb(zx::ok());
                         });
                   } else {
                     // CreatePowerElement returned zx::ok(false).
