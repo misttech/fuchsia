@@ -224,3 +224,40 @@ async fn test_erofs_directory_watcher() {
 
     assert_eq!(existing_files, expected_files);
 }
+
+#[fuchsia::test]
+async fn test_erofs_file_readahead() {
+    let (root_client, _realm) = setup_erofs().await;
+
+    // Open "photosynthesis", which spans two pages (4128 bytes).
+    let file = fuchsia_fs::directory::open_file(&root_client, "photosynthesis", fio::PERM_READABLE)
+        .await
+        .expect("Failed to open photosynthesis");
+
+    // Request backing VMO memory
+    let paged_vmo = file
+        .get_backing_memory(fio::VmoFlags::READ)
+        .await
+        .expect("get_backing_memory FIDL call failed")
+        .map_err(zx::Status::from_raw)
+        .expect("get_backing_memory returned error");
+
+    // Verify no pages are committed initially.
+    let info = paged_vmo.info().expect("Failed to query VMO info");
+    assert_eq!(info.committed_bytes, 0);
+
+    // Read 1 byte from the beginning of the VMO (offset 0).
+    // This should trigger page_in for 0..4096, which will readahead to 8192.
+    let mut buf1 = [0u8; 1];
+    paged_vmo.read(&mut buf1, 0).expect("Failed to read VMO at 0");
+
+    // Read 1 byte from the second page (offset 4100).
+    // If readahead worked, this should NOT trigger another page_in.
+    let mut buf2 = [0u8; 1];
+    paged_vmo.read(&mut buf2, 4100).expect("Failed to read VMO at 4100");
+
+    // Verify the data is correct.
+    let expected = fs::read("/pkg/data/simple/photosynthesis").expect("Failed to read source");
+    assert_eq!(buf1[0], expected[0]);
+    assert_eq!(buf2[0], expected[4100]);
+}

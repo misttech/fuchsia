@@ -8,6 +8,8 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex, Weak};
 use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_COMPLETE, ZX_PAGER_VMO_READ};
 
+const READAHEAD_ALIGNMENT: u64 = 128 * 1024;
+
 /// Manages the in-memory lifecycle of an active pager-backed file.
 ///
 /// To prevent memory leaks, the pager receiver initially holds files as `Weak` references. When a
@@ -79,14 +81,30 @@ impl ErofsPacketReceiver {
 
     fn page_in(&self, range: Range<u64>) -> Result<(), zx::Status> {
         let file = self.get_file()?;
-        let offset = range.start;
-        let len = range.end - range.start;
 
+        // Align the read to 128 KiB slots (readahead).
+        let readahead_start = (range.start / READAHEAD_ALIGNMENT) * READAHEAD_ALIGNMENT;
+        let mut readahead_end =
+            ((range.end + READAHEAD_ALIGNMENT - 1) / READAHEAD_ALIGNMENT) * READAHEAD_ALIGNMENT;
+
+        // Clamp to VMO size to avoid supplying pages out of bounds.
+        let vmo_size = file.vmo().get_size()?;
+        readahead_end = std::cmp::min(readahead_end, vmo_size);
+
+        if readahead_end <= readahead_start {
+            return Ok(());
+        }
+
+        let len = readahead_end - readahead_start;
+
+        // TODO(https://fxbug.dev/521911087): Use a pre-allocated mmapped transfer buffer to page
+        // in data instead of allocating a buffer and copying data multiple times.
         let mut buf = vec![0u8; len as usize];
-        let read_bytes = file.fs().read_file_range(file.node(), offset, &mut buf).map_err(|e| {
-            log::error!("Read EROFS file range failed: {:?}", e);
-            e.to_status()
-        })?;
+        let read_bytes =
+            file.fs().read_file_range(file.node(), readahead_start, &mut buf).map_err(|e| {
+                log::error!("Read EROFS file range failed: {:?}", e);
+                e.to_status()
+            })?;
 
         if read_bytes < buf.len() {
             buf[read_bytes..].fill(0);
@@ -95,7 +113,7 @@ impl ErofsPacketReceiver {
         let aux_vmo = zx::Vmo::create(len)?;
         aux_vmo.write(&buf, 0)?;
 
-        self.pager.supply_pages(file.vmo(), range, &aux_vmo, 0)?;
+        self.pager.supply_pages(file.vmo(), readahead_start..readahead_end, &aux_vmo, 0)?;
         Ok(())
     }
 
