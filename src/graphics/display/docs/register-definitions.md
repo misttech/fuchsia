@@ -381,9 +381,9 @@ use the terms here to refer to different concepts. Please use the terms below as
 described in this section.
 
 **Reserved** registers and fields are explicitly documented as not being
-*currently used. The documentation sometimes mandates setting the fields to a
-*value, and most often all bits must be zero (MBZ). When the documentation does
-*not specify a safe value, reserved registers and fields must not be modified.
+currently used. The documentation sometimes mandates setting the fields to a
+value, and most often all bits must be zero (MBZ). When the documentation does
+not specify a safe value, reserved registers and fields must not be modified.
 
 Use `DEF_RSVDZ_BIT` and `DEF_RSVDZ_FIELD` if and only if the underlying fields
 are documented as MBZ.
