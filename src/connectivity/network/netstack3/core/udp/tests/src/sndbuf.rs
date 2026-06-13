@@ -7,7 +7,7 @@ use core::num::NonZeroU16;
 
 use ip_test_macro::ip_test;
 use net_types::ethernet::Mac;
-use net_types::{Witness as _, ZonedAddr};
+use net_types::{UnicastAddr, Witness as _, ZonedAddr};
 use netstack3_base::WorkQueueReport;
 use packet::Buf;
 use test_case::test_case;
@@ -79,7 +79,7 @@ fn neighbor_resolution_holds_metadata<I: IpExt + TestIpExt>() {
     // Mark the neighbor as static.
     ctx.core_api()
         .neighbor::<I, EthernetLinkDevice>()
-        .insert_static_entry(eth_device, remote_addr.get(), FAKE_MAC)
+        .insert_static_entry(eth_device, remote_addr.get(), UnicastAddr::new(FAKE_MAC).unwrap())
         .unwrap();
 
     // After resolving the neighbor the send buffer is released.

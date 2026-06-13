@@ -1496,7 +1496,7 @@ mod tests {
                 .insert_static_entry(
                     &FakeDeviceId,
                     TEST_ADDRS_V4.remote_ip.get(),
-                    TEST_ADDRS_V4.remote_mac.get(),
+                    TEST_ADDRS_V4.remote_mac,
                 )
                 .unwrap();
             let CtxPair { core_ctx, bindings_ctx } = &mut ctx;

@@ -2953,8 +2953,8 @@ mod tests {
 
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
+    use net_types::UnicastAddr;
     use net_types::ip::{Ipv4Addr, Ipv6Addr};
-    use net_types::{UnicastAddr, Witness};
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeInstant, FakeLinkAddress, FakeLinkDevice,
         FakeLinkDeviceId, FakeTimerCtxExt as _, FakeTxMetadata, FakeWeakDeviceId,
@@ -3621,7 +3621,7 @@ mod tests {
     ) {
         let mut ctx = CtxPair { core_ctx, bindings_ctx };
         NeighborApi::new(&mut ctx)
-            .insert_static_entry(&FakeLinkDeviceId, *ip_address, link_address.get())
+            .insert_static_entry(&FakeLinkDeviceId, *ip_address, link_address)
             .unwrap();
         assert_eq!(
             ctx.bindings_ctx.take_events(),

@@ -382,7 +382,11 @@ fn new_incomplete_neighbor_schedule_timer_atomic<I: TestIpExt>() {
             let (mut ctx, device) = thread_vars;
             ctx.core_api()
                 .neighbor::<I, EthernetLinkDevice>()
-                .insert_static_entry(&device, I::NEIGHBOR_ADDR, NEIGHBOR_MAC)
+                .insert_static_entry(
+                    &device,
+                    I::NEIGHBOR_ADDR,
+                    UnicastAddr::new(NEIGHBOR_MAC).unwrap(),
+                )
                 .unwrap();
         });
 

@@ -1298,14 +1298,14 @@ impl FakeCtxBuilder {
             let device = &idx_to_device_id[idx];
             ctx.core_api()
                 .neighbor::<Ipv4, EthernetLinkDevice>()
-                .insert_static_entry(&device, ip.get(), mac.get())
+                .insert_static_entry(&device, ip.get(), mac)
                 .expect("error inserting static ARP entry");
         }
         for (idx, ip, mac) in ndp_table_entries {
             let device = &idx_to_device_id[idx];
             ctx.core_api()
                 .neighbor::<Ipv6, EthernetLinkDevice>()
-                .insert_static_entry(&device, ip.get(), mac.get())
+                .insert_static_entry(&device, ip.get(), mac)
                 .expect("error inserting static NDP entry");
         }
 

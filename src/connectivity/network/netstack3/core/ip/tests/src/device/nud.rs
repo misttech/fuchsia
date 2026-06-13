@@ -1017,7 +1017,7 @@ fn icmp_error_fragment_offset(fragment_offset: u16) {
     const FROM_ADDR: SpecifiedAddr<Ipv4Addr> = Ipv4::TEST_ADDRS.remote_ip;
     ctx.core_api()
         .neighbor::<Ipv4, _>()
-        .insert_static_entry(&device_id, FROM_ADDR.get(), Ipv4::TEST_ADDRS.remote_mac.get())
+        .insert_static_entry(&device_id, FROM_ADDR.get(), Ipv4::TEST_ADDRS.remote_mac)
         .expect("add static NUD entry for FROM_ADDR");
 
     ctx.test_api().set_unicast_forwarding_enabled::<Ipv4>(&device_id.clone().into(), true);

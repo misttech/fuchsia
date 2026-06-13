@@ -39,7 +39,7 @@ use net_declare::{
 };
 use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnetEither, Ip, IpAddr, IpInvariant, Ipv4, Ipv6};
-use net_types::{SpecifiedAddr, Witness as _};
+use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_core::device::{DeviceId, EthernetLinkDevice};
 use netstack3_core::error::AddressResolutionFailed;
 use netstack3_core::ip::{IpDeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate};
@@ -1011,13 +1011,13 @@ async fn test_neighbor_table_inspect() {
             })
             .expect("get_core_id failed");
         let v4_neigh_addr = net_ip_v4!("192.168.0.1");
-        let v4_neigh_mac = net_mac!("AA:BB:CC:DD:EE:FF");
+        let v4_neigh_mac = UnicastAddr::new(net_mac!("AA:BB:CC:DD:EE:FF")).unwrap();
         ctx.api()
             .neighbor::<Ipv4, EthernetLinkDevice>()
             .insert_static_entry(&device, v4_neigh_addr, v4_neigh_mac)
             .expect("failed to insert static neighbor entry");
         let v6_neigh_addr = net_ip_v6!("2001:DB8::1");
-        let v6_neigh_mac = net_mac!("00:11:22:33:44:55");
+        let v6_neigh_mac = UnicastAddr::new(net_mac!("00:11:22:33:44:55")).unwrap();
         ctx.api()
             .neighbor::<Ipv6, EthernetLinkDevice>()
             .insert_static_entry(&device, v6_neigh_addr, v6_neigh_mac)

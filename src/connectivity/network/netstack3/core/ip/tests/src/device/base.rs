@@ -100,7 +100,7 @@ fn enable_disable_ipv4() {
     );
 
     let addr = SpecifiedAddr::new(net_ip_v4!("192.0.2.1")).expect("addr should be unspecified");
-    let mac = net_mac!("02:23:45:67:89:ab");
+    let mac = UnicastAddr::new(net_mac!("02:23:45:67:89:ab")).unwrap();
 
     ctx.core_api()
         .neighbor::<Ipv4, EthernetLinkDevice>()
@@ -111,7 +111,7 @@ fn enable_disable_ipv4() {
         [DispatchedEvent::NeighborIpv4(nud::Event {
             device: ethernet_device_id.downgrade(),
             addr,
-            kind: nud::EventKind::Added(nud::EventState::Static(UnicastAddr::new(mac).unwrap())),
+            kind: nud::EventKind::Added(nud::EventState::Static(mac)),
             at: ctx.bindings_ctx.now(),
         })]
     );
@@ -120,7 +120,7 @@ fn enable_disable_ipv4() {
             &ethernet_device_id,
             &addr,
         ),
-        LinkResolutionResult::Resolved(got) => assert_eq!(got.get(), mac)
+        LinkResolutionResult::Resolved(got) => assert_eq!(got, mac)
     );
 
     set_ipv4_enabled(&mut ctx, false, true);
@@ -379,7 +379,7 @@ fn enable_disable_ipv6() {
     );
 
     let addr = SpecifiedAddr::new(net_ip_v6!("2001:db8::1")).expect("addr should be unspecified");
-    let mac = net_mac!("02:23:45:67:89:ab");
+    let mac = UnicastAddr::new(net_mac!("02:23:45:67:89:ab")).unwrap();
     ctx.core_api()
         .neighbor::<Ipv6, _>()
         .insert_static_entry(&ethernet_device_id, *addr, mac)
@@ -389,7 +389,7 @@ fn enable_disable_ipv6() {
         [DispatchedEvent::NeighborIpv6(nud::Event {
             device: ethernet_device_id.downgrade(),
             addr,
-            kind: nud::EventKind::Added(nud::EventState::Static(UnicastAddr::new(mac).unwrap())),
+            kind: nud::EventKind::Added(nud::EventState::Static(mac)),
             at: ctx.bindings_ctx.now(),
         })]
     );
@@ -398,7 +398,7 @@ fn enable_disable_ipv6() {
             &ethernet_device_id,
             &addr,
         ),
-        LinkResolutionResult::Resolved(got) => assert_eq!(got.get(), mac)
+        LinkResolutionResult::Resolved(got) => assert_eq!(got, mac)
     );
 
     let test_disable_device = |ctx: &mut FakeCtx, expected_prev| {

@@ -24,10 +24,6 @@ use crate::internal::device::nud::{
 /// Error when a static neighbor entry cannot be inserted.
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum StaticNeighborInsertionError {
-    /// The MAC address used for a static neighbor entry is not unicast.
-    #[error("MAC address is not unicast")]
-    MacAddressNotUnicast,
-
     /// The IP address is invalid as the address of a neighbor. A valid address
     /// is:
     /// - specified,
@@ -199,10 +195,8 @@ where
         // disallow the address with all host bits equal to 0, and the
         // subnet broadcast addresses with all host bits equal to 1.
         // TODO(https://fxbug.dev/42083952): Use NeighborAddr when available.
-        link_address: D::Address,
+        link_address: UnicastAddr<D::Address>,
     ) -> Result<(), StaticNeighborInsertionError> {
-        let link_address = UnicastAddr::new(link_address)
-            .ok_or(StaticNeighborInsertionError::MacAddressNotUnicast)?;
         let neighbor = validate_neighbor_addr(neighbor)
             .ok_or(StaticNeighborInsertionError::IpAddressInvalid)?;
         let (core_ctx, bindings_ctx) = self.contexts();

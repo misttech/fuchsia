@@ -21,7 +21,7 @@ use futures::{Future, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStream
 use log::{error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpAddr, IpAddress, Ipv4, Ipv6};
-use net_types::{SpecifiedAddr, Witness as _};
+use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use thiserror::Error;
 
 use crate::bindings::devices::{BindingId, DeviceIdAndName};
@@ -563,14 +563,11 @@ where
     A::Version: IpExt,
 {
     let device_id = get_ethernet_id(ctx, interface)?;
-    let mac = mac.into_ext();
+    let mac = UnicastAddr::new(mac.into_ext()).ok_or(ControllerError::MacAddressNotUnicast)?;
     ctx.api()
         .neighbor::<A::Version, EthernetLinkDevice>()
         .insert_static_entry(&device_id, neighbor, mac)
         .map_err(|e| match e {
-            StaticNeighborInsertionError::MacAddressNotUnicast => {
-                ControllerError::MacAddressNotUnicast
-            }
             StaticNeighborInsertionError::IpAddressInvalid => ControllerError::InvalidIpAddress,
         })
 }
