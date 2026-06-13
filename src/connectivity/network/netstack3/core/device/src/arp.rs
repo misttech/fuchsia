@@ -10,7 +10,7 @@ use alloc::fmt::Debug;
 
 use log::{debug, trace, warn};
 use net_types::ip::{Ip, Ipv4, Ipv4Addr};
-use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
+use net_types::{NonMulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_base::{
     CoreTimerContext, Counter, CounterContext, DeviceIdContext, EventContext, FrameDestination,
     InstantBindingsTypes, LinkDevice, NetworkSerializer, SendFrameContext, SendFrameError,
@@ -42,7 +42,7 @@ pub struct ArpFrameMetadata<D: ArpDevice, DeviceId> {
     /// The ID of the ARP device.
     pub(super) device_id: DeviceId,
     /// The destination hardware address.
-    pub(super) dst_addr: D::Address,
+    pub(super) dst_addr: NonMulticastAddr<D::Address>,
 }
 
 /// Counters for the ARP layer.
@@ -617,7 +617,10 @@ fn handle_packet<
                 SendFrameContext::send_frame(
                     core_ctx,
                     bindings_ctx,
-                    ArpFrameMetadata { device_id, dst_addr: sender_hw_addr.get() },
+                    ArpFrameMetadata {
+                        device_id,
+                        dst_addr: NonMulticastAddr::from(sender_hw_addr),
+                    },
                     ArpPacketBuilder::new(
                         ArpOp::Response,
                         self_hw_addr.get(),
@@ -656,9 +659,12 @@ pub fn send_arp_request<
     remote_link_addr: Option<UnicastAddr<D::Address>>,
 ) {
     let self_hw_addr = core_ctx.get_hardware_addr(bindings_ctx, device_id);
-    let dst_addr = remote_link_addr.map(|a| a.get()).unwrap_or(D::Address::BROADCAST);
+    let dst_addr = match remote_link_addr {
+        Some(addr) => NonMulticastAddr::from(addr),
+        None => NonMulticastAddr::new(D::Address::BROADCAST).expect("broadcast is non-multicast"),
+    };
     core_ctx.counters().tx_requests.increment();
-    debug!("sending ARP request for {lookup_addr} to {dst_addr:?}");
+    debug!("sending ARP request for {lookup_addr} to {:?}", dst_addr.get());
     SendFrameContext::send_frame(
         core_ctx,
         bindings_ctx,
@@ -1042,7 +1048,7 @@ mod tests {
     ) {
         assert_eq!(core_ctx.frames().len(), total_frames);
         let (meta, frame) = &core_ctx.frames()[total_frames - 1];
-        assert_eq!(meta.dst_addr, dst);
+        assert_eq!(meta.dst_addr.get(), dst);
         validate_arp_packet(frame, op, local_ipv4, remote_ipv4, local_mac, remote_mac);
     }
 
@@ -1488,7 +1494,7 @@ mod tests {
         let (meta, frame) = assert_matches!(core_ctx.frames(), [frame] => frame);
         // The request should have been broadcast, with the destination MAC
         // left unspecified.
-        assert_eq!(meta.dst_addr, Mac::BROADCAST);
+        assert_eq!(meta.dst_addr.get(), Mac::BROADCAST);
         validate_arp_packet(
             frame,
             ArpOp::Request,

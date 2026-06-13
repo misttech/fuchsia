@@ -807,7 +807,7 @@ impl<
             core_ctx,
             bindings_ctx,
             &device_id,
-            dst_addr,
+            dst_addr.get(),
             body,
             EtherType::Arp,
             meta,
