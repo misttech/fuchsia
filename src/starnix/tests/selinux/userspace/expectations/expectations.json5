@@ -39,10 +39,6 @@
                 // policy is loaded.
                 "MountTests/MountOptionValidationTest.RejectedBeforePolicyLoad/*",
 
-                // TODO: https://fxbug.dev/334094811 - Return EINVAL when mounting with an
-                // invalid Security Context.
-                "MountTests/MountOptionValidationTest.RejectedWhenInvalid/*",
-
                 // TODO: https://fxbug.dev/409256444 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodYes_PrivateMapping_Modification_MprotectSuccess",

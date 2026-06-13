@@ -88,8 +88,8 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
                 current_task,
                 &file_system,
             )
-            .unwrap_or_else(|_| {
-                panic!("Failed to resolve {} FileSystem label", file_system.name())
+            .unwrap_or_else(|e| {
+                panic!("Failed to resolve {} FileSystem label: {:?}", file_system.name(), e)
             });
         }
     }

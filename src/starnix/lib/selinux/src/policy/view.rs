@@ -288,6 +288,17 @@ impl<D: Hashable + Parse> CustomKeyHashedView<D> {
             entry.values().data().iter(policy_data).map(move |v| v.parse(policy_data))
         })
     }
+
+    pub(super) fn iter<'a>(
+        &'a self,
+        policy_data: &'a PolicyData,
+    ) -> impl Iterator<Item = Result<D, anyhow::Error>> + 'a {
+        self.index.iter().map(move |&offset| {
+            let cursor = PolicyCursor::new_at(policy_data, offset);
+            let (entry, _) = D::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
+            Ok(entry)
+        })
+    }
 }
 
 fn compute_hash<V: Hash>(val: &V) -> u64 {

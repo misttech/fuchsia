@@ -124,6 +124,7 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/minimal_policy.conf",
         ],
         "minimal_policy",
@@ -294,6 +295,7 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/minimal_policy.conf",
             "new_file/with_unlabeled_access_domain_policy.conf",
         ],
@@ -302,6 +304,7 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/minimal_policy.conf",
             "new_file/with_unlabeled_access_domain_policy.conf",
             "new_file/with_additional_domain_policy.conf",
@@ -311,6 +314,7 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/file_transition_policy.conf",
         ],
         "file_transition_policy",

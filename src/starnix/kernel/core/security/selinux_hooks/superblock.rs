@@ -11,6 +11,7 @@ use super::{
 use crate::task::CurrentTask;
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::{FileSystem, FileSystemHandle, FileSystemOps, FsStr, Mount, NamespaceNode};
+use linux_uapi::AUDIT_SELINUX_ERR;
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFilePermission, FileSystemMountOptions, FileSystemPermission, ForClass, FsNodeClass,
@@ -60,15 +61,17 @@ where
     if fs_state.label.get().is_none() {
         let requested_label = label_from_mount_options_and_name(
             security_server,
+            current_task,
             &fs_state.mount_options,
             file_system.name(),
-        );
+        )?;
 
         let default_label = label_from_mount_options_and_name(
             security_server,
+            current_task,
             &FileSystemMountOptions::default(),
             file_system.name(),
-        );
+        )?;
 
         if requested_label.sid != default_label.sid {
             let permission_check = super::build_permission_check(current_task, security_server);
@@ -138,9 +141,10 @@ where
 /// that is to be mounted with `mount_options`.
 pub(super) fn label_from_mount_options_and_name(
     security_server: &SecurityServer,
+    current_task: &CurrentTask,
     mount_options: &FileSystemMountOptions,
     fs_name: &'static FsStr,
-) -> FileSystemLabel {
+) -> Result<FileSystemLabel, Errno> {
     // TODO: https://fxbug.dev/361297862 - Replace this workaround with more
     // general handling of these special Fuchsia filesystems.
     let effective_name: &FsStr =
@@ -153,7 +157,16 @@ pub(super) fn label_from_mount_options_and_name(
         } else {
             fs_name
         };
-    security_server.resolve_fs_label(effective_name.into(), mount_options)
+    match security_server.resolve_fs_label(effective_name.into(), mount_options) {
+        Err(e) => {
+            let audit_logger = current_task.kernel().audit_logger();
+            audit_logger.audit_log(AUDIT_SELINUX_ERR as u16, || {
+                format!("Failed to initialize {fs_name} (as {effective_name}): {e:?}")
+            });
+            error!(EINVAL)
+        }
+        Ok(value) => Ok(value),
+    }
 }
 
 /// Consumes the SELinux mount options from the supplied `MountParams` and returns the security

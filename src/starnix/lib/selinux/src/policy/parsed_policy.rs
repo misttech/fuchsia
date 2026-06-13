@@ -23,7 +23,7 @@ use super::symbols::{
     Category, CategoryIndex, Class, ClassIndex, Classes, CommonSymbol, CommonSymbols,
     ConditionalBoolean, MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
 };
-use super::view::HashedArrayView;
+use super::view::{Hashable, HashedArrayView};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
@@ -564,6 +564,27 @@ impl ParsedPolicy {
         }
         Ok(())
     }
+
+    fn validate_context(
+        &self,
+        context: &Context,
+        user_ids: &HashSet<UserId>,
+        role_ids: &HashSet<RoleId>,
+        type_ids: &HashSet<TypeId>,
+        sensitivity_ids: &HashSet<SensitivityId>,
+        category_ids: &HashSet<CategoryId>,
+    ) -> Result<(), anyhow::Error> {
+        validate_id(user_ids, context.user_id(), "user")?;
+        validate_id(role_ids, context.role_id(), "role")?;
+        validate_id(type_ids, context.type_id(), "type")?;
+        self.validate_mls_range(
+            context.low_level(),
+            context.high_level(),
+            sensitivity_ids,
+            category_ids,
+        )?;
+        Ok(())
+    }
 }
 
 impl ParsedPolicy {
@@ -939,13 +960,11 @@ impl ParsedPolicy {
         // Check that all sensitivity and category IDs are defined and that MLS levels
         // are internally consistent.
         for initial_sid in &self.initial_sids.data {
-            let context = initial_sid.context();
-            validate_id(&user_ids, context.user_id(), "user")?;
-            validate_id(&role_ids, context.role_id(), "role")?;
-            validate_id(&type_ids, context.type_id(), "type")?;
-            self.validate_mls_range(
-                context.low_level(),
-                context.high_level(),
+            self.validate_context(
+                initial_sid.context(),
+                &user_ids,
+                &role_ids,
+                &type_ids,
                 &sensitivity_ids,
                 &category_ids,
             )?;
@@ -955,16 +974,32 @@ impl ParsedPolicy {
         // policy-defined Ids for their fields. Check that MLS levels are internally
         // consistent.
         for fs_use in &self.fs_uses.data {
-            let context = fs_use.context();
-            validate_id(&user_ids, context.user_id(), "user")?;
-            validate_id(&role_ids, context.role_id(), "role")?;
-            validate_id(&type_ids, context.type_id(), "type")?;
-            self.validate_mls_range(
-                context.low_level(),
-                context.high_level(),
+            self.validate_context(
+                fs_use.context(),
+                &user_ids,
+                &role_ids,
+                &type_ids,
                 &sensitivity_ids,
                 &category_ids,
             )?;
+        }
+
+        // Validate that contexts specified in genfscon rules only use
+        // policy-defined Ids for their fields. Check that MLS levels are internally
+        // consistent.
+        for entry in self.generic_fs_contexts.iter(&self.data) {
+            let entry = entry?;
+            for fs_context_view in entry.values().data().iter(&self.data) {
+                let fs_context = fs_context_view.parse(&self.data);
+                self.validate_context(
+                    fs_context.context(),
+                    &user_ids,
+                    &role_ids,
+                    &type_ids,
+                    &sensitivity_ids,
+                    &category_ids,
+                )?;
+            }
         }
 
         // Validate that roles output by role- transitions & allows are defined.

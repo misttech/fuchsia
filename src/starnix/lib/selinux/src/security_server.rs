@@ -387,17 +387,17 @@ impl SecurityServer {
         &self,
         fs_type: NullessByteStr<'_>,
         mount_options: &FileSystemMountOptions,
-    ) -> FileSystemLabel {
+    ) -> Result<FileSystemLabel, anyhow::Error> {
         let mut locked_state = self.backend.state.write();
         let active_policy = locked_state.expect_active_policy_mut();
 
         let mount_sids = FileSystemMountSids {
-            context: sid_from_mount_option(active_policy, &mount_options.context),
-            fs_context: sid_from_mount_option(active_policy, &mount_options.fs_context),
-            def_context: sid_from_mount_option(active_policy, &mount_options.def_context),
-            root_context: sid_from_mount_option(active_policy, &mount_options.root_context),
+            context: sid_from_mount_option(active_policy, &mount_options.context)?,
+            fs_context: sid_from_mount_option(active_policy, &mount_options.fs_context)?,
+            def_context: sid_from_mount_option(active_policy, &mount_options.def_context)?,
+            root_context: sid_from_mount_option(active_policy, &mount_options.root_context)?,
         };
-        if let Some(mountpoint_sid) = mount_sids.context {
+        let label = if let Some(mountpoint_sid) = mount_sids.context {
             // `mount_options` has `context` set, so the file-system and the nodes it contains are
             // labeled with that value, which is not modifiable. The `fs_context` option, if set,
             // overrides the file-system label.
@@ -459,7 +459,8 @@ impl SecurityServer {
                 },
                 mount_sids,
             }
-        }
+        };
+        Ok(label)
     }
 
     /// Returns the [`SecurityId`] with which to label an [`FsNode`] in a filesystem of `fs_type`,
@@ -759,19 +760,13 @@ impl AccessVectorComputer for SecurityServerState {
 fn sid_from_mount_option(
     active_policy: &mut ActivePolicy,
     mount_option: &Option<Vec<u8>>,
-) -> Option<SecurityId> {
-    if let Some(label) = mount_option.as_ref() {
-        Some(
-            if let Some(context) = active_policy.parsed.parse_security_context(label.into()).ok() {
-                active_policy.sid_table.security_context_to_sid(&context).unwrap()
-            } else {
-                // The mount option is present-but-not-valid: we use `Unlabeled`.
-                InitialSid::Unlabeled.into()
-            },
-        )
-    } else {
-        None
-    }
+) -> Result<Option<SecurityId>, anyhow::Error> {
+    let Some(label) = mount_option else {
+        return Ok(None);
+    };
+    let context = active_policy.parsed.parse_security_context(label.into())?;
+    let sid = active_policy.sid_table.security_context_to_sid(&context)?;
+    Ok(Some(sid))
 }
 
 #[cfg(test)]
