@@ -11,6 +11,7 @@ use fidl_next_fuchsia_hardware_clock as fclock;
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_i2c as fi2c;
 use fidl_next_fuchsia_hardware_mailbox as fmailbox;
+use fidl_next_fuchsia_hardware_pci as fpci;
 use fidl_next_fuchsia_hardware_reset as freset;
 use fidl_next_fuchsia_hardware_spi as fspi;
 
@@ -120,6 +121,26 @@ impl SpiExt for DriverContext {
         let service = self
             .incoming
             .service::<fdf_component::ServiceInstance<fspi::Service>>()
+            .instance(instance)
+            .connect_next()?;
+        let (client, server) = fidl_next::fuchsia::create_channel();
+        service.device(server)?;
+        Ok(client.spawn())
+    }
+}
+
+/// Extension trait for [`DriverContext`] to simplify connecting to PCI
+/// resources.
+pub trait PciExt {
+    /// Connects to a PCI resource with the given instance name.
+    fn connect_to_pci(&self, instance: &str) -> Result<Client<fpci::Device>, DriverError>;
+}
+
+impl PciExt for DriverContext {
+    fn connect_to_pci(&self, instance: &str) -> Result<Client<fpci::Device>, DriverError> {
+        let service = self
+            .incoming
+            .service::<fdf_component::ServiceInstance<fpci::Service>>()
             .instance(instance)
             .connect_next()?;
         let (client, server) = fidl_next::fuchsia::create_channel();

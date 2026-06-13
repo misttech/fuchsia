@@ -16,6 +16,7 @@ rustc_library("fdf_resource") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust_next",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust_next",
     "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox_rust_next",
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust_next",
     "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust_next",
     "//sdk/lib/driver/component/rust",
