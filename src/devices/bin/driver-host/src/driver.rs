@@ -252,6 +252,8 @@ struct DriverInner {
 
     // The handle to the task running the power element runner for this driver.
     power_element_runner_task: Option<fuchsia_async::Task<()>>,
+
+    resume_requester: Option<fdf_env::ResumeRequesterRegistration>,
 }
 
 #[allow(unused)]
@@ -465,6 +467,7 @@ impl Driver {
                 resume_sender: None,
                 internal_stop_tx: None,
                 power_element_runner_task: None,
+                resume_requester: None,
             }),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
@@ -580,6 +583,7 @@ impl Driver {
                 resume_sender: None,
                 internal_stop_tx: None,
                 power_element_runner_task: None,
+                resume_requester: None,
             }),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
@@ -862,7 +866,12 @@ impl Driver {
                     }
                 });
 
-                inner.runtime_handle.as_ref().unwrap().register_resume_requester(resume_requester);
+                let registration = inner
+                    .runtime_handle
+                    .as_ref()
+                    .expect("driver must have a runtime handle")
+                    .register_resume_requester(resume_requester);
+                inner.resume_requester = Some(registration);
             }
             _ => {}
         }
@@ -1145,6 +1154,12 @@ impl Driver {
         // Drop the power element runner task to prevent it from sending any
         // more requests on the runtime_handle which we are about to take.
         drop(self.inner.lock().power_element_runner_task.take());
+
+        // Clean up our resume requester from the runtime. This is only available
+        // in drivers that have RuntimeControlled power_elements.
+        if let Some(registration) = self.inner.lock().resume_requester.take() {
+            registration.unregister();
+        }
 
         let runtime_handle = self.inner.lock().runtime_handle.take();
         let shutdown_signaler = self.inner.lock().shutdown_signaler.take();

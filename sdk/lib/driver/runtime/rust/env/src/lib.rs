@@ -187,13 +187,21 @@ impl<T: 'static> Driver<T> {
     }
 
     /// Registers a callback which is triggered whenever the runtime needs to be resumed.
-    pub fn register_resume_requester(&self, requester: ResumeRequester) {
+    /// Returns a registration handle that unregisters and frees the requester when dropped.
+    pub fn register_resume_requester(
+        &self,
+        requester: ResumeRequester,
+    ) -> ResumeRequesterRegistration {
+        let driver_ptr = self.inner.as_ptr() as *const _;
+        let requester_ptr = requester.into_ptr();
+
+        // SAFETY: requester_ptr is used by the driver runtime as a callback function.
+        // The driver runtime does not manage this object's lifetime. driver_ptr is not modified
+        // by the runtime.
         unsafe {
-            fdf_sys::fdf_env_register_resume_requester(
-                self.inner.as_ptr() as *const _,
-                requester.into_ptr(),
-            );
+            fdf_sys::fdf_env_register_resume_requester(driver_ptr, requester_ptr);
         }
+        ResumeRequesterRegistration { driver_ptr, requester_ptr }
     }
 
     /// Asynchronously suspends the dispatchers owned by the driver.
@@ -575,5 +583,38 @@ impl Environment {
         unsafe {
             fdf_env_register_stall_scanner(scanner.into_ptr());
         }
+    }
+}
+
+/// A registration handle returned by [`Driver::register_resume_requester`].
+/// The user MUST call `unregister` to unregister the resume requester when it is no longer valid.
+#[derive(Debug)]
+pub struct ResumeRequesterRegistration {
+    driver_ptr: *const ffi::c_void,
+    requester_ptr: *mut fdf_env_resume_requester_t,
+}
+
+// SAFETY: The runtime API that we call in this object (fdf_env_register_resume_requester)
+// is thread-safe and can be called from any thread. We are also the exclusive maintainer of
+// requester_ptr's lifetime.
+unsafe impl Send for ResumeRequesterRegistration {}
+
+impl ResumeRequesterRegistration {
+    /// Unregisters the resume requester from the runtime and frees the memory associated with it.
+    pub fn unregister(mut self) {
+        // Unregister the callback from the runtime.
+        // SAFETY: The null pointer is handled correctly by the runtime. If driver_ptr is no longer valid
+        // in the driver runtime, it will be treated as a no-op.
+        unsafe {
+            fdf_sys::fdf_env_register_resume_requester(self.driver_ptr, null_mut());
+        }
+
+        // Reconstitute the box and free it.
+        // SAFETY: requester_ptr was created using Box::leak(Box::new(self)).
+        // This is the only location that we re-create the Box, with exclusive ownership of self.
+        let requester = unsafe { Box::from_raw(self.requester_ptr as *mut ResumeRequester) };
+        drop(requester);
+
+        self.requester_ptr = null_mut();
     }
 }
