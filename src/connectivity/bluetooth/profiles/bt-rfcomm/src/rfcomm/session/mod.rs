@@ -2484,4 +2484,275 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(false)));
         }
     }
+
+    #[fuchsia::test]
+    fn multiplexer_startup_collision() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, mut outgoing_frames, _rfcomm_channels) = setup_session();
+
+        // Initiate local multiplexer startup, which transitions the session to `Negotiating`
+        // and sends an SABM command on DLCI 0.
+        let mut start_mux_fut = Box::pin(session.start_multiplexer());
+        exec.run_until_stalled(&mut start_mux_fut).expect_pending("should wait for outgoing frame");
+
+        expect_frame(
+            &mut exec,
+            &mut outgoing_frames,
+            FrameData::SetAsynchronousBalancedMode,
+            Some(DLCI::MUX_CONTROL_DLCI),
+        );
+        assert_matches!(exec.run_until_stalled(&mut start_mux_fut), Poll::Ready(Ok(_)));
+        drop(start_mux_fut);
+
+        assert_eq!(session.role(), Role::Negotiating);
+
+        // Simulate a collision: the peer sends its own SABM on DLCI 0 before we receive the UA
+        // response to our SABM. We must reject the peer's attempt with a Disconnected Mode (DM)
+        // response while maintaining our `Negotiating` state.
+        let peer_sabm = Frame::make_sabm_command(Role::Unassigned, DLCI::MUX_CONTROL_DLCI);
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            peer_sabm,
+            FrameData::DisconnectedMode,
+        );
+        assert_eq!(session.role(), Role::Negotiating);
+
+        // The peer resolves the collision on its end and rejects our startup attempt with a DM.
+        // Upon receiving this rejection, we must reset the multiplexer to the `Unassigned` state.
+        let peer_dm = Frame::make_dm_response(Role::Unassigned, DLCI::MUX_CONTROL_DLCI);
+        let mut handle_fut = Box::pin(session.handle_frame(peer_dm));
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(false)));
+        drop(handle_fut);
+
+        assert_eq!(session.role(), Role::Unassigned);
+        assert!(!session.multiplexer().started());
+    }
+
+    #[fuchsia::test]
+    fn local_channel_disconnect_receives_ua() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, mut outgoing_frames, mut channel_receiver) = setup_session();
+        assert!(session.multiplexer().start(Role::Responder).is_ok());
+
+        let user_dlci = DLCI::try_from(8).unwrap();
+        assert!(
+            session
+                .multiplexer()
+                .find_or_create_session_channel(user_dlci)
+                .set_parameters(1000, FlowControlMode::CreditBased(Credits::new(7, 7)))
+                .is_ok()
+        );
+        let profile_client_channel = {
+            let mut establish_fut = Box::pin(session.establish_session_channel(user_dlci));
+            exec.run_until_stalled(&mut establish_fut).expect_pending("should wait for channel");
+            let channel = expect_channel(&mut exec, &mut channel_receiver);
+            assert_matches!(exec.run_until_stalled(&mut establish_fut), Poll::Ready(true));
+            channel
+        };
+        assert!(session.multiplexer().dlci_established(&user_dlci));
+
+        // When the local application drops its channel endpoint, the session task must
+        // initiate disconnection by transmitting a DISC frame to the peer.
+        drop(profile_client_channel);
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        expect_frame(&mut exec, &mut outgoing_frames, FrameData::Disconnect, Some(user_dlci));
+
+        // Receiving an Unnumbered Acknowledgement (UA) response from the peer confirms
+        // the disconnection, and the channel should no longer be considered established.
+        let peer_ua = Frame::make_ua_response(Role::Initiator, user_dlci);
+        let mut handle_fut = Box::pin(session.handle_frame(peer_ua));
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(false)));
+        drop(handle_fut);
+
+        assert!(!session.multiplexer().dlci_established(&user_dlci));
+    }
+
+    #[fuchsia::test]
+    fn local_channel_disconnect_receives_dm() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, mut outgoing_frames, mut channel_receiver) = setup_session();
+        assert!(session.multiplexer().start(Role::Responder).is_ok());
+
+        let user_dlci = DLCI::try_from(8).unwrap();
+        assert!(
+            session
+                .multiplexer()
+                .find_or_create_session_channel(user_dlci)
+                .set_parameters(1000, FlowControlMode::CreditBased(Credits::new(7, 7)))
+                .is_ok()
+        );
+        let profile_client_channel = {
+            let mut establish_fut = Box::pin(session.establish_session_channel(user_dlci));
+            exec.run_until_stalled(&mut establish_fut).expect_pending("should wait for channel");
+            let channel = expect_channel(&mut exec, &mut channel_receiver);
+            assert_matches!(exec.run_until_stalled(&mut establish_fut), Poll::Ready(true));
+            channel
+        };
+        assert!(session.multiplexer().dlci_established(&user_dlci));
+
+        // Local client drops the channel, triggering a DISC frame.
+        drop(profile_client_channel);
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        expect_frame(&mut exec, &mut outgoing_frames, FrameData::Disconnect, Some(user_dlci));
+
+        // If the peer responds with Disconnected Mode (DM) instead of UA (indicating it was
+        // already disconnected or rejected the command), we handle it gracefully and close
+        // the local channel representation.
+        let peer_dm = Frame::make_dm_response(Role::Initiator, user_dlci);
+        let mut handle_fut = Box::pin(session.handle_frame(peer_dm));
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(false)));
+        drop(handle_fut);
+
+        assert!(!session.multiplexer().dlci_established(&user_dlci));
+    }
+
+    #[fuchsia::test]
+    fn user_data_on_unestablished_channel() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, mut outgoing_frames, _channel_receiver) = setup_session();
+        assert!(session.multiplexer().start(Role::Responder).is_ok());
+
+        // Perform parameter negotiation for a DLCI, which registers the channel configuration
+        // but does not establish the data path (requires SABM/UA handshake).
+        let user_dlci = DLCI::try_from(8).unwrap();
+        let pn_command = ParameterNegotiationParams::default_command(user_dlci, 100);
+        let _ = session.handle_parameter_negotiation(&pn_command);
+        assert!(!session.multiplexer().dlci_established(&user_dlci));
+
+        // Injecting user data on this unestablished channel must fail. The session should
+        // reject the data and respond to the peer with a DM frame.
+        let user_data = Frame::make_user_data_frame(
+            Role::Initiator,
+            user_dlci,
+            UserData { information: vec![1, 2, 3] },
+            None,
+        );
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            user_data,
+            FrameData::DisconnectedMode,
+        );
+        assert!(!session.multiplexer().dlci_established(&user_dlci));
+    }
+
+    #[fuchsia::test]
+    fn unexpected_mux_response() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, _outgoing_frames, _channel_receiver) = setup_session();
+        assert!(session.multiplexer().start(Role::Responder).is_ok());
+
+        // Inject a multiplexer response (e.g. PN response) that does not match any outstanding
+        // request from our side. This must be treated as a protocol error, but should not
+        // bring down the entire multiplexer session.
+        let user_dlci = DLCI::try_from(8).unwrap();
+        let pn_response = make_dlc_pn_frame(CommandResponse::Response, user_dlci, true, 100);
+
+        let mut handle_fut = Box::pin(session.handle_frame(pn_response));
+        assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Err(_)));
+        drop(handle_fut);
+
+        assert!(session.multiplexer().started());
+    }
+
+    #[fuchsia::test]
+    fn mux_control_command_echo() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut session, mut outgoing_frames, _channel_receiver) = setup_session();
+        assert!(session.multiplexer().start(Role::Responder).is_ok());
+
+        let user_dlci = DLCI::try_from(8).unwrap();
+
+        // Verify that incoming multiplexer control commands are correctly echoed back to the
+        // peer as response frames.
+
+        // Remote Port Negotiation (RPN)
+        let rpn_params = RemotePortNegotiationParams { dlci: user_dlci, port_values: None };
+        let rpn_command = Frame::make_mux_command(
+            Role::Initiator,
+            MuxCommand {
+                params: MuxCommandParams::RemotePortNegotiation(rpn_params.clone()),
+                command_response: CommandResponse::Command,
+            },
+        );
+        let expected_rpn_response =
+            FrameData::UnnumberedInfoHeaderCheck(UIHData::Mux(MuxCommand {
+                params: MuxCommandParams::RemotePortNegotiation(rpn_params.response()),
+                command_response: CommandResponse::Response,
+            }));
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            rpn_command,
+            expected_rpn_response,
+        );
+
+        // Test Command
+        let test_params = TestCommandParams { test_pattern: vec![1, 3, 5, 7] };
+        let test_command = Frame::make_mux_command(
+            Role::Initiator,
+            MuxCommand {
+                params: MuxCommandParams::Test(test_params.clone()),
+                command_response: CommandResponse::Command,
+            },
+        );
+        let expected_test_response =
+            FrameData::UnnumberedInfoHeaderCheck(UIHData::Mux(MuxCommand {
+                params: MuxCommandParams::Test(test_params),
+                command_response: CommandResponse::Response,
+            }));
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            test_command,
+            expected_test_response,
+        );
+
+        // Flow Control Off (FCOFF)
+        let fcoff_command = Frame::make_mux_command(
+            Role::Initiator,
+            MuxCommand {
+                params: MuxCommandParams::FlowControlOff(FlowControlParams {}),
+                command_response: CommandResponse::Command,
+            },
+        );
+        let expected_fcoff_response =
+            FrameData::UnnumberedInfoHeaderCheck(UIHData::Mux(MuxCommand {
+                params: MuxCommandParams::FlowControlOff(FlowControlParams {}),
+                command_response: CommandResponse::Response,
+            }));
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            fcoff_command,
+            expected_fcoff_response,
+        );
+
+        // Flow Control On (FCON)
+        let fcon_command = Frame::make_mux_command(
+            Role::Initiator,
+            MuxCommand {
+                params: MuxCommandParams::FlowControlOn(FlowControlParams {}),
+                command_response: CommandResponse::Command,
+            },
+        );
+        let expected_fcon_response =
+            FrameData::UnnumberedInfoHeaderCheck(UIHData::Mux(MuxCommand {
+                params: MuxCommandParams::FlowControlOn(FlowControlParams {}),
+                command_response: CommandResponse::Response,
+            }));
+        handle_and_expect_frame(
+            &mut exec,
+            &mut session,
+            &mut outgoing_frames,
+            fcon_command,
+            expected_fcon_response,
+        );
+    }
 }
