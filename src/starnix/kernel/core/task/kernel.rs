@@ -48,7 +48,8 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
+    FileOpsCore, KernelSwapFiles, LockDepRwLock, LockEqualOrBefore, Locked, Mutex, OrderedMutex,
+    RwLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -454,7 +455,7 @@ impl Kernel {
             remote_block_device_registry: Default::default(),
             iptables: OnceLock::new(),
             shared_futexes: Arc::<FutexTable<SharedFutexKey>>::default(),
-            root_uts_ns: Arc::new(RwLock::new(UtsNamespace::default())),
+            root_uts_ns: Arc::new(LockDepRwLock::new(UtsNamespace::default())),
             vdso: Vdso::new(),
             vdso_arch32: Vdso::new_arch32(),
             netstack_devices: Arc::default(),

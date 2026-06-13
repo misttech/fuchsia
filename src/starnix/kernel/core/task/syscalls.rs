@@ -19,7 +19,7 @@ use crate::vfs::{
     VecOutputBuffer,
 };
 use starnix_logging::{log_error, log_info, log_trace, track_stub};
-use starnix_sync::{Locked, RwLock, Unlocked};
+use starnix_sync::{LockDepRwLock, Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_task_command::TaskCommand;
 use starnix_types::time::timeval_from_duration;
@@ -1844,7 +1844,7 @@ pub fn sys_unshare(
         // Fork the UTS namespace.
         let mut task_state = current_task.write();
         let new_uts_ns = task_state.uts_ns.read().clone();
-        task_state.uts_ns = Arc::new(RwLock::new(new_uts_ns));
+        task_state.uts_ns = Arc::new(LockDepRwLock::new(new_uts_ns));
     }
 
     Ok(())
