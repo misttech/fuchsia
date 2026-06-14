@@ -33,6 +33,7 @@ struct percpu;
 // Per cpu structure, pointed to by a fixed register while in kernel mode.
 // Aligned on the maximum architectural cache line to avoid cache
 // line sharing between CPUs.
+// LINT.IfChange(riscv64_percpu)
 struct alignas(MAX_CACHE_LINE) riscv64_percpu {
   // CPU number.
   cpu_num_t cpu_num;
@@ -58,6 +59,7 @@ struct alignas(MAX_CACHE_LINE) riscv64_percpu {
   // from external cpus.
   __CPU_ALIGN ktl::atomic<uint32_t> ipi_data;
 };
+// LINT.ThenChange(//zircon/kernel/arch/riscv64/lib.rs:curr_cpu_num)
 static_assert(offsetof(struct riscv64_percpu, in_restricted_mode) == PERCPU_IN_RESTRICTED_MODE,
               "in_restricted mode is at the wrong offset");
 

@@ -37,3 +37,28 @@ pub fn ints_disabled() -> bool {
     }
     (state & 2) == 0
 }
+
+/// Returns the CPU number of the calling CPU.
+#[inline(always)]
+pub fn curr_cpu_num() -> u32 {
+    let cpu_num: u32;
+    // LINT.IfChange(curr_cpu_num)
+    // Reads the current CPU number from the `riscv64_percpu` structure pointed to by `s11`.
+    unsafe {
+        asm!("lwu {:w}, 0(s11)", out(reg) cpu_num, options(nostack, preserves_flags, readonly));
+    }
+    // LINT.ThenChange(//zircon/kernel/arch/riscv64/include/arch/riscv64/mp.h:riscv64_percpu)
+    cpu_num
+}
+
+unsafe extern "C" {
+    #[link_name = "riscv64_num_cpus"]
+    static RISCV64_NUM_CPUS: u32;
+}
+
+/// Returns the maximum number of CPUs in the system.
+#[inline(always)]
+pub fn max_num_cpus() -> u32 {
+    // Reads the system-wide constant `RISCV64_NUM_CPUS`.
+    unsafe { RISCV64_NUM_CPUS }
+}

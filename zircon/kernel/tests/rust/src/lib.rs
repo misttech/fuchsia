@@ -52,3 +52,13 @@ pub extern "C" fn test_rust_interrupt_ops() -> bool {
     }
     true
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn test_rust_curr_cpu_num() -> u32 {
+    arch_rs::curr_cpu_num()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn test_rust_max_num_cpus() -> u32 {
+    arch_rs::max_num_cpus()
+}

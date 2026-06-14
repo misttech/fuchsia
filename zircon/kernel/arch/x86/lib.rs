@@ -39,3 +39,29 @@ pub fn ints_disabled() -> bool {
     }
     (state & (1 << 9)) == 0
 }
+
+/// Returns the CPU number of the calling CPU.
+#[inline(always)]
+pub fn curr_cpu_num() -> u32 {
+    let cpu_num: u32;
+    // LINT.IfChange(curr_cpu_num)
+    // Reads the current CPU number from the `x86_percpu` structure at offset `0x58` in the `gs`
+    // segment.
+    unsafe {
+        asm!("mov {:e}, gs:[0x58]", out(reg) cpu_num, options(nostack, preserves_flags));
+    }
+    // LINT.ThenChange(//zircon/kernel/arch/x86/include/arch/x86/mp.h:x86_percpu)
+    cpu_num
+}
+
+unsafe extern "C" {
+    #[link_name = "x86_num_cpus"]
+    static X86_NUM_CPUS: u8;
+}
+
+/// Returns the maximum number of CPUs in the system.
+#[inline(always)]
+pub fn max_num_cpus() -> u32 {
+    // Reads the system-wide constant `X86_NUM_CPUS`.
+    unsafe { X86_NUM_CPUS as u32 }
+}
