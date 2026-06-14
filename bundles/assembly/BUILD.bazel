@@ -3935,6 +3935,22 @@ assembly_input_bundle(
     ],
 )
 
+# AIB for the wlan-virtio-hwsim driver
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "wlan_virtio_hwsim_driver",
+    allowed_in = [
+        "eng",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlan-virtio-hwsim:package",
+            "driver_components": ["meta/wlan-virtio-hwsim.cm"],
+        },
+    ],
+)
+
 # WLAN support for interfacing with starnix.
 # buildifier: leave-alone
 assembly_input_bundle(

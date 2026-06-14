@@ -13,6 +13,7 @@ group("wlan") {
 group("drivers") {
   deps = [
     "drivers/third_party/broadcom/brcmfmac:fuchsia_driver",
+    "drivers/wlan-virtio-hwsim",
     "drivers/wlanif:wlanif_driver",
     "drivers/wlanphy:wlanphy_driver",
     "drivers/wlansoftmac:wlansoftmac_driver",
@@ -55,6 +56,7 @@ group("tests") {
     "drivers/testing/lib/sim-fake-ap/test:wlan-sim-fake-ap-test",
     "drivers/third_party/broadcom/brcmfmac:brcmfmac_host_tests",
     "drivers/third_party/broadcom/brcmfmac:brcmfmac_tests",
+    "drivers/wlan-virtio-hwsim:tests",
     "drivers/wlanif:tests",
     "drivers/wlanphy:tests",
     "drivers/wlansoftmac:tests",

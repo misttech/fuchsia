@@ -215,7 +215,10 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
 
             let has_fullmac = context.board_config.provides_feature(BoardFeature::WlanFullmac);
             let has_softmac = context.board_config.provides_feature(BoardFeature::WlanSoftmac);
-            if has_fullmac || has_softmac {
+            let has_virtio_hwsim =
+                context.board_config.provides_feature(BoardFeature::Paravirtualization)
+                    && has_softmac;
+            if has_fullmac || has_softmac || has_virtio_hwsim {
                 // Select the policy layer
                 match connectivity_config.wlan.policy_layer {
                     WlanPolicyLayer::Platform => {
@@ -336,6 +339,9 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 }
                 if has_softmac {
                     builder.platform_bundle("wlan_softmac_support")?;
+                }
+                if has_virtio_hwsim && context.build_type == &BuildType::Eng {
+                    builder.platform_bundle("wlan_virtio_hwsim_driver")?;
                 }
             }
 

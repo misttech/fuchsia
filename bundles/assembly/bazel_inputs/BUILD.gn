@@ -1354,6 +1354,10 @@ group("wlan_softmac_support") {
   ]
 }
 
+group("wlan_virtio_hwsim_driver") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlan-virtio-hwsim:package" ]
+}
+
 group("wlan_wlanix") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlanix" ]
 }

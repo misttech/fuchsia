@@ -262,6 +262,7 @@ platform_aib_names = bringup_platform_aib_names + [
     "wlan_fullmac_support",
     "wlan_policy",
     "wlan_softmac_support",
+    "wlan_virtio_hwsim_driver",
     "wlan_wlanix",
 
     # Sensors
