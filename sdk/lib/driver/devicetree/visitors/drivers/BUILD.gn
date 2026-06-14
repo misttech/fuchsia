@@ -64,6 +64,7 @@ devicetree_visitor_collection("all-driver-visitors") {
     "//sdk/lib/driver/devicetree/visitors/drivers/regulator/regulator:regulator-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/reset:reset-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/rtc:rtc-visitor",
+    "//sdk/lib/driver/devicetree/visitors/drivers/sdio:sdio-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/serial/serial-port:serial-port-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/spi-controllers/spi-bus-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/spmi-controllers/spmi",
