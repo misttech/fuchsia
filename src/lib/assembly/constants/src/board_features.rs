@@ -17,6 +17,8 @@ pub enum BoardFeature {
     BtTransportUart,
     /// User-space PCI bus support.
     BusPci,
+    /// User-space PCI bus support (Soft Migration).
+    BusPciSoftMigration,
     /// CPU power boost/frequency scaling support.
     CpuPowerBoost,
     /// Use a custom audio core component instead of the default.
@@ -116,6 +118,7 @@ impl AsRef<str> for BoardFeature {
             Self::Hrtimer => "fuchsia::hrtimer",
             Self::BtTransportUart => "fuchsia::bt_transport_uart",
             Self::BusPci => "fuchsia::bus_pci",
+            Self::BusPciSoftMigration => "fuchsia::bus_pci_soft_migration",
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",
             Self::CustomAudioCore => "fuchsia::custom_audio_core",
             Self::EagerPowerManager => "fuchsia::eager_power_manager",
