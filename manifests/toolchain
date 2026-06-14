@@ -128,7 +128,7 @@
      <!-- rust-analyzer, used for rust editor support -->
      <!-- mac platforms added to support CIPD tagging -->
      <package name="fuchsia/third_party/rust-analyzer/${platform}"
-              version="git_revision:a9a66c4077fedd375c0f1e61dc39a8f3243ce0ef"
+              version="git_revision:e79b8223f7e0f000d75e7bf9a8f5b590ff7eb7f8"
               platforms="linux-amd64,mac-amd64"
               path="prebuilt/third_party/rust-analyzer"/>
 
