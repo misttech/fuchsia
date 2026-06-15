@@ -1162,12 +1162,12 @@ impl CurrentTask {
             //
             // TODO(https://fxbug.dev/356684424): Implement the behavior above once we support
             // the PR_SET_PDEATHSIG flag.
-
-            security::bprm_committing_creds(locked, self, &resolved_elf)?;
-
-            let new_creds = Arc::new(resolved_elf.creds.clone());
-            writable_creds.update(self, new_creds);
         }
+
+        security::bprm_committing_creds(locked, self, &resolved_elf)?;
+
+        let new_creds = Arc::new(resolved_elf.creds.clone());
+        writable_creds.update(self, new_creds);
 
         let start_info = load_executable(self, resolved_elf, &path)?;
 
