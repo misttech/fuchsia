@@ -173,22 +173,6 @@ impl ObjectStore {
         txn_guard: &TxnGuard<'_>,
         reason: Reason,
     ) -> Result<FlushResult<Vec<u64>>, Error> {
-        let roll_mutations_key = self
-            .mutations_cipher
-            .lock()
-            .as_ref()
-            .map(|cipher| {
-                cipher.offset() >= self.filesystem().options().roll_metadata_key_byte_count
-            })
-            .unwrap_or(false);
-        if roll_mutations_key {
-            if let Err(error) = self.roll_mutations_key(self.crypt().unwrap().as_ref()).await {
-                log::warn!(
-                    error:?; "Failed to roll mutations key for store {}", self.store_object_id());
-                return Ok(FlushResult::CryptError(error));
-            }
-        }
-
         struct StoreInfoSnapshot<'a> {
             store: &'a ObjectStore,
             store_info: OnceLock<StoreInfo>,
@@ -219,6 +203,7 @@ impl ObjectStore {
         let reservation = object_manager.metadata_reservation();
         let txn_options = Options {
             skip_journal_checks: true,
+            skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
             txn_guard: Some(txn_guard),
@@ -421,6 +406,7 @@ impl ObjectStore {
         let reservation = object_manager.metadata_reservation();
         let txn_options = Options {
             skip_journal_checks: true,
+            skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
             txn_guard: Some(txn_guard),
@@ -595,8 +581,7 @@ mod tests {
             let mut i = 0;
             let first_filename = format!("{:<200}", i);
             loop {
-                let mut transaction = fs
-                    .root_store()
+                let mut transaction = store
                     .new_transaction(
                         lock_keys![LockKey::object(store_id, root_dir.object_id())],
                         Options::default(),
@@ -621,8 +606,7 @@ mod tests {
             fs.sync(SyncOptions::default()).await.expect("sync failed");
 
             // Write one more file to ensure the cipher has a non-zero offset.
-            let mut transaction = fs
-                .root_store()
+            let mut transaction = store
                 .new_transaction(
                     lock_keys![LockKey::object(store_id, root_dir.object_id())],
                     Options::default(),

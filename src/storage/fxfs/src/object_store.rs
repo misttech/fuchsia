@@ -806,6 +806,16 @@ impl ObjectStore {
         locks: LockKeys,
         options: Options<'a>,
     ) -> Result<Transaction<'a>, Error> {
+        if !options.skip_key_roll && self.needs_mutations_key_roll() {
+            if let Some(crypt) = self.crypt() {
+                let keys = lock_keys![LockKey::mutations_key_roll(self.store_object_id())];
+                let fs = self.filesystem();
+                let _guard = fs.lock_manager().write_lock(keys).await;
+                if self.needs_mutations_key_roll() {
+                    self.roll_mutations_key(crypt.as_ref()).await?;
+                }
+            }
+        }
         let fs = self.filesystem();
         let guard = if let Some(guard) = options.txn_guard.as_ref() {
             TxnGuard::Borrowed(guard)
@@ -2528,6 +2538,12 @@ impl ObjectStore {
         );
     }
 
+    fn needs_mutations_key_roll(&self) -> bool {
+        self.mutations_cipher.lock().as_ref().is_some_and(|cipher| {
+            cipher.offset() >= self.filesystem().options().roll_metadata_key_byte_count
+        })
+    }
+
     // Roll the mutations key.  The new key will be written for the next encrypted mutation.
     async fn roll_mutations_key(&self, crypt: &dyn Crypt) -> Result<(), Error> {
         let (wrapped_key, unwrapped_key) =
@@ -3060,7 +3076,9 @@ mod tests {
         OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo, StoreOptions, StoreOwner,
     };
     use crate::errors::FxfsError;
-    use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem};
+    use crate::filesystem::{
+        FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
+    };
     use crate::fsck::{fsck, fsck_volume};
     use crate::lsm_tree::Query;
     use crate::lsm_tree::types::{ItemRef, LayerIterator};
@@ -4689,5 +4707,111 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         assert_matches!(store.store_info().unwrap().last_object_id, LastObjectIdInfo::Low32Bit);
+    }
+
+    #[fuchsia::test]
+    async fn test_mutations_key_roll_during_flush() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .roll_metadata_key_byte_count(2048)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let crypt = Arc::new(new_insecure_crypt());
+
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("new_volume failed");
+
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+
+            let mut last_offset = 0;
+            loop {
+                let offset = store.mutations_cipher.lock().as_ref().unwrap().offset();
+                if offset >= 2048 {
+                    break;
+                }
+                if offset < last_offset {
+                    panic!("Key rolled during setup loop");
+                }
+                last_offset = offset;
+
+                let mut transaction = fs
+                    .root_store()
+                    .new_transaction(
+                        lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                let name = format!("file_{offset}");
+                root_dir
+                    .create_child_file(&mut transaction, &name)
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            }
+
+            store.flush().await.expect("flush failed");
+
+            // Compact journal NOW, before writing after_flush.
+            // Since store is flushed, it is not dirty.
+            // This will trim journal past the flush (including UpdateMutationsKey).
+            fs.journal().force_compact().await.expect("compact failed");
+
+            // Write a file after flush.
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let name = "file_after_flush";
+            root_dir
+                .create_child_file(&mut transaction, &name)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        fs.close().await.expect("Close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+
+        {
+            let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_vol
+                .volume("test", StoreOptions { crypt: Some(crypt), ..StoreOptions::default() })
+                .await
+                .expect("volume failed");
+
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+
+            let child = root_dir.lookup("file_after_flush").await.expect("lookup failed");
+            assert!(child.is_some(), "file_after_flush missing!");
+        }
+        fs.close().await.expect("Close failed");
     }
 }

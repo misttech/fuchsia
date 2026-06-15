@@ -44,6 +44,9 @@ pub struct Options<'a> {
     /// might alleviate journal space (i.e. compaction).
     pub skip_journal_checks: bool,
 
+    /// If true, don't check if we need to roll the mutations key.
+    pub skip_key_roll: bool,
+
     /// If true, borrow metadata space from the metadata reservation.  This setting should be set to
     /// true for any transaction that will either not affect space usage after compaction
     /// (e.g. setting attributes), or reduce space usage (e.g. unlinking).  Otherwise, a transaction
@@ -523,6 +526,11 @@ pub enum LockKey {
     InternalDirectory {
         store_object_id: u64,
     },
+
+    /// Used to lock mutations key roll.
+    MutationsKeyRoll {
+        store_object_id: u64,
+    },
 }
 
 impl LockKey {
@@ -544,6 +552,10 @@ impl LockKey {
 
     pub const fn truncate(store_object_id: u64, object_id: u64) -> Self {
         LockKey::Truncate { store_object_id, object_id }
+    }
+
+    pub const fn mutations_key_roll(store_object_id: u64) -> Self {
+        LockKey::MutationsKeyRoll { store_object_id }
     }
 }
 
