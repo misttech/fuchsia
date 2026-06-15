@@ -4,5 +4,8 @@
 
 [package]
 name = "wasm-bindgen"
-version = "0.2.91"
+version = "0.2.123"
 authors = ["The Fuchsia Authors <rust-fuchsia@fuchsia.com>"]
+
+[features]
+std = []

@@ -72,6 +72,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/futures-0.3.31:futures",
         "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
-        "//third_party/rust_crates/vendor/uuid-1.1.2:uuid",
+        "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
     ],
 )

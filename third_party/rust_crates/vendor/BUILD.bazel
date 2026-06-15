@@ -1135,14 +1135,14 @@ alias(
 )
 
 alias(
-    name = "getrandom-0.3.3",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.3.3:getrandom",
+    name = "getrandom-0.4.2",
+    actual = "//third_party/rust_crates/vendor/getrandom-0.4.2:getrandom",
     tags = ["manual"],
 )
 
 alias(
     name = "getrandom",
-    actual = "//third_party/rust_crates/vendor/getrandom-0.3.3:getrandom",
+    actual = "//third_party/rust_crates/vendor/getrandom-0.4.2:getrandom",
     tags = ["manual"],
 )
 
@@ -3205,14 +3205,14 @@ alias(
 )
 
 alias(
-    name = "uuid-1.1.2",
-    actual = "//third_party/rust_crates/vendor/uuid-1.1.2:uuid",
+    name = "uuid-1.23.3",
+    actual = "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
     tags = ["manual"],
 )
 
 alias(
     name = "uuid",
-    actual = "//third_party/rust_crates/vendor/uuid-1.1.2:uuid",
+    actual = "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
     tags = ["manual"],
 )
 

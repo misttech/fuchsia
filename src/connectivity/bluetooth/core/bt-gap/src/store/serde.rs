@@ -29,11 +29,12 @@
 // This allows us to provide a camel-case module name to the `derive_opt_box` macro below.
 #![allow(non_snake_case)]
 
+use fidl_fuchsia_bluetooth as bt;
+use fidl_fuchsia_bluetooth_sys as sys;
 use fuchsia_bluetooth::types::{
     Address, BondingData, BredrBondData, HostData, LeBondData, OneOrBoth, PeerId, Uuid,
 };
 use serde::{Deserialize, Serialize};
-use {fidl_fuchsia_bluetooth as bt, fidl_fuchsia_bluetooth_sys as sys};
 
 #[derive(Serialize)]
 pub struct BondingDataSerializer(BondingDataDef);
@@ -735,7 +736,7 @@ mod tests {
         }"#;
 
         assert_eq!(
-            "UUID parsing failed: invalid length: expected length 32 for simple format, found 16 at line 23 column 48",
+            "UUID parsing failed: invalid length: found 16 at line 23 column 48",
             BondingDataDeserializer::from_json(json_input).unwrap_err().to_string()
         );
     }

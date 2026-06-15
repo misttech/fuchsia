@@ -568,7 +568,7 @@ version = "0.0.1"
 dependencies = [
  "futures",
  "thiserror 2.0.18",
- "uuid 1.1.2",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -1722,7 +1722,7 @@ dependencies = [
  "futures-test",
  "futures-util",
  "getopts",
- "getrandom 0.3.3",
+ "getrandom 0.4.2",
  "glob",
  "googletest",
  "gpt",
@@ -1896,7 +1896,7 @@ dependencies = [
  "untrusted",
  "url 2.3.1",
  "utf8parse 0.2.2",
- "uuid 1.1.2",
+ "uuid 1.23.3",
  "valico",
  "vk-sys",
  "vt100",
@@ -2118,8 +2118,21 @@ checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
  "cfg-if",
  "libc",
- "r-efi",
+ "r-efi 5.3.0",
  "wasi 0.14.0",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0de51e6874e94e7bf76d726fc5d13ba782deca734ff60d5bb2fb2607c7406555"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi 6.0.0",
+ "wasip2",
+ "wasip3",
 ]
 
 [[package]]
@@ -2579,7 +2592,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "js-sys"
-version = "0.3.68"
+version = "0.3.102"
 
 [[package]]
 name = "json5format"
@@ -3122,7 +3135,7 @@ dependencies = [
  "signature 1.6.4",
  "thiserror 2.0.18",
  "typed-builder",
- "uuid 1.1.2",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -3829,7 +3842,11 @@ dependencies = [
 
 [[package]]
 name = "r-efi"
-version = "5.1.0"
+version = "5.3.0"
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
 
 [[package]]
 name = "rancor"
@@ -4251,7 +4268,7 @@ dependencies = [
  "rend",
  "rkyv_derive",
  "tinyvec",
- "uuid 1.1.2",
+ "uuid 1.23.3",
 ]
 
 [[package]]
@@ -5745,12 +5762,14 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.1.2"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
+checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
 dependencies = [
- "getrandom 0.2.10",
- "serde",
+ "getrandom 0.4.2",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5853,8 +5872,16 @@ name = "wasi"
 version = "0.14.0"
 
 [[package]]
+name = "wasip2"
+version = "1.0.4+wasi-0.2.12"
+
+[[package]]
+name = "wasip3"
+version = "0.4.0+wasi-0.3.0-rc-2026-01-06"
+
+[[package]]
 name = "wasm-bindgen"
-version = "0.2.91"
+version = "0.2.125"
 
 [[package]]
 name = "which"
@@ -6053,3 +6080,13 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
+
+[[patch.unused]]
+name = "js-sys"
+version = "0.3.100"
+
+
+[[patch.unused]]
+name = "wasm-bindgen"
+version = "0.2.123"
+
