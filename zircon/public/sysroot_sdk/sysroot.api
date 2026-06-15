@@ -189,7 +189,7 @@
   "include/zircon/syscalls/debug.h": "637ad28699c3827990be02dca180ca38",
   "include/zircon/syscalls/exception.h": "7ea1cc5acbd768ed5f6aa04e26fb0cbf",
   "include/zircon/syscalls/gen/cdecls-next.inc": "4f3a169ea0046806cbb16a6168c22263",
-  "include/zircon/syscalls/gen/cdecls.inc": "742df9ff2b6efd568d6c17e9ae78c023",
+  "include/zircon/syscalls/gen/cdecls.inc": "db20a43363a1a059e98d30411bdcdd81",
   "include/zircon/syscalls/gen/testonly-cdecls.inc": "8ba7ceb583338bb38082562c8e422af1",
   "include/zircon/syscalls/hypervisor.h": "adf1df65f07e47c726ac26c40589a6b2",
   "include/zircon/syscalls/iob.h": "7c5ebf9caa6164398533ea56939339d0",

@@ -20,7 +20,6 @@ cc_library_headers(
         "include/lib/zircon-internal/fnv1hash.h",
         "include/lib/zircon-internal/ktrace.h",
         "include/lib/zircon-internal/macros.h",
-        "include/lib/zircon-internal/mtrace.h",
         "include/lib/zircon-internal/paths.h",
         "include/lib/zircon-internal/thread_annotations.h",
         "include/lib/zircon-internal/unique-backtrace.h",

@@ -75,7 +75,6 @@
     "zx_membarrier_sync_process_insn",
     "zx_msi_allocate",
     "zx_msi_create",
-    "zx_mtrace_control",
     "zx_nanosleep",
     "zx_object_get_child",
     "zx_object_get_info",

@@ -59,7 +59,6 @@ all_libs = [
   "libc",
   "lockdep",
   "lockup_detector",
-  "mtrace",
   "object_cache",
   "page-map",
   "page_cache",

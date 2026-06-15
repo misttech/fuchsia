@@ -73,9 +73,6 @@ void apic_timer_unmask();
 void apic_timer_stop();
 void apic_timer_tsc_deadline_init();
 
-void apic_pmi_mask();
-void apic_pmi_unmask();
-
 void apic_error_interrupt_handler();
 void apic_timer_interrupt_handler();
 

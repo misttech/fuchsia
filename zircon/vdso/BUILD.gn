@@ -54,7 +54,6 @@ fidl("zx") {
     "membarrier.fidl",
     "misc.fidl",
     "msi.fidl",
-    "mtrace.fidl",
     "object.fidl",
     "overview.fidl",
     "pager.fidl",

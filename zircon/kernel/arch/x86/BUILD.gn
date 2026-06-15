@@ -207,7 +207,6 @@ source_set("x86") {
     "msr.cc",
     "msr_bench.cc",
     "ops.S",
-    "perf_mon.cc",
     "pv.cc",
     "registers.cc",
     "restricted.cc",

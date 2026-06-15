@@ -97,7 +97,6 @@ static bool bsp_apic_id_valid;
 
 static void apic_error_init(void);
 static void apic_timer_init(void);
-static void apic_pmi_init(void);
 
 static uint32_t lapic_reg_read(size_t offset) {
   if (x2apic_enabled) {
@@ -187,7 +186,6 @@ void apic_local_init(void) {
 
   apic_error_init();
   apic_timer_init();
-  apic_pmi_init();
 }
 
 uint8_t apic_local_id(void) {
@@ -480,22 +478,6 @@ void apic_error_interrupt_handler(void) {
   // reading.
   lapic_reg_write(LAPIC_REG_ERROR_STATUS, 0);
   panic("APIC error detected: %u\n", lapic_reg_read(LAPIC_REG_ERROR_STATUS));
-}
-
-static void apic_pmi_init(void) {
-  lapic_reg_write(LAPIC_REG_LVT_PERF, LVT_VECTOR(X86_INT_APIC_PMI) | LVT_MASKED);
-}
-
-void apic_pmi_mask(void) {
-  InterruptDisableGuard irqd;
-
-  lapic_reg_or(LAPIC_REG_LVT_PERF, LVT_MASKED);
-}
-
-void apic_pmi_unmask(void) {
-  InterruptDisableGuard irqd;
-
-  lapic_reg_and(LAPIC_REG_LVT_PERF, ~LVT_MASKED);
 }
 
 static int cmd_apic(int argc, const cmd_args* argv, uint32_t flags) {

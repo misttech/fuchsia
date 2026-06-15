@@ -83,7 +83,6 @@ source_set("impl") {
     "//zircon/kernel/lib/kpci",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
-    "//zircon/kernel/lib/mtrace",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page-map",
     "//zircon/kernel/lib/persistent-debuglog",

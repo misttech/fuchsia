@@ -7,5 +7,4 @@ pub mod e820;
 pub mod fnv1hash;
 pub mod ktrace;
 pub mod macros;
-pub mod mtrace;
 pub mod xorshiftrand;

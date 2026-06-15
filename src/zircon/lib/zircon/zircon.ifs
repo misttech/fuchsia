@@ -78,7 +78,6 @@ Symbols:
   - { Name: _zx_membarrier_sync_process_insn, Type: Func }
   - { Name: _zx_msi_allocate, Type: Func }
   - { Name: _zx_msi_create, Type: Func }
-  - { Name: _zx_mtrace_control, Type: Func }
   - { Name: _zx_nanosleep, Type: Func }
   - { Name: _zx_object_get_child, Type: Func }
   - { Name: _zx_object_get_info, Type: Func }
@@ -299,7 +298,6 @@ Symbols:
   - { Name: zx_membarrier_sync_process_insn, Type: Func, Weak: true }
   - { Name: zx_msi_allocate, Type: Func, Weak: true }
   - { Name: zx_msi_create, Type: Func, Weak: true }
-  - { Name: zx_mtrace_control, Type: Func, Weak: true }
   - { Name: zx_nanosleep, Type: Func, Weak: true }
   - { Name: zx_object_get_child, Type: Func, Weak: true }
   - { Name: zx_object_get_info, Type: Func, Weak: true }

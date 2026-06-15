@@ -328,11 +328,6 @@ _ZX_SYSCALL_DECL(msi_create, zx_status_t, /* no attributes */, 6,
                   size_t vmo_offset,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_interrupt))
 
-_ZX_SYSCALL_DECL(mtrace_control, zx_status_t, /* no attributes */, 6,
-                 (handle, kind, action, options, ptr, ptr_size),
-                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t kind,
-                  uint32_t action, uint32_t options, void* ptr, size_t ptr_size))
-
 _ZX_SYSCALL_DECL(nanosleep, zx_status_t, /* no attributes */, 1, (deadline),
                  (zx_instant_mono_t deadline))
 

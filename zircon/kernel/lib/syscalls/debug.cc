@@ -10,7 +10,6 @@
 #include <lib/debuglog.h>
 #include <lib/io.h>
 #include <lib/ktrace.h>
-#include <lib/mtrace.h>
 #include <lib/persistent-debuglog.h>
 #include <lib/syscalls/forward.h>
 #include <lib/user_copy/user_ptr.h>
@@ -156,20 +155,4 @@ zx_status_t sys_ktrace_control(zx_handle_t handle, uint32_t action, uint32_t opt
   }
 
   return KTrace::GetInstance().Control(action, options);
-}
-
-// zx_status_t zx_mtrace_control
-zx_status_t sys_mtrace_control(zx_handle_t handle, uint32_t kind, uint32_t action, uint32_t options,
-                               user_inout_ptr<void> ptr, size_t size) {
-  if (!BootOptions::Get()->enable_debugging_syscalls) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t status;
-  if ((status = validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUG_BASE,
-                                         1)) != ZX_OK) {
-    return status;
-  }
-
-  return mtrace_control(kind, action, options, ptr, size);
 }

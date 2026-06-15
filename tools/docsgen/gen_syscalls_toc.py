@@ -142,7 +142,7 @@ def get_topic(filename: str) -> str:
         topic = "others"
     elif topic in ["clock", "deadline", "nanosleep.md", "ticks"]:
         topic = "time"
-    elif topic in ["ktrace", "mtrace"]:
+    elif topic in ["ktrace"]:
         topic = "tracing"
     elif topic in ["debuglog"]:
         topic = "debug"

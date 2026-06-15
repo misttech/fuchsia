@@ -396,15 +396,6 @@ unsafe extern "C" {
         out_interrupt: *mut zx_handle_t,
     ) -> zx_status_t;
 
-    pub fn zx_mtrace_control(
-        handle: zx_handle_t,
-        kind: u32,
-        action: u32,
-        options: u32,
-        ptr: *mut u8,
-        ptr_size: usize,
-    ) -> zx_status_t;
-
     pub fn zx_nanosleep(deadline: zx_instant_mono_t) -> zx_status_t;
 
     pub fn zx_object_get_child(
