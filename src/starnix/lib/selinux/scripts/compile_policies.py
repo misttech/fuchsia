@@ -280,6 +280,14 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/sched.conf",
+        ],
+        "sched_policy",
+    ),
+    (
+        [
+            "base_policy.conf",
             "new_file/range_transition_policy.conf",
         ],
         "range_transition_policy",

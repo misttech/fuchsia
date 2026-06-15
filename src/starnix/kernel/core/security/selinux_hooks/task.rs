@@ -444,7 +444,7 @@ pub(in crate::security) fn check_getsched_access(
     )
 }
 
-/// Checks if the task with `source_sid` is allowed to set scheduling parameters for the task with
+/// Checks if the task with `source_sid` is allowed to set scheduling parameters or nice for the task with
 /// `target_sid`.
 pub(in crate::security) fn check_setsched_access(
     permission_check: &PermissionCheck<'_>,

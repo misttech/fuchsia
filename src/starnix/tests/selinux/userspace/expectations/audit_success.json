@@ -1875,6 +1875,31 @@
             ]
         },
         {
+            "name": "SchedTest.SchedGetschedulerDeniedWithoutGetsched",
+            "audit_expectations": [
+                "avc:  denied  { getsched } for scontext=test_u:test_r:test_sched_child_no_getsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "SchedTest.SchedSetschedulerDeniedWithoutSetsched",
+            "audit_expectations": [
+                "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:test_sched_child_no_setsched_t:s0 tcontext=test_u:test_r:test_sched_child_no_setsched_t:s0 tclass=capability permissive=0",
+                "avc:  denied  { setsched } for scontext=test_u:test_r:test_sched_child_no_setsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "SchedTest.SchedSetschedulerSucceedsWithSetsched",
+            "audit_expectations": [
+                "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:test_sched_child_t:s0 tcontext=test_u:test_r:test_sched_child_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "SchedTest.SetPriorityDeniedWithoutSetsched",
+            "audit_expectations": [
+                "avc:  denied  { setsched } for scontext=test_u:test_r:test_sched_child_no_setsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "SeLinuxFsNull.HasPolicyDevnullContext",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"null\" dev=\"selinuxfs\" ino=23 scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=system_u:object_r:devnull_t:s0 tclass=chr_file permissive=1"

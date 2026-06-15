@@ -7,6 +7,11 @@
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
+        // Starnix does not generate the sys_nice capability denial that Linux does
+        // because Starnix avoids the unnecessary capability check when EUIDs match.
+        "SchedTest.SchedSetschedulerDeniedWithoutSetsched",
+        "SchedTest.SchedSetschedulerSucceedsWithSetsched",
+
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
         "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",
 

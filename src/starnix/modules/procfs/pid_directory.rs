@@ -1496,7 +1496,7 @@ impl BytesFileOps for TimerslackNsFile {
             current_task.task.thread_group().leader == target_task.thread_group().leader;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
-            security::check_setsched_access(current_task, &target_task)?;
+            security::check_task_setscheduler_access(current_task, &target_task)?;
         };
 
         let value = parse_unsigned_file(&data)?;
@@ -1510,7 +1510,7 @@ impl BytesFileOps for TimerslackNsFile {
             current_task.task.thread_group().leader == target_task.thread_group().leader;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
-            security::check_getsched_access(current_task, &target_task)?;
+            security::check_task_getscheduler_access(current_task, &target_task)?;
         };
 
         let timerslack_ns = target_task.read().timerslack_ns;

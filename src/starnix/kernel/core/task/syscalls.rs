@@ -786,7 +786,7 @@ pub fn sys_sched_getscheduler(
     }
 
     let target_task = get_task_or_current(current_task, pid)?;
-    security::check_getsched_access(current_task, target_task.as_ref())?;
+    security::check_task_getscheduler_access(current_task, target_task.as_ref())?;
     let current_scheduler_state = target_task.read().scheduler_state;
     Ok(current_scheduler_state.policy_for_sched_getscheduler())
 }
@@ -830,7 +830,7 @@ pub fn sys_sched_setscheduler(
         security::check_task_capable(current_task, CAP_SYS_NICE)?;
     }
 
-    security::check_setsched_access(current_task, &target_task)?;
+    security::check_task_setscheduler_access(current_task, &target_task)?;
 
     // Apply the new scheduler configuration to the task.
     target_task.set_scheduler_policy_priority_and_reset_on_fork(
@@ -990,7 +990,7 @@ pub fn sys_sched_setparam(
         security::check_task_capable(current_task, CAP_SYS_NICE)?;
     }
 
-    security::check_setsched_access(current_task, &target_task)?;
+    security::check_task_setscheduler_access(current_task, &target_task)?;
 
     // Apply the new scheduler configuration to the task.
     target_task.set_scheduler_priority(realtime_priority)?;
@@ -1773,7 +1773,7 @@ pub fn sys_setpriority(
         security::check_task_capable(current_task, CAP_SYS_NICE).map_err(|_| errno!(EACCES))?;
     }
 
-    security::check_setsched_access(current_task, &target_task)?;
+    security::check_task_setnice_access(current_task, &target_task)?;
 
     // Apply the new scheduler configuration to the task.
     target_task.set_scheduler_nice(normal_priority)?;

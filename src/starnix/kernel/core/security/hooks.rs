@@ -1478,8 +1478,8 @@ pub fn bprm_committed_creds(
 
 /// Checks if `source` may exercise the "getsched" permission on `target`.
 /// Corresponds to the `task_getscheduler()` LSM hook.
-pub fn check_getsched_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.check_getsched_access");
+pub fn check_task_getscheduler_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.task_getscheduler");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_getsched_access(
             &selinux_hooks::build_permission_check(source, security_server),
@@ -1491,8 +1491,21 @@ pub fn check_getsched_access(source: &CurrentTask, target: &Task) -> Result<(), 
 
 /// Checks if setsched is allowed.
 /// Corresponds to the `task_setscheduler()` LSM hook.
-pub fn check_setsched_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.check_setsched_access");
+pub fn check_task_setscheduler_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.task_setscheduler");
+    if_selinux_else_default_ok(source, |security_server| {
+        selinux_hooks::task::check_setsched_access(
+            &selinux_hooks::build_permission_check(source, security_server),
+            &source,
+            &target,
+        )
+    })
+}
+
+/// Checks if setting nice value is allowed.
+/// Corresponds to the `task_setnice()` LSM hook.
+pub fn check_task_setnice_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.task_setnice");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_setsched_access(
             &selinux_hooks::build_permission_check(source, security_server),
@@ -2413,7 +2426,7 @@ mod tests {
     async fn getsched_access_allowed_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
+            assert_eq!(check_task_getscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
     }
@@ -2422,7 +2435,7 @@ mod tests {
     async fn getsched_access_allowed_for_permissive_mode() {
         spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
+            assert_eq!(check_task_getscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
     }
@@ -2431,7 +2444,7 @@ mod tests {
     async fn setsched_access_allowed_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
+            assert_eq!(check_task_setscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
     }
@@ -2440,7 +2453,7 @@ mod tests {
     async fn setsched_access_allowed_for_permissive_mode() {
         spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
+            assert_eq!(check_task_setscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
     }
