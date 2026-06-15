@@ -1006,15 +1006,6 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
     return {std::move(root), hierarchy};
   }
 
-  std::vector<inspect::UintArrayValue::HistogramBucket> GetHistogramBuckets(
-      const std::string& property) {
-    const auto [root, parent] = ReadHierarchyFromInspector();
-    const inspect::UintArrayValue* histogram =
-        parent->node().get_property<inspect::UintArrayValue>(property);
-    FX_CHECK(histogram) << "no histogram named " << property << " found";
-    return histogram->GetBuckets();
-  }
-
   uint64_t GetInjectionsAtMinute(uint64_t minute) {
     const auto [root, parent] = ReadHierarchyFromInspector();
     const inspect::Hierarchy* node = parent->GetByPath({kHistoryNodeName});
@@ -1052,110 +1043,6 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
 
 INSTANTIATE_TEST_SUITE_P(InjectorInspectionTest, InjectorInspectionTest, testing::Bool());
 
-TEST_P(InjectorInspectionTest, HistogramsTrackInjections) {
-  bool error_callback_fired = false;
-  injector_.set_error_handler(
-      [&error_callback_fired](zx_status_t) { error_callback_fired = true; });
-
-  {  // Inject ADD event.
-    bool injection_callback_fired = false;
-    InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
-    std::vector<InjectionEvent> events;
-    events.emplace_back(std::move(event));
-    Inject(injector_, {std::move(events)},
-           [&injection_callback_fired] { injection_callback_fired = true; });
-    RunLoopUntilIdle();
-    if (!use_inject_events()) {
-      EXPECT_TRUE(injection_callback_fired);
-    }
-
-    EXPECT_EQ(num_injections_, 1u);
-    EXPECT_FALSE(error_callback_fired);
-  }
-
-  {  // Inject CHANGE event.
-    bool injection_callback_fired = false;
-    std::vector<InjectionEvent> events;
-    InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
-    events.emplace_back(std::move(event));
-    Inject(injector_, {std::move(events)},
-           [&injection_callback_fired] { injection_callback_fired = true; });
-    RunLoopUntilIdle();
-    if (!use_inject_events()) {
-      EXPECT_TRUE(injection_callback_fired);
-    }
-
-    EXPECT_EQ(num_injections_, 2u);
-    EXPECT_FALSE(error_callback_fired);
-  }
-
-  {  // Inject REMOVE event.
-    bool injection_callback_fired = false;
-    std::vector<InjectionEvent> events;
-    InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
-    events.emplace_back(std::move(event));
-    Inject(injector_, {std::move(events)},
-           [&injection_callback_fired] { injection_callback_fired = true; });
-    RunLoopUntilIdle();
-    if (!use_inject_events()) {
-      EXPECT_TRUE(injection_callback_fired);
-    }
-
-    EXPECT_EQ(num_injections_, 3u);
-    EXPECT_FALSE(error_callback_fired);
-  }
-
-  {  // Inject VIEWPORT event.
-    bool injection_callback_fired = false;
-    InjectionEvent event;
-    event.set_timestamp(1);
-    {
-      fuchsia::ui::pointerinjector::Viewport viewport;
-      viewport.set_extents({{{-242, -383}, {124, 252}}});
-      viewport.set_viewport_to_context_transform(kIdentityMatrix);
-      fuchsia::ui::pointerinjector::Data data;
-      data.set_viewport(std::move(viewport));
-      event.set_data(std::move(data));
-    }
-
-    std::vector<InjectionEvent> events;
-    events.emplace_back(std::move(event));
-    Inject(injector_, {std::move(events)},
-           [&injection_callback_fired] { injection_callback_fired = true; });
-    RunLoopUntilIdle();
-    if (!use_inject_events()) {
-      EXPECT_TRUE(injection_callback_fired);
-    }
-
-    // Still 3 injections; the callback is not invoked for viewport changes.
-    EXPECT_EQ(num_injections_, 3u);
-    EXPECT_FALSE(error_callback_fired);
-  }
-
-  {
-    uint64_t count = 0;
-    for (const inspect::UintArrayValue::HistogramBucket& bucket :
-         GetHistogramBuckets("viewport_event_latency_usecs")) {
-      count += bucket.count;
-    }
-
-    EXPECT_EQ(count, 1u);
-  }
-
-  {
-    uint64_t count = 0;
-    for (const inspect::UintArrayValue::HistogramBucket& bucket :
-         GetHistogramBuckets("pointer_event_latency_usecs")) {
-      count += bucket.count;
-    }
-
-    EXPECT_EQ(count, 3u);
-  }
-}
-
 TEST_P(InjectorInspectionTest, InspectHistory) {
   const uint64_t kMaxNum = scenic_impl::input::InjectorInspector::kNumMinutesOfHistory;
   ASSERT_TRUE(kMaxNum > 2) << "This test assumes a minimum length of history";
@@ -1172,6 +1059,7 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   // Inject events. Each one should register in inspect.
   {
     InjectionEvent event = InjectionEventTemplate();
+    event.set_timestamp(Now().get());
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
@@ -1185,6 +1073,7 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
+    event.set_timestamp(Now().get());
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
@@ -1197,6 +1086,7 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
+    event.set_timestamp(Now().get());
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
@@ -1232,6 +1122,7 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
+    event.set_timestamp(Now().get());
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
@@ -1255,11 +1146,13 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
     std::vector<InjectionEvent> events;
     {
       InjectionEvent event = InjectionEventTemplate();
+      event.set_timestamp(Now().get());
       event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
       events.emplace_back(std::move(event));
     }
     {
       InjectionEvent event = InjectionEventTemplate();
+      event.set_timestamp(Now().get());
       event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
       events.emplace_back(std::move(event));
     }

@@ -21,12 +21,6 @@ using fuchsia_ui_pointerinjector::wire::EventPhase;
 
 namespace {
 
-// A histogram that ranges from 1ms to ~8s.
-constexpr zx::duration kLatencyHistogramFloor = zx::msec(1);
-constexpr zx::duration kLatencyHistogramInitialStep = zx::msec(1);
-constexpr uint64_t kLatencyHistogramStepMultiplier = 2;
-constexpr size_t kLatencyHistogramBuckets = 14;
-
 // Retain this many touch event buckets.  This ensures we see at most this
 // many of them even if there isn't 10 minutes of consistent touch activity.
 constexpr size_t kNumRetainedTouchEventBuckets = 10;
@@ -38,34 +32,21 @@ uint64_t GetCurrentMinute(const zx::time timestamp) { return timestamp.get() / z
 // LINT.IfChange
 InjectorInspector::InjectorInspector(inspect::Node node)
     : node_(std::move(node)),
-      history_stats_node_(node_.CreateLazyValues("Injection history",
-                                                 [this] {
-                                                   inspect::Inspector insp;
-                                                   ReportStats(insp);
-                                                   return fpromise::make_ok_promise(
-                                                       std::move(insp));
-                                                 })),
-      viewport_event_latency_(node_.CreateExponentialUintHistogram(
-          "viewport_event_latency_usecs", kLatencyHistogramFloor.to_usecs(),
-          kLatencyHistogramInitialStep.to_usecs(), kLatencyHistogramStepMultiplier,
-          kLatencyHistogramBuckets)),
-      pointer_event_latency_(node_.CreateExponentialUintHistogram(
-          "pointer_event_latency_usecs", kLatencyHistogramFloor.to_usecs(),
-          kLatencyHistogramInitialStep.to_usecs(), kLatencyHistogramStepMultiplier,
-          kLatencyHistogramBuckets)) {}
+      history_stats_node_(node_.CreateLazyValues("Injection history", [this] {
+        inspect::Inspector insp;
+        ReportStats(insp);
+        return fpromise::make_ok_promise(std::move(insp));
+      })) {}
 
 void InjectorInspector::OnPointerInjectorEvent(
     const fuchsia_ui_pointerinjector::wire::Event& event) {
   FX_DCHECK(event.has_data() && event.has_timestamp());
-  FX_DCHECK(async_get_default_dispatcher());
 
-  const zx::time now = async::Now(async_get_default_dispatcher());
-  const zx::duration latency = now - zx::time(event.timestamp());
   if (event.data().is_viewport()) {
-    viewport_event_latency_.Insert(latency.to_usecs());
+    // No-op.
   } else if (event.data().is_pointer_sample()) {
-    UpdateHistory(now);
-    pointer_event_latency_.Insert(latency.to_usecs());
+    last_event_timestamp_ = std::max(last_event_timestamp_, zx::time(event.timestamp()));
+    UpdateHistory(last_event_timestamp_);
   } else {
     FX_LOGS(ERROR) << "pointerinjector::Event dropped from inspect metrics. Unexpected data type.";
   }

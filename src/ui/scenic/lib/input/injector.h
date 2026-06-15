@@ -59,10 +59,8 @@ class InjectorInspector {
   inspect::Node node_;
   inspect::LazyNode history_stats_node_;
 
-  inspect::ExponentialUintHistogram viewport_event_latency_;
-  inspect::ExponentialUintHistogram pointer_event_latency_;
-
   std::deque<InspectHistory> history_;
+  zx::time last_event_timestamp_{0};
 
   FXL_DISALLOW_COPY_AND_ASSIGN(InjectorInspector);
 };
