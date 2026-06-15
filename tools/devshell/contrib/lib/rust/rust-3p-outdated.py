@@ -11,7 +11,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
 from urllib import error, request
@@ -90,8 +90,18 @@ def fetch_crate_versions(crate: str) -> List[Tuple[str, datetime]]:
 
 def process_crate(
     crate: str, version: str
-) -> Tuple[datetime, int, str, str, Tuple[str, datetime]] | None:
+) -> Tuple[timedelta, int, str, str, Tuple[str, datetime]] | None:
     versions = fetch_crate_versions(crate)
+    if not versions:
+        return None
+
+    current_semver = parse_semver(version)
+    current_is_release = current_semver[3]
+
+    if current_is_release:
+        # If the current version is a stable release, ignore the previous pre-releases
+        versions = [v for v in versions if parse_semver(v[0])[3]]
+
     try:
         versions = versions[
             : next((i for i, (v, _) in enumerate(versions) if v == version)) + 1
@@ -102,7 +112,12 @@ def process_crate(
         return None
     current = versions[-1][1]
     newest = versions[0][1]
-    return (newest - current, len(versions) - 1, crate, version, versions[0])
+
+    age = newest - current
+    if age < timedelta(0):
+        age = timedelta(0)
+
+    return (age, len(versions) - 1, crate, version, versions[0])
 
 
 if __name__ == "__main__":
