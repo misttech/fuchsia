@@ -326,6 +326,12 @@ impl<T, R: WavlTreeRank> WavlTreeNode<T, R> {
     }
 }
 
+impl<T, R: WavlTreeRank> core::fmt::Debug for WavlTreeNode<T, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("WavlTreeNode").field("in_container", &self.in_container()).finish()
+    }
+}
+
 impl<T, R: WavlTreeRank> Default for WavlTreeNode<T, R> {
     fn default() -> Self {
         Self::new()
@@ -2512,6 +2518,19 @@ where
         self.left_most = self.get_sentinel();
         self.right_most = self.get_sentinel();
         self.size.set(0);
+    }
+}
+
+impl<K, P, Tag, S, O> core::fmt::Debug for WavlTree<K, P, Tag, S, O>
+where
+    P: PtrTraits,
+    P::Target: WavlTreeContainable<P::Target, Tag> + WavlTreeKeyable<K> + core::fmt::Debug,
+    K: Ord,
+    S: SizeTracker,
+    O: WavlTreeObserver<Target = P::Target>,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 

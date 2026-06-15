@@ -39,7 +39,7 @@ pub use canary::{Canary, magic};
 pub use conditional_select_nospec::{conditional_select_nospec_eq, conditional_select_nospec_lt};
 pub use confine_array_index::confine_array_index;
 pub use doubly_linked_list::{
-    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator,
+    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator, Iterator,
     ReverseIterator, remove_from_container,
 };
 pub use fbl_macros::{

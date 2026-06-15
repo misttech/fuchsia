@@ -43,6 +43,12 @@ impl<T> SinglyLinkedListNode<T> {
     }
 }
 
+impl<T> core::fmt::Debug for SinglyLinkedListNode<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SinglyLinkedListNode").field("in_container", &self.in_container()).finish()
+    }
+}
+
 impl<T> Default for SinglyLinkedListNode<T> {
     fn default() -> Self {
         Self::new()
@@ -725,6 +731,17 @@ where
 
         // SAFETY: `next_ptr` was replaced, safe to reconstruct.
         Some(unsafe { P::from_raw(next_ptr) })
+    }
+}
+
+impl<P, Tag, S> core::fmt::Debug for SinglyLinkedList<P, Tag, S>
+where
+    P: PtrTraits,
+    P::Target: SinglyLinkedListContainable<P::Target, Tag> + core::fmt::Debug,
+    S: SizeTracker,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 

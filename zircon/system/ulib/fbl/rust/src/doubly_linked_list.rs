@@ -62,6 +62,12 @@ impl<T> DoublyLinkedListNode<T> {
     }
 }
 
+impl<T> core::fmt::Debug for DoublyLinkedListNode<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DoublyLinkedListNode").field("in_container", &self.in_container()).finish()
+    }
+}
+
 impl<T> Default for DoublyLinkedListNode<T> {
     fn default() -> Self {
         Self::new()
@@ -593,6 +599,10 @@ where
         if is_sentinel_ptr(self.current) { None } else { unsafe { Some(&*self.current) } }
     }
 
+    pub fn get_mut(&mut self) -> Option<&mut P::Target> {
+        if is_sentinel_ptr(self.current) { None } else { unsafe { Some(&mut *self.current) } }
+    }
+
     pub fn move_next(&mut self) {
         if !is_sentinel_ptr(self.current) {
             // SAFETY: `self.current` is valid current node (not sentinel).
@@ -1106,6 +1116,17 @@ where
         let list_ref = &mut *list_ptr;
 
         list_ref.erase(obj)
+    }
+}
+
+impl<P, Tag, S> core::fmt::Debug for DoublyLinkedList<P, Tag, S>
+where
+    P: PtrTraits,
+    P::Target: DoublyLinkedListContainable<P::Target, Tag> + core::fmt::Debug,
+    S: SizeTracker,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 

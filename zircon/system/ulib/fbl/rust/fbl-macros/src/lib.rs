@@ -81,9 +81,10 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn derive_recyclable(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let expanded = quote! {
-        unsafe impl ::fbl::Recyclable for #name {
+        unsafe impl #impl_generics ::fbl::Recyclable for #name #ty_generics #where_clause {
             unsafe fn recycle(ptr: ::core::ptr::NonNull<Self>) {
                 // SAFETY: The caller of `recycle` must ensure that `ptr` was allocated
                 // by a mechanism compatible with `kalloc::Box` (e.g., `UniquePtr::try_new`).
@@ -100,7 +101,7 @@ pub fn derive_recyclable(item: TokenStream) -> TokenStream {
             }
         }
 
-        unsafe impl ::fbl::UninitRecyclable for #name {
+        unsafe impl #impl_generics ::fbl::UninitRecyclable for #name #ty_generics #where_clause {
             unsafe fn recycle_uninit(ptr: ::core::ptr::NonNull<::core::mem::MaybeUninit<Self>>) {
                 // SAFETY: The caller of `recycle_uninit` must ensure that `ptr` was allocated
                 // by a mechanism compatible with `kalloc::Box`.
@@ -129,6 +130,7 @@ pub fn derive_recyclable(item: TokenStream) -> TokenStream {
 pub fn derive_singly_linked_list_containable(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let fields = match input.data {
         syn::Data::Struct(s) => s.fields,
@@ -158,8 +160,8 @@ pub fn derive_singly_linked_list_containable(item: TokenStream) -> TokenStream {
                 let tag_type = tag.unwrap_or_else(|| syn::parse_quote! { ::fbl::DefaultObjectTag });
 
                 impls.push(quote! {
-                    impl ::fbl::SinglyLinkedListContainable<#name, #tag_type> for #name {
-                        fn get_node(&self) -> &::fbl::SinglyLinkedListNode<#name> {
+                    impl #impl_generics ::fbl::SinglyLinkedListContainable<#name #ty_generics, #tag_type> for #name #ty_generics #where_clause {
+                        fn get_node(&self) -> &::fbl::SinglyLinkedListNode<#name #ty_generics> {
                             &self.#field_name
                         }
                     }
@@ -187,6 +189,7 @@ pub fn derive_singly_linked_list_containable(item: TokenStream) -> TokenStream {
 pub fn derive_doubly_linked_list_containable(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let fields = match input.data {
         syn::Data::Struct(s) => s.fields,
@@ -215,8 +218,8 @@ pub fn derive_doubly_linked_list_containable(item: TokenStream) -> TokenStream {
                 let tag_type = tag.unwrap_or_else(|| syn::parse_quote! { ::fbl::DefaultObjectTag });
 
                 impls.push(quote! {
-                    impl ::fbl::DoublyLinkedListContainable<#name, #tag_type> for #name {
-                        fn get_node(&self) -> &::fbl::DoublyLinkedListNode<#name> {
+                    impl #impl_generics ::fbl::DoublyLinkedListContainable<#name #ty_generics, #tag_type> for #name #ty_generics #where_clause {
+                        fn get_node(&self) -> &::fbl::DoublyLinkedListNode<#name #ty_generics> {
                             &self.#field_name
                         }
                     }
@@ -244,6 +247,7 @@ pub fn derive_doubly_linked_list_containable(item: TokenStream) -> TokenStream {
 pub fn derive_wavl_tree_containable(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let fields = match input.data {
         syn::Data::Struct(s) => s.fields,
@@ -280,9 +284,9 @@ pub fn derive_wavl_tree_containable(item: TokenStream) -> TokenStream {
                 let rank_type = rank.unwrap_or_else(|| syn::parse_quote! { bool });
 
                 impls.push(quote! {
-                    impl ::fbl::WavlTreeContainable<#name, #tag_type> for #name {
+                    impl #impl_generics ::fbl::WavlTreeContainable<#name #ty_generics, #tag_type> for #name #ty_generics #where_clause {
                         type Rank = #rank_type;
-                        fn get_node(&self) -> &::fbl::WavlTreeNode<#name, Self::Rank> {
+                        fn get_node(&self) -> &::fbl::WavlTreeNode<#name #ty_generics, Self::Rank> {
                             &self.#field_name
                         }
                     }
