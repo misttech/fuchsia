@@ -2,9 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Debugging aspect for IDK atoms."""
+
 load("//build/bazel/rules/idk/private:providers.bzl", "FuchsiaIdkAtomInfo")
 
 def _print_deps_aspect_impl(_target, ctx):
+    # buildifier: disable=print
     print("\n", ctx.rule.attr.name, ":\n\ttype: ", ctx.rule.attr.type, "\n\tIDK deps: ", ctx.rule.attr.deps, "\n\tnon-IDK build deps: ", ctx.rule.attr.atom_build_deps)
     return []
 
