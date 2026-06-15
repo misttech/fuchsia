@@ -1759,6 +1759,7 @@ TEST_F(FlatlandTest, SetImageBlendFunctionErrorCases) {
 class FlatlandParameterizedTest : public FlatlandTest,
                                   public ::testing::WithParamInterface<BlendMode> {};
 
+// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
 // Make sure that the data for setting the blend mode gets passed to
 // the uberstruct correctly.
 TEST_P(FlatlandParameterizedTest, SetImageBlendModeUberstructTest) {
@@ -1863,6 +1864,7 @@ TEST_F(FlatlandTest, SetImageFlipErrorCases) {
   }
 }
 
+// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
 // Make sure that the data for setting the image flip gets passed to the uberstruct correctly.
 TEST_F(FlatlandTest, SetImageFlipUberstructTest) {
   const ContentId kImageId1(1);
@@ -4368,6 +4370,7 @@ TEST_F(FlatlandTest, CreateImageValidCase) {
               std::move(properties));
 }
 
+// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
 TEST_F(FlatlandTest, CreateImageSetsDefaults) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -4630,6 +4633,7 @@ TEST_F(FlatlandTest, CreateFilledRectErrorTest) {
   }
 }
 
+// TODO(https://fxbug.dev/523371761): LEGACY-REPRESENTATION: delete in facade step 130
 // Make sure that the data for filled rects gets passed along
 // correctly to the uberstructs.
 TEST_F(FlatlandTest, FilledRectUberstructTest) {
@@ -5298,10 +5302,7 @@ TEST_F(FlatlandTest, ClearContentOnTransform) {
   // the image map.
   auto uber_struct = GetUberStruct(flatland.get());
   EXPECT_EQ(uber_struct->local_topology.back().handle, image_handle);
-
-  auto image_kv = uber_struct->images.find(image_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  EXPECT_EQ(image_kv->second.collection_id, global_collection_id);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 
   // An ContentId of 0 indicates to remove any content on the specified transform.
   flatland->SetContent(kTransformId, kInvalidContentId);
@@ -5311,6 +5312,7 @@ TEST_F(FlatlandTest, ClearContentOnTransform) {
   for (const auto& entry : uber_struct->local_topology) {
     EXPECT_NE(entry.handle, image_handle);
   }
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 }
 
 TEST_F(FlatlandTest, SetTheSameContentOnMultipleTransforms) {
@@ -5833,23 +5835,18 @@ TEST_F(FlatlandTest, ReleasedImageRemainsUntilCleared) {
   // the image map.
   auto uber_struct = GetUberStruct(flatland.get());
   EXPECT_EQ(uber_struct->local_topology.back().handle, image_handle);
-
-  auto image_kv = uber_struct->images.find(image_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  EXPECT_EQ(image_kv->second.collection_id, global_collection_id);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 
   // Releasing the image succeeds, but all data remains in the UberStruct.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
   flatland->ReleaseImage(kImageId);
   PRESENT(flatland, true);
 
   uber_struct = GetUberStruct(flatland.get());
   EXPECT_EQ(uber_struct->local_topology.back().handle, image_handle);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 
-  image_kv = uber_struct->images.find(image_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  EXPECT_EQ(image_kv->second.collection_id, global_collection_id);
-
-  // Clearing the Transform of its Image removes all references from the UberStruct.
+  // Clearing the Transform of its Image detaches it, triggering the release.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(1);
   flatland->SetContent(kTransformId, kInvalidContentId);
   PRESENT(flatland, true);
@@ -5858,8 +5855,7 @@ TEST_F(FlatlandTest, ReleasedImageRemainsUntilCleared) {
   for (const auto& entry : uber_struct->local_topology) {
     EXPECT_NE(entry.handle, image_handle);
   }
-
-  EXPECT_FALSE(uber_struct->images.contains(image_handle));
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle));
 }
 
 TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
@@ -5891,6 +5887,9 @@ TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
   flatland->ReleaseImage(kImageId);
   PRESENT(flatland, true);
 
+  auto uber_struct = GetUberStruct(flatland.get());
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
+
   // The ContentId can be reused even though the old image is still present. Add a second
   // transform so that both images show up in the global image vector.
   auto ref_pair_2 = BufferCollectionImportExportTokens::New();
@@ -5907,6 +5906,9 @@ TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
   flatland->CreateTransform(kTransformId2);
   flatland->AddChild(kTransformId1, kTransformId2);
   flatland->SetContent(kTransformId2, kImageId);
+  // Both images are attached, so releasing the first image ID shouldn't have released it from the
+  // importer.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
   PRESENT(flatland, true);
 
   const auto maybe_image_handle2 = flatland->GetContentHandle(kImageId);
@@ -5914,15 +5916,25 @@ TEST_F(FlatlandTest, ReleasedImageIdCanBeReused) {
   const auto image_handle2 = maybe_image_handle2.value();
 
   // Both images should appear in the image map.
-  auto uber_struct = GetUberStruct(flatland.get());
+  uber_struct = GetUberStruct(flatland.get());
+  EXPECT_NE(image_handle1, image_handle2);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
 
-  auto image_kv1 = uber_struct->images.find(image_handle1);
-  EXPECT_NE(image_kv1, uber_struct->images.end());
-  EXPECT_EQ(image_kv1->second.collection_id, global_collection_id1);
+  // Both images should be attached to the topology.
+  bool found_handle1 = false;
+  bool found_handle2 = false;
+  for (const auto& entry : uber_struct->local_topology) {
+    if (entry.handle == image_handle1)
+      found_handle1 = true;
+    if (entry.handle == image_handle2)
+      found_handle2 = true;
+  }
+  EXPECT_TRUE(found_handle1);
+  EXPECT_TRUE(found_handle2);
 
-  auto image_kv2 = uber_struct->images.find(image_handle2);
-  EXPECT_NE(image_kv2, uber_struct->images.end());
-  EXPECT_EQ(image_kv2->second.collection_id, global_collection_id2);
+  RunLoopUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(mock_buffer_collection_importer_);
 }
 
 // Test that released Images, when attached to a Transform, are not garbage collected even if
@@ -5956,14 +5968,16 @@ TEST_F(FlatlandTest, ReleasedImagePersistsOutsideGlobalTopology) {
   flatland->ReleaseImage(kImageId);
   PRESENT(flatland, true);
 
-  // Remove the entire hierarchy, then verify that the image is still present.
+  // Remove the entire hierarchy. It is detached from the root, but not cleared
+  // from the transform, so it should not be released.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
   flatland->SetRootTransform(kInvalidTransformId);
   PRESENT(flatland, true);
+  RunLoopUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(mock_buffer_collection_importer_);
 
   auto uber_struct = GetUberStruct(flatland.get());
-  auto image_kv = uber_struct->images.find(image_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  EXPECT_EQ(image_kv->second.collection_id, global_collection_id1);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 
   // Reintroduce the hierarchy and confirm the Image is still present, even though it was
   // temporarily not reachable from the root transform.
@@ -5972,10 +5986,7 @@ TEST_F(FlatlandTest, ReleasedImagePersistsOutsideGlobalTopology) {
 
   uber_struct = GetUberStruct(flatland.get());
   EXPECT_EQ(uber_struct->local_topology.back().handle, image_handle);
-
-  image_kv = uber_struct->images.find(image_handle);
-  EXPECT_NE(image_kv, uber_struct->images.end());
-  EXPECT_EQ(image_kv->second.collection_id, global_collection_id1);
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle));
 }
 
 TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
@@ -6031,6 +6042,80 @@ TEST_F(FlatlandTest, ClearReleasesImagesAndBufferCollections) {
   flatland->SetRootTransform(kTransformId);
   flatland->SetContent(kTransformId, kImageId);
   PRESENT(flatland, true);
+}
+
+TEST_F(FlatlandTest, BufferSwapReleasesPreviousImage) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Setup two valid images.
+  const ContentId kImageId1(1);
+  auto ref_pair_1 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties1;
+  properties1.size(SizeU{100, 200});
+
+  const allocation::GlobalBufferCollectionId global_collection_id1 =
+      CreateImage(flatland.get(), allocator.get(), kImageId1, std::move(ref_pair_1),
+                  std::move(properties1))
+          .collection_id;
+
+  const auto maybe_image_handle1 = flatland->GetContentHandle(kImageId1);
+  ASSERT_TRUE(maybe_image_handle1.has_value());
+  const auto image_handle1 = maybe_image_handle1.value();
+
+  const ContentId kImageId2(2);
+  auto ref_pair_2 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties2;
+  properties2.size(SizeU{300, 400});
+
+  const allocation::GlobalBufferCollectionId global_collection_id2 =
+      CreateImage(flatland.get(), allocator.get(), kImageId2, std::move(ref_pair_2),
+                  std::move(properties2))
+          .collection_id;
+
+  const auto maybe_image_handle2 = flatland->GetContentHandle(kImageId2);
+  ASSERT_TRUE(maybe_image_handle2.has_value());
+  const auto image_handle2 = maybe_image_handle2.value();
+
+  // Create a transform, make it the root transform, and attach the first image.
+  const TransformId kTransformId(3);
+  flatland->CreateTransform(kTransformId);
+  flatland->SetRootTransform(kTransformId);
+  flatland->SetContent(kTransformId, kImageId1);
+  PRESENT(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
+
+  // Releasing image 1 succeeds, but since it is still attached to the transform,
+  // it is not yet released from the importer.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  flatland->ReleaseImage(kImageId1);
+  PRESENT(flatland, true);
+  RunLoopUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(mock_buffer_collection_importer_);
+
+  uber_struct = GetUberStruct(flatland.get());
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle1));
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
+
+  // Now swap the content on the transform to image 2. This detaches image 1,
+  // which should trigger its release.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(1);
+  flatland->SetContent(kTransformId, kImageId2);
+  PRESENT(flatland, true);
+  RunLoopUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(mock_buffer_collection_importer_);
+
+  // Verify that the topology now has image 2's handle, and no longer contains image 1's handle.
+  uber_struct = GetUberStruct(flatland.get());
+  EXPECT_FALSE(uber_struct->HasLayerContentForTest(image_handle1));
+  EXPECT_TRUE(uber_struct->HasLayerContentForTest(image_handle2));
+  EXPECT_EQ(uber_struct->local_topology.back().handle, image_handle2);
+  for (const auto& entry : uber_struct->local_topology) {
+    EXPECT_NE(entry.handle, image_handle1);
+  }
 }
 
 TEST_F(FlatlandTest, UnsquashableUpdates_ShouldBeReflectedInScheduleUpdates) {

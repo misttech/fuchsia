@@ -82,6 +82,9 @@ struct UberStruct {
 
   // The time the UberStruct was created.
   zx::time_monotonic creation_time;
+
+  // Test-only helper which abstracts over legacy image content, and Flatland2 layer content.
+  bool HasLayerContentForTest(TransformHandle handle) const { return images.contains(handle); }
 };
 
 }  // namespace flatland
