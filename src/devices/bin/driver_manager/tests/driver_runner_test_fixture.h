@@ -590,6 +590,14 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
 
   void Unbind();
 
+  // Simulates a (compromised) driver_host process closing its
+  // fuchsia.driver.host/DriverHost server channel while keeping its per-driver
+  // fuchsia.driver.host/Driver channel(s) open. This triggers
+  // DriverHostComponent's ObserveTeardown lambda, which erases (and frees) the
+  // DriverHostComponent from DriverRunner::driver_hosts_ without clearing any
+  // Node::driver_host_ raw pointers.
+  void CloseDriverHostBindings() { driver_host_bindings_.CloseAll(ZX_OK); }
+
   static void ValidateProgram(std::optional<::fuchsia_data::Dictionary>& program,
                               std::string_view binary, std::string_view colocate,
                               std::string_view host_restart_on_crash,

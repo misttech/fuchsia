@@ -1744,7 +1744,7 @@ void Node::StartDriver(
 
   host_restart_on_crash_ = host_restart_on_crash;
 
-  if (colocate && !driver_host_) {
+  if (colocate && !driver_host()) {
     fdf_log::error(
         "Failed to start driver '{}', driver is colocated but does not have a parent with a "
         "driver host",

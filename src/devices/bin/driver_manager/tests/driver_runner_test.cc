@@ -2332,6 +2332,42 @@ TEST(NodeTest, ToCollection) {
   EXPECT_EQ(ToCollection(*child2, fdfw::DriverPackageType::kUniverse), Collection::kFullPackage);
 }
 
+// Verify that attempting to start a colocated driver on a node with a torn-down
+// driver host fails gracefully.
+TEST_P(DriverRunnerTest, ColocateAfterDriverHostTeardownFails) {
+  SetupDriverRunner();
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> child =
+      root_driver->driver->AddChild("second", /*owned=*/false, /*expect_error=*/false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  // Simulates a driver_host process closing its DriverHost channel.
+  CloseDriverHostBindings();
+  RunLoopUntilIdle();
+
+  // Attempt to start the colocated second driver, expecting the start to fail.
+  auto [driver, controller] =
+      StartDriver("dev.second", {
+                                    .url = second_driver_url,
+                                    .binary = second_driver_binary,
+                                    .colocate = true,
+                                    .close = true,
+                                    .use_dynamic_linker = use_dynamic_linker(),
+                                });
+
+  // Verify that the controller channel is closed because the start failed.
+  zx_signals_t pending;
+  EXPECT_EQ(controller.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::deadline_after(zx::sec(5)),
+                                          &pending),
+            ZX_OK);
+  EXPECT_TRUE(pending & ZX_CHANNEL_PEER_CLOSED);
+}
+
 // The tests are parameterized on whether to use the dynamic linker or not.
 INSTANTIATE_TEST_SUITE_P(/* no prefix */, DriverRunnerTest, testing::Values(true, false),
                          [](const testing::TestParamInfo<bool>& info) {
