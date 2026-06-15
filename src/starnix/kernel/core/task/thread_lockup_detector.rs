@@ -14,7 +14,7 @@ use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
 #[derive(Default)]
 pub struct ThreadLockupDetector;
@@ -36,11 +36,21 @@ impl ThreadState {
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
         let atomic = Box::new(AtomicU64::new(0));
         let ptr = &*atomic as *const AtomicU64;
+
+        let mut rcu_nesting_level = std::ptr::null();
+        let mut rcu_counter_index = std::ptr::null();
+        fuchsia_rcu::with_thread_block_counters(|nesting_ptr, counter_ptr| {
+            rcu_nesting_level = nesting_ptr;
+            rcu_counter_index = counter_ptr;
+        });
+
         let registered = RegisteredThread {
             // SAFETY: The handle is valid as long as the thread is registered.
             thread: unsafe { zx::Unowned::from_raw_handle(handle) },
             koid,
             atomic: ptr,
+            rcu_nesting_level,
+            rcu_counter_index,
         };
         REGISTRY.write().insert(registered);
         Self { atomic, koid }
@@ -67,6 +77,10 @@ struct RegisteredThread {
     koid: zx::Koid,
     /// Pointer to the atomic u64 in the thread's `ThreadState`.
     atomic: *const AtomicU64,
+    /// Pointer to the RCU nesting level.
+    rcu_nesting_level: *const AtomicUsize,
+    /// Pointer to the RCU counter index.
+    rcu_counter_index: *const AtomicU8,
 }
 
 // We only hash and compare by `koid` to allow lookup and removal by `koid`
@@ -175,6 +189,32 @@ impl ThreadLockupDetector {
     pub fn tracked_channel<T>() -> (std::sync::mpsc::Sender<T>, LockupDetectorReceiver<T>) {
         let (sender, receiver) = std::sync::mpsc::channel();
         (sender, LockupDetectorReceiver::new(receiver))
+    }
+
+    pub fn active_rcu_read_locks<F>(mut check: F)
+    where
+        F: FnMut(&zx::Thread, zx::Koid, u8),
+    {
+        let registry = REGISTRY.read();
+        for registered in registry.iter() {
+            if registered.rcu_nesting_level.is_null() || registered.rcu_counter_index.is_null() {
+                continue;
+            }
+            // SAFETY: The pointers point to thread-local storage of the registered thread.
+            // Before the thread exits, its `ThreadState` is dropped, which acquires a write
+            // lock on `REGISTRY` before the thread-local storage is destroyed. Since we hold the
+            // read lock on `REGISTRY` here, the thread cannot complete its cleanup and destroy the
+            // TLS until we release the lock, ensuring the pointers remain valid.
+            let (nesting_level, counter_index) = unsafe {
+                (
+                    (*registered.rcu_nesting_level).load(Ordering::Relaxed),
+                    (*registered.rcu_counter_index).load(Ordering::Relaxed),
+                )
+            };
+            if nesting_level > 0 {
+                check(&registered.thread, registered.koid, counter_index);
+            }
+        }
     }
 }
 

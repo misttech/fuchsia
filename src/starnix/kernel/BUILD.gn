@@ -68,6 +68,8 @@ rustc_binary("starnix_kernel_bin") {
     "//zircon/system/ulib/inspector",
   ]
 
+  test_deps = [ "//src/lib/fuchsia-rcu" ]
+
   sources = [
     "lockup_detector.rs",
     "main.rs",

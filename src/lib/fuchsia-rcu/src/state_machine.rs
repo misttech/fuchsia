@@ -5,7 +5,7 @@
 use crate::atomic_stack::{AtomicListIterator, AtomicStack};
 use fuchsia_sync::Mutex;
 use std::cell::Cell;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering, fence};
+use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering, fence};
 use std::thread_local;
 
 #[cfg(feature = "rseq_backend")]
@@ -70,11 +70,11 @@ static RCU_CONTROL_BLOCK: RcuControlBlock = RcuControlBlock::new();
 
 struct RcuThreadBlock {
     /// The number of times the thread has nested into a read lock.
-    nesting_level: Cell<usize>,
+    nesting_level: AtomicUsize,
 
     /// The index of the read counter that the thread incremented when it entered its outermost read
     /// lock.
-    counter_index: Cell<u8>,
+    counter_index: AtomicU8,
 
     /// Whether this thread has scheduled callbacks since the last time the thread called
     /// `rcu_synchronize`.
@@ -84,7 +84,7 @@ struct RcuThreadBlock {
 impl RcuThreadBlock {
     /// Returns true if the thread is holding a read lock.
     fn holding_read_lock(&self) -> bool {
-        self.nesting_level.get() > 0
+        self.nesting_level.load(Ordering::Relaxed) > 0
     }
 }
 
@@ -94,8 +94,8 @@ impl Default for RcuThreadBlock {
         fuchsia_rseq::rseq_register_thread().expect("failed to register thread");
 
         Self {
-            nesting_level: Cell::new(0),
-            counter_index: Cell::new(0),
+            nesting_level: AtomicUsize::new(0),
+            counter_index: AtomicU8::new(0),
             has_pending_callbacks: Cell::new(false),
         }
     }
@@ -116,6 +116,16 @@ thread_local! {
     static RCU_THREAD_BLOCK: RcuThreadBlock = RcuThreadBlock::default();
 }
 
+/// Exposes the thread-local counters for RCU stall detection.
+pub fn with_thread_block_counters<F>(f: F)
+where
+    F: FnOnce(*const AtomicUsize, *const AtomicU8),
+{
+    RCU_THREAD_BLOCK.with(|thread_block| {
+        f(&thread_block.nesting_level as *const _, &thread_block.counter_index as *const _);
+    });
+}
+
 /// Acquire a read lock.
 ///
 /// This function is used to acquire a read lock on the RCU state machine. The RCU state machine
@@ -124,12 +134,12 @@ thread_local! {
 /// Must be balanced by a call to `rcu_read_unlock` on the same thread.
 pub(crate) fn rcu_read_lock() {
     RCU_THREAD_BLOCK.with(|thread_block| {
-        let nesting_level = thread_block.nesting_level.get();
+        let nesting_level = thread_block.nesting_level.load(Ordering::Relaxed);
         if nesting_level > 0 {
             // If this thread already has a read lock, increment the nesting level instead of the
             // incrementing the read counter. This approach is a performance optimization to reduce
             // the number of atomic operations that need to be performed.
-            thread_block.nesting_level.set(nesting_level + 1);
+            thread_block.nesting_level.store(nesting_level + 1, Ordering::Relaxed);
         } else {
             // This is the outermost read lock. Increment the read counter.
             let control_block = &RCU_CONTROL_BLOCK;
@@ -154,8 +164,8 @@ pub(crate) fn rcu_read_lock() {
                 control_block.read_counters[index].fetch_add(1, Ordering::SeqCst);
             }
 
-            thread_block.counter_index.set(index as u8);
-            thread_block.nesting_level.set(1);
+            thread_block.counter_index.store(index as u8, Ordering::Relaxed);
+            thread_block.nesting_level.store(1, Ordering::Relaxed);
         }
     });
 }
@@ -166,14 +176,14 @@ pub(crate) fn rcu_read_lock() {
 /// more details.
 pub(crate) fn rcu_read_unlock() {
     RCU_THREAD_BLOCK.with(|thread_block| {
-        let nesting_level = thread_block.nesting_level.get();
+        let nesting_level = thread_block.nesting_level.load(Ordering::Relaxed);
         if nesting_level > 1 {
             // If the nesting level is greater than 1, this is not the outermost read lock.
             // Decrement the nesting level instead of the read counter.
-            thread_block.nesting_level.set(nesting_level - 1);
+            thread_block.nesting_level.store(nesting_level - 1, Ordering::Relaxed);
         } else {
             // This is the outermost read lock. Decrement the read counter.
-            let index = thread_block.counter_index.get() as usize;
+            let index = thread_block.counter_index.load(Ordering::Relaxed) as usize;
             let control_block = &RCU_CONTROL_BLOCK;
 
             #[cfg(feature = "rseq_backend")]
@@ -198,8 +208,8 @@ pub(crate) fn rcu_read_unlock() {
                 }
             }
 
-            thread_block.nesting_level.set(0);
-            thread_block.counter_index.set(u8::MAX);
+            thread_block.nesting_level.store(0, Ordering::Relaxed);
+            thread_block.counter_index.store(u8::MAX, Ordering::Relaxed);
         }
     });
 }
