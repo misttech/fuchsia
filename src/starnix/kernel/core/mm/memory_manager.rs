@@ -789,6 +789,35 @@ impl MemoryManagerState {
         )
     }
 
+    fn any_ranges_lazy<I>(&self, ranges: I) -> bool
+    where
+        I: IntoIterator<Item = (UserAddress, Option<usize>)>,
+    {
+        for (addr, length) in ranges {
+            match length {
+                None => {
+                    if let Some((_, mapping)) = self.mappings.get(addr) {
+                        if mapping.mapping_mode() == MappingMode::Lazy {
+                            return true;
+                        }
+                    }
+                }
+                Some(len) => {
+                    assert!(len > 0);
+                    let end = addr.checked_add(len).expect("address overflowed after validation");
+                    if self
+                        .mappings
+                        .range(addr..end)
+                        .any(|(_, mapping)| mapping.mapping_mode() == MappingMode::Lazy)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn ensure_range_mapped_in_user_vmar(
         &mut self,
         addr: UserAddress,
@@ -2710,6 +2739,9 @@ impl MemoryManager {
         addr: UserAddress,
         length: Option<usize>,
     ) -> Result<bool, Errno> {
+        if !self.state.read().any_ranges_lazy(std::iter::once((addr, length))) {
+            return Ok(false);
+        }
         self.state.write().ensure_ranges_mapped_in_user_vmar(
             std::iter::once((addr, length)),
             &self.mapping_context,
@@ -2724,6 +2756,12 @@ impl MemoryManager {
     where
         I: IntoIterator<Item = (UserAddress, Option<usize>)>,
     {
+        // Collect ranges into a SmallVec with capacity 4 to avoid heap allocations in the common
+        // case where there are only a few ranges (e.g., socket read/write buffers).
+        let ranges = ranges.into_iter().collect::<SmallVec<[_; 4]>>();
+        if !self.state.read().any_ranges_lazy(ranges.iter().cloned()) {
+            return Ok(false);
+        }
         self.state.write().ensure_ranges_mapped_in_user_vmar(ranges, &self.mapping_context)
     }
 
@@ -4887,6 +4925,48 @@ mod tests {
         let adusted_mapping_flags = mapping_flags.with_access_flags(new_access_flags);
         assert_eq!(adusted_mapping_flags.access_flags(), new_access_flags);
         assert_eq!(adusted_mapping_flags.options(), options);
+    }
+
+    #[::fuchsia::test]
+    async fn test_any_ranges_lazy() {
+        spawn_kernel_and_run(async |_locked, current_task| {
+            let mm = current_task.mm().unwrap();
+            let page_size = *PAGE_SIZE as usize;
+            let addr = (mm.base_addr + 10 * page_size).unwrap();
+            let length = page_size;
+
+            let memory = create_anonymous_mapping_memory(length as u64).unwrap();
+            let flags = MappingFlags::from_access_flags_and_options(
+                ProtectionFlags::READ | ProtectionFlags::WRITE,
+                MappingOptions::empty(),
+            );
+
+            let mapping = Mapping::with_name(
+                MappingBacking::Memory(Box::new(MappingBackingMemory::new(addr, memory, 0))),
+                flags,
+                Access::rwx(),
+                MappingName::None,
+                MappingMode::Lazy,
+            );
+
+            {
+                let mut state = mm.state.write();
+                state.mappings.insert(addr..(addr + length).unwrap(), mapping);
+            }
+
+            {
+                let state = mm.state.read();
+                assert!(state.any_ranges_lazy(std::iter::once((addr, Some(length)))));
+            }
+
+            assert!(mm.ensure_range_mapped_in_user_vmar(addr, Some(length)).unwrap());
+
+            {
+                let state = mm.state.read();
+                assert!(!state.any_ranges_lazy(std::iter::once((addr, Some(length)))));
+            }
+        })
+        .await;
     }
 
     #[::fuchsia::test]
