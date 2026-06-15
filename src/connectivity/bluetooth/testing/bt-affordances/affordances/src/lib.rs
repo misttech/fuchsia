@@ -31,7 +31,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
-    Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
     WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -146,9 +145,6 @@ impl WorkThread {
                         continue;
                     }
                     result_sender.send(Err(anyhow!("Peer not found"))).unwrap();
-                }
-                Request::Forget(peer_id, result_sender) => {
-                    result_sender.send(sys::forget(&proxies, &peer_id).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
@@ -335,13 +331,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Forget peer and delete all bonding information, if peer is found.
-    pub async fn forget_peer(&self, peer_id: PeerId) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::Forget(peer_id, sender))?;
         receiver.await?
     }
 

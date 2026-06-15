@@ -15,14 +15,12 @@ using grpc::Status;
 using grpc::StatusCode;
 
 SecurityStorageService::SecurityStorageService(async_dispatcher_t* dispatcher) {
-  // Connect to fuchsia.bluetooth.affordances.PeerController
-  zx::result peer_controller_client_end =
-      component::Connect<fuchsia_bluetooth_affordances::PeerController>();
-  if (peer_controller_client_end.is_ok()) {
-    peer_controller_client_.Bind(std::move(*peer_controller_client_end));
+  // Connect to fuchsia.bluetooth.sys.Access
+  zx::result access_client_end = component::Connect<fuchsia_bluetooth_sys::Access>();
+  if (access_client_end.is_ok()) {
+    access_client_.Bind(std::move(*access_client_end));
   } else {
-    FX_LOGS(ERROR) << "Error connecting to PeerController service: "
-                   << peer_controller_client_end.status_string();
+    FX_LOGS(ERROR) << "Error connecting to Access service: " << access_client_end.status_string();
   }
 }
 
@@ -46,13 +44,10 @@ Status SecurityStorageService::DeleteBond(::grpc::ServerContext* context,
   }
 
   uint64_t peer_id = get_peer_id(address.c_str());
-  fuchsia_bluetooth_affordances::PeerSelector selector;
-  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
-  auto forget_peer_result = peer_controller_client_->ForgetPeer(selector);
-  if (forget_peer_result.is_error()) {
-    return Status(StatusCode::INTERNAL,
-                  "fuchsia.bluetooth.affordances.PeerController/ForgetPeer error: " +
-                      forget_peer_result.error_value().FormatDescription());
+  auto result = access_client_->Forget(fuchsia_bluetooth::PeerId{peer_id});
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Forget error: " +
+                                            result.error_value().FormatDescription());
   }
 
   return Status::OK;

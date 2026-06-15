@@ -7,7 +7,7 @@ use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Tr
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_bluetooth::PeerId as FidlPeerId;
-use fdomain_fuchsia_bluetooth_affordances::{PeerControllerProxy, PeerSelector};
+use fdomain_fuchsia_bluetooth_affordances::PeerControllerProxy;
 use fdomain_fuchsia_bluetooth_sys::{
     AccessProxy, BondableMode, InputCapability, OutputCapability, PairingDelegateMarker,
     PairingOptions, PairingProxy, PairingSecurityLevel,
@@ -228,10 +228,9 @@ impl PeerTool {
 
     async fn forget_peer(&self, id: PeerId) -> Result<()> {
         let fidl_peer_id: FidlPeerId = id.into();
-        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
         Ok(self
-            .peer_controller
-            .forget_peer(&selector)
+            .access_proxy
+            .forget(&fidl_peer_id)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {

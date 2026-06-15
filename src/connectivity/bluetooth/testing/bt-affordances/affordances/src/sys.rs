@@ -12,20 +12,6 @@ use futures::StreamExt;
 use std::ffi::CString;
 use std::sync::Arc;
 
-pub(crate) async fn forget(proxies: &Proxies, peer_id: &PeerId) -> Result<(), anyhow::Error> {
-    match proxies.access_proxy.forget(peer_id).await {
-        Err(fidl_error) => Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {fidl_error}")),
-        Ok(Err(fidl_fuchsia_bluetooth_sys::Error::PeerNotFound)) => {
-            println!("Asked to forget nonexistent peer.");
-            Ok(())
-        }
-        Ok(Err(sapphire_err)) => {
-            Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {sapphire_err:?}"))
-        }
-        Ok(Ok(_)) => Ok(()),
-    }
-}
-
 pub(crate) fn update_peer_cache(
     peer_cache: Arc<Mutex<Vec<Peer>>>,
     updated: Vec<Peer>,

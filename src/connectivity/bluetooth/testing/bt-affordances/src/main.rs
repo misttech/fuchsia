@@ -88,17 +88,9 @@ async fn handle_single_peer_request(
             warn!("Pair is being deprecated and no-op");
             responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
-        PeerControllerRequest::ForgetPeer { payload, responder } => {
-            let id = selector_to_peer_id!("ForgetPeer", payload, responder);
-            match worker.forget_peer(id).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("ForgetPeer encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        PeerControllerRequest::ForgetPeer { payload: _, responder } => {
+            warn!("ForgetPeer is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         PeerControllerRequest::SetDiscovery { payload, responder } => {
             let PeerControllerSetDiscoveryRequest { discovery: Some(discovery), .. } = payload
