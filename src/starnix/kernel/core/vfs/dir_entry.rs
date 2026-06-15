@@ -926,6 +926,10 @@ impl DirEntry {
             unsafe {
                 renamed.children.reset_dependencies();
                 renamed.node.info_lock().reset_dependencies();
+                old_parent.children.reset_dependencies();
+                old_parent.node.info_lock().reset_dependencies();
+                new_parent.children.reset_dependencies();
+                new_parent.node.info_lock().reset_dependencies();
             }
 
             if flags.contains(RenameFlags::EXCHANGE) {
