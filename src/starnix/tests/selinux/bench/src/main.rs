@@ -248,9 +248,9 @@ fn main() {
     let c: &mut Criterion = &mut fc;
 
     *c = std::mem::take(c)
-        .warm_up_time(Duration::from_millis(1))
-        .measurement_time(Duration::from_secs(3))
-        .sample_size(10);
+        .warm_up_time(Duration::from_millis(100))
+        .measurement_time(Duration::from_secs(1))
+        .sample_size(50);
 
     c.bench("fuchsia.sestarnix", load_policy_bench());
     c.bench("fuchsia.sestarnix", security_context_to_sid_bench("simple", b"u:r:kernel:s0"));
