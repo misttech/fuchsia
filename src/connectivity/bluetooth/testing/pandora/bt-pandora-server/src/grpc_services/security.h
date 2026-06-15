@@ -69,6 +69,7 @@ class SecurityService : public pandora::Security::Service {
 
   fidl::SyncClient<fuchsia_bluetooth_sys::Pairing> pairing_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
+  fidl::SyncClient<fuchsia_bluetooth_sys::Access> access_client_;
 
   std::mutex m_pairing_event_;
   // If this stream is non-null, it means a Security.OnPairing bidirectional stream is active.

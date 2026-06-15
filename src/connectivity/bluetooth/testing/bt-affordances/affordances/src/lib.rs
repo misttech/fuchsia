@@ -7,7 +7,7 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
-use fidl_fuchsia_bluetooth_sys::{HostInfo, PairingOptions, Peer};
+use fidl_fuchsia_bluetooth_sys::{HostInfo, Peer};
 use fuchsia_async::LocalExecutor;
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
@@ -31,7 +31,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
-    Pair(PeerId, PairingOptions, oneshot::Sender<Result<(), anyhow::Error>>),
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
@@ -150,9 +149,6 @@ impl WorkThread {
                 }
                 Request::Forget(peer_id, result_sender) => {
                     result_sender.send(sys::forget(&proxies, &peer_id).await).unwrap();
-                }
-                Request::Pair(peer_id, options, result_sender) => {
-                    result_sender.send(sys::pair(&proxies, &peer_id, &options).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
@@ -339,18 +335,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Initiate pairing with peer with given identifier.
-    // TODO(b/423700622): Add PairingDelegate server to bt-affordances.
-    pub async fn pair(
-        &self,
-        peer_id: PeerId,
-        options: PairingOptions,
-    ) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::Pair(peer_id, options, sender))?;
         receiver.await?
     }
 

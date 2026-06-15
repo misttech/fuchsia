@@ -5,31 +5,12 @@
 use crate::proxies::Proxies;
 use anyhow::anyhow;
 use fidl_fuchsia_bluetooth::{DeviceClass, HostId, PeerId};
-use fidl_fuchsia_bluetooth_sys::{
-    AccessSetConnectionPolicyRequest, HostInfo, PairingOptions, Peer,
-};
+use fidl_fuchsia_bluetooth_sys::{AccessSetConnectionPolicyRequest, HostInfo, Peer};
 use fuchsia_async::{TimeoutExt, Timer};
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use std::ffi::CString;
 use std::sync::Arc;
-
-pub(crate) async fn pair(
-    proxies: &Proxies,
-    peer_id: &PeerId,
-    options: &PairingOptions,
-) -> Result<(), anyhow::Error> {
-    proxies
-        .access_proxy
-        .pair(peer_id, options)
-        .await
-        .map_err(|fidl_error| anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {fidl_error}"))
-        .and_then(|pair_result| {
-            pair_result.map_err(|sapphire_err| {
-                anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {sapphire_err:?}")
-            })
-        })
-}
 
 pub(crate) async fn forget(proxies: &Proxies, peer_id: &PeerId) -> Result<(), anyhow::Error> {
     match proxies.access_proxy.forget(peer_id).await {

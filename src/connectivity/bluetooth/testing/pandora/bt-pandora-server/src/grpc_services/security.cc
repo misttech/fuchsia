@@ -96,6 +96,14 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
     FX_LOGS(ERROR) << "Error connecting to PeerController service: "
                    << peer_controller_client_end.status_string();
   }
+
+  // Connect to fuchsia.bluetooth.sys.Access
+  zx::result access_client_end = component::Connect<fuchsia_bluetooth_sys::Access>();
+  if (access_client_end.is_ok()) {
+    access_client_.Bind(std::move(*access_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to Access service: " << access_client_end.status_string();
+  }
 }
 
 ::grpc::Status SecurityService::OnPairing(
@@ -158,21 +166,14 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
 
   uint64_t peer_id =
       std::strtoul(request->connection().cookie().value().c_str(), nullptr, /*base=*/10);
-  fuchsia_bluetooth_affordances::PeerSelector selector;
-  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
-
   fuchsia_bluetooth_sys::PairingOptions options;
   options.le_security_level() = pairing_level;
   options.bondable_mode() = bondable;
 
-  fuchsia_bluetooth_affordances::PeerControllerPairRequest pair_request;
-  pair_request.selector() = selector;
-  pair_request.options() = options;
-  auto pair_result = peer_controller_client_->Pair(pair_request);
-  if (pair_result.is_error()) {
-    return Status(StatusCode::INTERNAL,
-                  "fuchsia.bluetooth.affordances.PeerController/Pair error: " +
-                      pair_result.error_value().FormatDescription());
+  auto result = access_client_->Pair({fuchsia_bluetooth::PeerId{peer_id}, options});
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Pair error: " +
+                                            result.error_value().FormatDescription());
   }
 
   return Status::OK;

@@ -9,9 +9,9 @@ use fidl_fuchsia_bluetooth_affordances::{
     GattClientControllerDiscoverServicesResponse, GattClientControllerRequest,
     GattClientControllerRequestStream, HostControllerRequest, HostControllerRequestStream,
     HostControllerSetConnectabilityRequest, HostControllerSetDeviceClassRequest,
-    HostControllerSetDiscoverabilityRequest, HostSelector, PeerControllerPairRequest,
-    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
-    PeerSelector, PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
+    HostControllerSetDiscoverabilityRequest, HostSelector, PeerControllerRequest,
+    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest, PeerSelector,
+    PeripheralControllerAdvertiseRequest, PeripheralControllerAdvertiseResponse,
     PeripheralControllerRequest, PeripheralControllerRequestStream,
     ScanResultListenerOnPeersDiscoveredRequest,
 };
@@ -84,25 +84,9 @@ async fn handle_single_peer_request(
             warn!("DisconnectPeer is being deprecated and no-op");
             responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
-        PeerControllerRequest::Pair { payload, responder } => {
-            let PeerControllerPairRequest {
-                selector: Some(selector), options: Some(options), ..
-            } = payload
-            else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
-                return Ok(());
-            };
-            let id = selector_to_peer_id!("Pair", selector, responder);
-            match worker.pair(id, options).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("Pair encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        PeerControllerRequest::Pair { payload: _, responder } => {
+            warn!("Pair is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         PeerControllerRequest::ForgetPeer { payload, responder } => {
             let id = selector_to_peer_id!("ForgetPeer", payload, responder);
