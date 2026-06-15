@@ -33,3 +33,6 @@ targets:
       - rrm_neighbor_report
       - bss_transition
       - wnm_sleep_mode
+      - ieee80211w
+
+

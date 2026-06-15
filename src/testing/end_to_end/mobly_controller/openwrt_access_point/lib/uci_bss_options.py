@@ -8,7 +8,7 @@
 # Schema: wireless.wifi-iface.json
 # Tag: v25.12.4
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class UciBssOptions(TypedDict, total=False):
@@ -46,3 +46,6 @@ class UciBssOptions(TypedDict, total=False):
 
     wnm_sleep_mode: bool
     """WNM-Sleep Mode (extended sleep mode for stations)"""
+
+    ieee80211w: Literal[0, 1, 2]
+    """Enables MFP (802.11w) support (0 = disabled, 1 = optional, 2 = required). Requires the 'full' version of wpad/hostapd and support from the Wi-Fi driver"""

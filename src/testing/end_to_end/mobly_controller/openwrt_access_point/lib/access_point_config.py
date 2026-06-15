@@ -93,9 +93,11 @@ class SecurityWpa2Wpa3Mixed:
 
 @dataclasses.dataclass(frozen=True)
 class SecurityWep:
+    auth_mode: Literal["open", "shared"] = "open"
+
     @property
     def uci_encryption(self) -> str:
-        return "wep"
+        return f"wep+{self.auth_mode}"
 
 
 Bandwidth: TypeAlias = Literal[20, 40, 80, 160, 320]

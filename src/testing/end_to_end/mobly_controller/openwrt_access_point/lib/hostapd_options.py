@@ -54,6 +54,7 @@ class HostapdOptions(TypedDict, total=False):
     country3: str
 
     obss_interval: int
+
     """
     If set non-zero, require stations to perform scans of overlapping
     channels to test for stations which would be affected by 40 MHz traffic.
