@@ -18,6 +18,7 @@
 
 #include <zxtest/zxtest.h>
 
+#include "src/ui/scenic/tests/utils/blocking_present.h"
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
 #include "src/ui/scenic/tests/utils/utils.h"
 
@@ -29,6 +30,7 @@
 
 namespace {
 
+using integration_tests::BlockingPresent;
 using ExpectedLayout = std::pair<float, float>;
 
 // Stores information about a view node present in a fuog_ViewDescriptor. Used for assertions.
@@ -194,7 +196,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
       display_width_ = static_cast<float>(width);
       display_height_ = static_cast<float>(height);
     });
-    BlockingPresent(root_session_);
+    BlockingPresent(this, root_session_);
 
     // Now that the scene exists, wait for a valid focus chain and for the display size.
     RunLoopUntil([this] {
@@ -204,19 +206,6 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
     ASSERT_EQ(LastFocusChain()->focus_chain().size(), 1u);
 
     observed_focus_chains_.clear();
-  }
-
-  // Invokes Flatland.Present() and waits for a response from Scenic that the frame has been
-  // presented.
-  void BlockingPresent(fuc_FlatlandPtr& flatland) {
-    bool presented = false;
-    bool next_frame_ready = false;
-    flatland.events().OnFramePresented = [&presented](auto) { presented = true; };
-    flatland.events().OnNextFrameBegin = [&next_frame_ready](auto) { next_frame_ready = true; };
-    flatland->Present({});
-    RunLoopUntil([&presented, &next_frame_ready] { return presented && next_frame_ready; });
-    flatland.events().OnFramePresented = nullptr;
-    flatland.events().OnNextFrameBegin = nullptr;
   }
 
   // Create a new transform and viewport, then call |BlockingPresent| to wait for it to take
@@ -237,7 +226,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                              child_view_watcher.NewRequest());
     flatland->SetContent(kTransform, kContent);
 
-    BlockingPresent(flatland);
+    BlockingPresent(this, flatland);
   }
 
   // |fuchsia::ui::focus::FocusChainListener|
@@ -305,7 +294,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesTopologyUpdatesFor
     RunLoopUntil([&result] { return result.has_value(); });
     EXPECT_TRUE(result.value());
 
-    BlockingPresent(parent_session);
+    BlockingPresent(this, parent_session);
   }
 
   // Set up the child_view and connect it to the parent_view.
@@ -324,12 +313,12 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesTopologyUpdatesFor
     child_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(child_session);
+    BlockingPresent(this, child_session);
   }
 
   // Detach the child_view from the parent_view.
   child_session->ReleaseView();
-  BlockingPresent(child_session);
+  BlockingPresent(this, child_session);
 
   std::optional<fuog_WatchResponse> view_tree_result;
 
@@ -406,7 +395,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
     RunLoopUntil([&result] { return result.has_value(); });
     EXPECT_TRUE(result.value());
 
-    BlockingPresent(parent_session);
+    BlockingPresent(this, parent_session);
   }
 
   // Set up the child_view and connect it to the parent_view.
@@ -425,7 +414,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
     child_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(child_session);
+    BlockingPresent(this, child_session);
   }
 
   // Modify the Viewport properties of the child.
@@ -434,7 +423,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
   properties.set_logical_size({width, height});
   parent_session->SetViewportProperties({1}, std::move(properties));
 
-  BlockingPresent(parent_session);
+  BlockingPresent(this, parent_session);
 
   std::optional<fuog_WatchResponse> view_tree_result;
 
@@ -513,7 +502,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ChildRequestsFocusAfterConnectin
     RunLoopUntil([&result] { return result.has_value(); });
     EXPECT_TRUE(result.value());
 
-    BlockingPresent(child_session);
+    BlockingPresent(this, child_session);
   }
 
   // Watch for child focused event.

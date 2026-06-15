@@ -9,6 +9,9 @@ namespace integration_tests {
 void BlockingPresent(ui_testing::LoggingEventLoop* loop, FlatlandClientWithEventHandler& flatland,
                      fuchsia_ui_composition::PresentArgs present_args,
                      cpp20::source_location caller) {
+  if (!present_args.unsquashable().has_value()) {
+    present_args.unsquashable(true);
+  }
   // Initialize callbacks and callback state.
   bool presented = false;
   bool began = false;
@@ -36,6 +39,9 @@ void BlockingPresent(ui_testing::LoggingEventLoop* loop,
                      fuchsia::ui::composition::FlatlandPtr& flatland,
                      fuchsia::ui::composition::PresentArgs present_args,
                      cpp20::source_location caller) {
+  if (!present_args.has_unsquashable()) {
+    present_args.set_unsquashable(true);
+  }
   // Initialize callbacks and callback state.
   bool presented = false;
   bool began = false;

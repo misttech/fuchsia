@@ -18,6 +18,7 @@
 
 #include <zxtest/zxtest.h>
 
+#include "src/ui/scenic/tests/utils/blocking_present.h"
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
 #include "src/ui/scenic/tests/utils/utils.h"
 
@@ -25,6 +26,7 @@
 
 namespace {
 
+using integration_tests::BlockingPresent;
 using ExpectedLayout = std::pair<float, float>;
 
 // Stores information about a view node present in a fuog_ViewDescriptor. Used for assertions.
@@ -189,7 +191,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
       display_width_ = static_cast<float>(width);
       display_height_ = static_cast<float>(height);
     });
-    BlockingPresent(root_session_);
+    BlockingPresent(this, root_session_);
 
     // Now that the scene exists, wait for a valid focus chain and for the display size.
     RunLoopUntil([this] {
@@ -199,20 +201,6 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
     ASSERT_EQ(LastFocusChain()->focus_chain().size(), 1u);
 
     observed_focus_chains_.clear();
-  }
-
-  // Invokes Flatland.Present() and waits for a response from Scenic that the frame has been
-  // presented.
-  void BlockingPresent(fuc_FlatlandPtr& flatland) {
-    bool presented = false;
-    flatland.events().OnFramePresented = [&presented](auto) { presented = true; };
-    fuchsia::ui::composition::PresentArgs args;
-    // Squashing frames can affect the number of view trees produced, which would make this test
-    // flaky.
-    args.set_unsquashable(true);
-    flatland->Present(std::move(args));
-    RunLoopUntil([&presented] { return presented; });
-    flatland.events().OnFramePresented = nullptr;
   }
 
   // Create a new transform and viewport, then call |BlockingPresent| to wait for it to take
@@ -233,7 +221,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                              child_view_watcher.NewRequest());
     flatland->SetContent(kTransform, kContent);
 
-    BlockingPresent(flatland);
+    BlockingPresent(this, flatland);
   }
 
   // |fuchsia::ui::focus::FocusChainListener|
@@ -306,7 +294,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesTopologyUpdatesFor
     parent_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                 parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(parent_session);
+    BlockingPresent(this, parent_session);
   }
 
   // Set up the child_view and connect it to the parent_view.
@@ -325,12 +313,12 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesTopologyUpdatesFor
     child_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(child_session);
+    BlockingPresent(this, child_session);
   }
 
   // Detach the child_view from the parent_view.
   child_session->ReleaseView();
-  BlockingPresent(child_session);
+  BlockingPresent(this, child_session);
 
   std::optional<fuog_WatchResponse> view_tree_result;
 
@@ -416,7 +404,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
   session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                        parent_viewport_watcher.NewRequest());
 
-  BlockingPresent(session);
+  BlockingPresent(this, session);
 
   // Modify the Viewport properties of the root.
   fuc_ViewportProperties properties;
@@ -424,7 +412,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
   properties.set_logical_size({width, height});
   root_session_->SetViewportProperties({1}, std::move(properties));
 
-  BlockingPresent(root_session_);
+  BlockingPresent(this, root_session_);
 
   std::optional<fuog_WatchResponse> view_tree_result;
 
@@ -499,7 +487,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ChildRequestsFocusAfterConnectin
     child_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(child_session);
+    BlockingPresent(this, child_session);
   }
 
   // Watch for child focused event.
@@ -569,7 +557,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientDeath_ShouldTriggerNewSnap
     child.value()->CreateView2(std::move(child_view_token), std::move(identity),
                                fuc_ViewBoundProtocols{}, parent_viewport_watcher.NewRequest());
 
-    BlockingPresent(child.value());
+    BlockingPresent(this, child.value());
   }
 
   {  //  Child view should now be present in the snapshot.
