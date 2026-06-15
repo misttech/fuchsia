@@ -18,10 +18,13 @@ def main() -> int:
     projects = {
         "fuchsia": source_root,
         "mesa": source_root / "third_party/mesa-migrating/src",
+        "glslang": source_root / "third_party/glslang/src",
     }
 
     results = {}
     for name, path in projects.items():
+        if name == "glslang" and not path.exists():
+            continue
         head_file = get_git_path(path, "HEAD")
         ref_path = get_git_ref(path)
 

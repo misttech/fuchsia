@@ -46,6 +46,9 @@ git_paths = {
   fuchsia_ref = _paths.fuchsia_ref
   mesa_head = _paths.mesa_head
   mesa_ref = _paths.mesa_ref
+  if (defined(_paths.glslang_head)) {
+    glslang_head = _paths.glslang_head
+  }
 }
 
 git_revisions = {
