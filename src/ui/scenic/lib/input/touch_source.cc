@@ -20,7 +20,12 @@ TouchSource::TouchSource(zx_koid_t view_ref_koid,
                       inspector),
       binding_(async_get_default_dispatcher(), std::move(touch_source), this,
                [error_handler = std::move(error_handler)](fidl::UnbindInfo info) {
-                 FX_LOGS(ERROR) << "TouchSource fidl channel closed: " << info.FormatDescription();
+                 if (info.status() != ZX_OK && info.status() != ZX_ERR_PEER_CLOSED) {
+                   FX_LOGS(ERROR) << "TouchSource fidl channel closed: "
+                                  << info.FormatDescription();
+                 } else {
+                   FX_LOGS(INFO) << "TouchSource fidl channel closed: " << info.FormatDescription();
+                 }
                  // NOTE: Triggers destruction of this object.
                  error_handler();
                }) {}

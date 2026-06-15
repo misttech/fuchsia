@@ -27,8 +27,13 @@ TouchSourceWithLocalHit::TouchSourceWithLocalHit(
       error_handler_(std::move(error_handler)),
       get_local_hit_(std::move(get_local_hit)) {
   binding_.set_error_handler([this](zx_status_t status) {
-    FX_LOGS(ERROR) << "TouchSourceWithLocalHit fidl channel closed: "
-                   << zx_status_get_string(status);
+    if (status != ZX_OK && status != ZX_ERR_PEER_CLOSED) {
+      FX_LOGS(ERROR) << "TouchSourceWithLocalHit fidl channel closed: "
+                     << zx_status_get_string(status);
+    } else {
+      FX_LOGS(INFO) << "TouchSourceWithLocalHit fidl channel closed: "
+                    << zx_status_get_string(status);
+    }
     error_handler_();
   });
 }
