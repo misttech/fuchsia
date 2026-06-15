@@ -391,5 +391,74 @@ TEST(FramePredictor, ComputeNextSyncTime) {
   }
 }
 
+TEST(FramePredictor, SnapRequestedPresentationTime) {
+  const zx::time last_vsync_time = ms_to_time(100);
+  const zx::duration vsync_interval = zx::msec(16);
+  // 18% of 16ms is 2.88ms. Since it is less than 3ms, threshold is 2.88ms.
+
+  // 1. Under 18% overshoot -> should snap back to last_vsync_time (100ms).
+  {
+    zx::time requested_time = last_vsync_time + zx::usec(1500);  // 1.5ms overshoot
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time, last_vsync_time,
+                                                            vsync_interval),
+              last_vsync_time);
+  }
+
+  // 2. Exactly on the 18% threshold -> should snap back to last_vsync_time (100ms).
+  {
+    zx::time requested_time = last_vsync_time + zx::usec(2880);  // 2.88ms overshoot
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time, last_vsync_time,
+                                                            vsync_interval),
+              last_vsync_time);
+  }
+
+  // 3. Over 18% overshoot -> should not snap.
+  {
+    zx::time requested_time = last_vsync_time + zx::usec(2900);  // 2.9ms overshoot
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time, last_vsync_time,
+                                                            vsync_interval),
+              requested_time);
+  }
+
+  // 4. Large vsync interval where 18% exceeds 3ms. Threshold should cap at 3ms.
+  {
+    const zx::duration large_vsync_interval = zx::msec(50);  // 18% is 9ms
+    // 2.5ms overshoot (< 3ms) -> should snap to 100ms
+    zx::time requested_time_snap = last_vsync_time + zx::usec(2500);
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time_snap, last_vsync_time,
+                                                            large_vsync_interval),
+              last_vsync_time);
+
+    // 3.5ms overshoot (> 3ms) -> should not snap
+    zx::time requested_time_no_snap = last_vsync_time + zx::usec(3500);
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time_no_snap, last_vsync_time,
+                                                            large_vsync_interval),
+              requested_time_no_snap);
+  }
+
+  // 5. Exact vsync hit -> snaps to itself (no change)
+  {
+    zx::time requested_time = last_vsync_time + vsync_interval;  // 116ms
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time, last_vsync_time,
+                                                            vsync_interval),
+              requested_time);
+  }
+
+  // 6. Requested time in the past relative to last_vsync_time -> no snap
+  {
+    zx::time requested_time = last_vsync_time - zx::msec(5);
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(requested_time, last_vsync_time,
+                                                            vsync_interval),
+              requested_time);
+  }
+
+  // 7. Requested time equal to last_vsync_time -> no snap
+  {
+    EXPECT_EQ(FramePredictor::SnapRequestedPresentationTime(last_vsync_time, last_vsync_time,
+                                                            vsync_interval),
+              last_vsync_time);
+  }
+}
+
 }  // namespace test
 }  // namespace scheduling

@@ -8,7 +8,60 @@
 
 #include <algorithm>
 
+namespace {
+
+// Allowed snapping threshold as a percentage of vsync_interval.
+constexpr int64_t kSnapThresholdPercent = 18;
+// LINT.IfChange
+// Maximum duration cap for the snapping threshold.
+constexpr zx::duration kMaxSnapThreshold = zx::msec(3);
+// LINT.ThenChange(//src/ui/scenic/lib/scheduling/tests/default_frame_scheduler_unittest.cc)
+
+struct VsyncProjection {
+  zx::time previous_vsync;
+  zx::duration overshoot;
+};
+
+// Projects a timestamp onto the Vsync grid defined by `base_vsync_time` and `vsync_interval`.
+// Returns the previous Vsync boundary (<= time) and the overshoot duration.
+// Assumes `time > base_vsync_time` and `vsync_interval > 0`.
+VsyncProjection ProjectOntoVsyncGrid(zx::time time, zx::time base_vsync_time,
+                                     zx::duration vsync_interval) {
+  FX_DCHECK(time > base_vsync_time);
+  FX_DCHECK(vsync_interval.get() > 0);
+
+  const zx::duration diff = time - base_vsync_time;
+  const int64_t num_intervals = diff.get() / vsync_interval.get();
+  const zx::time previous_vsync = base_vsync_time + (vsync_interval * num_intervals);
+  const zx::duration overshoot = time - previous_vsync;
+
+  return {.previous_vsync = previous_vsync, .overshoot = overshoot};
+}
+
+}  // namespace
+
 namespace scheduling {
+
+// static
+zx::time FramePredictor::SnapRequestedPresentationTime(zx::time requested_presentation_time,
+                                                       zx::time last_vsync_time,
+                                                       zx::duration vsync_interval) {
+  if (requested_presentation_time <= last_vsync_time || vsync_interval.get() <= 0) {
+    return requested_presentation_time;
+  }
+
+  const auto [previous_vsync, overshoot] =
+      ProjectOntoVsyncGrid(requested_presentation_time, last_vsync_time, vsync_interval);
+
+  const zx::duration snap_threshold =
+      std::min(vsync_interval * kSnapThresholdPercent / 100, kMaxSnapThreshold);
+
+  if (overshoot <= snap_threshold) {
+    return previous_vsync;
+  }
+
+  return requested_presentation_time;
+}
 
 // static
 zx::time FramePredictor::ComputeNextVsyncTime(zx::time base_vsync_time, zx::duration vsync_interval,
@@ -22,12 +75,13 @@ zx::time FramePredictor::ComputeNextVsyncTime(zx::time base_vsync_time, zx::dura
     return base_vsync_time;
   }
 
-  // The "-1" is so that `ComputeNextVsyncTime(5, 10, 15)` returns 15 instead of 25.
-  // The latter would be surprising, because the if-statement above causes
-  // `ComputeNextVsyncTime(5, 10, 5)` to return 5.
-  const int64_t num_intervals =
-      (min_vsync_time.get() - base_vsync_time.get() - 1) / vsync_interval.get();
-  return base_vsync_time + (vsync_interval * (num_intervals + 1));
+  const auto [previous_vsync, overshoot] =
+      ProjectOntoVsyncGrid(min_vsync_time, base_vsync_time, vsync_interval);
+
+  if (overshoot.get() == 0) {
+    return previous_vsync;
+  }
+  return previous_vsync + vsync_interval;
 }
 
 // static

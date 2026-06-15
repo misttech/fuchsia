@@ -82,6 +82,12 @@ class FramePredictor {
   // |min_vsync_time| The minimum time allowed to return.
   static zx::time ComputeNextVsyncTime(zx::time base_vsync_time, zx::duration vsync_interval,
                                        zx::time min_vsync_time);
+
+  // Snaps the client's `requested_presentation_time` back to the closest past vsync
+  // if it overshoots it by less than the threshold.
+  static zx::time SnapRequestedPresentationTime(zx::time requested_presentation_time,
+                                                zx::time last_vsync_time,
+                                                zx::duration vsync_interval);
 };
 
 }  // namespace scheduling

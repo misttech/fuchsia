@@ -308,15 +308,21 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
                          TA_UINT64(id_pair.present_id));
   }
 
+  const zx::time snapped_presentation_time = FramePredictor::SnapRequestedPresentationTime(
+      requested_presentation_time, vsync_timing_->last_vsync_time(),
+      vsync_timing_->vsync_interval());
+
   // Logging the first few frames to find common startup bugs.
   if (frame_number_ < kNumDebugFrames) {
     FX_LOGS(DEBUG) << "FrameScheduler::ScheduleUpdateForSession() session_id=" << id_pair.session_id
                    << "  present_id=" << id_pair.present_id
-                   << "  requested_presentation_time=" << requested_presentation_time.get();
+                   << "  requested_presentation_time=" << requested_presentation_time.get()
+                   << "  snapped_presentation_time=" << snapped_presentation_time.get();
   } else {
     FLATLAND_VERBOSE_LOG << "FrameScheduler::ScheduleUpdateForSession() session_id="
                          << id_pair.session_id << "  present_id=" << id_pair.present_id
-                         << "  requested_presentation_time=" << requested_presentation_time.get();
+                         << "  requested_presentation_time=" << requested_presentation_time.get()
+                         << "  snapped_presentation_time=" << snapped_presentation_time.get();
   }
 
   const trace_flow_id_t flow_id = trace_enabled ? TRACE_NONCE() : 0;
@@ -324,7 +330,7 @@ void DefaultFrameScheduler::ScheduleUpdateForSession(zx::time requested_presenta
     TRACE_FLOW_BEGIN("gfx", "request_to_render", flow_id);
   }
   pending_present_requests_.emplace(std::make_pair(
-      id_pair, PresentRequest{.requested_presentation_time = requested_presentation_time,
+      id_pair, PresentRequest{.requested_presentation_time = snapped_presentation_time,
                               .flow_id = flow_id,
                               .squashable = squashable,
                               .schedule_asap = schedule_asap}));

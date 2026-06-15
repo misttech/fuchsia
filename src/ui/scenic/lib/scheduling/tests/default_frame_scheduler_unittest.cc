@@ -441,7 +441,11 @@ TEST_F(FrameSchedulerTest, NoOpUpdateWithSecondPendingUpdate_ShouldBeRescheduled
   EXPECT_EQ(update_sessions_call_count_, 0u);
 
   ScheduleUpdate(kSessionId, Now() + vsync_timing_->vsync_interval());
-  ScheduleUpdate(kSessionId, Now() + (vsync_timing_->vsync_interval() + zx::duration(1)));
+  // Schedule a second update with an offset of 4ms beyond the vsync interval.
+  // This offset is chosen to be greater than the maximum vsync snapping threshold
+  // (kMaxSnapThreshold = 3ms), preventing the scheduler from snapping the target
+  // presentation time back to the vsync interval and coalescing the updates.
+  ScheduleUpdate(kSessionId, Now() + (vsync_timing_->vsync_interval() + zx::msec(4)));
 
   RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
   EXPECT_EQ(update_sessions_call_count_, 1u);
