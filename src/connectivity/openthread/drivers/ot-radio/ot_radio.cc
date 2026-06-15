@@ -145,9 +145,9 @@ void OtRadioDevice::LowpanSpinelDeviceFidlImpl::SendFrame(SendFrameRequestView r
       ot_radio_obj_.outbound_cnt_++;
       zxlogf(DEBUG, "Successfully Txed pkt, total tx pkt %lu", ot_radio_obj_.outbound_cnt_);
       if ((ot_radio_obj_.outbound_cnt_ & 1) == 0) {
+        ot_radio_obj_.outbound_allowance_ += kOutboundAllowanceInc;
         (void)fidl::WireSendEvent(*ot_radio_obj_.fidl_binding_)
             ->OnReadyForSendFrames(kOutboundAllowanceInc);
-        ot_radio_obj_.outbound_allowance_ += kOutboundAllowanceInc;
       }
     }
   }
@@ -536,9 +536,9 @@ bool OtRadioDevice::ShouldRetryReset() {
   if (inbound_frame_available_.load()) {
     zxlogf(INFO, "ot-radio: rcp back online");
     hard_reset_end_.store(0);
+    outbound_allowance_.store(kOutboundAllowanceInit);
     // TODO(https://fxbug.dev/42176667): Consider handling errors instead of ignoring them.
     (void)fidl::WireSendEvent(*fidl_binding_)->OnReadyForSendFrames(kOutboundAllowanceInit);
-    outbound_allowance_.store(kOutboundAllowanceInit);
     return false;
   }
   zx_time_t cur_time_us = zx::clock::get_monotonic().get();
