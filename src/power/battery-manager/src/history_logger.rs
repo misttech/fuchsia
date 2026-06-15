@@ -29,6 +29,7 @@ static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
 static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 const MAX_BATTERY_LEVEL_MEASUREMENTS: usize = 200;
+const MAX_CHARGE_STATUS_MEASUREMENTS: usize = 20;
 const MAX_FAULT_MEASUREMENTS: usize = 20;
 const MAX_HEALTH_MEASUREMENTS: usize = 20;
 const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
@@ -84,6 +85,40 @@ impl From<fidl_fuchsia_power_battery::HealthStatus> for BatteryHealth {
             fidl_fuchsia_power_battery::HealthStatus::Cool => BatteryHealth::Cool,
             fidl_fuchsia_power_battery::HealthStatus::Warm => BatteryHealth::Warm,
             fidl_fuchsia_power_battery::HealthStatus::Overheat => BatteryHealth::Overheat,
+        }
+    }
+}
+
+/// Local representation of `fidl_fuchsia_power_battery::ChargeStatus` defined
+/// for compatibility with the `state_recorder` library.
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[repr(u8)]
+pub enum BatteryChargeStatus {
+    Unknown = 0,
+    Charging = 1,
+    Discharging = 2,
+    NotCharging = 3,
+    Full = 4,
+}
+
+impl From<BatteryChargeStatus> for u64 {
+    fn from(value: BatteryChargeStatus) -> Self {
+        value as Self
+    }
+}
+
+impl From<fidl_fuchsia_power_battery::ChargeStatus> for BatteryChargeStatus {
+    fn from(status: fidl_fuchsia_power_battery::ChargeStatus) -> Self {
+        match status {
+            fidl_fuchsia_power_battery::ChargeStatus::Unknown => BatteryChargeStatus::Unknown,
+            fidl_fuchsia_power_battery::ChargeStatus::Charging => BatteryChargeStatus::Charging,
+            fidl_fuchsia_power_battery::ChargeStatus::Discharging => {
+                BatteryChargeStatus::Discharging
+            }
+            fidl_fuchsia_power_battery::ChargeStatus::NotCharging => {
+                BatteryChargeStatus::NotCharging
+            }
+            fidl_fuchsia_power_battery::ChargeStatus::Full => BatteryChargeStatus::Full,
         }
     }
 }
@@ -313,6 +348,8 @@ pub struct BatteryInfoRecorders {
     time_to_full: RefCell<NumericStateRecorder<u64>>,
     health: RefCell<EnumStateRecorder<BatteryHealth>>,
     previous_health: RefCell<Option<BatteryHealth>>,
+    charge_status: RefCell<EnumStateRecorder<BatteryChargeStatus>>,
+    previous_charge_status: RefCell<Option<BatteryChargeStatus>>,
     fault_detector: Rc<FaultDetector>,
     crash_reporter: Rc<CrashReporter>,
 }
@@ -335,6 +372,7 @@ impl BatteryInfoRecorders {
         let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
         let mut time_to_full_opts = PersistenceOptions::new("time_to_full".to_string());
         let mut health_opts = PersistenceOptions::new("health".to_string());
+        let mut charge_status_opts = PersistenceOptions::new("charge_status".to_string());
 
         let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs.clone());
 
@@ -358,6 +396,8 @@ impl BatteryInfoRecorders {
             time_to_full_opts =
                 time_to_full_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             health_opts = health_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            charge_status_opts =
+                charge_status_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
         }
 
         let raw_level_percent_recorder = Self::create_recorder(
@@ -404,6 +444,11 @@ impl BatteryInfoRecorders {
         );
         let health_recorder =
             Self::create_enum_recorder("health", MAX_HEALTH_MEASUREMENTS, health_opts);
+        let charge_status_recorder = Self::create_enum_recorder(
+            "charge_status",
+            MAX_CHARGE_STATUS_MEASUREMENTS,
+            charge_status_opts,
+        );
 
         Self {
             raw_level_percent: RefCell::new(raw_level_percent_recorder),
@@ -417,6 +462,8 @@ impl BatteryInfoRecorders {
             time_to_full: RefCell::new(time_to_full_recorder),
             health: RefCell::new(health_recorder),
             previous_health: RefCell::new(None),
+            charge_status: RefCell::new(charge_status_recorder),
+            previous_charge_status: RefCell::new(None),
             fault_detector,
             crash_reporter,
         }
@@ -505,6 +552,20 @@ impl BatteryInfoRecorders {
             if Some(battery_health) != *previous_health {
                 *previous_health = Some(battery_health);
                 self.health.borrow_mut().record(battery_health);
+            }
+        }
+    }
+
+    pub fn record_charge_status_on_change(
+        &self,
+        status: Option<fidl_fuchsia_power_battery::ChargeStatus>,
+    ) {
+        if let Some(status) = status {
+            let battery_status = BatteryChargeStatus::from(status);
+            let mut previous_status = self.previous_charge_status.borrow_mut();
+            if Some(battery_status) != *previous_status {
+                *previous_status = Some(battery_status);
+                self.charge_status.borrow_mut().record(battery_status);
             }
         }
     }

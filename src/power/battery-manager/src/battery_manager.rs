@@ -344,6 +344,7 @@ impl BatteryManager {
         self.info_recorders.record_present_current(info.present_charging_current_ua);
         self.info_recorders.record_average_current(info.average_charging_current_ua);
         self.info_recorders.record_health_on_change(info.health);
+        self.info_recorders.record_charge_status_on_change(info.charge_status);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
@@ -1156,6 +1157,17 @@ mod tests {
                     history: contains {
                         "0": contains {
                             value: 0u64,
+                        }
+                    }
+                },
+                charge_status: contains {
+                    metadata: contains {
+                        name: "charge_status",
+                        type: "enum",
+                    },
+                    history: contains {
+                        "0": contains {
+                            value: "Discharging",
                         }
                     }
                 },
