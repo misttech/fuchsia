@@ -1,5 +1,5 @@
 ---
-name: cpp-to-rust-orchestration
+name: cpp-to-rust
 description: >
   Workflow and instructions for orchestrating Coder and Reviewer agents to
   port Zircon C++ code to Rust and verify the port.
@@ -42,7 +42,7 @@ specialization prompts.
     * **Name**: `cpp-to-rust-reviewer`
     * **System Prompt**: Focuses on reviewing the Rust port against the C++
       code, checking for API parity, memory safety (double-drops, raw pointers),
-      and test coverage (defined in
+      test coverage, and fuzz test parity (defined in
       `zircon/skills/cpp-to-rust-reviewer/SKILL.md`).
 
 ### Step 2: Invoke the Subagents
@@ -81,8 +81,8 @@ C++ implementation, C++ tests, Rust implementation, and Rust tests.
 > You must follow `zircon/skills/cpp-to-rust-reviewer/SKILL.md`.
 >
 > Relevant files:
-> - C++: `<cpp_paths>`
-> - Rust: `<rust_paths>`
+> - C++: `<cpp_paths>` (including fuzz tests if applicable)
+> - Rust: `<rust_paths>` (including fuzz tests if applicable)
 >
 > Please generate a structured review report. The Coder agent conversation ID is `<coder_id>`.
 

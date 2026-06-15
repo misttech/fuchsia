@@ -19,8 +19,10 @@ developed to support this migration.
     data structures and algorithms where possible.
 2.  **Memory Layout Parity**: The memory layout of Rust structs must match
     corresponding C++ objects exactly.
-3.  **Test Parity**: Test coverage for Rust code must match C++ code exactly.
-    Always cross-check Rust test coverage against C++ tests and close any gaps.
+3.  **Test & Fuzz Parity**: Test and fuzz coverage for Rust code must match C++
+    code exactly. Always cross-check Rust test coverage against C++ tests and
+    close any gaps. If the C++ code has fuzz tests, implement equivalent Rust
+    fuzzers using `rustc_fuzzer` and the `arbitrary` crate.
 4.  **Ergonomic Design**: Rust code should follow Rust best practices where they
     don't conflict with layout or behavior requirements.
 5.  **DRY Principle**: Apply "Don't Repeat Yourself" to minimize duplication.
@@ -29,10 +31,15 @@ developed to support this migration.
 7.  **Locking and Synchronization**: The locking strategies and concurrency
     control protocols must match C++ code and integrate with standard validation
     frameworks (e.g., lockdep).
-8.  **Documentation Parity**: Port and adapt documentation and comments from the
-    C++ version. Retain explanations of algorithms, design constraints, and
-    usage notes, while updating code examples and API names to reflect Rust
-    idioms.
+8.  **Documentation Parity & Rustdoc**: Port and adapt documentation and
+    comments from the C++ version.
+    * **Public API Documentation**: All public traits, structs, enums, methods,
+      and functions MUST be documented using Rustdoc (`///`) comments.
+    * **Safety Sections**: If a function is `unsafe`, its Rustdoc must contain a
+      `# Safety` section explaining the requirements for safe usage.
+    * **Implementation Comments**: Retain explanations of algorithms, design
+      constraints, and usage notes, while updating code examples and API names
+      to reflect Rust idioms.
 9.  **Preservation of Named Constants**: Avoid hardcoding values that are
     defined as named constants in the C++ version. Extract these to equivalent
     `pub const` definitions in Rust and use them for defaults, limits, or
@@ -350,7 +357,7 @@ Prefer adding `use` directives at the top of the file rather than writing out
 fully qualified namespaces (e.g., `core::ffi::CStr`) for everything explicitly.
 This makes the code more compact and readable.
 
-### 10. Pointer Safety with `NonNull` and `Option<NonNull>`
+### 10. Pointer Safety, `NonNull`, and Strict Provenance
 
 When porting C++ code that uses raw pointers (`T*` or `const T*`):
 - **Avoid raw pointers** (`*const T` or `*mut T`) in Rust interfaces unless
@@ -389,6 +396,38 @@ impl Node {
 }
 ```
 
+#### Strict Provenance & Casts:
+Rust is transitioning to a "Strict Provenance" model where pointers are not just
+integers (addresses), but also carry "provenance" (the permission to access the
+memory).
+- **Avoid raw casts (`as *const T` / `as *mut T`)** when converting integer
+  addresses (e.g., `usize` returned from OS memory mapping APIs) back to
+  pointers.
+- **Use `core::ptr::with_exposed_provenance`** (or `with_exposed_provenance_mut`
+  for mutable pointers) to construct pointers from integers that represent
+  exposed memory addresses (like those returned from VMAR mapping syscalls).
+- This makes the provenance cast explicit and ensures compliance with Rust's
+  strict provenance guidelines, helping the compiler perform correct alias
+  analysis.
+
+Example:
+```rust
+// Converting a raw mapped address (usize) back to a slice safely and with correct provenance:
+pub fn get_slice(mapped_addr: usize, size: usize) -> &'static [u8] {
+    if mapped_addr == 0 {
+        &[]
+    } else {
+        // SAFETY: `mapped_addr` is a valid address mapped from a VMO with `size` bytes.
+        // We use `with_exposed_provenance` to construct a pointer with exposed provenance,
+        // and then `from_raw_parts` to construct a slice.
+        unsafe {
+            let ptr = core::ptr::with_exposed_provenance::<u8>(mapped_addr);
+            core::slice::from_raw_parts(ptr, size)
+        }
+    }
+}
+```
+
 ### 11. Zircon Status and Error Handling
 
 When porting Zircon code that returns error codes (e.g., `zx_status_t` in C++):
@@ -416,4 +455,120 @@ pub fn add_region(&self, base: u64, size: u64) -> Result<(), Status> {
     Ok(())
 }
 ```
+
+### 12. Code Organization Parity
+
+When porting a C++ library or component, match the file and module structure of
+the C++ codebase:
+- If the C++ library is split into multiple headers and source files (e.g.,
+  `bitmap.h`, `storage.h`, `raw-bitmap.h`, `rle-bitmap.h`), organize the Rust
+  port similarly using separate module files (e.g., `src/bitmap.rs`,
+  `src/storage.rs`, `src/raw_bitmap.rs`, `src/rle_bitmap.rs`).
+- Use `pub mod` declarations in the root `src/lib.rs` (or `src/main.rs`) to
+  define these modules.
+- Re-export the public types and traits at the root level (using `pub use`) to
+  maintain a unified, flat public API if the C++ library exposed everything from
+  a single entry point or header.
+- Ensure that the unit tests are also modularized or placed appropriately (e.g.,
+  in a `tests.rs` file or submodule) and explicitly declared in `lib.rs` via
+  `mod tests;` (usually under `#[cfg(test)]`) to ensure they are compiled and
+  executed.
+
+### 13. Fuzz Testing Parity
+
+If the C++ library or component being ported has fuzz tests, you must implement
+equivalent Rust fuzzers to maintain testing parity.
+
+#### Fuzzer Implementation Structure:
+- **Separate Crate**: Compile the fuzzer as a separate crate (usually staticlib
+  linked with clang by the build system) rather than part of the library crate.
+- **Imports**: Import the library crate using absolute paths (`use
+  ::library_name::*;`) instead of `use crate::*` to avoid ambiguity since the
+  fuzzer is its own crate root.
+- **Structured Inputs (`Arbitrary`)**: Use the `arbitrary` crate to define
+  structured inputs for the fuzzer. This is the idiomatic Rust equivalent to
+  C++'s `FuzzedDataProvider`.
+- **Fuzz Target**: Use the `#[fuzz]` attribute from the `fuzz` crate to define
+  the fuzzer entry point.
+
+Example (`src/fuzzer.rs`):
+```rust
+use ::my_library::*;
+use arbitrary::Arbitrary;
+use fuzz::fuzz;
+
+#[derive(Arbitrary, Debug)]
+enum Op {
+    Add { val: u32 },
+    Remove { val: u32 },
+    Clear,
+}
+
+#[fuzz]
+fn my_library_fuzzer(ops: Vec<Op>) {
+    let mut obj = MyStruct::new();
+    for op in ops {
+        match op {
+            Op::Add { val } => { let _ = obj.add(val); }
+            Op::Remove { val } => { let _ = obj.remove(val); }
+            Op::Clear => { obj.clear(); }
+        }
+    }
+}
+```
+
+#### Build Configuration (`BUILD.gn`):
+- Import fuzzing templates:
+  ```gn
+  import("//build/fuzz.gni")
+  import("//build/rust/rustc_fuzzer.gni")
+  ```
+- Define the fuzzer targets:
+  ```gn
+  rustc_fuzzer("my-fuzzer") {
+    edition = "2024"
+    deps = [
+      ":my-library",
+      "//src/lib/fuzzing/rust:fuzz",
+      "//third_party/rust_crates:arbitrary",
+    ]
+    source_root = "src/fuzzer.rs"
+    sources = [ "src/fuzzer.rs" ]
+    rustfunction = "my_library_fuzzer"
+  }
+
+  fuchsia_fuzzer_component("my-fuzzer-component") {
+    manifest = "meta/my-fuzzer.cml"
+    deps = [ ":my-fuzzer" ]
+  }
+
+  fuchsia_fuzzer_package("my-fuzzers") {
+    rust_fuzzer_components = [ ":my-fuzzer-component" ]
+  }
+  ```
+- Add the fuzzer package to the `tests` group:
+  ```gn
+  group("tests") {
+    testonly = true
+    deps = [
+      ":my-fuzzers",
+      ":my-library-tests",
+    ]
+  }
+  ```
+
+#### Component Manifest (`meta/my-fuzzer.cml`):
+Create a basic component manifest that includes the default libFuzzer shard:
+```json
+{
+    include: [ "//src/sys/fuzzing/libfuzzer/default.shard.cml" ],
+    program: {
+        args: [ "test/my-fuzzer" ],
+    },
+}
+```
+
+#### Verification:
+- Add the fuzzer to your build using `fx add-test //path/to:my-fuzzers`.
+- Verify compilation by building the target: `fx build //path/to:my-fuzzers`.
 

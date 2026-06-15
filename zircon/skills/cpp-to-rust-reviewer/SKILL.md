@@ -54,6 +54,9 @@ across the following dimensions:
   port use `NonNull<T>` (if they must be non-null) or `Option<NonNull<T>>` (if
   they can be null) instead of raw `*const T` or `*mut T`? Does the Rust code
   enforce non-nullness at the API boundary where applicable?
+* **Strict Provenance**: When casting integers (like `usize` addresses) to
+  pointers, does the code use `core::ptr::with_exposed_provenance` (or
+  `with_exposed_provenance_mut`) instead of `as *const T` / `as *mut T`?
 * **Memory Allocation**: Are all memory allocations explicit and fallible (e.g.,
   using `kalloc::Box`)? Are there any hidden paths that could trigger a panic on
   Out-of-Memory (OOM)?
@@ -69,13 +72,16 @@ across the following dimensions:
   synchronization primitive (e.g., via a template parameter like `LockType`),
   does the Rust version support equivalent customization?
 
-### 5. Test Parity
+### 5. Test and Fuzz Parity
 * **Coverage Equivalence**: Do the Rust unit tests cover every test case,
   scenario, and edge case present in the C++ unit tests?
 * **Edge Cases**: Are limit cases, error paths, concurrency scenarios, and
   negative test cases fully tested in Rust?
 * **Differential Testing**: If possible, are there tests verifying that both C++
   and Rust versions produce identical outcomes for complex inputs?
+* **Fuzz Testing**: If the C++ codebase has fuzz tests (e.g.
+  `raw-bitmap-fuzzer.cc`), ensure that equivalent Rust fuzzers are implemented
+  using `rustc_fuzzer` and the `arbitrary` crate to fuzz the same operations.
 
 ### 6. Documentation and Comment Parity
 * **Comment Matching**: Are high-level architectural descriptions, design
@@ -85,6 +91,9 @@ across the following dimensions:
   const generics, standard wrappers)?
 * **Safety Comments**: Are all unsafe blocks clearly documented with `//
   SAFETY:` comments explaining structural safety invariants?
+* **Rustdoc Coverage**: Are all public traits, structs, enums, methods, and
+  functions documented with `///` doc comments? Do `unsafe` functions have a `#
+  Safety` section in their Rustdoc?
 
 ### 7. Rust Ergonomics and Idioms
 * **Derive Macros**: Are standard traits (`Default`, `Clone`, `Debug`,
@@ -109,6 +118,16 @@ across the following dimensions:
 * **Namespace Cleanliness**: Are type imports cleaned up (using `use` statements
   at the top of the file) rather than using fully qualified paths (e.g.
   `core::sync::atomic::Ordering`) in the function body?
+
+### 8. Code Organization Parity
+* **File Structure Matching**: Does the Rust code organization (file and module
+  structure) roughly match the C++ code organization?
+* **Module Definition & Re-exports**: Are logically related components split
+  into separate files matching their C++ counterparts, and are they correctly
+  declared as modules and optionally re-exported to maintain API compatibility?
+* **Test Module Declaration**: Are test files explicitly declared as modules
+  (e.g., `mod tests;` under `#[cfg(test)]`) in the crate root to ensure they are
+  compiled and run?
 
 ## Common Pitfalls to Check For
 
@@ -148,6 +167,18 @@ When reviewing ports, pay special attention to these common issues:
     `ZX_ERR_*` constants locally. Check if the Rust port defines these locally,
     and instruct the implementation agent to depend on `//sdk/rust/zx-status`
     and use `zx_status::Status` instead.
+9.  **Monolithic Rust File**: Porting a multi-file C++ library into a single,
+    massive Rust `lib.rs` file. This makes maintenance difficult. Ensure that
+    logically distinct C++ headers/implementations are mapped to separate Rust
+    module files and appropriately re-exports.
+10.  **Ignoring Fuzz Testing Parity**: Failing to check if the C++ codebase has
+     fuzz tests and omitting equivalent Rust fuzzers. Always check for `.cc`
+     files in the C++ test directories that contain `LLVMFuzzerTestOneInput` or
+     use `FuzzedDataProvider`, and ensure the Rust port implements them.
+11.  **Pointer Provenance Violations**: Casting integers (like raw mapped
+     addresses) directly to pointers via `as *const T` or `as *mut T`. This
+     violates Rust's strict provenance guidelines. Insist on using
+     `core::ptr::with_exposed_provenance` or `with_exposed_provenance_mut`.
 
 ---
 
@@ -217,6 +248,7 @@ containing:
 2.  **Side-by-Side Comparison Tables**:
     * **API Parity**: C++ Type/Method vs. Rust Type/Method (and parity status).
     * **Test Parity**: C++ Test Case vs. Rust Test Case (and parity status).
+    * **Fuzz Test Parity**: C++ Fuzzer vs. Rust Fuzzer (and parity status).
 3.  **Detailed Gap Analysis**: A categorized list of gaps with thorough
     explanations.
 4.  **Actionable Instructions**: The precise instructions for the implementation
