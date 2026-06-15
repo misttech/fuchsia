@@ -225,6 +225,7 @@ pub fn create_init_process(
     fs: Arc<FsContext>,
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno> {
+    assert_eq!(pid, 1);
     let pids = kernel.pids.write();
     let builder = create_task_with_pid(
         locked,
