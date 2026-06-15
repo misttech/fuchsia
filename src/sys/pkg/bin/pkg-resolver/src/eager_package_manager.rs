@@ -5,8 +5,10 @@
 use crate::resolver_service::Resolver;
 use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
+use cobalt_sw_delivery_registry as metrics;
 use eager_package_config::pkg_resolver::{EagerPackageConfig, EagerPackageConfigs};
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{self as fpkg, CupRequest, CupRequestStream, GetInfoError, WriteError};
 use fidl_fuchsia_pkg_ext::{CupData, CupMissingField, ResolutionContext, cache};
@@ -30,7 +32,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 use system_image::CachePackages;
-use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio};
 
 const EAGER_PACKAGE_PERSISTENT_FIDL_NAME: &str = "eager_packages.pf";
 
@@ -413,13 +414,13 @@ impl<T: Resolver> EagerPackageManager<T> {
             return Err(CupWriteError::RequestedVersionTooLow);
         }
 
+        let cup_handler = StandardCupv2Handler::new(&package.public_keys);
+        verify_cup_signature(&cup_handler, &cup_data)?;
+
         let hash = pinned_url.hash();
         let (pkg_dir, _resolution_context) =
             Self::resolve_pinned(&manager.package_resolver, pinned_url).await?;
         package.package_directory_and_hash = Some((pkg_dir, hash));
-
-        let cup_handler = StandardCupv2Handler::new(&package.public_keys);
-        verify_cup_signature(&cup_handler, &cup_data)?;
 
         package.cup = Some(cup_data);
 
@@ -1505,6 +1506,36 @@ mod tests {
             )
             .await,
             Err(CupWriteError::RequestedVersionTooLow)
+        );
+        manager = manager_lock.into_inner();
+        assert!(manager.packages[&url].package_directory_and_hash.is_none());
+        assert_eq!(manager.packages[&url].cup, None);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_cup_write_signature_invalid() {
+        let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
+        let package_resolver = MockResolver::new(move |_url, _gc_protection| async move {
+            panic!("resolver should not be called");
+        });
+
+        let mut manager = TestEagerPackageManagerBuilder::default()
+            .package_resolver(package_resolver)
+            .build()
+            .await;
+
+        let mut cup = make_cup_data(&get_default_cup_response());
+        cup.signature = vec![0; 64];
+
+        let manager_lock = AsyncRwLock::new(manager);
+        assert_matches!(
+            EagerPackageManager::cup_write(
+                &manager_lock,
+                &fpkg::PackageUrl { url: TEST_PINNED_URL.into() },
+                cup.into(),
+            )
+            .await,
+            Err(CupWriteError::ParseCupResponse(_))
         );
         manager = manager_lock.into_inner();
         assert!(manager.packages[&url].package_directory_and_hash.is_none());
