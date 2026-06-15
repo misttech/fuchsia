@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "unicode-normalization",
-    package_url = "https://github.com/unicode-rs/unicode-normalization",
-    package_version = "0.1.24",
+    package_name = "tinyvec",
+    package_url = "https://github.com/Lokathor/tinyvec",
+    package_version = "1.11.0",
 )
 
 license(
@@ -30,12 +30,13 @@ license(
     license_kinds = [
         "@rules_license//licenses/spdx:Apache-2.0",
         "@rules_license//licenses/spdx:MIT",
+        "@rules_license//licenses/spdx:Zlib",
     ],
-    license_text = "LICENSE-APACHE",
+    license_text = "LICENSE-APACHE.md",
 )
 
 rust_library(
-    name = "unicode_normalization",
+    name = "tinyvec",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,8 +54,9 @@ rust_library(
         ],
     ),
     crate_features = [
+        "alloc",
         "default",
-        "std",
+        "tinyvec_macros",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
@@ -63,7 +65,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=unicode-normalization",
+        "crate-name=tinyvec",
         "manual",
         "noclippy",
         "norustfmt",
@@ -75,8 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.24",
+    version = "1.11.0",
     deps = [
-        "//third_party/rust_crates/vendor/tinyvec-1.11.0:tinyvec",
+        "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1:tinyvec_macros",
     ],
 )
