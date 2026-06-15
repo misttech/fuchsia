@@ -48,8 +48,8 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    FileOpsCore, KernelSwapFiles, LockDepRwLock, LockEqualOrBefore, Locked, Mutex, OrderedMutex,
-    RwLock, TerminalLock,
+    FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked, Mutex,
+    OrderedMutex, RwLock, TerminalLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -319,7 +319,8 @@ pub struct Kernel {
     pub disable_unprivileged_bpf: AtomicU8,
 
     /// Control handle to the running container's ComponentController.
-    pub container_control_handle: Mutex<Option<ComponentControllerControlHandle>>,
+    pub container_control_handle:
+        LockDepMutex<Option<ComponentControllerControlHandle>, TerminalLock>,
 
     /// eBPF state: loaded programs, eBPF maps, etc.
     pub ebpf_state: EbpfState,
@@ -484,7 +485,7 @@ impl Kernel {
             memory_attribution_manager: MemoryAttributionManager::new(kernel.clone()),
             crash_reporter,
             shutting_down: AtomicBool::new(false),
-            container_control_handle: Mutex::new(None),
+            container_control_handle: LockDepMutex::new(None),
             ebpf_state: Default::default(),
             cgroups: Default::default(),
             time_adjustment_proxy,
