@@ -1287,6 +1287,8 @@ impl StatusFile {
 }
 impl DynamicFileSource for StatusFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        let start_monotonic = zx::MonotonicInstant::get();
+        let start_boot = zx::BootInstant::get();
         let task = &self.0.upgrade();
         let (tgid, pid, creds_string) = {
             if let Some(task) = task {
@@ -1390,6 +1392,28 @@ impl DynamicFileSource for StatusFile {
 
         // There should be at least one thread in Zombie processes.
         writeln!(sink, "Threads:\t{}", std::cmp::max(1, threads))?;
+
+        let elapsed_monotonic = zx::MonotonicInstant::get() - start_monotonic;
+        let elapsed_boot = zx::BootInstant::get() - start_boot;
+        if elapsed_monotonic > zx::MonotonicDuration::from_millis(100)
+            || elapsed_boot > zx::BootDuration::from_seconds(1)
+        {
+            let target_pid = task.as_ref().map(|t| t.persistent_info.pid()).unwrap_or(-1);
+            let target_comm = task
+                .as_ref()
+                .map(|t| {
+                    String::from_utf8_lossy(t.persistent_info.command_guard().comm_name())
+                        .into_owned()
+                })
+                .unwrap_or_default();
+            starnix_logging::log_warn!(
+                "StatusFile::generate for task {} ({}) took {} ms (monotonic), {} ms (boot)",
+                target_pid,
+                target_comm,
+                elapsed_monotonic.into_millis(),
+                elapsed_boot.into_millis()
+            );
+        }
 
         Ok(())
     }
