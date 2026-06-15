@@ -446,164 +446,6 @@ TEST_F(PrinterUnitTest, PrintSummaryVMOShared) {
                     });
 }
 
-TEST_F(PrinterUnitTest, OutputSummarySingle) {
-  Capture c;
-  TestUtils::CreateCapture(
-      &c,
-      {
-          .time = 1234L * 1000000000L,
-          .vmos =
-              {
-                  {.koid = 1, .name = "v1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-              },
-          .processes =
-              {
-                  {.koid = 100, .name = "p1", .vmos = {1}},
-              },
-      });
-  Summary s(c);
-
-  std::ostringstream oss;
-  TextPrinter p(oss);
-
-  p.OutputSummary(s, SORTED, ZX_KOID_INVALID);
-  ConfirmLines(oss, {
-                        "1234,100,p1,100,100,100",
-                        "1234,1,kernel,0,0,0",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, 100);
-  ConfirmLines(oss, {
-                        "1234,100,v1,100,100,100",
-                    });
-}
-
-TEST_F(PrinterUnitTest, OutputSummaryKernel) {
-  Capture c;
-  TestUtils::CreateCapture(&c, {
-                                   .time = 1234L * 1000000000L,
-                                   .kmem =
-                                       {
-                                           .wired_bytes = 10,
-                                           .total_heap_bytes = 20,
-                                           .vmo_bytes = 60,
-                                           .mmu_overhead_bytes = 30,
-                                           .ipc_bytes = 40,
-                                           .other_bytes = 50,
-                                       },
-                               });
-  Summary s(c);
-
-  std::ostringstream oss;
-  TextPrinter p(oss);
-
-  p.OutputSummary(s, SORTED, ZX_KOID_INVALID);
-  ConfirmLines(oss, {
-                        "1234,1,kernel,210,210,210",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, ProcessSummary::kKernelKoid);
-  ConfirmLines(oss, {
-                        "1234,1,vmo,60,60,60",
-                        "1234,1,other,50,50,50",
-                        "1234,1,ipc,40,40,40",
-                        "1234,1,mmu,30,30,30",
-                        "1234,1,heap,20,20,20",
-                        "1234,1,wired,10,10,10",
-                    });
-}
-
-TEST_F(PrinterUnitTest, OutputSummaryDouble) {
-  Capture c;
-  TestUtils::CreateCapture(
-      &c,
-      {
-          .time = 1234L * 1000000000L,
-          .vmos =
-              {
-                  {.koid = 1, .name = "v1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 2, .name = "v2", .committed_bytes = 200, .committed_scaled_bytes = 200},
-              },
-          .processes =
-              {
-                  {.koid = 100, .name = "p1", .vmos = {1}},
-                  {.koid = 200, .name = "p2", .vmos = {2}},
-              },
-      });
-  Summary s(c);
-
-  std::ostringstream oss;
-  TextPrinter p(oss);
-
-  p.OutputSummary(s, SORTED, ZX_KOID_INVALID);
-  ConfirmLines(oss, {
-                        "1234,200,p2,200,200,200",
-                        "1234,100,p1,100,100,100",
-                        "1234,1,kernel,0,0,0",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, 100);
-  ConfirmLines(oss, {
-                        "1234,100,v1,100,100,100",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, 200);
-  ConfirmLines(oss, {
-                        "1234,200,v2,200,200,200",
-                    });
-}
-
-TEST_F(PrinterUnitTest, OutputSummaryShared) {
-  Capture c;
-  TestUtils::CreateCapture(
-      &c,
-      {
-          .time = 1234L * 1000000000L,
-          .vmos =
-              {
-                  {.koid = 1, .name = "v1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 2, .name = "v1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 3, .name = "v1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 4, .name = "v2", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 5, .name = "v3", .committed_bytes = 200, .committed_scaled_bytes = 200},
-              },
-          .processes =
-              {
-                  {.koid = 100, .name = "p1", .vmos = {1, 2, 4}},
-                  {.koid = 200, .name = "p2", .vmos = {2, 3, 5}},
-              },
-      });
-  Summary s(c);
-
-  std::ostringstream oss;
-  TextPrinter p(oss);
-
-  p.OutputSummary(s, SORTED, ZX_KOID_INVALID);
-  ConfirmLines(oss, {
-                        "1234,200,p2,300,350,400",
-                        "1234,100,p1,200,250,300",
-                        "1234,1,kernel,0,0,0",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, 100);
-  ConfirmLines(oss, {
-                        "1234,100,v1,100,150,200",
-                        "1234,100,v2,100,100,100",
-                    });
-
-  oss.str("");
-  p.OutputSummary(s, SORTED, 200);
-  ConfirmLines(oss, {
-                        "1234,200,v3,200,200,200",
-                        "1234,200,v1,100,150,200",
-                    });
-}
-
 TEST_F(PrinterUnitTest, PrintDigest) {
   // Test kernel stats.
   Capture c;
@@ -640,54 +482,47 @@ TEST_F(PrinterUnitTest, PrintDigest) {
                      "[Addl]DiscardableUnlocked: 0B", "[Addl]ZramCompressedBytes: 0B"});
 }
 
-TEST_F(PrinterUnitTest, OutputDigest) {
-  // Test kernel stats.
+TEST_F(PrinterUnitTest, PrintSummaryWithControlCharacters) {
   Capture c;
   TestUtils::CreateCapture(
-      &c,
-      {
-          .time = 1234L * 1000000000L,
-          .kmem =
-              {
-                  .total_bytes = 1000,
-                  .free_bytes = 100,
-                  .wired_bytes = 10,
-                  .vmo_bytes = 700,
-              },
-          .kmem_extended =
-              {
-                  .total_bytes = 1000,
-                  .free_bytes = 100,
-                  .wired_bytes = 10,
-                  .vmo_bytes = 700,
-                  .vmo_pager_total_bytes = 300,
-                  .vmo_pager_newest_bytes = 50,
-                  .vmo_pager_oldest_bytes = 150,
-                  .vmo_discardable_locked_bytes = 60,
-                  .vmo_discardable_unlocked_bytes = 40,
-              },
-          .vmos =
-              {
-                  {.koid = 1, .name = "a1", .committed_bytes = 100, .committed_scaled_bytes = 100},
-                  {.koid = 2, .name = "b1", .committed_bytes = 200, .committed_scaled_bytes = 200},
-                  {.koid = 3, .name = "c1", .committed_bytes = 300, .committed_scaled_bytes = 300},
-              },
-          .processes =
-              {
-                  {.koid = 1, .name = "p1", .vmos = {1}},
-                  {.koid = 2, .name = "q1", .vmos = {2}},
-              },
-      });
-  Digester digester({{"A", ".*", "a.*"}, {"B", ".*", "b.*"}});
-  Digest d(c, &digester);
+      &c, {
+              .time = 1234,
+              .kmem =
+                  {
+                      .total_bytes = 1024ul * 1024,
+                      .free_bytes = 1024,
+                      .wired_bytes = 2ul * 1024,
+                      .total_heap_bytes = 3ul * 1024,
+                      .free_heap_bytes = 2ul * 1024,
+                      .vmo_bytes = 5ul * 1024,
+                      .mmu_overhead_bytes = 6ul * 1024,
+                      .ipc_bytes = 7ul * 1024,
+                      .other_bytes = 8ul * 1024,
+                  },
+              .vmos = {{.koid = 1,
+                        .name = "v1\n\r\t\\\"\x01\x7f",
+                        .committed_bytes = 1024,
+                        .committed_scaled_bytes = 1024}},
+              .processes = {{.koid = 100, .name = "p1\n\r\t\\\"\x01\x7f", .vmos = {1}}},
+          });
+
   std::ostringstream oss;
   TextPrinter p(oss);
-  p.OutputDigest(d);
-  ConfirmLines(oss, {"1234,B,200", "1234,A,100", "1234,Undigested,300", "1234,Orphaned,100",
-                     "1234,Kernel,10", "1234,Free,100", "1234,[Addl]PagerTotal,300",
-                     "1234,[Addl]PagerNewest,50", "1234,[Addl]PagerOldest,150",
-                     "1234,[Addl]DiscardableLocked,60", "1234,[Addl]DiscardableUnlocked,40",
-                     "1234,[Addl]ZramCompressedBytes,0"});
+  Summary s(c);
+  p.PrintSummary(s, CaptureLevel::VMO, SORTED);
+
+  ConfirmLines(oss, {
+                        "Time: 1234 VMO: 5K Free: 1K",
+                        "kernel<1> 30K",
+                        " other 8K",
+                        " ipc 7K",
+                        " mmu 6K",
+                        " vmo 4K",
+                        " heap 3K",
+                        " wired 2K",
+                        "p1\\n\\r\\t\\\\\\\"\\x01\\x7f<100> 1K",
+                        " v1\\n\\r\\t\\\\\\\"\\x01\\x7f 1K",
+                    });
 }
 
 TEST_F(PrinterUnitTest, FormatSize) {

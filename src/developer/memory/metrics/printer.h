@@ -130,8 +130,6 @@ class TextPrinter {
   explicit TextPrinter(std::ostream& os) : os_(os) {}
   void PrintSummary(const Summary& summary, CaptureLevel level, Sorted sorted);
   void PrintDigest(const Digest& digest);
-  void OutputSummary(const Summary& summary, Sorted sorted, zx_koid_t pid);
-  void OutputDigest(const Digest& digest);
 
  private:
   void OutputSizes(const Sizes& sizes);
