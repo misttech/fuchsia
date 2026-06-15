@@ -216,15 +216,14 @@ impl PeerTool {
 
     async fn disconnect_peer(&self, id: PeerId) -> Result<()> {
         let fidl_peer_id: FidlPeerId = id.into();
-        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
         Ok(self
-            .peer_controller
-            .disconnect_peer(&selector)
+            .access_proxy
+            .disconnect(&fidl_peer_id)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
                 fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                    "fuchsia.bluetooth.sys.Access/Disconnect error: {err:?}"
                 ))
             })?)
     }

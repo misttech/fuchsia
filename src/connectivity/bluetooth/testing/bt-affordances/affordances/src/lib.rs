@@ -31,7 +31,6 @@ enum Request {
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
-    Disconnect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     Pair(PeerId, PairingOptions, oneshot::Sender<Result<(), anyhow::Error>>),
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -151,9 +150,6 @@ impl WorkThread {
                 }
                 Request::Forget(peer_id, result_sender) => {
                     result_sender.send(sys::forget(&proxies, &peer_id).await).unwrap();
-                }
-                Request::Disconnect(peer_id, result_sender) => {
-                    result_sender.send(sys::disconnect_peer(&proxies, &peer_id).await).unwrap();
                 }
                 Request::Pair(peer_id, options, result_sender) => {
                     result_sender.send(sys::pair(&proxies, &peer_id, &options).await).unwrap();
@@ -343,13 +339,6 @@ impl WorkThread {
     pub async fn get_known_peers(&self) -> Result<Vec<Peer>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Vec<Peer>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::GetKnownPeers(sender))?;
-        receiver.await?
-    }
-
-    // Disconnect all logical links (BR/EDR & LE) to peer with given identifier.
-    pub async fn disconnect_peer(&self, peer_id: PeerId) -> Result<(), anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::Disconnect(peer_id, sender))?;
         receiver.await?
     }
 

@@ -14,24 +14,6 @@ use futures::StreamExt;
 use std::ffi::CString;
 use std::sync::Arc;
 
-pub(crate) async fn disconnect_peer(
-    proxies: &Proxies,
-    peer_id: &PeerId,
-) -> Result<(), anyhow::Error> {
-    proxies
-        .access_proxy
-        .disconnect(peer_id)
-        .await
-        .map_err(|fidl_error| {
-            anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {fidl_error}")
-        })
-        .and_then(|connect_result| {
-            connect_result.map_err(|sapphire_err| {
-                anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {sapphire_err:?}")
-            })
-        })
-}
-
 pub(crate) async fn pair(
     proxies: &Proxies,
     peer_id: &PeerId,

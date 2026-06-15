@@ -181,13 +181,10 @@ Status HostService::Disconnect(::grpc::ServerContext* context,
   uint64_t peer_id =
       std::strtoul(request->connection().cookie().value().c_str(), nullptr, /*base=*/10);
 
-  fuchsia_bluetooth_affordances::PeerSelector selector;
-  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
-  auto result = peer_controller_client_->DisconnectPeer(selector);
+  auto result = access_sync_client_->Disconnect({fuchsia_bluetooth::PeerId{peer_id}});
   if (result.is_error()) {
-    return Status(StatusCode::INTERNAL,
-                  "fuchsia.bluetooth.affordances.PeerController/DisconnectPeer error: " +
-                      result.error_value().FormatDescription());
+    return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Disconnect error: " +
+                                            result.error_value().FormatDescription());
   }
   return {/*OK*/};
 }
