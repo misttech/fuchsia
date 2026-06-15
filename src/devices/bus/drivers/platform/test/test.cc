@@ -37,4 +37,28 @@ zx_status_t TestBoard::TestInit() {
   return ZX_OK;
 }
 
+zx_status_t TestBoard::InterruptControllerInit() {
+  fpbus::Node int_dev;
+  int_dev.name() = "test-interrupt-controller";
+  int_dev.vid() = PDEV_VID_TEST;
+  int_dev.pid() = PDEV_PID_PBUS_TEST;
+  int_dev.did() = PDEV_DID_TEST_INTERRUPT_CONTROLLER;
+  int_dev.interrupt_controller_id() = 1;
+
+  fidl::Arena<> fidl_arena;
+  fdf::Arena arena('TEST');
+  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, int_dev));
+  if (!result.ok()) {
+    zxlogf(ERROR, "%s: DeviceAdd Interrupt Controller request failed: %s", __func__,
+           result.FormatDescription().data());
+    return result.status();
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "%s: DeviceAdd Interrupt Controller failed: %s", __func__,
+           zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
+}
+
 }  // namespace board_test

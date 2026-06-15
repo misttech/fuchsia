@@ -48,6 +48,11 @@ int TestBoard::Thread() {
     zxlogf(ERROR, "%s: TestInit failed: %d", __func__, status);
   }
 
+  status = InterruptControllerInit();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "%s: InterruptControllerInit failed: %d", __func__, status);
+  }
+
   status = CompositeNodeSpecInit();
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: CompositeNodeSpecInit failed: %d", __func__, status);

@@ -53,12 +53,18 @@ TEST(PbusTest, Enumeration) {
                 .status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/gpio/test-gpio/gpio/gpio-3").status_value());
   EXPECT_OK(RecursiveWaitForFile(dirfd, "sys/platform/spi/test-spi/spi/spi-0-0").status_value());
+  EXPECT_OK(RecursiveWaitForFile(dirfd,
+                                 "sys/platform/test-interrupt-controller/test-interrupt-controller")
+                .status_value());
   EXPECT_EQ(RecursiveWaitForFile(dirfd, "sys/platform/node_a/composite_node_spec").status_value(),
             ZX_OK);
 
   struct stat st;
   EXPECT_EQ(fstatat(dirfd, "sys/platform/pt/test-board", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/test-parent", &st, 0), 0);
+  EXPECT_EQ(
+      fstatat(dirfd, "sys/platform/test-interrupt-controller/test-interrupt-controller", &st, 0),
+      0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/test-parent/child-1", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/test-parent/child-1/child-2", &st, 0), 0);
   EXPECT_EQ(fstatat(dirfd, "sys/platform/test-parent/child-1/child-3-top", &st, 0), 0);

@@ -17,6 +17,7 @@ group("drivers") {
     "drivers/platform/test:test-child-3",
     "drivers/platform/test:test-composite-node-spec",
     "drivers/platform/test:test-gpio",
+    "drivers/platform/test:test-interrupt-controller",
     "drivers/platform/test:test-parent",
     "drivers/platform/test:test-power",
     "drivers/platform/test:test-spi",

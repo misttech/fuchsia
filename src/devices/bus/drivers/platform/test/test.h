@@ -40,6 +40,7 @@ class TestBoard : public TestBoardType {
   zx_status_t ClockInit();
   zx_status_t CompositeNodeSpecInit();
   zx_status_t TestInit();
+  zx_status_t InterruptControllerInit();
   int Thread();
 
   // TODO(https://fxbug.dev/42059490): Use `fdf::SyncClient` when it is available.

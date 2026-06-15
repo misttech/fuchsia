@@ -113,6 +113,37 @@ fuchsia_driver_component("test-gpio") {
   manifest = "meta/test-gpio.cml"
 }
 
+driver_bind_rules("test-interrupt-controller-bind") {
+  testonly = true
+  rules = "meta/test-interrupt-controller.bind"
+  deps = [
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test.platform",
+  ]
+}
+
+fuchsia_cc_driver("test-interrupt-controller-driver") {
+  testonly = true
+  output_name = "test-interrupt-controller"
+  configs += [ "//build/config:all_source" ]
+  sources = [ "test/interrupt-controller.cc" ]
+  deps = [
+    ":test-interrupt-controller-bind",
+    "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
+}
+
+fuchsia_driver_component("test-interrupt-controller") {
+  testonly = true
+  component_name = "test-interrupt-controller"
+  deps = [ ":test-interrupt-controller-driver" ]
+  info = "meta/test-driver-info.json"
+  manifest = "meta/test-interrupt-controller.cml"
+}
+
 driver_bind_rules("test-power-bind") {
   testonly = true
   rules = "meta/test-power.bind"
@@ -258,6 +289,7 @@ fuchsia_unittest_package("platform-bus-test") {
     ":test-board",
     ":test-composite-node-spec",
     ":test-gpio",
+    ":test-interrupt-controller",
     ":test-power",
     ":test-spi",
     "//src/devices/bus/drivers/platform",

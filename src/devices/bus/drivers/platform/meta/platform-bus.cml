@@ -19,6 +19,7 @@
         { service: "fuchsia.boot.metadata.SerialNumberMetadata" },
         { service: "fuchsia.boot.metadata.PartitionMap" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
+        { service: "fuchsia.hardware.interrupt.ControllerRegistryService" },
     ],
     use: [
         {
@@ -92,6 +93,10 @@
         },
         {
             service: "fuchsia.boot.metadata.MacAddressMetadata",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.interrupt.ControllerRegistryService",
             from: "self",
         },
     ],

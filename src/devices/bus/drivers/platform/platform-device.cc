@@ -375,6 +375,9 @@ zx::result<> PlatformDevice::CreateNode() {
   std::vector offers = {
       fdf::MakeOffer2<fuchsia_hardware_platform_device::Service>(name_),
   };
+  if (node_.interrupt_controller_id().has_value()) {
+    offers.push_back(fdf::MakeOffer2<fuchsia_hardware_interrupt::ControllerRegistryService>(name_));
+  }
   if (device_server_) {
     offers.push_back(fdf::MakeOffer2<fuchsia_driver_compat::Service>(name_));
   }
@@ -417,6 +420,21 @@ zx::result<> PlatformDevice::CreateNode() {
         name_);
     if (result.is_error()) {
       fdf::warn("Failed to add platform device service: {}", result);
+      return result.take_error();
+    }
+  }
+
+  if (node_.interrupt_controller_id().has_value()) {
+    zx::result result =
+        bus()->outgoing()->AddService<fuchsia_hardware_interrupt::ControllerRegistryService>(
+            fuchsia_hardware_interrupt::ControllerRegistryService::InstanceHandler({
+                .registry = controller_bindings_.CreateHandler(
+                    this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                    fidl::kIgnoreBindingClosure),
+            }),
+            name_);
+    if (result.is_error()) {
+      fdf::warn("Failed to add controller registry service: {}", result);
       return result.take_error();
     }
   }
@@ -796,6 +814,18 @@ void PlatformDevice::GetMetadata(GetMetadataRequestView request,
 
 void PlatformDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_platform_device::Device> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::warn("PlatformDevice received unknown method with ordinal: {}", metadata.method_ordinal);
+}
+
+void PlatformDevice::RegisterController(RegisterControllerRequestView request,
+                                        RegisterControllerCompleter::Sync& completer) {
+  // TODO(519918279): Save this controller and use it to fulfill GetInterrupt requests.
+  completer.ReplySuccess();
+}
+
+void PlatformDevice::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_interrupt::ControllerRegistry> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   fdf::warn("PlatformDevice received unknown method with ordinal: {}", metadata.method_ordinal);
 }

@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BUS_DRIVERS_PLATFORM_PLATFORM_DEVICE_H_
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
@@ -25,7 +26,8 @@ class PlatformBus;
 // Instances of this class are created by PlatformBus at boot time when the board driver
 // calls the platform bus protocol method pbus_device_add().
 
-class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device::Device> {
+class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device::Device>,
+                       public fidl::WireServer<fuchsia_hardware_interrupt::ControllerRegistry> {
  public:
   // Creates a new PlatformDevice instance.
   // *flags* contains zero or more PDEV_ADD_* flags from the platform bus protocol.
@@ -103,6 +105,13 @@ class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device:
       fidl::UnknownMethodMetadata<fuchsia_hardware_platform_device::Device> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
+  // fuchsia.hardware.interrupt.ControllerRegistry implementation.
+  void RegisterController(RegisterControllerRequestView request,
+                          RegisterControllerCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_interrupt::ControllerRegistry> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
   bool HasInterruptVector(uint32_t vector) const { return interrupt_vectors_.contains(vector); }
   bool HasInterruptKoid(zx_koid_t koid) const { return interrupt_koids_.contains(koid); }
 
@@ -141,6 +150,7 @@ class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device:
   fuchsia_hardware_platform_bus::Node node_;
   fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::PlatformBus> bus_bindings_;
   fidl::ServerBindingGroup<fuchsia_hardware_platform_device::Device> device_bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_interrupt::ControllerRegistry> controller_bindings_;
   std::unordered_map<std::string, std::vector<uint8_t>, MetadataIdHash, std::equal_to<>> metadata_;
   std::vector<std::unique_ptr<PlatformInterruptFragment>> fragments_;
 
