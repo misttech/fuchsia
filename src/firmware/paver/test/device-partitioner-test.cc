@@ -779,7 +779,7 @@ TEST_F(FixedDevicePartitionerTests, EmptyDisk) {
 
 TEST_F(FixedDevicePartitionerTests, FindPartitionTest) {
   std::unique_ptr<BlockDevice> gpt_dev;
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
                         {
@@ -861,7 +861,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
 
   void FindPartitionNewGuidsTest() {
     std::unique_ptr<BlockDevice> gpt_dev;
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
                           // partition size / location is arbitrary
@@ -894,7 +894,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
   void FindPartitionNewGuidsWithWrongTypeGUIDSTest() {
     // Due to a bootloader bug (b/173801312), the type GUID's may be reset in certain conditions.
     // This test verifies that the sherlock partitioner only looks at the partition name.
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -925,7 +925,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
   }
 
   void FindPartitionSecondaryTest() {
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -956,7 +956,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
   }
 
   void ShouldNotFindPartitionBootTest() {
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1089,7 +1089,7 @@ TEST_F(MoonflowerPartitionerTests, InitializeWithoutFvmFails) {
 }
 
 TEST_F(MoonflowerPartitionerTests, FindPartition) {
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1138,7 +1138,7 @@ TEST_F(MoonflowerPartitionerTests, FindPartition) {
 }
 
 TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1229,7 +1229,7 @@ class IrisPartitionerTests : public GptDevicePartitionerTests {
   }
 
   void CreateIrisFullGptDevice(std::unique_ptr<BlockDevice>* gpt_dev) {
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(gpt_dev, kBlockCount * block_size_,
                           {
@@ -1556,7 +1556,7 @@ TEST_F(LuisPartitionerTests, FindPartition) {
   // kBlockCount should be a value large enough to accommodate all partitions and blocks reserved
   // by gpt. The current value is copied from the case of sherlock. As of now, we assume they
   // have the same disk size requirement.
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1600,7 +1600,7 @@ TEST_F(LuisPartitionerTests, FindPartition) {
 }
 
 TEST_F(LuisPartitionerTests, CreateAbrClient) {
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1624,7 +1624,7 @@ TEST_F(LuisPartitionerTests, CreateAbrClient) {
 }
 
 TEST_F(LuisPartitionerTests, SupportsPartition) {
-  constexpr uint64_t kBlockCount = 0x748034;
+  constexpr uint64_t kBlockCount = 0x748038;
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(
       CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1806,7 +1806,7 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
     // kBlockCount should be a value large enough to accommodate all partitions and blocks reserved
     // by gpt. The current value is copied from the case of sherlock. The actual size of fvm
     // partition on nelson is yet to be finalized.
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -1858,7 +1858,7 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
   }
 
   void CreateAbrClientTest() {
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
@@ -2096,7 +2096,7 @@ class Vim3PartitionerTests : public GptDevicePartitionerTests {
     std::unique_ptr<BlockDevice> boot1_dev;
     std::unique_ptr<BlockDevice> gpt_dev;
     ASSERT_NO_FATAL_FAILURE(CreateBootloaderDevices(&boot0_dev, &boot1_dev));
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&gpt_dev, kBlockCount * block_size_,
                           // partition size / location is arbitrary
@@ -2167,7 +2167,7 @@ class AndroidPartitionerTests : public GptDevicePartitionerTests {
   void InitializeTest() {
     std::unique_ptr<BlockDevice> primary_gpt_dev;
     std::unique_ptr<BlockDevice> other_gpt_dev;
-    constexpr uint64_t kBlockCount = 0x748034;
+    constexpr uint64_t kBlockCount = 0x748038;
     ASSERT_NO_FATAL_FAILURE(
         CreateDiskWithGpt(&primary_gpt_dev, kBlockCount * block_size_,
                           // partition size / location is arbitrary

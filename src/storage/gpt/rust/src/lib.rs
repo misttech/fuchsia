@@ -162,6 +162,7 @@ async fn load_metadata(
             .checksum(&partition_table_blocks[..partition_table_size]);
         anyhow::ensure!(header.crc32_parts == crc, "Invalid partition table checksum");
 
+        let mut used_ranges = Vec::new();
         for i in 0..header.num_parts as usize {
             let entry_raw = &partition_table_blocks
                 [i * header.part_size as usize..(i + 1) * header.part_size as usize];
@@ -170,9 +171,16 @@ async fn load_metadata(
             if entry.is_empty() {
                 continue;
             }
-            entry.ensure_integrity().context("GPT partition table entry invalid!")?;
+            entry
+                .ensure_integrity(header.first_usable, header.last_usable)
+                .context("GPT partition table entry invalid!")?;
+            used_ranges.push(entry.first_lba..entry.last_lba.checked_add(1).unwrap());
 
             partition_table.insert(i as u32, PartitionInfo::from_entry(entry)?);
+        }
+        used_ranges.sort_by_key(|r| r.start);
+        for pairs in used_ranges.windows(2) {
+            anyhow::ensure!(pairs[0].end <= pairs[1].start, "Overlapping partitions");
         }
     }
     Ok((header.clone(), partition_table))
@@ -508,7 +516,8 @@ impl Drop for Transaction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AddPartitionError, Gpt, Guid, PartitionInfo};
+    use crate::{AddPartitionError, Gpt, Guid, PartitionInfo, format};
+    use anyhow::Error;
     use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
     use fidl_fuchsia_storage_block as fblock;
     use fuchsia_async as fasync;
@@ -518,6 +527,7 @@ mod tests {
     use test_vmo_backed_block_server::{
         InitialContents, Observer, VmoBackedServer, VmoBackedServerOptions, WriteAction, WriteCache,
     };
+    use zerocopy::IntoBytes as _;
 
     async fn connect_to_server(
         server: VmoBackedServer,
@@ -1632,5 +1642,159 @@ mod tests {
             let len = manager.partitions().len();
             assert!(len == 0 || len == num);
         }
+    }
+
+    async fn try_load_invalid_gpt(
+        block_count: u64,
+        block_size: u32,
+        mut header: format::Header,
+        entries: Vec<format::PartitionTableEntry>,
+    ) -> Result<Gpt, Error> {
+        let vmo = zx::Vmo::create(block_count * block_size as u64).unwrap();
+
+        let part_size = std::mem::size_of::<format::PartitionTableEntry>();
+        let mut part_table_bytes = vec![0u8; entries.len() * part_size];
+        for (i, entry) in entries.iter().enumerate() {
+            part_table_bytes[i * part_size..(i + 1) * part_size].copy_from_slice(entry.as_bytes());
+        }
+
+        let crc_parts = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(&part_table_bytes);
+        header.crc32_parts = crc_parts;
+        header.crc32 = header.compute_checksum();
+
+        // Write primary
+        vmo.write(header.as_bytes(), block_size as u64).unwrap();
+        vmo.write(&part_table_bytes, 2 * block_size as u64).unwrap();
+
+        // Write backup
+        let mut backup_header = header.clone();
+        backup_header.current_lba = block_count - 1;
+        backup_header.backup_lba = 1;
+        backup_header.part_start = backup_header.last_usable + 1;
+        backup_header.crc32 = backup_header.compute_checksum();
+
+        vmo.write(backup_header.as_bytes(), (block_count - 1) * block_size as u64).unwrap();
+
+        let partition_table_len = header.part_size as u64 * header.num_parts as u64;
+        let partition_table_blocks =
+            partition_table_len.checked_next_multiple_of(block_size as u64).unwrap()
+                / block_size as u64;
+
+        if backup_header.part_start + partition_table_blocks <= backup_header.current_lba {
+            vmo.write(&part_table_bytes, backup_header.part_start * block_size as u64).unwrap();
+        }
+
+        let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let server = VmoBackedServer::from_vmo(block_size, vmo_clone).unwrap();
+        let (client, _task) = connect_to_server(server).await;
+
+        Gpt::open(client).await
+    }
+
+    #[fuchsia::test]
+    async fn test_partition_before_first_usable() {
+        let block_count = 128;
+        let block_size = 512;
+        let header = format::Header::new(block_count, block_size, 128).unwrap();
+        let mut entries = vec![format::PartitionTableEntry::empty(); 128];
+        entries[0] = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: header.first_usable - 1,
+            last_lba: header.first_usable + 10,
+            ..format::PartitionTableEntry::empty()
+        };
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
+        let err_msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            err_msg.contains("GPT partition table entry invalid"),
+            "Unexpected error: {}",
+            err_msg
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_partition_after_last_usable() {
+        let block_count = 128;
+        let block_size = 512;
+        let header = format::Header::new(block_count, block_size, 128).unwrap();
+        let mut entries = vec![format::PartitionTableEntry::empty(); 128];
+        entries[0] = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: header.first_usable,
+            last_lba: header.last_usable + 1,
+            ..format::PartitionTableEntry::empty()
+        };
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
+        let err_msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            err_msg.contains("GPT partition table entry invalid"),
+            "Unexpected error: {}",
+            err_msg
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_overlapping_partitions() {
+        let block_count = 128;
+        let block_size = 512;
+        let header = format::Header::new(block_count, block_size, 128).unwrap();
+        let mut entries = vec![format::PartitionTableEntry::empty(); 128];
+        entries[0] = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: header.first_usable,
+            last_lba: header.first_usable + 10,
+            ..format::PartitionTableEntry::empty()
+        };
+        entries[1] = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [2; 16],
+            first_lba: header.first_usable + 5, // Overlaps
+            last_lba: header.first_usable + 15,
+            ..format::PartitionTableEntry::empty()
+        };
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
+        let err_msg = format!("{:?}", res.err().unwrap());
+        assert!(err_msg.contains("Overlapping partitions"), "Unexpected error: {}", err_msg);
+    }
+
+    #[fuchsia::test]
+    async fn test_header_first_usable_too_small() {
+        let block_count = 128;
+        let block_size = 512;
+        let mut header = format::Header::new(block_count, block_size, 128).unwrap();
+        // partition_table_blocks = 128 * 128 / 512 = 32.
+        // first_lba = 1.
+        // We want first_usable = first_lba + partition_table_blocks = 33
+        // (invalid, overlaps with partition table).
+        // Valid first_usable is >= 34.
+        header.first_usable = 33;
+        let entries = vec![format::PartitionTableEntry::empty(); 128];
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
+        let err_msg = format!("{:?}", res.err().unwrap());
+        assert!(err_msg.contains("Invalid first_usable"), "Unexpected error: {}", err_msg);
+    }
+
+    #[fuchsia::test]
+    async fn test_header_last_usable_too_large() {
+        let block_count = 128;
+        let block_size = 512;
+        let mut header = format::Header::new(block_count, block_size, 128).unwrap();
+        // partition_table_blocks = 32.
+        // second_lba = 127.
+        // We want last_usable = 95 (invalid, overlaps with backup partition table starting at 96).
+        // Valid last_usable is <= 94.
+        header.last_usable = 95;
+        let entries = vec![format::PartitionTableEntry::empty(); 128];
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
+        let err_msg = format!("{:?}", res.err().unwrap());
+        assert!(err_msg.contains("Invalid last_usable"), "Unexpected error: {}", err_msg);
     }
 }

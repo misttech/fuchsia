@@ -2428,7 +2428,7 @@ class PaverServiceLuisTest : public PaverServiceGptDeviceTest {
   void SetUp() override {
     ASSERT_NO_FATAL_FAILURE(PaverServiceGptDeviceTest::SetUp());
     ASSERT_NO_FATAL_FAILURE(InitializeGptDevice(
-        0x748034, 512,
+        0x748038, 512,
         {
             {GPT_DURABLE_BOOT_NAME, uuid::Uuid(GUID_ZIRCON_A_VALUE), kDurableBootStart,
              kDurableBootSize},

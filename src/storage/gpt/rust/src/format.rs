@@ -134,6 +134,8 @@ impl Header {
             "Invalid current_lba {}",
             self.current_lba
         );
+        let expected_backup_lba = if self.current_lba == 1 { block_count - 1 } else { 1 };
+        ensure!(self.backup_lba == expected_backup_lba, "Invalid backup_lba {}", self.backup_lba);
         let (first_lba, second_lba) = if self.current_lba == 1 {
             (self.current_lba, self.backup_lba)
         } else {
@@ -141,13 +143,13 @@ impl Header {
         };
 
         ensure!(
-            self.first_usable >= first_lba + partition_table_blocks,
+            self.first_usable >= first_lba + 1 + partition_table_blocks,
             "Invalid first_usable {}",
             self.first_usable
         );
         ensure!(
             self.first_usable <= self.last_usable
-                && self.last_usable + partition_table_blocks <= second_lba,
+                && self.last_usable + partition_table_blocks < second_lba,
             "Invalid last_usable {}",
             self.last_usable
         );
@@ -193,11 +195,14 @@ impl PartitionTableEntry {
         }
     }
 
-    pub fn ensure_integrity(&self) -> Result<(), Error> {
+    pub fn ensure_integrity(&self, first_usable: u64, last_usable: u64) -> Result<(), Error> {
         ensure!(self.type_guid != [0u8; 16], "Empty type GUID");
         ensure!(self.instance_guid != [0u8; 16], "Empty instance GUID");
-        ensure!(self.first_lba != 0, "Invalid first LBA");
-        ensure!(self.last_lba != 0 && self.last_lba >= self.first_lba, "Invalid last LBA");
+        ensure!(self.first_lba >= first_usable, "Invalid first LBA");
+        ensure!(
+            self.last_lba <= last_usable && self.last_lba >= self.first_lba,
+            "Invalid last LBA"
+        );
         Ok(())
     }
 }
@@ -242,7 +247,9 @@ pub fn serialize_partition_table(
         let part_raw = entry.as_bytes();
         assert!(part_raw.len() == part_size);
         if !entry.is_empty() {
-            entry.ensure_integrity().map_err(|_| FormatError::InvalidArguments)?;
+            entry
+                .ensure_integrity(first_usable, last_usable)
+                .map_err(|_| FormatError::InvalidArguments)?;
             used_ranges.push(entry.first_lba..entry.last_lba + 1);
             partition_table_view[..part_raw.len()].copy_from_slice(part_raw);
         }
