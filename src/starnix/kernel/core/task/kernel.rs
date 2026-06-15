@@ -48,7 +48,7 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked, Mutex,
+    FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked,
     OrderedMutex, RwLock, TerminalLock,
 };
 use starnix_uapi::device_id::DeviceId;
@@ -340,7 +340,7 @@ pub struct Kernel {
 
     /// Filters for syscall logging. Processes with names matching these filters will have syscalls
     /// logged at INFO level.
-    pub syscall_log_filters: Mutex<Vec<SyscallLogFilter>>,
+    pub syscall_log_filters: LockDepMutex<Vec<SyscallLogFilter>, TerminalLock>,
 }
 
 /// Hardware capabilities.
