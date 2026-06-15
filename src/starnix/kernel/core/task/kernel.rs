@@ -49,7 +49,7 @@ use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockDepRwLock, LockEqualOrBefore, Locked, Mutex, OrderedMutex,
-    RwLock,
+    RwLock, TerminalLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -174,7 +174,7 @@ pub struct Kernel {
     pub pids: RwLock<PidTable>,
 
     /// Used to record the pid/tid to Koid mappings. Set when collecting trace data.
-    pub pid_to_koid_mapping: Arc<RwLock<Option<PidToKoidMap>>>,
+    pub pid_to_koid_mapping: Arc<LockDepRwLock<Option<PidToKoidMap>, TerminalLock>>,
 
     /// Subsystem-specific properties that hang off the Kernel object.
     ///
@@ -441,7 +441,7 @@ impl Kernel {
             kthreads: KernelThreads::new(kernel.clone()),
             features,
             pids: Default::default(),
-            pid_to_koid_mapping: Arc::new(RwLock::new(None)),
+            pid_to_koid_mapping: Arc::new(LockDepRwLock::new(None)),
             expando: Default::default(),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),
             default_abstract_vsock_namespace: AbstractVsockSocketNamespace::new(
