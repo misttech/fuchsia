@@ -62,6 +62,8 @@ pub struct LogFilterCriteria {
     moniker_filters: MonikerFilters,
     /// Exclude by string.
     excludes: Vec<String>,
+    /// Exclude by regular expressions.
+    exclude_regexes: Vec<regex_lite::Regex>,
     /// The tags to include.
     tags: Vec<String>,
     /// The tags to exclude.
@@ -84,6 +86,7 @@ impl Default for LogFilterCriteria {
             min_severity: Severity::Info,
             filters: vec![],
             excludes: vec![],
+            exclude_regexes: vec![],
             tags: vec![],
             moniker_filters: MonikerFilters::new(vec![]),
             exclude_tags: vec![],
@@ -101,9 +104,30 @@ fn convert_to_lowercase_if_needed<'a>(input: &'a str, case_sensitive: bool) -> C
     if case_sensitive { Cow::Borrowed(input) } else { Cow::Owned(input.to_lowercase()) }
 }
 
-impl From<LogCommand> for LogFilterCriteria {
-    fn from(mut cmd: LogCommand) -> Self {
-        Self {
+impl LogFilterCriteria {
+    pub fn try_from(mut cmd: LogCommand) -> Result<Self, LogError> {
+        let mut exclude_regexes = Vec::new();
+        for pattern in &cmd.exclude_regex {
+            let re = regex_lite::RegexBuilder::new(pattern)
+                .case_insensitive(!cmd.case_sensitive)
+                .build()?;
+            exclude_regexes.push(re);
+        }
+        if let Some(ref path) = cmd.exclude_regex_file {
+            let content = std::fs::read_to_string(path)?;
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let re = regex_lite::RegexBuilder::new(line)
+                    .case_insensitive(!cmd.case_sensitive)
+                    .build()?;
+                exclude_regexes.push(re);
+            }
+        }
+
+        Ok(Self {
             min_severity: cmd.severity,
             filters: cmd.filter,
             tags: cmd
@@ -112,6 +136,7 @@ impl From<LogCommand> for LogFilterCriteria {
                 .map(|value| convert_to_lowercase_if_needed(&value, cmd.case_sensitive).to_string())
                 .collect(),
             excludes: cmd.exclude,
+            exclude_regexes,
             moniker_filters: if cmd.kernel {
                 cmd.component.push(KLOG.to_string());
                 MonikerFilters::new(cmd.component)
@@ -123,7 +148,13 @@ impl From<LogCommand> for LogFilterCriteria {
             case_sensitive: cmd.case_sensitive,
             tid: cmd.tid,
             interest_selectors: cmd.set_severity.into_iter().flatten().collect(),
-        }
+        })
+    }
+}
+
+impl From<LogCommand> for LogFilterCriteria {
+    fn from(cmd: LogCommand) -> Self {
+        Self::try_from(cmd).expect("Failed to convert LogCommand to LogFilterCriteria")
     }
 }
 
@@ -284,6 +315,14 @@ impl LogFilterCriteria {
         {
             return false;
         }
+        if self.exclude_regexes.iter().any(|r| {
+            r.is_match(msg)
+                || data.file_path().is_some_and(|f| r.is_match(f))
+                || data.metadata.component_url.as_ref().is_some_and(|url| r.is_match(url.as_str()))
+                || r.is_match(data.moniker.as_ref())
+        }) {
+            return false;
+        }
         if !self.tags.is_empty()
             && !self.tags.iter().any(|query_tag| {
                 let has_tag = data
@@ -351,7 +390,7 @@ mod test {
 
     fn empty_dump_command() -> LogCommand {
         LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             ..LogCommand::default()
         }
     }
@@ -463,7 +502,7 @@ mod test {
     #[fuchsia::test]
     async fn test_per_component_severity() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("test_selector#DEBUG").unwrap(),
             )],
@@ -503,7 +542,7 @@ mod test {
         ];
 
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![
                 OneOrMany::One(parse_log_interest_selector("test_selector#INFO").unwrap()),
                 OneOrMany::One(parse_log_interest_selector("test_selector#TRACE").unwrap()),
@@ -1273,5 +1312,96 @@ mod test {
                 .into()
             ))
         );
+    }
+
+    #[test]
+    fn test_criteria_exclude_regex() {
+        let cmd = LogCommand {
+            exclude_regex: vec!["foo.*bar".to_string(), "baz".to_string()],
+            ..empty_dump_command()
+        };
+        let criteria = LogFilterCriteria::try_from(cmd).unwrap();
+
+        let entry_match_msg = make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp: Timestamp::from_nanos(0),
+                component_url: Some("".into()),
+                moniker: "core/test".try_into().unwrap(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("hello foo middle bar world")
+            .build()
+            .into(),
+        );
+
+        let entry_match_moniker = make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp: Timestamp::from_nanos(0),
+                component_url: Some("".into()),
+                moniker: "core/baz".try_into().unwrap(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("hello world")
+            .build()
+            .into(),
+        );
+
+        let entry_no_match = make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp: Timestamp::from_nanos(0),
+                component_url: Some("".into()),
+                moniker: "core/test".try_into().unwrap(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("hello world")
+            .build()
+            .into(),
+        );
+
+        assert!(!criteria.matches(&entry_match_msg));
+        assert!(!criteria.matches(&entry_match_moniker));
+        assert!(criteria.matches(&entry_no_match));
+    }
+
+    #[test]
+    fn test_criteria_exclude_regex_file() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("exclude_patterns.txt");
+        std::fs::write(&file_path, "# comment\n\nfoo.*bar\nbaz\n").unwrap();
+
+        let cmd = LogCommand {
+            exclude_regex_file: Some(file_path.to_string_lossy().to_string()),
+            ..empty_dump_command()
+        };
+        let criteria = LogFilterCriteria::try_from(cmd).unwrap();
+
+        let entry_match_msg = make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp: Timestamp::from_nanos(0),
+                component_url: Some("".into()),
+                moniker: "core/test".try_into().unwrap(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("hello foo middle bar world")
+            .build()
+            .into(),
+        );
+
+        let entry_no_match = make_log_entry(
+            diagnostics_data::LogsDataBuilder::new(diagnostics_data::BuilderArgs {
+                timestamp: Timestamp::from_nanos(0),
+                component_url: Some("".into()),
+                moniker: "core/test".try_into().unwrap(),
+                severity: diagnostics_data::Severity::Error,
+            })
+            .set_message("hello world")
+            .build()
+            .into(),
+        );
+
+        assert!(!criteria.matches(&entry_match_msg), "entry_match_msg should be filtered out");
+        assert!(criteria.matches(&entry_no_match), "entry_no_match should NOT be filtered out");
+
+        std::fs::remove_file(file_path).ok();
     }
 }

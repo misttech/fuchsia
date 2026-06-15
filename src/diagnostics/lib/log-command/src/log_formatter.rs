@@ -5,7 +5,8 @@
 use crate::filter::LogFilterCriteria;
 use crate::log_socket_stream::{JsonDeserializeError, LogsDataStream};
 use crate::{
-    DetailedDateTime, InstanceGetter, LogCommand, LogError, LogProcessingResult, TimeFormat,
+    DetailedDateTime, InstanceGetter, LogCommand, LogError, LogProcessingResult, LogSubCommand,
+    TimeFormat,
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -151,6 +152,7 @@ where
             },
             Either::Right(Some(Some(symbolized))) => match formatter.push_log(symbolized).await? {
                 LogProcessingResult::Exit => {
+                    formatter.flush().await?;
                     return Ok(LogProcessingResult::Exit);
                 }
                 LogProcessingResult::Continue => {}
@@ -158,6 +160,7 @@ where
             _ => {}
         }
     }
+    formatter.flush().await?;
     Ok(LogProcessingResult::Continue)
 }
 
@@ -191,6 +194,7 @@ where
             },
             Either::Right(Some(Some(symbolized))) => match formatter.push_log(symbolized).await? {
                 LogProcessingResult::Exit => {
+                    formatter.flush().await?;
                     return Ok(LogProcessingResult::Exit);
                 }
                 LogProcessingResult::Continue => {}
@@ -198,6 +202,7 @@ where
             _ => {}
         }
     }
+    formatter.flush().await?;
     Ok(LogProcessingResult::Continue)
 }
 
@@ -253,11 +258,18 @@ pub struct LogFormatterOptions {
     pub since: Option<DeviceOrLocalTimestamp>,
     /// Only display logs until the specified time.
     pub until: Option<DeviceOrLocalTimestamp>,
+    /// Only display the last N log lines.
+    pub tail: Option<usize>,
 }
 
 impl Default for LogFormatterOptions {
     fn default() -> Self {
-        LogFormatterOptions { display: Some(Default::default()), since: None, until: None }
+        LogFormatterOptions {
+            display: Some(Default::default()),
+            since: None,
+            until: None,
+            tail: None,
+        }
     }
 }
 
@@ -290,6 +302,8 @@ where
     filters: LogFilterCriteria,
     options: LogFormatterOptions,
     boot_ts_nanos: Option<Timestamp>,
+    tail_queue: std::collections::VecDeque<LogEntry>,
+    tail_limit: Option<usize>,
 }
 
 /// Converts from UTC time to boot time.
@@ -313,6 +327,10 @@ where
             LogTimeDisplayFormat::Original => false,
             LogTimeDisplayFormat::WallTime { tz, offset: _ } => tz == Timezone::Utc,
         })
+    }
+
+    async fn flush(&mut self) -> Result<(), LogError> {
+        self.flush_tail().await
     }
 }
 
@@ -359,7 +377,15 @@ where
 {
     /// Creates a new DefaultLogFormatter with the given writer and options.
     pub fn new(filters: LogFilterCriteria, writer: W, options: LogFormatterOptions) -> Self {
-        Self { filters, writer, options, boot_ts_nanos: None }
+        let tail_limit = options.tail;
+        Self {
+            filters,
+            writer,
+            options,
+            boot_ts_nanos: None,
+            tail_queue: std::collections::VecDeque::new(),
+            tail_limit,
+        }
     }
 
     pub async fn expand_monikers(&mut self, getter: &impl InstanceGetter) -> Result<(), LogError> {
@@ -371,6 +397,44 @@ where
         log_entry: LogEntry,
     ) -> Result<LogProcessingResult, LogError> {
         self.push_log_internal(log_entry, false).await
+    }
+
+    async fn flush_tail(&mut self) -> Result<(), LogError> {
+        while let Some(log_entry) = self.tail_queue.pop_front() {
+            self.write_log_entry(log_entry, true)?;
+        }
+        Ok(())
+    }
+
+    fn write_log_entry(
+        &mut self,
+        log_entry: LogEntry,
+        enable_filters: bool,
+    ) -> Result<(), LogError> {
+        match self.options.display {
+            Some(text_options) => {
+                let mut options_for_this_line_only = self.options.clone();
+                options_for_this_line_only.display = Some(text_options);
+                // For host logs, don't apply the boot time offset
+                // as this is with reference to the UTC timeline
+                if !enable_filters
+                    && let LogTimeDisplayFormat::WallTime { ref mut offset, .. } =
+                        options_for_this_line_only.display.as_mut().unwrap().time_format
+                {
+                    // 1 nanosecond so that LogTimeDisplayFormat in diagnostics_data
+                    // knows that we have a valid UTC offset. It normally falls back if
+                    // the UTC offset is 0. It prints at millisecond precision so being
+                    // off by +1 nanosecond isn't an issue.
+                    *offset = 1;
+                }
+                self.format_text_log(options_for_this_line_only, log_entry)
+                    .map_err(LogError::FormatterError)?;
+            }
+            None => {
+                self.writer.item(&log_entry).map_err(|err| LogError::UnknownError(err.into()))?;
+            }
+        };
+        Ok(())
     }
 
     async fn push_log_internal(
@@ -391,39 +455,24 @@ where
                 return Ok(LogProcessingResult::Continue);
             }
         }
-        match self.options.display {
-            Some(text_options) => {
-                let mut options_for_this_line_only = self.options.clone();
-                options_for_this_line_only.display = Some(text_options);
-                if !enable_filters {
-                    // For host logs, don't apply the boot time offset
-                    // as this is with reference to the UTC timeline
-                    if let LogTimeDisplayFormat::WallTime { ref mut offset, .. } =
-                        options_for_this_line_only.display.as_mut().unwrap().time_format
-                    {
-                        // 1 nanosecond so that LogTimeDisplayFormat in diagnostics_data
-                        // knows that we have a valid UTC offset. It normally falls back if
-                        // the UTC offset is 0. It prints at millisecond precision so being
-                        // off by +1 nanosecond isn't an issue.
-                        *offset = 1;
-                    };
-                }
-                self.format_text_log(options_for_this_line_only, log_entry)?;
-            }
-            None => {
-                self.writer.item(&log_entry).map_err(|err| LogError::UnknownError(err.into()))?;
-            }
-        };
 
+        if let Some(limit) = self.tail_limit {
+            self.tail_queue.push_back(log_entry);
+            if self.tail_queue.len() > limit {
+                self.tail_queue.pop_front();
+            }
+        } else {
+            self.write_log_entry(log_entry, enable_filters)?;
+        }
         Ok(LogProcessingResult::Continue)
     }
 
     /// Creates a new DefaultLogFormatter from command-line arguments.
-    pub fn new_from_args(cmd: &LogCommand, writer: W) -> Self {
+    pub fn new_from_args(cmd: &LogCommand, writer: W) -> Result<Self, LogError> {
         let is_json = writer.is_machine();
 
-        DefaultLogFormatter::new(
-            LogFilterCriteria::from(cmd.clone()),
+        Ok(DefaultLogFormatter::new(
+            LogFilterCriteria::try_from(cmd.clone())?,
             writer,
             LogFormatterOptions {
                 display: if is_json {
@@ -460,8 +509,12 @@ where
                 },
                 since: DeviceOrLocalTimestamp::new(cmd.since.as_ref(), cmd.since_boot.as_ref()),
                 until: DeviceOrLocalTimestamp::new(cmd.until.as_ref(), cmd.until_boot.as_ref()),
+                tail: match &cmd.sub_command {
+                    Some(LogSubCommand::Dump(dump)) => dump.tail,
+                    _ => None,
+                },
             },
-        )
+        ))
     }
 
     fn filter_by_timestamp(
@@ -529,6 +582,11 @@ pub trait LogFormatter {
 
     /// Returns true if the formatter is configured to output in UTC time format.
     fn is_utc_time_format(&self) -> bool;
+
+    /// Flushes any buffered logs.
+    async fn flush(&mut self) -> Result<(), LogError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -888,6 +946,7 @@ mod test {
                     time_format: LogTimeDisplayFormat::WallTime { tz: Timezone::Utc, offset: 1 },
                     ..Default::default()
                 }),
+                ..Default::default()
             },
         );
         formatter.set_boot_timestamp(Timestamp::from_nanos(1));
@@ -1334,5 +1393,45 @@ mod test {
 
         // 3. Verify identity
         assert_eq!(buffers_json.stdout.into_string(), buffers_fxt.stdout.into_string());
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_tail_limit() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions { tail: Some(2), ..Default::default() };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        let entry1 = LogEntry {
+            data: LogData::TargetLog(
+                logs_data_builder().add_tag("tag1").set_message("msg1").build(),
+            ),
+        };
+        let entry2 = LogEntry {
+            data: LogData::TargetLog(
+                logs_data_builder().add_tag("tag1").set_message("msg2").build(),
+            ),
+        };
+        let entry3 = LogEntry {
+            data: LogData::TargetLog(
+                logs_data_builder().add_tag("tag1").set_message("msg3").build(),
+            ),
+        };
+
+        formatter.push_log(entry1).await.unwrap();
+        formatter.push_log(entry2).await.unwrap();
+        formatter.push_log(entry3).await.unwrap();
+
+        // Before flushing, nothing should be outputted because tail buffering delays output
+        let stdout_snapshot = buffers.stdout.clone().into_string();
+        assert_eq!(stdout_snapshot, "");
+
+        formatter.flush().await.unwrap();
+
+        // After flushing, only the last 2 entries should be outputted
+        let output = buffers.into_stdout_str();
+        assert!(!output.contains("msg1"));
+        assert!(output.contains("msg2"));
+        assert!(output.contains("msg3"));
     }
 }

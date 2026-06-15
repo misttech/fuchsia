@@ -84,7 +84,7 @@ async fn main() -> Result<(), Error> {
     let mut formatter = DefaultLogFormatter::<JsonWriter<LogEntry>>::new_from_args(
         &cmd,
         JsonWriter::new(if cmd.json { Some(Format::Json) } else { None }),
-    );
+    )?;
     formatter.expand_monikers(&realm_proxy).await?;
     for warning in cmd.validate_cmd_flags_with_warnings()? {
         writeln!(formatter.writer().stderr(), "{warning}")?;

@@ -64,6 +64,7 @@ impl From<log_command_fdomain::LogError> for LogError {
             | DumpWithSinceNow
             | NoBootTimestamp
             | NoSymbolizerConfig
+            | RegexError(_)
             | DeprecatedFlag { .. } => fho::Error::User(value.into()),
             IOError(err) => fho::Error::Unexpected(err.into()),
             FfxError(err) => err.into(),

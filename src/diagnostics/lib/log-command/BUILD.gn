@@ -27,6 +27,7 @@ template("log_command_lib") {
              "//third_party/rust_crates:chrono-english",
              "//third_party/rust_crates:futures-util",
              "//third_party/rust_crates:log",
+             "//third_party/rust_crates:regex-lite",
              "//third_party/rust_crates:serde",
              "//third_party/rust_crates:serde_json",
              "//third_party/rust_crates:thiserror",
@@ -82,6 +83,7 @@ log_command_lib("log-command_fdomain") {
 }
 
 fuchsia_unittest_package("log-command-test") {
+  manifest = "meta/log-command-test.cml"
   deps = [ ":log-command_test" ]
 }
 

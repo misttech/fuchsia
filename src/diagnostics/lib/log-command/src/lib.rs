@@ -78,10 +78,14 @@ pub struct SetSeverityCommand {
 #[argh(subcommand, name = "watch")]
 pub struct WatchCommand {}
 
-#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug, Default)]
 /// Dumps all log from a given target's session.
 #[argh(subcommand, name = "dump")]
-pub struct DumpCommand {}
+pub struct DumpCommand {
+    /// return only the last N log lines.
+    #[argh(option)]
+    pub tail: Option<usize>,
+}
 
 pub fn parse_time(value: &str) -> Result<DetailedDateTime, String> {
     parse_date_string(value, Local::now(), Dialect::Us)
@@ -266,6 +270,14 @@ pub struct LogCommand {
     #[argh(option)]
     pub exclude: Vec<String>,
 
+    /// exclude logs matching a regular expression. May be repeated.
+    #[argh(option)]
+    pub exclude_regex: Vec<String>,
+
+    /// path to a file containing regular expressions, one per line, to exclude.
+    #[argh(option)]
+    pub exclude_regex_file: Option<String>,
+
     /// filter for only logs with a given tag. May be repeated.
     #[argh(option)]
     pub tag: Vec<String>,
@@ -401,6 +413,8 @@ impl Default for LogCommand {
             moniker: vec![],
             component: vec![],
             exclude: vec![],
+            exclude_regex: vec![],
+            exclude_regex_file: None,
             tag: vec![],
             exclude_tags: vec![],
             hide_tags: false,
@@ -467,6 +481,8 @@ pub enum LogError {
     NoBootTimestamp,
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    RegexError(#[from] regex_lite::Error),
     #[error("Cannot use dump with --since now")]
     DumpWithSinceNow,
     #[error("No symbolizer configuration provided")]
@@ -517,6 +533,7 @@ impl LogError {
             LogError::NoBootTimestamp
             | LogError::DumpWithSinceNow
             | LogError::NoSymbolizerConfig
+            | LogError::RegexError(_)
             | LogError::FfxError(_)
             | LogError::Utf8Error(_)
             | LogError::FidlError(_)
@@ -811,7 +828,7 @@ mod test {
         // Main should return an error
 
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
@@ -853,7 +870,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_translates_selector_if_one_match() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],
@@ -893,7 +910,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_uses_specified_selectors_if_no_results_returned() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("core/something/a:b/elements:main/otherstuff:*#DEBUG")
                     .unwrap(),
@@ -1025,7 +1042,7 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn logger_prints_ignores_ambiguity_if_machine_output_is_used() {
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand::default())),
             set_severity: vec![OneOrMany::One(
                 parse_log_interest_selector("ambiguous_selector#INFO").unwrap(),
             )],

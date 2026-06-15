@@ -72,6 +72,30 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "exclude-regex"
+        }
+      },
+      "optionality": "repeating",
+      "long": "--exclude-regex",
+      "short": null,
+      "description": "exclude logs matching a regular expression. May be repeated.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "exclude-regex-file"
+        }
+      },
+      "optionality": "optional",
+      "long": "--exclude-regex-file",
+      "short": null,
+      "description": "path to a file containing regular expressions, one per line, to exclude.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "tag"
         }
       },

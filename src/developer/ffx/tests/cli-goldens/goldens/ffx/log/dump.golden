@@ -10,6 +10,18 @@
       "short": null,
       "description": "display usage information",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "tail"
+        }
+      },
+      "optionality": "optional",
+      "long": "--tail",
+      "short": null,
+      "description": "return only the last N log lines.",
+      "hidden": false
     }
   ],
   "notes": [],
