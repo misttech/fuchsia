@@ -74,8 +74,30 @@ pub enum FfxTargetCrateError {
 }
 
 impl FfxTargetCrateError {
+    /// Converts this error into a user-facing command error (`Error::User`) if the underlying
+    /// error represents a target resolution or connection failure that is actionable by the
+    /// user (such as target not found or ambiguous target query). Otherwise, wraps it as an
+    /// unexpected error (`Error::Unexpected`).
     pub fn into_command_error(self) -> ffx_command_error::Error {
-        ffx_command_error::Error::Unexpected(anyhow::Error::new(self))
+        // TODO(b/523421855): Simplify this nested downcasting once FfxTargetCrateError
+        // has a more unified representation of target resolution/connection errors.
+        match self {
+            Self::Target(err) => {
+                let ffx_err: errors::FfxError = err.into();
+                ffx_command_error::Error::User(anyhow::Error::new(ffx_err))
+            }
+            Self::Fallback(err) => match err.downcast::<target_errors::FfxTargetError>() {
+                Ok(target_err) => {
+                    let ffx_err: errors::FfxError = target_err.into();
+                    ffx_command_error::Error::User(anyhow::Error::new(ffx_err))
+                }
+                Err(err) => match err.downcast::<errors::FfxError>() {
+                    Ok(ffx_err) => ffx_command_error::Error::User(anyhow::Error::new(ffx_err)),
+                    Err(err) => ffx_command_error::Error::Unexpected(err),
+                },
+            },
+            other => ffx_command_error::Error::Unexpected(anyhow::Error::new(other)),
+        }
     }
 }
 

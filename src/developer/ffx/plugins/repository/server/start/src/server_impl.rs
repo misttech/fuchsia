@@ -608,17 +608,13 @@ mod test {
     use fdomain_fuchsia_pkg_rewrite_ext::Rule;
     use ffx_config::TestEnv;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
-    use ffx_target::TargetProxy;
     use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, TestBuffers};
     use fho::{FfxMain, FhoEnvironment, TryFromEnv, user_error};
     use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
-    use fidl_fuchsia_developer_ffx::{
-        RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
-        TargetIpPort, TargetRequest, TargetState,
-    };
-    use fidl_fuchsia_developer_remotecontrol::{self as frcs, RemoteControlProxy};
-    use fidl_fuchsia_net_common::{IpAddress, Ipv4Address};
+    use fidl_fuchsia_developer_remotecontrol as frcs;
+    use fidl_fuchsia_io as fio;
+
     use fidl_fuchsia_pkg::{
         MirrorConfig, RepositoryConfig, RepositoryManagerMarker, RepositoryManagerRequest,
         RepositoryManagerRequestStream,
@@ -630,7 +626,6 @@ mod test {
         EditTransactionRequest, EngineMarker, EngineRequest, EngineRequestStream,
         RuleIteratorRequest,
     };
-    use frcs::RemoteControlMarker;
     use fuchsia_repo::repo_builder::RepoBuilder;
     use fuchsia_repo::repo_keys::RepoKeys;
     use fuchsia_repo::repository::HttpRepository;
@@ -642,7 +637,7 @@ mod test {
     use std::time;
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_connector::Connector;
-    use target_holders::{FakeInjector, fake_proxy};
+
     use test_case::test_case;
     use timeout::timeout;
     use tuf::crypto::Ed25519PrivateKey;
@@ -666,176 +661,94 @@ mod test {
         };
     }
 
-    fn to_target_info(nodename: String) -> TargetInfo {
-        let device_addr = TargetAddrInfo::IpPort(TargetIpPort {
-            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-            port: DEVICE_PORT,
-        });
-        let device_addr_ip = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-            port: DEVICE_PORT,
-        });
-
-        TargetInfo {
-            nodename: Some(nodename),
-            addresses: Some(vec![device_addr]),
-            ssh_address: Some(device_addr_ip),
-            ssh_host_address: Some(SshHostAddrInfo { address: HOST_ADDR.to_string() }),
-            age_ms: Some(101),
-            rcs_state: Some(RemoteControlState::Up),
-            target_state: Some(TargetState::Unknown),
-            ..Default::default()
-        }
-    }
-
     struct FakeRcs;
 
     impl FakeRcs {
-        fn new(
+        fn spawn(
             repo_manager: FakeRepositoryManager,
             engine: FakeEngine,
             netstack: Arc<FakeNetstack>,
-        ) -> RemoteControlProxy {
-            let fake_rcs_proxy: RemoteControlProxy = fake_proxy(move |req| match req {
-                frcs::RemoteControlRequest::ConnectCapability {
-                    moniker: _,
-                    capability_set: _,
-                    capability_name,
-                    server_channel,
-                    responder,
-                } => {
-                    let capability_name =
-                        capability_name.strip_prefix("svc/").unwrap_or(capability_name.as_str());
-                    match capability_name {
-                        RepositoryManagerMarker::PROTOCOL_NAME => repo_manager.spawn(
-                            fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
-                                server_channel,
-                            )
-                            .into_stream(),
-                        ),
-                        EngineMarker::PROTOCOL_NAME => engine.spawn(
-                            fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
-                                .into_stream(),
-                        ),
-                        fidl_fuchsia_posix_socket::ProviderMarker::PROTOCOL_NAME => {
-                            netstack.connect_socket_provider(fidl::endpoints::ServerEnd::<
-                                fidl_fuchsia_posix_socket::ProviderMarker,
-                            >::new(
-                                server_channel
-                            ))
-                        }
-                        p => {
-                            unimplemented!("unimplemented protocol {p}");
-                        }
-                    }
-                    responder.send(Ok(())).unwrap();
-                }
-                _ => panic!("unexpected request: {:?}", req),
-            });
-
-            fake_rcs_proxy
-        }
-    }
-
-    #[derive(Debug, PartialEq)]
-    enum TargetEvent {
-        Identity,
-        OpenRemoteControl,
-    }
-    struct FakeTarget;
-
-    impl FakeTarget {
-        fn new(knock_skip: Option<Vec<u32>>) -> (Self, TargetProxy, mpsc::Receiver<()>) {
-            let (sender, target_rx) = mpsc::channel::<()>(1);
-            let events = Arc::new(Mutex::new(Vec::new()));
-            let events_closure = Arc::clone(&events);
-
-            let mut knock_counter = 0;
-            let knock_skip = if let Some(k) = knock_skip { k } else { vec![] };
-
-            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
-                TargetRequest::Identity { responder, .. } => {
-                    let mut sender = sender.clone();
-                    let events_closure = events_closure.clone();
-
-                    fasync::Task::local(async move {
-                        events_closure.lock().unwrap().push(TargetEvent::Identity);
-                        responder.send(&to_target_info(TARGET_NODENAME.to_string())).unwrap();
-                        let _send = sender.send(()).await.unwrap();
-                    })
-                    .detach();
-                }
-                TargetRequest::OpenRemoteControl { remote_control, responder } => {
-                    let mut s = remote_control.into_stream();
-                    let knock_skip = knock_skip.clone();
-                    fasync::Task::local(async move {
-                        if let Ok(Some(req)) = s.try_next().await {
-                            match req {
-                                frcs::RemoteControlRequest::ConnectCapability {
-                                    moniker: _,
-                                    capability_set: _,
-                                    capability_name,
-                                    server_channel,
-                                    responder,
-                                } => {
-                                    let capability_name = capability_name
-                                        .strip_prefix("svc/")
-                                        .unwrap_or(capability_name.as_str());
-                                    match capability_name {
-                                        RemoteControlMarker::PROTOCOL_NAME => {
-                                            // Serve the periodic knock whether the fake target is alive
-                                            // By knock_rcs_impl() in
-                                            // src/developer/ffx/lib/rcs/src/lib.rs
-                                            // a knock is considered unsuccessful if there is no
-                                            // channel connection available within the timeout.
-                                            knock_counter += 1;
-                                            if knock_skip.contains(&knock_counter) { // Do not respond
-                                            } else {
-                                                let mut stream = fidl::endpoints::ServerEnd::<
-                                                    RemoteControlMarker,
-                                                >::new(
-                                                    server_channel
-                                                )
-                                                .into_stream();
-                                                fasync::Task::local(async move {
-                                                    while let Some(Ok(_)) = stream.next().await {
-                                                        // Do nada, just await the request, this is required for target knocking
-                                                    }
-                                                })
-                                                .detach();
-                                                let _ = responder.send(Ok(())).unwrap();
-                                            }
-                                        }
-                                        e => {
-                                            panic!("Requested capability not implemented: {}", e);
-                                        }
-                                    };
+            stream: frcs::RemoteControlRequestStream,
+        ) {
+            fasync::Task::local(async move {
+                let mut stream = stream;
+                while let Some(Ok(req)) = stream.next().await {
+                    match req {
+                        frcs::RemoteControlRequest::ConnectCapability {
+                            moniker: _,
+                            capability_set: _,
+                            capability_name,
+                            server_channel,
+                            responder,
+                        } => {
+                            let capability_name = capability_name
+                                .strip_prefix("svc/")
+                                .unwrap_or(capability_name.as_str());
+                            match capability_name {
+                                RepositoryManagerMarker::PROTOCOL_NAME => repo_manager.spawn(
+                                    fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
+                                        server_channel,
+                                    )
+                                    .into_stream(),
+                                ),
+                                EngineMarker::PROTOCOL_NAME => engine.spawn(
+                                    fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
+                                        .into_stream(),
+                                ),
+                                fidl_fuchsia_posix_socket::ProviderMarker::PROTOCOL_NAME => {
+                                    netstack.connect_socket_provider(fidl::endpoints::ServerEnd::<
+                                        fidl_fuchsia_posix_socket::ProviderMarker,
+                                    >::new(
+                                        server_channel
+                                    ))
                                 }
-                                _ => panic!("unexpected request: {:?}", req),
-                            };
-                        }
-                    })
-                    .detach();
-
-                    knock_counter += 1;
-                    if knock_counter != 200 {
-                        let mut sender = sender.clone();
-                        let events_closure = events_closure.clone();
-
-                        fasync::Task::local(async move {
-                            events_closure.lock().unwrap().push(TargetEvent::OpenRemoteControl);
+                                p => {
+                                    unimplemented!("unimplemented protocol {p}");
+                                }
+                            }
                             responder.send(Ok(())).unwrap();
-                            let _send = sender.send(()).await.unwrap();
-                        })
-                        .detach();
+                        }
+                        _ => panic!("unexpected request: {:?}", req),
                     }
                 }
-                _ => panic!("unexpected request: {:?}", req),
-            });
-            (Self, target_proxy, target_rx)
+            })
+            .detach();
         }
+    }
+
+    fn make_fake_directory(
+        repo_manager: FakeRepositoryManager,
+        engine: FakeEngine,
+        netstack: Arc<FakeNetstack>,
+    ) -> fidl::endpoints::ClientEnd<fio::DirectoryMarker> {
+        let (directory_proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fio::DirectoryMarker>();
+
+        fasync::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fio::DirectoryRequest::Open { path, object, .. } => {
+                        let path = path.strip_prefix("svc/").unwrap_or(&path);
+                        if path == frcs::RemoteControlMarker::PROTOCOL_NAME {
+                            let server_end =
+                                fidl::endpoints::ServerEnd::<frcs::RemoteControlMarker>::new(
+                                    object,
+                                );
+                            FakeRcs::spawn(
+                                repo_manager.clone(),
+                                engine.clone(),
+                                netstack.clone(),
+                                server_end.into_stream(),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .detach();
+
+        directory_proxy.into_channel().unwrap().into_zx_channel().into()
     }
 
     #[derive(Debug, PartialEq)]
@@ -1004,12 +917,20 @@ mod test {
             .runtime_config("connectivity.enable_network", false)
     }
 
+    fn make_direct_connector_behavior(client: Arc<fdomain_client::Client>) -> ConnectionBehavior {
+        let resolution = ffx_target::Resolution::mock(move || {
+            Ok(ffx_target::Connection::from_fdomain_client(client.clone()))
+        });
+        ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        )
+    }
+
     async fn make_fake_rcs_proxy_connector(
         test_env: &TestEnv,
     ) -> Connector<RemoteControlProxyHolder> {
         let (fake_repo, _) = FakeRepositoryManager::new();
         let (fake_engine, _content) = FakeEngine::new();
-        let (_, fake_target_proxy, _) = FakeTarget::new(None);
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1019,122 +940,53 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        target_env.set_behavior_for_test(behavior);
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
 
     async fn make_no_target_connector(test_env: &TestEnv) -> Connector<RemoteControlProxyHolder> {
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(|| {
-                Box::pin(async move {
-                    Err::<RemoteControlProxy, anyhow::Error>(
-                        FfxTargetError::OpenTargetError {
-                            err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
-                            target: None,
-                            targets: vec![],
-                        }
-                        .into(),
-                    )
-                })
-            }),
-            remote_factory_closure_f: Box::new(|| {
-                Box::pin(async move {
-                    Err::<_, anyhow::Error>(
-                        FfxTargetError::OpenTargetError {
-                            err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
-                            target: None,
-                            targets: vec![],
-                        }
-                        .into(),
-                    )
-                })
-            }),
-            ..Default::default()
+        let err = FfxTargetError::OpenTargetError {
+            err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
+            target: None,
+            targets: vec![],
         };
+        let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
+        let behavior = ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        );
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
 
     async fn make_ambiguous_connector(test_env: &TestEnv) -> Connector<RemoteControlProxyHolder> {
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(|| {
-                Box::pin(async move {
-                    Err::<RemoteControlProxy, anyhow::Error>(
-                        FfxTargetError::OpenTargetError {
-                            err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
-                            target: None,
-                            targets: vec!["foo".to_string(), "bar".to_string()],
-                        }
-                        .into(),
-                    )
-                })
-            }),
-            remote_factory_closure_f: Box::new(|| {
-                Box::pin(async move {
-                    Err::<_, anyhow::Error>(
-                        FfxTargetError::OpenTargetError {
-                            err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
-                            target: None,
-                            targets: vec!["foo".to_string(), "bar".to_string()],
-                        }
-                        .into(),
-                    )
-                })
-            }),
-            ..Default::default()
+        let err = FfxTargetError::OpenTargetError {
+            err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
+            target: None,
+            targets: vec!["foo".to_string(), "bar".to_string()],
         };
+        let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
+        let behavior = ConnectionBehavior::DirectConnector(
+            target_behavior::DirectConnector::from_resolution_for_test(resolution),
+        );
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
@@ -1638,7 +1490,6 @@ mod test {
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, _fake_target_rx) = FakeTarget::new(None);
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1648,46 +1499,15 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1821,8 +1641,11 @@ mod test {
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
-        // Create a target where the second and third knock requests are not answered, triggering the reconnect
-        // loops in both the repository serve plugin and the Connect<TargetProxy>.
+        // In this test, target discovery is disabled (NETWORK_ENABLED and USB_ENABLED are false).
+        // Consequently, the daemonless knocker (which resolves the target spec via discovery) will
+        // fail on every knock and report `TargetNotFound`, simulating a lost connection.
+        // Meanwhile, the mocked DirectConnector behavior bypasses resolution and successfully returns a
+        // connection to the target, allowing the loop to reconnect and testing the auto-reconnect logic.
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1832,42 +1655,15 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            ..Default::default()
-        };
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_port_file_path = tmp_port_file.path().to_owned();
@@ -2161,11 +1957,8 @@ mod test {
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, _) = FakeTarget::new(None);
-
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
-        let ftpc = fake_target_proxy.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
         let socket_provider = fake_netstack.new_socket_provider();
 
@@ -2173,46 +1966,15 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = ftpc.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         let (listen_addr, repo_host) = if direct_target_connection {
             (REPO_UNSPECIFIED_IPV4_ADDR, HOST_ADDR)
@@ -2399,7 +2161,7 @@ mod test {
 
         let (fake_repo, _fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, _) = FakeTarget::new(None);
+
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
@@ -2408,45 +2170,15 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         // Prepare serving the repo without passing the trusted root, and
         // passing of the trusted root 2.root.json explicitly
@@ -2507,7 +2239,7 @@ mod test {
 
         let (fake_repo, _fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, _) = FakeTarget::new(None);
+
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
@@ -2516,45 +2248,15 @@ mod test {
             let fake_repo = frc.clone();
             let fake_engine = fec.clone();
             let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
+            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
         });
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
+        let behavior = make_direct_connector_behavior(fdomain_client);
 
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        let target_env = target_interface(&env);
+        target_env.set_behavior_for_test(behavior);
 
         let serve_cmd_with_root = StartCommand {
             repository: Some(REPO_NAME.to_string()),
