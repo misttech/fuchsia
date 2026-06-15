@@ -434,9 +434,6 @@ void TouchSystem::UpdateGestureContest(const view_tree::Snapshot& snapshot,
   // Update remaining contenders.
   // Copy the vector to avoid problems if the arena is destroyed inside of UpdateStream().
   const std::vector<ContenderId> contenders = arena.contenders();
-  const glm::mat4 world_from_viewport_transform =
-      snapshot.GetWorldFromViewTransform(event.context).value() *
-      event.viewport.context_from_viewport_transform;
   for (const auto contender_id : contenders) {
     // Don't use the arena obtained above the loop, because it may have been removed from
     // gesture_arenas_ in a previous loop iteration.
