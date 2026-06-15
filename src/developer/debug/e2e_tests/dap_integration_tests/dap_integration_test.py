@@ -17,6 +17,7 @@ class TestDapSmoke(DapTestCase):
         pass
 
 
+# Any tests that send initialize will automatically send disconnect after teardown
 class TestDapInit(DapTestCase):
     async def test_initialize(self) -> None:
         await self.initialize(InitializeArguments(adapterID="zxdb"))

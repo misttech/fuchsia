@@ -7,10 +7,10 @@ import sys
 import unittest
 from io import StringIO
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from async_utils.command import StderrEvent, StdoutEvent, TerminationEvent
-from dap_test_framework import DapTestFramework, RequestFuture
+from dap_test_framework import DapTestCase, DapTestFramework, RequestFuture
 from pydap.client import DapClient
 
 
@@ -202,7 +202,7 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
 
         # Start the server log task
         self.framework._server_log_task = asyncio.create_task(
-            self.framework._read_server_log()
+            self.framework._run_to_completion_collect_log()
         )
 
         captured_output = StringIO()
@@ -221,6 +221,112 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[zxdb stdout] stdout line\n", output_str)
         self.assertIn("[zxdb stderr] stderr line\n", output_str)
         self.assertIn("[zxdb terminated] exit code: 0", output_str)
+
+
+class TestDapTestCaseTeardown(unittest.TestCase):
+    @patch("dap_test_framework.dap_test_framework.DapTestFramework")
+    def test_body_fail_prevents_teardown_failure_override(
+        self, mock_framework_cls: Mock
+    ) -> None:
+        class MockDapTestCaseBodyFail(DapTestCase):
+            async def test_body(self) -> None:
+                raise ValueError("Original body failure")
+
+        # Construct test instance
+        test = MockDapTestCaseBodyFail("test_body")
+
+        # Configure mock framework that will be created during asyncSetUp
+        mock_framework = mock_framework_cls.return_value
+        mock_framework.initialized = True
+        mock_framework.disconnected = False
+        mock_framework.start_server = AsyncMock()
+
+        # Make teardown methods raise errors when awaited
+        mock_framework.verify_all_expectations = AsyncMock(
+            side_effect=RuntimeError("verify failed")
+        )
+        mock_framework.disconnect = AsyncMock(
+            side_effect=RuntimeError("disconnect failed")
+        )
+        mock_framework.teardown = AsyncMock(
+            side_effect=RuntimeError("teardown failed")
+        )
+
+        suite = unittest.TestSuite()
+        suite.addTest(test)
+
+        captured_stdout = StringIO()
+        with patch("sys.stdout", captured_stdout):
+            result = unittest.TestResult()
+            suite.run(result)
+
+        # Verify that the ValueError from the test body is the one reported
+        self.assertEqual(len(result.errors), 1)
+        err_msg = result.errors[0][1]
+        self.assertIn("ValueError: Original body failure", err_msg)
+        # Teardown errors should NOT be in the failure traceback because they were ignored
+        self.assertNotIn("RuntimeError: verify failed", err_msg)
+        self.assertNotIn("RuntimeError: disconnect failed", err_msg)
+        self.assertNotIn("RuntimeError: teardown failed", err_msg)
+
+        # Verify dump_server_logs was called with the correct test ID
+        mock_framework.dump_server_logs.assert_called_once()
+        called_test_id = mock_framework.dump_server_logs.call_args[0][0]
+        self.assertIn("MockDapTestCaseBodyFail.test_body", called_test_id)
+
+        # Verify the ignored errors were logged to stdout
+        output = captured_stdout.getvalue()
+        self.assertIn(
+            "[VERIFY_EXPECT] Check failed (ignored due to prior failure): verify failed",
+            output,
+        )
+        self.assertIn(
+            "[VERIFY_DISCONNECT] Check failed (ignored due to prior failure): disconnect failed",
+            output,
+        )
+        self.assertIn(
+            "[CLEAN_FRAMEWORK] Check failed (ignored due to prior failure): teardown failed",
+            output,
+        )
+
+    @patch("dap_test_framework.dap_test_framework.DapTestFramework")
+    def test_teardown_failure_reported_if_body_succeeds(
+        self, mock_framework_cls: Mock
+    ) -> None:
+        class MockDapTestCaseTeardownFail(DapTestCase):
+            async def test_body(self) -> None:
+                pass
+
+        test = MockDapTestCaseTeardownFail("test_body")
+
+        mock_framework = mock_framework_cls.return_value
+        mock_framework.initialized = True
+        mock_framework.disconnected = False
+        mock_framework.start_server = AsyncMock()
+
+        # Raise error on verify, but let teardown succeed
+        mock_framework.verify_all_expectations = AsyncMock(
+            side_effect=RuntimeError("verify failed")
+        )
+        mock_framework.teardown = AsyncMock()
+
+        suite = unittest.TestSuite()
+        suite.addTest(test)
+
+        captured_stdout = StringIO()
+        with patch("sys.stdout", captured_stdout):
+            result = unittest.TestResult()
+            suite.run(result)
+
+        # Since test body succeeded, the teardown error must be reported
+        self.assertEqual(len(result.errors), 1)
+        err_msg = result.errors[0][1]
+        self.assertIn("RuntimeError: verify failed", err_msg)
+
+        # Verify dump_server_logs was called because the test failed (due to teardown)
+        mock_framework.dump_server_logs.assert_called_once()
+        called_test_id = mock_framework.dump_server_logs.call_args[0][0]
+        self.assertIn("MockDapTestCaseTeardownFail.test_body", called_test_id)
 
 
 if __name__ == "__main__":

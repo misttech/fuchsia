@@ -119,6 +119,20 @@ void SetupCommandLineOptions(const CommandLineOptions& options, Session* session
 
 int ConsoleMain(int argc, const char* argv[]) {
   signal(SIGPIPE, SIG_IGN);
+
+  // Declare the loop at the top because it must outlive other objects that
+  // might call loop methods during their destruction.
+  //
+  // Declaring `defer_loop_cleanup` before those objects ensures that
+  // `loop.Cleanup()` runs after they have been fully cleaned up.
+  debug::MessageLoopPoll loop;
+  bool loop_is_initialized = false;
+  auto defer_loop_cleanup = fit::defer([&loop, &loop_is_initialized] {
+    if (loop_is_initialized) {
+      loop.Cleanup();
+    }
+  });
+
   using ::analytics::core_dev_tools::EarlyProcessAnalyticsOptions;
 
   CommandLineOptions options;
@@ -182,12 +196,12 @@ int ConsoleMain(int argc, const char* argv[]) {
     return 1;
   }
 
-  debug::MessageLoopPoll loop;
   std::string error_message;
   if (!loop.Init(&error_message)) {
     fprintf(stderr, "%s", error_message.c_str());
     return 1;
   }
+  loop_is_initialized = true;
 
   // This scope forces all the objects to be destroyed before the Cleanup() call which will mark the
   // message loop as not-current.
@@ -240,13 +254,12 @@ int ConsoleMain(int argc, const char* argv[]) {
       err = debug_adapter->Init();
       if (err.has_error()) {
         fprintf(stderr, "Failed to initialize debug adapter: %s\n", err.msg().c_str());
-        loop.Cleanup();
+
         return EXIT_FAILURE;
       }
     } else {
       if (isatty(STDIN_FILENO) && tcgetpgrp(STDIN_FILENO) != getpgrp()) {
         fprintf(stderr, "Error: This program cannot be run in the background.\n");
-        loop.Cleanup();
         return EXIT_FAILURE;
       }
       console = std::make_unique<ConsoleImpl>(session.get());
@@ -272,7 +285,6 @@ int ConsoleMain(int argc, const char* argv[]) {
       fbl::unique_fd fd(HANDLE_EINTR(open(path.c_str(), O_RDONLY | O_NONBLOCK)));
       if (!fd.is_valid()) {
         LOGS(Error) << "Failed to open file for streaming: " << path;
-        loop.Cleanup();
         return EXIT_FAILURE;
       }
       file_streamers.emplace_back(StreamFDToConsole(std::move(fd), console.get()));
@@ -320,8 +332,6 @@ int ConsoleMain(int argc, const char* argv[]) {
 
     loop.Run();
   }
-
-  loop.Cleanup();
 
   return ret_code;
 }

@@ -13,7 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional
 
 from async_utils.command import (
     AsyncCommand,
@@ -25,6 +25,7 @@ from ffx_cmd.lib import FfxCmd
 from portpicker import portpicker
 from pydap.dap_types import DapBaseModel
 from pydap.models import (
+    DisconnectArguments,
     EvaluateArguments,
     InitializeArguments,
     LaunchArguments,
@@ -92,8 +93,8 @@ class EventFuture:
 
             # 2. Await future or wake up immediately if background tasks crash
             tasks = [self.fut]
-            if self.framework._client_task:
-                tasks.append(self.framework._client_task)
+            if self.framework._client_reader_task:
+                tasks.append(self.framework._client_reader_task)
             if self.framework._process_task:
                 tasks.append(self.framework._process_task)
 
@@ -106,15 +107,25 @@ class EventFuture:
 
             # 3. Check if background tasks crashed
             if (
-                self.framework._client_task
-                and self.framework._client_task in done
+                self.framework._client_reader_task
+                and self.framework._client_reader_task in done
             ):
-                exc = self.framework._client_task.exception()
-                raise RuntimeError(f"DAP client background task stopped: {exc}")
+                if self.framework._client_reader_task.cancelled():
+                    raise RuntimeError(
+                        "DAP client reader background task was cancelled"
+                    )
+                exc = self.framework._client_reader_task.exception()
+                raise RuntimeError(
+                    f"DAP client reader background task stopped: {exc}"
+                )
             if (
                 self.framework._process_task
                 and self.framework._process_task in done
             ):
+                if self.framework._process_task.cancelled():
+                    raise RuntimeError(
+                        "DAP event processor background task was cancelled"
+                    )
                 exc = self.framework._process_task.exception()
                 raise RuntimeError(
                     f"DAP event processor background task stopped: {exc}"
@@ -160,7 +171,7 @@ class DapTestFramework:
         self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self.traffic_history: List[Dict[str, Any]] = []
         self.unmatched_events: List[Dict[str, Any]] = []
-        self._client_task: Optional[asyncio.Task[None]] = None
+        self._client_reader_task: Optional[asyncio.Task[None]] = None
         self._process_task: Optional[asyncio.Task[None]] = None
         self._request_tasks: List[asyncio.Task[None]] = []
         self.proc: Optional[AsyncCommand] = None
@@ -168,6 +179,9 @@ class DapTestFramework:
         self._writer: Optional[asyncio.StreamWriter] = None
         self.pending_futures: List[RequestFuture] = []
         self.event_expectations: List[EventFuture] = []
+        self.initialized = False
+        self.disconnected = False
+        self.return_code: Optional[int] = None
         self._isolate_dir: Optional[tempfile.TemporaryDirectory[str]] = None
         self._server_logs: List[str] = []
 
@@ -227,7 +241,9 @@ class DapTestFramework:
             f"--signal-when-ready={os.getpid()}",
         ]
         self.proc = await ffx_cmd.start(*args)
-        self._server_log_task = asyncio.create_task(self._read_server_log())
+        self._server_log_task = asyncio.create_task(
+            self._run_to_completion_collect_log()
+        )
         # Setup signal handler to wait for zxdb to be ready
         loop = asyncio.get_running_loop()
         signal_fut = loop.create_future()
@@ -253,7 +269,7 @@ class DapTestFramework:
         reader, writer = await asyncio.open_connection("localhost", port)
         self._writer = writer
         # Start background task for protocol handling
-        self._client_task = asyncio.create_task(
+        self._client_reader_task = asyncio.create_task(
             self.client.run(reader, self.event_queue)
         )
         self._process_task = asyncio.create_task(self._event_processor_loop())
@@ -276,6 +292,8 @@ class DapTestFramework:
                     raise AssertionError(
                         f"DAP request {command} failed: {resp_dict.get('message')}"
                     )
+                if command == "initialize":
+                    self.initialized = True
                 req_fut.set_result(resp_dict)
             except Exception as e:
                 req_fut.set_exception(e)
@@ -518,6 +536,18 @@ class DapTestFramework:
             "stackTrace", lambda: self.client.stack_trace(writer, args)
         )
 
+    def disconnect(
+        self, args: Optional[DisconnectArguments] = None
+    ) -> RequestFuture:
+        self.disconnected = True
+        assert self._writer is not None
+        writer = self._writer
+        if args is None:
+            args = DisconnectArguments()
+        return self._send_wrapper(
+            "disconnect", lambda: self.client.disconnect(writer, args)
+        )
+
     async def verify_all_expectations(self) -> None:
         """Awaits all pending futures and verifies event expectations."""
         # 1. Check if pending expectations are already satisfied by unmatched history
@@ -572,6 +602,59 @@ class DapTestFramework:
                         self.unmatched_events.remove(msg)
                         break
 
+    async def _drain_and_cleanup_server(self) -> None:
+        """Drains server logs and ensures the process is terminated."""
+        if not self._server_log_task:
+            return
+
+        try:
+            # 1. Wait for normal exit
+            try:
+                await asyncio.wait_for(self._server_log_task, timeout=5.0)
+                return
+            except asyncio.TimeoutError:
+                print(
+                    "Teardown: Timeout waiting for server log reader to finish, terminating..."
+                )
+
+            # 2. Try SIGTERM
+            if self.proc:
+                try:
+                    self.proc.terminate()
+                except ProcessLookupError:
+                    pass
+
+            # 3. Wait again after SIGTERM
+            try:
+                await asyncio.wait_for(self._server_log_task, timeout=5.0)
+                return
+            except asyncio.TimeoutError:
+                print(
+                    "Teardown: Timeout waiting for server log reader to finish after terminate. Killing..."
+                )
+
+            # 4. Try SIGKILL
+            if self.proc:
+                try:
+                    self.proc.kill()
+                except ProcessLookupError:
+                    pass
+
+            # 5. Final cancellation fallback if still not done
+            if not self._server_log_task.done():
+                self._server_log_task.cancel()
+            try:
+                await self._server_log_task
+            except asyncio.CancelledError:
+                pass
+        except Exception as e:
+            print(f"Teardown: error draining server process: {e}")
+
+        if self.initialized:
+            assert (
+                self.return_code == 0
+            ), f"DAP server exited unexpectedly with code: {self.return_code}"
+
     async def teardown(self) -> None:
         """Cleans up connections and processes."""
         for task in self._request_tasks:
@@ -583,10 +666,10 @@ class DapTestFramework:
                     pass
         self._request_tasks.clear()
 
-        if self._client_task:
-            self._client_task.cancel()
+        if self._client_reader_task:
+            self._client_reader_task.cancel()
             try:
-                await self._client_task
+                await self._client_reader_task
             except asyncio.CancelledError:
                 pass
         if self._process_task:
@@ -595,34 +678,28 @@ class DapTestFramework:
                 await self._process_task
             except asyncio.CancelledError:
                 pass
+
         if self._writer:
             self._writer.close()
             await self._writer.wait_closed()
-        if self.proc:
-            try:
-                self.proc.terminate()
-            except ProcessLookupError:
-                pass
-        if self._server_log_task:
-            try:
-                await asyncio.wait_for(self._server_log_task, timeout=5.0)
-            except TimeoutError:
-                print(
-                    "Teardown: Timeout waiting for server log reader to finish, cancelling..."
-                )
-                self._server_log_task.cancel()
-                try:
-                    await self._server_log_task
-                except asyncio.CancelledError:
-                    pass
-            except Exception as e:
-                print(f"Teardown: error draining server process: {e}")
+
+        # Drain logs and terminate process
+        await self._drain_and_cleanup_server()
 
         if self._isolate_dir:
             self._isolate_dir.cleanup()
             self._isolate_dir = None
 
-    async def _read_server_log(self) -> None:
+    async def _run_to_completion_collect_log(self) -> None:
+        """Runs the process to completion while collecting stdout/stderr logs.
+
+        CRITICAL: This is the sole consumer of the `AsyncCommand` event queue
+        (`self.proc`). Since `AsyncCommand` only supports a single iterator,
+        no other methods (such as `self.proc.run_to_completion()`) should be
+        called concurrently on `self.proc` while this task is running. Doing
+        so will cause a race condition where events are missed by one of the
+        consumers, leading to hangs.
+        """
         if self.proc is None:
             raise RuntimeError("Cannot read server log: process is not started")
         try:
@@ -636,6 +713,7 @@ class DapTestFramework:
                         f"[zxdb stderr] {event.text.decode('utf-8', errors='replace')}"
                     )
                 elif isinstance(event, TerminationEvent):
+                    self.return_code = event.return_code
                     self._server_logs.append(
                         f"[zxdb terminated] exit code: {event.return_code}\n"
                     )
@@ -645,11 +723,16 @@ class DapTestFramework:
             self._server_logs.append(f"Error reading server log: {e}\n")
             raise
 
-    def dump_server_logs(self) -> None:
+    def dump_server_logs(self, test_id: Optional[str] = None) -> None:
         """Dumps captured DAP server stdout/stderr logs to host output."""
         if not self._server_logs:
             return
-        print("\n--- Captured DAP Server Logs ---", flush=True)
+        if test_id:
+            print(
+                f"\n--- Captured DAP Server Logs for {test_id} ---", flush=True
+            )
+        else:
+            print("\n--- Captured DAP Server Logs ---", flush=True)
         for line in self._server_logs:
             print(line, end="", flush=True)
         print("---------------------------------\n", flush=True)
@@ -666,27 +749,62 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
         # Start server and connect
         await self.framework.start_server(self.port)
 
-    async def asyncTearDown(self) -> None:
-        test_failed = False
+    # any exception that is not caught during the execution of unittest will update the outcome
+    def _is_test_failed(self) -> bool:
+        if getattr(self, "_teardown_failed", False):
+            return True
         outcome = getattr(self, "_outcome", None)
         if outcome:
-            errors = getattr(outcome, "errors", [])
-            for _, exc_info in errors:
-                if exc_info:
-                    test_failed = True
-                    break
+            if hasattr(outcome, "result"):
+                # Python 3.11+
+                result = outcome.result
+                return any(
+                    test == self
+                    for test, text in result.errors + result.failures
+                )
+        return False
 
+    async def _run_keep_previous_fail(
+        self, task_name: str, coro: Awaitable[Any]
+    ) -> None:
+        is_failed = self._is_test_failed()
         try:
-            await self.framework.verify_all_expectations()
+            await coro
         except Exception as e:
-            test_failed = True
-            print(f"Teardown: Expectations failed: {e}", flush=True)
-            raise
+            self._teardown_failed = True
+            if is_failed:
+                print(
+                    f"[{task_name}] Check failed (ignored due to prior failure): {e}",
+                    flush=True,
+                )
+            else:
+                print(f"[{task_name}] Check failed: {e}", flush=True)
+                raise e
+
+    async def asyncTearDown(self) -> None:
+        try:
+            # some failure might have already happened before entering this function
+            # use _run_keep_previous_fail to prevent failure from being overwritten
+            await self._run_keep_previous_fail(
+                "VERIFY_EXPECT", self.framework.verify_all_expectations()
+            )
+
+            # safely close the connection if it was initialized and not already disconnected.
+            # the framework.teardown will terminate forcefully if server is still alive
+            if self.framework.initialized and not self.framework.disconnected:
+                await self._run_keep_previous_fail(
+                    "VERIFY_DISCONNECT", self.disconnect()
+                )
         finally:
-            # Disconnect and terminate server (drains logs)
-            await self.framework.teardown()
-            if test_failed:
-                self.framework.dump_server_logs()
+            # non-test-logic related teardown, any failure happen here shouldn't be seen as a dap-logic failure.
+            # CLEAN_FRAMEWORK is placed in finally to guarantee cleanup of server processes and sockets.
+            await self._run_keep_previous_fail(
+                "CLEAN_FRAMEWORK", self.framework.teardown()
+            )
+
+            # dump the log whenever failure happens
+            if self._is_test_failed():
+                self.framework.dump_server_logs(self.id())
             print(f"[TEST END] {self.id()}\n", flush=True)
 
     # Delegation methods for cleaner test syntax
@@ -707,6 +825,11 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def split_request(self, seq: int, delay: float = 0.1) -> None:
         self.framework.split_request(seq, delay)
+
+    def disconnect(
+        self, args: Optional[DisconnectArguments] = None
+    ) -> RequestFuture:
+        return self.framework.disconnect(args)
 
     def on_event(self, event_name: str) -> EventFuture:
         return self.framework.on_event(event_name)
