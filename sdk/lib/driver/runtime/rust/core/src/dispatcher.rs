@@ -556,7 +556,7 @@ mod tests {
             }
         });
     }
-    pub fn with_raw_dispatcher<T>(name: &str, p: impl for<'a> FnOnce(AsyncDispatcher) -> T) -> T {
+    pub fn with_raw_dispatcher<T>(name: &str, p: impl FnOnce(AsyncDispatcher) -> T) -> T {
         with_raw_dispatcher_flags(name, DispatcherBuilder::ALLOW_THREAD_BLOCKING, "", p)
     }
 
@@ -564,7 +564,7 @@ mod tests {
         name: &str,
         flags: u32,
         scheduler_role: &str,
-        p: impl for<'a> FnOnce(AsyncDispatcher) -> T,
+        p: impl FnOnce(AsyncDispatcher) -> T,
     ) -> T {
         ensure_driver_env();
 
