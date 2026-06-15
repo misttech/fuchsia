@@ -897,7 +897,8 @@ pub fn sys_sched_getaffinity(
 
     check_cpu_set_alignment(current_task, cpusetsize)?;
 
-    let _task = get_task_or_current(current_task, pid)?;
+    let target_task = get_task_or_current(current_task, pid)?;
+    security::check_task_getscheduler_access(current_task, &target_task)?;
 
     // sched_setaffinity() is not implemented. Fake affinity mask based on the number of CPUs.
     let mask = get_default_cpu_set();
@@ -938,6 +939,8 @@ pub fn sys_sched_setaffinity(
     if !current_task.is_euid_friendly_with(&target_task) {
         security::check_task_capable(current_task, CAP_SYS_NICE)?;
     }
+
+    security::check_task_setscheduler_access(current_task, &target_task)?;
 
     // Currently, we ignore the mask and act as if the system reset the mask
     // immediately to allowing all CPUs.

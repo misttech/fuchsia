@@ -103,4 +103,54 @@ TEST(SchedTest, SchedGetschedulerDeniedWithoutGetsched) {
   }));
 }
 
+TEST(SchedTest, SchedGetaffinitySucceedsWithGetsched) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ScopedTargetProcess target("test_u:test_r:test_sched_target_t:s0");
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_sched_child_t:s0", [&] {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    EXPECT_THAT(syscall(SYS_sched_getaffinity, target.pid(), sizeof(mask), &mask),
+                SyscallSucceeds());
+  }));
+}
+
+TEST(SchedTest, SchedGetaffinityDeniedWithoutGetsched) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ScopedTargetProcess target("test_u:test_r:test_sched_target_t:s0");
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_sched_child_no_getsched_t:s0", [&] {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    EXPECT_THAT(syscall(SYS_sched_getaffinity, target.pid(), sizeof(mask), &mask),
+                SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+TEST(SchedTest, SchedSetaffinitySucceedsWithSetsched) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ScopedTargetProcess target("test_u:test_r:test_sched_target_t:s0");
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_sched_child_t:s0", [&] {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(0, &mask);
+    EXPECT_THAT(syscall(SYS_sched_setaffinity, target.pid(), sizeof(mask), &mask),
+                SyscallSucceeds());
+  }));
+}
+
+TEST(SchedTest, SchedSetaffinityDeniedWithoutSetsched) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ScopedTargetProcess target("test_u:test_r:test_sched_target_t:s0");
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_sched_child_no_setsched_t:s0", [&] {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(0, &mask);
+    EXPECT_THAT(syscall(SYS_sched_setaffinity, target.pid(), sizeof(mask), &mask),
+                SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 }  // namespace

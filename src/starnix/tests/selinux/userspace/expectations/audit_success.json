@@ -1875,9 +1875,21 @@
             ]
         },
         {
+            "name": "SchedTest.SchedGetaffinityDeniedWithoutGetsched",
+            "audit_expectations": [
+                "avc:  denied  { getsched } for scontext=test_u:test_r:test_sched_child_no_getsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "SchedTest.SchedGetschedulerDeniedWithoutGetsched",
             "audit_expectations": [
                 "avc:  denied  { getsched } for scontext=test_u:test_r:test_sched_child_no_getsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "SchedTest.SchedSetaffinityDeniedWithoutSetsched",
+            "audit_expectations": [
+                "avc:  denied  { setsched } for scontext=test_u:test_r:test_sched_child_no_setsched_t:s0 tcontext=test_u:test_r:test_sched_target_t:s0 tclass=process permissive=0"
             ]
         },
         {
