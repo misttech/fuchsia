@@ -76,17 +76,9 @@ async fn handle_single_peer_request(
                 }
             }
         }
-        PeerControllerRequest::ConnectPeer { payload, responder } => {
-            let id = selector_to_peer_id!("ConnectPeer", payload, responder);
-            match worker.connect_peer(id).await {
-                Ok(_) => {
-                    responder.send(Ok(()))?;
-                }
-                Err(err) => {
-                    error!("ConnectPeer encountered error: {err}");
-                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                }
-            }
+        PeerControllerRequest::ConnectPeer { payload: _, responder } => {
+            warn!("ConnectPeer is being deprecated and no-op");
+            responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
         }
         PeerControllerRequest::DisconnectPeer { payload, responder } => {
             let id = selector_to_peer_id!("DisconnectPeer", payload, responder);

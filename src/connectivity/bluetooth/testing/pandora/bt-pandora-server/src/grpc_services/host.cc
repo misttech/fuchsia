@@ -125,13 +125,10 @@ Status HostService::Connect(grpc::ServerContext* context, const pandora::Connect
     return Status(StatusCode::NOT_FOUND, "Peer not found");
   }
 
-  fuchsia_bluetooth_affordances::PeerSelector selector;
-  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
-  auto result = peer_controller_client_->ConnectPeer(selector);
+  auto result = access_sync_client_->Connect({fuchsia_bluetooth::PeerId{peer_id}});
   if (result.is_error()) {
-    return Status(StatusCode::INTERNAL,
-                  "fuchsia.bluetooth.affordances.PeerController/ConnectPeer error: " +
-                      result.error_value().FormatDescription());
+    return Status(StatusCode::INTERNAL, "fuchsia.bluetooth.sys.Access/Connect error: " +
+                                            result.error_value().FormatDescription());
   }
 
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
