@@ -79,6 +79,8 @@ type CrashReport = resource table {
     ///    * annotations.json
     ///    * minidump.dmp
     ///    * snapshot_uuid.txt
+    ///    * snapshot.zip
+    ///    * uploadFileMinidump
     4: attachments vector<Attachment>:MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT;
 
     /// A text ID that the crash server can use to group multiple crash reports related to the

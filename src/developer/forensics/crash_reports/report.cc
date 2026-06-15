@@ -79,7 +79,8 @@ Report::Report(const ReportId report_id, const std::string& program_shortname,
 
 bool Report::IsReservedAttachmentKey(const std::string& key) {
   return (key == feedback_data::kAttachmentAnnotations || key == feedback_data::kMinidumpFilename ||
-          key == feedback_data::kSnapshotUuidFilename);
+          key == feedback_data::kSnapshotUuidFilename || key == feedback_data::kSnapshotFilename ||
+          key == feedback_data::kMinidumpUploadKey);
 }
 
 bool Report::IsValidAttachmentKey(const std::string& key) {

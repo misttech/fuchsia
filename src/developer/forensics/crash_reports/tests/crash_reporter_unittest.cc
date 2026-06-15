@@ -915,6 +915,14 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ReservedAttachmentKeyTest,
                                  "SnapshotUuidTxt",
                                  feedback_data::kSnapshotUuidFilename,
                              },
+                             {
+                                 "SnapshotZip",
+                                 feedback_data::kSnapshotFilename,
+                             },
+                             {
+                                 "UploadFileMinidump",
+                                 feedback_data::kMinidumpUploadKey,
+                             },
                          })),
                          [](const testing::TestParamInfo<ReservedAttachmentKeyTestParam>& info) {
                            return info.param.test_name;
