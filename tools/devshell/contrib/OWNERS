@@ -63,4 +63,4 @@ per-file zedmon=claridge@google.com
 per-file lib/count-ninja-actions.py = file: /src/lib/analytics/OWNERS
 per-file lib/count-ninja-actions.py = file: /build/OWNERS
 per-file build-zbi = diserovich@google.com
-per-file download-metrics.fx,download-baseline.fx,extract-metrics.fx=cmasone@google.com
+per-file download-metrics.fx,download-baseline.fx,extract-metrics.fx = file: /src/testing/perfcompare/OWNERS
