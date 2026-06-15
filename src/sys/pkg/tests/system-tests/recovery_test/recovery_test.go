@@ -148,7 +148,7 @@ func doTestRecovery(
 	version ffxpkg.FfxVersionPolicy,
 ) error {
 	// We don't install an OTA, so we don't need to prefetch the blobs.
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxRunDir, version)
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxRunDir, version, ffxTool)
 	if err != nil {
 		return fmt.Errorf("unable to get repository: %w", err)
 	}
@@ -221,7 +221,7 @@ func initializeDevice(
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.RunDir(), version)
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.RunDir(), version, ffx)
 	if err != nil {
 		return err
 	}

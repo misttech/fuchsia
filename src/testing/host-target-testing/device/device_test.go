@@ -50,7 +50,7 @@ func (b fakeBuild) GetFlashManifest(ctx context.Context) (string, error) {
 func (b fakeBuild) GetProductBundleDir(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no product bundle")
 }
-func (b fakeBuild) GetPackageRepository(ctx context.Context, blobFetchMode artifacts.BlobFetchMode, ffxRunDir ffx.RunDir, version ffx.FfxVersionPolicy) (*packages.Repository, error) {
+func (b fakeBuild) GetPackageRepository(ctx context.Context, blobFetchMode artifacts.BlobFetchMode, ffxRunDir ffx.RunDir, version ffx.FfxVersionPolicy, hostFfx *ffx.FFXTool) (*packages.Repository, error) {
 	return nil, nil
 }
 func (b fakeBuild) GetPaverDir(ctx context.Context) (string, error) { return "", nil }

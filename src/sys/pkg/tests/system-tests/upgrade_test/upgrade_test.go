@@ -131,7 +131,7 @@ func doTest(ctx context.Context) error {
 		logger.Infof(ctx, "Refreshing TUF metadata in build %s with latest ffx", build)
 
 		logger.Infof(ctx, "Calling GetPackageRepository with version: %q for build %s", buildWithVersion.Version, build)
-		repo, err := build.GetPackageRepository(ctx, artifacts.PrefetchBlobs, ffxRunDir, buildWithVersion.Version)
+		repo, err := build.GetPackageRepository(ctx, artifacts.PrefetchBlobs, ffxRunDir, buildWithVersion.Version, latestFfx)
 		if err != nil {
 			return fmt.Errorf("error getting repository: %w", err)
 		}

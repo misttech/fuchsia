@@ -78,6 +78,7 @@ type Build interface {
 		blobFetchMode BlobFetchMode,
 		ffxRunDir ffx.RunDir,
 		version ffx.FfxVersionPolicy,
+		hostFfx *ffx.FFXTool,
 	) (*packages.Repository, error)
 
 	// GetPaverDir downloads and returns the directory containing the images
@@ -165,17 +166,9 @@ func (b *ArtifactsBuild) GetFfx(
 		return nil, fmt.Errorf("failed to download ffxPath: %w", err)
 	}
 
-	// Ignore error, not all builds upload ffx-package subtools
-	if err := b.archive.download(
-		ctx,
-		b.id,
-		false,
-		b.buildDir,
-		[]string{relativeFfxPath + "-package"},
-	); err == nil {
-		// Make ffx-package executable.
-		if err := os.Chmod(ffxPath+"-package", os.ModePerm); err != nil {
-			return nil, fmt.Errorf("failed to make ffx-package executable: %w", err)
+	for _, subtool := range []string{"package", "product", "component", "emulator", "repository", "product-bundle"} {
+		if err := b.downloadSubtool(ctx, subtool); err != nil {
+			return nil, err
 		}
 	}
 
@@ -185,6 +178,36 @@ func (b *ArtifactsBuild) GetFfx(
 	}
 
 	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version, "")
+}
+
+func (b *ArtifactsBuild) downloadSubtool(
+	ctx context.Context,
+	name string,
+) error {
+	ffxPath := filepath.Join(b.buildDir, relativeFfxPath)
+	subtoolPath := ffxPath + "-" + name
+
+	// Ignore error, not all builds upload all subtools
+	if err := b.archive.download(
+		ctx,
+		b.id,
+		false,
+		b.buildDir,
+		[]string{relativeFfxPath + "-" + name},
+	); err == nil {
+		if err := os.Chmod(subtoolPath, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to make subtool %s executable: %w", name, err)
+		}
+		// Try to download the manifest, but ignore error if it fails
+		_ = b.archive.download(
+			ctx,
+			b.id,
+			false,
+			b.buildDir,
+			[]string{relativeFfxPath + "-" + name + ".json"},
+		)
+	}
+	return nil
 }
 
 func (b *ArtifactsBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -297,6 +320,7 @@ func (b *ArtifactsBuild) GetPackageRepository(
 	fetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
+	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
 	if b.packages != nil {
 		return b.packages, nil
@@ -366,9 +390,14 @@ func (b *ArtifactsBuild) GetPackageRepository(
 		}
 	}
 
-	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ffx: %w", err)
+	var ffxTool *ffx.FFXTool
+	if version == ffx.FfxVersionPolicyLatest && hostFfx != nil {
+		ffxTool = hostFfx
+	} else {
+		ffxTool, err = b.GetFfx(ctx, ffxRunDir, version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ffx: %w", err)
+		}
 	}
 
 	blobType, err := build.GetDeliveryBlobType(deliveryBlobConfigPath)
@@ -729,7 +758,11 @@ func (b *FuchsiaDirBuild) GetPackageRepository(
 	blobFetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
+	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
+	// hostFfx is ignored because FuchsiaDirBuild uses the ffx binary from
+	// its own local build directory. Unlike ArtifactsBuild, it does not
+	// download ffx and does not benefit from the host tool optimization.
 	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
@@ -829,7 +862,11 @@ func (b *ProductBundleDirBuild) GetPackageRepository(
 	blobFetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
+	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
+	// hostFfx is ignored because ProductBundleDirBuild uses the ffx binary
+	// from the local product bundle directory. It does not download ffx
+	// and does not benefit from the host tool optimization.
 	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
@@ -1112,8 +1149,9 @@ func (b *OmahaBuild) GetPackageRepository(
 	blobFetchMode BlobFetchMode,
 	ffxRunDir ffx.RunDir,
 	version ffx.FfxVersionPolicy,
+	hostFfx *ffx.FFXTool,
 ) (*packages.Repository, error) {
-	return b.build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version)
+	return b.build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version, hostFfx)
 }
 
 func (b *OmahaBuild) GetPaverDir(ctx context.Context) (string, error) {

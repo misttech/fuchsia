@@ -154,6 +154,7 @@ func doTestReboot(
 		artifacts.LazilyFetchBlobs,
 		ffxTool.RunDir(),
 		version,
+		ffxTool,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to get repository: %w", err)
@@ -238,7 +239,7 @@ func initializeDevice(
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.RunDir(), version)
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.RunDir(), version, ffxTool)
 	if err != nil {
 		return err
 	}

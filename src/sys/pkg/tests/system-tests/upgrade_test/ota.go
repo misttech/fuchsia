@@ -132,7 +132,7 @@ func newOta(
 	if err := latestFfx.EnsureOutputDirsExist(ctx); err != nil {
 		return nil, fmt.Errorf("failed to recreate output dirs: %w", err)
 	}
-	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version)
+	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version, latestFfx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)
 	}
