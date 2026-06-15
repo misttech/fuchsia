@@ -644,6 +644,7 @@
                 "ProcNetSnmp.UdpNoPorts",
                 "ProcNetSnmp.UdpIn",
                 "ProcNetSnmp.Stat",
+                "ProcNetSnmp.CheckNetStat",
                 "ProcSysNetIpv4Recovery.Exists",
                 "ProcSysNetIpv4IpForward.DefaultValueEqZero",
                 "ProcSysNetIpv4Sack.CanReadAndWrite",
