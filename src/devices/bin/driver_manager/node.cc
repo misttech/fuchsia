@@ -1223,12 +1223,18 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
                                    });
   }
 
-  auto finish = [this, child, node = std::move(node)]() mutable {
+  auto finish = [weak_self = weak_from_this(), child, node = std::move(node)]() mutable {
+    std::shared_ptr<Node> self = weak_self.lock();
+    if (!self) {
+      fdf_log::warn("Parent of '{}' freed before AddChild dictionary import completed",
+                    child->name());
+      return;
+    }
     if (node.is_valid()) {
       child->state_.emplace<OwnedByParent>(std::move(node), child.get());
     } else {
       auto tracker = child->CreateBindResultTracker(/*silent=*/true);
-      (*node_manager_)->Bind(*child, std::move(tracker));
+      (*self->node_manager_)->Bind(*child, std::move(tracker));
     }
 
     child->AddToParents();

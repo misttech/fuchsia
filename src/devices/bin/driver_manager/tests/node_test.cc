@@ -178,8 +178,18 @@ class FakeDictionaryUtil : public driver_manager::DictionaryUtil {
   void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
                         fit::callback<void(zx::result<fuchsia_component_sandbox::NewCapabilityId>)>
                             callback) override {
+    if (defer_import_) {
+      pending_import_ = std::move(callback);
+      return;
+    }
     callback(zx::ok(1234));
   }
+
+  // When true, ImportDictionary stashes the continuation instead of invoking it
+  // synchronously, modelling the in-flight CapabilityStore.Import IPC window
+  // that exists in production (see DictionaryUtil::ImportDictionaryWire).
+  bool defer_import_ = false;
+  fit::callback<void(zx::result<fuchsia_component_sandbox::NewCapabilityId>)> pending_import_;
 
   void ImportDictionaryWire(
       fuchsia_component_sandbox::wire::DictionaryRef dictionary,
@@ -1073,4 +1083,59 @@ TEST_F(Dfv2NodeTest, PrepareDictionaryComposite) {
   ASSERT_EQ(fake_util.receivers_.size(), 2u);
   ASSERT_TRUE(fake_util.receivers_.count("service_1"));
   ASSERT_TRUE(fake_util.receivers_.count("service_2"));
+}
+
+// Verify that if a parent node is freed before the asynchronous dictionary import
+// for its child completes, it fails gracefully and does not cause a use-after-free.
+TEST_F(Dfv2NodeTest, AddChildOffersDictionaryParentFreedBeforeImportReply) {
+  bool destroyed = false;
+  std::shared_ptr<driver_manager::Node> parent(
+      new driver_manager::Node("P", root(), GetNodeManager(), dispatcher()),
+      [&destroyed](driver_manager::Node* p) {
+        delete p;
+        destroyed = true;
+      });
+  parent->AddToDevfsForTesting(root_devnode());
+  parent->devfs_device().publish();
+  std::weak_ptr<driver_manager::Node> weak_parent = parent;
+
+  auto& fake_util = static_cast<FakeDictionaryUtil&>(node_manager->dictionary_util());
+  fake_util.defer_import_ = true;
+
+  // NodeAddArgs with a DictionaryOffer + offers_dictionary token, and no
+  // fdf::Node server end so that child creation takes the Bind path.
+  fuchsia_driver_framework::NodeAddArgs args;
+  args.name("C");
+  fuchsia_component_decl::OfferService svc;
+  svc.source_name("svc");
+  svc.target_name("svc");
+  svc.renamed_instances(std::vector<fuchsia_component_decl::NameMapping>{
+      fuchsia_component_decl::NameMapping("default", "default")});
+  svc.source_instance_filter(std::vector<std::string>{"default"});
+  args.offers2(std::vector{fuchsia_driver_framework::Offer::WithDictionaryOffer(
+      fuchsia_component_decl::Offer::WithService(svc))});
+  args.offers_dictionary(fuchsia_component_sandbox::DictionaryRef{zx::eventpair{}});
+
+  bool result_seen = false;
+  parent->AddChild(
+      std::move(args), /*controller=*/{}, /*node=*/{},
+      [&](fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<driver_manager::Node>>) {
+        result_seen = true;
+      });
+  RunLoopUntilIdle();
+
+  // ImportDictionary was deferred, so child creation is still pending.
+  ASSERT_FALSE(result_seen);
+  ASSERT_TRUE(static_cast<bool>(fake_util.pending_import_));
+
+  // Free the parent.
+  parent.reset();
+  RunLoopUntilIdle();
+  ASSERT_TRUE(weak_parent.expired());
+  ASSERT_TRUE(destroyed);
+
+  // Invoke the deferred continuation.
+  auto cb = std::move(fake_util.pending_import_);
+  cb(zx::error(ZX_ERR_INTERNAL));
+  RunLoopUntilIdle();
 }
