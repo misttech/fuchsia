@@ -123,7 +123,11 @@ async def main(args: list[str]) -> int:
 async def send_command(req: BaseRequest) -> int:
     if not UDS_PATH.exists():
         print(
-            f"Daemon socket not found at {UDS_PATH}. Is it running?",
+            f"Daemon socket not found at {UDS_PATH}.\n\n"
+            "To start the daemon, run:\n"
+            "  fx debug cli start\n\n"
+            "Or run your tests with debugging enabled:\n"
+            "  fx test <test_name> --agent-debugging-mode",
             file=sys.stderr,
         )
         return 1
