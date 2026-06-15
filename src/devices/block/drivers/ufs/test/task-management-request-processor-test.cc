@@ -211,7 +211,7 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
   ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
 }
 
-TEST_F(TaskManagementRequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
+TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestWithSlotIsFull) {
   constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
       dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlotCount();

@@ -37,6 +37,10 @@ struct RequestSlot {
   sync_completion_t complete;
   zx::pmt pmt;
   IoCommand *io_cmd;
+  zx::unowned_vmo data_vmo;
+  uint64_t dma_offset = 0;
+  uint64_t dma_length = 0;
+  bool is_read = false;
   bool is_scsi_command = false;
   bool is_sync = false;
   uint16_t response_upiu_offset;

@@ -17,7 +17,11 @@
 namespace scsi {
 
 struct DeviceOp {
-  void Complete(zx_status_t status) { completion_cb(cookie, status, &op); }
+  void Complete(zx_status_t status) {
+    if (completion_cb != nullptr) {
+      completion_cb(cookie, status, &op);
+    }
+  }
 
   block_op_t op;
   block_impl_queue_callback completion_cb;

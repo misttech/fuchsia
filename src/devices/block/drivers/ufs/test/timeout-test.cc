@@ -32,7 +32,7 @@ TEST_F(TiemoutTest, GetEarliestTimeoutDeadline) {
 
   // If there are in-flight I/Os, it should return the earliest timeout deadline.
   {
-    IoCommand empty_io_cmd;
+    IoCommand empty_io_cmd = {};
     empty_io_cmd.device_op.op.rw.offset_dev = 0;
     empty_io_cmd.device_op.op.rw.length = 0;
     empty_io_cmd.device_op.completion_cb = [](void* cookie, zx_status_t status, block_op_t* op) {};
@@ -43,8 +43,8 @@ TEST_F(TiemoutTest, GetEarliestTimeoutDeadline) {
 
     ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
     for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-      auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, std::nullopt,
-                                                                       &empty_io_cmd);
+      auto response =
+          dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &empty_io_cmd);
       ASSERT_OK(response);
     }
 
@@ -86,10 +86,15 @@ TEST_F(TiemoutTest, AsyncCommandTimeout) {
   cdb->set_force_unit_access(false);
   ZX_ASSERT(cdb_length <= sizeof(cdb_buffer));
 
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
+
   auto block_op = std::make_unique<uint8_t[]>(dut_->BlockOpSize());
   block_op_t& op = *reinterpret_cast<block_op_t*>(block_op.get());
   scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
+  device_op->op.command.opcode = BLOCK_OPCODE_READ;
   device_op->op.rw.length = 1;
+  device_op->op.rw.vmo = vmo.get();
   device_op->completion_cb = [](void* ctx, zx_status_t status, block_op_t* op) {};
   IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
   io_cmd->block_size_bytes = kMockBlockSize;
@@ -146,13 +151,18 @@ TEST_F(TiemoutTest, AllAsyncCommandsTimeout) {
       });
 
   auto block_ops = std::make_unique<uint8_t[]>(dut_->BlockOpSize() * kMaxSlotCount);
+  auto vmos = std::make_unique<zx::vmo[]>(kMaxSlotCount);
 
   auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {};
 
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+    ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
     block_op_t& op =
         *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
     scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
+    device_op->op.command.opcode = BLOCK_OPCODE_READ;
+    device_op->op.rw.length = 1;
+    device_op->op.rw.vmo = vmos[slot_num].get();
     device_op->completion_cb = callback;
 
     dut_->ExecuteCommandAsync(0, lun_id.value(), {cdb_buffer, cdb_length}, false, 4096, device_op,
@@ -212,16 +222,20 @@ TEST_F(TiemoutTest, PartialAsyncCommandsTimeout) {
       });
 
   auto block_ops = std::make_unique<uint8_t[]>(dut_->BlockOpSize() * kMaxSlotCount);
+  auto vmos = std::make_unique<zx::vmo[]>(kMaxSlotCount);
 
   auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {};
 
   // Execute READ_10 commands to timeout.
   cdb->opcode = scsi::Opcode::READ_10;
   for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
+    ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
     block_op_t& op =
         *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
     scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
+    device_op->op.command.opcode = BLOCK_OPCODE_READ;
     device_op->op.rw.length = 1;
+    device_op->op.rw.vmo = vmos[slot_num].get();
     device_op->completion_cb = callback;
     IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
     io_cmd->block_size_bytes = kMockBlockSize;
@@ -233,10 +247,13 @@ TEST_F(TiemoutTest, PartialAsyncCommandsTimeout) {
   // Execute WRITE_10 commands to succeed.
   cdb->opcode = scsi::Opcode::WRITE_10;
   for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
+    ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
     block_op_t& op =
         *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
     scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
+    device_op->op.command.opcode = BLOCK_OPCODE_WRITE;
     device_op->op.rw.length = 1;
+    device_op->op.rw.vmo = vmos[slot_num].get();
     device_op->completion_cb = callback;
     IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
     io_cmd->block_size_bytes = kMockBlockSize;

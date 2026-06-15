@@ -60,7 +60,7 @@ TEST_F(RegisterTest, InterruptStatus) {
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu unit_ready_upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  EXPECT_OK(dut_->GetTransferRequestProcessor().SendScsiUpiu(unit_ready_upiu, 0));
+  EXPECT_OK(dut_->GetTransferRequestProcessor().SendAdminScsiCmd(unit_ready_upiu, 0));
 
   // InterruptStatus is cleared by Isr().
   EXPECT_FALSE(InterruptStatusReg::Get()

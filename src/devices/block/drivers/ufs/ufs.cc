@@ -215,7 +215,6 @@ void Ufs::ProcessIoSubmissions() {
       data_direction = DataDirection::kDeviceToHost;
     }
 
-    std::optional<zx::unowned_vmo> vmo_optional = std::nullopt;
     uint32_t transfer_bytes = 0;
     if (data_direction != DataDirection::kNone) {
       if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
@@ -229,13 +228,10 @@ void Ufs::ProcessIoSubmissions() {
           return;
         }
         memcpy(mapper.start(), io_cmd->data_buffer, io_cmd->data_length);
-        vmo_optional = zx::unowned_vmo(data_vmo);
         io_cmd->data_vmo = std::move(data_vmo);
 
         transfer_bytes = io_cmd->data_length;
       } else {
-        vmo_optional = zx::unowned_vmo(io_cmd->device_op.op.rw.vmo);
-
         transfer_bytes = io_cmd->device_op.op.rw.length * io_cmd->block_size_bytes;
       }
     }
@@ -248,8 +244,7 @@ void Ufs::ProcessIoSubmissions() {
     }
 
     ScsiCommandUpiu upiu(io_cmd->cdb_buffer, io_cmd->cdb_length, data_direction, transfer_bytes);
-    auto response =
-        transfer_request_processor_->SendScsiUpiu(upiu, io_cmd->lun, vmo_optional, io_cmd);
+    auto response = transfer_request_processor_->SendIoScsiCmd(upiu, io_cmd->lun, io_cmd);
     if (response.is_error()) {
       if (response.error_value() == ZX_ERR_NO_RESOURCES) {
         std::lock_guard<std::mutex> lock(commands_lock_);
@@ -505,9 +500,9 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
     data_direction = DataDirection::kDeviceToHost;
   }
 
-  std::optional<zx::unowned_vmo> vmo_optional = std::nullopt;
   zx::vmo data_vmo;
   fzl::VmoMapper mapper;
+
   if (data_direction != DataDirection::kNone) {
     // Allocate a response data buffer.
     // TODO(https://fxbug.dev/42075643): We need to pre-allocate a data buffer that will be used in
@@ -515,7 +510,6 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
     if (zx::result<> result = AllocatePages(data_vmo, mapper, data.iov_len); result.is_error()) {
       return result.error_value();
     }
-    vmo_optional = zx::unowned_vmo(data_vmo);
   }
 
   if (data_direction == DataDirection::kHostToDevice) {
@@ -525,7 +519,9 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
   ScsiCommandUpiu upiu(static_cast<uint8_t*>(cdb.iov_base),
                        safemath::checked_cast<uint8_t>(cdb.iov_len), data_direction,
                        safemath::checked_cast<uint32_t>(data.iov_len));
-  if (auto response = transfer_request_processor_->SendScsiUpiu(upiu, lun_id.value(), vmo_optional);
+
+  if (auto response = transfer_request_processor_->SendAdminScsiCmd(upiu, lun_id.value(),
+                                                                    zx::unowned_vmo(data_vmo));
       response.is_error()) {
     return response.error_value();
   }

@@ -54,15 +54,13 @@ class TransferRequestProcessor : public RequestProcessor {
   // Find the earliest timeout deadline of the in-flight I/O.
   zx_time_t GetEarliestTimeoutDeadline();
 
-  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
-      ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-      IoCommand *io_cmd, bool is_sync);
+  // |SendAdminScsiCmd| allocates the admin slot for a SCSI command and calls SendScsiUpiuUsingSlot.
+  zx::result<std::unique_ptr<ResponseUpiu>> SendAdminScsiCmd(
+      ScsiCommandUpiu &request, uint8_t lun, zx::unowned_vmo data_vmo = zx::unowned_vmo());
 
-  // |SendScsiUpiu| allocates a slot for SCSI command UPIU and calls SendScsiUpiuUsingSlot.
-  // If it is an admin command, the |io_cmd| is nullptr.
-  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiu(
-      ScsiCommandUpiu &request, uint8_t lun, std::optional<zx::unowned_vmo> data = std::nullopt,
-      IoCommand *io_cmd = nullptr);
+  // |SendIoScsiCmd| allocates an I/O slot for a SCSI command and calls SendScsiUpiuUsingSlot.
+  zx::result<std::unique_ptr<ResponseUpiu>> SendIoScsiCmd(ScsiCommandUpiu &request, uint8_t lun,
+                                                          IoCommand *io_cmd);
 
   // This function is a wrapper function that sends a query request UPIU.
   zx::result<std::unique_ptr<QueryResponseUpiu>> SendQueryRequestUpiu(QueryRequestUpiu &request);
@@ -78,8 +76,8 @@ class TransferRequestProcessor : public RequestProcessor {
     }
 
     zx::result<void *> response;
-    if (response = SendRequestUsingSlot<RequestType>(request, lun, slot.value(), std::nullopt,
-                                                     nullptr, /*is_sync*/ true);
+    if (response = SendRequestUsingSlot<RequestType>(request, lun, slot.value(), zx::unowned_vmo(),
+                                                     0, 0, nullptr, /*synchronous*/ true);
         response.is_error()) {
       return response.take_error();
     }
@@ -103,13 +101,17 @@ class TransferRequestProcessor : public RequestProcessor {
 
   template <class RequestType>
   zx::result<void *> SendRequestUsingSlot(RequestType &request, uint8_t lun, uint8_t slot,
-                                          std::optional<zx::unowned_vmo> data_vmo,
-                                          IoCommand *io_cmd, bool is_sync);
+                                          zx::unowned_vmo data_vmo, uint64_t dma_offset,
+                                          uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 
   uint32_t GetInflightIoCount() const { return inflight_io_count_; }
 
  private:
   friend class UfsTest;
+
+  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
+      ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+      IoCommand *io_cmd, bool synchronous);
 
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,

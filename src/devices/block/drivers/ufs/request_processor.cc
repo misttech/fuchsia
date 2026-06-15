@@ -70,6 +70,7 @@ zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   request_slot.is_sync = false;
   request_slot.result = ZX_OK;
   request_slot.deadline = ZX_TIME_INFINITE;
+  request_slot.data_vmo = {};
 
   return zx::ok();
 }

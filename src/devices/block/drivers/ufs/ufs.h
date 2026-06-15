@@ -85,6 +85,15 @@ struct IoCommand {
   zx::vmo data_vmo;
 
   list_node_t node;
+
+  zx::unowned_vmo vmo() const {
+    if (device_op.op.command.opcode == BLOCK_OPCODE_READ ||
+        device_op.op.command.opcode == BLOCK_OPCODE_WRITE) {
+      ZX_DEBUG_ASSERT_MSG(!data_vmo.is_valid(), "Internal VMO set for external RW request");
+      return zx::unowned_vmo(device_op.op.rw.vmo);
+    }
+    return zx::unowned_vmo(data_vmo);
+  }
 };
 
 struct InspectProperties {

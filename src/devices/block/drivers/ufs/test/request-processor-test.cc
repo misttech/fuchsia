@@ -245,7 +245,7 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
   auto response_or = dut_->GetTransferRequestProcessor().SendRequestUsingSlot<ScsiCommandUpiu>(
-      upiu, kTestLun, slot.value(), std::nullopt, nullptr, /*is_sync*/ true);
+      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0, nullptr, /*synchronous*/ true);
   ASSERT_OK(response_or);
 
   // Check that the SCSI UPIU is copied into the command descriptor.
@@ -277,7 +277,7 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlotTimeout) {
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
   auto response_or = dut_->GetTransferRequestProcessor().SendRequestUsingSlot<ScsiCommandUpiu>(
-      upiu, kTestLun, slot.value(), std::nullopt, nullptr, /*is_sync*/ true);
+      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0, nullptr, /*synchronous*/ true);
   ASSERT_EQ(response_or.status_value(), ZX_ERR_TIMED_OUT);
 }
 
@@ -290,7 +290,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiu) {
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response_or = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun);
+  auto response_or = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
   ASSERT_OK(response_or);
 
   // Check that the SCSI UPIU is copied into the command descriptor.
@@ -318,7 +318,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiuTimeout) {
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response_or = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun);
+  auto response_or = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
   ASSERT_EQ(response_or.status_value(), ZX_ERR_TIMED_OUT);
 }
 
@@ -332,7 +332,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithAdminSlotIsFull) {
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response = dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun);
+  auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
   ASSERT_EQ(response.status_value(), ZX_ERR_NO_RESOURCES);
 }
 
@@ -346,16 +346,36 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
     ASSERT_OK(ReserveSlot<ufs::TransferRequestProcessor>());
   }
 
-  IoCommand empty_io_cmd;
+  IoCommand empty_io_cmd = {};
 
   uint8_t cdb_buffer[6] = {};
   auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response =
-      dut_->GetTransferRequestProcessor().SendScsiUpiu(upiu, kTestLun, std::nullopt, &empty_io_cmd);
+  auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &empty_io_cmd);
   ASSERT_EQ(response.status_value(), ZX_ERR_NO_RESOURCES);
+}
+
+TEST_F(RequestProcessorTest, SendAdminScsiCmdWithSlotIsFull) {
+  constexpr uint8_t kTestLun = 0;
+  const uint8_t kMaxSlotCount =
+      dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
+
+  // Reserve all I/O slots.
+  for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+    ASSERT_OK(ReserveSlot<ufs::TransferRequestProcessor>());
+  }
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+
+  // Admin command should succeed even if all I/O slots are full.
+  auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
+  ASSERT_OK(response);
 }
 
 }  // namespace ufs

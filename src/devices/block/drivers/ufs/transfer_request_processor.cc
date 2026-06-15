@@ -107,61 +107,82 @@ zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
 }
 
 zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiuUsingSlot(
-    ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd, bool is_sync) {
-  uint32_t offset = 0;
-  uint32_t length = 0;
+    ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+    IoCommand *io_cmd, bool synchronous) {
+  uint32_t block_offset = 0;
+  uint32_t block_length = 0;
+  uint64_t dma_offset = 0;
+  uint64_t dma_length = 0;
   if (io_cmd != nullptr) {
-    offset =
+    block_offset =
         safemath::checked_cast<uint32_t>(io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
                                              ? io_cmd->device_op.op.trim.offset_dev
                                              : io_cmd->device_op.op.rw.offset_dev);
-    length = io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
-                 ? io_cmd->device_op.op.trim.length
-                 : io_cmd->device_op.op.rw.length;
+    block_length = io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
+                       ? io_cmd->device_op.op.trim.length
+                       : io_cmd->device_op.op.rw.length;
+    if (data_vmo->is_valid()) {
+      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
+        dma_offset = 0;
+        dma_length = zx_system_get_page_size();
+      } else {
+        dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
+        dma_length = static_cast<uint64_t>(io_cmd->device_op.op.rw.length) *
+                     io_cmd->block_size_bytes;
+      }
+    }
+  } else if (data_vmo->is_valid()) {
+    dma_offset = 0;
+    dma_length = fbl::round_up(request.GetTransferBytes(), zx_system_get_page_size());
   }
-  TRACE_DURATION("ufs", "SendScsiUpiu", "slot", slot, "offset", offset, "length", length);
+  TRACE_DURATION("ufs", "SendScsiUpiu", "slot", slot, "offset", block_offset, "length",
+                 block_length);
 
-  zx::result<void *> response;
-  // Admin commands should be performed synchronously and non-admin (data) commands should be
-  // performed asynchronously.
-  if (response = SendRequestUsingSlot<ScsiCommandUpiu>(request, lun, slot, std::move(data_vmo),
-                                                       io_cmd, is_sync);
-      response.is_error()) {
+  zx::result<void *> response = SendRequestUsingSlot<ScsiCommandUpiu>(
+      request, lun, slot, std::move(data_vmo), dma_offset, dma_length, io_cmd, synchronous);
+
+  if (response.is_error()) {
     return response.take_error();
   }
   auto response_upiu = std::make_unique<ResponseUpiu>(response.value());
   return zx::ok(std::move(response_upiu));
 }
 
-zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiu(
-    ScsiCommandUpiu &request, uint8_t lun, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd) {
-  const bool is_admin = io_cmd == nullptr;
-  zx::result<uint8_t> slot;
-  zx::result<std::unique_ptr<ResponseUpiu>> response_upiu;
-  if (is_admin) {
-    std::lock_guard<std::mutex> lock(admin_slot_lock_);
-    slot = ReserveAdminSlot();
-    if (slot.is_error()) {
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
-    // Execute `SendScsiUpiuUsingSlot()` with a admin_slot_lock_ to avoid a race condition for the
-    // admin slot.
-    response_upiu = SendScsiUpiuUsingSlot(request, lun, slot.value(), data_vmo, io_cmd, is_admin);
-  } else {
-    slot = ReserveSlot();
-    if (slot.is_error()) {
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
-    response_upiu = SendScsiUpiuUsingSlot(request, lun, slot.value(), data_vmo, io_cmd, is_admin);
+zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendAdminScsiCmd(
+    ScsiCommandUpiu &request, uint8_t lun, zx::unowned_vmo data_vmo) {
+  if (request.GetTransferBytes() > 0 && !data_vmo->is_valid()) {
+    return zx::error(ZX_ERR_BAD_HANDLE);
   }
 
-  if (response_upiu.is_error()) {
-    return response_upiu.take_error();
+  std::lock_guard<std::mutex> lock(admin_slot_lock_);
+  zx::result<uint8_t> slot = ReserveAdminSlot();
+  if (slot.is_error()) {
+    return zx::error(ZX_ERR_NO_RESOURCES);
   }
 
-  return zx::ok(std::move(response_upiu.value()));
+  return SendScsiUpiuUsingSlot(request, lun, slot.value(), std::move(data_vmo), nullptr,
+                               /*synchronous*/ true);
+}
+
+zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendIoScsiCmd(
+    ScsiCommandUpiu &request, uint8_t lun, IoCommand *io_cmd) {
+  if (io_cmd == nullptr) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  bool has_data_vmo = io_cmd->vmo()->is_valid();
+  if (request.GetTransferBytes() > 0 && !has_data_vmo) {
+    return zx::error(ZX_ERR_BAD_HANDLE);
+  }
+
+  const bool synchronous = io_cmd->device_op.completion_cb == nullptr;
+
+  zx::result<uint8_t> slot = ReserveSlot();
+  if (slot.is_error()) {
+    return zx::error(ZX_ERR_NO_RESOURCES);
+  }
+
+  return SendScsiUpiuUsingSlot(request, lun, slot.value(), io_cmd->vmo(), io_cmd, synchronous);
 }
 
 zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQueryRequestUpiu(
@@ -179,9 +200,9 @@ zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQue
 
 template <class RequestType>
 zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
-    RequestType &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd, bool is_sync) {
-  if (is_sync) {
+    RequestType &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo, uint64_t dma_offset,
+    uint64_t dma_length, IoCommand *io_cmd, bool synchronous) {
+  if (synchronous) {
     // TODO(https://fxbug.dev/42075643): Needs to be changed to be compatible with DFv2's dispatcher
     // Since the completion is handled by the I/O thread, submitting a synchronous command from the
     // I/O thread will cause a deadlock.
@@ -190,56 +211,54 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
 
   RequestSlot &request_slot = request_list_.GetSlot(slot);
   ZX_DEBUG_ASSERT_MSG(request_slot.state == SlotState::kReserved, "Invalid slot state");
+  auto cleanup = fit::defer([&]() {
+    if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
+      fdf::error("Failed to clear slot: {}", result);
+    }
+  });
 
   const uint16_t response_offset = request.GetResponseOffset();
   const uint16_t response_length = request.GetResponseLength();
 
   request_slot.io_cmd = io_cmd;
+  request_slot.data_vmo = data_vmo;
+  request_slot.dma_offset = dma_offset;
+  request_slot.dma_length = dma_length;
+  request_slot.is_read = (request.GetDataDirection() == DataDirection::kDeviceToHost);
   request_slot.is_scsi_command = std::is_base_of<ScsiCommandUpiu, RequestType>::value;
-  request_slot.is_sync = is_sync;
+  request_slot.is_sync = synchronous;
   request_slot.response_upiu_offset = response_offset;
 
   uint16_t prdt_offset = 0;
   uint32_t prdt_entry_count = 0;
   std::vector<zx_paddr_t> data_paddrs;
 
-  if (data_vmo.has_value()) {
+  if (request_slot.data_vmo->is_valid()) {
     // Assign physical addresses(pin) to data vmo. The return value is the physical address of
     // the pinned memory.
     const uint32_t kPageSize = zx_system_get_page_size();
-    uint64_t offset, length;
-    uint32_t option;
+    uint32_t option = request_slot.is_read ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
 
-    if (io_cmd) {
-      // Non-admin (data) command.
-      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
-        offset = 0;
-        length = kPageSize;
-        option = ZX_BTI_PERM_READ;
-      } else {
-        offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
-        length = static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
-        option = (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_READ) ? ZX_BTI_PERM_WRITE
-                                                                            : ZX_BTI_PERM_READ;
-      }
-    } else {
-      // Admin command.
-      offset = 0;
-      data_vmo.value()->get_size(&length);
-      option = ZX_BTI_PERM_WRITE;
-    }
-    ZX_DEBUG_ASSERT(length > 0 && length % kPageSize == 0);
+    ZX_DEBUG_ASSERT(dma_length > 0 && dma_length % kPageSize == 0);
 
-    data_paddrs.resize(length / kPageSize, 0);
+    data_paddrs.resize(dma_length / kPageSize, 0);
     if (zx_status_t status =
-            GetBti()->pin(option, *data_vmo.value(), offset, length, data_paddrs.data(),
-                          length / kPageSize, &request_slot.pmt);
+            GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
+                          data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
         status != ZX_OK) {
       fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
 
-      if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
-        return result.take_error();
-      }
+    // Ensure that any cached writes are written out to volatile memory before we issue the
+    // request. Even for a read, we must pessimistically assume that there are pending writes to
+    // the VMO which need to be flushed before we start doing the DMA.  If we didn't flush the
+    // writes, they might get written out after we start to DMA, in which case they could stomp
+    // the read bytes.
+    uint32_t op = request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
+    zx_status_t status = request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
+    if (status != ZX_OK) {
+      fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -264,14 +283,11 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
                                        response_length, prdt_offset, prdt_entry_count);
       result.is_error()) {
     fdf::error("Failed to send upiu: {}", result);
-
-    if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
-      return result.take_error();
-    }
     return result.take_error();
   }
+  cleanup.cancel();
 
-  if (is_sync) {
+  if (synchronous) {
     // Wait for completion.
     TRACE_DURATION("ufs", "SendRequestUsingSlot::sync_completion_wait", "slot", slot);
     zx_status_t status =
@@ -296,14 +312,14 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
 }
 
 template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<QueryRequestUpiu>(
-    QueryRequestUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd, bool is_sync);
+    QueryRequestUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+    uint64_t dma_offset, uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<ScsiCommandUpiu>(
-    ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd, bool is_sync);
+    ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+    uint64_t dma_offset, uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<NopOutUpiu>(
-    NopOutUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
-    IoCommand *io_cmd, bool is_sync);
+    NopOutUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo, uint64_t dma_offset,
+    uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
 
 zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot,
                                                      bool is_timeout) {
@@ -333,16 +349,18 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     // commands can be IO commands.
     request_result = controller_.ScsiComplete(status_message, sense_data);
 
+    // Unpin data buffer before signalling request completion to the upper layer. This is
+    // necessary because the filesystem is allowed to transfer pages directly out of this
+    // buffer.
+    if (request_slot.pmt.is_valid()) {
+      if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
+        fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
+        request_result = zx::error(status);
+      }
+    }
+
     IoCommand *io_cmd = request_slot.io_cmd;
     if (io_cmd) {
-      // Unpin data buffer before signalling request completion to the upper layer. This is
-      // necessary because the filesystem is allowed to transfer pages directly out of this buffer.
-      if (request_slot.pmt.is_valid()) {
-        if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
-          fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
-          request_result = zx::error(status);
-        }
-      }
       io_cmd->data_vmo.reset();
       io_cmd->device_op.Complete(request_result.status_value());
     }
@@ -360,6 +378,15 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
 
 void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot,
                                                  bool is_timeout) {
+  if (request_slot.data_vmo->is_valid() && request_slot.is_read) {
+    // Invalidate the cache so the read data is visible to the CPU.
+    zx_status_t status =
+        request_slot.data_vmo->op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, request_slot.dma_offset,
+                                        request_slot.dma_length, nullptr, 0);
+    if (status != ZX_OK) {
+      fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(status));
+    }
+  }
   // Check request response.
   zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
   if (status == ZX_ERR_UNAVAILABLE) {
