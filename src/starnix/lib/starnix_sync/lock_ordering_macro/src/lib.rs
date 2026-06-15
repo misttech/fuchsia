@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use proc_macro::TokenStream;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use syn::Ident;
 
 #[derive(Clone, PartialEq, Eq, Ord, PartialOrd)]
@@ -23,8 +23,13 @@ impl syn::parse::Parse for Edge {
 }
 
 struct Graph {
+    // Represents all the lock levels defined in the graph. This is a superset of `terminals`.
+    // We use a BTreeSet to guarantee deterministic lock ID generation order.
     levels: BTreeSet<Ident>,
     edges: BTreeSet<Edge>,
+    // Locks that are marked as terminal (i.e. having no outgoing dependencies).
+    // These locks will share the maximal lock level ID.
+    terminals: HashSet<Ident>,
 }
 
 impl Graph {
@@ -42,14 +47,36 @@ impl syn::parse::Parse for Graph {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut levels = BTreeSet::new();
         let mut edges = BTreeSet::new();
+        let mut terminals = HashSet::new();
         while !input.is_empty() {
-            let edge: Edge = input.parse()?;
-            let Edge { from, to } = edge.clone();
-            levels.insert(to);
-            levels.insert(from);
-            edges.insert(edge);
+            // We are parsing an entry of the form `Terminal(<lock_name>)`
+            if input.peek(syn::Ident) && input.peek2(syn::token::Paren) {
+                let ident: syn::Ident = input.parse()?;
+                if ident != "Terminal" {
+                    return Err(syn::Error::new(ident.span(), "Expected 'Terminal'"));
+                }
+                let content;
+                syn::parenthesized!(content in input);
+                let lock_name: syn::Ident = content.parse()?;
+                let _ = input.parse::<syn::Token![,]>();
+                terminals.insert(lock_name.clone());
+                levels.insert(lock_name);
+            } else {
+                let edge: Edge = input.parse()?;
+                let Edge { from, to } = edge.clone();
+                levels.insert(to);
+                levels.insert(from);
+                edges.insert(edge);
+            }
         }
-        Ok(Self { levels, edges })
+
+        for Edge { from, .. } in edges.iter() {
+            if terminals.contains(from) {
+                panic!("Terminal lock {} cannot have dependencies starting from it.", from);
+            }
+        }
+
+        Ok(Self { levels, edges, terminals })
     }
 }
 
@@ -88,6 +115,7 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
     let graph = syn::parse_macro_input!(input as Graph);
     let levels = &graph.levels;
     let edges = &graph.edges;
+    let terminals = &graph.terminals;
     let mut adj_list: BTreeMap<Ident, BTreeSet<Ident>> = BTreeMap::new();
 
     let mut result = proc_macro2::TokenStream::new();
@@ -114,6 +142,17 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
 
     let mut in_degree = graph.in_degrees();
 
+    // Since terminal locks do not have explicit incoming edges in the macro definition,
+    // they are not reached by `build_lock_graph`. Therefore, we must explicitly add edges
+    // from all non-terminal levels to all terminal locks.
+    for terminal in terminals.iter() {
+        for level in levels.iter() {
+            if !terminals.contains(level) {
+                all_edges.insert(Edge { from: level.clone(), to: terminal.clone() });
+            }
+        }
+    }
+
     let mut queue: std::collections::BTreeSet<Ident> = in_degree
         .iter()
         .filter_map(|(k, &v)| if v == 0 { Some(k.clone()) } else { None })
@@ -121,12 +160,17 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
 
     let mut next_id: usize = 0;
     let mut lock_ids: BTreeMap<Ident, usize> = BTreeMap::new();
+    let max_id = usize::MAX & !0xF; // Max value with subclass bits cleared
 
     while let Some(node) = queue.pop_first() {
         if node != "Unlocked" {
-            lock_ids.insert(node.clone(), next_id);
-            // Space out IDs by 16 (4 bits) for subclassing
-            next_id += 16;
+            if terminals.contains(&node) {
+                lock_ids.insert(node.clone(), max_id);
+            } else {
+                lock_ids.insert(node.clone(), next_id);
+                // Space out IDs by 16 (4 bits) for subclassing
+                next_id += 16;
+            }
         }
         if let Some(neighbors) = adj_list.get(&node) {
             for neighbor in neighbors {

@@ -50,9 +50,16 @@ mod tracking {
                 let target_level = target_value & !0xF;
 
                 if target_value == last_value {
-                    panic!(
-                        "LockDep: Self-deadlock detected on lock '{name}' (level {target_value})!"
-                    );
+                    if target_level == last_level && name != last.name {
+                        panic!(
+                            "LockDep: Invalid lock ordering detected: acquired lock '{}' while holding lock '{}' (both share the same lock level {})!",
+                            name, last.name, target_value
+                        );
+                    } else {
+                        panic!(
+                            "LockDep: Self-deadlock detected on lock '{name}' (level {target_value})!"
+                        );
+                    }
                 }
                 if target_level < last_level {
                     panic!(
@@ -850,6 +857,8 @@ mod tests {
     lock_ordering! {
         Unlocked => LevelA,
         LevelA => LevelB,
+        Terminal(TerminalC),
+        Terminal(TerminalD),
     }
 
     #[test]
@@ -857,9 +866,18 @@ mod tests {
         tracking::clear_state();
         let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
         let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+        let lock_c: LockDepMutex<i32, TerminalC> = LockDepMutex::new(0);
+        let lock_d: LockDepMutex<i32, TerminalD> = LockDepMutex::new(0);
 
         let _guard_a = lock_a.lock();
         let _guard_b = lock_b.lock();
+
+        {
+            let _guard_c = lock_c.lock();
+        }
+        {
+            let _guard_d = lock_d.lock();
+        }
     }
 
     #[test]
@@ -980,6 +998,21 @@ mod tests {
 
             let _guard_a1 = lock_a.lock();
             let _guard_a2 = lock_a.lock();
+        }
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "LockDep: Invalid lock ordering detected: acquired lock 'TerminalD' while holding lock 'TerminalC'"
+    )]
+    fn test_terminal_locks_self_deadlock() {
+        tracking::clear_state();
+        {
+            let lock_c: LockDepMutex<i32, TerminalC> = LockDepMutex::new(0);
+            let lock_d: LockDepMutex<i32, TerminalD> = LockDepMutex::new(0);
+
+            let _guard_c = lock_c.lock();
+            let _guard_d = lock_d.lock();
         }
     }
 

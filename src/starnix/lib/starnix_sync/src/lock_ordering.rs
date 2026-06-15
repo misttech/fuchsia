@@ -66,19 +66,16 @@ lock_ordering! {
     FileObjectOffset => BinderFsDevicesLevel,
     DirEntryChildrenLevel => BinderFsDevicesLevel,
     BinderFsDevicesLevel => FsNodeInfoLevel,
-    FsNodeInfoLevel => TerminalLock,
     BinderFsDevicesLevel => DeviceRegistryState,
     BinderProcsLevel => BinderProcessSharedMemoryLevel,
     BinderProcessSharedMemoryLevel => BinderFreezeLevel,
     BinderFreezeLevel => BinderProcessStateLevel,
     BinderProcessSharedMemoryLevel => DeviceRegistryState,
     BinderProcessStateLevel => BinderContextManagerLevel,
-    BinderContextManagerLevel => TerminalLock,
     FileOpsCore => BinderContextManagerLevel,
     UninterruptibleLock => BinderObjectLevel,
     FileOpsCore => BinderObjectLevel,
     BinderProcessStateLevel => BinderObjectLevel,
-    BinderObjectLevel => TerminalLock,
 
     // VFS locks
     BinderProcessSharedMemoryLevel => FsRenameRecursive,
@@ -89,8 +86,7 @@ lock_ordering! {
 
     // Terminal Level. No lock level should ever be defined after this. Can be used for any locks
     // that is never acquired before any other lock.
-    UninterruptibleLock => TerminalLock,
-    FileOpsCore => TerminalLock,
+    Terminal(TerminalLock),
 
     // eBPF locks
     UninterruptibleLock => EbpfStateLock,
@@ -100,5 +96,4 @@ lock_ordering! {
 
     // Timer locks
     UninterruptibleLock => IntervalTimerState,
-    IntervalTimerState => TerminalLock,
 }
