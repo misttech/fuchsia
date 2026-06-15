@@ -258,7 +258,7 @@ func isPortRangeAny(p filter.PortRange) bool {
 }
 
 func isPortRangeValid(p filter.PortRange) bool {
-	return isPortRangeAny(p) || (1 <= p.Start && p.Start <= p.End)
+	return 0 <= p.Start && p.Start <= p.End
 }
 
 func maskForSubnet(subnet tcpip.Subnet) tcpip.Address {

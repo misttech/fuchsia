@@ -200,7 +200,7 @@ fn parse_rdr(pair: Pair<'_, Rule>) -> Result<filter::Rdr, Error> {
 }
 
 fn validate_port_range(range: &filter::PortRange) -> Result<(), Error> {
-    if (range.start == 0 && range.end != 0) || range.start > range.end {
+    if range.start > range.end {
         return Err(Error::Invalid(InvalidReason::InvalidPortRange));
     }
     Ok(())
@@ -443,15 +443,29 @@ mod test {
     }
 
     #[test]
-    fn test_rule_with_from_invalid_range_1() {
+    fn test_rule_with_from_range_2() {
         assert_eq!(
             parse_str_to_rules("pass in proto tcp from range 0:5;"),
-            Err(Error::Invalid(InvalidReason::InvalidPortRange))
+            Ok(vec![filter::Rule {
+                action: filter::Action::Pass,
+                direction: filter::Direction::Incoming,
+                proto: filter::SocketProtocol::Tcp,
+                src_subnet: None,
+                src_subnet_invert_match: false,
+                src_port_range: filter::PortRange { start: 0, end: 5 },
+                dst_subnet: None,
+                dst_subnet_invert_match: false,
+                dst_port_range: filter::PortRange { start: 0, end: 0 },
+                nic: 0,
+                log: false,
+                keep_state: false,
+                device_class: filter::DeviceClass::Any(filter::Empty {}),
+            }])
         );
     }
 
     #[test]
-    fn test_rule_with_from_invalid_range_2() {
+    fn test_rule_with_from_invalid_range() {
         assert_eq!(
             parse_str_to_rules("pass in proto tcp from range 10005:10000;"),
             Err(Error::Invalid(InvalidReason::InvalidPortRange))
@@ -745,7 +759,7 @@ mod test {
     fn test_rdr_rule_with_to_v4_address_range_to_v4_address_invalid_range() {
         assert_eq!(
             parse_str_to_rdr_rules(
-                "rdr proto tcp to 1.2.3.4 range 10000:10005 -> to 192.168.1.1 range 0:5;"
+                "rdr proto tcp to 1.2.3.4 range 10000:10005 -> to 192.168.1.1 range 20005:20000;"
             ),
             Err(Error::Invalid(InvalidReason::InvalidPortRange))
         );
