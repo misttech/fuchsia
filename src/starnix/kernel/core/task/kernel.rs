@@ -17,7 +17,7 @@ use crate::task::net::NetstackDevices;
 use crate::task::tracing::PidToKoidMap;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
-    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, Syslog,
+    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, Syslog, Task,
     ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
 use crate::time::{HrTimerManager, HrTimerManagerHandle};
@@ -172,6 +172,9 @@ pub struct Kernel {
 
     /// The processes and threads running in this kernel, organized by pid_t.
     pub pids: RwLock<PidTable>,
+
+    /// A weak reference to the init task (PID 1).
+    pub init_task: OnceLock<Weak<Task>>,
 
     /// Used to record the pid/tid to Koid mappings. Set when collecting trace data.
     pub pid_to_koid_mapping: Arc<LockDepRwLock<Option<PidToKoidMap>, TerminalLock>>,
@@ -442,6 +445,7 @@ impl Kernel {
             kthreads: KernelThreads::new(kernel.clone()),
             features,
             pids: Default::default(),
+            init_task: OnceLock::new(),
             pid_to_koid_mapping: Arc::new(LockDepRwLock::new(None)),
             expando: Default::default(),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),
@@ -521,6 +525,11 @@ impl Kernel {
         });
 
         Ok(this)
+    }
+
+    /// Returns the init task for this kernel.
+    pub fn get_init_task(&self) -> Result<Arc<Task>, Errno> {
+        self.init_task.get().and_then(|t| t.upgrade()).ok_or_else(|| errno!(EINVAL))
     }
 
     /// Shuts down userspace and the kernel in an orderly fashion, eventually terminating the root
@@ -603,11 +612,7 @@ impl Kernel {
         }
 
         // Step 3: Terminate the init process.
-        let maybe_init = {
-            // Exiting thread groups need to acquire a write lock for the pid table to successfully
-            // exit so we need to acquire that lock in a reduced scope.
-            self.pids.read().get_thread_group(1).map(|tg| Arc::downgrade(&tg))
-        };
+        let maybe_init = self.get_init_task().ok().map(|t| Arc::downgrade(&t.thread_group));
         if let Some(init) = maybe_init {
             log_info!("shutting down init");
             ThreadGroup::shut_down(init).await;

@@ -150,7 +150,7 @@ pub fn create_init_child_process<L>(
 where
     L: LockBefore<TaskRelease>,
 {
-    let init_task = kernel.pids.read().get_task(1).map_err(|_| errno!(EINVAL))?;
+    let init_task = kernel.get_init_task()?;
 
     let fs = init_task.running_state()?.fs().fork();
 
@@ -226,7 +226,7 @@ pub fn create_init_process(
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno> {
     let pids = kernel.pids.write();
-    create_task_with_pid(
+    let builder = create_task_with_pid(
         locked,
         kernel,
         pids,
@@ -247,7 +247,9 @@ pub fn create_init_process(
         },
         Credentials::root(),
         rlimits,
-    )
+    )?;
+    let _ = kernel.init_task.set(Arc::downgrade(&builder.task));
+    Ok(builder)
 }
 
 /// Create a task that runs inside the kernel.

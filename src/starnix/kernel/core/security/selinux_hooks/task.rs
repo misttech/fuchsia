@@ -142,7 +142,7 @@ fn maybe_reset_rlimits<L>(
     // Compute the new soft resource limits for the current task.
     // For each resource, the new soft limit is the minimum of the current task's hard limit
     // and the initial task's soft limit.
-    let init_task = current_task.kernel().pids.read().get_task(1).expect("get the initial task");
+    let init_task = current_task.kernel().get_init_task().expect("get the initial task");
     let init_rlimits = { init_task.thread_group().limits.lock(locked).clone() };
     let mut current_rlimits = current_task.thread_group().limits.lock(locked);
     (Resource::ALL).iter().for_each(|resource| {
