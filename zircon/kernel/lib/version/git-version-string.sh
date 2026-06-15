@@ -9,12 +9,15 @@
 
 readonly OUTFILE="$1"
 readonly CHECKOUT_ROOT="$2"
+readonly INPUT_GIT_REV="$3"
 
 set -e
 
-# The --no-optional-locks option ensures git read-only operations do
-# not refresh the index (https://fxbug.dev/42175708)
-GIT_REV="git-$(git --no-optional-locks -C "$CHECKOUT_ROOT" rev-parse HEAD 2>/dev/null)"
+if [ -z "$INPUT_GIT_REV" ]; then
+  echo "Error: git revision must be provided as the third argument" >&2
+  exit 1
+fi
+GIT_REV="git-$INPUT_GIT_REV"
 
 if [ -n "$(git --no-optional-locks -C "$CHECKOUT_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   GIT_REV+="-dirty"

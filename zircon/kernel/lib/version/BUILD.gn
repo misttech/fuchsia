@@ -15,6 +15,8 @@ if (current_toolchain != default_toolchain) {
     public_deps = [ ":$target_name($default_toolchain)" ]
   }
 } else {
+  import("//build/git/git_revisions.gni")
+
   declare_args() {
     # Version string embedded in the kernel for `zx_system_get_version_string`.
     # If set to the default "", a string is generated based on the
@@ -37,16 +39,18 @@ if (current_toolchain != default_toolchain) {
       visibility = [ "//zircon/kernel/*" ]
       script = "git-version-string.sh"
       inputs = [
-        # Regenerate version if HEAD moves
-        "//.git/HEAD",
-
         # Add "-dirty" suffix as needed
-        "//.git/index",
+        git_paths.fuchsia_index,
       ]
+
       outputs = [ "$target_gen_dir/version-string.txt" ]
       hermetic_deps = false
 
-      args = rebase_path(outputs + [ "//" ], root_build_dir)
+      args = [
+        rebase_path(outputs[0], root_build_dir),
+        rebase_path("//", root_build_dir),
+        git_revisions.fuchsia_revision,
+      ]
 
       metadata = {
         # This is what resource() does.

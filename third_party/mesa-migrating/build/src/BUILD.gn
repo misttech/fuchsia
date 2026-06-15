@@ -129,21 +129,22 @@ config("common_config") {
 }
 
 config("sha1_config") {
-  include_dirs = [ "$target_gen_dir" ]
+  include_dirs =
+      [ get_label_info(":sha1($default_toolchain)", "target_gen_dir") ]
 }
 
-mesa_python_action("sha1") {
-  output_name = "git_sha1.h"
-  outputs = [ "$target_gen_dir/$output_name" ]
+if (current_toolchain == default_toolchain) {
+  import("//build/git/git_revisions.gni")
 
-  script = "$mesa_source_root/bin/git_sha1_gen.py"
-  args = [
-    "--output",
-    rebase_path("$target_gen_dir/$output_name", root_build_dir),
-  ]
-
-  # Ensure that this action reruns when git HEAD moves
-  inputs = [ "$mesa_source_root/.git/HEAD" ]
-
-  public_configs = [ ":sha1_config" ]
+  generated_file("sha1") {
+    outputs = [ "$target_gen_dir/git_sha1.h" ]
+    contents =
+        [ "#define MESA_GIT_SHA1 \" (git-${git_revisions.mesa_revision})\"" ]
+    public_configs = [ ":sha1_config" ]
+  }
+} else {
+  group("sha1") {
+    public_deps = [ ":sha1($default_toolchain)" ]
+    public_configs = [ ":sha1_config" ]
+  }
 }

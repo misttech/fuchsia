@@ -14,56 +14,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-
-def find_git_head_inputs(repo_dir: Path) -> set[Path]:
-    """Find all input files used to determine the git HEAD of a given repository.
-
-    Args:
-        repo_dir: Path to a non-bare git repository directory.
-    Returns:
-        A set of Path values that can be used as implicit inputs in a depfile.
-    """
-    result: set[Path] = set()
-
-    git_dir = repo_dir / ".git"
-    if git_dir.is_dir():
-        # A regular .git sub-directory.
-        pass
-    elif git_dir.is_file():
-        # A sub-module redirection file, contains 'gitdir: <path_to_real_git_dir>'
-        result.add(git_dir)
-        content = git_dir.read_text().strip()
-        assert content.startswith("gitdir: ")
-        git_dir = repo_dir / content[8:]
-
-    # The .git/config file will be accessed if it exists.
-    git_config = git_dir / "config"
-    if git_config.exists():
-        result.add(git_config)
-
-    # The .git/packed-refs file will be accessed if it exists,
-    # even in detached state.
-    git_packed_refs = git_dir / "packed-refs"
-    if git_packed_refs.exists():
-        result.add(git_packed_refs)
-
-    git_head = git_dir / "HEAD"
-    result.add(git_head)
-
-    if git_head.exists():
-        # HEAD can be an hexadecimal commit value (detached state)
-        # or "ref: refs/heads/<branch>" (when on a branch).
-        content = git_head.read_text().strip()
-        if content.startswith("ref: "):
-            branch_ref = git_dir / content[5:]
-
-            # refs/heads/<branch> might not exist when packed references
-            # are enabled, in this case, the value is in .git/packed-refs
-            # instead.
-            if branch_ref.exists():
-                result.add(branch_ref)
-
-    return result
+# Add build/git to sys.path to import git_utils
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "git"))
+from git_utils import find_git_head_inputs as find_git_head_inputs
 
 
 def get_git_head_commit(repo_dir: Path, git_binary: Path = Path("git")) -> str:
@@ -77,7 +30,14 @@ def get_git_head_commit(repo_dir: Path, git_binary: Path = Path("git")) -> str:
         This will be "GIT_ERROR" if an error happened when trying to get it.
     """
     ret = subprocess.run(
-        [git_binary, "-C", repo_dir, "rev-parse", "HEAD"],
+        [
+            git_binary,
+            "--no-optional-locks",
+            "-C",
+            repo_dir,
+            "rev-parse",
+            "HEAD",
+        ],
         text=True,
         capture_output=True,
     )
