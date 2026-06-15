@@ -222,6 +222,8 @@ source_set("report") {
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/utils:sized_data",
   ]
+
+  deps = [ "//src/developer/forensics/feedback_data:constants" ]
 }
 
 source_set("reporting_policy_watcher") {

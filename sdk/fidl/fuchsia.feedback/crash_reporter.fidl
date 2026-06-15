@@ -75,6 +75,10 @@ type CrashReport = resource table {
     ///  * a key contains a forward slash "/"
     ///  * a key contains a space " "
     ///  * a key contains characters other than printable ASCII
+    ///  * a key is reserved for use by Feedback:
+    ///    * annotations.json
+    ///    * minidump.dmp
+    ///    * snapshot_uuid.txt
     4: attachments vector<Attachment>:MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT;
 
     /// A text ID that the crash server can use to group multiple crash reports related to the

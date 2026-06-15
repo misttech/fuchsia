@@ -52,7 +52,17 @@ class Report {
 
   bool IsHourlyReport() const { return is_hourly_report_; }
 
-  // Whether the key is valid, i.e. doesn't contain disallowed characters.
+  // Whether the key is reserved for use by Feedback and should not be used by clients. This
+  // includes:
+  //
+  // - Files that will be stored by the ReportStore
+  // - Files that will be attached to crash reports when uploaded
+  //
+  // Note that file names zipped into a snapshot are not necessarily reserved because they don't
+  // always meet the conditions above.
+  static bool IsReservedAttachmentKey(const std::string& key);
+
+  // Whether the key is valid, i.e. isn't a reserved key and doesn't contain disallowed characters.
   static bool IsValidAttachmentKey(const std::string& key);
 
  private:

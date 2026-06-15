@@ -10,6 +10,7 @@
 #include <string>
 
 #include "src/developer/forensics/crash_reports/program_shortname.h"
+#include "src/developer/forensics/feedback_data/constants.h"
 
 namespace forensics {
 namespace crash_reports {
@@ -76,6 +77,11 @@ Report::Report(const ReportId report_id, const std::string& program_shortname,
       minidump_(std::move(minidump)),
       is_hourly_report_(is_hourly_report) {}
 
+bool Report::IsReservedAttachmentKey(const std::string& key) {
+  return (key == feedback_data::kAttachmentAnnotations || key == feedback_data::kMinidumpFilename ||
+          key == feedback_data::kSnapshotUuidFilename);
+}
+
 bool Report::IsValidAttachmentKey(const std::string& key) {
   if (key.empty() || key == "." || key == "..") {
     return false;
@@ -85,7 +91,7 @@ bool Report::IsValidAttachmentKey(const std::string& key) {
     return false;
   }
 
-  return IsPrintableAscii(key);
+  return IsPrintableAscii(key) && !IsReservedAttachmentKey(key);
 }
 
 }  // namespace crash_reports

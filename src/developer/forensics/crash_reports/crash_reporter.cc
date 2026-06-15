@@ -199,7 +199,7 @@ void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReport
 
   if (const std::optional<std::string> invalid_key = GetFirstInvalidAttachmentKey(report);
       invalid_key.has_value()) {
-    FX_LOGS(ERROR) << "Attachment key '" << *invalid_key << "' is invalid. Won't file.";
+    FX_LOGS(ERROR) << "Attachment key '" << *invalid_key << "' is invalid or reserved. Won't file.";
     callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
     info_.LogCrashState(cobalt::CrashState::kDropped);
     return;

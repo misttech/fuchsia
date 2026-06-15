@@ -18,6 +18,7 @@
 #include "src/developer/forensics/crash_reports/report.h"
 #include "src/developer/forensics/crash_reports/report_id.h"
 #include "src/developer/forensics/crash_reports/report_util.h"
+#include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/utils/sized_data.h"
 #include "src/developer/forensics/utils/storage_size.h"
 #include "src/lib/files/directory.h"
@@ -30,16 +31,6 @@
 namespace forensics {
 namespace crash_reports {
 namespace {
-
-constexpr char kAnnotationsFilename[] = "annotations.json";
-constexpr char kMinidumpFilename[] = "minidump.dmp";
-constexpr char kSnapshotUuidFilename[] = "snapshot_uuid.txt";
-
-const std::set<std::string> kReservedAttachmentNames = {
-    kAnnotationsFilename,
-    kMinidumpFilename,
-    kSnapshotUuidFilename,
-};
 
 // Recursively delete |path|.
 bool DeletePath(const std::string& path) { return files::DeletePath(path, /*recursive=*/true); }
@@ -172,8 +163,8 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
     return std::nullopt;
   }
 
-  for (const std::string& key : kReservedAttachmentNames) {
-    if (report.Attachments().contains(key)) {
+  for (const auto& [key, _] : report.Attachments()) {
+    if (Report::IsReservedAttachmentKey(key)) {
       FX_LOGST(ERROR, tags_->Get(report.Id())) << "Attachment is using reserved key: " << key;
       return std::nullopt;
     }
@@ -183,12 +174,12 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
 
   // Organize the report attachments.
   std::map<std::string, SizedData> attachments = std::move(report.Attachments());
-  attachments.emplace(kAnnotationsFilename,
+  attachments.emplace(feedback_data::kAttachmentAnnotations,
                       SizedData(annotations_json.begin(), annotations_json.end()));
-  attachments.emplace(kSnapshotUuidFilename,
+  attachments.emplace(feedback_data::kSnapshotUuidFilename,
                       SizedData(report.SnapshotUuid().begin(), report.SnapshotUuid().end()));
   if (report.Minidump().has_value()) {
-    attachments.emplace(kMinidumpFilename, std::move(report.Minidump().value()));
+    attachments.emplace(feedback_data::kMinidumpFilename, std::move(report.Minidump().value()));
   }
 
   // Determine the size of the report.
@@ -287,7 +278,7 @@ void ReportStore::AddAnnotation(ReportId id, const std::string& key, const std::
 
   ReportStoreMetadata& root_metadata = RootFor(id);
   const std::optional<std::string> annotations_path =
-      root_metadata.ReportAttachmentPath(id, "annotations.json");
+      root_metadata.ReportAttachmentPath(id, feedback_data::kAttachmentAnnotations);
 
   if (!annotations_path.has_value()) {
     FX_LOGST(ERROR, tags_->Get(id)) << "annotations.json doesn't exist";
@@ -333,12 +324,12 @@ std::optional<Report> ReportStore::Get(const ReportId report_id) {
   std::optional<SizedData> minidump;
 
   for (size_t i = 0; i < attachment_files.size(); ++i) {
-    if (attachment_files[i] == "annotations.json") {
+    if (attachment_files[i] == feedback_data::kAttachmentAnnotations) {
       if (!ReadAnnotations(attachment_paths[i], &annotations)) {
         FX_LOGST(ERROR, tags_->Get(report_id)) << "Failed to read annotations.json";
         return std::nullopt;
       }
-    } else if (attachment_files[i] == "snapshot_uuid.txt") {
+    } else if (attachment_files[i] == feedback_data::kSnapshotUuidFilename) {
       snapshot_uuid = ReadSnapshotUuid(attachment_paths[i]);
     } else {
       SizedData attachment;
@@ -348,7 +339,7 @@ std::optional<Report> ReportStore::Get(const ReportId report_id) {
         return std::nullopt;
       }
 
-      if (attachment_files[i] == "minidump.dmp") {
+      if (attachment_files[i] == feedback_data::kMinidumpFilename) {
         minidump = std::move(attachment);
       } else {
         attachments.emplace(attachment_files[i], std::move(attachment));
@@ -383,7 +374,7 @@ std::string ReportStore::GetSnapshotUuid(const ReportId id) {
 
   std::string snapshot_uuid;
   for (size_t i = 0; i < attachment_files.size(); ++i) {
-    if (attachment_files[i] != kSnapshotUuidFilename) {
+    if (attachment_files[i] != feedback_data::kSnapshotUuidFilename) {
       continue;
     }
 

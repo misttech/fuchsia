@@ -30,6 +30,11 @@ constexpr char kAttachmentMetadata[] = "metadata.json";
 // Snapshot key.
 constexpr char kSnapshotFilename[] = "snapshot.zip";
 
+// Other reserved attachment or file names.
+constexpr char kMinidumpFilename[] = "minidump.dmp";
+constexpr char kMinidumpUploadKey[] = "uploadFileMinidump";
+constexpr char kSnapshotUuidFilename[] = "snapshot_uuid.txt";
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // UTC-monotonic difference
 ///////////////////////////////////////////////////////////////////////////////////////////////////

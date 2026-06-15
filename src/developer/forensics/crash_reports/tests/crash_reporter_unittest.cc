@@ -35,6 +35,7 @@
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/constants.h"
+#include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/testing/fakes/privacy_settings.h"
 #include "src/developer/forensics/testing/stubs/channel_control.h"
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
@@ -884,6 +885,51 @@ TEST_F(CrashReporterTest, FailOnInvalidInputAttachmentKeyIsDotDot) {
   report.set_program_name("crashing_program_generic");
   std::vector<Attachment> attachments;
   attachments.emplace_back(BuildAttachment("..", "content"));
+  report.set_attachments(std::move(attachments));
+
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+  ASSERT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
+struct ReservedAttachmentKeyTestParam {
+  std::string test_name;
+  std::string key;
+};
+
+class ReservedAttachmentKeyTest
+    : public CrashReporterTest,
+      public testing::WithParamInterface<ReservedAttachmentKeyTestParam> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ReservedAttachmentKeyTest,
+                         ::testing::ValuesIn(std::vector<ReservedAttachmentKeyTestParam>({
+                             {
+                                 "AnnotationsJson",
+                                 feedback_data::kAttachmentAnnotations,
+                             },
+                             {
+                                 "MinidumpDmp",
+                                 feedback_data::kMinidumpFilename,
+                             },
+                             {
+                                 "SnapshotUuidTxt",
+                                 feedback_data::kSnapshotUuidFilename,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<ReservedAttachmentKeyTestParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(ReservedAttachmentKeyTest, FailOnInvalidInputAttachmentKeyIsReserved) {
+  const ReservedAttachmentKeyTestParam& param = GetParam();
+
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("crashing_program_generic");
+  std::vector<Attachment> attachments;
+  attachments.emplace_back(BuildAttachment(param.key, "content"));
   report.set_attachments(std::move(attachments));
 
   const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
