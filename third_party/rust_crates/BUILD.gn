@@ -21047,7 +21047,7 @@ rustc_library("tinyvec-v1_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tinyvec_macros-v0_1_0" ]
+  deps += [ ":tinyvec_macros-v0_1_1" ]
 
   rustenv = []
 
@@ -21065,17 +21065,21 @@ rustc_library("tinyvec-v1_3_1") {
   applicable_licenses = [ ":tinyvec-v1_3_1.license" ]
 }
 
-license("tinyvec_macros-v0_1_0.license") {
+license("tinyvec_macros-v0_1_1.license") {
   public_package_name = "tinyvec_macros"
-  license_files =
-      [ "//third_party/rust_crates/vendor/tinyvec_macros-0.1.0/LICENSE" ]
+  license_files = [
+    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE",
+    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-APACHE.md",
+    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-MIT.md",
+    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-ZLIB.md",
+  ]
 }
 
-rustc_library("tinyvec_macros-v0_1_0") {
+rustc_library("tinyvec_macros-v0_1_1") {
   crate_name = "tinyvec_macros"
   source_root =
-      "//third_party/rust_crates/vendor/tinyvec_macros-0.1.0/src/lib.rs"
-  output_name = "tinyvec_macros-de657c64f98fc831"
+      "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/src/lib.rs"
+  output_name = "tinyvec_macros-7889fbc0d52f9cac"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -21087,13 +21091,13 @@ rustc_library("tinyvec_macros-v0_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=de657c64f98fc831",
-    "-Cextra-filename=-de657c64f98fc831",
+    "-Cmetadata=7889fbc0d52f9cac",
+    "-Cextra-filename=-7889fbc0d52f9cac",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tinyvec_macros-v0_1_0.license" ]
+  applicable_licenses = [ ":tinyvec_macros-v0_1_1.license" ]
 }
 
 license("tls_codec-v0_4_2.license") {
