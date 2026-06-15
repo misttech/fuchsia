@@ -262,7 +262,7 @@ unicode-xid = "0.2.6"
 untrusted = "0.9"
 url = { version = "2.3", features = ["serde"] }
 utf8parse = "0.2.2"
-uuid = { version = "1.1.2", features = ["serde", "v4"] } # move ?
+uuid = { version = "1.1.2", features = ["serde", "v4"] }
 valico = "2.4.2"
 vt100 = "0.16.2"
 vte = "0.15"
