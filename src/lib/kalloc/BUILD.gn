@@ -15,6 +15,7 @@ rustc_library("kalloc") {
     "src/lib.rs",
   ]
   with_unit_tests = true
+  deps = [ "//third_party/rust_crates:zerocopy" ]
 
   if (is_kernel) {
     rustflags = [ "--cfg=is_kernel" ]

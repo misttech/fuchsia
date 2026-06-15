@@ -8,6 +8,7 @@ use crate::allocator::{AllocError, Allocator, DefaultAllocator};
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
+use zerocopy::FromZeros;
 
 /// Helper to construct a dangling slice of a given length.
 fn dangling_slice<T>(len: usize) -> NonNull<[MaybeUninit<T>]> {
@@ -247,7 +248,7 @@ impl<T, A: Allocator> Box<[T], A> {
     }
 
     /// Tries to allocate a new zeroed slice of the given length.
-    pub fn try_new_zeroed_slice_in(
+    pub fn try_new_zeroed_uninit_slice_in(
         len: usize,
         allocator: A,
     ) -> Result<Box<[MaybeUninit<T>], A>, AllocError> {
@@ -268,9 +269,29 @@ impl<T> Box<[T], DefaultAllocator> {
         Self::try_new_uninit_slice_in(len, DefaultAllocator)
     }
 
-    pub fn try_new_zeroed_slice(
+    /// Tries to allocate a new zeroed slice of the given length.
+    pub fn try_new_zeroed_uninit_slice(
         len: usize,
     ) -> Result<Box<[MaybeUninit<T>], DefaultAllocator>, AllocError> {
+        Self::try_new_zeroed_uninit_slice_in(len, DefaultAllocator)
+    }
+}
+
+impl<T: FromZeros, A: Allocator> Box<[T], A> {
+    /// Tries to allocate a new zeroed slice of the given length.
+    pub fn try_new_zeroed_slice_in(len: usize, allocator: A) -> Result<Self, AllocError> {
+        let fat_ptr = allocate_zeroed_slice::<T, A>(&allocator, len)?;
+        // SAFETY: `fat_ptr` points to a valid zero-initialized allocation.
+        // Since T implements FromZeros, all zeroes is a valid bit pattern for T.
+        let ptr = fat_ptr.as_ptr() as *mut [T];
+        // SAFETY: `ptr` is non-null because it comes from a successful non-null allocation.
+        Ok(unsafe { Self::from_non_null_in(NonNull::new_unchecked(ptr), allocator) })
+    }
+}
+
+impl<T: FromZeros> Box<[T], DefaultAllocator> {
+    /// Tries to allocate a new zeroed slice of the given length.
+    pub fn try_new_zeroed_slice(len: usize) -> Result<Self, AllocError> {
         Self::try_new_zeroed_slice_in(len, DefaultAllocator)
     }
 }
@@ -563,7 +584,6 @@ mod tests {
     #[test]
     fn test_box_try_new_zeroed_slice() {
         let b = Box::<[u32]>::try_new_zeroed_slice(3).unwrap();
-        let b = unsafe { b.assume_init() };
         assert_eq!(*b, [0, 0, 0]);
     }
 
@@ -776,5 +796,23 @@ mod tests {
             // The old memory should have been deallocated by try_shrink calling deallocate_slice.
             assert!(!alloc.allocated.borrow().contains(&addr));
         }
+    }
+
+    #[test]
+    fn test_try_new_zeroed_uninit_slice() {
+        // Zeroed slice of u32 (which implements FromZeros)
+        let b = Box::<[u32]>::try_new_zeroed_uninit_slice(4).unwrap();
+        assert_eq!(b.len(), 4);
+        for x in b.as_ref() {
+            assert_eq!(unsafe { x.assume_init() }, 0);
+        }
+
+        // Zeroed slice of a struct that does not implement FromZeros
+        struct NotZeroable {
+            _a: u32,
+            _b: u32,
+        }
+        let b = Box::<[NotZeroable]>::try_new_zeroed_uninit_slice(4).unwrap();
+        assert_eq!(b.len(), 4);
     }
 }
