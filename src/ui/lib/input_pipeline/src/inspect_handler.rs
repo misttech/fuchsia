@@ -11,8 +11,8 @@ use fuchsia_inspect::{
     Property,
 };
 
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
-use futures::lock::Mutex;
 use inspect::Node;
 use sorted_vec_map::SortedVecSet;
 use std::cell::RefCell;
@@ -95,6 +95,7 @@ impl EventCounters {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct CircularBuffer<T> {
     // Size of CircularBuffer
     _size: usize,
@@ -249,7 +250,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
             .unwrap_or_else(|| panic!("no event counters for {}", event_type))
             .count_event(now, event_time, &input_event.handled, has_wake_lease);
         if let Some(recent_events_log) = &self.recent_events_log {
-            recent_events_log.lock().await.push(input_event.clone());
+            recent_events_log.lock().push(input_event.clone());
         }
         self.pipeline_latency_ms.insert((now - event_time).into_millis());
         vec![input_event]
@@ -354,7 +355,8 @@ fn record_lazy_recent_events(
         let recent_events_clone = Arc::clone(&recent_events);
         async move {
             let inspector = Inspector::default();
-            Ok(recent_events_clone.lock().await.record_all_lazy_inspect(inspector))
+            let events = recent_events_clone.lock();
+            Ok(events.record_all_lazy_inspect(inspector))
         }
         .boxed()
     });
@@ -551,7 +553,7 @@ mod tests {
         ];
 
         for event in recent_events.into_iter() {
-            recent_events_log.lock().await.push(event);
+            recent_events_log.lock().push(event);
         }
 
         assert_data_tree!(inspector, root: {

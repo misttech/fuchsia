@@ -24,8 +24,8 @@ use fidl_next_fuchsia_input_report::{FeatureReport, SensorFeatureReport};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
 
+use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use futures::lock::Mutex;
 use futures::{Future, FutureExt, TryStreamExt};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -334,7 +334,8 @@ impl<T> LightSensorHandler<T> {
                 let feature_updates = Arc::clone(&feature_updates);
                 async move {
                     let inspector = fuchsia_inspect::Inspector::default();
-                    Ok(feature_updates.lock().await.record_all_lazy_inspect(inspector))
+                    let feature_updates = feature_updates.lock();
+                    Ok(feature_updates.record_all_lazy_inspect(inspector))
                 }
                 .boxed()
             }
@@ -422,7 +423,7 @@ where
         let (initial_setting, pulled_up) = {
             let mut active_setting_state = self.active_setting.borrow_mut();
             let track_feature_update = |feature_event| async move {
-                self.feature_updates.lock().await.push(feature_event);
+                self.feature_updates.lock().push(feature_event);
             };
             match &mut *active_setting_state {
                 ActiveSettingState::Uninitialized(adjustment_settings) => {

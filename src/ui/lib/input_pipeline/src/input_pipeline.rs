@@ -16,9 +16,9 @@ use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::future::LocalBoxFuture;
-use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use metrics_registry::*;
@@ -812,7 +812,7 @@ async fn add_device_bindings(
     }
 
     if !new_bindings.is_empty() {
-        let mut bindings = bindings.lock().await;
+        let mut bindings = bindings.lock();
         if let Some(v) = bindings.get_mut(&device_id) {
             v.extend(new_bindings);
         } else {
@@ -1098,7 +1098,7 @@ mod tests {
         .await;
 
         // Assert that one mouse device with accurate device id was found.
-        let bindings_map = bindings.lock().await;
+        let bindings_map = bindings.lock();
         assert_eq!(bindings_map.len(), 1);
         let bindings_vector = bindings_map.get(&10);
         assert!(bindings_vector.is_some());
@@ -1210,7 +1210,7 @@ mod tests {
         .await;
 
         // Assert that no devices were found.
-        let bindings = bindings.lock().await;
+        let bindings = bindings.lock();
         assert_eq!(bindings.len(), 0);
 
         // Assert that inspect tree reflects new device discovered, but not connected.
@@ -1284,7 +1284,7 @@ mod tests {
         .await;
 
         // Assert that a device was registered.
-        let bindings = bindings.lock().await;
+        let bindings = bindings.lock();
         assert_eq!(bindings.len(), 1);
     }
 
