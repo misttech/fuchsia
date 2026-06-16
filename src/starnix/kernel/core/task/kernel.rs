@@ -48,8 +48,8 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    ComponentControllerLock, FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock,
-    LockEqualOrBefore, Locked, OrderedMutex, PidToKoidMapLock, RwLock, SyscallLogFiltersLock,
+    FileOpsCore, KernelSwapFiles, LockDepMutex, LockDepRwLock, LockEqualOrBefore, Locked,
+    OrderedMutex, RwLock, TerminalLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -177,7 +177,7 @@ pub struct Kernel {
     pub init_task: OnceLock<Weak<Task>>,
 
     /// Used to record the pid/tid to Koid mappings. Set when collecting trace data.
-    pub pid_to_koid_mapping: Arc<LockDepRwLock<Option<PidToKoidMap>, PidToKoidMapLock>>,
+    pub pid_to_koid_mapping: Arc<LockDepRwLock<Option<PidToKoidMap>, TerminalLock>>,
 
     /// Subsystem-specific properties that hang off the Kernel object.
     ///
@@ -323,7 +323,7 @@ pub struct Kernel {
 
     /// Control handle to the running container's ComponentController.
     pub container_control_handle:
-        LockDepMutex<Option<ComponentControllerControlHandle>, ComponentControllerLock>,
+        LockDepMutex<Option<ComponentControllerControlHandle>, TerminalLock>,
 
     /// eBPF state: loaded programs, eBPF maps, etc.
     pub ebpf_state: EbpfState,
@@ -343,7 +343,7 @@ pub struct Kernel {
 
     /// Filters for syscall logging. Processes with names matching these filters will have syscalls
     /// logged at INFO level.
-    pub syscall_log_filters: LockDepMutex<Vec<SyscallLogFilter>, SyscallLogFiltersLock>,
+    pub syscall_log_filters: LockDepMutex<Vec<SyscallLogFilter>, TerminalLock>,
 }
 
 /// Hardware capabilities.

@@ -17,7 +17,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info, log_warn};
-use starnix_sync::{BootedLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TerminalLock, Unlocked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -161,7 +161,7 @@ impl Inner {
 }
 
 struct File {
-    booted: LockDepMutex<bool, BootedLock>,
+    booted: LockDepMutex<bool, TerminalLock>,
     sender: Sender<bool>,
 }
 

@@ -34,7 +34,7 @@ use selinux::{
 };
 use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, track_stub};
-use starnix_sync::{LockDepMutex, Mutex, SeLinuxPeerSidLock};
+use starnix_sync::{LockDepMutex, Mutex, TerminalLock};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
@@ -652,7 +652,7 @@ pub(super) struct BinderConnectionState {
 /// the peer socket.
 #[derive(Debug, Default)]
 pub(super) struct SocketState {
-    peer_sid: LockDepMutex<Option<SecurityId>, SeLinuxPeerSidLock>,
+    peer_sid: LockDepMutex<Option<SecurityId>, TerminalLock>,
 }
 
 /// Security state for a bpf [`ebpf_api::maps::Map`] instance. This currently just holds the

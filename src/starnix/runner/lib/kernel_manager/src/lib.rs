@@ -26,7 +26,7 @@ use kernels::Kernels;
 use log::warn;
 use proxy::ChannelProxy;
 use rand::Rng;
-use starnix_sync::{LockDepMutex, WakeSourcesLock};
+use starnix_sync::{LockDepMutex, TerminalLock};
 use std::future::Future;
 use std::sync::Arc;
 use suspend::{
@@ -226,7 +226,7 @@ pub async fn run_suspend_worker(
 pub async fn serve_starnix_manager(
     mut stream: fstarnixrunner::ManagerRequestStream,
     suspend_context: Arc<SuspendContext>,
-    sender: &async_channel::Sender<(ChannelProxy, Arc<LockDepMutex<WakeSources, WakeSourcesLock>>)>,
+    sender: &async_channel::Sender<(ChannelProxy, Arc<LockDepMutex<WakeSources, TerminalLock>>)>,
     pager: Arc<Pager>,
     suspend_sender: &async_channel::Sender<SuspendMessage>,
 ) -> Result<(), Error> {

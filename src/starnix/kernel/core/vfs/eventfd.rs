@@ -7,7 +7,7 @@ use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{EventFdInnerLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked};
+use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, TerminalLock};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -27,7 +27,7 @@ pub enum EventFdType {
 /// See https://man7.org/linux/man-pages/man2/eventfd.2.html
 
 pub struct EventFdFileObject {
-    inner: LockDepMutex<u64, EventFdInnerLock>,
+    inner: LockDepMutex<u64, TerminalLock>,
     eventfd_type: EventFdType,
     wait_queue: WaitQueue,
 }

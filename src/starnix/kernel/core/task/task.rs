@@ -25,8 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
 use starnix_sync::{
-    FutexTableStateLock, LockBefore, LockDepGuard, LockDepMutex, Locked, RwLock, RwLockReadGuard,
-    RwLockWriteGuard, TaskCommandLevel,
+    LockBefore, LockDepGuard, LockDepMutex, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    TaskCommandLevel, TerminalLock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -1289,7 +1289,7 @@ impl Task {
     /// them up here to let them know the thread is done.
     pub fn clear_child_tid_if_needed<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
     where
-        L: LockBefore<TaskCommandLevel> + LockBefore<FutexTableStateLock>,
+        L: LockBefore<TerminalLock>,
     {
         let mut state = self.write();
         let user_tid = state.clear_child_tid;

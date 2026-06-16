@@ -1146,7 +1146,7 @@ mod tests {
     use starnix_core::power::{OwnedMessageCounter, WakeupSourceOrigin};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
-    use starnix_sync::RemoteBinderControllerLock;
+    use starnix_sync::TerminalLock;
     use starnix_task_command::TaskCommand;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::auth::Credentials;
@@ -1158,10 +1158,7 @@ mod tests {
     use std::sync::LazyLock;
 
     static REMOTE_CONTROLLER_CLIENT: LazyLock<
-        LockDepMutex<
-            BTreeMap<String, ClientEnd<fbinder::RemoteControllerMarker>>,
-            RemoteBinderControllerLock,
-        >,
+        LockDepMutex<BTreeMap<String, ClientEnd<fbinder::RemoteControllerMarker>>, TerminalLock>,
     > = LazyLock::new(Default::default);
 
     struct TestRemoteControllerConnector {}

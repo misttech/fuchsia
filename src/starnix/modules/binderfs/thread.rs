@@ -13,7 +13,7 @@ use starnix_core::task::{
 };
 
 use starnix_logging::{log_trace, log_warn};
-use starnix_sync::{BinderThreadStateLock, LockDepGuard, LockDepMutex, ordered_lock};
+use starnix_sync::{LockDepGuard, LockDepMutex, TerminalLock, ordered_lock};
 use starnix_uapi::vfs::FdEvents;
 
 use crossbeam::queue::SegQueue;
@@ -156,7 +156,7 @@ pub struct BinderThread {
     pub thread: Arc<zx::Thread>,
 
     /// The mutable state of the binder thread, protected by a single lock.
-    pub state: LockDepMutex<BinderThreadState, BinderThreadStateLock>,
+    pub state: LockDepMutex<BinderThreadState, TerminalLock>,
 
     /// A hint as to the registration state of the thread. This is eventually consistent with the
     /// state protected by the lock.

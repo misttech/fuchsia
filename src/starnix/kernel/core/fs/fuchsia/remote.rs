@@ -33,8 +33,8 @@ use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn};
 use starnix_sync::{
-    DynamicLockDepRwLock, FileOpsCore, FuchsiaRemoteTargetLock, LockDepReadGuard, LockDepRwLock,
-    LockDepWriteGuard, LockEqualOrBefore, Locked, Unlocked,
+    DynamicLockDepRwLock, FileOpsCore, LockDepReadGuard, LockDepRwLock, LockDepWriteGuard,
+    LockEqualOrBefore, Locked, TerminalLock, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
@@ -2100,7 +2100,7 @@ impl FileOps for RemoteZxioFileObject {
 
 struct RemoteSymlink {
     node: BaseNode,
-    target: LockDepRwLock<Box<[u8]>, FuchsiaRemoteTargetLock>,
+    target: LockDepRwLock<Box<[u8]>, TerminalLock>,
 }
 
 impl RemoteSymlink {

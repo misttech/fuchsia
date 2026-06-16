@@ -23,8 +23,7 @@ use fxt::session::SessionParser;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{
-    FileOpsCore, LockDepMutex, LockDepRwLock, Locked, PerfEventLevel, PerfFormatIdLookupTableLock,
-    Unlocked,
+    FileOpsCore, LockDepMutex, LockDepRwLock, Locked, PerfEventLevel, TerminalLock, Unlocked,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
@@ -117,7 +116,7 @@ struct PerfState {
     // When a sample is generated for any event in a group, we use this
     // "format ID" from the group leader as the value for *both* the
     // `PERF_SAMPLE_ID` and `PERF_SAMPLE_IDENTIFIER` fields.
-    format_id_lookup_table: LockDepMutex<HashMap<FileObjectId, u64>, PerfFormatIdLookupTableLock>,
+    format_id_lookup_table: LockDepMutex<HashMap<FileObjectId, u64>, TerminalLock>,
 }
 
 impl Default for PerfState {

@@ -9,7 +9,7 @@ use fuchsia_runtime::vmar_root_self;
 use fuchsia_trace;
 use shared_buffer::SharedBuffer;
 use starnix_logging::{log_error, log_info, log_warn};
-use starnix_sync::{LockDepMutex, PerfRingBufferStateLock};
+use starnix_sync::{LockDepMutex, TerminalLock};
 use starnix_types::PAGE_SIZE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, from_status_like_fdio};
@@ -152,7 +152,7 @@ pub struct LocklessRingBuffer {
     reader_active: std::sync::atomic::AtomicBool,
     // Mutex to serialize enable() and disable() calls to prevent racing. This should
     // never be accessed by other methods to avoid locking during reading and writing.
-    state_mutex: LockDepMutex<(), PerfRingBufferStateLock>,
+    state_mutex: LockDepMutex<(), TerminalLock>,
 }
 impl LocklessRingBuffer {
     // This is an Ftrace page header consisting of a u64 timestamp at offset 0 and a u64 data size at offset 8.

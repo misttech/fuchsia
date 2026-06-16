@@ -17,7 +17,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use itertools::Either;
 use starnix_logging::{log_error, track_stub};
-use starnix_sync::{FileServerStatsLock, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{LockDepMutex, Locked, TerminalLock, Unlocked};
 use starnix_types::convert::IntoFidl as _;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -55,7 +55,7 @@ struct FileServerStats {
 }
 
 struct FileServerRegistry {
-    stats: LockDepMutex<HashMap<&'static str, Arc<FileServerStats>>, FileServerStatsLock>,
+    stats: LockDepMutex<HashMap<&'static str, Arc<FileServerStats>>, TerminalLock>,
 }
 
 impl FileServerRegistry {
