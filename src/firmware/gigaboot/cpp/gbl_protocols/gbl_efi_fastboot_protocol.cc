@@ -2,17 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gbl_efi_fastboot_protocol.h"
-
 #include <zircon/assert.h>
 
-#include <functional>
+#include <array>
 #include <span>
 #include <string_view>
 
+#include <gbl/gbl_efi_protocols.h>
 #include <phys/efi/main.h>
-
-#include "utils.h"
+#include <uefi/protocols/gbl_efi_fastboot_protocol.h>
 
 #define GBL_EFI_FASTBOOT_PROTOCOL_GUID \
   {0xc67e48a0, 0x5eb8, 0x4127, {0xbe, 0x89, 0xdf, 0x2e, 0xd9, 0x3d, 0x8a, 0x9a}}
@@ -91,9 +89,9 @@ GblEfiFastbootProtocol protocol = {
     .revision = GBL_EFI_FASTBOOT_PROTOCOL_REVISION,
     .get_var = GetVar,
     .get_var_all = GetVarAll,
-    .get_staged = NULL,
+    .get_staged = nullptr,
     .command_exec = CommandExec,
-    .get_partition_type = NULL,
+    .get_partition_type = nullptr,
 };
 
 efi_guid guid = GBL_EFI_FASTBOOT_PROTOCOL_GUID;
@@ -102,7 +100,7 @@ efi_guid guid = GBL_EFI_FASTBOOT_PROTOCOL_GUID;
 
 namespace gigaboot {
 efi_status InstallGblEfiFastbootProtocol() {
-  efi_handle out_handle = NULL;
+  efi_handle out_handle = nullptr;
   return gEfiSystemTable->BootServices->InstallMultipleProtocolInterfaces(&out_handle, &guid,
                                                                           &protocol, NULL);
 }

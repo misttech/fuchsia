@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gbl_efi_boot_control_protocol.h"
-
+#include <gbl/gbl_efi_protocols.h>
 #include <phys/efi/main.h>
+#include <uefi/protocols/gbl_efi_boot_control_protocol.h>
 
 #define GBL_EFI_BOOT_CONTROL_PROTOCOL_GUID \
   {0xd382db1b, 0x9ac2, 0x11f0, {0x84, 0xc7, 0x04, 0x7b, 0xcb, 0xa9, 0x60, 0x19}}
@@ -33,11 +33,11 @@ EfiStatus GetOneShotBootMode(struct GblEfiBootControlProtocol* self, GblEfiOneSh
 GblEfiBootControlProtocol protocol = {
     .revision = GBL_EFI_BOOT_CONTROL_PROTOCOL_REVISION,
     .get_slot_count = GetSlotCount,
-    .get_slot_info = NULL,
-    .get_current_slot = NULL,
-    .set_active_slot = NULL,
+    .get_slot_info = nullptr,
+    .get_current_slot = nullptr,
+    .set_active_slot = nullptr,
     .get_one_shot_boot_mode = GetOneShotBootMode,
-    .handle_loaded_os = NULL,
+    .handle_loaded_os = nullptr,
 };
 
 efi_guid guid = GBL_EFI_BOOT_CONTROL_PROTOCOL_GUID;
@@ -46,7 +46,7 @@ efi_guid guid = GBL_EFI_BOOT_CONTROL_PROTOCOL_GUID;
 
 namespace gigaboot {
 efi_status InstallGblEfiBootControlProtocol() {
-  efi_handle out_handle = NULL;
+  efi_handle out_handle = nullptr;
   return gEfiSystemTable->BootServices->InstallMultipleProtocolInterfaces(&out_handle, &guid,
                                                                           &protocol, NULL);
 }

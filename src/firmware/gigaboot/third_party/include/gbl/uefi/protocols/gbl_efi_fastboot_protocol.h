@@ -1,18 +1,39 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+/*
+ * Copyright (C) 2024 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR BSD-2-Clause-Patent
+ *
+ * You may choose to use or redistribute this file under
+ *  (a) the Apache License, Version 2.0, or
+ *  (b) the BSD 2-Clause Patent license.
+ *
+ * Unless you expressly elect the BSD-2-Clause-Patent terms, the Apache-2.0
+ * terms apply by default.
+ */
 
 #ifndef __GBL_EFI_FASTBOOT_PROTOCOL_H__
 #define __GBL_EFI_FASTBOOT_PROTOCOL_H__
 
-#include <stddef.h>
 #include <stdint.h>
 
-#include "gbl_protocol_utils.h"
+#include <efi/types.h>
+#include <uefi/gbl_protocol_utils.h>
 
 #define GBL_EFI_FASTBOOT_SERIAL_NUMBER_MAX_LEN_UTF8 32
 
-static const uint64_t GBL_EFI_FASTBOOT_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(0, 256);
+static const uint64_t GBL_EFI_FASTBOOT_PROTOCOL_REVISION = GBL_PROTOCOL_REVISION(1, 0);
 
 static const size_t GBL_EFI_FASTBOOT_PARTITION_TYPE_BUF_LEN = 56;
 
@@ -57,9 +78,5 @@ typedef struct GblEfiFastbootProtocol {
   EfiStatus (*get_partition_type)(struct GblEfiFastbootProtocol* self, const EfiChar8* part_name,
                                   size_t* part_type_len, EfiChar8* part_type);
 } GblEfiFastbootProtocol;
-
-namespace gigaboot {
-efi_status InstallGblEfiFastbootProtocol();
-}
 
 #endif  // __GBL_EFI_FASTBOOT_PROTOCOL_H__

@@ -27,12 +27,10 @@ source_set("lib") {
     "fastboot.cc",
     "fastboot.h",
     "gbl_dt.cc",
-    "gbl_efi_boot_control_protocol.cc",
-    "gbl_efi_boot_control_protocol.h",
-    "gbl_efi_fastboot_protocol.cc",
-    "gbl_efi_fastboot_protocol.h",
     "gbl_loader.cc",
     "gbl_loader.h",
+    "gbl_protocols/gbl_efi_boot_control_protocol.cc",
+    "gbl_protocols/gbl_efi_fastboot_protocol.cc",
     "gpt.cc",
     "gpt.h",
     "input.cc",
@@ -71,7 +69,11 @@ source_set("lib") {
     "//zircon/third_party/ulib/cksum",
   ]
 
-  include_dirs = [ "../include" ]
+  include_dirs = []
+  include_dirs += [
+    "../include",
+    "../third_party/include/gbl",
+  ]
 
   if (is_kernel) {
     public_deps += [

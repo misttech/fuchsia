@@ -6,12 +6,11 @@
 
 #include <zircon/assert.h>
 
+#include <gbl/gbl_efi_protocols.h>
 #include <phys/efi/main.h>
 
 #include "backends.h"
 #include "boot_zbi_items.h"
-#include "gbl_efi_boot_control_protocol.h"
-#include "gbl_efi_fastboot_protocol.h"
 #include "input.h"
 #include "utils.h"
 
