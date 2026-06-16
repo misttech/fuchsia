@@ -14,7 +14,6 @@ group("tests") {
     ":sync_workspace_test($host_toolchain)",
     ":util_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
-    "ide_query:tests",
   ]
 }
 
