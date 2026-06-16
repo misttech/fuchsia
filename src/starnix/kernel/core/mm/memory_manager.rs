@@ -3169,6 +3169,15 @@ pub struct MemoryManager {
 
     /// A mechanism to be notified when this `MemoryManager` is destroyed.
     pub drop_notifier: DropNotifier,
+
+    /// The architecture width of the process.
+    pub arch_width: ArchWidth,
+}
+
+impl ArchSpecific for MemoryManager {
+    fn is_arch32(&self) -> bool {
+        self.arch_width.is_arch32()
+    }
 }
 
 fn check_access_permissions_in_page_fault(
@@ -3317,6 +3326,7 @@ impl MemoryManager {
             ),
             inflight_vmspliced_payloads: Default::default(),
             drop_notifier: DropNotifier::default(),
+            arch_width,
         }))
     }
 
@@ -4105,6 +4115,15 @@ impl MemoryManager {
         decoded: PageFaultExceptionReport,
         error_code: zx::Status,
     ) -> ExceptionResult {
+        #[cfg(target_arch = "aarch64")]
+        // On aarch64, 64-bit processes can use Top Byte Ignore (TBI). We need to mask out the
+        // top byte of the faulting address to get the actual userspace address.
+        let addr = if self.is_arch64() {
+            UserAddress::from(decoded.faulting_address & 0x00FF_FFFF_FFFF_FFFF)
+        } else {
+            UserAddress::from(decoded.faulting_address)
+        };
+        #[cfg(not(target_arch = "aarch64"))]
         let addr = UserAddress::from(decoded.faulting_address);
 
         // On uffd-registered range, handle according to the uffd rules

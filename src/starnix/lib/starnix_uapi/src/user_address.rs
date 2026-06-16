@@ -336,6 +336,9 @@ impl<T> fmt::Debug for UserRef<T> {
 
 pub trait ArchSpecific {
     fn is_arch32(&self) -> bool;
+    fn is_arch64(&self) -> bool {
+        !self.is_arch32()
+    }
 }
 
 pub trait MultiArchFrom<T>: Sized {
