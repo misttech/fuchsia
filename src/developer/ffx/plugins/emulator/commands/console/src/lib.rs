@@ -12,7 +12,7 @@ use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::EngineConsoleType;
 use ffx_emulator_console_args::ConsoleCommand;
 use ffx_emulator_engines::EngineBuilder;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, bug};
 /// Sub-sub tool for `emu console`
 #[derive(FfxTool)]
@@ -30,11 +30,14 @@ fho::embedded_plugin!(EmuConsoleTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for EmuConsoleTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<()>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+        if writer.is_machine() {
+            return Err(fho::user_error!("Interactive console not supported in machine mode"));
+        }
         let instance_dir: PathBuf =
             self.context.get(EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
         let builder = EngineBuilder::new(&self.context, EmulatorInstances::new(instance_dir));

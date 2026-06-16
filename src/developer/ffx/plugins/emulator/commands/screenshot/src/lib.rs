@@ -9,9 +9,16 @@ use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::EmulatorEngine;
 use ffx_emulator_engines::EngineBuilder;
 use ffx_emulator_screenshot_args::ScreenshotCommand;
-use ffx_writer::{SimpleWriter, ToolIO};
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result as FhoResult, bug, user_error};
+use schemars::JsonSchema;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
+
+#[derive(Serialize, JsonSchema)]
+pub struct ScreenshotResult {
+    pub path: PathBuf,
+}
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -25,7 +32,7 @@ fho::embedded_plugin!(ScreenshotTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ScreenshotTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<ScreenshotResult>;
 
     type Error = ::fho::Error;
 
@@ -40,8 +47,12 @@ impl FfxMain for ScreenshotTool {
             .await
             .map_err(|e| user_error!("Failed to take screenshot: {e}"))?;
 
-        let output_name = self.cmd.output.to_string_lossy();
-        writer.line(format!("Screenshot saved to {}", output_name)).map_err(|e| bug!("{e}"))?;
+        if writer.is_machine() {
+            writer.machine(&ScreenshotResult { path: absolute_path })?;
+        } else {
+            let output_name = self.cmd.output.to_string_lossy();
+            writer.line(format!("Screenshot saved to {}", output_name)).map_err(|e| bug!("{e}"))?;
+        }
         Ok(())
     }
 }
