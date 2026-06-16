@@ -176,7 +176,18 @@ impl ProtocolsExt for fio::OpenFlags {
             return Err(Status::INVALID_ARGS);
         }
 
-        Ok(SymlinkOptions)
+        let mut rights = fio::Operations::GET_ATTRIBUTES;
+        if self.contains(fio::OpenFlags::RIGHT_READABLE) {
+            rights |= fio::Operations::READ_BYTES;
+        }
+        if self.contains(fio::OpenFlags::RIGHT_WRITABLE) {
+            rights |= fio::Operations::WRITE_BYTES | fio::Operations::UPDATE_ATTRIBUTES;
+        }
+        if self.contains(fio::OpenFlags::RIGHT_EXECUTABLE) {
+            rights |= fio::Operations::EXECUTE;
+        }
+
+        Ok(SymlinkOptions { rights })
     }
 
     fn to_service_options(&self) -> Result<ServiceOptions, Status> {
@@ -283,10 +294,11 @@ impl ProtocolsExt for fio::Flags {
         }
 
         // If is_symlink_allowed() returned true, there must be rights.
-        if !self.rights().unwrap().contains(fio::Operations::GET_ATTRIBUTES) {
+        let rights = self.rights().unwrap();
+        if !rights.contains(fio::Operations::GET_ATTRIBUTES) {
             return Err(Status::INVALID_ARGS);
         }
-        Ok(SymlinkOptions)
+        Ok(SymlinkOptions { rights })
     }
 
     fn to_service_options(&self) -> Result<ServiceOptions, Status> {

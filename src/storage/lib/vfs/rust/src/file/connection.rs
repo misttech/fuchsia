@@ -931,6 +931,10 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         &mut self,
         iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
     ) {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            let _ = iterator.close_with_epitaph(Status::BAD_HANDLE);
+            return;
+        }
         let attributes = match self.file.list_extended_attributes().await {
             Ok(attributes) => attributes,
             Err(status) => {
@@ -951,6 +955,9 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         &mut self,
         name: Vec<u8>,
     ) -> Result<fio::ExtendedAttributeValue, Status> {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         let value = self.file.get_extended_attribute(name).await?;
         encode_extended_attribute_value(value)
     }
@@ -961,6 +968,9 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         value: fio::ExtendedAttributeValue,
         mode: fio::SetExtendedAttributeMode,
     ) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         if name.contains(&0) {
             return Err(Status::INVALID_ARGS);
         }
@@ -969,6 +979,9 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
     }
 
     async fn handle_remove_extended_attribute(&mut self, name: Vec<u8>) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         self.file.remove_extended_attribute(name).await
     }
 

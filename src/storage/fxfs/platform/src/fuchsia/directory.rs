@@ -811,7 +811,8 @@ impl MutableDirectory for FxDirectory {
                         let node = Arc::new(FxSymlink::new(self.volume().clone(), object_id));
                         p.commit(&(node.clone() as Arc<dyn FxNode>));
                         let scope = self.volume().scope().clone();
-                        let flags = fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE;
+                        let flags =
+                            fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE | fio::PERM_WRITABLE;
                         // fio::Flags::FLAG_SEND_REPRESENTATION isn't specified so connection
                         // creation is synchronous.
                         symlink::Connection::create_sync(
@@ -1992,7 +1993,7 @@ mod tests {
             open_dir_checked(
                 parent.as_ref(),
                 &encrypted_name,
-                fio::Flags::PROTOCOL_DIRECTORY,
+                fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
                 Default::default(),
             )
             .await,
@@ -2121,7 +2122,7 @@ mod tests {
             open_file_checked(
                 parent.as_ref(),
                 &encrypted_name,
-                fio::Flags::PROTOCOL_FILE,
+                fio::Flags::PROTOCOL_FILE | fio::PERM_READABLE,
                 &Default::default(),
             )
             .await,
@@ -4760,8 +4761,11 @@ mod tests {
 
             for (path, protocol) in node_info {
                 // Create node with the context.
-                let flags =
-                    protocol | fio::Flags::FLAG_SEND_REPRESENTATION | fio::Flags::FLAG_MAYBE_CREATE;
+                let flags = protocol
+                    | fio::Flags::FLAG_SEND_REPRESENTATION
+                    | fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE;
                 let options = fio::Options {
                     create_attributes: Some(fio::MutableNodeAttributes {
                         selinux_context: Some(fio::SelinuxContext::Data(CONTEXT.into())),

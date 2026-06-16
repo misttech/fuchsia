@@ -506,6 +506,10 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         &self,
         iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
     ) {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            let _ = iterator.close_with_epitaph(Status::BAD_HANDLE);
+            return;
+        }
         let attributes = match self.directory.list_extended_attributes().await {
             Ok(attributes) => attributes,
             Err(status) => {
@@ -526,6 +530,9 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         &self,
         name: Vec<u8>,
     ) -> Result<fio::ExtendedAttributeValue, Status> {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         let value = self.directory.get_extended_attribute(name).await?;
         encode_extended_attribute_value(value)
     }
@@ -536,6 +543,9 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         value: fio::ExtendedAttributeValue,
         mode: fio::SetExtendedAttributeMode,
     ) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         if name.contains(&0) {
             return Err(Status::INVALID_ARGS);
         }
@@ -544,6 +554,9 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     }
 
     async fn handle_remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         self.directory.remove_extended_attribute(name).await
     }
 }

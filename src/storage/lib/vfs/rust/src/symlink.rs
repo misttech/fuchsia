@@ -28,12 +28,16 @@ pub trait Symlink: Node {
     fn read_target(&self) -> impl Future<Output = Result<Vec<u8>, Status>> + Send;
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SymlinkOptions {
+    pub rights: fio::Operations,
+}
+
 pub struct Connection<T> {
     scope: ExecutionScope,
     symlink: Arc<T>,
+    options: SymlinkOptions,
 }
-
-pub struct SymlinkOptions;
 
 impl<T: Symlink> Connection<T> {
     /// Creates a new connection to serve the symlink. The symlink will be served from a new async
@@ -47,8 +51,8 @@ impl<T: Symlink> Connection<T> {
         protocols: impl ProtocolsExt,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
-        let _options = protocols.to_symlink_options()?;
-        let connection = Self { scope: scope.clone(), symlink };
+        let options = protocols.to_symlink_options()?;
+        let connection = Self { scope: scope.clone(), symlink, options };
         if let Ok(requests) = object_request.take().into_request_stream(&connection).await {
             scope.spawn(RequestListener::new(requests, connection));
         }
@@ -276,6 +280,10 @@ impl<T: Symlink> Connection<T> {
         &self,
         iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
     ) {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            let _ = iterator.close_with_epitaph(Status::BAD_HANDLE);
+            return;
+        }
         let attributes = match self.symlink.list_extended_attributes().await {
             Ok(attributes) => attributes,
             Err(status) => {
@@ -296,6 +304,9 @@ impl<T: Symlink> Connection<T> {
         &self,
         name: Vec<u8>,
     ) -> Result<fio::ExtendedAttributeValue, Status> {
+        if !self.options.rights.intersects(fio::Operations::READ_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         let value = self.symlink.get_extended_attribute(name).await?;
         encode_extended_attribute_value(value)
     }
@@ -306,6 +317,9 @@ impl<T: Symlink> Connection<T> {
         value: fio::ExtendedAttributeValue,
         mode: fio::SetExtendedAttributeMode,
     ) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         if name.contains(&0) {
             return Err(Status::INVALID_ARGS);
         }
@@ -314,6 +328,9 @@ impl<T: Symlink> Connection<T> {
     }
 
     async fn handle_remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::WRITE_BYTES) {
+            return Err(Status::BAD_HANDLE);
+        }
         self.symlink.remove_extended_attribute(name).await
     }
 }
@@ -480,21 +497,20 @@ mod tests {
         }
     }
 
-    async fn serve_test_symlink(client: &flex_client::ClientArg) -> fio::SymlinkProxy {
+    async fn serve_test_symlink(
+        client: &flex_client::ClientArg,
+        symlink: Arc<TestSymlink>,
+        rights: fio::Flags,
+    ) -> fio::SymlinkProxy {
         let (client_end, server_end) = client.create_proxy::<fio::SymlinkMarker>();
-        let flags = fio::PERM_READABLE | fio::Flags::PROTOCOL_SYMLINK;
+        let flags = rights | fio::Flags::PROTOCOL_SYMLINK;
 
         #[cfg(feature = "fdomain")]
         let scope = crate::execution_scope::ExecutionScope::new(client.clone());
         #[cfg(not(feature = "fdomain"))]
         let scope = crate::execution_scope::ExecutionScope::new();
 
-        Connection::create_sync(
-            scope,
-            Arc::new(TestSymlink::new()),
-            flags,
-            flags.to_object_request(server_end),
-        );
+        Connection::create_sync(scope, symlink, flags, flags.to_object_request(server_end));
 
         client_end
     }
@@ -502,7 +518,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_target() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let client_end =
+            serve_test_symlink(&client, Arc::new(TestSymlink::new()), fio::PERM_READABLE).await;
 
         assert_eq!(
             client_end.describe().await.expect("fidl failed").target.expect("missing target"),
@@ -559,7 +576,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_attr() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let client_end =
+            serve_test_symlink(&client, Arc::new(TestSymlink::new()), fio::PERM_READABLE).await;
 
         let (mutable_attrs, immutable_attrs) = client_end
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -583,7 +601,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_clone() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let client_end =
+            serve_test_symlink(&client, Arc::new(TestSymlink::new()), fio::PERM_READABLE).await;
 
         let orig_attrs = client_end
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -604,7 +623,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_describe() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let client_end =
+            serve_test_symlink(&client, Arc::new(TestSymlink::new()), fio::PERM_READABLE).await;
 
         assert_matches!(
             client_end.describe().await.expect("fidl failed"),
@@ -618,9 +638,26 @@ mod tests {
     #[fuchsia::test]
     async fn test_xattrs() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let symlink = Arc::new(TestSymlink::new());
+        let rw_client_end =
+            serve_test_symlink(&client, symlink.clone(), fio::PERM_READABLE | fio::PERM_WRITABLE)
+                .await;
+        let ro_client_end = serve_test_symlink(&client, symlink, fio::PERM_READABLE).await;
 
-        client_end
+        assert_eq!(
+            ro_client_end
+                .set_extended_attribute(
+                    b"foo",
+                    fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
+                    fio::SetExtendedAttributeMode::Set,
+                )
+                .await
+                .unwrap()
+                .unwrap_err(),
+            Status::BAD_HANDLE.into_raw(),
+        );
+
+        rw_client_end
             .set_extended_attribute(
                 b"foo",
                 fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
@@ -629,20 +666,29 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+
         assert_eq!(
-            client_end.get_extended_attribute(b"foo").await.unwrap().unwrap(),
+            ro_client_end.get_extended_attribute(b"foo").await.unwrap().unwrap(),
             fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
         );
+
         let (iterator_client_end, iterator_server_end) =
             client.create_proxy::<fio::ExtendedAttributeIteratorMarker>();
-        client_end.list_extended_attributes(iterator_server_end).unwrap();
+        ro_client_end.list_extended_attributes(iterator_server_end).unwrap();
         assert_eq!(
             iterator_client_end.get_next().await.unwrap().unwrap(),
             (vec![b"bar".to_vec()], true)
         );
-        client_end.remove_extended_attribute(b"foo").await.unwrap().unwrap();
+
         assert_eq!(
-            client_end.get_extended_attribute(b"foo").await.unwrap().unwrap_err(),
+            ro_client_end.remove_extended_attribute(b"foo").await.unwrap().unwrap_err(),
+            Status::BAD_HANDLE.into_raw(),
+        );
+
+        rw_client_end.remove_extended_attribute(b"foo").await.unwrap().unwrap();
+
+        assert_eq!(
+            ro_client_end.get_extended_attribute(b"foo").await.unwrap().unwrap_err(),
             Status::NOT_FOUND.into_raw(),
         );
     }
@@ -651,7 +697,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_open() {
         let client = flex_local::local_client_empty();
-        let client_end = serve_test_symlink(&client).await;
+        let client_end =
+            serve_test_symlink(&client, Arc::new(TestSymlink::new()), fio::PERM_READABLE).await;
 
         #[cfg(feature = "fdomain")]
         let (object, server_end) = client.create_channel();

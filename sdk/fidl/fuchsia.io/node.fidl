@@ -645,7 +645,7 @@ open protocol Node {
     /// GetExtendedAttributes can be used with any of these names to retrieve
     /// the associated value.
     ///
-    /// This method requires the [`Rights.GET_ATTRIBUTES`] right.
+    /// This method requires the [`Rights.READ_BYTES`] right.
     @available(added=18)
     @selector("fuchsia.io/Node.ListExtendedAttributes")
     strict ListExtendedAttributes(resource struct {
@@ -657,7 +657,7 @@ open protocol Node {
     /// Attribute names have a maximum length of MAX_ATTRIBUTE_NAME. No
     /// particular structure is imposed on them.
     ///
-    /// This method requires the [`Rights.GET_ATTRIBUTES`] right.
+    /// This method requires the [`Rights.READ_BYTES`] right.
     @available(added=18)
     @selector("fuchsia.io/Node.GetExtendedAttribute")
     strict GetExtendedAttribute(struct {
@@ -670,7 +670,7 @@ open protocol Node {
     /// If the attribute doesn't exist, it is created. The name should have no
     /// null bytes in it. If it does, ZX_ERR_INVALID_ARGS is returned.
     ///
-    /// This method requires the [`Rights.UPDATE_ATTRIBUTES`] right.
+    /// This method requires the [`Rights.WRITE_BYTES`] right.
     @available(added=18)
     @selector("fuchsia.io/Node.SetExtendedAttribute")
     strict SetExtendedAttribute(resource struct {
@@ -698,7 +698,7 @@ open protocol Node {
     ///
     /// If the attribute doesn't exist, ZX_ERR_NOT_FOUND is returned.
     ///
-    /// This method requires the [`Rights.UPDATE_ATTRIBUTES`] right.
+    /// This method requires the [`Rights.WRITE_BYTES`] right.
     @available(added=18)
     @selector("fuchsia.io/Node.RemoveExtendedAttribute")
     strict RemoveExtendedAttribute(struct {

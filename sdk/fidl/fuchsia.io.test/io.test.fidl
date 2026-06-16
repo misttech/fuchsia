@@ -66,6 +66,9 @@ type HarnessConfig = struct {
 
     /// Supports unnamed temporary files.
     supports_unnamed_temporary_file bool;
+
+    /// Supports extended attributes (xattrs).
+    supports_xattrs bool;
 };
 
 /// Directory entries should support opening with any combination of read/write/execute rights.

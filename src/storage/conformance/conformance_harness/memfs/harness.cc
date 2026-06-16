@@ -88,6 +88,7 @@ class TestHarness : public fidl::Server<fio_test::TestHarness> {
     config.supports_truncate(true);
     config.supports_modify_directory(true);
     config.supports_mutable_file(true);
+    config.supports_xattrs(false);
     config.supported_attributes(
         fio::NodeAttributesQuery::kCreationTime | fio::NodeAttributesQuery::kModificationTime |
         fio::NodeAttributesQuery::kContentSize | fio::NodeAttributesQuery::kStorageSize |

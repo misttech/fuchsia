@@ -96,6 +96,7 @@ async fn run(mut stream: TestHarnessRequestStream, fixture: &TestFixture) -> Res
                         | fio::NodeAttributesQuery::SELINUX_CONTEXT
                         | fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
                     supports_services: false,
+                    supports_xattrs: true,
                 })?;
             }
             TestHarnessRequest::CreateDirectory {

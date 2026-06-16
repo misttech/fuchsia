@@ -49,6 +49,7 @@ class SdkCppHarness : public fidl::Server<fio_test::TestHarness> {
     config.supports_get_token(true);
     config.supports_mutable_file(true);
     config.supports_services(true);
+    config.supports_xattrs(false);
     config.supported_attributes(fio::NodeAttributesQuery::kContentSize |
                                 fio::NodeAttributesQuery::kStorageSize);
 
