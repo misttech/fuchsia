@@ -8,7 +8,10 @@ import("//build/testing/perf/test.gni")
 
 group("benchmarks") {
   testonly = true
-  deps = [ ":selinux_bench" ]
+  deps = [
+    ":selinux_bench",
+    ":sestarnix_memory_bench",
+  ]
 }
 
 rustc_binary("bin") {
@@ -66,4 +69,40 @@ fuchsia_component_perf_test("selinux_bench") {
   test_type = "starnix"
   expected_metric_names_filepath =
       "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.sestarnix.txt"
+}
+
+rustc_binary("memory_bench_bin") {
+  output_name = "sestarnix_memory_bench"
+  edition = "2024"
+  testonly = true
+
+  source_root = "src/memory_bench.rs"
+  sources = [ "src/memory_bench.rs" ]
+
+  deps = [
+    "//src/performance/lib/fuchsiaperf",
+    "//src/starnix/lib/selinux",
+    "//third_party/rust_crates:serde_json",
+  ]
+
+  inputs = [ "//src/starnix/lib/selinux/testdata/policies/aosp_sepolicy" ]
+}
+
+fuchsia_component("sestarnix_memory_bench_component") {
+  testonly = true
+  component_name = "sestarnix_memory_bench"
+  manifest = "meta/sestarnix_memory_bench.cml"
+  deps = [ ":memory_bench_bin" ]
+}
+
+fuchsia_package("sestarnix_memory_bench_pkg") {
+  testonly = true
+  deps = [ ":sestarnix_memory_bench_component" ]
+}
+
+fuchsia_component_perf_test("sestarnix_memory_bench") {
+  package = ":sestarnix_memory_bench_pkg"
+  component_name = "sestarnix_memory_bench"
+  test_type = "starnix"
+  expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.sestarnix_memory.txt"
 }
