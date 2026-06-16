@@ -56,7 +56,7 @@ TEST(UnitTests, UnitTests) {
                                        fidl::StringView());
     (void)manager_client->DisableDriver(fidl::StringView::FromExternal(kTestDriver),
                                         fidl::StringView());
-    RestartAndWait(kTestDriver, "/svc/fuchsia.gpu.magma.Service");
+    RestartAndWait(kTestDriver, "/svc/fuchsia.gpu.magma.TrustedService");
   });
 
   {

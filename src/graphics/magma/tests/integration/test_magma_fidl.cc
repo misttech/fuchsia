@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 
 #include <gtest/gtest.h>
 #include <src/lib/fsl/handles/object_info.h>
@@ -61,16 +62,12 @@ class TestAsyncHandler : public fidl::WireAsyncEventHandler<fuchsia_gpu_magma::P
 
 class TestMagmaFidl : public gtest::RealLoopFixture {
  public:
-  static constexpr const char* kDevicePathFuchsia = "/svc/fuchsia.gpu.magma.Service";
+  static constexpr const char* kDevicePathFuchsiaUntrusted = "/svc/fuchsia.gpu.magma.Service";
+  static constexpr const char* kDevicePathFuchsiaTrusted = "/svc/fuchsia.gpu.magma.TrustedService";
 
-  void SetUp() override {
-    auto client_end = component::Connect<fuchsia_gpu_magma_test::VendorHelper>();
-    EXPECT_TRUE(client_end.is_ok()) << " status " << client_end.status_value();
-
-    vendor_helper_ = fidl::WireSyncClient(std::move(*client_end));
-
-    for (auto& p : std::filesystem::directory_iterator(kDevicePathFuchsia)) {
-      ASSERT_FALSE(device_.is_valid()) << " More than one GPU device found, specify --vendor-id";
+  static void OpenFuchsiaDevice(const char* device_path, DeviceClient& device) {
+    for (auto& p : std::filesystem::directory_iterator(device_path)) {
+      ASSERT_FALSE(device.is_valid()) << " More than one GPU device found, specify --vendor-id";
 
       auto endpoints = fidl::Endpoints<fuchsia_gpu_magma::CombinedDevice>::Create();
 
@@ -79,11 +76,11 @@ class TestMagmaFidl : public gtest::RealLoopFixture {
                                endpoints.server.TakeChannel().release());
       ASSERT_EQ(ZX_OK, zx_status);
 
-      device_ = DeviceClient(std::move(endpoints.client));
+      device = DeviceClient(std::move(endpoints.client));
 
       uint64_t vendor_id = 0;
       {
-        auto wire_result = device_->Query(fuchsia_gpu_magma::wire::QueryId::kVendorId);
+        auto wire_result = device->Query(fuchsia_gpu_magma::wire::QueryId::kVendorId);
         ASSERT_TRUE(wire_result.ok());
 
         ASSERT_TRUE(wire_result->value()->is_simple_result());
@@ -93,11 +90,23 @@ class TestMagmaFidl : public gtest::RealLoopFixture {
       if (gVendorId == 0 || vendor_id == gVendorId) {
         break;
       } else {
-        device_ = {};
+        device = {};
       }
     }
+  }
 
-    ASSERT_TRUE(device_.client_end());
+  void SetUp() override {
+    auto client_end = component::Connect<fuchsia_gpu_magma_test::VendorHelper>();
+    EXPECT_TRUE(client_end.is_ok()) << " status " << client_end.status_value();
+
+    vendor_helper_ = fidl::WireSyncClient(std::move(*client_end));
+
+    OpenFuchsiaDevice(kDevicePathFuchsiaUntrusted, device_);
+    if (!device_.is_valid()) {
+      OpenFuchsiaDevice(kDevicePathFuchsiaTrusted, device_);
+    }
+
+    ASSERT_TRUE(device_.is_valid());
 
     {
       auto wire_result = device_->Query(fuchsia_gpu_magma::wire::QueryId::kVendorVersion);

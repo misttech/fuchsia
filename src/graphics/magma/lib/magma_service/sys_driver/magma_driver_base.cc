@@ -145,7 +145,7 @@ zx::result<> MagmaDriverBase::CreateDevfsNode() {
   gpu_node_ = std::move(gpu_node.value());
 
   // Add the gpu service.
-  {
+  if (serve_untrusted_service_) {
     auto power_protocol =
         [this](fidl::ServerEnd<fuchsia_gpu_magma::PowerElementProvider> server_end) mutable {
           fidl::BindServer(dispatcher(), std::move(server_end), this);
@@ -161,7 +161,7 @@ zx::result<> MagmaDriverBase::CreateDevfsNode() {
     {
       auto status = outgoing()->template AddService<fuchsia_gpu_magma::Service>(std::move(handler));
       if (status.is_error()) {
-        fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
+        fdf::error("{}(): Failed to add Service to outgoing directory: {}", __func__, status);
         return status.take_error();
       }
     }

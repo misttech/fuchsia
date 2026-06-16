@@ -91,7 +91,7 @@ class MagmaVsi {
   inline uint32_t& GetContextId() { return context_id_; }
 
  protected:
-  static constexpr const char* kDevicePath = "/svc/fuchsia.gpu.magma.Service";
+  static constexpr const char* kDevicePath = "/svc/fuchsia.gpu.magma.TrustedService";
 
   magma_device_t device_ = 0ul;
   magma_connection_t connection_ = {};

@@ -469,6 +469,11 @@
             to: [ "#system-tests" ],
         },
         {
+            service: "fuchsia.gpu.magma.TrustedService",
+            from: "parent",
+            to: [ "#system-tests" ],
+        },
+        {
             dictionary: "diagnostics",
             from: "parent",
             to: [ "#system-tests" ],

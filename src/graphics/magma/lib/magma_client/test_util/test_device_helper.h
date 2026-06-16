@@ -18,6 +18,9 @@
 #include <gtest/gtest.h>
 
 namespace magma {
+constexpr const char* kMagmaServicePaths[] = {"/svc/fuchsia.gpu.magma.Service",
+                                              "/svc/fuchsia.gpu.magma.TrustedService"};
+
 class TestDeviceBase {
  public:
   explicit TestDeviceBase(std::string device_name) { InitializeFromFileName(device_name.c_str()); }
@@ -37,17 +40,22 @@ class TestDeviceBase {
   }
 
   void InitializeFromVendorId(uint64_t id) {
-    for (auto& p : std::filesystem::directory_iterator("/svc/fuchsia.gpu.magma.Service")) {
-      InitializeFromFileName((static_cast<std::string>(p.path()) + "/device").c_str());
-      uint64_t vendor_id;
-      magma_status_t magma_status =
-          magma_device_query(device_, MAGMA_QUERY_VENDOR_ID, NULL, &vendor_id);
-      if (magma_status == MAGMA_STATUS_OK && vendor_id == id) {
-        return;
+    for (const char* path : kMagmaServicePaths) {
+      if (!std::filesystem::exists(path)) {
+        continue;
       }
+      for (auto& p : std::filesystem::directory_iterator(path)) {
+        InitializeFromFileName((static_cast<std::string>(p.path()) + "/device").c_str());
+        uint64_t vendor_id;
+        magma_status_t magma_status =
+            magma_device_query(device_, MAGMA_QUERY_VENDOR_ID, NULL, &vendor_id);
+        if (magma_status == MAGMA_STATUS_OK && vendor_id == id) {
+          return;
+        }
 
-      magma_device_release(device_);
-      device_ = 0;
+        magma_device_release(device_);
+        device_ = 0;
+      }
     }
     GTEST_FAIL();
   }
@@ -103,21 +111,29 @@ class TestDeviceBase {
     // Loop until a new device with the correct specs is found.
     auto deadline_time = zx::clock::get_monotonic() + zx::sec(5);
     while (!found_device && zx::clock::get_monotonic() < deadline_time) {
-      for (auto& p : std::filesystem::directory_iterator("/svc/fuchsia.gpu.magma.Service")) {
-        auto magma_client = component::Connect<fuchsia_gpu_magma::TestDevice>(
-            static_cast<std::string>(p.path()) + "/device");
+      for (const char* path : kMagmaServicePaths) {
+        if (!std::filesystem::exists(path)) {
+          continue;
+        }
+        for (auto& p : std::filesystem::directory_iterator(path)) {
+          auto magma_client = component::Connect<fuchsia_gpu_magma::TestDevice>(
+              static_cast<std::string>(p.path()) + "/device");
 
-        magma_device_t device;
-        EXPECT_EQ(MAGMA_STATUS_OK,
-                  magma_device_import(magma_client->TakeChannel().release(), &device));
+          magma_device_t device;
+          EXPECT_EQ(MAGMA_STATUS_OK,
+                    magma_device_import(magma_client->TakeChannel().release(), &device));
 
-        uint64_t vendor_id;
-        magma_status_t magma_status =
-            magma_device_query(device, MAGMA_QUERY_VENDOR_ID, NULL, &vendor_id);
+          uint64_t vendor_id;
+          magma_status_t magma_status =
+              magma_device_query(device, MAGMA_QUERY_VENDOR_ID, NULL, &vendor_id);
 
-        magma_device_release(device);
-        if (magma_status == MAGMA_STATUS_OK && vendor_id == gpu_vendor_id) {
-          found_device = true;
+          magma_device_release(device);
+          if (magma_status == MAGMA_STATUS_OK && vendor_id == gpu_vendor_id) {
+            found_device = true;
+            break;
+          }
+        }
+        if (found_device) {
           break;
         }
       }

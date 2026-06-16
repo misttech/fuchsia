@@ -22,4 +22,11 @@
             max_size: 1024,
         },
     ],
+    offer: [
+        {
+            service: "fuchsia.gpu.magma.TrustedService",
+            from: "parent",
+            to: "#test",
+        },
+    ],
 }

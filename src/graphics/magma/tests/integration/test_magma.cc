@@ -115,7 +115,8 @@ class FakeTraceRegistry : public fidl::WireServer<fuchsia_tracing_provider::Regi
 
 class TestConnection {
  public:
-  static constexpr const char* kDevicePathFuchsia = "/svc/fuchsia.gpu.magma.Service";
+  static constexpr const char* kDevicePathFuchsiaUntrusted = "/svc/fuchsia.gpu.magma.Service";
+  static constexpr const char* kDevicePathFuchsiaTrusted = "/svc/fuchsia.gpu.magma.TrustedService";
   static constexpr const char* kDeviceNameLinux = "/dev/dri/renderD128";
   static constexpr const char* kDeviceNameVirtioMagma = "/dev/magma0";
 
@@ -128,11 +129,12 @@ class TestConnection {
 #endif
 
 #if defined(__Fuchsia__)
-  static bool OpenFuchsiaDevice(std::string* device_name_out, magma_device_t* device_out) {
+  static bool OpenFuchsiaDevice(const char* device_path, std::string* device_name_out,
+                                magma_device_t* device_out) {
     std::string device_name;
     magma_device_t device = 0;
 
-    for (auto& p : std::filesystem::directory_iterator(kDevicePathFuchsia)) {
+    for (auto& p : std::filesystem::directory_iterator(device_path)) {
       EXPECT_FALSE(device) << " More than one GPU device found, specify --vendor-id";
       if (device) {
         magma_device_release(device);
@@ -191,7 +193,10 @@ class TestConnection {
 
     vendor_helper_ = fidl::WireSyncClient(std::move(*client_end));
 
-    EXPECT_TRUE(OpenFuchsiaDevice(&device_name_, &device_));
+    if (!OpenFuchsiaDevice(kDevicePathFuchsiaUntrusted, &device_name_, &device_)) {
+      OpenFuchsiaDevice(kDevicePathFuchsiaTrusted, &device_name_, &device_);
+    }
+    EXPECT_TRUE(device_) << "Unable to open magma device";
 
 #elif defined(__linux__)
     int fd = open(kDeviceNameVirtioMagma, O_RDWR);

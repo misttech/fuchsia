@@ -4,7 +4,9 @@
 
 #define MAGMA_DLOG_ENABLE 1
 
-#include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/component/incoming/cpp/directory_watcher.h>
+#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service.h>
 #include <lib/magma/magma.h>
 #include <lib/magma/util/dlog.h>
 #include <lib/magma/util/short_macros.h>
@@ -58,12 +60,54 @@ class TestConnection : public magma::TestDeviceBase {
   std::optional<mali_utils::AtomHelper> helper_;
 };
 
-TEST(PowerManagement, SuspendResume) {
-  component::SyncServiceMemberWatcher<fuchsia_gpu_magma::TrustedService::DebugUtils> watcher;
-  zx::result client_end = watcher.GetNextInstance(false);
-  ASSERT_FALSE(client_end.is_error()) << client_end.status_string();
+fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> GetMaliDebugUtilsClient() {
+  zx::result svc_dir = component::OpenServiceRoot();
+  EXPECT_FALSE(svc_dir.is_error()) << svc_dir.status_string();
+  if (svc_dir.is_error()) {
+    return {};
+  }
 
-  auto client = fidl::WireSyncClient(std::move(*client_end));
+  component::SyncDirectoryWatcher watcher(
+      *svc_dir, fuchsia_gpu_magma::TrustedService::DebugUtils::ServiceName);
+
+  fidl::ClientEnd<fuchsia_gpu_magma::DebugUtils> debug_utils_client;
+
+  while (true) {
+    zx::result instance_name = watcher.GetNextEntry(true);
+    if (instance_name.is_error()) {
+      break;
+    }
+
+    zx::result device_client_end =
+        component::ConnectAtMember<fuchsia_gpu_magma::TrustedService::Device>(*svc_dir,
+                                                                              *instance_name);
+    EXPECT_FALSE(device_client_end.is_error()) << device_client_end.status_string();
+    if (device_client_end.is_error()) {
+      continue;
+    }
+
+    auto device_client = fidl::WireSyncClient(std::move(*device_client_end));
+    auto wire_result = device_client->Query(fuchsia_gpu_magma::wire::QueryId::kVendorId);
+    if (wire_result.ok() && wire_result->value()->is_simple_result() &&
+        wire_result->value()->simple_result() == MAGMA_VENDOR_ID_MALI) {
+      zx::result debug_utils_client_end =
+          component::ConnectAtMember<fuchsia_gpu_magma::TrustedService::DebugUtils>(*svc_dir,
+                                                                                    *instance_name);
+      EXPECT_FALSE(debug_utils_client_end.is_error()) << debug_utils_client_end.status_string();
+      if (debug_utils_client_end.is_ok()) {
+        debug_utils_client = std::move(*debug_utils_client_end);
+      }
+      break;
+    }
+  }
+
+  return debug_utils_client;
+}
+
+TEST(PowerManagement, SuspendResume) {
+  auto debug_utils_client = GetMaliDebugUtilsClient();
+  ASSERT_TRUE(debug_utils_client.is_valid()) << "No Mali GPU device found";
+  auto client = fidl::WireSyncClient(std::move(debug_utils_client));
 
   EXPECT_TRUE(client->SetPowerState(0).ok());
 
@@ -83,11 +127,9 @@ TEST(PowerManagement, SuspendResume) {
 
 // Repeatedly attempt to suspend/resume to GPU to attempt to trigger a soft stop.
 TEST(PowerManagement, RepeatedSuspendResume) {
-  component::SyncServiceMemberWatcher<fuchsia_gpu_magma::TrustedService::DebugUtils> watcher;
-  zx::result client_end = watcher.GetNextInstance(false);
-  ASSERT_FALSE(client_end.is_error()) << client_end.status_string();
-
-  auto client = fidl::WireSyncClient(std::move(*client_end));
+  auto debug_utils_client = GetMaliDebugUtilsClient();
+  ASSERT_TRUE(debug_utils_client.is_valid()) << "No Mali GPU device found";
+  auto client = fidl::WireSyncClient(std::move(debug_utils_client));
 
   std::unique_ptr<TestConnection> test;
   test.reset(new TestConnection());

@@ -21,8 +21,13 @@
             protocol: [ "fuchsia.gpu.magma.test.VendorHelper" ],
             from: "parent",
         },
-        { service: "fuchsia.gpu.magma.Service" },
-        { service: "fuchsia.gpu.magma.PerformanceCounterService" },
+        {
+            service: [
+                "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.Service",
+                "fuchsia.gpu.magma.TrustedService",
+            ],
+        },
         {
             config: "fuchsia.gpu.test.GpuVendorId",
             from: "parent",

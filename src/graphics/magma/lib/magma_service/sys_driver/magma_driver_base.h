@@ -65,12 +65,13 @@ class MagmaDriverBase : public fdf::DriverBase2,
                         public fidl::WireServer<fuchsia_gpu_magma::DebugUtils>,
                         public internal::DependencyInjectionServer::Owner {
  public:
-  explicit MagmaDriverBase(std::string_view name)
+  explicit MagmaDriverBase(std::string_view name, bool serve_untrusted_service = true)
       : DriverBase2(name),
         magma_(std::make_shared<MagmaObjects>()),
         combined_device_server_(magma_, MagmaClientType::kUntrusted),
         trusted_combined_device_server_(magma_, MagmaClientType::kTrusted),
-        magma_devfs_connector_(fit::bind_member<&MagmaDriverBase::BindConnector>(this)) {}
+        magma_devfs_connector_(fit::bind_member<&MagmaDriverBase::BindConnector>(this)),
+        serve_untrusted_service_(serve_untrusted_service) {}
 
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
@@ -143,6 +144,7 @@ class MagmaDriverBase : public fdf::DriverBase2,
 
   internal::PerformanceCountersServer perf_counter_{dispatcher()};
   internal::DependencyInjectionServer dependency_injection_{this, dispatcher()};
+  bool serve_untrusted_service_;
 };
 
 class MagmaTestServer : public fidl::WireServer<fuchsia_gpu_magma::TestDevice2> {
