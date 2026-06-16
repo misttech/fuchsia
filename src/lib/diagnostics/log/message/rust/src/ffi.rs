@@ -344,12 +344,21 @@ pub fn ffi_from_extended_record<'a, 'b>(
         let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
         let component_url_len = u32::from_le_bytes(remaining[4..8].try_into().unwrap()) as usize;
         let rolled_out_logs = u64::from_le_bytes(remaining[8..16].try_into().unwrap());
-        let mut offset = 16;
-        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
+        let mut offset: usize = 16;
+
+        // NOTE: This addition is safe as all platforms Fuchsia supports are 64-bit,
+        // so usize will never overflow.
         let moniker_padded_len = (moniker_len + 7) & !7;
+        let component_url_padded_len = (component_url_len + 7) & !7;
+        let moniker_padded_end = offset + moniker_padded_len;
+        let url_padded_end = moniker_padded_end + component_url_padded_len;
+        if url_padded_end > remaining.len() {
+            return Err(MessageError::OutOfBounds);
+        }
+
+        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
         offset += moniker_padded_len;
         let url = str::from_utf8(&remaining[offset..offset + component_url_len])?;
-        let component_url_padded_len = (component_url_len + 7) & !7;
         offset += component_url_padded_len;
         (
             Some(ExtendedMetadata {
@@ -463,6 +472,34 @@ mod test {
             unsafe { log_message.message.as_utf8_str() },
             r#"hello world key="val\"with\\escapes""#
         );
+    }
+
+    #[fuchsia::test]
+    fn test_out_of_bounds_extended_record() {
+        let allocator = Bump::new();
+
+        let record = Record {
+            timestamp: BootInstant::from_nanos(72),
+            severity: 0x30,
+            arguments: vec![Argument::message("hello world")],
+        };
+        let mut buffer = Cursor::new(vec![0u8; 1024]);
+        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        encoder.write_record(record).unwrap();
+        let len = buffer.position() as usize;
+        let mut bytes = buffer.into_inner();
+        bytes.truncate(len);
+
+        // Append a corrupt moniker_len or component_url_len in the remaining slice.
+        let extended_metadata_suffix = [
+            0xE8, 0x03, 0x00, 0x00, // moniker_len = 1000
+            0xE8, 0x03, 0x00, 0x00, // component_url_len = 1000
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // rolled_out_logs = 0
+        ];
+        bytes.extend_from_slice(&extended_metadata_suffix);
+
+        let res = ffi_from_extended_record(&bytes, &allocator);
+        assert!(matches!(res, Err(MessageError::OutOfBounds)));
     }
 
     #[fuchsia::test]
