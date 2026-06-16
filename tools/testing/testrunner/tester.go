@@ -689,9 +689,7 @@ type FFXTesterOptions struct {
 
 // NewFFXTester returns an FFXTester.
 func NewFFXTester(ctx context.Context, opts FFXTesterOptions) (*FFXTester, error) {
-	err := retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), maxReconnectAttempts), func() error {
-		return opts.Ffx.TargetWait(ctx, "-t", "10")
-	}, nil)
+	err := opts.Ffx.TargetWait(ctx, "-t", "30")
 	if err != nil {
 		return nil, err
 	}
@@ -755,9 +753,7 @@ func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, std
 var ffxTesterReconnect = reconnect
 
 func reconnect(t *FFXTester, ctx context.Context) error {
-	return retry.Retry(ctx, retry.WithMaxDuration(retry.NewConstantBackoff(time.Second), 30*time.Second), func() error {
-		return t.ffx.TargetWait(ctx, "-t", "10")
-	}, nil)
+	return t.ffx.TargetWait(ctx, "-t", "30")
 }
 
 func (t *FFXTester) Reconnect(ctx context.Context) error {
