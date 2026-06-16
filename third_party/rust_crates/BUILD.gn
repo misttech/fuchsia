@@ -14810,18 +14810,18 @@ rustc_library("png-v0_18_1") {
   applicable_licenses = [ ":png-v0_18_1.license" ]
 }
 
-license("podio-v0_1_6.license") {
+license("podio-v0_1_7.license") {
   public_package_name = "podio"
   license_files = [
-    "//third_party/rust_crates/vendor/podio-0.1.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/podio-0.1.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/podio-0.1.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/podio-0.1.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("podio-v0_1_6") {
+rustc_library("podio-v0_1_7") {
   crate_name = "podio"
-  source_root = "//third_party/rust_crates/vendor/podio-0.1.6/src/lib.rs"
-  output_name = "podio-9f03c94555630577"
+  source_root = "//third_party/rust_crates/vendor/podio-0.1.7/src/lib.rs"
+  output_name = "podio-28552b76529ff99e"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -14833,13 +14833,13 @@ rustc_library("podio-v0_1_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9f03c94555630577",
-    "-Cextra-filename=-9f03c94555630577",
+    "-Cmetadata=28552b76529ff99e",
+    "-Cextra-filename=-28552b76529ff99e",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":podio-v0_1_6.license" ]
+  applicable_licenses = [ ":podio-v0_1_7.license" ]
 }
 
 license("polyval-v0_6_2.license") {
@@ -24274,7 +24274,7 @@ rustc_library("zip-v0_5_5") {
   deps = []
   deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":flate2-v1_1_9" ]
-  deps += [ ":podio-v0_1_6" ]
+  deps += [ ":podio-v0_1_7" ]
 
   rustenv = []
 

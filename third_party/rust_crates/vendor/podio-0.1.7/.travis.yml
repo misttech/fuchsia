@@ -1,5 +1,12 @@
 language: rust
 
+arch:
+  - amd64
+  - s390x
+
+os: linux
+dist: bionic
+
 rust:
     - stable
     - nightly
