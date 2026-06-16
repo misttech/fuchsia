@@ -463,6 +463,55 @@
                 "title": "ThreadsRequest",
                 "type": "object"
             },
+            "VariablesRequest": {
+                "description": "Request variables for a frame in a thread.",
+                "properties": {
+                    "command": {
+                        "const": "variables",
+                        "default": "variables",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "thread_id": {
+                        "title": "Thread Id",
+                        "type": "integer"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "thread_id"
+                ],
+                "title": "VariablesRequest",
+                "type": "object"
+            },
             "WaitForEventRequest": {
                 "description": "Request to wait for a debug adapter event.",
                 "properties": {
@@ -520,6 +569,7 @@
                 "start": "#/$defs/StartRequest",
                 "stop": "#/$defs/StopRequest",
                 "threads": "#/$defs/ThreadsRequest",
+                "variables": "#/$defs/VariablesRequest",
                 "wait-for-event": "#/$defs/WaitForEventRequest"
             },
             "propertyName": "command"
@@ -554,6 +604,9 @@
             },
             {
                 "$ref": "#/$defs/ThreadsRequest"
+            },
+            {
+                "$ref": "#/$defs/VariablesRequest"
             },
             {
                 "$ref": "#/$defs/WaitForEventRequest"

@@ -29,6 +29,7 @@ if (is_host) {
       "commands/start.py",
       "commands/stop.py",
       "commands/threads.py",
+      "commands/variables.py",
       "commands/wait_for_event.py",
     ]
     deps = [

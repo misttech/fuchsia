@@ -18,6 +18,7 @@ from cli.commands import (
     start,
     stop,
     threads,
+    variables,
     wait_for_event,
 )
 from cli.commands.base import BaseCommand
@@ -64,6 +65,7 @@ async def main(args: list[str]) -> int:
         start.Command,
         stop.Command,
         threads.Command,
+        variables.Command,
         wait_for_event.Command,
     ]
     for cmd_class in command_classes:
@@ -108,6 +110,8 @@ async def main(args: list[str]) -> int:
                 return exit_code
         try:
             args_dict = vars(parsed_args)
+            if cmd_cls is not None and cmd_cls.COMMAND_NAME:
+                args_dict["command"] = cmd_cls.COMMAND_NAME
             req = make_request(args_dict)
         except (ValueError, ValidationError) as e:
             print(f"Error: {e}", file=sys.stderr)

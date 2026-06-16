@@ -21,6 +21,7 @@ from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
+from shared.protocol.variables import VariablesRequest
 
 
 class TestCLI(unittest.IsolatedAsyncioTestCase):
@@ -173,6 +174,49 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(output["success"])
         self.assertIn(
             "Failed to start daemon: Unexpected error", output["message"]
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_variables_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["variables", "1", "--frame-index", "2"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            VariablesRequest(thread_id=1, frame_index=2)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_variables_command_default_frame_index(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["variables", "1"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            VariablesRequest(thread_id=1, frame_index=0)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_locals_alias_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["locals", "1", "--frame-index", "2"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            VariablesRequest(thread_id=1, frame_index=2)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_variables(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "variables", "thread_id": 1, "frame_index": 2}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            VariablesRequest(thread_id=1, frame_index=2)
         )
 
 

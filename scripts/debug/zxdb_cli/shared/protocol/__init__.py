@@ -28,6 +28,7 @@ from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.start import StartRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
+from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
 
 RequestType = Annotated[
@@ -41,6 +42,7 @@ RequestType = Annotated[
     | StartRequest
     | StopRequest
     | ThreadsRequest
+    | VariablesRequest
     | WaitForEventRequest,
     Field(discriminator="command"),
 ]
@@ -66,6 +68,7 @@ __all__ = [
     "StartRequest",
     "StopRequest",
     "ThreadsRequest",
+    "VariablesRequest",
     "WaitForEventRequest",
 ]
 

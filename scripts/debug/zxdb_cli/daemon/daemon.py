@@ -25,6 +25,7 @@ from daemon.handlers import (
     start,
     stop,
     threads,
+    variables,
     wait_for_event,
 )
 from ffx_cmd.lib import FfxCmd
@@ -163,6 +164,7 @@ class Daemon:
             start,
             stop,
             threads,
+            variables,
             wait_for_event,
         ]
         for mod in handlers:

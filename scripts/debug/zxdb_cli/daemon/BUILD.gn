@@ -33,6 +33,7 @@ if (is_host) {
       "handlers/start.py",
       "handlers/stop.py",
       "handlers/threads.py",
+      "handlers/variables.py",
       "handlers/wait_for_event.py",
     ]
     deps = [

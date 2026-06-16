@@ -3,10 +3,12 @@
 # found in the LICENSE file.
 
 import argparse
-from typing import Any
+from typing import Any, ClassVar
 
 
 class BaseCommand:
+    COMMAND_NAME: ClassVar[str] = ""
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         raise NotImplementedError()

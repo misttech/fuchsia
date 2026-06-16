@@ -33,6 +33,7 @@ if (is_host) {
       "protocol/start.py",
       "protocol/stop.py",
       "protocol/threads.py",
+      "protocol/variables.py",
       "protocol/wait_for_event.py",
     ]
     library_deps = [ "//third_party/pylibs/pydantic" ]
