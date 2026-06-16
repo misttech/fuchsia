@@ -2375,7 +2375,7 @@
     {
         "kind": "bits",
         "name": "fuchsia.io/Operations",
-        "strictness": "strict",
+        "strictness": "flexible",
         "type": "uint64"
     },
     {

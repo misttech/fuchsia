@@ -6,8 +6,7 @@ library fuchsia.io;
 
 /// The common members definition behind [`Rights`] and [`Abilities`]. Some operations may apply
 /// only to certain node types (e.g. [`Operations.MODIFY_DIRECTORY`] only applies to directories).
-@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
-type Operations = strict bits : uint64 {
+type Operations = flexible bits : uint64 {
     /// Connecting to a service in a directory.
     CONNECT = 0x01;
 
