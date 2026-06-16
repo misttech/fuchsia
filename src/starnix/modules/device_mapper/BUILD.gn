@@ -22,8 +22,7 @@ rustc_library("device_mapper") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
-    "//src/storage/lib/fsverity-merkle",
+    "//src/storage/lib/dm_verity",
     "//third_party/rust_crates:bitflags",
-    "//third_party/rust_crates:hex",
   ]
 }

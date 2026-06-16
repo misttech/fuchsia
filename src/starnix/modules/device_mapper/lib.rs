@@ -5,8 +5,9 @@
 #![recursion_limit = "512"]
 
 use bitflags::bitflags;
-use fsverity_merkle::{
-    FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder, Sha256Hash, Sha512Hash,
+use dm_verity::{
+    DmVerityError, DmVerityTargetOptionalParams, DmVerityTargetParams, HashAlgorithm,
+    MerkleVerifier,
 };
 use linux_uapi::DM_UUID_LEN;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
@@ -45,8 +46,6 @@ use std::ops::Sub;
 use std::sync::Arc;
 
 const SECTOR_SIZE: u64 = 512;
-const SHA256_ALGORITHM: &str = "sha256";
-const SHA512_ALGORITHM: &str = "sha512";
 // The value of the data_size field in the output dm_ioctl struct when no data is returned as per
 // Linux 6.6.15.
 const DATA_SIZE: u32 = 305;
@@ -263,45 +262,6 @@ struct DmDeviceFile {
     device: Arc<DmDevice>,
 }
 
-fn verify_read(
-    buffer: &VecOutputBuffer,
-    args: &mut VerityTargetParams,
-    offset: usize,
-) -> Result<(), Errno> {
-    let (hasher, digest_size) = match args.base_args.hash_algorithm.as_str() {
-        SHA256_ALGORITHM => {
-            let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new_dmverity(
-                hex::decode(args.base_args.salt.clone()).unwrap(),
-                args.base_args.hash_block_size as usize,
-            ));
-            (hasher, <Sha256 as Hasher>::Digest::DIGEST_LEN)
-        }
-        SHA512_ALGORITHM => {
-            let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new_dmverity(
-                hex::decode(args.base_args.salt.clone()).unwrap(),
-                args.base_args.hash_block_size as usize,
-            ));
-            (hasher, <Sha512 as Hasher>::Digest::DIGEST_LEN)
-        }
-        _ => return error!(ENOTSUP),
-    };
-
-    let leaf_nodes: Vec<&[u8]> = args.hash_device.chunks(digest_size).collect();
-    let mut leaf_nodes_offset = offset;
-
-    for b in buffer.data().chunks(args.base_args.hash_block_size as usize) {
-        if hasher.hash_block(b)
-            != leaf_nodes[leaf_nodes_offset / args.base_args.hash_block_size as usize]
-        {
-            args.corrupted = true;
-            return error!(EINVAL);
-        }
-
-        leaf_nodes_offset += args.base_args.hash_block_size as usize;
-    }
-    Ok(())
-}
-
 impl FileOps for DmDeviceFile {
     fileops_impl_seekable!();
 
@@ -353,19 +313,23 @@ impl FileOps for DmDeviceFile {
             let size = (target.length * SECTOR_SIZE) as usize;
             if offset >= start && offset < start + size {
                 match &mut target.target_type {
-                    TargetType::Verity(args) => {
-                        if to_read % args.base_args.hash_block_size as usize != 0 {
+                    TargetType::Verity(verity_target) => {
+                        if to_read % verity_target.params.hash_block_size as usize != 0 {
                             return error!(EINVAL);
                         }
-                        let read = args.block_device.ops().read(
+                        let read = verity_target.block_device.ops().read(
                             locked,
-                            &args.block_device,
+                            &verity_target.block_device,
                             current_task,
                             offset - start,
                             &mut buffer,
                         )?;
                         bytes_read += read;
-                        verify_read(&buffer, args, offset - start)?;
+                        if let Err(_) = verity_target.verifier.verify(offset - start, buffer.data())
+                        {
+                            verity_target.corrupted = true;
+                            return error!(EINVAL);
+                        }
                     }
                     TargetType::Error => {
                         return error!(EIO);
@@ -403,9 +367,9 @@ impl FileOps for DmDeviceFile {
                 return error!(ENOTSUP);
             }
             match &active_table.targets[0].target_type {
-                TargetType::Verity(args) => args.block_device.ops().get_memory(
+                TargetType::Verity(verity_target) => verity_target.block_device.ops().get_memory(
                     locked,
-                    &args.block_device,
+                    &verity_target.block_device,
                     current_task,
                     length,
                     prot,
@@ -563,139 +527,78 @@ impl DeviceMapper {
 
 #[derive(Debug, Clone)]
 enum TargetType {
-    Verity(Box<VerityTargetParams>),
+    Verity(Box<VerityTarget>),
     Error,
 }
 
 #[derive(Debug, Clone)]
-struct VerityTargetParams {
-    base_args: VerityTargetBaseArgs,
-    optional_args: VerityTargetOptionalArgs,
+struct VerityTarget {
+    verifier: MerkleVerifier,
+    params: DmVerityTargetParams,
     block_device: FileHandle,
-    hash_device: Vec<u8>,
     corrupted: bool,
 }
 
-impl VerityTargetParams {
+impl VerityTarget {
     fn create_and_verify(
-        base_args: VerityTargetBaseArgs,
-        optional_args: VerityTargetOptionalArgs,
+        params: DmVerityTargetParams,
         block_device: FileHandle,
-        hash_device: Vec<u8>,
+        leaf_hashes: Box<[u8]>,
     ) -> Result<Self, Errno> {
-        let params = VerityTargetParams {
-            base_args,
-            optional_args,
-            block_device,
-            hash_device,
-            corrupted: false,
-        };
-        params.verify_root()?;
-        Ok(params)
+        let verifier = dm_verity::create_verifier(&params, leaf_hashes).map_err(|e| match &e {
+            DmVerityError::RootHashMismatch => {
+                starnix_logging::log_warn!(
+                    "Merkle tree root hash mismatch. Expected: {}",
+                    params.root_digest
+                );
+                errno!(EINVAL)
+            }
+            DmVerityError::UnsupportedAlgorithm(algorithm) => {
+                starnix_logging::log_warn!(
+                    "dm-verity verifier creation failed for unsupported algorithm: {}",
+                    algorithm
+                );
+                errno!(ENOTSUP)
+            }
+            _ => {
+                starnix_logging::log_warn!("dm-verity verifier creation failed: {:?}", e);
+                errno!(EINVAL)
+            }
+        })?;
+        Ok(Self { verifier, params, block_device, corrupted: false })
     }
 
     fn parameter_string(&self) -> String {
+        let params = &self.params;
         let base_string = format!(
-            "{} {} {} {:?} {:?} {:?} {:?} {} {} {}",
-            self.base_args.version,
-            self.base_args.block_device_path,
-            self.base_args.hash_device_path,
-            self.base_args.data_block_size,
-            self.base_args.hash_block_size,
-            self.base_args.num_data_blocks,
-            self.base_args.hash_start_block,
-            self.base_args.hash_algorithm,
-            self.base_args.root_digest,
-            self.base_args.salt
+            "{} {} {} {} {} {} {} {} {} {}",
+            params.version,
+            params.block_device_path,
+            params.hash_device_path,
+            params.data_block_size,
+            params.hash_block_size,
+            params.num_data_blocks,
+            params.hash_start_block,
+            params.hash_algorithm.as_str(),
+            params.root_digest,
+            params.salt
         );
         let mut optional_arg_count = 0;
         let mut optional_string = String::new();
-        if self.optional_args.ignore_zero_blocks {
+        if params.optional_params.ignore_zero_blocks {
             optional_arg_count += 1;
             optional_string.push_str(" ignore_zero_blocks");
         }
-        if self.optional_args.restart_on_corruption {
+        if params.optional_params.restart_on_corruption {
             optional_arg_count += 1;
             optional_string.push_str(" restart on corruption");
         }
         if optional_arg_count > 0 {
-            return format!("{base_string} {optional_arg_count}{optional_string}");
+            format!("{base_string} {optional_arg_count}{optional_string}")
         } else {
             base_string
         }
     }
-
-    fn verify_root(&self) -> Result<(), Errno> {
-        let (hasher, digest_size) = match self.base_args.hash_algorithm.as_str() {
-            SHA256_ALGORITHM => {
-                let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new_dmverity(
-                    hex::decode(self.base_args.salt.clone()).map_err(|_| errno!(EINVAL))?,
-                    self.base_args.hash_block_size as usize,
-                ));
-                (hasher, <Sha256 as Hasher>::Digest::DIGEST_LEN)
-            }
-            SHA512_ALGORITHM => {
-                let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new_dmverity(
-                    hex::decode(self.base_args.salt.clone()).map_err(|_| errno!(EINVAL))?,
-                    self.base_args.hash_block_size as usize,
-                ));
-                (hasher, <Sha512 as Hasher>::Digest::DIGEST_LEN)
-            }
-            _ => return error!(ENOTSUP),
-        };
-
-        let tree = match self.base_args.hash_algorithm.as_str() {
-            SHA256_ALGORITHM => {
-                const DIGEST_LEN: usize = <Sha256 as Hasher>::Digest::DIGEST_LEN;
-                let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(hasher);
-                for chunk in self.hash_device.chunks(digest_size) {
-                    let array: [u8; DIGEST_LEN] = chunk.try_into().unwrap();
-                    builder.push_data_hash(array.into());
-                }
-                builder.finish()
-            }
-            SHA512_ALGORITHM => {
-                const DIGEST_LEN: usize = <Sha512 as Hasher>::Digest::DIGEST_LEN;
-                let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(hasher);
-                for chunk in self.hash_device.chunks(digest_size) {
-                    let array: [u8; DIGEST_LEN] = chunk.try_into().unwrap();
-                    builder.push_data_hash(array.into());
-                }
-                builder.finish()
-            }
-            _ => unreachable!(),
-        };
-        let calculated_root = tree.root();
-
-        let expected_root = hex::decode(&self.base_args.root_digest).map_err(|_| errno!(EINVAL))?;
-
-        if calculated_root != expected_root {
-            starnix_logging::log_warn!("Merkle tree root hash mismatch");
-            return error!(EINVAL);
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-struct VerityTargetOptionalArgs {
-    ignore_zero_blocks: bool,
-    restart_on_corruption: bool,
-}
-
-#[derive(Debug, Clone)]
-struct VerityTargetBaseArgs {
-    version: String,
-    block_device_path: String,
-    hash_device_path: String,
-    data_block_size: u64,
-    hash_block_size: u64,
-    num_data_blocks: u64,
-    hash_start_block: u64,
-    hash_algorithm: String,
-    root_digest: String,
-    salt: String,
 }
 
 // Returns the FileHandle and minor number of the device found at `device path` formatted as
@@ -726,15 +629,15 @@ fn open_device(
 fn size_of_merkle_tree_preceding_leaf_nodes(
     leaf_nodes_size: u64,
     hash_size: u64,
-    base_args: &VerityTargetBaseArgs,
+    hash_block_size: u64,
 ) -> u64 {
     let mut total_size = 0;
     let mut data_size = leaf_nodes_size;
-    while data_size > base_args.hash_block_size {
-        let num_hashes = data_size.div_ceil(base_args.hash_block_size);
-        let hashes_per_block = base_args.hash_block_size.div_ceil(hash_size);
+    while data_size > hash_block_size {
+        let num_hashes = data_size.div_ceil(hash_block_size);
+        let hashes_per_block = hash_block_size.div_ceil(hash_size);
         let hash_blocks = num_hashes.div_ceil(hashes_per_block);
-        data_size = hash_blocks * base_args.hash_block_size;
+        data_size = hash_blocks * hash_block_size;
         total_size += data_size;
     }
     total_size
@@ -751,7 +654,8 @@ fn parse_parameter_string(
     match target_type {
         "verity" => {
             let v: Vec<&str> = parameter_str.split(" ").collect();
-            let mut base_args = VerityTargetBaseArgs {
+            let hash_algorithm = v[7].parse::<HashAlgorithm>().map_err(|_| errno!(ENOTSUP))?;
+            let mut params = DmVerityTargetParams {
                 version: String::from(v[0]),
                 block_device_path: String::from(v[1]),
                 hash_device_path: String::from(v[2]),
@@ -759,11 +663,11 @@ fn parse_parameter_string(
                 hash_block_size: v[4].parse::<u64>().unwrap(),
                 num_data_blocks: v[5].parse::<u64>().unwrap(),
                 hash_start_block: v[6].parse::<u64>().unwrap(),
-                hash_algorithm: String::from(v[7]),
+                hash_algorithm,
                 root_digest: String::from(v[8]),
                 salt: String::from(v[9]),
+                optional_params: DmVerityTargetOptionalParams::default(),
             };
-            let mut optional_args = VerityTargetOptionalArgs { ..Default::default() };
 
             if v.len() > 10 {
                 let num_optional_args = v[10].parse::<u64>().unwrap();
@@ -772,13 +676,13 @@ fn parse_parameter_string(
                 }
                 for i in 0..num_optional_args {
                     if v[11 + i as usize] == "ignore_zero_blocks" {
-                        optional_args.ignore_zero_blocks = true;
+                        params.optional_params.ignore_zero_blocks = true;
                     } else if v[11 + i as usize] == "restart_on_corruption" {
                         track_stub!(
                             TODO("https://fxbug.dev/338243823"),
                             "Support restart on corruption."
                         );
-                        optional_args.restart_on_corruption = true;
+                        params.optional_params.restart_on_corruption = true;
                     } else {
                         return error!(ENOTSUP);
                     }
@@ -786,32 +690,34 @@ fn parse_parameter_string(
             }
 
             let (minor, block_device) =
-                open_device(locked, current_task, base_args.block_device_path)?;
-            base_args.block_device_path = format!("{LOOP_MAJOR}:{minor}");
+                open_device(locked, current_task, params.block_device_path)?;
+            params.block_device_path = format!("{LOOP_MAJOR}:{minor}");
 
-            let (minor, hash_device) = if base_args.hash_device_path == base_args.block_device_path
-            {
+            let (minor, hash_device) = if params.hash_device_path == params.block_device_path {
                 (minor, block_device.clone())
             } else {
-                open_device(locked, current_task, base_args.hash_device_path)?
+                open_device(locked, current_task, params.hash_device_path)?
             };
-            base_args.hash_device_path = format!("{LOOP_MAJOR}:{minor}");
+            params.hash_device_path = format!("{LOOP_MAJOR}:{minor}");
 
-            let hash_size: u64 = match base_args.hash_algorithm.as_str() {
-                SHA256_ALGORITHM => <Sha256 as Hasher>::Digest::DIGEST_LEN as u64,
-                SHA512_ALGORITHM => <Sha512 as Hasher>::Digest::DIGEST_LEN as u64,
-                _ => return error!(ENOTSUP),
+            let hash_size: u64 = match params.hash_algorithm {
+                HashAlgorithm::Sha256 => <Sha256 as Hasher>::Digest::DIGEST_LEN as u64,
+                HashAlgorithm::Sha512 => <Sha512 as Hasher>::Digest::DIGEST_LEN as u64,
             };
 
-            debug_assert!(base_args.hash_block_size > 0);
-            let data_size = base_args.num_data_blocks * base_args.data_block_size;
-            let num_hashes = data_size.div_ceil(base_args.hash_block_size);
-            let hashes_per_block = base_args.hash_block_size.div_ceil(hash_size);
+            debug_assert!(params.hash_block_size > 0);
+            let data_size = params.num_data_blocks * params.data_block_size;
+            let num_hashes = data_size.div_ceil(params.hash_block_size);
+            let hashes_per_block = params.hash_block_size.div_ceil(hash_size);
             let hash_blocks = num_hashes.div_ceil(hashes_per_block);
-            let leaf_nodes_size = hash_blocks * base_args.hash_block_size;
+            let leaf_nodes_size = hash_blocks * params.hash_block_size;
             let mut buffer = VecOutputBuffer::new(leaf_nodes_size as usize);
-            let offset = base_args.hash_start_block * base_args.hash_block_size
-                + size_of_merkle_tree_preceding_leaf_nodes(leaf_nodes_size, hash_size, &base_args);
+            let offset = params.hash_start_block * params.hash_block_size
+                + size_of_merkle_tree_preceding_leaf_nodes(
+                    leaf_nodes_size,
+                    hash_size,
+                    params.hash_block_size,
+                );
             let locked = locked.cast_locked::<FileOpsCore>();
             let bytes_read = hash_device.ops().read(
                 locked,
@@ -822,13 +728,13 @@ fn parse_parameter_string(
             )?;
             debug_assert!(bytes_read == leaf_nodes_size as usize);
 
-            let params = VerityTargetParams::create_and_verify(
-                base_args,
-                optional_args,
+            let leaf_hashes: Vec<u8> = buffer.into();
+            let verity_target = VerityTarget::create_and_verify(
+                params,
                 block_device,
-                buffer.into(),
+                leaf_hashes.into_boxed_slice(),
             )?;
-            Ok(TargetType::Verity(Box::new(params)))
+            Ok(TargetType::Verity(Box::new(verity_target)))
         }
         "error" => Ok(TargetType::Error),
         _ => error!(ENOTSUP),
