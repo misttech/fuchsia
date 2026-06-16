@@ -161,15 +161,18 @@ async fn check_and_report_lockups(
         let vmo = zx::Vmo::create(size).context("Failed to create VMO")?;
         vmo.write(bt.as_bytes(), 0).context("Failed to write backtrace to VMO")?;
 
-        let attachments = vec![ffeedback::Attachment {
-            key: "backtrace.txt".to_string(),
-            value: fmem::Buffer { vmo, size },
-        }];
-
         let report = ffeedback::CrashReport {
             program_name: Some("starnix_kernel".to_string()),
             crash_signature: Some("fuchsia-starnix_kernel-thread-lockup".to_string()),
             is_fatal: Some(false),
+            specific_report: Some(ffeedback::SpecificCrashReport::TextBacktrace(
+                ffeedback::TextBacktraceCrashReport {
+                    fuchsia_backtrace: Some(fmem::Buffer { vmo, size }),
+                    thread_name: registered.thread.get_name().ok().map(|name| name.to_string()),
+                    thread_koid: Some(registered.koid.raw_koid()),
+                    ..Default::default()
+                },
+            )),
             annotations: Some(vec![
                 ffeedback::Annotation {
                     key: "starnix.lockup_thread_koids".to_string(),
@@ -179,12 +182,7 @@ async fn check_and_report_lockups(
                     key: "starnix.lockup_thread_names".to_string(),
                     value: names_str.clone(),
                 },
-                ffeedback::Annotation {
-                    key: "starnix.lockup_target_thread_koid".to_string(),
-                    value: registered.koid.raw_koid().to_string(),
-                },
             ]),
-            attachments: Some(attachments),
             event_id: Some(event_id_str.clone()),
             ..Default::default()
         };
