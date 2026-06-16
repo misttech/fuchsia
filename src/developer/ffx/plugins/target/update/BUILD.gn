@@ -19,6 +19,7 @@ ffx_plugin("ffx_update") {
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust_fdomain",
     "//sdk/rust/zx-status",
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/pkg:pkg_fdomain",
     "//src/developer/ffx/lib/ssh:lib",
@@ -45,6 +46,7 @@ ffx_plugin("ffx_update") {
     "//third_party/rust_crates:http",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:termion",
+    "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [

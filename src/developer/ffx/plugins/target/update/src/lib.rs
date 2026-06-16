@@ -5,10 +5,11 @@
 //! A tool to update the target device.
 
 use async_trait::async_trait;
+use errors;
 use fdomain_client::AsHandleRef;
-use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy as _};
+use fdomain_client::fidl::Proxy as _;
 use fdomain_fuchsia_update::{
-    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerMarker, ManagerProxy, MonitorMarker,
+    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerProxy, MonitorMarker,
     MonitorRequest, MonitorRequestStream,
 };
 use fdomain_fuchsia_update_channel as fupdate_channel;
@@ -18,7 +19,7 @@ use ffx_config::EnvironmentContext;
 use ffx_update_args as args;
 use ffx_update_args::ForceInstall;
 use ffx_writer::SimpleWriter;
-use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result, bug, deferred, return_user_error};
+use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
 use fidl::Signals;
 use fidl_fuchsia_update_ext::State;
 use fidl_fuchsia_update_installer_ext as installer;
@@ -37,7 +38,102 @@ mod server;
 
 const WARNING_DURATION: Duration = Duration::from_secs(30);
 
+use fho::FfxError;
+use thiserror::Error;
+
+#[derive(FfxError, Error, Debug)]
+pub enum UpdateError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[exit_with_code(1)]
+    #[error("FDomain client error: {0}")]
+    FidlFDomain(#[from] fdomain_client::Error),
+
+    #[exit_with_code(1)]
+    #[error("Cannot specify a product bundle without the the `--product-bundle option.")]
+    ProductBundleWithoutOption,
+
+    #[exit_with_code(1)]
+    #[error("Package server exited successfully, but prematurely")]
+    PackageServerExitedPrematurely,
+
+    #[exit_with_code(1)]
+    #[error("Package server failed to run: {0}")]
+    PackageServerRunFailed(#[source] fho::Error),
+
+    #[exit_with_code(1)]
+    #[error("Failed to resolve product bundle port: {0}")]
+    ProductBundlePortResolution(#[source] anyhow::Error),
+
+    #[exit_with_code(1)]
+    #[error("Not started error on check-now: {0:?}")]
+    CheckNowNotStarted(fdomain_fuchsia_update::CheckNotStartedReason),
+
+    #[exit_with_code(1)]
+    #[error("No package servers are running, could not determine the packageless update url")]
+    NoPackageServerRunning,
+
+    #[exit_with_code(1)]
+    #[error("Tunnel required, cannot use existing package server, try --product-bundle")]
+    TunnelRequired,
+
+    #[exit_with_code(1)]
+    #[error(
+        "Multiple package servers are running, could not determine the packageless update url, please specify\n{0:#?}"
+    )]
+    MultiplePackageServersRunning(Vec<pkg::PkgServerInfo>),
+
+    #[exit_with_code(1)]
+    #[error(
+        "No product bundle path specified nor configured. Run `ffx product-bundle get` or specify one with the appropriate flag."
+    )]
+    NoProductBundlePath,
+
+    #[exit_with_code(1)]
+    #[error("Install failed prepare: {0:?}")]
+    InstallFailedPrepare(installer::PrepareFailureReason),
+
+    #[exit_with_code(1)]
+    #[error("Install failed stage: {0:?}")]
+    InstallFailedStage(installer::StageFailureReason),
+
+    #[exit_with_code(1)]
+    #[error("Install failed fetch: {0:?}")]
+    InstallFailedFetch(installer::FetchFailureReason),
+
+    #[exit_with_code(1)]
+    #[error("Install failed: canceled")]
+    InstallCanceled,
+
+    #[exit_with_code(1)]
+    #[error("Internal error encountered during installation at {0:?} percent.")]
+    InternalInstallation(Option<f32>),
+
+    #[exit_with_code(1)]
+    #[error("Update Manager encountered an error while checking for an update.")]
+    UpdateCheckingFailed,
+
+    #[transparent]
+    #[error(transparent)]
+    Fho(#[from] fho::Error),
+}
+
 #[derive(FfxTool)]
+#[main_error(UpdateError)]
 pub struct UpdateTool {
     #[command]
     cmd: args::Update,
@@ -57,16 +153,15 @@ pub struct UpdateTool {
     host_address: Deferred<HostAddrHolder>,
 }
 
-fho::embedded_plugin!(UpdateTool);
+fho::embedded_plugin!(UpdateTool, UpdateError);
 
 #[async_trait(?Send)]
 impl FfxMain for UpdateTool {
     type Writer = SimpleWriter;
-
-    type Error = ::fho::Error;
+    type Error = UpdateError;
 
     /// Main entry point for the `update` subcommand.
-    async fn main(self, mut writer: SimpleWriter) -> Result<()> {
+    async fn main(self, mut writer: SimpleWriter) -> Result<(), Self::Error> {
         let update = self.cmd.clone();
 
         match update.cmd {
@@ -105,11 +200,15 @@ impl UpdateTool {
         self,
         cmd: &args::CheckNow,
         writer: &mut W,
-    ) -> Result<()> {
+    ) -> Result<(), UpdateError> {
         let package_server_task = if cmd.product_bundle {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-            let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
+            let repo_port: u16 = cmd
+                .product_bundle_port(&self.context)
+                .map_err(UpdateError::ProductBundlePortResolution)?
+                .try_into()
+                .unwrap();
             Some(
                 Box::pin(server::package_server_task(
                     self.target_spec,
@@ -122,9 +221,7 @@ impl UpdateTool {
                 .await?,
             )
         } else if cmd.product_bundle_path.is_some() {
-            return_user_error!(
-                "Cannot specify a product bundle without the the `--product-bundle option."
-            );
+            return Err(UpdateError::ProductBundleWithoutOption);
         } else {
             None
         };
@@ -154,8 +251,8 @@ impl UpdateTool {
                 server_task_result = fused_server_task =>  {
                     // The server should start and run indefiniitely, if we get here there is a problem.
                     match server_task_result {
-                        Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
-                        Err(e) => return_user_error!("Package server failed to run: {e}")
+                        Ok(_) => return Err(UpdateError::PackageServerExitedPrematurely),
+                        Err(e) => return Err(UpdateError::PackageServerRunFailed(e))
                     }
                 }
                 update_task_result =  check_task => {
@@ -173,7 +270,7 @@ impl UpdateTool {
         update_manager_proxy: ManagerProxy,
         cmd: &args::CheckNow,
         writer: &mut W,
-    ) -> Result<()> {
+    ) -> Result<(), UpdateError> {
         let do_monitor = cmd.monitor || cmd.product_bundle;
         let options = CheckOptions {
             initiator: Some(if cmd.service_initiated {
@@ -199,12 +296,12 @@ impl UpdateTool {
         match update_manager_proxy.check_now(&options, monitor_client).await {
             Ok(ok_result) => {
                 if let Err(e) = ok_result {
-                    return_user_error!("Not started error on check-now: {e:?}")
+                    return Err(UpdateError::CheckNowNotStarted(e));
                 }
             }
-            Err(e) => return_user_error!("Error on check-now: {e:?}"),
+            Err(e) => return Err(UpdateError::Fidl(e)),
         };
-        writeln!(writer, "Checking for an update.").bug()?;
+        writeln!(writer, "Checking for an update.")?;
         if let Some(monitor_server) = monitor_server {
             monitor_state(monitor_server, writer).await?;
         }
@@ -217,13 +314,17 @@ impl UpdateTool {
         self,
         cmd: &ForceInstall,
         writer: &mut W,
-    ) -> Result<()> {
+    ) -> Result<(), UpdateError> {
         let (mut package_server_task, host_address) =
             if cmd.product_bundle || cmd.product_bundle_path.is_some() {
                 let product_path =
                     Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
 
-                let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
+                let repo_port: u16 = cmd
+                    .product_bundle_port(&self.context)
+                    .map_err(UpdateError::ProductBundlePortResolution)?
+                    .try_into()
+                    .unwrap();
                 (
                     Some(
                         Box::pin(server::package_server_task(
@@ -245,7 +346,7 @@ impl UpdateTool {
         let installer_proxy = self.installer_proxy.await?;
 
         let update_url = if let Some(url) = &cmd.update_url {
-            url.parse().bug_context("parsing update url")?
+            url.parse::<http::Uri>().map_err(|e| UpdateError::Fho(bug!(e)))?
         } else if cmd.packageless {
             if let Some(server_task) = &mut package_server_task {
                 // Need to get the repo host address from the package server task, because it might
@@ -253,8 +354,10 @@ impl UpdateTool {
                 let mut repo_host =
                     timeout::timeout(Duration::from_secs(30), server_task.repo_host_rx.next())
                         .await
-                        .bug_context("Timeout waiting for the repo host address")?
-                        .bug_context("Failed to get the repo host address")?;
+                        .map_err(|e| UpdateError::Fho(bug!(e)))?
+                        .ok_or_else(|| {
+                            UpdateError::Fho(bug!("Failed to get the repo host address"))
+                        })?;
                 // If package_server_task enters connection loop, we want to get the latest address.
                 while let Ok(Some(host)) = server_task.repo_host_rx.try_next() {
                     repo_host = host;
@@ -275,16 +378,15 @@ impl UpdateTool {
                     "http://{}/{}.{}/ota_manifest",
                     repo_host, server_task.repo_name, first_alias
                 );
-                url.parse().with_bug_context(|| format!("parsing update url: {url}"))?
+                url.parse::<http::Uri>().map_err(|e| UpdateError::Fho(bug!(e)))?
             } else {
-                let instance_root = self.context.get("repository.process_dir").bug()?;
+                let instance_root =
+                    self.context.get("repository.process_dir").map_err(UpdateError::Config)?;
                 let mgr = pkg::PkgServerInstances::new(instance_root);
-                let mut instances = mgr.list_instances().bug()?;
+                let mut instances = mgr.list_instances().map_err(|e| UpdateError::Fho(bug!(e)))?;
                 instances.retain(|i| i.is_running());
                 match instances.as_slice() {
-                    [] => return_user_error!(
-                        "No package servers are running, could not determine the packageless update url"
-                    ),
+                    [] => return Err(UpdateError::NoPackageServerRunning),
                     [instance] => {
                         let host_address: Option<ffx_ssh::parse::HostAddr> =
                             host_address.unwrap().await?.into();
@@ -292,30 +394,25 @@ impl UpdateTool {
                             instance.address,
                             host_address.map(|t| t.0),
                         )
-                        .bug()?
+                        .map_err(|e| UpdateError::Fho(bug!(e)))?
                         {
                             pkg::repo::RepoHostAddr::Direct(repo_host) => {
                                 let url =
                                     format!("http://{}/{}/ota_manifest", repo_host, instance.name);
-                                url.parse()
-                                    .with_bug_context(|| format!("parsing update url: {url}"))?
+                                url.parse::<http::Uri>().map_err(|e| UpdateError::Fho(bug!(e)))?
                             }
                             pkg::repo::RepoHostAddr::Tunnel => {
-                                return_user_error!(
-                                    "Tunnel required, cannot use existing package server, try --product-bundle"
-                                );
+                                return Err(UpdateError::TunnelRequired);
                             }
                         }
                     }
-                    _ => return_user_error!(
-                        "Multiple package servers are running, could not determine the packageless update url, please specify\n{instances:#?}"
-                    ),
+                    _ => return Err(UpdateError::MultiplePackageServersRunning(instances)),
                 }
             }
         } else {
             http::Uri::from_static("fuchsia-pkg://fuchsia.com/update")
         };
-        writeln!(writer, "Using update url: {update_url}").bug()?;
+        writeln!(writer, "Using update url: {update_url}")?;
 
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
@@ -345,8 +442,8 @@ impl UpdateTool {
                 server_task_result = fused_server_task =>  {
                     // The server should start and run indefiniitely, if we get here there is a problem.
                     match server_task_result {
-                        Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
-                        Err(e) => return_user_error!("Package server failed to run: {e}")
+                        Ok(_) => return Err(UpdateError::PackageServerExitedPrematurely),
+                        Err(e) => return Err(UpdateError::PackageServerRunFailed(e))
                     }
                 }
                 update_task_result =  install_task => {
@@ -366,7 +463,7 @@ impl UpdateTool {
         reboot: bool,
         installer_proxy: InstallerProxy,
         writer: &mut W,
-    ) -> Result<()> {
+    ) -> Result<(), UpdateError> {
         let options = installer::Options {
             initiator: installer::Initiator::User,
             should_write_recovery: true,
@@ -385,9 +482,9 @@ impl UpdateTool {
             Some(reboot_controller_server_end),
         )
         .await
-        .bug_context("starting update")?;
+        .map_err(|e| UpdateError::Fho(bug!(e)))?;
 
-        writeln!(writer, "Installing an update.").bug()?;
+        writeln!(writer, "Installing an update.")?;
         if update_url.scheme_str() == Some("fuchsia-pkg") {
             writeln!(
                 writer,
@@ -396,14 +493,15 @@ larger than the others, then the reported progress could appear to stall near th
 Until the update process is improved to have more granular reporting, try using
     ffx inspect show 'core/pkg-resolver'
 for more detail on the progress of update-related downloads.\n"
-            )
-            .bug()?;
+            )?;
         }
         if !reboot {
-            reboot_controller.detach().bug_context("notify installer do not reboot")?;
+            reboot_controller.detach().map_err(|e| UpdateError::Fho(bug!(e)))?;
         }
         write_progress("\nStarting install", writer)?;
-        while let Some(state) = update_attempt.try_next().await.bug_context("getting next state")? {
+        while let Some(state) =
+            update_attempt.try_next().await.map_err(|e| UpdateError::Fho(bug!(e)))?
+        {
             match state {
                 fidl_fuchsia_update_installer_ext::State::WaitToReboot(info) => {
                     // if waiting for reboot, wait for a while to get a head start, hopefully returning after
@@ -415,7 +513,7 @@ for more detail on the progress of update-related downloads.\n"
                         ),
                         writer,
                     )?;
-                    write!(writer, "\n").bug()?;
+                    write!(writer, "\n")?;
                     if reboot {
                         return Ok(());
                     }
@@ -431,20 +529,36 @@ for more detail on the progress of update-related downloads.\n"
                 }
 
                 fidl_fuchsia_update_installer_ext::State::FailPrepare(reason) => {
-                    write!(writer, "\n").bug()?;
-                    return_user_error!("Install failed: {reason:?}")
+                    write!(
+                        writer,
+                        "
+"
+                    )?;
+                    return Err(UpdateError::InstallFailedPrepare(reason));
                 }
                 fidl_fuchsia_update_installer_ext::State::FailStage(data) => {
-                    write!(writer, "\n").bug()?;
-                    return_user_error!("Install failed: {:?}", data.reason())
+                    write!(
+                        writer,
+                        "
+"
+                    )?;
+                    return Err(UpdateError::InstallFailedStage(data.reason()));
                 }
                 fidl_fuchsia_update_installer_ext::State::FailFetch(data) => {
-                    write!(writer, "\n").bug()?;
-                    return_user_error!("Install failed: {:?}", data.reason())
+                    write!(
+                        writer,
+                        "
+"
+                    )?;
+                    return Err(UpdateError::InstallFailedFetch(data.reason()));
                 }
                 fidl_fuchsia_update_installer_ext::State::Canceled => {
-                    write!(writer, "\n").bug()?;
-                    return_user_error!("Install failed: canceled")
+                    write!(
+                        writer,
+                        "
+"
+                    )?;
+                    return Err(UpdateError::InstallCanceled);
                 }
 
                 fidl_fuchsia_update_installer_ext::State::Prepare => {
@@ -475,18 +589,17 @@ for more detail on the progress of update-related downloads.\n"
     fn get_product_bundle_path(
         product_bundle_path: &Option<PathBuf>,
         context: &EnvironmentContext,
-    ) -> Result<PathBuf> {
+    ) -> Result<PathBuf, UpdateError> {
         let pb_path = match product_bundle_path {
             Some(product_path) => product_path.clone(),
             None => {
-                if let Some(product_path) =
-                    context.get::<Option<PathBuf>, _>("product.path").bug()?
+                if let Some(product_path) = context
+                    .get::<Option<PathBuf>, _>("product.path")
+                    .map_err(UpdateError::Config)?
                 {
                     product_path
                 } else {
-                    return_user_error!(
-                        "No product bundle path specified nor configured. Run `ffx product-bundle get` or specify one with the appropriate flag."
-                    )
+                    return Err(UpdateError::NoProductBundlePath);
                 }
             }
         };
@@ -494,16 +607,16 @@ for more detail on the progress of update-related downloads.\n"
     }
 }
 
-fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<()> {
+fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<(), UpdateError> {
     // Use escape sequences to make this line overwrite the current terminal line.
     // \r: send cursor to start of line
     // \x1b[K: clear to end of line
     if termion::is_tty(&std::io::stdout()) {
-        write!(writer, "\r{s}\x1b[K").bug()?;
+        write!(writer, "\r{s}\x1b[K").map_err(UpdateError::Io)?;
     } else {
-        writeln!(writer, "{s}").bug()?;
+        writeln!(writer, "{s}").map_err(UpdateError::Io)?;
     }
-    writer.flush().bug()
+    writer.flush().map_err(UpdateError::Io)
 }
 
 /// Handle subcommands for `update channel`.
@@ -512,28 +625,27 @@ async fn handle_channel_control_cmd<W: std::io::Write>(
     channel_provider: fupdate_channel::ProviderProxy,
     channel_control: fdomain_fuchsia_update_channelcontrol::ChannelControlProxy,
     writer: &mut W,
-) -> Result<()> {
+) -> Result<(), UpdateError> {
     match cmd {
         args::channel::Command::Get(_) => {
-            let channel = channel_provider.get_current().await.map_err(|e: fidl::Error| bug!(e))?;
-            writeln!(writer, "current channel: {}", channel).bug()?;
+            let channel = channel_provider.get_current().await?;
+            writeln!(writer, "current channel: {}", channel)?;
         }
         args::channel::Command::Target(_) => {
-            let channel = channel_control.get_target().await.map_err(|e: fidl::Error| bug!(e))?;
-            writeln!(writer, "target channel: {}", channel).bug()?;
+            let channel = channel_control.get_target().await?;
+            writeln!(writer, "target channel: {}", channel)?;
         }
         args::channel::Command::Set(args::channel::Set { channel }) => {
-            channel_control.set_target(&channel).await.map_err(|e: fidl::Error| bug!(e))?;
+            channel_control.set_target(&channel).await?;
         }
         args::channel::Command::List(_) => {
-            let channels =
-                channel_control.get_target_list().await.map_err(|e: fidl::Error| bug!(e))?;
+            let channels = channel_control.get_target_list().await?;
             if channels.is_empty() {
-                writeln!(writer, "known channels list is empty.").bug()?;
+                writeln!(writer, "known channels list is empty.")?;
             } else {
-                writeln!(writer, "known channels:").bug()?;
+                writeln!(writer, "known channels:")?;
                 for channel in channels {
-                    writeln!(writer, "{}", channel).bug()?;
+                    writeln!(writer, "{}", channel)?;
                 }
             }
         }
@@ -545,15 +657,13 @@ async fn handle_channel_control_cmd<W: std::io::Write>(
 async fn monitor_state<W: std::io::Write>(
     mut stream: MonitorRequestStream,
     writer: &mut W,
-) -> Result<()> {
-    while let Some(event) = stream.try_next().await.bug()? {
+) -> Result<(), UpdateError> {
+    while let Some(event) = stream.try_next().await.map_err(|e| UpdateError::Fho(bug!(e)))? {
         match event {
             MonitorRequest::OnState { state, responder } => {
-                responder.send().bug()?;
+                responder.send().map_err(|e| UpdateError::Fho(bug!(e)))?;
 
                 let state = State::from(state);
-                // If this gets set to `Some(_)` then we must exit with a user error.
-                let mut critical_error: Option<String> = None;
                 match state.clone() {
                     State::CheckingForUpdates => write_progress("Checking for updates", writer)?,
                     State::NoUpdateAvailable => write_progress("No update available", writer)?,
@@ -584,25 +694,17 @@ async fn monitor_state<W: std::io::Write>(
                         Timer::new(Duration::from_secs(15)).await;
                     }
                     State::InstallationError(installing_data) => {
-                        let pct = if let Some(progress) = installing_data.installation_progress {
-                            format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
-                        } else {
-                            "".into()
-                        };
-                        critical_error.replace(format!("Internal error encountered at {pct}."));
+                        let pct = installing_data
+                            .installation_progress
+                            .and_then(|p| p.fraction_completed);
+                        return Err(UpdateError::InternalInstallation(pct));
                     }
                     State::ErrorCheckingForUpdate => {
-                        critical_error.replace(format!(
-                            "{} encountered an error while checking for an update.",
-                            ManagerMarker::PROTOCOL_NAME
-                        ));
+                        return Err(UpdateError::UpdateCheckingFailed);
                     }
                 };
-                if let Some(e) = critical_error {
-                    return_user_error!("Update failed: {}", e)
-                }
                 if state.is_terminal() {
-                    writeln!(writer, "\n").bug()?;
+                    writeln!(writer, "\n")?;
                     return Ok(());
                 }
             }
@@ -645,12 +747,11 @@ impl<W: std::io::Write> CommitObserver for Printer<W> {
 }
 
 /// Waits for the system to commit (e.g. when the EventPair observes a signal).
-async fn wait_for_commit(proxy: &CommitStatusProviderProxy) -> Result<()> {
-    let p = proxy.is_current_system_committed().await.bug_context("while obtaining EventPair")?;
+async fn wait_for_commit(proxy: &CommitStatusProviderProxy) -> Result<(), UpdateError> {
+    let p = proxy.is_current_system_committed().await.map_err(|e| UpdateError::Fho(bug!(e)))?;
     fdomain_client::OnFDomainSignals::new(&p.as_handle_ref(), Signals::USER_0)
         .await
-        .map_err(|e: fdomain_client::Error| bug!(e))
-        .bug_context("while waiting for the commit")?;
+        .map_err(UpdateError::FidlFDomain)?;
     Ok(())
 }
 
@@ -663,8 +764,8 @@ async fn handle_wait_for_commit(
     proxy: &CommitStatusProviderProxy,
     observer: &mut impl CommitObserver,
     warning_duration: Duration,
-) -> Result<()> {
-    observer.on_event(CommitEvent::Begin).bug_context("while handling a begin event")?;
+) -> Result<(), UpdateError> {
+    observer.on_event(CommitEvent::Begin).map_err(UpdateError::Io)?;
 
     let commit_fut = wait_for_commit(proxy).fuse();
     futures::pin_mut!(commit_fut);
@@ -673,15 +774,15 @@ async fn handle_wait_for_commit(
     // Send a warning after the WARNING_DURATION.
     let () = futures::select! {
         commit_res = commit_fut => commit_res?,
-        _ = timer_fut => observer.on_event(CommitEvent::Warning).bug_context("while handling a warning event")?,
+        _ = timer_fut => observer.on_event(CommitEvent::Warning).map_err(UpdateError::Io)?,
     };
 
     // If we timed out on WARNING_DURATION, try again.
     if !commit_fut.is_terminated() {
-        let () = commit_fut.await.bug_context("while calling wait_for_commit second")?;
+        let () = commit_fut.await?;
     }
 
-    let () = observer.on_event(CommitEvent::End).bug_context("while handling a end event")?;
+    let () = observer.on_event(CommitEvent::End).map_err(UpdateError::Io)?;
     Ok(())
 }
 
@@ -1304,5 +1405,124 @@ mod tests {
             observer.take_events(),
             &[CommitEvent::Begin, CommitEvent::Warning, CommitEvent::End]
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_force_install_fail_prepare() {
+        let client = fdomain_local::local_client_empty();
+        let test_env = ffx_config::test_init().expect("test env");
+        let mock_installer = Arc::new(MockUpdateInstallerService::with_states(vec![
+            installer::State::Prepare,
+            installer::State::FailPrepare(installer::PrepareFailureReason::Internal),
+        ]));
+        let fake_installer_proxy = mock_installer.spawn_installer_service(Arc::clone(&client));
+
+        let args = ForceInstall {
+            reboot: true,
+            update_url: Some("fuchsia-pkg://fuchsia.test/update".into()),
+            product_bundle: false,
+            product_bundle_port: None,
+            product_bundle_path: None,
+            packageless: false,
+        };
+
+        let fake_update_manager_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_control_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_commit_status_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
+
+        let tool = UpdateTool {
+            cmd: Update { cmd: args::Command::ForceInstall(args) },
+            context: test_env.context.clone(),
+            update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
+            channel_control_proxy: fake_channel_control_proxy,
+            installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
+            commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            target_spec: fake_env.target_spec,
+            rcs_proxy_connector: fake_env.rcs_proxy_connector,
+            host_address: fake_env.host_address,
+        };
+
+        let buffers = TestBuffers::default();
+        let writer = SimpleWriter::new_test(&buffers);
+        let result = tool.main(writer).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            UpdateError::InstallFailedPrepare(installer::PrepareFailureReason::Internal)
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_check_now_monitor_error() {
+        use fdomain_fuchsia_update::ManagerRequest;
+        let client = fdomain_local::local_client_empty();
+        let test_env = ffx_config::test_init().expect("test env");
+
+        let fake_installer_proxy =
+            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            })));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_control_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_commit_status_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+
+        let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
+            match req {
+                ManagerRequest::CheckNow { monitor, responder, .. } => {
+                    let monitor_client = monitor.unwrap();
+                    let monitor_proxy = monitor_client.into_proxy();
+                    fuchsia_async::Task::local(async move {
+                        let state = fdomain_fuchsia_update::State::ErrorCheckingForUpdate(
+                            fdomain_fuchsia_update::ErrorCheckingForUpdateData::default(),
+                        );
+                        monitor_proxy.on_state(&state).await.unwrap();
+                    })
+                    .detach();
+                    responder.send(Ok(())).expect("send ok")
+                }
+                _ => panic!("Unexpected request: {:?}", req),
+            };
+        });
+
+        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
+
+        let tool = UpdateTool {
+            cmd: Update {
+                cmd: args::Command::CheckNow(args::CheckNow {
+                    service_initiated: false,
+                    monitor: true,
+                    product_bundle: false,
+                    product_bundle_path: None,
+                    product_bundle_port: None,
+                }),
+            },
+            context: test_env.context.clone(),
+            update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
+            channel_control_proxy: fake_channel_control_proxy,
+            installer_proxy: fake_installer_proxy,
+            commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            target_spec: fake_env.target_spec,
+            rcs_proxy_connector: fake_env.rcs_proxy_connector,
+            host_address: fake_env.host_address,
+        };
+        let buffers = TestBuffers::default();
+        let writer = SimpleWriter::new_test(&buffers);
+
+        let result = tool.main(writer).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), UpdateError::UpdateCheckingFailed));
     }
 }
