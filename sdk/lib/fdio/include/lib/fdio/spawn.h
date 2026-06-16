@@ -78,8 +78,6 @@ __BEGIN_CDECLS
 // The program for the process is loaded from the given `path` and passed `argv`. The aspects of
 // this process' environment indicated by `flags` are shared with the process. If the target program
 // begins with `#!resolve ` then the binary is resolved by url via `fuchsia.process.Resolver`.
-// If the target program begins with a standard shebang (`#!`), the specified interpreter is used
-// and receives the resolved `path` as an argument.
 //
 // The `argv` array must be terminated with a null pointer.
 //
@@ -234,10 +232,7 @@ struct fdio_spawn_action {
 // Spawn a process in the given job.
 //
 // The binary for the process is loaded from the given `path` and passed `argv`. The aspects of this
-// process' environment indicated by `flags` are shared with the process. If the target program
-// begins with `#!resolve ` then the binary is resolved by url via `fuchsia.process.Resolver`.
-// If the target program begins with a standard shebang (`#!`), the specified interpreter is used
-// and receives the resolved `path` as an argument.
+// process' environment indicated by `clone` are shared with the process.
 //
 // The spawned process is also given `environ` as its environment and the given `actions` are
 // applied when creating the process.

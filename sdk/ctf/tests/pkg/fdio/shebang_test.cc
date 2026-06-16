@@ -70,17 +70,6 @@ TEST_F(ShebangTest, SpawnShellScriptPath) {
   RunTest(path, argv, expected);
 }
 
-// Spawning a shell script with a relative argv[0] should still pass the resolved (absolute) path
-// of the script to the interpreter.
-TEST_F(ShebangTest, SpawnShellScriptRelativeArgv0) {
-  const char* path = kShebangEchoArgumentsBin;
-  const char* argv[] = {"shebang_echo_arguments", "original_arg1", "original_arg2", nullptr};
-  const char* expected =
-      "/pkg/bin/echo_arguments_bin\n/pkg/bin/shebang_echo_arguments\n"
-      "original_arg1\noriginal_arg2\n";
-  RunTest(path, argv, expected);
-}
-
 // Multiple #! directives should be resolved
 TEST_F(ShebangTest, SpawnScriptThatUsesOtherScript) {
   const char* path = kUseScriptAsInterpreterBin;

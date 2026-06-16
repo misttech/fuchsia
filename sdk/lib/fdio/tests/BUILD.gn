@@ -15,11 +15,9 @@ fuchsia_unittest_component("fdio-zxtest-component") {
   deps = [
     ":accept-child",
     ":chroot-child",
-    ":echo-args",
     ":fdio-test",
     ":hello-world",
     ":null-namespace-child",
-    ":shebang-test-script",
   ]
 }
 
@@ -102,7 +100,6 @@ test("fdio-test") {
       "fdio_root.cc",
       "fdio_socket.cc",
       "fdio_socket_cleanup.cc",
-      "fdio_spawn.cc",
       "fdio_startup.cc",
       "fdio_stubs.cc",
       "fdio_unsafe.cc",
@@ -209,17 +206,4 @@ executable("null-namespace-child") {
     "//sdk/lib/fit",
     "//src/zircon/lib/zircon",
   ]
-}
-
-executable("echo-args") {
-  visibility = [ ":*" ]
-  testonly = true
-  sources = [ "echo_args.cc" ]
-}
-
-resource("shebang-test-script") {
-  testonly = true
-  sources = [ "test_bins/shebang_test_script" ]
-  outputs = [ "bin/shebang_test_script" ]
-  allow_binary_output_dir = true
 }
