@@ -16,6 +16,7 @@ use core::time::Duration;
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_hashmap::HashMap;
+use netstack3_hashmap::hash_map::Entry;
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 
 use crate::context::FilterBindingsTypes;
@@ -383,12 +384,50 @@ where
                     Ok(Some((Connection::Exclusive(conn), direction)))
                 }
                 Connection::Shared(conn) => {
-                    // RACE: It's possible that GC already removed the
+                    // RACE #1: It's possible that GC already removed the
                     // connection from the table, since we released the table
                     // lock while updating the connection.
+                    //
+                    // RACE #2: It's possible that another connection with the
+                    // same tuple as either the original or reply has been
+                    // inserted. We use Arc::ptr_eq to ensure that the entry
+                    // we're removing is actually ours.
                     let mut guard = self.inner.lock();
-                    let _ = guard.table.remove(&conn.inner.original_tuple);
-                    let _ = guard.table.remove(&conn.inner.reply_tuple);
+
+                    let (original_tuple, reply_tuple) =
+                        (&conn.inner.original_tuple, &conn.inner.reply_tuple);
+
+                    // Tries to remove a tuple from the map and returns whether
+                    // that happened.
+                    let mut remove_tuple = |tuple| {
+                        match guard.table.entry(tuple) {
+                            Entry::Occupied(occupied) => {
+                                // See "RACE #2" above.
+                                if Arc::ptr_eq(occupied.get(), &conn) {
+                                    let _ = occupied.remove();
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            Entry::Vacant(_) => false,
+                        }
+                    };
+
+                    let original_removed = remove_tuple(original_tuple.clone());
+                    if reply_tuple != original_tuple {
+                        let reply_removed = remove_tuple(reply_tuple.clone());
+
+                        // For non-self-connected sockets (tuples aren't equal
+                        // we maintain the invariant that either both tuples are
+                        // present or neither is. There should be no case where
+                        // we remove a single half of the connection.
+                        assert_eq!(
+                            original_removed, reply_removed,
+                            "Only one tuple removed: {:?}={} {:?}={}",
+                            original_tuple, original_removed, reply_tuple, reply_removed,
+                        );
+                    }
 
                     Ok(Some((Connection::Shared(conn), direction)))
                 }
