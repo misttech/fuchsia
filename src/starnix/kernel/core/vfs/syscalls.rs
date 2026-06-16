@@ -24,7 +24,9 @@ use crate::vfs::{
     new_zombie_pidfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    EventHandlerReadyQueueLock, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timespec, time_from_timespec, timespec_from_duration,
@@ -2622,7 +2624,7 @@ pub fn sys_epoll_pwait2(
 
 struct FileWaiter<Key: Into<ReadyItemKey>> {
     waiter: Waiter,
-    ready_items: Arc<Mutex<VecDeque<ReadyItem>>>,
+    ready_items: Arc<LockDepMutex<VecDeque<ReadyItem>, EventHandlerReadyQueueLock>>,
     _marker: PhantomData<Key>,
 }
 

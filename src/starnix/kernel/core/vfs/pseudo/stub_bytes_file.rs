@@ -7,7 +7,7 @@ use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use crate::vfs::{FileObject, FsNodeOps};
 use bstr::ByteSlice;
 use starnix_logging::BugRef;
-use starnix_sync::{FileOpsCore, Locked, Mutex};
+use starnix_sync::{FileOpsCore, LockDepMutex, Locked, StubBytesFileStateLock};
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
 use std::panic::Location;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct StubBytesFile {
-    data: Arc<Mutex<Vec<u8>>>,
+    data: Arc<LockDepMutex<Vec<u8>, StubBytesFileStateLock>>,
     bug: BugRef,
     location: &'static Location<'static>,
 }
@@ -30,7 +30,7 @@ impl StubBytesFile {
     pub fn new_node_with_data(bug: BugRef, initial_data: impl Into<Vec<u8>>) -> impl FsNodeOps {
         let location = Location::caller();
         let file = BytesFile::new(StubBytesFile {
-            data: Arc::new(Mutex::new(initial_data.into())),
+            data: Arc::new(LockDepMutex::new(initial_data.into())),
             bug,
             location,
         });

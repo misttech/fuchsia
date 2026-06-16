@@ -8,7 +8,7 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, SignalFdMaskLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SigSet;
@@ -17,7 +17,7 @@ use starnix_uapi::{SFD_NONBLOCK, errno, error, signalfd_siginfo};
 use zerocopy::IntoBytes;
 
 pub struct SignalFd {
-    mask: Mutex<SigSet>,
+    mask: LockDepMutex<SigSet, SignalFdMaskLock>,
 }
 
 impl SignalFd {
@@ -37,7 +37,7 @@ impl SignalFd {
         Anon::new_private_file(
             locked,
             current_task,
-            Box::new(SignalFd { mask: Mutex::new(mask) }),
+            Box::new(SignalFd { mask: LockDepMutex::new(mask) }),
             open_flags,
             "[signalfd]",
         )

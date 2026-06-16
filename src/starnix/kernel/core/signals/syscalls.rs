@@ -1134,7 +1134,7 @@ mod tests {
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
-    use starnix_sync::Mutex;
+    use starnix_sync::{EventHandlerReadyQueueLock, LockDepMutex};
     use starnix_types::math::round_up_to_system_page_size;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::ERESTARTSYS;
@@ -2564,7 +2564,8 @@ mod tests {
 
             // Set up the async wait.
             let waiter = Waiter::new();
-            let ready_items = Arc::new(Mutex::new(VecDeque::new()));
+            let ready_items =
+                Arc::new(LockDepMutex::<_, EventHandlerReadyQueueLock>::new(VecDeque::new()));
 
             let sfd_term_int_file = current_task
                 .running_state()

@@ -25,7 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
 use starnix_sync::{
-    LockBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TerminalLock,
+    FutexTableStateLock, LockBefore, LockDepGuard, LockDepMutex, Locked, RwLock, RwLockReadGuard,
+    RwLockWriteGuard, TaskCommandLevel,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -741,7 +742,7 @@ pub struct TaskPersistentInfoState {
     thread_group_key: ThreadGroupKey,
 
     /// The command of this task.
-    command: Mutex<TaskCommand>,
+    command: LockDepMutex<TaskCommand, TaskCommandLevel>,
 
     /// The security credentials for this task. These are only set when the task is the CurrentTask,
     /// or on task creation.
@@ -789,7 +790,7 @@ impl TaskPersistentInfoState {
         Arc::new(Self {
             tid,
             thread_group_key,
-            command: Mutex::new(command),
+            command: LockDepMutex::new(command),
             creds: RcuArc::new(creds),
             creds_lock: RwLock::new(()),
         })
@@ -803,7 +804,7 @@ impl TaskPersistentInfoState {
         self.thread_group_key.pid()
     }
 
-    pub fn command_guard(&self) -> MutexGuard<'_, TaskCommand> {
+    pub fn command_guard(&self) -> LockDepGuard<'_, TaskCommand> {
         self.command.lock()
     }
 
@@ -1288,7 +1289,7 @@ impl Task {
     /// them up here to let them know the thread is done.
     pub fn clear_child_tid_if_needed<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<TaskCommandLevel> + LockBefore<FutexTableStateLock>,
     {
         let mut state = self.write();
         let user_tid = state.clear_child_tid;
@@ -1600,7 +1601,7 @@ impl fmt::Debug for Task {
             "{}:{}[{}]",
             self.thread_group().leader,
             self.tid,
-            self.persistent_info.command.lock()
+            *self.persistent_info.command.lock()
         )
     }
 }

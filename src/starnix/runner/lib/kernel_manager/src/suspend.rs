@@ -8,7 +8,7 @@ use fidl::Peered;
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_inspect::{self as inspect, UintExponentialHistogramProperty, UintProperty};
 use log::warn;
-use starnix_sync::{LockDepMutex, TerminalLock};
+use starnix_sync::{LockDepMutex, WakeSourcesLock, WakeWatchersLock};
 use std::sync::Arc;
 use zx::Task;
 
@@ -41,8 +41,8 @@ impl WakeSource {
 pub type WakeSources = std::collections::HashMap<zx::Koid, WakeSource>;
 
 pub struct SuspendContext {
-    pub wake_sources: Arc<LockDepMutex<WakeSources, TerminalLock>>,
-    pub wake_watchers: Arc<LockDepMutex<Vec<zx::EventPair>, TerminalLock>>,
+    pub wake_sources: Arc<LockDepMutex<WakeSources, WakeSourcesLock>>,
+    pub wake_watchers: Arc<LockDepMutex<Vec<zx::EventPair>, WakeWatchersLock>>,
 
     /// Inspect node for suspend-related metrics.
     pub node: inspect::Node,

@@ -2190,7 +2190,7 @@ pub fn creds_start_internal_operation(current_task: &CurrentTask) -> Arc<Credent
 
 pub mod testing {
     use super::{Arc, KernelState, SecurityServer, selinux_hooks};
-    use starnix_sync::Mutex;
+    use starnix_sync::LockDepMutex;
     use std::sync::OnceLock;
     use std::sync::atomic::AtomicU64;
 
@@ -2199,7 +2199,7 @@ pub mod testing {
     pub fn kernel_state(security_server: Option<Arc<SecurityServer>>) -> KernelState {
         let state = security_server.map(|server| selinux_hooks::KernelState {
             server,
-            pending_file_systems: Mutex::default(),
+            pending_file_systems: LockDepMutex::default(),
             selinuxfs_null: OnceLock::default(),
             access_denial_count: AtomicU64::new(0u64),
             has_policy: false.into(),

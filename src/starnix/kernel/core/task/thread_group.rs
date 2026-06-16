@@ -25,7 +25,8 @@ use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
-    LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
+    LockBefore, LockDepMutex, Locked, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits,
+    ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, Unlocked,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable};
@@ -311,10 +312,10 @@ pub struct ThreadGroup {
     pub next_seccomp_filter_id: AtomicCounter<u64>,
 
     /// Tasks ptraced by this process
-    pub ptracees: Mutex<BTreeMap<tid_t, TaskContainer>>,
+    pub ptracees: LockDepMutex<BTreeMap<tid_t, TaskContainer>, ThreadGroupPtraceesLock>,
 
     /// The signals that are currently pending for this thread group.
-    pub pending_signals: Mutex<QueuedSignals>,
+    pub pending_signals: LockDepMutex<QueuedSignals, ThreadGroupPendingSignalsLock>,
 
     /// Whether or not there are any pending signals available for tasks in this thread group.
     /// Used to avoid having to acquire the signal state lock in hot paths.
