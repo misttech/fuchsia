@@ -1164,7 +1164,7 @@ impl Task {
     }
 
     pub fn ptracer_task(&self) -> Option<Arc<Task>> {
-        self.get_task(self.read().ptrace.as_ref().map(|p| p.core_state.pid)?).ok()
+        self.read().ptrace.as_ref().and_then(|p| p.core_state.task.upgrade())
     }
 
     /// Determine whether the task is running.

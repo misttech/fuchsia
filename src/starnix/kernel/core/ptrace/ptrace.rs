@@ -190,8 +190,12 @@ impl PtraceEventData {
 /// task that clones it.
 #[derive(Clone)]
 pub struct PtraceCoreState {
+    // TODO(https://fxbug.dev/524605237): Remove the `pid` field.
     /// The pid of the tracer
     pub pid: pid_t,
+
+    /// The task of the tracer
+    pub task: Weak<Task>,
 
     /// The thread group of the tracer
     pub thread_group: Weak<ThreadGroup>,
@@ -245,6 +249,7 @@ pub struct PtraceState {
 impl PtraceState {
     pub fn new(
         pid: pid_t,
+        task: Weak<Task>,
         thread_group: Weak<ThreadGroup>,
         attach_type: PtraceAttachType,
         options: PtraceOptions,
@@ -252,6 +257,7 @@ impl PtraceState {
         Box::new(PtraceState {
             core_state: PtraceCoreState {
                 pid,
+                task,
                 thread_group,
                 attach_type,
                 options,
@@ -1068,6 +1074,7 @@ where
 /// Makes the given thread group trace the given task.
 fn do_attach(
     thread_group: &ThreadGroup,
+    tracer_task: Weak<Task>,
     task: &Arc<Task>,
     attach_type: PtraceAttachType,
     options: PtraceOptions,
@@ -1078,6 +1085,7 @@ fn do_attach(
     let mut state = task.write();
     state.set_ptrace(Some(PtraceState::new(
         thread_group.leader,
+        tracer_task,
         thread_group.weak_self.clone(),
         attach_type,
         options,
@@ -1112,7 +1120,13 @@ where
         let tracer_tg =
             tracee_task.thread_group().kernel.pids.read().get_thread_group(ptrace_state.pid);
         let tracer_tg = tracer_tg.ok_or_else(|| errno!(ESRCH))?;
-        do_attach(&tracer_tg, tracee_task, ptrace_state.attach_type, ptrace_state.options)?;
+        do_attach(
+            &tracer_tg,
+            ptrace_state.task.clone(),
+            tracee_task,
+            ptrace_state.attach_type,
+            ptrace_state.options,
+        )?;
     }
     let mut state = tracee_task.write();
     if let Some(ptrace) = &mut state.ptrace {
@@ -1145,13 +1159,20 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
     if let Some(parent) = parent {
         let parent = parent.upgrade();
         // TODO: Move this check into `do_attach()` so that there is a single `ptrace_access_check(tracer, tracee)`?
-        {
+        let parent_task = {
             let pids = current_task.kernel().pids.read();
             let parent_task = pids.get_task(parent.leader).map_err(|_| errno!(EINVAL))?;
             security::ptrace_traceme(current_task, &parent_task)?;
-        }
+            Arc::downgrade(&parent_task)
+        };
 
-        do_attach(&parent, &current_task.task, PtraceAttachType::Attach, PtraceOptions::empty())?;
+        do_attach(
+            &parent,
+            parent_task,
+            &current_task.task,
+            PtraceAttachType::Attach,
+            PtraceOptions::empty(),
+        )?;
         Ok(starnix_syscalls::SUCCESS)
     } else {
         error!(EPERM)
@@ -1175,7 +1196,14 @@ where
     }
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &tracee)?;
-    do_attach(current_task.thread_group(), &tracee, attach_type, PtraceOptions::empty())?;
+    let tracer_task = Arc::downgrade(&current_task.task);
+    do_attach(
+        current_task.thread_group(),
+        tracer_task,
+        &tracee,
+        attach_type,
+        PtraceOptions::empty(),
+    )?;
     if attach_type == PtraceAttachType::Attach {
         send_standard_signal(
             locked.cast_locked::<MmDumpable>(),
