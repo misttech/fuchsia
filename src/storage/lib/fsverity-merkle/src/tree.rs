@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::builder::MerkleTreeBuilder;
 use crate::util::FsVerityHasher;
+use crate::{FsVerityHash, Sha256Hash, Sha512Hash};
 use std::io;
 
 /// A `MerkleTree` contains levels of hashes that can be used to verify the integrity of data.
@@ -25,7 +27,6 @@ use std::io;
 /// Each level consists of a hash for each block of hashes from the previous level (or, for
 /// level 0, each block of data).
 ///
-///
 /// While building a `MerkleTree`, callers pass in an `FsverityHasher` which hashes based on a
 /// particular algorithm and contains the necessary parameters to compute the merkle tree. The
 /// `block size` is determined by the filesystem and the `salt` by the FsverityMetadata struct
@@ -34,49 +35,72 @@ use std::io;
 ///
 /// For level 0, the length of the block is `block size`, except for the last block, which may be
 /// less than `block size`. All other levels use a block length of `block size`.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct MerkleTree {
-    levels: Vec<Vec<Vec<u8>>>,
+    levels: Vec<Box<[u8]>>,
+    hasher: FsVerityHasher,
 }
 
 impl MerkleTree {
-    /// Creates a `MerkleTree` from a well-formed tree of hashes.
-    ///
-    /// A tree of hashes is well-formed iff:
-    /// - The length of the last level is 1.
-    /// - The length of every hash level is the length of the prior hash level divided by
-    ///   hashes_per_block (`block size` \ digest length`), rounded up to the nearest
-    ///   integer.
-    pub fn from_levels(levels: Vec<Vec<Vec<u8>>>) -> MerkleTree {
-        MerkleTree { levels }
+    /// Creates a `MerkleTree` from data.
+    pub fn from_data(data: &[u8], hasher: FsVerityHasher) -> Self {
+        match hasher {
+            FsVerityHasher::Sha256(_) => Self::from_data_impl::<Sha256Hash>(data, hasher),
+            FsVerityHasher::Sha512(_) => Self::from_data_impl::<Sha512Hash>(data, hasher),
+        }
+    }
+
+    fn from_data_impl<D: FsVerityHash>(data: &[u8], hasher: FsVerityHasher) -> Self {
+        let mut builder = MerkleTreeBuilder::<D>::new(hasher);
+        builder.write(data);
+        builder.finish()
+    }
+
+    // Creates a `MerkleTree` from a well-formed tree of hashes.
+    //
+    // This is used by `MerkleTreeBuilder` to construct the tree.
+    //
+    // A tree of hashes is well-formed iff:
+    // - The length of the last level is 1.
+    // - The length of every hash level is the length of the prior hash level divided by
+    //   hashes_per_block (`block size` / `digest length`), rounded up to the nearest
+    //   integer.
+    pub(crate) fn from_levels(levels: Vec<Box<[u8]>>, hasher: FsVerityHasher) -> MerkleTree {
+        MerkleTree { levels, hasher }
     }
 
     /// The root hash of the merkle tree.
     pub fn root(&self) -> &[u8] {
-        &self.levels[self.levels.len() - 1][0]
+        &self.levels[self.levels.len() - 1][..]
+    }
+
+    /// Returns the levels of the tree as flat byte slices, from leaves (level 0) to root.
+    pub fn levels(&self) -> &[Box<[u8]>] {
+        &self.levels[..]
+    }
+
+    /// Returns the raw bytes of the leaf hashes (level 0 of the tree).
+    pub fn leaf_hashes(&self) -> &[u8] {
+        &self.levels[0][..]
     }
 
     /// Creates a `MerkleTree` from all of the bytes of a `Read`er.
-    ///
-    /// # Examples
-    /// ```
-    /// # use fsverity_merkle::MerkleTree;
-    /// fsverity_merkle::{MerkleTree, FsVerityHasher, FsVerityHasherOptions},
-    /// let data_to_hash = [0xffu8; 8192];
-    /// let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096));
-    /// let tree = MerkleTree::from_reader(&data_to_hash[..], hasher).unwrap();
-    /// assert_eq!(
-    ///     tree.root().bytes(),
-    ///     FromHex::from_hex("e9c09b505561b9509f93b5c7990ed41427f708480c56306453d505e94076d600")
-    ///         .unwrap();
-    /// );
-    /// ```
     pub fn from_reader(
+        reader: impl std::io::Read,
+        hasher: FsVerityHasher,
+    ) -> Result<MerkleTree, io::Error> {
+        match hasher {
+            FsVerityHasher::Sha256(_) => Self::from_reader_impl::<Sha256Hash>(reader, hasher),
+            FsVerityHasher::Sha512(_) => Self::from_reader_impl::<Sha512Hash>(reader, hasher),
+        }
+    }
+
+    fn from_reader_impl<D: FsVerityHash>(
         mut reader: impl std::io::Read,
         hasher: FsVerityHasher,
     ) -> Result<MerkleTree, io::Error> {
         let block_size = hasher.block_size() as usize;
-        let mut builder = crate::builder::MerkleTreeBuilder::new(hasher);
+        let mut builder = MerkleTreeBuilder::<D>::new(hasher);
         let mut buf = vec![0u8; block_size];
         loop {
             let size = reader.read(&mut buf)?;
@@ -89,12 +113,6 @@ impl MerkleTree {
     }
 }
 
-impl AsRef<[Vec<Vec<u8>>]> for MerkleTree {
-    fn as_ref(&self) -> &[Vec<Vec<u8>>] {
-        &self.levels[..]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,7 +122,9 @@ mod tests {
     impl MerkleTree {
         /// Given the index of a block of data, lookup its hash.
         fn leaf_hash(&self, block: usize) -> &[u8] {
-            &self.levels[0][block]
+            let hash_size = self.hasher.hash_size();
+            let start = block * hash_size;
+            &self.levels[0][start..start + hash_size]
         }
     }
 
@@ -122,7 +142,12 @@ mod tests {
             }
         }
         let root = hasher.hash_hashes(&leafs);
-        let tree: MerkleTree = MerkleTree::from_levels(vec![leafs, vec![root.clone()]]);
+
+        // Convert Vec<Vec<u8>> to flat Box<[u8]> for the test
+        let flat_leafs = leafs.concat().into_boxed_slice();
+        let flat_root = root.clone().into_boxed_slice();
+
+        let tree: MerkleTree = MerkleTree::from_levels(vec![flat_leafs, flat_root], hasher.clone());
         assert_eq!(tree.root(), root);
         for (i, leaf) in expected_leafs.iter().enumerate().take(hashes_per_block) {
             assert_eq!(tree.leaf_hash(i), leaf);
@@ -143,7 +168,12 @@ mod tests {
             }
         }
         let root = hasher.hash_hashes(&leafs);
-        let tree: MerkleTree = MerkleTree::from_levels(vec![leafs, vec![root.clone()]]);
+
+        // Convert Vec<Vec<u8>> to flat Box<[u8]> for the test
+        let flat_leafs = leafs.concat().into_boxed_slice();
+        let flat_root = root.clone().into_boxed_slice();
+
+        let tree: MerkleTree = MerkleTree::from_levels(vec![flat_leafs, flat_root], hasher.clone());
         assert_eq!(tree.root(), root);
         for (i, leaf) in expected_leafs.iter().enumerate().take(hashes_per_block) {
             assert_eq!(tree.leaf_hash(i), leaf);

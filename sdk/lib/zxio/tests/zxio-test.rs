@@ -5,7 +5,7 @@
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_io as fio;
-use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
+use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder, Sha256Hash};
 use fuchsia_async as fasync;
 use fxfs_testing::TestFixture;
 use std::mem::MaybeUninit;
@@ -101,7 +101,7 @@ async fn test_fsverity_enabled() {
                 .expect("open failed"),
         );
         assert!(!attrs.fsverity_enabled);
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha256(
+        let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(FsVerityHasher::Sha256(
             FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
         ));
         builder.write(data.as_slice());

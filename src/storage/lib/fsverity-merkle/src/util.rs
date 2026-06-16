@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// `FsVerityHasherOptions` contains relevant metadata for the FsVerityHasher. The `salt` is set
 /// according to the FsverityMetadata struct stored in fxfs and `block_size` is that of the
 /// filesystem.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FsVerityHasherOptions {
     salt: Vec<u8>,
     block_size: usize,
@@ -195,7 +195,7 @@ impl<'a> FsVerityDescriptor<'a> {
 
 /// `FsVerityHasher` is used by fsverity to construct merkle trees for verity-enabled files.
 /// `FsVerityHasher` is parameterized by a salt and a block size.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FsVerityHasher {
     Sha256(FsVerityHasherOptions),
     Sha512(FsVerityHasherOptions),
@@ -388,7 +388,7 @@ impl FsVerityHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MerkleTreeBuilder;
+    use crate::{FsVerityHash, MerkleTreeBuilder, Sha256Hash, Sha512Hash};
     use fidl_fuchsia_io as fio;
     use hex::FromHex;
     use test_case::test_case;
@@ -560,6 +560,31 @@ mod tests {
     #[test_case(0, vec![0u8; BLOCK_SIZE * 2], BLOCK_SIZE, 0, FsVerityHasher::Sha512(FsVerityHasherOptions::new(vec![0xAB; 8], BLOCK_SIZE)); "sha512_empty_file")]
     fn descriptor_merkle_leaves_locations(
         file_blocks: usize,
+        buf: Vec<u8>,
+        descriptor_offset: usize,
+        leaf_offset: usize,
+        hasher: FsVerityHasher,
+    ) {
+        match hasher {
+            FsVerityHasher::Sha256(_) => descriptor_merkle_leaves_locations_impl::<Sha256Hash>(
+                file_blocks,
+                buf,
+                descriptor_offset,
+                leaf_offset,
+                hasher,
+            ),
+            FsVerityHasher::Sha512(_) => descriptor_merkle_leaves_locations_impl::<Sha512Hash>(
+                file_blocks,
+                buf,
+                descriptor_offset,
+                leaf_offset,
+                hasher,
+            ),
+        }
+    }
+
+    fn descriptor_merkle_leaves_locations_impl<D: FsVerityHash>(
+        file_blocks: usize,
         mut buf: Vec<u8>,
         descriptor_offset: usize,
         leaf_offset: usize,
@@ -577,7 +602,7 @@ mod tests {
         };
 
         let hash_size = hasher.hash_size();
-        let mut builder = MerkleTreeBuilder::new(hasher);
+        let mut builder = MerkleTreeBuilder::<D>::new(hasher);
         builder.write(file.as_slice());
         let tree = builder.finish();
 
@@ -595,19 +620,20 @@ mod tests {
             .expect("Writing descriptor");
         // FsVerity doesn't actually write out the leaves if there is one or fewer blocks.
         if file_blocks > 1 {
-            let leaf_bytes: Vec<u8> = tree.as_ref()[0].iter().flatten().copied().collect();
+            let leaf_bytes = tree.leaf_hashes();
             buf.as_mut_slice()[leaf_offset..(leaf_offset + (file_blocks * hash_size))]
-                .copy_from_slice(leaf_bytes.as_slice());
+                .copy_from_slice(leaf_bytes);
         }
 
         let descriptor2 =
             FsVerityDescriptor::from_bytes(buf.as_slice(), BLOCK_SIZE).expect("Parsing decsriptor");
         assert_eq!(descriptor2.root_digest(), tree.root());
 
-        let mut verifier_builder = MerkleTreeBuilder::new(descriptor2.hasher());
+        let mut verifier_builder = MerkleTreeBuilder::<D>::new(descriptor2.hasher());
         let leaves = descriptor2.leaf_digests().expect("Finding leaf digests");
         for leaf in leaves.chunks_exact(hash_size) {
-            verifier_builder.push_data_hash(leaf.to_vec());
+            let hash = D::read_from_bytes(leaf).unwrap();
+            verifier_builder.push_data_hash(hash);
         }
 
         let verifier_tree = verifier_builder.finish();

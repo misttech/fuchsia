@@ -5,7 +5,9 @@
 #![recursion_limit = "512"]
 
 use bitflags::bitflags;
-use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
+use fsverity_merkle::{
+    FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder, Sha256Hash, Sha512Hash,
+};
 use linux_uapi::DM_UUID_LEN;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use starnix_core::device::DeviceMode;
@@ -642,11 +644,27 @@ impl VerityTargetParams {
             _ => return error!(ENOTSUP),
         };
 
-        let mut builder = MerkleTreeBuilder::new(hasher);
-        for chunk in self.hash_device.chunks(digest_size) {
-            builder.push_data_hash(chunk.to_vec());
-        }
-        let tree = builder.finish();
+        let tree = match self.base_args.hash_algorithm.as_str() {
+            SHA256_ALGORITHM => {
+                const DIGEST_LEN: usize = <Sha256 as Hasher>::Digest::DIGEST_LEN;
+                let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(hasher);
+                for chunk in self.hash_device.chunks(digest_size) {
+                    let array: [u8; DIGEST_LEN] = chunk.try_into().unwrap();
+                    builder.push_data_hash(array.into());
+                }
+                builder.finish()
+            }
+            SHA512_ALGORITHM => {
+                const DIGEST_LEN: usize = <Sha512 as Hasher>::Digest::DIGEST_LEN;
+                let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(hasher);
+                for chunk in self.hash_device.chunks(digest_size) {
+                    let array: [u8; DIGEST_LEN] = chunk.try_into().unwrap();
+                    builder.push_data_hash(array.into());
+                }
+                builder.finish()
+            }
+            _ => unreachable!(),
+        };
         let calculated_root = tree.root();
 
         let expected_root = hex::decode(&self.base_args.root_digest).map_err(|_| errno!(EINVAL))?;

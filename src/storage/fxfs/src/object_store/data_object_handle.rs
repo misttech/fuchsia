@@ -30,8 +30,8 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fsverity_merkle::{
-    FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHasher, FsVerityHasherOptions, MerkleTree,
-    MerkleTreeBuilder,
+    FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHash, FsVerityHasher, FsVerityHasherOptions,
+    MerkleTree, MerkleTreeBuilder, Sha256Hash, Sha512Hash,
 };
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
@@ -42,6 +42,7 @@ use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
+use zerocopy::FromBytes;
 
 mod allocated_ranges;
 pub use allocated_ranges::{AllocatedRanges, RangeType};
@@ -288,14 +289,29 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         // Validate the merkle tree data against the root before applying it.
         ensure!(metadata.merkle_tree.len() % hasher.hash_size() == 0, FxfsError::Inconsistent);
         let leaf_chunks = metadata.merkle_tree.chunks_exact(hasher.hash_size());
-        let mut builder = MerkleTreeBuilder::new(hasher);
-        for leaf in leaf_chunks {
-            builder.push_data_hash(leaf.to_vec());
-        }
-        let tree = builder.finish();
+
         let root_hash = match &metadata.root_digest {
             RootDigest::Sha256(root_hash) => root_hash.as_slice(),
             RootDigest::Sha512(root_hash) => root_hash.as_slice(),
+        };
+
+        let tree = match hasher {
+            FsVerityHasher::Sha256(_) => {
+                let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(hasher);
+                for leaf in leaf_chunks {
+                    let hash = Sha256Hash::read_from_bytes(leaf).unwrap();
+                    builder.push_data_hash(hash);
+                }
+                builder.finish()
+            }
+            FsVerityHasher::Sha512(_) => {
+                let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(hasher);
+                for leaf in leaf_chunks {
+                    let hash = Sha512Hash::read_from_bytes(leaf).unwrap();
+                    builder.push_data_hash(hash);
+                }
+                builder.finish()
+            }
         };
 
         ensure!(root_hash == tree.root(), FxfsError::IntegrityError);
@@ -487,8 +503,24 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         hash_alg: fio::HashAlgorithm,
         salt: &[u8],
     ) -> Result<(MerkleTree, Vec<u8>), Error> {
+        match hasher {
+            FsVerityHasher::Sha256(_) => {
+                self.build_verity_tree_impl::<Sha256Hash>(hasher, hash_alg, salt).await
+            }
+            FsVerityHasher::Sha512(_) => {
+                self.build_verity_tree_impl::<Sha512Hash>(hasher, hash_alg, salt).await
+            }
+        }
+    }
+
+    async fn build_verity_tree_impl<D: FsVerityHash>(
+        &self,
+        hasher: FsVerityHasher,
+        hash_alg: fio::HashAlgorithm,
+        salt: &[u8],
+    ) -> Result<(MerkleTree, Vec<u8>), Error> {
         let hash_len = hasher.hash_size();
-        let mut builder = MerkleTreeBuilder::new(hasher);
+        let mut builder = MerkleTreeBuilder::<D>::new(hasher);
         let mut offset = 0;
         let size = self.get_size();
         // TODO(b/314836822): Consider further tuning the buffer size to optimize
@@ -504,18 +536,18 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let tree = builder.finish();
         // This will include a block for the root layer, which will be used to house the descriptor.
         let tree_data_len = tree
-            .as_ref()
+            .levels()
             .iter()
-            .map(|layer| (layer.len() * hash_len).next_multiple_of(self.block_size() as usize))
+            .map(|layer| layer.len().next_multiple_of(self.block_size() as usize))
             .sum();
         let mut merkle_tree_data = Vec::<u8>::with_capacity(tree_data_len);
         // Iterating from the top layers down to the leaves.
-        for layer in tree.as_ref().iter().rev() {
+        for layer in tree.levels().iter().rev() {
             // Skip the root layer.
-            if layer.len() <= 1 {
+            if layer.len() <= hash_len {
                 continue;
             }
-            merkle_tree_data.extend(layer.iter().flatten());
+            merkle_tree_data.extend_from_slice(layer);
             // Pad to the end of the block.
             let padded_size = merkle_tree_data.len().next_multiple_of(self.block_size() as usize);
             merkle_tree_data.resize(padded_size, 0);

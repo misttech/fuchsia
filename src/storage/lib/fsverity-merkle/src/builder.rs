@@ -2,36 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{FsVerityHasher, MerkleTree};
+use crate::FsVerityHash;
+use crate::tree::MerkleTree;
+use crate::util::FsVerityHasher;
 use std::cmp::min;
+use zerocopy::IntoBytes;
 
 /// A `MerkleTreeBuilder` generates a [`MerkleTree`] from one or more write calls.
-///
-/// # Examples
-/// ```
-/// # use fsverity_merkle::*;
-/// let data = vec![0xff; 8192];
-/// let hasher = FsVerityHasherSha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096));
-/// let mut builder = MerkleTreeBuilder::new(hasher);
-/// for i in 0..8 {
-///     builder.write(&data[..]);
-/// }
-/// assert_eq!(
-///     builder.finish().root().bytes(),
-///     FromHex::from_hex("ec6b4dc183833a5665b8d804c6e900f2543b54914f153e4139cb77b261f59615")
-///         .unwrap()
-/// );
-/// ```
 #[derive(Clone, Debug)]
-pub struct MerkleTreeBuilder {
+pub struct MerkleTreeBuilder<D> {
     /// Buffer to hold a partial block of data between [`MerkleTreeBuilder::write`] calls.
     /// `block.len()` will never exceed `hasher.block_size()`.
     block: Vec<u8>,
-    levels: Vec<Vec<Vec<u8>>>,
+    levels: Vec<Vec<D>>,
     hasher: FsVerityHasher,
 }
 
-impl MerkleTreeBuilder {
+impl<D: FsVerityHash> MerkleTreeBuilder<D> {
     /// Creates a new, empty `MerkleTreeBuilder`.
     pub fn new(hasher: FsVerityHasher) -> Self {
         MerkleTreeBuilder {
@@ -39,6 +26,11 @@ impl MerkleTreeBuilder {
             levels: vec![Vec::new()],
             hasher,
         }
+    }
+
+    fn hash_block(&self, data: &[u8]) -> D {
+        let hash_bytes = self.hasher.hash_block(data);
+        D::read_from_bytes(&hash_bytes[..]).unwrap()
     }
 
     /// Append a buffer of bytes to the merkle tree.
@@ -55,7 +47,7 @@ impl MerkleTreeBuilder {
             let (buf, rest) = buf.split_at(prefix);
             self.block.extend_from_slice(buf);
             if self.block.len() == block_size {
-                self.push_data_hash(self.hasher.hash_block(&self.block[..]));
+                self.push_data_hash(self.hash_block(&self.block[..]));
             }
             rest
         };
@@ -63,7 +55,7 @@ impl MerkleTreeBuilder {
         // Write full blocks, saving any final partial block for later writes.
         for block in buf.chunks(block_size) {
             if block.len() == block_size {
-                self.push_data_hash(self.hasher.hash_block(block));
+                self.push_data_hash(self.hash_block(block));
             } else {
                 self.block.extend_from_slice(block);
             }
@@ -72,7 +64,7 @@ impl MerkleTreeBuilder {
 
     /// Save a data block hash, propagating full blocks of hashes to higher layers. Also clear a
     /// stored data block.
-    pub fn push_data_hash(&mut self, hash: Vec<u8>) {
+    pub fn push_data_hash(&mut self, hash: D) {
         let hashes_per_block = self.hasher.block_size() / self.hasher.hash_size();
         self.block.clear();
         self.levels[0].push(hash);
@@ -96,14 +88,16 @@ impl MerkleTreeBuilder {
             len - hashes_per_block
         } else {
             if !self.hasher.fsverity() {
+                let zero_hash = self.hash_block(&[]);
                 for _ in 0..(hashes_per_block - (len % hashes_per_block)) {
-                    self.levels[level].push(self.hasher.hash_block(&[]))
+                    self.levels[level].push(zero_hash);
                 }
             }
             len - (len % hashes_per_block)
         };
 
-        let hash = self.hasher.hash_hashes(&self.levels[level][first_hash..]);
+        let block_bytes = self.levels[level][first_hash..].as_bytes();
+        let hash = self.hash_block(block_bytes);
 
         self.levels[next_level].push(hash);
         if self.levels[next_level].len() % hashes_per_block == 0 {
@@ -120,7 +114,7 @@ impl MerkleTreeBuilder {
         // data block before finalizing the hash levels.
         // Also, an empty tree consists of a single, empty block. Handle that case now as well.
         if !self.block.is_empty() || self.levels[0].is_empty() {
-            self.push_data_hash(self.hasher.hash_block(&self.block[..]));
+            self.push_data_hash(self.hash_block(&self.block[..]));
         }
 
         // Enumerate the hash levels, finalizing any that have a partial block of hashes.
@@ -136,14 +130,21 @@ impl MerkleTreeBuilder {
             }
         }
 
-        MerkleTree::from_levels(self.levels)
+        let flat_levels: Vec<Box<[u8]>> = self
+            .levels
+            .into_iter()
+            .map(|level| level.as_bytes().to_vec().into_boxed_slice())
+            .collect();
+
+        MerkleTree::from_levels(flat_levels, self.hasher)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::FsVerityHasherOptions;
+    use crate::util::FsVerityHasherOptions;
+    use crate::{Sha256Hash, Sha512Hash};
     use hex::FromHex;
     use test_case::test_case;
 
@@ -157,7 +158,7 @@ mod tests {
     #[test_case(vec![0xFF; 2105344], "b4050a226383d94c09c004d59a81b08bed17726b79cf9bd0994931f13213652d"; "test_large")]
     #[test_case(vec![0xFF; 2109440], "1a07efa041afdf78b86df2c580ec6f8446eb6e802321252996563c14334a5342"; "test_unaligned")]
     fn sha256_tests_no_salt(input: Vec<u8>, output: &str) {
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha256(
+        let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(FsVerityHasher::Sha256(
             FsVerityHasherOptions::new(vec![], 4096),
         ));
         builder.write(input.as_slice());
@@ -175,7 +176,7 @@ mod tests {
     #[test_case(vec![0xFF; 2105344], "b433c8b632c79ca9fc2c04913541aa38970ae9da04a43269f67770221e79fe37"; "test_large")]
     #[test_case(vec![0xFF; 2109440], "fbd261c306f522aba5ac0c70229870594d236634f5afe68fe9656ea04eb4a4fe"; "test_unaligned")]
     fn sha256_tests_with_salt(input: Vec<u8>, output: &str) {
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha256(
+        let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(FsVerityHasher::Sha256(
             FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
         ));
         builder.write(input.as_slice());
@@ -193,7 +194,7 @@ mod tests {
     #[test_case(vec![0xFF; 2105344], "51977ac06edd17d32761e27d384f6c437ead6922f0a3fbabc3390d8f6e929bc1d9ff9e4ee34fb060484e8eff272f9cc36fa1cf26361c3258b5d8b87d8144b497"; "test_large")]
     #[test_case(vec![0xFF; 2109440], "f6e821f7cdd1306031080ff99c4c2d7270c6d6bbaa07f4e3040a5d20a1178af1e4f6377f898166d5835ec22b2fcca6d364711cf0c20862d40f3580b6b6276683"; "test_unaligned")]
     fn sha512_tests_no_salt(input: Vec<u8>, output: &str) {
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha512(
+        let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(FsVerityHasher::Sha512(
             FsVerityHasherOptions::new(vec![], 4096),
         ));
         builder.write(input.as_slice());
@@ -211,7 +212,7 @@ mod tests {
     #[test_case(vec![0xFF; 2105344], "a92ddf722dfcf679a64b6364de7f823850f8f856e0ba2c53d66f75cf72d5572bf1d525b3c185e5c39818e2d29997d259f81363daab80a902f86291a71514f891"; "test_large")]
     #[test_case(vec![0xFF; 2109440], "b6913e8c1d3bb84b467e24667aedad0491ad86f548e849741969688b2526919a380946bebf481ec1ee1bdda86631e10c4a82e7329afdd84db2ac43994a524785"; "test_unaligned")]
     fn sha512_tests_with_salt(input: Vec<u8>, output: &str) {
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha512(
+        let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(FsVerityHasher::Sha512(
             FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
         ));
         builder.write(input.as_slice());
@@ -223,7 +224,7 @@ mod tests {
     #[test]
     fn test_unaligned_single_block_sha256() {
         let data = vec![0xFF; 8192];
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha256(
+        let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(FsVerityHasher::Sha256(
             FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
         ));
         let (first, second) = &data[..].split_at(1024);
@@ -239,7 +240,7 @@ mod tests {
     #[test]
     fn test_unaligned_single_block_sha512() {
         let data = vec![0xFF; 8192];
-        let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha512(
+        let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(FsVerityHasher::Sha512(
             FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
         ));
         let (first, second) = &data[..].split_at(1024);
@@ -258,7 +259,7 @@ mod tests {
                 .unwrap();
 
         for chunk_size in &[1, 100, 1024, 8193] {
-            let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha256(
+            let mut builder = MerkleTreeBuilder::<Sha256Hash>::new(FsVerityHasher::Sha256(
                 FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
             ));
             for block in data.as_slice().chunks(*chunk_size) {
@@ -276,7 +277,7 @@ mod tests {
         let expected: [u8; 64] = FromHex::from_hex("4f6a2e16dabf6347b9ae88d5c298befcff0cc71abe1905fa6aefcee14fa5acb89ecbf949daef002d11a9dbb51f211f0eb3e2f7f5e2911b0af2e9fb68c7799a94").unwrap();
 
         for chunk_size in &[1, 100, 1024, 8193] {
-            let mut builder = MerkleTreeBuilder::new(FsVerityHasher::Sha512(
+            let mut builder = MerkleTreeBuilder::<Sha512Hash>::new(FsVerityHasher::Sha512(
                 FsVerityHasherOptions::new(vec![0xFF; 8], 4096),
             ));
             for block in data.as_slice().chunks(*chunk_size) {
