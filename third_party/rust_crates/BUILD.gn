@@ -818,11 +818,11 @@ group("googletest-0.14.2") {
 }
 
 group("gpt") {
-  public_deps = [ ":gpt-v3_0_0" ]
+  public_deps = [ ":gpt-v3_1_0" ]
 }
 
-group("gpt-3.0.0") {
-  public_deps = [ ":gpt-v3_0_0" ]
+group("gpt-3.1.0") {
+  public_deps = [ ":gpt-v3_1_0" ]
 }
 
 group("half") {
@@ -6019,40 +6019,6 @@ rustc_library("cpufeatures-v0_2_17") {
   applicable_licenses = [ ":cpufeatures-v0_2_17.license" ]
 }
 
-license("crc-v1_8_1.license") {
-  public_package_name = "crc"
-  license_files = [
-    "//third_party/rust_crates/vendor/crc-1.8.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crc-1.8.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("crc-v1_8_1") {
-  crate_name = "crc"
-  source_root = "//third_party/rust_crates/vendor/crc-1.8.1/src/lib.rs"
-  output_name = "crc-b07cba2eb65fd100"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = [ "OUT_DIR=../../../compat/crc" ]
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b07cba2eb65fd100",
-    "-Cextra-filename=-b07cba2eb65fd100",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":crc-v1_8_1.license" ]
-}
-
 license("crc-v3_4_0.license") {
   public_package_name = "crc"
   license_files = [
@@ -9656,37 +9622,37 @@ rustc_macro("googletest_macro-v0_14_2") {
   applicable_licenses = [ ":googletest_macro-v0_14_2.license" ]
 }
 
-license("gpt-v3_0_0.license") {
+license("gpt-v3_1_0.license") {
   public_package_name = "gpt"
-  license_files = [ "//third_party/rust_crates/vendor/gpt-3.0.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/gpt-3.1.0/LICENSE" ]
 }
 
-rustc_library("gpt-v3_0_0") {
+rustc_library("gpt-v3_1_0") {
   crate_name = "gpt"
-  source_root = "//third_party/rust_crates/vendor/gpt-3.0.0/src/lib.rs"
-  output_name = "gpt-ee8537fb7cdea5c1"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/gpt-3.1.0/src/lib.rs"
+  output_name = "gpt-ea7d9869031bef6c"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":crc-v1_8_1" ]
+  deps += [ ":bitflags-v2_13_0" ]
+  deps += [ ":crc-v3_4_0" ]
   deps += [ ":log-v0_4_29" ]
-  deps += [ ":uuid-v0_8_2" ]
+  deps += [ ":uuid-v1_23_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ee8537fb7cdea5c1",
-    "-Cextra-filename=-ee8537fb7cdea5c1",
+    "-Cmetadata=ea7d9869031bef6c",
+    "-Cextra-filename=-ea7d9869031bef6c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":gpt-v3_0_0.license" ]
+  applicable_licenses = [ ":gpt-v3_1_0.license" ]
 }
 
 license("group-v0_12_1.license") {
@@ -23031,41 +22997,6 @@ rustc_library("uuid-v0_7_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":uuid-v0_7_2.license" ]
-}
-
-license("uuid-v0_8_2.license") {
-  public_package_name = "uuid"
-  license_files =
-      [ "//third_party/rust_crates/vendor/uuid-0.8.2/LICENSE-APACHE" ]
-}
-
-rustc_library("uuid-v0_8_2") {
-  crate_name = "uuid"
-  source_root = "//third_party/rust_crates/vendor/uuid-0.8.2/src/lib.rs"
-  output_name = "uuid-919b1371cee9e3ba"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":getrandom-v0_2_10" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=919b1371cee9e3ba",
-    "-Cextra-filename=-919b1371cee9e3ba",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"getrandom\"",
-    "--cfg=feature=\"std\"",
-    "--cfg=feature=\"v4\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":uuid-v0_8_2.license" ]
 }
 
 license("uuid-v1_23_3.license") {

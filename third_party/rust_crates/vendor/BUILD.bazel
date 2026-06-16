@@ -1171,14 +1171,14 @@ alias(
 )
 
 alias(
-    name = "gpt-3.0.0",
-    actual = "//third_party/rust_crates/vendor/gpt-3.0.0:gpt",
+    name = "gpt-3.1.0",
+    actual = "//third_party/rust_crates/vendor/gpt-3.1.0:gpt",
     tags = ["manual"],
 )
 
 alias(
     name = "gpt",
-    actual = "//third_party/rust_crates/vendor/gpt-3.0.0:gpt",
+    actual = "//third_party/rust_crates/vendor/gpt-3.1.0:gpt",
     tags = ["manual"],
 )
 

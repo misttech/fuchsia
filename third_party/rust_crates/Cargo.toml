@@ -128,7 +128,7 @@ futures-util = "=0.3.31"
 getrandom = { version = "0.4.2", default-features = false, features = ["std"] }
 glob = "0.3.3"
 googletest = "0.14.2"
-gpt = "3.0.0"
+gpt = "3.1.0"
 half = "2.7.1"
 handlebars = "4.3.5"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
@@ -591,9 +591,6 @@ rustflags = []
 
 [gn.package.core-foundation-sys."0.8.7".platform."cfg(target_os = \"macos\")"]
 rustflags = ["-lframework=CoreFoundation"]
-
-[gn.package.crc."1.8.1"]
-env_vars = ["OUT_DIR=../../../compat/crc"]
 
 [gn.package.crc-catalog."2.4.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
@@ -1281,9 +1278,6 @@ visibility = [
   "//third_party/rust_crates/compat/icu:*",":*", "//build/sdk/meta:*"]
 
 [gn.package.uuid."0.7.2"]
-license_files = ["LICENSE-APACHE"]
-
-[gn.package.uuid."0.8.2"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.uuid."1.23.3"]
