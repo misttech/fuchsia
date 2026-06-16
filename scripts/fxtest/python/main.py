@@ -22,6 +22,7 @@ import textwrap
 import time
 import typing
 from typing import List
+import uuid
 
 import async_utils.command as command
 import async_utils.signals as signals
@@ -1979,7 +1980,13 @@ class AsyncMain:
         return (
             asyncio.create_task(
                 execution.run_command(
-                    *exec_env.fx_cmd_line("serve"),
+                    *exec_env.fx_cmd_line(
+                        "serve",
+                        "-l",
+                        "0",
+                        "--name",
+                        f"fxtest-temp-{uuid.uuid4()}",
+                    ),
                     recorder=recorder,
                     abort_signal=cancel_event,
                     quiet_mode=True,

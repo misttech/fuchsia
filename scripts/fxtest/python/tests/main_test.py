@@ -185,6 +185,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         self._mock_has_active_device(True)
         self._mock_wait_for_repository_registration(True)
+        self._mock_uuid4()
 
         # Provide hard-coded predictable test-list.json content rather than
         # actually running the generate_test_list program.
@@ -265,6 +266,13 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         patch = mock.patch("main.AsyncMain._has_active_device", m)
         patch.start()
         self.addCleanup(patch.stop)
+
+    def _mock_uuid4(self, value: str = "test-uuid") -> mock.MagicMock:
+        m = mock.MagicMock(return_value=value)
+        patch = mock.patch("main.uuid.uuid4", m)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return m
 
     def _mock_wait_for_repository_registration(self, value: bool) -> None:
         m = mock.AsyncMock(return_value=value)
@@ -807,7 +815,18 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         if expect_to_serve:
             self.assertIsSubset(
-                {("fx", "--dir", self.out_dir, "serve")},
+                {
+                    (
+                        "fx",
+                        "--dir",
+                        self.out_dir,
+                        "serve",
+                        "-l",
+                        "0",
+                        "--name",
+                        "fxtest-temp-test-uuid",
+                    )
+                },
                 call_prefixes,
             )
             self.assertIsNotNone(serve_abort_signal)
@@ -986,7 +1005,18 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsSubset(
-            {("fx", "--dir", self.out_dir, "serve")},
+            {
+                (
+                    "fx",
+                    "--dir",
+                    self.out_dir,
+                    "serve",
+                    "-l",
+                    "0",
+                    "--name",
+                    "fxtest-temp-test-uuid",
+                )
+            },
             call_prefixes,
         )
         self.assertIsNotNone(serve_abort_signal)
@@ -1022,7 +1052,18 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsSubset(
-            {("fx", "--dir", self.out_dir, "serve")},
+            {
+                (
+                    "fx",
+                    "--dir",
+                    self.out_dir,
+                    "serve",
+                    "-l",
+                    "0",
+                    "--name",
+                    "fxtest-temp-test-uuid",
+                )
+            },
             call_prefixes,
         )
         self.assertIsNotNone(serve_abort_signal)
@@ -1546,7 +1587,18 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             )
         else:
             self.assertIsSubset(
-                {("fx", "--dir", self.out_dir, "serve")},
+                {
+                    (
+                        "fx",
+                        "--dir",
+                        self.out_dir,
+                        "serve",
+                        "-l",
+                        "0",
+                        "--name",
+                        "fxtest-temp-test-uuid",
+                    )
+                },
                 call_prefixes,
             )
 
