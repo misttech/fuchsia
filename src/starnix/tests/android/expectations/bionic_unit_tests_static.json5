@@ -127,6 +127,8 @@
 
                 // This test requires scudo
                 "malloc.alloc_after_fork",
+                "android_mallopt.get_fault_information_errors",
+                "android_mallopt.get_fault_information_scudo",
 
                 // Tests for deprecated functions not supported in our configuration.
                 "malloc.pvalloc_std",
