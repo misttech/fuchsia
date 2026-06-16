@@ -1119,9 +1119,15 @@ pub enum TargetUpdateFilter<'a> {
 }
 
 fn match_addr(sa: SocketAddr, ta: TargetIpAddr) -> bool {
+    let scope_sa = match sa {
+        SocketAddr::V6(v6) => v6.scope_id(),
+        _ => 0,
+    };
     (ta.ip() == IpAddr::from(sa.ip()))
-    // Support port 0 as a wildcard
-    && ((ta.port() == sa.port()) || (ta.port() == 0) || (sa.port() == 0))
+        // Support port 0 as a wildcard
+        && ((ta.port() == sa.port()) || (ta.port() == 0) || (sa.port() == 0))
+        // Support scope 0 as a wildcard
+        && (ta.scope_id() == scope_sa || ta.scope_id() == 0 || scope_sa == 0)
 }
 
 impl<'a> TargetUpdateFilter<'a> {
@@ -1336,7 +1342,7 @@ mod tests {
         assert!(addrs.contains(&TargetAddr::new(a1, 1, 0)));
         assert!(addrs.contains(&TargetAddr::new(a2, 1, 0)), "does not contain addr: {addrs:?}");
 
-        // Insert another instance of the a2 address, but with a new scope_id, and ensure that the new scope is used.
+        // Insert another instance of the a2 address, but with a new scope_id, and ensure that both scopes coexist.
         let t3 = Target::new_with_time(
             &tc.context,
             &nodename,
@@ -1344,8 +1350,9 @@ mod tests {
         );
         t3.addrs_insert(TargetAddr::new(a2.clone(), 3, 0));
         let merged_target = tc.merge_insert(t3);
-        assert_eq!(merged_target.addrs().len(), 2);
+        assert_eq!(merged_target.addrs().len(), 3);
         assert!(merged_target.addrs().contains(&TargetAddr::new(a1, 1, 0)));
+        assert!(merged_target.addrs().contains(&TargetAddr::new(a2, 1, 0)));
         assert!(merged_target.addrs().contains(&TargetAddr::new(a2, 3, 0)));
     }
 
@@ -2430,5 +2437,40 @@ mod tests {
         tc.targets.borrow_mut().insert(1, target);
         let t = tc.find_overnet_id(1234).expect("Couldn't find overnet id 1234");
         assert_eq!(t.id(), tid);
+    }
+
+    #[test]
+    fn test_match_addr_wildcard_scope() {
+        let ip = "fe80::1".parse::<IpAddr>().unwrap();
+        let ta = TargetIpAddr::new(ip, 5, 0);
+
+        // Query address has scope ID 5 (exact match)
+        let sa_exact = SocketAddr::new(ip, 0);
+        let sa_exact = match sa_exact {
+            SocketAddr::V6(mut v6) => {
+                v6.set_scope_id(5);
+                SocketAddr::V6(v6)
+            }
+            _ => panic!("Expected IPv6"),
+        };
+        assert!(match_addr(sa_exact, ta));
+
+        // Query address has scope ID 0 (wildcard)
+        let sa_wildcard = SocketAddr::new(ip, 0);
+        assert!(match_addr(sa_wildcard, ta));
+
+        // Query address has scope ID 6 (different scope, no match)
+        let sa_diff = match sa_exact {
+            SocketAddr::V6(mut v6) => {
+                v6.set_scope_id(6);
+                SocketAddr::V6(v6)
+            }
+            _ => panic!("Expected IPv6"),
+        };
+        assert!(!match_addr(sa_diff, ta));
+
+        // Target address has scope ID 0, Query has scope ID 5 (wildcard)
+        let ta_zero = TargetIpAddr::new(ip, 0, 0);
+        assert!(match_addr(sa_exact, ta_zero));
     }
 }

@@ -45,6 +45,88 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use usb_fastboot_discovery::{Interface, open_interface_with_serial};
 
+// Processes and updates the IPv6 scope ID and source metadata for an incoming target address entry.
+//
+// Link-local IPv6 addresses are only unique and routable when scoped to a specific network
+// interface (represented by the non-zero `scope_id`). Because different targets on different
+// links may share identical link-local addresses (e.g. `fe80::1`), we must treat different
+// scope IDs as distinct addresses to prevent cross-interface target hijacking (b/516825007).
+//
+// This function:
+// 1. If the incoming address has no scope (`scope_id == 0`), attempts to carry forward a scope ID
+//    from an existing cached address with the same IP and port.
+// 2. Discards link-local addresses that remain unscoped, as they are unroutable.
+// 3. If an unscoped entry exists in the set and a scoped entry is added, the unscoped entry
+//    is removed and its source metadata is merged into the scoped entry. If a scoped entry
+//    exists and an unscoped entry is added, the unscoped entry is resolved to the scoped
+//    one and replaces it (propagating its metadata). Different non-zero scopes are allowed
+//    to coexist independently without merging their metadata.
+//
+// Returns `true` if the address should be skipped/ignored.
+fn process_ipv6_scope_and_metadata(
+    addr: &mut TargetAddrEntry,
+    addrs: &mut BTreeSet<TargetAddrEntry>,
+) -> bool {
+    let TargetAddr::Net(ip_addr) = addr.addr else {
+        return false;
+    };
+    if !ip_addr.ip().is_ipv6() {
+        return false;
+    }
+
+    if addr.addr.scope_id() == 0 {
+        // If the incoming address has no scope ID, try to carry forward an existing scope ID
+        // for the same IP and port. We only carry forward valid non-zero scope IDs. Note that if
+        // multiple valid scopes exist (e.g. Ethernet and Wi-Fi paths), this choice is arbitrary.
+        let existing_scope = addrs.iter().find_map(|entry| {
+            if let TargetAddr::Net(entry_ip_addr) = entry.addr
+                && entry_ip_addr.ip() == ip_addr.ip()
+                && entry_ip_addr.port() == ip_addr.port()
+                && entry.addr.scope_id() != 0
+            {
+                Some(entry.addr.scope_id())
+            } else {
+                None
+            }
+        });
+        if let Some(scope_id) = existing_scope {
+            addr.addr.set_scope_id(scope_id);
+        }
+
+        // Note: Discarding IPv6 link-local addresses without a scope ID is deliberate.
+        // Link-local addresses (fe80::/10) require an interface scope ID to be routable by the
+        // host OS. If we added an unscoped link-local address and could not carry forward an
+        // existing scope, the address would be unroutable and unusable for SSH connections.
+        if ip_addr.ip().is_link_local_addr() && addr.addr.scope_id() == 0 {
+            return true;
+        }
+    } else {
+        // If the incoming address has a scope, and there is an existing unscoped entry
+        // for the same IP and port, remove the unscoped entry and merge its status.
+        let unscoped_entry = addrs
+            .iter()
+            .find(|entry| {
+                if let TargetAddr::Net(entry_ip_addr) = entry.addr
+                    && entry_ip_addr.ip() == ip_addr.ip()
+                    && entry_ip_addr.port() == ip_addr.port()
+                    && entry.addr.scope_id() == 0
+                {
+                    true
+                } else {
+                    false
+                }
+            })
+            .cloned();
+
+        if let Some(entry) = unscoped_entry {
+            addr.status.source.merge(entry.status.source);
+            addrs.remove(&entry);
+        }
+    }
+
+    false
+}
+
 mod identity;
 mod update;
 pub use self::identity::{Identity, IdentityCmp};
@@ -1172,22 +1254,13 @@ impl Target {
             // originally present, for example if a directly connected USB target has restarted,
             // wherein the scopeid could be incremented due to the device being given a new
             // interface id allocation.
-            if let TargetAddr::Net(ip_addr) = &addr.addr {
-                if ip_addr.ip().is_ipv6() && addr.addr.scope_id() == 0 {
-                    if let Some(entry) = addrs.get(&addr) {
-                        addr.addr.set_scope_id(entry.addr.scope_id());
-                    }
-
-                    // Note: not adding ipv6 link-local addresses without scopes here is deliberate!
-                    if addr.addr.ip().unwrap().is_link_local_addr() && addr.addr.scope_id() == 0 {
-                        continue;
-                    }
-                }
+            if process_ipv6_scope_and_metadata(&mut addr, &mut addrs) {
+                continue;
             }
 
             if let Some(entry) = addrs.get(&addr) {
                 // If the existing entry was not from discovery, unmark the incoming entry as well.
-                addr.status.source.merge(entry.source);
+                addr.status.source.merge(entry.status.source);
             }
 
             addrs.replace(addr);
@@ -1851,6 +1924,176 @@ mod test {
     const DEFAULT_PRODUCT_CONFIG: &str = "core";
     const DEFAULT_BOARD_CONFIG: &str = "x64";
     const TEST_SERIAL: &'static str = "test-serial";
+
+    fn make_addr_entry(ip: &str, scope: u32, source: TargetSource) -> TargetAddrEntry {
+        TargetAddrEntry {
+            addr: TargetAddr::new(ip.parse().unwrap(), scope, 8080),
+            timestamp: Utc::now(),
+            status: TargetAddrStatus {
+                protocol: TargetProtocol::Ssh,
+                transport: TargetTransport::Network,
+                source,
+            },
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_process_ipv6_scope_and_metadata_carries_forward_scope_id() {
+        let mut addrs = BTreeSet::new();
+        addrs.insert(make_addr_entry("fe80::1", 5, TargetSource::Discovered));
+
+        let mut addr = make_addr_entry("fe80::1", 0, TargetSource::Discovered);
+
+        assert!(!process_ipv6_scope_and_metadata(&mut addr, &mut addrs));
+        assert_eq!(addr.addr.scope_id(), 5);
+    }
+
+    #[fuchsia::test]
+    fn test_process_ipv6_scope_and_metadata_discards_unscoped_link_local() {
+        let mut addrs = BTreeSet::new();
+        let mut addr = make_addr_entry("fe80::1", 0, TargetSource::Discovered);
+        // Returning `true` indicates the address is unroutable and should be discarded/skipped.
+        assert!(process_ipv6_scope_and_metadata(&mut addr, &mut addrs));
+    }
+
+    #[fuchsia::test]
+    fn test_process_ipv6_scope_and_metadata_merges_metadata() {
+        let mut addrs = BTreeSet::new();
+        addrs.insert(make_addr_entry("fe80::1", 0, TargetSource::Manual));
+
+        let mut addr = make_addr_entry("fe80::1", 5, TargetSource::Discovered);
+
+        assert!(!process_ipv6_scope_and_metadata(&mut addr, &mut addrs));
+        assert_eq!(addr.status.source, TargetSource::Manual);
+        assert!(addrs.is_empty()); // Verify the unscoped entry was removed
+    }
+
+    #[fuchsia::test]
+    async fn test_addrs_extend_retains_both_scopes_without_merging_non_zero_metadata() {
+        let env = ffx_config::test_init().unwrap();
+        let target = Target::new_named(&env.context, "test-device");
+
+        // 1. Target starts with a manual address fe80::1%4
+        let manual_addr = make_addr_entry("fe80::1", 4, TargetSource::Manual);
+        target.addrs_extend(std::iter::once(manual_addr));
+
+        // Verify it is manual
+        {
+            let addrs = target.addrs.borrow();
+            let entry = addrs.iter().next().unwrap();
+            assert_eq!(entry.addr, TargetAddr::new("fe80::1".parse().unwrap(), 4, 8080));
+            assert_eq!(entry.status.source, TargetSource::Manual);
+        }
+
+        // 2. We receive a discovery advertisement on fe80::1%5
+        let discovered_addr = make_addr_entry("fe80::1", 5, TargetSource::Discovered);
+        target.addrs_extend(std::iter::once(discovered_addr));
+
+        // 3. Verify that both entries coexist and retain their own metadata
+        let addrs = target.addrs.borrow();
+        assert_eq!(addrs.len(), 2);
+
+        let mut iter = addrs.iter();
+        let entry1 = iter.next().unwrap();
+        let entry2 = iter.next().unwrap();
+
+        assert_eq!(entry1.addr, TargetAddr::new("fe80::1".parse().unwrap(), 4, 8080));
+        assert_eq!(entry1.status.source, TargetSource::Manual);
+
+        assert_eq!(entry2.addr, TargetAddr::new("fe80::1".parse().unwrap(), 5, 8080));
+        assert_eq!(entry2.status.source, TargetSource::Discovered);
+    }
+
+    #[fuchsia::test]
+    async fn test_addrs_extend_merges_unscoped_manual_metadata_link_local() {
+        let env = ffx_config::test_init().unwrap();
+        let target = Target::new_named(&env.context, "test-device");
+
+        // 1. Target starts with a discovered scoped address fe80::1%5
+        let discovered_addr = make_addr_entry("fe80::1", 5, TargetSource::Discovered);
+        target.addrs_extend(std::iter::once(discovered_addr));
+
+        // Verify it is discovered
+        {
+            let addrs = target.addrs.borrow();
+            let entry = addrs.iter().next().unwrap();
+            assert_eq!(entry.addr, TargetAddr::new("fe80::1".parse().unwrap(), 5, 8080));
+            assert_eq!(entry.status.source, TargetSource::Discovered);
+        }
+
+        // 2. We manually add an unscoped address fe80::1%0
+        let manual_addr = make_addr_entry("fe80::1", 0, TargetSource::Manual);
+        target.addrs_extend(std::iter::once(manual_addr));
+
+        // 3. Verify that the unscoped entry was resolved to scope 5, and the entry is now Manual
+        let addrs = target.addrs.borrow();
+        assert_eq!(addrs.len(), 1);
+
+        let entry = addrs.iter().next().unwrap();
+        assert_eq!(entry.addr, TargetAddr::new("fe80::1".parse().unwrap(), 5, 8080));
+        assert_eq!(entry.status.source, TargetSource::Manual);
+    }
+
+    #[fuchsia::test]
+    async fn test_addrs_extend_merges_unscoped_manual_first_global() {
+        let env = ffx_config::test_init().unwrap();
+        let target = Target::new_named(&env.context, "test-device");
+
+        // 1. Target starts with a manual unscoped address 2001:db8::1%0
+        // (Global IP is not link-local, so it is not discarded when unscoped)
+        let manual_addr = make_addr_entry("2001:db8::1", 0, TargetSource::Manual);
+        target.addrs_extend(std::iter::once(manual_addr));
+
+        // Verify it is manual
+        {
+            let addrs = target.addrs.borrow();
+            let entry = addrs.iter().next().unwrap();
+            assert_eq!(entry.addr, TargetAddr::new("2001:db8::1".parse().unwrap(), 0, 8080));
+            assert_eq!(entry.status.source, TargetSource::Manual);
+        }
+
+        // 2. We receive a discovery advertisement on 2001:db8::1%5
+        let discovered_addr = make_addr_entry("2001:db8::1", 5, TargetSource::Discovered);
+        target.addrs_extend(std::iter::once(discovered_addr));
+
+        // 3. Verify that the unscoped entry is replaced, and only 2001:db8::1%5 (Manual) exists
+        let addrs = target.addrs.borrow();
+        assert_eq!(addrs.len(), 1);
+
+        let entry = addrs.iter().next().unwrap();
+        assert_eq!(entry.addr, TargetAddr::new("2001:db8::1".parse().unwrap(), 5, 8080));
+        assert_eq!(entry.status.source, TargetSource::Manual);
+    }
+
+    #[fuchsia::test]
+    async fn test_addrs_extend_merges_discovered_first_global() {
+        let env = ffx_config::test_init().unwrap();
+        let target = Target::new_named(&env.context, "test-device");
+
+        // 1. Target starts with a discovered scoped address 2001:db8::1%5
+        let discovered_addr = make_addr_entry("2001:db8::1", 5, TargetSource::Discovered);
+        target.addrs_extend(std::iter::once(discovered_addr));
+
+        // Verify it is discovered
+        {
+            let addrs = target.addrs.borrow();
+            let entry = addrs.iter().next().unwrap();
+            assert_eq!(entry.addr, TargetAddr::new("2001:db8::1".parse().unwrap(), 5, 8080));
+            assert_eq!(entry.status.source, TargetSource::Discovered);
+        }
+
+        // 2. We manually add an unscoped address 2001:db8::1%0
+        let manual_addr = make_addr_entry("2001:db8::1", 0, TargetSource::Manual);
+        target.addrs_extend(std::iter::once(manual_addr));
+
+        // 3. Verify that only 2001:db8::1%5 exists as Manual (identical to the first case)
+        let addrs = target.addrs.borrow();
+        assert_eq!(addrs.len(), 1);
+
+        let entry = addrs.iter().next().unwrap();
+        assert_eq!(entry.addr, TargetAddr::new("2001:db8::1".parse().unwrap(), 5, 8080));
+        assert_eq!(entry.status.source, TargetSource::Manual);
+    }
 
     fn setup_fake_remote_control_service(
         send_internal_error: bool,

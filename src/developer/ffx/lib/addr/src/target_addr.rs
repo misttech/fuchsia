@@ -76,20 +76,21 @@ impl FromStr for TargetIpAddr {
         Ok(Self::from(sa))
     }
 }
-// Only compare `TargetAddr` by ip and port, since we want to deduplicate targets if they are
-// addressable over multiple IPv6 interfaces.
+// Compare `TargetIpAddr` by ip, port, and scope_id.
 impl std::hash::Hash for TargetIpAddr {
     fn hash<H>(&self, state: &mut H)
     where
         H: std::hash::Hasher,
     {
-        (self.0.ip(), self.0.port()).hash(state)
+        (self.0.ip(), self.0.port(), self.scope_id()).hash(state)
     }
 }
 
 impl PartialEq for TargetIpAddr {
     fn eq(&self, other: &Self) -> bool {
-        self.0.ip() == other.0.ip() && self.0.port() == other.0.port()
+        self.0.ip() == other.0.ip()
+            && self.0.port() == other.0.port()
+            && self.scope_id() == other.scope_id()
     }
 }
 
@@ -97,7 +98,11 @@ impl Eq for TargetIpAddr {}
 
 impl Ord for TargetIpAddr {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.ip().cmp(&other.0.ip()).then(self.0.port().cmp(&other.0.port()))
+        self.0
+            .ip()
+            .cmp(&other.0.ip())
+            .then(self.0.port().cmp(&other.0.port()))
+            .then(self.scope_id().cmp(&other.scope_id()))
     }
 }
 
@@ -260,15 +265,14 @@ pub enum TargetAddr {
     UsbCtx(u32),
 }
 
-// Only compare `TargetAddr` by ip and port, since we want to deduplicate targets if they are
-// addressable over multiple IPv6 interfaces.
+// Compare `TargetAddr` by ip, port, and scope_id (if network address) or cid (if VSOCK/USB address).
 impl std::hash::Hash for TargetAddr {
     fn hash<H>(&self, state: &mut H)
     where
         H: std::hash::Hasher,
     {
         match self {
-            TargetAddr::Net(addr) => (addr.ip(), addr.port()).hash(state),
+            TargetAddr::Net(addr) => (addr.ip(), addr.port(), self.scope_id()).hash(state),
             TargetAddr::VSockCtx(cid) => cid.hash(state),
             TargetAddr::UsbCtx(cid) => {
                 cid.hash(state);
@@ -281,8 +285,10 @@ impl std::hash::Hash for TargetAddr {
 impl PartialEq for TargetAddr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (TargetAddr::Net(addr), TargetAddr::Net(other)) => {
-                addr.ip() == other.ip() && addr.port() == other.port()
+            (TargetAddr::Net(addr), TargetAddr::Net(other_addr)) => {
+                addr.ip() == other_addr.ip()
+                    && addr.port() == other_addr.port()
+                    && self.scope_id() == other.scope_id()
             }
             (TargetAddr::Net(_), _) | (_, TargetAddr::Net(_)) => false,
             (TargetAddr::VSockCtx(cid), TargetAddr::VSockCtx(other)) => cid == other,
@@ -297,9 +303,11 @@ impl Eq for TargetAddr {}
 impl Ord for TargetAddr {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (TargetAddr::Net(addr), TargetAddr::Net(other)) => {
-                addr.ip().cmp(&other.ip()).then(addr.port().cmp(&other.port()))
-            }
+            (TargetAddr::Net(addr), TargetAddr::Net(other_addr)) => addr
+                .ip()
+                .cmp(&other_addr.ip())
+                .then(addr.port().cmp(&other_addr.port()))
+                .then(self.scope_id().cmp(&other.scope_id())),
             (TargetAddr::Net(_), TargetAddr::VSockCtx(_) | TargetAddr::UsbCtx(_)) => Ordering::Less,
             (TargetAddr::VSockCtx(_) | TargetAddr::UsbCtx(_), TargetAddr::Net(_)) => {
                 Ordering::Greater
@@ -537,5 +545,55 @@ mod test {
         let v6addr = std_socket_addr!("[fe80::1]:8080");
         let addr = TargetIpAddr::from(v6addr);
         assert_eq!(&addr.resolved_str(), "fe80::1");
+    }
+
+    #[fuchsia::test]
+    fn test_target_addr_eq_and_hash_includes_scope() {
+        let addr1 = TargetAddr::new("fe80::1".parse().unwrap(), 1, 8080);
+        let addr2 = TargetAddr::new("fe80::1".parse().unwrap(), 2, 8080);
+        let addr1_dup = TargetAddr::new("fe80::1".parse().unwrap(), 1, 8080);
+
+        assert_eq!(addr1, addr1_dup);
+        assert_ne!(addr1, addr2);
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut h1 = DefaultHasher::new();
+        addr1.hash(&mut h1);
+
+        let mut h2 = DefaultHasher::new();
+        addr2.hash(&mut h2);
+
+        let mut h1_dup = DefaultHasher::new();
+        addr1_dup.hash(&mut h1_dup);
+
+        assert_eq!(h1.finish(), h1_dup.finish());
+        assert_ne!(h1.finish(), h2.finish());
+    }
+
+    #[fuchsia::test]
+    fn test_target_ip_addr_eq_and_hash_includes_scope() {
+        let addr1 = TargetIpAddr::new("fe80::1".parse().unwrap(), 1, 8080);
+        let addr2 = TargetIpAddr::new("fe80::1".parse().unwrap(), 2, 8080);
+        let addr1_dup = TargetIpAddr::new("fe80::1".parse().unwrap(), 1, 8080);
+
+        assert_eq!(addr1, addr1_dup);
+        assert_ne!(addr1, addr2);
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut h1 = DefaultHasher::new();
+        addr1.hash(&mut h1);
+
+        let mut h2 = DefaultHasher::new();
+        addr2.hash(&mut h2);
+
+        let mut h1_dup = DefaultHasher::new();
+        addr1_dup.hash(&mut h1_dup);
+
+        assert_eq!(h1.finish(), h1_dup.finish());
+        assert_ne!(h1.finish(), h2.finish());
     }
 }
