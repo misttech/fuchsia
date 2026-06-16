@@ -3,10 +3,18 @@
 # found in the LICENSE file.
 
 group("hierarchy") {
-  deps = [ "//src/lib/diagnostics/hierarchy/rust" ]
+  deps = [
+    "//src/lib/diagnostics/hierarchy/rust",
+    "//src/lib/diagnostics/hierarchy/rust/bench:build-only",
+  ]
 }
 
 group("tests") {
   testonly = true
   deps = [ "//src/lib/diagnostics/hierarchy/rust:tests" ]
+}
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "rust:benchmarks" ]
 }

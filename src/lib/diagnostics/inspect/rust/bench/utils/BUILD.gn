@@ -9,7 +9,10 @@ rustc_library("fuchsia_inspect_bench_utils") {
   edition = "2024"
   with_unit_tests = true
 
-  visibility = [ "//src/lib/diagnostics/inspect/rust/bench/*" ]
+  visibility = [
+    "//src/lib/diagnostics/hierarchy/rust/bench/*",
+    "//src/lib/diagnostics/inspect/rust/bench/*",
+  ]
 
   source_root = "src/lib.rs"
 

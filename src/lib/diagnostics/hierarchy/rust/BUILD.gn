@@ -70,3 +70,8 @@ group("tests") {
     deps += [ ":diagnostics-hierarchy_test" ]
   }
 }
+
+group("benchmarks") {
+  testonly = true
+  deps = [ "bench" ]
+}
