@@ -607,6 +607,7 @@
                 "ProcTask.VerifyTaskDirNlinks",
                 "ProcSysKernel.RandomizeVaSpace",
                 "ProcSysKernelHostname.MatchesUname",
+                "ProcSysKernelDomainname.MatchesUname",
                 "ProcSysVmMaxmapCount.HasNumericValue",
                 "ProcSysVmMmapMinAddr.HasNumericValue",
                 "ProcSysVmOvercommitMemory.HasNumericValue",
