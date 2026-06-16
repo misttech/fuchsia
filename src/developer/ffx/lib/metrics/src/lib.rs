@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use agents::{SystemEnvironment, is_invoked_by_agent};
 use analytics::metrics_state::MetricsStatus;
 use analytics::{
     AnalyticsError, add_custom_event, ga4_metrics, initialize_ga4_metrics_service,
@@ -59,14 +58,12 @@ pub async fn add_ffx_launch_event(
     error_message: Option<String>,
 ) -> Result<()> {
     let u64_time = u64::try_from(time).unwrap_or(0);
-    let is_ai = is_invoked_by_agent(&SystemEnvironment);
     let call_stack = std::env::var("FUCHSIA_METRICS_CALL_STACK").unwrap_or_default();
     let custom_dimensions = BTreeMap::from([
         ("time", u64_time.into()),
         ("exit_code", exit_code.to_string().into()),
         ("error_message", error_message.unwrap_or_else(|| "".to_string()).into()),
         ("redacted_args", redacted_args.into()),
-        ("in_agent_env", is_ai.into()),
         ("call_stack", call_stack.into()),
     ]);
     let mut metrics_svc = ga4_metrics().await?;

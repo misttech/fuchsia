@@ -9,7 +9,6 @@ rustc_library("lib") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//src/developer/ffx/lib/agents",
     "//src/developer/ffx/lib/diagnostics/analytics/state:lib",
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/errors:lib",
@@ -30,4 +29,9 @@ rustc_library("lib") {
 
   test_deps = [ "//third_party/rust_crates:pretty_assertions" ]
   sources = [ "src/lib.rs" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":lib_test" ]
 }

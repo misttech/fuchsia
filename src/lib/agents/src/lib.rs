@@ -5,7 +5,7 @@
 use std::sync::LazyLock;
 
 static AGENTS_ENV_VARS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
-    include_str!("../../../../../../tools/devshell/lib/agents.txt")
+    include_str!("../../../../tools/devshell/lib/agents.txt")
         .lines()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
@@ -26,6 +26,11 @@ impl EnvironmentSource for SystemEnvironment {
 /// Returns true if the current process appears to be invoked by an AI agent.
 pub fn is_invoked_by_agent<E: EnvironmentSource>(env: &E) -> bool {
     AGENTS_ENV_VARS.iter().any(|&name| env.has_var(name))
+}
+
+/// Returns true if the current process appears to be invoked by an AI agent, using the system environment.
+pub fn is_agent_env() -> bool {
+    is_invoked_by_agent(&SystemEnvironment)
 }
 
 #[cfg(test)]

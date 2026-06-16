@@ -7,7 +7,6 @@ assert(is_host, "ffx/lib is for use with the host toolchain only")
 libs = [
   # keep-sorted start
   "addr",
-  "agents",
   "arg_parsing",
   "auth",
   "buildid",

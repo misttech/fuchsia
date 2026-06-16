@@ -4,15 +4,13 @@
 
 import("//build/rust/rustc_library.gni")
 
-assert(is_host, "agents is for use with the host toolchain only")
-
 group("agents") {
   public_deps = [ ":lib" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":lib_test" ]
+  deps = [ ":lib_test($host_toolchain)" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

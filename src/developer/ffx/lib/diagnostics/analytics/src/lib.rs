@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use agents::{SystemEnvironment, is_invoked_by_agent};
 use discovery::{TargetHandle, TargetState};
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -235,7 +234,7 @@ pub async fn mark_point_of_failure(failure_point: impl Into<CustomEvent>) {
         _ => return,
     };
     set_or_panic(&mut custom_dimensions, "category_name", category);
-    set_or_panic(&mut custom_dimensions, "is_agent_env", is_invoked_by_agent(&SystemEnvironment));
+
     if let Some(subcmd_args) = ffx_diagnostics_analytics_state::get_command_line() {
         set_or_panic(&mut custom_dimensions, "command_root", subcmd_args.join(" "));
     }

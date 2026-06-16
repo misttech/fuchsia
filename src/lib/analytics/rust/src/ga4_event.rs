@@ -308,6 +308,7 @@ pub(crate) fn make_ga4_event<'a>(
     );
 
     let params: &mut HashMap<String, GA4Value> = &mut HashMap::new();
+    params.insert("is_agent_env".into(), agents::is_agent_env().into());
     if let Some(s) = invoker {
         params.insert("invoker".into(), s.into());
     }
@@ -352,6 +353,7 @@ pub(crate) fn make_ga4_crash_event(
     invoker: Option<&str>,
 ) -> Event {
     let params: &mut HashMap<String, GA4Value> = &mut HashMap::new();
+    params.insert("is_agent_env".into(), agents::is_agent_env().into());
     if let Some(s) = invoker {
         params.insert("invoker".into(), s.into());
     }
@@ -379,6 +381,7 @@ pub(crate) fn make_ga4_timing_event<'a>(
     invoker: Option<&str>,
 ) -> Event {
     let params: &mut HashMap<String, GA4Value> = &mut HashMap::new();
+    params.insert("is_agent_env".into(), agents::is_agent_env().into());
     if let Some(value) = command {
         params.insert("command".into(), value.into());
     }
@@ -651,8 +654,9 @@ mod tests {
     #[test]
     fn make_post_event() {
         let args = "config analytics enable";
-        let expected = String::from(
-            "{\"client_id\":\"1\",\"events\":[{\"name\":\"invoke\",\"params\":{\"label\":\"config analytics enable\"},\"timestamp_micros\":\"1\"}],\"non_personalized_ads\":true}",
+        let expected = format!(
+            "{{\"client_id\":\"1\",\"events\":[{{\"name\":\"invoke\",\"params\":{{\"is_agent_env\":{},\"label\":\"config analytics enable\"}},\"timestamp_micros\":\"1\"}}],\"non_personalized_ads\":true}}",
+            agents::is_agent_env()
         );
         let mut event =
             make_ga4_event(None, None, Some(args), BTreeMap::new(), None, Some("invoke"));

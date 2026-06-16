@@ -6,6 +6,7 @@
 # which are listed in //sdk/fidl/bazel2gn_verification_targets.gni.
 bazel2gn_verification_targets = [
   # keep-sorted start
+
   "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:verify_bazel2gn",
   "//build/sdk/generate_version_history:verify_bazel2gn",
   "//build/sdk/meta:verify_bazel2gn",
@@ -54,7 +55,6 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/core/macro:verify_bazel2gn",
   "//src/developer/ffx/fidl/usb:verify_bazel2gn",
   "//src/developer/ffx/fidl:verify_bazel2gn",
-  "//src/developer/ffx/lib/agents:verify_bazel2gn",
   "//src/developer/ffx/lib/buildid/cpp:verify_bazel2gn",
   "//src/developer/ffx/lib/buildid:verify_bazel2gn",
   "//src/developer/ffx/lib/diagnostics/analytics/state:verify_bazel2gn",
@@ -72,6 +72,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/plugins/completion:verify_bazel2gn",
   "//src/developer/ffx/tools/efi:verify_bazel2gn",
   "//src/developer/lib/writer:verify_bazel2gn",
+  "//src/lib/agents:verify_bazel2gn",
   "//src/lib/analytics/rust:verify_bazel2gn",
   "//src/lib/collections/packed:verify_bazel2gn",
   "//src/lib/fdio/rust:verify_bazel2gn",
