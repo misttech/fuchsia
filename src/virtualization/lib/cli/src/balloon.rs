@@ -8,7 +8,7 @@ use fidl_fuchsia_virtualization::{
 };
 use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::fmt;
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -116,6 +116,7 @@ const VIRTIO_BALLOON_S_CACHES: u16 = 7; // Disk caches
 const VIRTIO_BALLOON_S_HTLB_PGALLOC: u16 = 8; // HugeTLB page allocations
 const VIRTIO_BALLOON_S_HTLB_PGFAIL: u16 = 9; // HugeTLB page allocation failures
 
+#[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401253790)
 pub async fn connect_to_balloon_controller<P: PlatformServices>(
     services: &P,
     guest_type: arguments::GuestType,
@@ -232,10 +233,11 @@ pub async fn handle_balloon<P: PlatformServices>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::{create_proxy_and_stream, ControlHandle, RequestStream};
+    use fidl::endpoints::{ControlHandle, RequestStream, create_proxy_and_stream};
     use fidl_fuchsia_virtualization::MemStat;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
-    use {fuchsia_async as fasync, zx_status};
+    use zx_status;
 
     #[fasync::run_until_stalled(test)]
     async fn balloon_valid_page_num_returns_ok() {

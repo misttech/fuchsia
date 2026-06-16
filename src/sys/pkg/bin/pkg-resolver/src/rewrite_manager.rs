@@ -247,6 +247,7 @@ pub struct RewriteManagerBuilder<N> {
 }
 
 impl RewriteManagerBuilder<UnsetInspectNode> {
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255328)
     /// Create a new [RewriteManagerBuilder] and initialize it with the dynamic [Rule]s from the
     /// provided path. If the provided dynamic rule config file does not exist or is corrupt, this
     /// method returns an [RewriteManagerBuilder] initialized with no rules and configured with the
@@ -306,6 +307,7 @@ pub enum LoadRulesError {
 }
 
 impl<N> RewriteManagerBuilder<N> {
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255328)
     /// Load [Rule]s from the provided path and register them as static rewrite rules. On error,
     /// return this [RewriteManagerBuilder] unmodified along with the encountered error.
     pub async fn static_rules_path(

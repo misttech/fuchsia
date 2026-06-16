@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_posix_socket as fposix_socket,
-};
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_posix_socket as fposix_socket;
 
 use log::{error, info};
 use socket_proxy::{NetworkConversionError, NetworkExt, NetworkRegistryError};
@@ -117,7 +115,7 @@ impl SocketProxyState {
                 let _ = entry.insert(network.clone());
             }
             Entry::Occupied(_entry) => {
-                return Err(SocketProxyError::AddedExistingNetwork(network));
+                return Err(SocketProxyError::AddedExistingNetwork(Box::new(network)));
             }
         }
 
@@ -249,7 +247,7 @@ impl SocketProxyState {
 #[derive(Clone, Debug, Error)]
 pub enum SocketProxyError {
     #[error("Error adding network that already exists: {0:?}")]
-    AddedExistingNetwork(fnp_socketproxy::Network),
+    AddedExistingNetwork(Box<fnp_socketproxy::Network>),
     #[error("Error converting the watcher properties to a network: {0}")]
     ConversionError(#[from] NetworkConversionError),
     #[error("Error calling FIDL on socketproxy: {0:?}")]
@@ -434,10 +432,11 @@ mod tests {
         // Ensure we cannot add a network with the same id twice.
         assert_matches::assert_matches!(
             state.handle_add_network(&network1).await,
-            Err(SocketProxyError::AddedExistingNetwork(fnp_socketproxy::Network {
-                network_id: Some(NETWORK_ID1_U32),
-                ..
-            }))
+            Err(SocketProxyError::AddedExistingNetwork(network))
+                if matches!(
+                    *network,
+                    fnp_socketproxy::Network { network_id: Some(NETWORK_ID1_U32), .. }
+                )
         );
 
         // Ensure we can add a network with a different id.

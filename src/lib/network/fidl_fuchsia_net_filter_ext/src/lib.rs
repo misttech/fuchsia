@@ -1103,6 +1103,7 @@ impl Update for HashMap<ControllerId, HashMap<ResourceId, Resource>> {
 
 /// Collects all `existing` events from the stream, stopping once the `idle`
 /// event is observed.
+#[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401253790)
 pub async fn get_existing_resources<C: Update + Default>(
     stream: impl Stream<Item = Result<Event, WatchError>>,
 ) -> Result<C, GetExistingResourcesError> {
@@ -1159,6 +1160,7 @@ pub enum WaitForConditionError {
 /// With the given `initial_state`, take events from `event_stream` and update
 /// the state, calling `predicate` whenever the state changes. When predicates
 /// returns `True` yield `Ok(())`.
+#[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401253790)
 pub async fn wait_for_condition<
     C: Update,
     S: Stream<Item = Result<Event, WatchError>>,

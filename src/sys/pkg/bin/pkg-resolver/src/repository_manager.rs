@@ -432,6 +432,7 @@ impl<S, N> RepositoryManagerBuilder<S, N> {
 }
 
 impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255328)
     /// Create a new builder and initialize it with the dynamic
     /// [RepositoryConfigs](RepositoryConfig) from this path if it exists, and add it to the
     /// [RepositoryManager], or error out if we encounter errors during the load. The
@@ -474,6 +475,7 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
         if let Some(err) = err { Err((builder, err)) } else { Ok(builder) }
     }
 
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255328)
     #[cfg(test)]
     pub async fn new_test<P>(
         data_dir: &tempfile::TempDir,
@@ -1018,6 +1020,7 @@ mod tests {
             Ok(builder.build())
         }
 
+        #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255328)
         async fn repo_manager_builder(
             &self,
         ) -> Result<RepositoryManagerBuilder, (RepositoryManagerBuilder, TestError)> {

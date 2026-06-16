@@ -42,7 +42,7 @@ pub enum Error {
     CannotStartRootComponent(anyhow::Error),
 
     #[error("from_dictionary is not supported for capability type: {0:?}")]
-    FromDictionaryNotSupported(ftest::Capability),
+    FromDictionaryNotSupported(Box<ftest::Capability>),
 }
 
 impl From<ftest::RealmBuilderError> for Error {

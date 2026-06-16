@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::prelude::*;
 use std::collections::HashMap;
 use update_package::{UpdateImagePackage, UpdatePackage};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg};
 
 /// Error encountered while resolving a package.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveError {
     #[error("fidl error while resolving {1}")]
-    Fidl(#[source] fidl::Error, AbsolutePackageUrl),
+    Fidl(#[source] fidl::Error, Box<AbsolutePackageUrl>),
 
     #[error("error while resolving {1}")]
-    Error(#[source] fidl_fuchsia_pkg_ext::ResolveError, AbsolutePackageUrl),
+    Error(#[source] fidl_fuchsia_pkg_ext::ResolveError, Box<AbsolutePackageUrl>),
 }
 
 /// Resolves the update package given by `url` through the pkg_resolver.
@@ -54,7 +55,7 @@ pub(super) async fn resolve_package(
     let _: fpkg::ResolutionContext = pkg_resolver
         .resolve(&url.to_string(), dir_server_end)
         .await
-        .map_err(|e| ResolveError::Fidl(e, url.clone()))?
-        .map_err(|raw| ResolveError::Error(raw.into(), url.clone()))?;
+        .map_err(|e| ResolveError::Fidl(e, Box::new(url.clone())))?
+        .map_err(|raw| ResolveError::Error(raw.into(), Box::new(url.clone())))?;
     Ok(dir)
 }
