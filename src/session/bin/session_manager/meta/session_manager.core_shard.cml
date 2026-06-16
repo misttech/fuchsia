@@ -745,7 +745,6 @@
                 "fuchsia.element.GraphicalPresenter",
                 "fuchsia.input.virtualkeyboard.ControllerCreator",
                 "fuchsia.input.virtualkeyboard.Manager",
-                "fuchsia.recovery.policy.Device",
                 "fuchsia.recovery.ui.FactoryResetCountdown",
                 "fuchsia.session.scene.Manager",
                 "fuchsia.ui.brightness.ColorAdjustment",
