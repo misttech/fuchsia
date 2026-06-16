@@ -84,13 +84,9 @@ lock_ordering! {
     FsNodeInfoRecursiveLevel => FsRename,
     FsRename => DirEntryChildrenLevel,
 
-    UninterruptibleLock => PerfEventLevel,
-    FileOpsCore => PerfEventLevel,
-
-    // Terminal Levels. No lock level should ever be defined after this. Can be used for any locks
+    // Terminal Level. No lock level should ever be defined after this. Can be used for any locks
     // that is never acquired before any other lock.
     Terminal(TerminalLock),
-    Terminal(TaskCommandLevel),
 
     // eBPF locks
     UninterruptibleLock => EbpfStateLock,
