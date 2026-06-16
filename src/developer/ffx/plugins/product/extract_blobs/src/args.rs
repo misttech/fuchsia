@@ -4,10 +4,8 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_core::ffx_command;
 
 /// Extract all blobs from a product bundle to a target directory.
-#[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "extract-blobs")]
 pub struct ExtractBlobsCommand {

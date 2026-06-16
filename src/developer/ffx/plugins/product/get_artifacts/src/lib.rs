@@ -7,7 +7,6 @@ use assembled_system::Image;
 use async_trait::async_trait;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
-use ffx_product_get_artifacts_args::GetArtifactsCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, bug, return_user_error};
 use product_bundle::{ProductBundle, Type};
@@ -16,6 +15,9 @@ use sdk_metadata::VirtualDeviceManifest;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use utf8_path::path_relative_from;
+
+mod args;
+pub use args::GetArtifactsCommand;
 
 /// CommandStatus is returned to indicate exit status of
 /// a command. The Ok variant returns the list of artifacts.
@@ -35,8 +37,6 @@ pub struct PbGetArtifactsTool {
     pub cmd: GetArtifactsCommand,
     env: EnvironmentContext,
 }
-
-fho::embedded_plugin!(PbGetArtifactsTool);
 
 #[async_trait(?Send)]
 impl FfxMain for PbGetArtifactsTool {

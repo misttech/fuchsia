@@ -8,11 +8,13 @@ use anyhow::{Result, anyhow};
 use assembly_partitions_config::Slot;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
-use ffx_product_extract_blobs_args::ExtractBlobsCommand;
 use fho::{FfxMain, FfxTool, Result as FhoResult, return_user_error};
 use product_bundle::ProductBundle;
 use std::io::Write;
 use std::path::PathBuf;
+
+mod args;
+pub use args::ExtractBlobsCommand;
 
 #[derive(FfxTool)]
 pub struct PbExtractBlobsTool {
@@ -20,8 +22,6 @@ pub struct PbExtractBlobsTool {
     pub cmd: ExtractBlobsCommand,
     env: EnvironmentContext,
 }
-
-fho::embedded_plugin!(PbExtractBlobsTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PbExtractBlobsTool {

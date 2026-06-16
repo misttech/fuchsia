@@ -3,11 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use ffx_core::ffx_command;
 use pbms::AuthFlowChoice;
 
 /// List all available products for a specific SDK version.
-#[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,

@@ -22,12 +22,13 @@ if (is_host) {
     "//src/developer/ffx:test_data",
     "//src/developer/ffx/plugins/inspect:ffx_inspect_tool_test_data",
     "//src/developer/ffx/plugins/log:ffx_log_tool_test_data",
+    "//src/developer/ffx/plugins/package:ffx_package_tool_test_data",
+    "//src/developer/ffx/plugins/product:ffx_product_tool_test_data",
   ]
   if (ffx_build_dual_mode_plugins_as_subtools) {
     non_go_deps += [
       "//src/developer/ffx/plugins/component:ffx_component_tool_test_data",
       "//src/developer/ffx/plugins/emulator:ffx_emulator_tool_test_data",
-      "//src/developer/ffx/plugins/package:ffx_package_tool_test_data",
       "//src/developer/ffx/plugins/product_bundle:ffx_product_bundle_tool_test_data",
       "//src/developer/ffx/plugins/repository:ffx_repository_tool_test_data",
     ]

@@ -9,7 +9,6 @@ use ::gcs::client::{Client, ProgressResponse};
 use anyhow::{Context, Result};
 use ffx_config::EnvironmentContext;
 use ffx_config::sdk::{SdkVersion, in_tree_sdk_version};
-use ffx_product_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, bug, return_user_error};
 use gcs::gs_url::split_gs_url;
@@ -23,6 +22,9 @@ use std::io::{Write, stderr, stdin, stdout};
 use std::str::FromStr;
 use std::sync::LazyLock;
 use structured_ui::{Notice, Presentation};
+
+mod args;
+pub use args::ListCommand;
 
 const PB_MANIFEST_NAME: &'static str = "product_bundles.json";
 const CONFIG_BASE_URLS: &'static str = "pbms.base_urls";
@@ -70,8 +72,6 @@ pub struct ProductListTool {
 
     pub context: EnvironmentContext,
 }
-
-fho::embedded_plugin!(ProductListTool);
 
 /// This plugin will get list the available product bundles.
 #[async_trait::async_trait(?Send)]

@@ -2,21 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/developer/ffx/build/ffx_plugin.gni")
+import("//build/rust/rustc_library.gni")
 
-ffx_plugin("ffx_product_extract_blobs") {
-  sdk_category = "partner"
+rustc_library("lib") {
+  name = "ffx_product_extract_blobs"
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
 
-  args_sources = [ "src/args.rs" ]
-  sources = [ "src/lib.rs" ]
-
-  args_deps = [
-    "//src/developer/ffx/core:lib",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:camino",
+  sources = [
+    "src/args.rs",
+    "src/lib.rs",
   ]
 
   deps = [
@@ -26,6 +22,7 @@ ffx_plugin("ffx_product_extract_blobs") {
     "//src/lib/assembly/partitions_config",
     "//src/lib/assembly/product_bundle",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
   ]

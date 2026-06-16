@@ -17,10 +17,12 @@ use crate::unique_release_info::UniqueReleaseInfoVector;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use ffx_product_get_version_args::GetVersionCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool};
 use product_bundle::ProductBundle;
+
+mod args;
+pub use args::GetVersionCommand;
 
 /// This plugin will get the the product version of a Product Bundle.
 #[derive(FfxTool)]
@@ -28,8 +30,6 @@ pub struct PbGetVersionTool {
     #[command]
     cmd: GetVersionCommand,
 }
-
-fho::embedded_plugin!(PbGetVersionTool);
 
 #[async_trait(?Send)]
 impl FfxMain for PbGetVersionTool {

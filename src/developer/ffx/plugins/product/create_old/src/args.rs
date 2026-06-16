@@ -4,10 +4,8 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_core::ffx_command;
 
 /// Create a Product Bundle using the outputs of Product Assembly.
-#[ffx_command()]
 #[derive(Clone, ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "create-old")]
 pub struct CreateCommand {

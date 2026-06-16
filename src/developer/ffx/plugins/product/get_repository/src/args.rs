@@ -4,10 +4,8 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_core::ffx_command;
 
 /// Get the info of repository inside a Product Bundle.
-#[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "get-repository")]
 pub struct GetRepositoryCommand {

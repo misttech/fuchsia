@@ -14,12 +14,14 @@ use assembly_tool::ToolProvider;
 use ffx_config::EnvironmentContext;
 use ffx_config::sdk::{SdkVersion, in_tree_sdk_version};
 use ffx_flash_manifest::FlashManifestVersion;
-use ffx_product_create_old_args::CreateCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, return_bug};
 use product_bundle::ProductBundleBuilder;
 use sdk_metadata::VirtualDevice;
 use std::fs::File;
+
+mod args;
+pub use args::CreateCommand;
 
 /// Default delivery blob type to use for products.
 const DEFAULT_DELIVERY_BLOB_TYPE: u32 = 1;
@@ -30,8 +32,6 @@ pub struct ProductCreateTool {
     pub cmd: CreateCommand,
     ctx: EnvironmentContext,
 }
-
-fho::embedded_plugin!(ProductCreateTool);
 
 /// Create a product bundle.
 #[async_trait::async_trait(?Send)]

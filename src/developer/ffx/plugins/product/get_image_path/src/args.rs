@@ -5,7 +5,6 @@
 use anyhow::{Result, anyhow};
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_core::ffx_command;
 use std::str::FromStr;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -56,7 +55,6 @@ impl FromStr for ImageType {
 }
 
 /// Get the path of an image inside a Product Bundle based on type and slot.
-#[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "get-image-path")]
 pub struct GetImagePathCommand {
