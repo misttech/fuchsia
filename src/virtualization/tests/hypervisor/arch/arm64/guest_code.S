@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <lib/arch/asm.h>
-#include <lib/arch/cache.h>
 
 #include "src/virtualization/tests/hypervisor/asm.h"
 #include "src/virtualization/tests/hypervisor/constants.h"
@@ -174,6 +173,32 @@
     bne     \failure_label
     cmp     x0, x1                // Otherwise, keep looping until we reach the end address.
     bne     .Lcheck_region\@
+.endm
+
+// Clean the cache by VA for the region [start, start + size).
+//
+// Clobbers x0 -- x3.
+.macro clean_region start, size
+    movlit  x0, \start
+    movlit  x1, (\start + \size)
+
+    // Extract the cache line size in bytes from CTR_EL0
+    mrs     x2, ctr_el0
+    ubfx    x2, x2, #16, #4
+    mov     x3, #4
+    lsl     x2, x3, x2
+
+.Lclean_region\@:
+    // Iterate with x0, cleaning one cache line at a time by VA.
+    dc      cvac, x0
+    add     x0, x0, x2
+
+    // Loop if x0 is still less than the end of the region.
+    cmp     x0, x1
+    blo     .Lclean_region\@
+
+    dsb     sy  // Ensure all cleans have taken effect...
+    isb         // ...and that no speculation occurs until they do.
 .endm
 
 
@@ -390,8 +415,8 @@ FUNCTION vcpu_enable_disable_mmu
     // Turn off the MMU.
     disable_mmu  // clobbers x0
 
-    // Clean/invalidate caches.
-    data_cache_way_set_op csw  // clobbers x0 -- x13.
+    // Write the contents of the scratch space back to main memory.
+    clean_region GUEST_SCRATCH_ADDR, MEMORY_TEST_BYTES // clobbers x0 -- x3.
 
     // The value written into cache should now have been cleaned to main
     // memory, and should be visible even though caches are off.
