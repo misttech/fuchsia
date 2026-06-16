@@ -267,6 +267,23 @@ impl MagmaSystemConnection {
         for resource in &resources {
             let id = resource.buffer_id;
             let buffer = self.buffer_map.get(&BufferId(id)).ok_or(MagmaStatus::InvalidArgs)?;
+
+            // Validate the resource.
+            let buffer_size = buffer.size()?;
+            let Some(end) = resource.offset.checked_add(resource.length) else {
+                log::warn!("Resource offset + length overflowed");
+                return Err(MagmaStatus::InvalidArgs);
+            };
+            if end > buffer_size {
+                log::warn!(
+                    "Resource range [0x{:x}, 0x{:x}) out of bounds (size 0x{:x})",
+                    resource.offset,
+                    end,
+                    buffer_size
+                );
+                return Err(MagmaStatus::InvalidArgs);
+            }
+
             resolved_buffers.push(buffer);
         }
 
@@ -677,6 +694,63 @@ mod tests {
             0,
         );
         assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), MagmaStatus::InvalidArgs);
+    }
+
+    #[fuchsia::test]
+    fn execute_command_buffers_invalid_params() {
+        let driver = MockDriver;
+        let msd_dev = MockDevice;
+        let device = Arc::new(crate::magma_system_device::MagmaSystemDevice::new(
+            Box::new(driver),
+            Box::new(msd_dev),
+            0,
+        ));
+
+        let mut connection = create_test_connection(device.clone());
+
+        assert!(connection.create_context(ContextId(1)).is_ok());
+
+        let vmo = zx::Vmo::create(256).unwrap();
+        let id = 1;
+
+        assert!(
+            connection
+                .import_object(zx::NullableHandle::from(vmo), 0, MagmaObjectType::Buffer, id)
+                .is_ok()
+        );
+
+        // Overflow the offset and length.
+        let result = connection.execute_command_buffers(
+            ContextId(1),
+            vec![MagmaExecCommandBuffer { resource_index: 0, start_offset: 0 }],
+            vec![MagmaExecResource { buffer_id: 1, offset: 1, length: u64::MAX }],
+            vec![],
+            vec![],
+            0,
+        );
+        assert_eq!(result.unwrap_err(), MagmaStatus::InvalidArgs);
+
+        // Have a length that is out of bounds.
+        let result = connection.execute_command_buffers(
+            ContextId(1),
+            vec![MagmaExecCommandBuffer { resource_index: 0, start_offset: 0 }],
+            vec![MagmaExecResource { buffer_id: 1, offset: 0, length: 4097 }],
+            vec![],
+            vec![],
+            0,
+        );
+        assert_eq!(result.unwrap_err(), MagmaStatus::InvalidArgs);
+
+        // Have an offset that is out of bounds.
+        let result = connection.execute_command_buffers(
+            ContextId(1),
+            vec![MagmaExecCommandBuffer { resource_index: 0, start_offset: 0 }],
+            vec![MagmaExecResource { buffer_id: 1, offset: 4097, length: 256 }],
+            vec![],
+            vec![],
+            0,
+        );
         assert_eq!(result.unwrap_err(), MagmaStatus::InvalidArgs);
     }
 
