@@ -13,8 +13,10 @@ No.
 
 # What differs from upstream?
 
-This fork allows us to pull in https://github.com/bertptrs/tracing-mutex/pull/53
-in advance of it landing and being released upstream.
+1. This fork allows us to pull in https://github.com/bertptrs/tracing-mutex/pull/53
+   in advance of it landing and being released upstream.
+2. This fork allows using the mutex while the thread is destroyed by stopping
+   local mutex tracking once the TLS entry is deleted.
 
 # Are there any restrictions to how it should be rolled?
 

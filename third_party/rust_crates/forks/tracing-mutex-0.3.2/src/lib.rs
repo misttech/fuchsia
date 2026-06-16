@@ -184,7 +184,7 @@ impl MutexId {
     ///
     /// This method panics if the new dependency would introduce a cycle.
     pub fn mark_held(&self) {
-        let opt_cycle = HELD_LOCKS.with(|locks| {
+        let Ok(opt_cycle) = HELD_LOCKS.try_with(|locks| {
             if let Some(&previous) = locks.borrow().last() {
                 let mut graph = get_dependency_graph();
 
@@ -192,7 +192,9 @@ impl MutexId {
             } else {
                 None
             }
-        });
+        }) else {
+            return;
+        };
 
         if let Some(cycle) = opt_cycle {
             reporting::report_cycle(&cycle);
@@ -202,7 +204,7 @@ impl MutexId {
     }
 
     pub unsafe fn mark_released(&self) {
-        HELD_LOCKS.with(|locks| {
+        let _ = HELD_LOCKS.try_with(|locks| {
             let mut locks = locks.borrow_mut();
 
             for (i, &lock) in locks.iter().enumerate().rev() {
