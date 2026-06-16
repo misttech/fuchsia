@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import Field, model_serializer
 
-from .dap_types import DapBaseModel, StackFrame, Thread
+from .dap_types import DapBaseModel, Scope, StackFrame, Thread, Variable
 
 
 class MessageType(str, Enum):
@@ -220,3 +220,63 @@ class AttachRequestArguments(DapBaseModel):
         if extra_fields:
             data.update(extra_fields)
         return data
+
+
+class ScopesArguments(DapBaseModel):
+    """Arguments for `scopes` request.
+
+    Attributes:
+        frame_id: Retrieve the scopes for this stack frame.
+    """
+
+    frame_id: int
+
+
+class ScopesResponseBody(DapBaseModel):
+    """Body of response to `scopes` request.
+
+    Attributes:
+        scopes: The scopes in the frame.
+    """
+
+    scopes: list[Scope]
+
+
+class ScopesResponse(Response):
+    """Response to `scopes` request.
+
+    Attributes:
+        body: The scopes response body.
+    """
+
+    body: ScopesResponseBody
+
+
+class VariablesArguments(DapBaseModel):
+    """Arguments for `variables` request.
+
+    Attributes:
+        variables_reference: Retrieve the variables for this reference.
+    """
+
+    variables_reference: int
+
+
+class VariablesResponseBody(DapBaseModel):
+    """Body of response to `variables` request.
+
+    Attributes:
+        variables: The variables.
+    """
+
+    variables: list[Variable]
+
+
+class VariablesResponse(Response):
+    """Response to `variables` request.
+
+    Attributes:
+        body: The variables response body.
+    """
+
+    body: VariablesResponseBody

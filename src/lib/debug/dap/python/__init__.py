@@ -5,7 +5,7 @@
 """Pydap: A Python client library for the Debug Adapter Protocol."""
 
 from .client import DapClient, DapError
-from .dap_types import DapBaseModel, StackFrame, Thread
+from .dap_types import DapBaseModel, Scope, StackFrame, Thread, Variable
 from .models import (
     ContinueArguments,
     ContinueResponseBody,
@@ -16,7 +16,11 @@ from .models import (
     ProtocolMessage,
     Request,
     Response,
+    ScopesArguments,
+    ScopesResponse,
     StackTraceArguments,
     StackTraceResponse,
     ThreadsResponse,
+    VariablesArguments,
+    VariablesResponse,
 )

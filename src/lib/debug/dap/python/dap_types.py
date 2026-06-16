@@ -79,3 +79,35 @@ class Thread(DapBaseModel):
 
     id: int
     name: str
+
+
+class Scope(DapBaseModel):
+    """A Scope.
+
+    Attributes:
+        name: Name of the scope.
+        variables_reference: The variables of this scope can be retrieved by passing this
+            value to the `variables` request.
+        expensive: If true, the number of variables in this scope is large or expensive to retrieve.
+    """
+
+    name: str
+    variables_reference: int
+    expensive: bool
+
+
+class Variable(DapBaseModel):
+    """A Variable.
+
+    Attributes:
+        name: The variable's name.
+        value: The variable's value.
+        variables_reference: If variables_reference is > 0, the variable is structured and its children
+            can be retrieved by passing variables_reference to the `variables` request.
+        type: The type of the variable's value.
+    """
+
+    name: str
+    value: str
+    variables_reference: int
+    type: str | None = None

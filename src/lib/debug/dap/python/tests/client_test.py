@@ -358,3 +358,87 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((resp.body or {}).get("result"), "2")
         self.assertEqual(req_val["arguments"]["expression"], "1 + 1")
         self.assertEqual(req_val["arguments"]["context"], "repl")
+
+    async def test_scopes(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = ScopesArguments(frame_id=42)
+        send_task = asyncio.create_task(client.scopes(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "scopes",
+            "body": {
+                "scopes": [
+                    {
+                        "name": "Locals",
+                        "variablesReference": 100,
+                        "expensive": False,
+                    }
+                ]
+            },
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(len(resp.body.scopes), 1)
+        self.assertEqual(resp.body.scopes[0].name, "Locals")
+        self.assertEqual(resp.body.scopes[0].variables_reference, 100)
+        self.assertFalse(resp.body.scopes[0].expensive)
+        self.assertEqual(req_val["arguments"]["frameId"], 42)
+
+    async def test_variables(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = VariablesArguments(variables_reference=100)
+        send_task = asyncio.create_task(client.variables(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "variables",
+            "body": {
+                "variables": [
+                    {
+                        "name": "foo",
+                        "value": "bar",
+                        "variablesReference": 0,
+                        "type": "str",
+                    }
+                ]
+            },
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(len(resp.body.variables), 1)
+        self.assertEqual(resp.body.variables[0].name, "foo")
+        self.assertEqual(resp.body.variables[0].value, "bar")
+        self.assertEqual(resp.body.variables[0].variables_reference, 0)
+        self.assertEqual(resp.body.variables[0].type, "str")
+        self.assertEqual(req_val["arguments"]["variablesReference"], 100)

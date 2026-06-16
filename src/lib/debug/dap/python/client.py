@@ -18,9 +18,13 @@ from .models import (
     MessageType,
     PauseArguments,
     Response,
+    ScopesArguments,
+    ScopesResponse,
     StackTraceArguments,
     StackTraceResponse,
     ThreadsResponse,
+    VariablesArguments,
+    VariablesResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -246,6 +250,36 @@ class DapClient:
         """
         resp = await self._send_request(writer, "evaluate", args)
         return Response.model_validate(resp)
+
+    async def scopes(
+        self, writer: asyncio.StreamWriter, args: ScopesArguments
+    ) -> ScopesResponse:
+        """Sends a scopes request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the scopes request.
+
+        Returns:
+            The scopes response model.
+        """
+        resp = await self._send_request(writer, "scopes", args)
+        return ScopesResponse.model_validate(resp)
+
+    async def variables(
+        self, writer: asyncio.StreamWriter, args: VariablesArguments
+    ) -> VariablesResponse:
+        """Sends a variables request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the variables request.
+
+        Returns:
+            The variables response model.
+        """
+        resp = await self._send_request(writer, "variables", args)
+        return VariablesResponse.model_validate(resp)
 
     async def _read_message(
         self, reader: asyncio.StreamReader
