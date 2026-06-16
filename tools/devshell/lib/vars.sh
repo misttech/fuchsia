@@ -1175,7 +1175,7 @@ function fx-run-build-command {
     args+=("--dry-run")
   fi
   FX_BUILD_STATUS="${FX_BUILD_STATUS:-1}"
-  if [[ "${FX_BUILD_STATUS}" == "0" || -n "${ANTIGRAVITY_AGENT}" || -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" || -n "${GEMINI_CLI}" ]]; then
+  if [[ "${FX_BUILD_STATUS}" == "0" ]] || is_invoked_by_agent; then
     args+=("--no-status")
   fi
   args+=(

@@ -455,8 +455,8 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
-# Check if we're running in antigravity (a coding agent)
-if [[ -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" || -n "${ANTIGRAVITY_AGENT}" ]]; then
+# Check if we're running in an agent
+if is_invoked_by_agent; then
   # quiet the build to save on tokens
   export FX_BUILD_QUIET=1
 
