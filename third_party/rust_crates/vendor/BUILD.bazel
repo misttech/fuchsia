@@ -3289,14 +3289,14 @@ alias(
 )
 
 alias(
-    name = "which-4.0.2",
-    actual = "//third_party/rust_crates/vendor/which-4.0.2:which",
+    name = "which-8.0.3",
+    actual = "//third_party/rust_crates/vendor/which-8.0.3:which",
     tags = ["manual"],
 )
 
 alias(
     name = "which",
-    actual = "//third_party/rust_crates/vendor/which-4.0.2:which",
+    actual = "//third_party/rust_crates/vendor/which-8.0.3:which",
     tags = ["manual"],
 )
 

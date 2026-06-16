@@ -1888,7 +1888,7 @@ dependencies = [
  "vte",
  "wait-timeout",
  "walkdir",
- "which",
+ "which 8.0.3",
  "winnow 0.7.13",
  "x509-cert",
  "xattr",
@@ -1915,7 +1915,7 @@ dependencies = [
  "slab",
  "tokio",
  "tracing",
- "which",
+ "which 4.0.2",
 ]
 
 [[package]]
@@ -3741,7 +3741,7 @@ dependencies = [
  "prost-types",
  "regex",
  "tempfile",
- "which",
+ "which 4.0.2",
 ]
 
 [[package]]
@@ -5867,6 +5867,15 @@ checksum = "87c14ef7e1b8b8ecfc75d5eca37949410046e66f15d185c01d70824f1f8111ef"
 dependencies = [
  "libc",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "which"
+version = "8.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c789537cf2f7f55be8e6192f92e464174ee55f91af622777f7f1ceb0dbccd03e"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
