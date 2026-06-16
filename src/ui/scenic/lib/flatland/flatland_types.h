@@ -12,6 +12,7 @@
 
 #include <array>
 #include <optional>
+#include <variant>
 
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
@@ -148,6 +149,32 @@ struct EngineLayerImage {
   bool operator==(const EngineLayerImage& other) const {
     return image_id == other.image_id && width == other.width && height == other.height;
   }
+};
+
+// Layer instance resolved from the global Flatland scene graph.
+struct ResolvedLayer {
+  // Reference to a sysmem image bound to a layer.
+  struct ImageContent {
+    allocation::GlobalImageId image_id = allocation::kInvalidImageId;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    bool operator==(const ImageContent&) const = default;
+  };
+
+  // A solid-color fill.  Replaces the kInvalidImageId sentinel encoding.
+  struct SolidColorContent {
+    std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
+    bool operator==(const SolidColorContent&) const = default;
+  };
+
+  ImageRect rect;
+  std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};  // multiply color
+  types::BlendMode blend_mode = types::BlendMode::kReplace();
+  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
+  std::variant<ImageContent, SolidColorContent> content;
+  // damage_hints / visible_hints / topology_index arrive with later Flatland2
+  // work; identity fields only if the deferred tracker is ever built.
+  bool operator==(const ResolvedLayer&) const = default;
 };
 
 }  // namespace flatland
