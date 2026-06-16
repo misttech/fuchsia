@@ -49,7 +49,8 @@ def create_verify_pragma_once_target(
     Args:
         name: Name of the target for which the verification is being performed.
         files: List of files to check.
-        testonly: Standard definition.
+        testonly: Standard meaning.
+        visibility: Standard meaning.
     Returns:
         The relative label of the target.
     """
@@ -79,7 +80,8 @@ def create_verify_no_duplicate_files_target(
         hdrs: See idk_cc_source_library().
         hdrs_for_internal_use: See idk_cc_source_library().
         srcs: See idk_cc_source_library().
-        testonly: Standard definition.
+        testonly: Standard meaning.
+        visibility: Standard meaning.
     Returns:
         The relative label of the target.
     """

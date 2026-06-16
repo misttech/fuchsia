@@ -28,7 +28,7 @@ rustc_library = macro(
     doc = """`rustc_library` wrapper that optionally defines a test target.
 
 Besides being a shorthand, this is mainly used to allow easier syncing between
-Bazel and GN targets. See details in http://fxbug.dev/407441714.
+Bazel and GN targets. See details in https://fxbug.dev/407441714.
 """,
     implementation = _rustc_library_impl,
     inherit_attrs = rust_library,

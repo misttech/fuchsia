@@ -2,12 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Shared library rules for Fuchsia."""
+
 load("@rules_cc//cc:defs.bzl", "cc_import")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
-
-"""Shared library rules for Fuchsia."""
 
 def _to_clang_cpu(cpu):
     if cpu == "arm64":

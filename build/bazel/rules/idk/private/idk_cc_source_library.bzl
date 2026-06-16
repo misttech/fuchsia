@@ -55,6 +55,7 @@ def _get_include_path_for_cc_library(include_base):
     return include_path
 
 def _build_configurable_info_impl(ctx):
+    this_directory_relative_to_sdk = None  # Silence buildifier warning.
     if ctx.attr.include_base == "//sdk":
         path_to_this_directory = "//" + ctx.label.package
         this_directory_relative_to_sdk = paths.relativize(path_to_this_directory, "//sdk")

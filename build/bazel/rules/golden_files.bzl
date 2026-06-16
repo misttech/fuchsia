@@ -86,6 +86,8 @@ def _verify_golden_files_impl(ctx):
             if ctx.file.formatter_executable:
                 # TODO(https://fxbug.dev/427998443): Validate formatter support.
                 fail("Formatter support has not been validated. Test before using.")
+
+                # buildifier: disable=unreachable
                 apply_formatter = True
                 if ctx.attr.formatter_extensions:
                     golden_ext_with_dot = paths.split_extension(golden_file.path)

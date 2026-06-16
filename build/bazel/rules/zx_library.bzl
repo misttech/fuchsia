@@ -150,6 +150,9 @@ def apply_common_zx_library_modifications(kwargs):
 
     if kwargs["defines"] == None:
         kwargs["defines"] = []
+
+    # The `defines` attribute is configurable, so `append()` cannot be used.
+    # buildifier: disable=list-append
     kwargs["defines"] += ["_ALL_SOURCE"]
 
     return kwargs

@@ -208,6 +208,7 @@ def idk_go_binary_host_tool(
         idk_name: The name of the tool in the IDK. Usually matches `name`.
         category: Publication level of the tool in the IDK. See _create_idk_atom().
         api_area: The API area responsible for maintaining this tool.
+        visibility: Standard meaning.
         # TODO(https://fxbug.dev/442025401): Consider implementing this within
         # bazel2gn rather than requiring it at each call site.
         # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer

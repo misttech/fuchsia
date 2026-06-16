@@ -36,6 +36,14 @@ visibility([
 # LINT.IfChange(idk_cc_prebuilt_library)
 
 def get_shared_library_output_name(name, output_name):
+    """Returns the output name for a shared library given the target name and output name attributes.
+
+    Args:
+        name: The target name.
+        output_name: The specified output name.
+    Returns:
+        The output name.
+    """
     if output_name == "":
         return name
     elif output_name == name:

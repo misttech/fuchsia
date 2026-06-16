@@ -56,6 +56,10 @@ def _get_idk_label(label_str):
     # (e.g., "//path/to/package").
     return "//{}:{}_idk".format(label.package, label.name)
 
+# Buildifier considers this to be a macro because `_get_idk_label()` calls
+# `native.package_relative_label()`, which it considers to be a rule. However,
+# both are functions, not macros. See https://fxbug.dev/524667764.
+# buildifier: disable=unnamed-macro
 def get_idk_deps(underlying_deps):
     return [_get_idk_label(dep) for dep in underlying_deps]
 

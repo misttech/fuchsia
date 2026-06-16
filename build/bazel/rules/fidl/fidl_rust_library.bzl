@@ -100,18 +100,16 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         "//src/lib/fidl/rust/fidl",
         "//third_party/rust_crates/vendor:bitflags",
         "//third_party/rust_crates/vendor:futures",
-    ] + select({
-        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
-        "//conditions:default": [],
-    })
+    ]
 
     for dep in deps:
         if Label(dep) == Label("//zircon/vdso/zx"):
             continue
-        library_deps += [_fidl_rust_flavor_label(dep, flavor)]
+
+        library_deps.append(_fidl_rust_flavor_label(dep, flavor))
 
     if flavor != "common":
-        library_deps += [":" + _fidl_rust_flavor_label_name(fidl_library_name, "common")]
+        library_deps.append(":" + _fidl_rust_flavor_label_name(fidl_library_name, "common"))
 
     if contains_drivers:
         # TODO(https://fxbug.dev/503359085): driver transport support
@@ -120,6 +118,12 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         #         "//sdk/lib/driver/runtime/rust",
         #     ]
         pass
+
+    # `select()` must be appended last.
+    library_deps += select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    })
 
     rust_library(
         name = flavor_label,

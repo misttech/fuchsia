@@ -299,7 +299,6 @@ def fidl_cpp_family(
 
         library_name_slashes = fidl_library_name.replace(".", "/")
 
-        generated_files_base = library_name_slashes + "/cpp"
         generated_header_files = [
             "fidl.h",
             "fidl_test_base.h",
@@ -380,7 +379,6 @@ def _fidl_cc_library(
         `bindings_flavor` to form the dependency suffix. Optional.
       target_compatible_with: Usual meaning. Optional.
     """
-
     if fidl_library_name == "zx":
         # The zx FIDL library isn't generated with C++ fidlgens.
         # Create an empty library.
@@ -410,7 +408,6 @@ def _fidl_cc_library(
 
 def _generate_fidl_cc_bindings_impl(ctx):
     ir = ctx.file.fidl_ir_json
-    fidl_library_name = ctx.attr.fidl_library_name
 
     root_path = _get_root_path(ctx.attr.bindings_flavor)
     dir = root_path + "/" + ctx.attr.generated_files_base
