@@ -410,10 +410,8 @@ for more detail on the progress of update-related downloads.\n"
                     // the shutdown.
                     write_progress(
                         &format!(
-                            "{:.1} {}/{} Waiting to Reboot",
+                            "{:6.2}% Waiting to Reboot",
                             info.progress().fraction_completed() * 100.0,
-                            info.progress().bytes_downloaded(),
-                            info.info().download_size()
                         ),
                         writer,
                     )?;
@@ -426,67 +424,46 @@ for more detail on the progress of update-related downloads.\n"
                 | fidl_fuchsia_update_installer_ext::State::DeferReboot(info)
                 | fidl_fuchsia_update_installer_ext::State::Complete(info) => {
                     write_progress(
-                        &format!(
-                            "{:.1} {}/{} Complete",
-                            info.progress().fraction_completed() * 100.0,
-                            info.progress().bytes_downloaded(),
-                            info.info().download_size()
-                        ),
+                        &format!("{:6.2}% Complete", info.progress().fraction_completed() * 100.0),
                         writer,
                     )?;
                     return Ok(());
                 }
 
                 fidl_fuchsia_update_installer_ext::State::FailPrepare(reason) => {
+                    write!(writer, "\n").bug()?;
                     return_user_error!("Install failed: {reason:?}")
                 }
                 fidl_fuchsia_update_installer_ext::State::FailStage(data) => {
+                    write!(writer, "\n").bug()?;
                     return_user_error!("Install failed: {:?}", data.reason())
                 }
                 fidl_fuchsia_update_installer_ext::State::FailFetch(data) => {
+                    write!(writer, "\n").bug()?;
                     return_user_error!("Install failed: {:?}", data.reason())
                 }
                 fidl_fuchsia_update_installer_ext::State::Canceled => {
+                    write!(writer, "\n").bug()?;
                     return_user_error!("Install failed: canceled")
                 }
 
                 fidl_fuchsia_update_installer_ext::State::Prepare => {
-                    write_progress(&format!("{:.1} {}/{} Preparing", 0.0, 0, "?"), writer)?
+                    write_progress(&format!("{:6.2}% Preparing", 0.0), writer)?
                 }
                 fidl_fuchsia_update_installer_ext::State::Stage(info) => write_progress(
-                    &format!(
-                        "{:.1} {}/{} Staging",
-                        info.progress().fraction_completed() * 100.0,
-                        info.progress().bytes_downloaded(),
-                        info.info().download_size()
-                    ),
+                    &format!("{:6.2}% Staging", info.progress().fraction_completed() * 100.0),
                     writer,
                 )?,
                 fidl_fuchsia_update_installer_ext::State::Fetch(info) => write_progress(
-                    &format!(
-                        "{:.1} {}/{} Fetching",
-                        info.progress().fraction_completed() * 100.0,
-                        info.progress().bytes_downloaded(),
-                        info.info().download_size()
-                    ),
+                    &format!("{:6.2}% Fetching", info.progress().fraction_completed() * 100.0),
                     writer,
                 )?,
                 fidl_fuchsia_update_installer_ext::State::Commit(info) => write_progress(
-                    &format!(
-                        "{:.1} {}/{} Commit",
-                        info.progress().fraction_completed() * 100.0,
-                        info.progress().bytes_downloaded(),
-                        info.info().download_size()
-                    ),
+                    &format!("{:6.2}% Commit", info.progress().fraction_completed() * 100.0),
                     writer,
                 )?,
                 fidl_fuchsia_update_installer_ext::State::FailCommit(info) => write_progress(
-                    &format!(
-                        "{:.1} {}/{} Failed commit",
-                        info.progress().fraction_completed() * 100.0,
-                        info.progress().bytes_downloaded(),
-                        info.info().download_size()
-                    ),
+                    &format!("{:6.2}% Failed commit", info.progress().fraction_completed() * 100.0),
                     writer,
                 )?,
             }
@@ -591,7 +568,7 @@ async fn monitor_state<W: std::io::Write>(
                     }
                     State::InstallingUpdate(installing_data) => {
                         let pct = if let Some(progress) = installing_data.installation_progress {
-                            format!("{:.2}", progress.fraction_completed.unwrap_or(0.0) * 100.0)
+                            format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
                         } else {
                             "".into()
                         };
@@ -599,7 +576,7 @@ async fn monitor_state<W: std::io::Write>(
                     }
                     State::WaitingForReboot(installing_data) => {
                         let pct = if let Some(progress) = installing_data.installation_progress {
-                            format!("{:.2}", progress.fraction_completed.unwrap_or(0.0) * 100.0)
+                            format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
                         } else {
                             "".into()
                         };
@@ -608,12 +585,11 @@ async fn monitor_state<W: std::io::Write>(
                     }
                     State::InstallationError(installing_data) => {
                         let pct = if let Some(progress) = installing_data.installation_progress {
-                            format!("{:.2}", progress.fraction_completed.unwrap_or(0.0) * 100.0)
+                            format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
                         } else {
                             "".into()
                         };
-                        critical_error
-                            .replace(format!("Internal error encountered at {pct} percent."));
+                        critical_error.replace(format!("Internal error encountered at {pct}."));
                     }
                     State::ErrorCheckingForUpdate => {
                         critical_error.replace(format!(
@@ -1046,11 +1022,11 @@ mod tests {
             Until the update process is improved to have more granular reporting, try using\
             \n    ffx inspect show 'core/pkg-resolver'\n\
             for more detail on the progress of update-related downloads.\n\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
+            Starting install\
+            \n  0.00% Preparing\
+            \n  0.00% Fetching\
+            \n 50.00% Staging\
+            \n100.00% Waiting to Reboot\n\n"
         );
     }
 
@@ -1148,11 +1124,11 @@ mod tests {
             stdout,
             "Using update url: http://127.0.0.1:8083/devhost.fuchsia.com/ota_manifest\n\
             Installing an update.\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
+            Starting install\
+            \n  0.00% Preparing\
+            \n  0.00% Fetching\
+            \n 50.00% Staging\
+            \n100.00% Waiting to Reboot\n\n"
         );
     }
 
@@ -1273,11 +1249,11 @@ mod tests {
         assert!(
             stdout.ends_with(
                 "Installing an update.\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
+                Starting install\
+                \n  0.00% Preparing\
+                \n  0.00% Fetching\
+                \n 50.00% Staging\
+                \n100.00% Waiting to Reboot\n\n"
             ),
             "stdout: {stdout}",
         );
