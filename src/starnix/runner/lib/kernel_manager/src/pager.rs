@@ -327,15 +327,33 @@ impl Filesystem {
             return;
         };
 
-        let mut range = contents.range();
+        let requested_range = contents.range();
 
-        // Make all the reads multiples of 128 KiB.
+        // Align the read to 128 KiB slots (readahead).
         const ALIGNMENT: u64 = 128 * 1024;
-        let unaligned = (range.end - range.start) % ALIGNMENT;
-        let readahead_end =
-            if unaligned > 0 { range.end - unaligned + ALIGNMENT } else { range.end };
+        let readahead_start = (requested_range.start / ALIGNMENT) * ALIGNMENT;
+        let mut readahead_end = requested_range.end.next_multiple_of(ALIGNMENT);
 
-        let start_block = (range.start / self.block_size) as u32;
+        // Clamp to VMO size to avoid supplying pages out of bounds.
+        let vmo_size = match file.vmo.get_size() {
+            Ok(size) => size,
+            Err(status) => {
+                log_error!("Failed to get VMO size: {:?}", status);
+                let _ = self.pager.pager.op_range(
+                    zx::PagerOp::Fail(zx::Status::IO),
+                    &file.vmo,
+                    contents.range(),
+                );
+                return;
+            }
+        };
+        readahead_end = std::cmp::min(readahead_end, vmo_size);
+
+        if readahead_end <= readahead_start {
+            return;
+        }
+
+        let start_block = (readahead_start / self.block_size) as u32;
         let mut ix = file.extents.partition_point(|e| e.logical.end <= start_block);
 
         // SAFETY: We know that `transfer_vmo` is mapped (and initialized) for `TRANSFER_VMO_SIZE`
@@ -344,31 +362,32 @@ impl Filesystem {
             std::slice::from_raw_parts_mut(transfer_vmo_addr as *mut u8, TRANSFER_VMO_SIZE as usize)
         };
 
+        let mut current_offset = readahead_start;
         let mut supply_helper =
-            SupplyHelper::new(transfer_vmo, buf, &file.vmo, range.start, &*self.pager);
+            SupplyHelper::new(transfer_vmo, buf, &file.vmo, current_offset, &*self.pager);
 
-        while ix < file.extents.len() && range.start < readahead_end {
+        while ix < file.extents.len() && current_offset < readahead_end {
             let extent = &file.extents[ix];
 
             let logical_start = extent.logical.start as u64 * self.block_size;
 
             // Deal with holes.
-            if range.start < logical_start {
-                if let Err(e) = supply_helper.zero(logical_start - range.start) {
-                    supply_helper.fail_to(range.end, e);
+            if current_offset < logical_start {
+                if let Err(e) = supply_helper.zero(logical_start - current_offset) {
+                    supply_helper.fail_to(readahead_end, e);
                     return;
                 }
-                range.start = logical_start;
+                current_offset = logical_start;
             }
 
             let end = std::cmp::min(extent.logical.end as u64 * self.block_size, readahead_end);
 
-            while range.start < end {
+            while current_offset < end {
                 let phys_offset =
-                    extent.physical_block * self.block_size + range.start - logical_start;
+                    extent.physical_block * self.block_size + current_offset - logical_start;
 
                 match supply_helper.fill_buf(|buf| {
-                    let amount = std::cmp::min(buf.len() as u64, end - range.start) as usize;
+                    let amount = std::cmp::min(buf.len() as u64, end - current_offset) as usize;
                     self.backing_vmo.read(&mut buf[..amount], phys_offset)?;
                     Ok(amount)
                 }) {
@@ -380,10 +399,10 @@ impl Filesystem {
                             phys_offset,
                             amount as u64,
                         );
-                        range.start += amount as u64;
+                        current_offset += amount as u64;
                     }
                     Err(e) => {
-                        supply_helper.fail_to(range.end, e);
+                        supply_helper.fail_to(readahead_end, e);
                         return;
                     }
                 }
@@ -392,12 +411,8 @@ impl Filesystem {
             ix += 1;
         }
 
-        // This won't zero out any read ahead, which is intentional because we don't know what the
-        // end of the file is and so it could be beyond the end of the file.  We could easily find
-        // out by querying for the VMO size but that's an extra syscall.  The pager will need to
-        // to change if the readahead strategy changes (e.g. if the kernel implements readahead).
-        if let Err(e) = supply_helper.finish(range.end) {
-            supply_helper.fail_to(range.end, e);
+        if let Err(e) = supply_helper.finish(readahead_end) {
+            supply_helper.fail_to(readahead_end, e);
         }
     }
 
