@@ -111,6 +111,7 @@ unsafe impl Send for RegisteredThread {}
 // SAFETY: Same as above.
 unsafe impl Sync for RegisteredThread {}
 
+#[derive(Clone)]
 pub struct ThreadLockupInfo {
     pub thread: zx::Unowned<'static, zx::Thread>,
     pub koid: zx::Koid,

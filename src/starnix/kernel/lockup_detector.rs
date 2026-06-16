@@ -9,6 +9,7 @@ use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt;
 use fuchsia_runtime as fruntime;
 use starnix_c_file_buffer::CFileBuffer;
+use starnix_core::task::ThreadLockupInfo;
 use starnix_logging::{log_debug, log_error, log_warn};
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
@@ -76,6 +77,12 @@ struct RcuStall {
     first_seen: zx::MonotonicInstant,
 }
 
+struct Lockups {
+    long_running: Vec<ThreadLockupInfo>,
+    current_koids: BTreeSet<zx::Koid>,
+    newly_locked: Vec<ThreadLockupInfo>,
+}
+
 #[derive(Default)]
 struct LockupDetectorContext {
     event_id: Option<String>,
@@ -84,52 +91,7 @@ struct LockupDetectorContext {
     active_rcu_reads: HashMap<zx::Koid, ActiveRcuRead>,
 }
 
-async fn check_and_report_lockups(
-    context: &mut LockupDetectorContext,
-) -> Result<(), anyhow::Error> {
-    let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
-        zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
-    );
-
-    let current_koids: BTreeSet<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
-
-    // Clean up threads that are no longer locked up.
-    context.reported_lockup_koids.retain(|koid| current_koids.contains(koid));
-
-    if long_running.is_empty() {
-        return Ok(());
-    }
-
-    // Identify newly locked threads.
-    let newly_locked: Vec<_> =
-        long_running.iter().filter(|r| !context.reported_lockup_koids.contains(&r.koid)).collect();
-
-    if newly_locked.is_empty() {
-        return Ok(());
-    }
-
-    let mut file_buffer = CFileBuffer::new(1024 * 1024)
-        .map_err(|e| anyhow::anyhow!("Failed to create CFileBuffer: {}", e))?;
-
-    let event_id_str = context.event_id.get_or_insert_with(|| Uuid::new_v4().to_string()).clone();
-
-    let koids_str = format!("{:?}", current_koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>());
-
-    log_error!(
-        "Detected threads locked up for more than {} minutes: {:?}",
-        LOCKUP_DETECTOR_INTERVAL_MINUTES,
-        current_koids
-    );
-
-    let mut thread_names = BTreeSet::new();
-    for registered in &long_running {
-        let name = if let Ok(name) = registered.thread.get_name() {
-            format!("{}({})", name, registered.koid.raw_koid())
-        } else {
-            format!("koid-{}", registered.koid.raw_koid())
-        };
-        thread_names.insert(name);
-    }
+fn format_thread_names(thread_names: BTreeSet<String>) -> String {
     let mut names_str = thread_names.into_iter().collect::<Vec<_>>().join(", ");
     let max_annotation_len = ffeedback::MAX_ANNOTATION_VALUE_LENGTH as usize;
     if names_str.len() > max_annotation_len {
@@ -140,21 +102,79 @@ async fn check_and_report_lockups(
         names_str.truncate(limit);
         names_str.push_str("...");
     }
+    names_str
+}
+
+fn build_annotations(lockups: &Lockups, rcu_stalls: &Vec<RcuStall>) -> Vec<ffeedback::Annotation> {
+    let koids_str =
+        format!("{:?}", lockups.current_koids.iter().map(|k| k.raw_koid()).collect::<Vec<_>>());
+    let rcu_koids_str =
+        format!("{:?}", rcu_stalls.iter().map(|k| k.koid.raw_koid()).collect::<Vec<_>>());
+
+    let mut thread_names = BTreeSet::new();
+    for registered in &lockups.long_running {
+        let name = if let Ok(name) = registered.thread.get_name() {
+            format!("{}({})", name, registered.koid.raw_koid())
+        } else {
+            format!("koid-{}", registered.koid.raw_koid())
+        };
+        thread_names.insert(name);
+    }
+    let mut rcu_thread_names = BTreeSet::new();
+    for stall in rcu_stalls {
+        let name = if let Ok(name) = stall.thread.get_name() {
+            format!("{}({})", name, stall.koid.raw_koid())
+        } else {
+            format!("koid-{}", stall.koid.raw_koid())
+        };
+        rcu_thread_names.insert(name);
+    }
+
+    vec![
+        ffeedback::Annotation { key: "starnix.lockup_thread_koids".to_string(), value: koids_str },
+        ffeedback::Annotation {
+            key: "starnix.lockup_thread_names".to_string(),
+            value: format_thread_names(thread_names),
+        },
+        ffeedback::Annotation {
+            key: "starnix.rcu_lockup_thread_koids".to_string(),
+            value: rcu_koids_str,
+        },
+        ffeedback::Annotation {
+            key: "starnix.rcu_lockup_thread_names".to_string(),
+            value: format_thread_names(rcu_thread_names),
+        },
+    ]
+}
+
+async fn report_lockups(
+    context: &mut LockupDetectorContext,
+    lockups: Lockups,
+    rcu_stalls: Vec<RcuStall>,
+) -> anyhow::Result<()> {
+    let event_id_str = context.event_id.get_or_insert_with(|| Uuid::new_v4().to_string()).clone();
+    let mut file_buffer = CFileBuffer::new(1024 * 1024)
+        .map_err(|e| anyhow::anyhow!("Failed to create CFileBuffer: {}", e))?;
 
     let reporter =
         fuchsia_component::client::connect_to_protocol::<ffeedback::CrashReporterMarker>()
             .context("Failed to connect to CrashReporter")?;
 
-    for registered in newly_locked {
+    let annotations = build_annotations(&lockups, &rcu_stalls);
+    let threads: BTreeSet<_> = lockups
+        .newly_locked
+        .into_iter()
+        .map(|info| (info.thread, info.koid))
+        .chain(rcu_stalls.iter().map(|stall| (stall.thread.unowned(), stall.koid)))
+        .collect();
+    for (thread, koid) in threads {
         let bt = dump_thread_backtrace(
-            &registered.thread,
+            &thread,
             &mut file_buffer,
             zx::MonotonicDuration::from_seconds(1),
         )
         .await
-        .with_context(|| {
-            format!("Failed to dump backtrace for thread {}", registered.koid.raw_koid())
-        })?;
+        .with_context(|| format!("Failed to dump backtrace for thread {}", koid.raw_koid()))?;
         log_error!("Locked thread backtrace:\n{}", bt);
 
         let size = bt.len() as u64;
@@ -168,41 +188,69 @@ async fn check_and_report_lockups(
             specific_report: Some(ffeedback::SpecificCrashReport::TextBacktrace(
                 ffeedback::TextBacktraceCrashReport {
                     fuchsia_backtrace: Some(fmem::Buffer { vmo, size }),
-                    thread_name: registered.thread.get_name().ok().map(|name| name.to_string()),
-                    thread_koid: Some(registered.koid.raw_koid()),
+                    thread_name: thread.get_name().ok().map(|name| name.to_string()),
+                    thread_koid: Some(koid.raw_koid()),
                     ..Default::default()
                 },
             )),
-            annotations: Some(vec![
-                ffeedback::Annotation {
-                    key: "starnix.lockup_thread_koids".to_string(),
-                    value: koids_str.clone(),
-                },
-                ffeedback::Annotation {
-                    key: "starnix.lockup_thread_names".to_string(),
-                    value: names_str.clone(),
-                },
-            ]),
+            annotations: Some(annotations.clone()),
             event_id: Some(event_id_str.clone()),
             ..Default::default()
         };
 
         reporter.file_report(report).await.context("Failed to call file_report")?.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to file crash report for thread {}: {:?}",
-                registered.koid.raw_koid(),
-                e
-            )
+            anyhow::anyhow!("Failed to file crash report for thread {}: {:?}", koid.raw_koid(), e)
         })?;
 
-        log_debug!("Filed crash report for thread lockup (thread {}).", registered.koid.raw_koid());
-        context.reported_lockup_koids.insert(registered.koid);
+        log_debug!("Filed crash report for thread lockup (thread {}).", koid.raw_koid());
+        context.reported_lockup_koids.insert(koid);
     }
 
     Ok(())
 }
 
-async fn check_rcu_stalls(context: &mut LockupDetectorContext) -> Vec<RcuStall> {
+fn check_lockups(context: &mut LockupDetectorContext) -> Lockups {
+    let long_running = starnix_core::task::ThreadLockupDetector::get_long_running_threads(
+        zx::MonotonicDuration::from_minutes(LOCKUP_DETECTOR_INTERVAL_MINUTES),
+    );
+
+    let current_koids: BTreeSet<zx::Koid> = long_running.iter().map(|r| r.koid).collect();
+
+    // Clean up threads that are no longer locked up.
+    context.reported_lockup_koids.retain(|koid| current_koids.contains(koid));
+
+    if long_running.is_empty() {
+        return Lockups {
+            long_running: Vec::new(),
+            current_koids: BTreeSet::new(),
+            newly_locked: Vec::new(),
+        };
+    }
+
+    // Identify newly locked threads.
+    let newly_locked: Vec<_> = long_running
+        .iter()
+        .filter(|r| !context.reported_lockup_koids.contains(&r.koid))
+        .cloned()
+        .collect();
+
+    if newly_locked.is_empty() {
+        return Lockups {
+            long_running: Vec::new(),
+            current_koids: BTreeSet::new(),
+            newly_locked: Vec::new(),
+        };
+    }
+
+    log_error!(
+        "Detected threads locked up for more than {} minutes: {:?}",
+        LOCKUP_DETECTOR_INTERVAL_MINUTES,
+        current_koids
+    );
+    Lockups { long_running, current_koids, newly_locked }
+}
+
+fn check_rcu_stalls(context: &mut LockupDetectorContext) -> Vec<RcuStall> {
     let now = zx::MonotonicInstant::get();
     let mut active_koids = std::collections::HashSet::new();
     let mut stalled_threads = vec![];
@@ -233,9 +281,10 @@ async fn check_rcu_stalls(context: &mut LockupDetectorContext) -> Vec<RcuStall> 
             );
 
             if count >= RCU_STALL_THRESHOLD_SAMPLES
-                && context.reported_rcu_koids.insert(koid)
+                && !context.reported_rcu_koids.contains(&koid)
                 && let Ok(thread_dup) = thread.duplicate_handle(zx::Rights::SAME_RIGHTS)
             {
+                context.reported_rcu_koids.insert(koid);
                 stalled_threads.push(RcuStall { thread: thread_dup, koid, first_seen });
             }
         },
@@ -244,49 +293,15 @@ async fn check_rcu_stalls(context: &mut LockupDetectorContext) -> Vec<RcuStall> 
     context.active_rcu_reads.retain(|koid, _| active_koids.contains(koid));
     context.reported_rcu_koids.retain(|koid| active_koids.contains(koid));
 
+    for stall in &stalled_threads {
+        log_warn!(
+            "RCU Stall detected: Thread {} has held RCU read lock for {}ms.",
+            stall.koid.raw_koid(),
+            (zx::MonotonicInstant::get() - stall.first_seen).into_millis(),
+        );
+    }
+
     stalled_threads
-}
-
-async fn report_rcu_stalls(stalls: Vec<RcuStall>) -> Result<(), anyhow::Error> {
-    if stalls.is_empty() {
-        return Ok(());
-    }
-    let mut file_buffer = CFileBuffer::new(1024 * 1024)
-        .map_err(|e| anyhow::anyhow!("Failed to create CFileBuffer: {}", e))?;
-
-    for stall in stalls {
-        let name = stall
-            .thread
-            .get_name()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-        match dump_thread_backtrace(
-            &stall.thread,
-            &mut file_buffer,
-            zx::MonotonicDuration::from_millis(100),
-        )
-        .await
-        {
-            Ok(backtrace_str) => {
-                log_error!(
-                    "RCU Stall detected: Thread {}({}) has held RCU read lock for {}ms. Backtrace:\n{}",
-                    name,
-                    stall.koid.raw_koid(),
-                    (zx::MonotonicInstant::get() - stall.first_seen).into_millis(),
-                    backtrace_str
-                );
-            }
-            Err(e) => {
-                log_error!(
-                    "RCU Stall suspected on Thread {}({}), but failed to suspend for backtrace: {:?}",
-                    name,
-                    stall.koid.raw_koid(),
-                    e
-                );
-            }
-        }
-    }
-    Ok(())
 }
 
 pub fn start_thread_lockup_detector() -> fasync::Task<()> {
@@ -298,13 +313,12 @@ pub fn start_thread_lockup_detector() -> fasync::Task<()> {
             )))
             .await;
 
-            let stalls = check_rcu_stalls(&mut context).await;
-            if let Err(e) = report_rcu_stalls(stalls).await {
-                log_warn!("Error reporting RCU stalls: {:?}", e);
-            }
-
             let _waiting_guard = starnix_core::task::ThreadLockupDetector::pause_tracking();
-            if let Err(e) = check_and_report_lockups(&mut context).await {
+
+            let rcu_stalls = check_rcu_stalls(&mut context);
+            let lockups = check_lockups(&mut context);
+
+            if let Err(e) = report_lockups(&mut context, lockups, rcu_stalls).await {
                 log_warn!("Error in thread lockup detector: {:?}", e);
             }
         }
@@ -338,7 +352,7 @@ mod tests {
         // Threshold is RCU_STALL_THRESHOLD_SAMPLES = 4.
 
         // 1st sample
-        let candidates = check_rcu_stalls(&mut context).await;
+        let candidates = check_rcu_stalls(&mut context);
         assert!(candidates.is_empty());
         assert_eq!(context.active_rcu_reads.len(), 1);
         let koid = *context.active_rcu_reads.keys().next().unwrap();
@@ -346,13 +360,13 @@ mod tests {
 
         // 2nd and 3rd samples
         for i in 2..=3 {
-            let candidates = check_rcu_stalls(&mut context).await;
+            let candidates = check_rcu_stalls(&mut context);
             assert!(candidates.is_empty());
             assert_eq!(context.active_rcu_reads.get(&koid).unwrap().consecutive_polls_active, i);
         }
 
         // 4th sample (should return candidate)
-        let candidates = check_rcu_stalls(&mut context).await;
+        let candidates = check_rcu_stalls(&mut context);
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].koid, koid);
         assert_eq!(context.active_rcu_reads.get(&koid).unwrap().consecutive_polls_active, 4);
@@ -361,7 +375,7 @@ mod tests {
         thread.join().unwrap();
 
         // Run check again, thread should be gone.
-        let candidates = check_rcu_stalls(&mut context).await;
+        let candidates = check_rcu_stalls(&mut context);
         assert!(candidates.is_empty());
         assert!(context.active_rcu_reads.is_empty());
     }
