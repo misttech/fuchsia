@@ -6056,13 +6056,3 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
-
-[[patch.unused]]
-name = "js-sys"
-version = "0.3.100"
-
-
-[[patch.unused]]
-name = "wasm-bindgen"
-version = "0.2.123"
-
