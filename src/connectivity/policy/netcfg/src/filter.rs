@@ -6,18 +6,16 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
 
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, Action, Change, CommitError, Domain, InstalledIpRoutine,
     InstalledNatRoutine, IpHook, Matchers, Namespace, NamespaceId, NatHook, PushChangesError,
     Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fuchsia_async::DurationExt as _;
-use {
-    fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
-    fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-};
 
 use anyhow::{Context as _, bail};
 use log::{error, info, warn};
@@ -129,10 +127,12 @@ impl FilterState {
             config,
         )?;
 
-        controller
-            .push_changes(changes)
-            .await
-            .context("failed to push changes to filter controller")?;
+        for batch in changes.chunks(usize::from(fnet_filter::MAX_BATCH_SIZE)) {
+            controller
+                .push_changes(batch.to_vec())
+                .await
+                .context("failed to push changes to filter controller")?;
+        }
 
         controller.commit().await.context("failed to commit changes to filter controller")?;
         info!("initial filter configuration has been committed successfully");
@@ -1013,5 +1013,72 @@ mod tests {
             assert_eq!(fes.should_enable(Some(wlan_ap_info.interface_type()), id), expect_enabled);
             assert_eq!(fes.should_enable(Some(ethernet_info.interface_type()), id), expect_enabled);
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_update_filters_current_large_batch() {
+        use futures::StreamExt as _;
+
+        let (control_client, control_server) =
+            fidl::endpoints::create_endpoints::<fnet_filter::ControlMarker>();
+        let client_fut = FilterControl::new(None, Some(control_client.into_proxy()));
+        let mut control_stream = control_server.into_stream();
+        let control_server_fut = async move {
+            match control_stream
+                .next()
+                .await
+                .expect("stream shouldn't close")
+                .expect("stream shouldn't have an error")
+            {
+                fnet_filter::ControlRequest::OpenController { id, request, control_handle: _ } => {
+                    let (request_stream, control_handle) = request.into_stream_and_control_handle();
+                    control_handle.send_on_id_assigned(id.as_str()).expect("failed to respond");
+                    request_stream
+                }
+                _ => panic!("unexpected request"),
+            }
+        };
+        let (filter_control, mut server_request_stream) =
+            futures::join!(client_fut, control_server_fut);
+        let mut filter_control = filter_control.expect("failed to create filter control");
+
+        let config = FilterConfig {
+            rules: std::iter::repeat("pass in;".to_string()).take(50).collect(),
+            nat_rules: vec![],
+            rdr_rules: vec![],
+        };
+
+        let server_fut = async move {
+            let mut push_changes_count = 0;
+            while let Some(req) = server_request_stream.next().await {
+                match req.expect("stream shouldn't have an error") {
+                    fnet_filter::NamespaceControllerRequest::PushChanges { changes, responder } => {
+                        assert!(
+                            changes.len() <= usize::from(fnet_filter::MAX_BATCH_SIZE),
+                            "batch size {} exceeds MAX_BATCH_SIZE",
+                            changes.len()
+                        );
+                        push_changes_count += 1;
+                        responder
+                            .send(fnet_filter::ChangeValidationResult::Ok(fnet_filter::Empty))
+                            .expect("failed to respond");
+                    }
+                    fnet_filter::NamespaceControllerRequest::Commit { payload: _, responder } => {
+                        responder
+                            .send(fnet_filter::CommitResult::Ok(fnet_filter::Empty))
+                            .expect("failed to respond");
+                        break;
+                    }
+                    _ => panic!("unexpected request"),
+                }
+            }
+            push_changes_count
+        };
+
+        let (client_res, push_changes_count) =
+            futures::join!(filter_control.update_filters(config), server_fut);
+
+        client_res.expect("update_filters should succeed");
+        assert_eq!(push_changes_count, 2);
     }
 }
