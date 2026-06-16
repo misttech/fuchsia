@@ -22,7 +22,9 @@ use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 use starnix_logging::{log_info, log_warn, track_stub};
-use starnix_sync::{FileOpsCore, LockDepMutex, LockDepRwLock, Locked, TerminalLock, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockDepRwLock, Locked, PerfEventLevel, TerminalLock, Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
     PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
@@ -213,7 +215,7 @@ impl PerfEventFileState {
 pub struct PerfEventFile {
     _tid: tid_t,
     _cpu: i32,
-    perf_event_file: LockDepRwLock<PerfEventFileState, TerminalLock>,
+    perf_event_file: LockDepRwLock<PerfEventFileState, PerfEventLevel>,
     // The security state for this PerfEventFile.
     pub security_state: security::PerfEventState,
     seq_lock: Arc<OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>>,
