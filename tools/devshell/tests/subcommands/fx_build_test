@@ -358,13 +358,23 @@ TEST_fx-build-with-no-status() {
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
 
-TEST_fx-build-auto-no-status() {
+TEST_fx-build-auto-no-status-non-tty() {
     setup_build_test
     setup_build_api_results "//src:foo" "obj/src/foo"
     export FX_BUILD_DRY_RUN=1
-    export ANTIGRAVITY_AGENT=1
     BT_EXPECT "${fx}" build //src:foo ">" stdout.txt
-    # Verify that NINJA_STATUS is set to [%f/%t] due to auto-detection.
+    # Verify that NINJA_STATUS is set to [%f/%t] due to auto-detection (non-TTY).
+    BT_EXPECT "grep -q -F \"NINJA_STATUS='[%f/%t] '\" stdout.txt"
+    BT_EXPECT grep -q "obj/src/foo" stdout.txt
+}
+
+TEST_fx-build-auto-no-status-term-dumb() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    export TERM=dumb
+    BT_EXPECT "${fx}" build //src:foo ">" stdout.txt
+    # Verify that NINJA_STATUS is set to [%f/%t] due to TERM=dumb.
     BT_EXPECT "grep -q -F \"NINJA_STATUS='[%f/%t] '\" stdout.txt"
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
