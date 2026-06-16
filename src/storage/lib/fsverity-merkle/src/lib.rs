@@ -17,6 +17,9 @@ pub use crate::util::{
     FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHasher, FsVerityHasherOptions,
 };
 
+mod verifier;
+pub use crate::verifier::MerkleVerifier;
+
 pub const SHA256_SALT_PADDING: u8 = 64;
 pub const SHA512_SALT_PADDING: u8 = 128;
 

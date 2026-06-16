@@ -12,6 +12,7 @@ rustc_library("fsverity-merkle") {
 
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx-status",
     "//src/lib/mundane",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
@@ -27,6 +28,7 @@ rustc_library("fsverity-merkle") {
     "src/lib.rs",
     "src/tree.rs",
     "src/util.rs",
+    "src/verifier.rs",
   ]
 }
 

@@ -2025,7 +2025,7 @@ mod tests {
                 .expect("write failed");
         }
 
-        let tree = fsverity_merkle::from_slice(
+        let tree = fsverity_merkle::MerkleTree::from_data(
             &data,
             FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096)),
         );
