@@ -9,7 +9,7 @@
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use futures::TryStreamExt;
 use starnix_logging::{log_debug, log_error, log_warn, with_zx_name};
-use starnix_sync::{LockDepMutex, TerminalLock};
+use starnix_sync::{LockDepMutex, PagerFilesByInodeLock, PagerFilesystemsLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::collections::HashMap;
@@ -122,7 +122,7 @@ pub struct Pager {
     port: zx::Port,
     zero_vmo: zx::Vmo,
     next_filesystem_id: AtomicU32,
-    filesystems: LockDepMutex<HashMap<u32, Arc<Filesystem>>, TerminalLock>,
+    filesystems: LockDepMutex<HashMap<u32, Arc<Filesystem>>, PagerFilesystemsLock>,
 }
 
 impl Pager {
@@ -262,7 +262,7 @@ pub struct Filesystem {
     pager: Arc<Pager>,
     backing_vmo: zx::Vmo,
     block_size: u64,
-    files_by_inode: LockDepMutex<HashMap<u32, Arc<PagedFile>>, TerminalLock>,
+    files_by_inode: LockDepMutex<HashMap<u32, Arc<PagedFile>>, PagerFilesByInodeLock>,
     id: u32,
 }
 
@@ -274,13 +274,7 @@ impl Filesystem {
             return error!(EINVAL, "Bad block size {block_size}");
         }
         let id = pager.allocate_filesystem_id();
-        Ok(Self {
-            pager,
-            backing_vmo,
-            block_size,
-            files_by_inode: Default::default(),
-            id,
-        })
+        Ok(Self { pager, backing_vmo, block_size, files_by_inode: Default::default(), id })
     }
 
     /// Registers the file with the pager.  Returns a child VMO.  `extents` should be sorted.

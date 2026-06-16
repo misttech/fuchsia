@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::vfs::FsString;
-use starnix_sync::{LockDepRwLock, TerminalLock};
+use starnix_sync::{LockDepRwLock, UtsNamespaceLock};
 use std::sync::Arc;
 
 const DEFAULT_HOST_NAME: &str = "localhost";
 const DEFAULT_DOMAIN_NAME: &str = "localdomain";
 
-pub type UtsNamespaceHandle = Arc<LockDepRwLock<UtsNamespace, TerminalLock>>;
+pub type UtsNamespaceHandle = Arc<LockDepRwLock<UtsNamespace, UtsNamespaceLock>>;
 
 // Unix Time-sharing Namespace (UTS) information.
 // Stores the hostname and domainname for a specific process.

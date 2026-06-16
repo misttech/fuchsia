@@ -20,7 +20,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
-use starnix_sync::{LockDepMutex, Mutex, MutexGuard, TerminalLock};
+use starnix_sync::{HrTimerIsIntervalLock, LockDepMutex, Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
@@ -1201,7 +1201,7 @@ pub struct HrTimer {
     /// until the next timer request has been sent to the driver. This prevents
     /// lost wake ups where the container happens to suspend between two instances
     /// of an interval timer triggering.
-    pub is_interval: LockDepMutex<bool, TerminalLock>,
+    pub is_interval: LockDepMutex<bool, HrTimerIsIntervalLock>,
 }
 pub type HrTimerHandle = Arc<HrTimer>;
 

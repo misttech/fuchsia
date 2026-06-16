@@ -22,7 +22,7 @@ use futures::{FutureExt, StreamExt};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
     EbpfSuspendLock, FileOpsCore, LockBefore, LockDepGuard, LockDepMutex, LockDepReadGuard, Locked,
-    OrderedRwLock, TerminalLock,
+    OrderedRwLock, PowerMessageCountersLock, SuspendResumeManagerInnerLock,
 };
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -99,11 +99,12 @@ impl std::string::ToString for WakeupSourceOrigin {
 /// Manager for suspend and resume.
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
-    inner: Arc<LockDepMutex<SuspendResumeManagerInner, TerminalLock>>,
+    inner: Arc<LockDepMutex<SuspendResumeManagerInner, SuspendResumeManagerInnerLock>>,
 
     /// The currently registered message counters in the system whose values are exposed to inspect
     /// via a lazy node.
-    message_counters: Arc<LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, TerminalLock>>,
+    message_counters:
+        Arc<LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, PowerMessageCountersLock>>,
 
     /// The lock used to to avoid suspension while holding eBPF locks.
     ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
@@ -363,7 +364,7 @@ pub type SuspendResumeManagerHandle = Arc<SuspendResumeManager>;
 impl Default for SuspendResumeManager {
     fn default() -> Self {
         let message_counters: Arc<
-            LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, TerminalLock>,
+            LockDepMutex<HashSet<WeakKey<OwnedMessageCounter>>, PowerMessageCountersLock>,
         > = Default::default();
         let message_counters_clone = message_counters.clone();
         let root = inspect::component::inspector().root();

@@ -24,7 +24,9 @@ use starnix_core::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{set_zx_name, track_stub};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, OrderedMutex, TerminalLock, Unlocked};
+use starnix_sync::{
+    FileOpsCore, IoUringStateLock, LockEqualOrBefore, Locked, OrderedMutex, Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::errors::Errno;
@@ -650,7 +652,7 @@ impl IoUringQueue {
 
 pub struct IoUringFileObject {
     queue: IoUringQueue,
-    state: OrderedMutex<IoUringFileMutableState, TerminalLock>,
+    state: OrderedMutex<IoUringFileMutableState, IoUringStateLock>,
     _flags: IoRingSetupFlags,
 }
 

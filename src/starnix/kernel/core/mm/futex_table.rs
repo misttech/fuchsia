@@ -6,7 +6,9 @@ use crate::mm::memory::MemoryObject;
 use crate::mm::{CompareExchangeResult, ProtectionFlags};
 use crate::task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, Waiter};
 use futures::channel::oneshot;
-use starnix_sync::{InterruptibleEvent, LockBefore, Locked, OrderedMutex, TerminalLock, Unlocked};
+use starnix_sync::{
+    FutexTableStateLock, InterruptibleEvent, LockBefore, Locked, OrderedMutex, Unlocked,
+};
 use starnix_types::futex_address::FutexAddress;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
@@ -25,7 +27,7 @@ pub struct FutexTable<Key: FutexKey> {
     /// The futexes associated with each address in each VMO.
     ///
     /// This HashMap is populated on-demand when futexes are used.
-    state: OrderedMutex<FutexTableState<Key>, TerminalLock>,
+    state: OrderedMutex<FutexTableState<Key>, FutexTableStateLock>,
 }
 
 impl<Key: FutexKey> Default for FutexTable<Key> {
@@ -99,7 +101,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         deadline: zx::MonotonicInstant,
     ) -> Result<(), Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let addr = FutexAddress::try_from(addr)?;
         let mut state = self.state.lock(locked);
@@ -142,7 +144,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         mask: u32,
     ) -> Result<usize, Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let addr = FutexAddress::try_from(addr)?;
         let key = Key::get(task, addr)?;
@@ -163,7 +165,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         expected_value: Option<u32>,
     ) -> Result<usize, Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let addr = FutexAddress::try_from(addr)?;
         let new_addr = FutexAddress::try_from(new_addr)?;
@@ -193,7 +195,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         deadline: zx::MonotonicInstant,
     ) -> Result<(), Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let addr = FutexAddress::try_from(addr)?;
         let mut state = self.state.lock(locked);
@@ -284,7 +286,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         addr: UserAddress,
     ) -> Result<(), Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let addr = FutexAddress::try_from(addr)?;
         let mut state = self.state.lock(locked);
@@ -364,7 +366,7 @@ impl FutexTable<SharedFutexKey> {
         mask: u32,
     ) -> Result<(Arc<()>, oneshot::Receiver<()>), Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let key = SharedFutexKey::new(&memory, offset);
         let mut state = self.state.lock(locked);
@@ -393,7 +395,7 @@ impl FutexTable<SharedFutexKey> {
         mask: u32,
     ) -> Result<usize, Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         Ok(self.state.lock(locked).wake(SharedFutexKey::new(&memory, offset), count, mask))
     }
@@ -410,7 +412,7 @@ impl FutexTable<SharedFutexKey> {
         expected_value: Option<u32>,
     ) -> Result<usize, Errno>
     where
-        L: LockBefore<TerminalLock>,
+        L: LockBefore<FutexTableStateLock>,
     {
         let first_key = SharedFutexKey::new(&first_memory, first_offset);
         let second_key = match second_memory.as_ref() {
