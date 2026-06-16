@@ -90,6 +90,12 @@ class InfraDriver(base.BaseDriver):
             test_params = {}
             if self._params_path:
                 test_params = common.read_yaml_from_file(self._params_path)
+            if "transports" in self._honeydew_config:
+                ffx_config = self._honeydew_config["transports"].get("ffx", {})
+                if "subtools_search_path" in ffx_config:
+                    test_params["ffx-subtools-search-path"] = ffx_config[
+                        "subtools_search_path"
+                    ]
             botanist_honeydew_translation_map: dict[str, str] = {
                 "nodename": "name",
             }

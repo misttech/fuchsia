@@ -37,8 +37,14 @@ class MoblyDriverSmokeTest(base_test.BaseTestClass):
     def test_params_exist(self) -> None:
         """Asserts user_params exactly match params.yaml."""
         assert self.user_params is not None, "Test params are missing."
+        actual_keys = set(self.user_params.keys())
+        # ffx-subtools-search-path is injected by the mobly driver (though not
+        # guaranteed to be present in all execution environments) and is not
+        # present in params.yaml. Discard it to verify that params.yaml
+        # contents match exactly.
+        actual_keys.discard("ffx-subtools-search-path")
         asserts.assert_equal(
-            set(self.user_params.keys()),
+            actual_keys,
             {"bool_param", "str_param", "dict_param", "list_param"},
         )
         asserts.assert_true(

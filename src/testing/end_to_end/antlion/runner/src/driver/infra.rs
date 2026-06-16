@@ -220,7 +220,10 @@ impl InfraDriver {
                         hard_reboot_on_fail: true,
                         honeydew_config: config::HoneydewConfig {
                             transports: config::HoneydewTransports {
-                                ffx: config::HoneydewFfx { path: ffx_binary.clone() },
+                                ffx: config::HoneydewFfx {
+                                    path: ffx_binary.clone(),
+                                    subtools_search_path: ffx_subtools_search_path.clone(),
+                                },
                             },
                             affordances: config::HoneydewAffordances {
                                 bluetooth: config::HoneydewAffordanceSpec {
@@ -594,6 +597,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -676,6 +680,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -792,6 +797,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -907,6 +913,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller

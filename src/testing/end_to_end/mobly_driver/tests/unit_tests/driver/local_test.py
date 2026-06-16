@@ -46,6 +46,10 @@ class LocalDriverTest(unittest.TestCase):
         self, mock_get_config: Any, mock_read_yaml: Any, *unused_args: Any
     ) -> None:
         """Test case for successful config generation from file"""
+        mock_read_yaml.side_effect = [
+            {"TestBeds": [{"Name": "GeneratedLocalTestbed"}]},
+            {"existing_param": "value"},
+        ]
         driver = local.LocalDriver(
             honeydew_config=_HONEYDEW_CONFIG,
             output_path="output/path",
@@ -54,7 +58,13 @@ class LocalDriverTest(unittest.TestCase):
         )
         ret = driver.generate_test_config()
 
-        mock_get_config.assert_called_once()
+        mock_get_config.assert_called_once_with(
+            {"TestBeds": [{"Name": "GeneratedLocalTestbed"}]},
+            {
+                "existing_param": "value",
+                "ffx-subtools-search-path": "subtools/search/path",
+            },
+        )
         self.assertEqual(mock_read_yaml.call_count, 2)
         self.assertEqual(ret, "yaml_str")
 
@@ -63,9 +73,16 @@ class LocalDriverTest(unittest.TestCase):
     @patch("mobly_driver.driver.common.read_yaml_from_file")
     @patch("mobly_driver.api.api_mobly.get_config_with_test_params")
     def test_generate_test_config_from_file_without_params_success(
-        self, mock_get_config: Any, mock_read_yaml: Any, *unused_args: Any
+        self,
+        mock_get_config: Any,
+        mock_read_yaml: Any,
+        mock_yaml_dump: Any,
+        *unused_args: Any,
     ) -> None:
         """Test case for successful config without params generation"""
+        mock_read_yaml.return_value = {
+            "TestBeds": [{"Name": "GeneratedLocalTestbed"}]
+        }
         driver = local.LocalDriver(
             honeydew_config=_HONEYDEW_CONFIG,
             output_path="output/path",
@@ -74,7 +91,19 @@ class LocalDriverTest(unittest.TestCase):
         ret = driver.generate_test_config()
 
         mock_get_config.assert_not_called()
-        mock_read_yaml.assert_called_once()
+        mock_read_yaml.assert_called_once_with("config/path")
+        mock_yaml_dump.assert_called_once_with(
+            {
+                "TestBeds": [
+                    {
+                        "Name": "GeneratedLocalTestbed",
+                        "TestParams": {
+                            "ffx-subtools-search-path": "subtools/search/path",
+                        },
+                    }
+                ]
+            }
+        )
         self.assertEqual(ret, "yaml_str")
 
     @patch("builtins.print")
@@ -132,9 +161,18 @@ class LocalDriverTest(unittest.TestCase):
         mock_new_tb_config: Any,
         mock_ffx_target_list: Any,
         mock_ffx_target_ssh_address: Any,
+        mock_yaml_dump: Any,
         *unused_args: Any,
     ) -> None:
         """Test case for successful env config generation"""
+        mock_new_tb_config.return_value = {
+            "TestBeds": [
+                {
+                    "Name": "GeneratedLocalTestbed",
+                    "Controllers": {},
+                }
+            ]
+        }
         driver = local.LocalDriver(
             honeydew_config=_HONEYDEW_CONFIG,
             output_path="output/path",
@@ -145,6 +183,20 @@ class LocalDriverTest(unittest.TestCase):
         controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
         self.assertEqual(2, len(controllers))
         self.assertEqual([c["name"] for c in controllers], ["dut_1", "dut_2"])
+
+        mock_yaml_dump.assert_called_once_with(
+            {
+                "TestBeds": [
+                    {
+                        "Name": "GeneratedLocalTestbed",
+                        "Controllers": {},
+                        "TestParams": {
+                            "ffx-subtools-search-path": "subtools/search/path",
+                        },
+                    }
+                ]
+            }
+        )
         self.assertEqual(ret, "yaml_str")
 
         mock_ffx_target_list.assert_called()

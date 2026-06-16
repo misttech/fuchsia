@@ -108,6 +108,8 @@ pub(crate) struct HoneydewTransports {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct HoneydewFfx {
     pub path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subtools_search_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -34,6 +34,10 @@ class InfraMoblyDriverTest(unittest.TestCase):
         *unused_args: Any,
     ) -> None:
         """Test case for successful config generation"""
+        mock_read_yaml.return_value = {"existing_param": "value"}
+        mock_read_json.return_value = [
+            {"type": "FuchsiaDevice", "nodename": "dut"}
+        ]
         driver = infra.InfraDriver(
             tb_json_path="tb/json/path",
             honeydew_config=_HONEYDEW_CONFIG,
@@ -42,9 +46,20 @@ class InfraMoblyDriverTest(unittest.TestCase):
         )
         ret = driver.generate_test_config()
 
-        mock_new_config.assert_called_once()
-        mock_read_yaml.assert_called_once()
-        mock_read_json.assert_called_once()
+        mock_new_config.assert_called_once_with(
+            testbed_name="InfraTestbed",
+            output_path="",
+            honeydew_config=_HONEYDEW_CONFIG,
+            mobly_controllers=[{"type": "FuchsiaDevice", "nodename": "dut"}],
+            test_params_dict={
+                "existing_param": "value",
+                "ffx-subtools-search-path": "subtools/search/path",
+            },
+            botanist_honeydew_map={"nodename": "name"},
+            ssh_path=None,
+        )
+        mock_read_yaml.assert_called_once_with("params/path")
+        mock_read_json.assert_called_once_with("tb/json/path")
         self.assertEqual(ret, "yaml_str")
 
     @patch("yaml.dump", return_value="yaml_str")
@@ -59,6 +74,9 @@ class InfraMoblyDriverTest(unittest.TestCase):
         *unused_args: Any,
     ) -> None:
         """Test case for successful config without params generation"""
+        mock_read_json.return_value = [
+            {"type": "FuchsiaDevice", "nodename": "dut"}
+        ]
         driver = infra.InfraDriver(
             tb_json_path="tb/json/path",
             honeydew_config=_HONEYDEW_CONFIG,
@@ -66,9 +84,19 @@ class InfraMoblyDriverTest(unittest.TestCase):
         )
         ret = driver.generate_test_config()
 
-        mock_new_config.assert_called_once()
+        mock_new_config.assert_called_once_with(
+            testbed_name="InfraTestbed",
+            output_path="",
+            honeydew_config=_HONEYDEW_CONFIG,
+            mobly_controllers=[{"type": "FuchsiaDevice", "nodename": "dut"}],
+            test_params_dict={
+                "ffx-subtools-search-path": "subtools/search/path",
+            },
+            botanist_honeydew_map={"nodename": "name"},
+            ssh_path=None,
+        )
         mock_read_yaml.assert_not_called()
-        mock_read_json.assert_called_once()
+        mock_read_json.assert_called_once_with("tb/json/path")
         self.assertEqual(ret, "yaml_str")
 
     @patch(

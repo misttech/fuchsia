@@ -154,7 +154,10 @@ impl Driver for LocalDriver {
                         hard_reboot_on_fail: false,
                         honeydew_config: config::HoneydewConfig {
                             transports: config::HoneydewTransports {
-                                ffx: config::HoneydewFfx { path: self.ffx_binary.clone() },
+                                ffx: config::HoneydewFfx {
+                                    path: self.ffx_binary.clone(),
+                                    subtools_search_path: self.ffx_subtools_search_path.clone(),
+                                },
                             },
                             affordances: config::HoneydewAffordances {
                                 bluetooth: config::HoneydewAffordanceSpec {
@@ -345,6 +348,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -406,6 +410,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -472,6 +477,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller
@@ -539,6 +545,7 @@ mod test {
                 transports:
                   ffx:
                     path: {ffx_path}
+                    subtools_search_path: {ffx_subtools_path}
                 affordances:
                   bluetooth:
                     implementation: fuchsia-controller

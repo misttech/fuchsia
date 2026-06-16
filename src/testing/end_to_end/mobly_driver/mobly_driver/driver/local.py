@@ -9,6 +9,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 import yaml
+from mobly import keys
 from mobly_driver.api import api_ffx, api_infra, api_mobly
 from mobly_driver.driver import base, common
 
@@ -313,8 +314,26 @@ class LocalDriver(base.BaseDriver):
             # Add the "honeydew_config" field for every Fuchsia device, if exists.
             api_mobly.set_honeydew_config(config, self._honeydew_config)
 
+        test_params = {}
         if self._params_path:
             test_params = common.read_yaml_from_file(self._params_path)
+
+        if "transports" in self._honeydew_config:
+            ffx_config = self._honeydew_config["transports"].get("ffx", {})
+            if "subtools_search_path" in ffx_config:
+                subtools_path = ffx_config["subtools_search_path"]
+                if self._params_path:
+                    test_params["ffx-subtools-search-path"] = subtools_path
+                    config = api_mobly.get_config_with_test_params(
+                        config, test_params
+                    )
+                else:
+                    for tb in config.get(keys.Config.key_testbed.value, []):
+                        tb_params = tb.setdefault(
+                            keys.Config.key_testbed_test_params.value, {}
+                        )
+                        tb_params["ffx-subtools-search-path"] = subtools_path
+        elif self._params_path:
             config = api_mobly.get_config_with_test_params(config, test_params)
 
         return yaml.dump(config)
