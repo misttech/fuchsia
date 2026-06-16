@@ -950,8 +950,10 @@ mod tests {
         }
 
         // Wait until all writers are blocked in the write phase.
-        let mut state = cache.storage.state.lock();
-        cache.storage.condvar.wait_while(&mut state, |state| state.blocked_writes.len() < 4);
+        {
+            let mut state = cache.storage.state.lock();
+            cache.storage.condvar.wait_while(&mut state, |state| state.blocked_writes.len() < 4);
+        }
 
         // All ways are being written to. Readers will call the backend, and their result will
         // not be cached.
@@ -960,8 +962,7 @@ mod tests {
         assert_eq!(cache.get_or_insert(&4, || 50), 50);
 
         // Unblock writers.
-        state.blocked_writes.clear();
-        drop(state);
+        cache.storage.state.lock().blocked_writes.clear();
         cache.storage.condvar.notify_all();
         for t in threads {
             t.join().unwrap();
