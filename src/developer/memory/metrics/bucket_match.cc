@@ -28,12 +28,11 @@ bool BucketMatch::ProcessMatch(const Process& process) {
   if (match_all_processes_) {
     return true;
   }
-  const auto& pi = process_match_.find(process.koid);
-  if (pi != process_match_.end()) {
-    return pi->second;
+  if (auto match = process_match_.Find(process.koid)) {
+    return *match;
   }
   bool match = re2::RE2::FullMatch(process.name, *process_);
-  process_match_.emplace(process.koid, match);
+  process_match_.Emplace(process.koid, match);
   return match;
 }
 
@@ -41,13 +40,17 @@ bool BucketMatch::VmoMatch(const std::string& vmo) {
   if (match_all_vmos_) {
     return true;
   }
-  const auto& vi = vmo_match_.find(vmo);
-  if (vi != vmo_match_.end()) {
-    return vi->second;
+  if (auto match = vmo_match_.Find(vmo)) {
+    return *match;
   }
   bool match = re2::RE2::FullMatch(vmo, *vmo_);
-  vmo_match_.emplace(vmo, match);
+  vmo_match_.Emplace(vmo, match);
   return match;
+}
+
+void BucketMatch::Sweep() {
+  process_match_.Sweep();
+  vmo_match_.Sweep();
 }
 
 std::optional<std::vector<BucketMatch>> BucketMatch::ReadBucketMatchesFromConfig(

@@ -60,6 +60,13 @@ void Digester::Digest(const Capture& capture, class Digest* digest) {
     }
   }
 
+  {
+    TRACE_DURATION("memory_metrics", "Digester::Digest sweep");
+    for (auto& bucket_match : bucket_matches_) {
+      bucket_match.Sweep();
+    }
+  }
+
   FractionalBytes undigested_size{};
   for (auto v : digest->undigested_vmos_) {
     undigested_size += capture.vmo_for_koid(v).committed_scaled_bytes;

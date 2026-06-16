@@ -33,6 +33,7 @@ cc_test_executable("memory_metrics_unittests") {
     "capture_strategy_unittest.cc",
     "capture_unittest.cc",
     "digest_unittest.cc",
+    "mas_cache_unittest.cc",
     "printer_unittest.cc",
     "summary_unittest.cc",
     "watcher_unittest.cc",

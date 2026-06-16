@@ -12,6 +12,7 @@ source_set("metrics") {
     "capture_strategy.h",
     "digest.cc",
     "digest.h",
+    "mas_cache.h",
     "printer.cc",
     "printer.h",
     "summary.cc",

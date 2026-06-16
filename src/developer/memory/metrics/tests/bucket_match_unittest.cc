@@ -17,7 +17,7 @@ using testing::SizeIs;
 namespace memory {
 namespace test {
 
-using ConfigUnitTest = testing::Test;
+using BucketMatchUnitTest = testing::Test;
 
 const std::string kValidConfiguration = R"([
     {
@@ -34,7 +34,7 @@ const std::string kValidConfiguration = R"([
     }
 ])";
 
-TEST_F(ConfigUnitTest, ValidConfiguration) {
+TEST_F(BucketMatchUnitTest, ValidConfiguration) {
   auto result = BucketMatch::ReadBucketMatchesFromConfig(kValidConfiguration);
   ASSERT_TRUE(result);
 
@@ -54,7 +54,7 @@ TEST_F(ConfigUnitTest, ValidConfiguration) {
   EXPECT_TRUE(match_1.VmoMatch("blob-01234"));
 }
 
-TEST_F(ConfigUnitTest, InvalidConfiguration) {
+TEST_F(BucketMatchUnitTest, InvalidConfiguration) {
   // Missing "name"
   EXPECT_FALSE(BucketMatch::ReadBucketMatchesFromConfig(R"([{"process": "a", "vmo": ".*"}])"));
   // Missing "process"
@@ -65,6 +65,26 @@ TEST_F(ConfigUnitTest, InvalidConfiguration) {
   // Badly formatted JSON
   EXPECT_FALSE(
       BucketMatch::ReadBucketMatchesFromConfig(R"([{"name": "a", "process": ".*", "vmo": ".*"]})"));
+}
+
+TEST_F(BucketMatchUnitTest, Sweep) {
+  auto result = BucketMatch::ReadBucketMatchesFromConfig(kValidConfiguration);
+  ASSERT_TRUE(result);
+
+  auto bucket_matches = *result;
+  BucketMatch& match_0 = bucket_matches[0];
+
+  // Perform some matches to populate the cache
+  EXPECT_TRUE(match_0.ProcessMatch(Process{1, 0, "driver_host", {}}));
+  EXPECT_TRUE(match_0.VmoMatch("SysmemContiguousPool"));
+
+  // Sweep. This will unmark all matches, but not delete any entry.
+  match_0.Sweep();
+
+  // Match one of the same process again, but not the VMO, and call Sweep. The Sweep will delete the
+  // VMO cache entry.
+  EXPECT_TRUE(match_0.ProcessMatch(Process{1, 0, "driver_host", {}}));
+  match_0.Sweep();
 }
 
 }  // namespace test

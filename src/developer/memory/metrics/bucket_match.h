@@ -10,12 +10,12 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <re2/re2.h>
 
 #include "src/developer/memory/metrics/capture.h"
+#include "src/developer/memory/metrics/mas_cache.h"
 
 namespace memory {
 
@@ -33,6 +33,9 @@ class BucketMatch {
   std::optional<int64_t> event_code() const { return event_code_; }
   bool ProcessMatch(const Process& process);
   bool VmoMatch(const std::string& vmo);
+  // Removes all processes and VMOs that haven't been matched since the last Sweep call from the
+  // internal cache.
+  void Sweep();
 
   // Parses a configuration string (e.g. stored in a file) to create bucket matches. The
   // configuration format is described in the README.md file in this directory. Returns true if the
@@ -49,9 +52,9 @@ class BucketMatch {
   const std::optional<int64_t> event_code_;
 
   // Cache of the matching results against the |process_| regexp.
-  std::unordered_map<zx_koid_t, bool> process_match_;
+  MarkAndSweepCache<zx_koid_t, bool> process_match_;
   // Cache of the matching results against the |vmo_| regexp.
-  std::unordered_map<std::string, bool> vmo_match_;
+  MarkAndSweepCache<std::string, bool> vmo_match_;
 };
 
 }  // namespace memory
