@@ -14,7 +14,9 @@ use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::{DowncastedFile, FileHandle, FileObject, FsNodeHandle, default_ioctl};
 use starnix_logging::track_stub;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, SocketStateLock, Unlocked,
+};
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{duration_from_timeval, timeval_from_duration};
 use starnix_types::user_buffer::UserBuffer;
@@ -255,7 +257,7 @@ pub struct Socket {
     /// The protocol of this socket.
     pub protocol: SocketProtocol,
 
-    state: Mutex<SocketState>,
+    state: LockDepMutex<SocketState, SocketStateLock>,
 
     /// Security module state associated with this socket. Note that the socket's security label is
     /// applied to the associated `fs_node`.
@@ -497,7 +499,7 @@ impl Socket {
             domain,
             socket_type,
             protocol,
-            state: Mutex::default(),
+            state: Default::default(),
             security: security::SocketState::default(),
         })
     }

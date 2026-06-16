@@ -11,7 +11,7 @@ use linux_uapi::{
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_warn;
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::{AuditQueueLock, LockDepMutex, Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
@@ -128,7 +128,7 @@ pub struct AuditLogger {
     serial_counter: AtomicCounter<u64>,
     /// Audit message deque containing (audit type, audit string) up to `backlog_limit` messages.
     /// TODO: https://fxbug.dev/438677236 - confirm single queue behaviour is valid.
-    audit_queue: Mutex<VecDeque<AuditMessage>>,
+    audit_queue: LockDepMutex<VecDeque<AuditMessage>, AuditQueueLock>,
 }
 
 impl AuditLogger {

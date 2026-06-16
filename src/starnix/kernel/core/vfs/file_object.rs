@@ -31,8 +31,8 @@ use fidl::endpoints::ProtocolMarker as _;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, track_stub};
 use starnix_sync::{
-    BeforeFsNodeAppend, FileObjectOffset, FileOpsCore, LockBefore, LockEqualOrBefore, Locked,
-    Mutex, Unlocked,
+    BeforeFsNodeAppend, FileAsyncOwnerLock, FileEpollFilesLock, FileLeaseLock, FileObjectOffset,
+    FileOpsCore, LockBefore, LockDepMutex, LockEqualOrBefore, Locked, Unlocked,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
@@ -1499,14 +1499,14 @@ pub struct FileObjectState {
 
     flags: AtomicOpenFlags,
 
-    async_owner: Mutex<FileAsyncOwner>,
+    async_owner: LockDepMutex<FileAsyncOwner, FileAsyncOwnerLock>,
 
     /// A set of epoll file descriptor numbers that tracks which `EpollFileObject`s add this
     /// `FileObject` as the control file.
-    epoll_files: Mutex<HashMap<FileHandleKey, WeakFileHandle>>,
+    epoll_files: LockDepMutex<HashMap<FileHandleKey, WeakFileHandle>, FileEpollFilesLock>,
 
     /// See fcntl F_SETLEASE and F_GETLEASE.
-    lease: Mutex<FileLeaseType>,
+    lease: LockDepMutex<FileLeaseType, FileLeaseLock>,
 
     // This extra reference to the FsNode should not be needed, but it is needed to make
     // Inotify.ExcludeUnlinkInodeEvents pass.

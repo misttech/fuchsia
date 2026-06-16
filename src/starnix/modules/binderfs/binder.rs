@@ -43,8 +43,7 @@ use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{CATEGORY_STARNIX, log_error, log_trace, log_warn, track_stub, with_zx_name};
 use starnix_sync::{
     BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockDepRwLock, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel, Unlocked,
-    ordered_lock_vec,
+    LockDepRwLock, LockEqualOrBefore, Locked, ResourceAccessorLevel, Unlocked, ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -1965,7 +1964,7 @@ impl BinderDriver {
         let handler = match handler {
             EventHandler::None | EventHandler::HandleOnce(_) => handler,
             EventHandler::Enqueue { .. } | EventHandler::Epoll(_) => {
-                EventHandler::HandleOnce(Arc::new(Mutex::new(Some(handler))))
+                EventHandler::HandleOnce(Arc::new(LockDepMutex::new(Some(handler))))
             }
         };
 

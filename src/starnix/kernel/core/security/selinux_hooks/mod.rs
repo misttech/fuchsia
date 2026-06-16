@@ -34,7 +34,10 @@ use selinux::{
 };
 use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, track_stub};
-use starnix_sync::{LockDepMutex, Mutex, SeLinuxPeerSidLock};
+use starnix_sync::{
+    LockDepMutex, SeLinuxPeerSidLock, SeLinuxPendingEntriesLock, SeLinuxPendingFileSystemsLock,
+    SeLinuxUpdateLock,
+};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
@@ -419,7 +422,7 @@ pub(super) fn kernel_init_security(
 
     KernelState {
         server,
-        pending_file_systems: Mutex::default(),
+        pending_file_systems: LockDepMutex::default(),
         selinuxfs_null: OnceLock::default(),
         access_denial_count: AtomicU64::new(0u64),
         has_policy: false.into(),
@@ -436,7 +439,8 @@ pub(super) struct KernelState {
     /// as a policy is loaded into the `server`. Insertion order is retained, via use of `IndexSet`,
     /// to ensure that filesystems have labels initialized in creation order, which is important
     /// e.g. when initializing "overlayfs" node labels, based on the labels of the underlying nodes.
-    pub(super) pending_file_systems: Mutex<IndexSet<WeakKey<FileSystem>>>,
+    pub(super) pending_file_systems:
+        LockDepMutex<IndexSet<WeakKey<FileSystem>>, SeLinuxPendingFileSystemsLock>,
 
     /// True when the `server` has a policy loaded.
     pub(super) has_policy: AtomicBool,
@@ -499,7 +503,7 @@ pub(super) struct FileObjectState {
 pub(super) struct FileSystemState {
     // Fields used prior to policy-load, to hold mount options, etc.
     mount_options: FileSystemMountOptions,
-    pending_entries: Mutex<IndexSet<WeakKey<DirEntry>>>,
+    pending_entries: LockDepMutex<IndexSet<WeakKey<DirEntry>>, SeLinuxPendingEntriesLock>,
 
     // Set once the initial policy has been loaded, taking into account `mount_options`.
     label: OnceLock<FileSystemLabel>,
@@ -507,7 +511,7 @@ pub(super) struct FileSystemState {
 
 impl FileSystemState {
     fn new(mount_options: FileSystemMountOptions, _ops: &dyn FileSystemOps) -> Self {
-        let pending_entries = Mutex::new(IndexSet::new());
+        let pending_entries = LockDepMutex::new(IndexSet::new());
         let label = OnceLock::new();
 
         Self { mount_options, pending_entries, label }
@@ -547,7 +551,7 @@ impl FileSystemState {
 #[derive(Debug)]
 pub(super) struct FsNodeState {
     label: RcuBox<FsNodeLabelAndClass>,
-    update_lock: Mutex<()>,
+    update_lock: LockDepMutex<(), SeLinuxUpdateLock>,
 }
 
 impl Default for FsNodeState {
@@ -557,7 +561,7 @@ impl Default for FsNodeState {
                 label: FsNodeLabel::Uninitialized,
                 class: None,
             }),
-            update_lock: Mutex::new(()),
+            update_lock: LockDepMutex::new(()),
         }
     }
 }

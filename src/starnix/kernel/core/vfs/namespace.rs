@@ -23,7 +23,8 @@ use ref_cast::RefCast;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
 use starnix_sync::{
-    BeforeFsNodeAppend, FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
+    BeforeFsNodeAppend, FileOpsCore, LockDepMutex, LockEqualOrBefore, Locked, NamespaceFlagsLock,
+    RwLock, Unlocked,
 };
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
@@ -148,7 +149,7 @@ pub struct Mount {
     flags: AtomicMountpointFlags,
 
     /// Lock used to serialize updates of `flags` to ensure consistency during remount operations.
-    flags_lock: Mutex<()>,
+    flags_lock: LockDepMutex<(), NamespaceFlagsLock>,
 
     /// A unique identifier for this mount reported in /proc/pid/mountinfo.
     id: u64,
@@ -308,7 +309,7 @@ impl Mount {
         Arc::new(Self {
             id: kernel.get_next_mount_id(),
             flags: (flags & MountpointFlags::STORED_ON_MOUNT).into(),
-            flags_lock: Mutex::new(()),
+            flags_lock: LockDepMutex::new(()),
             root,
             active_client_counter: Default::default(),
             fs,

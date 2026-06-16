@@ -6,98 +6,104 @@ use crate::Unlocked;
 use lock_ordering_macro::lock_ordering;
 
 lock_ordering! {
-    // UninterruptibleLock represents a virtual level before which lock must be interruptible.
-    Unlocked => FuseFsRenameLevel,
-    FuseFsRenameLevel => FuseDirEntryChildrenLevel,
-    FuseDirEntryChildrenLevel => FuseFsNodeInfoLevel,
-    FuseFsNodeInfoLevel => UninterruptibleLock,
-    // Artificial level for ResourceAccessor.add_file_with_flags(..)
-    Unlocked => ResourceAccessorLevel,
-    // Level for FileObject offset lock.
-    Unlocked => FileObjectOffset,
-    FileObjectOffset => BeforeFsNodeAppend,
-    // Artificial level for methods in FsNodeOps/FileOps that require access to the
-    // FsNode.append_lock
-    Unlocked => BeforeFsNodeAppend,
+    // keep-sorted start
     BeforeFsNodeAppend => FsNodeAppend,
-    // Artificial level for file operations.
-    FsNodeAppend => FileOpsCore,
-    ResourceAccessorLevel => FileOpsCore,
-    // FileOpsCore are interruptible
-    FileOpsCore => UninterruptibleLock,
-    // Artificial lock level for {Task, CurrentTask}.release()
-    Unlocked => TaskRelease,
-    // During task release, file must be closed.
-    TaskRelease => FileOpsCore,
-    // Kernel.iptables
-    UninterruptibleLock => KernelIpTables,
-    // Kernel.swap_files
-    UninterruptibleLock => KernelSwapFiles,
-    // ThreadGroup.limits
-    ProcessGroupState => ThreadGroupLimits,
-    MmDumpable => ThreadGroupLimits,
-    // MemoryManager.dumpable
-    UninterruptibleLock => MmDumpable,
-    // ProcessGroup.mutable_state.
-    // Needs to be before TaskRelease because of the dependency in CurrentTask.release()
-    TaskRelease => ProcessGroupState,
-    UninterruptibleLock => ProcessGroupState,
-    // ProcessGroup.mutable_state. Artificial locks above need to be before it because of
-    // dependencies in DevPtsFile.{read, write, ioctl}.
-    FileOpsCore => ProcessGroupState,
-    // Userfaultfd
-    FileOpsCore => UserFaultInner,
-    UninterruptibleLock => UserFaultInner,
-    // MemoryPressureMonitor
-    UninterruptibleLock => MemoryPressureMonitor,
-    FileOpsCore => MemoryPressureMonitor,
-    MemoryPressureMonitor => MemoryPressureMonitorClientState,
-    // Fastrpc
-    UninterruptibleLock => FastrpcInnerState,
-    // MemoryXattrStorage
-    UninterruptibleLock => MemoryXattrStorageLevel,
-    // DeviceRegistry
-    UninterruptibleLock => DeviceRegistryState,
-    FileOpsCore => DeviceRegistryState,
-
-    // Binderfs locks
-    UninterruptibleLock => RemoteBinderHandleLevel,
-    RemoteBinderHandleLevel => BinderProcsLevel,
-    FileObjectOffset => BinderFsDevicesLevel,
-    DirEntryChildrenLevel => BinderFsDevicesLevel,
-    BinderFsDevicesLevel => FsNodeInfoLevel,
-    BinderFsDevicesLevel => DeviceRegistryState,
-    BinderProcsLevel => BinderProcessSharedMemoryLevel,
-    BinderProcessSharedMemoryLevel => BinderFreezeLevel,
     BinderFreezeLevel => BinderProcessStateLevel,
+    BinderFsDevicesLevel => DeviceRegistryState,
+    BinderFsDevicesLevel => FsNodeInfoLevel,
+    BinderObjectLevel => BinderThreadStateLock,
+    BinderProcessSharedMemoryLevel => BinderFreezeLevel,
     BinderProcessSharedMemoryLevel => DeviceRegistryState,
-    BinderProcessStateLevel => BinderContextManagerLevel,
-    FileOpsCore => BinderContextManagerLevel,
-    UninterruptibleLock => BinderObjectLevel,
-    FileOpsCore => BinderObjectLevel,
-    BinderProcessStateLevel => BinderObjectLevel,
-
-    // VFS locks
+    BinderProcessSharedMemoryLevel => FdTableWriterQueueLock,
     BinderProcessSharedMemoryLevel => FsRenameRecursive,
-    FsRenameRecursive => DirEntryChildrenRecursiveLevel,
+    BinderProcessStateLevel => BinderContextManagerLevel,
+    BinderProcessStateLevel => BinderObjectLevel,
+    BinderProcsLevel => BinderProcessSharedMemoryLevel,
+    DirEntryChildrenLevel => BinderFsDevicesLevel,
     DirEntryChildrenRecursiveLevel => FsNodeInfoRecursiveLevel,
+    EbpfMapStateLevel => EbpfSuspendLock,
+    EbpfStateLock => EbpfSuspendLock,
+    ExecutorVmarManagerLock => PidToKoidMapLock,
+    FileObjectOffset => BeforeFsNodeAppend,
+    FileObjectOffset => BinderFsDevicesLevel,
+    FileOpsCore => BinderContextManagerLevel,
+    FileOpsCore => BinderObjectLevel,
+    FileOpsCore => DeviceRegistryState,
+    FileOpsCore => MemoryPressureMonitor,
+    FileOpsCore => PerfEventLevel,
+    FileOpsCore => ProcessGroupState,
+    FileOpsCore => UninterruptibleLock,
+    FileOpsCore => UserFaultInner,
+    FsNodeAppend => FileOpsCore,
+    FsNodeInfoLevel => FsNodeWriteGuardStateLock,
     FsNodeInfoRecursiveLevel => FsRename,
     FsRename => DirEntryChildrenLevel,
-
+    FsRenameRecursive => DirEntryChildrenRecursiveLevel,
+    FuseDirEntryChildrenLevel => FuseFsNodeInfoLevel,
+    FuseFsNodeInfoLevel => UninterruptibleLock,
+    FuseFsRenameLevel => FuseDirEntryChildrenLevel,
+    MemoryPressureMonitor => MemoryPressureMonitorClientState,
+    MmDumpable => ThreadGroupLimits,
+    ProcessGroupState => ThreadGroupLimits,
+    RemoteBinderHandleLevel => BinderProcsLevel,
+    ResourceAccessorLevel => FileOpsCore,
+    TaskRelease => FileOpsCore,
+    TaskRelease => ProcessGroupState,
+    TimerTableStateLock => IntervalTimerState,
+    UninterruptibleLock => BinderObjectLevel,
+    UninterruptibleLock => DeviceRegistryState,
+    UninterruptibleLock => EbpfMapStateLevel,
+    UninterruptibleLock => EbpfStateLock,
+    UninterruptibleLock => ExecutorVmarManagerLock,
+    UninterruptibleLock => FastrpcInnerState,
+    UninterruptibleLock => FileEpollFilesLock,
+    UninterruptibleLock => IntervalTimerState,
+    UninterruptibleLock => KernelIpTables,
+    UninterruptibleLock => KernelSwapFiles,
+    UninterruptibleLock => MemoryPressureMonitor,
+    UninterruptibleLock => MemoryXattrStorageLevel,
+    UninterruptibleLock => MmDumpable,
     UninterruptibleLock => PerfEventLevel,
-    FileOpsCore => PerfEventLevel,
+    UninterruptibleLock => ProcessGroupState,
+    UninterruptibleLock => RemoteBinderHandleLevel,
+    UninterruptibleLock => SignalFdMaskLock,
+    UninterruptibleLock => UserFaultInner,
+    Unlocked => BeforeFsNodeAppend,
+    Unlocked => FileObjectOffset,
+    Unlocked => FuseFsRenameLevel,
+    Unlocked => ResourceAccessorLevel,
+    Unlocked => TaskRelease,
+    // keep-sorted end
 
-    // Terminal Levels. No lock level should ever be defined after this. Can be used for any locks
-    // that is never acquired before any other lock.
-    Terminal(BinderThreadStateLock),
+    // Terminal Levels. No lock level should ever be defined after this.
+    // Can be used for any locks that is never acquired before any other lock.
+    // keep-sorted start
+    Terminal(AioEventsLock),
+    Terminal(AioPendingOperationsLock),
+    Terminal(AuditQueueLock),
     Terminal(BootedLock),
     Terminal(ComponentControllerLock),
+    Terminal(DeviceTerminalsLock),
     Terminal(EventFdInnerLock),
+    Terminal(EventHandlerReadyQueueLock),
+    Terminal(FileAsyncOwnerLock),
+    Terminal(FileLeaseLock),
     Terminal(FileServerStatsLock),
+    Terminal(FileSystemEntriesLock),
+    Terminal(FileSystemPermanentLock),
+    Terminal(FsNodeFlockInfoLock),
+    Terminal(FsNodeFsVerityLock),
+    Terminal(FsRegistryLock),
+    Terminal(FuchsiaRemoteTargetLock),
     Terminal(FutexTableStateLock),
     Terminal(HrTimerIsIntervalLock),
+    Terminal(HrTimerManagerStateLock),
     Terminal(IcmpPingGidsLock),
+    Terminal(InotifyWatchersLock),
     Terminal(IoUringStateLock),
+    Terminal(MapInfoCacheBufLock),
+    Terminal(MemoryAttributionPublisherLock),
+    Terminal(NamespaceFlagsLock),
     Terminal(PagerFilesByInodeLock),
     Terminal(PagerFilesystemsLock),
     Terminal(PerfFormatIdLookupTableLock),
@@ -105,25 +111,24 @@ lock_ordering! {
     Terminal(PowerMessageCountersLock),
     Terminal(PtsIdsSetLock),
     Terminal(RemoteBinderControllerLock),
+    Terminal(RwQueueInnerLock),
     Terminal(SeLinuxPeerSidLock),
+    Terminal(SeLinuxPendingEntriesLock),
+    Terminal(SeLinuxPendingFileSystemsLock),
+    Terminal(SeLinuxUpdateLock),
+    Terminal(SocketStateLock),
+    Terminal(StubBytesFileStateLock),
     Terminal(SuspendResumeManagerInnerLock),
     Terminal(SyscallLogFiltersLock),
+    Terminal(SyslogStateLock),
     Terminal(TaskCommandLevel),
+    Terminal(ThreadGroupPendingSignalsLock),
+    Terminal(ThreadGroupPtraceesLock),
     Terminal(TouchPowerPolicyEnabledLock),
+    Terminal(UtsNamespaceLock),
     Terminal(VmspliceSegmentsLock),
+    Terminal(WaiterEventHandlerLock),
     Terminal(WakeSourcesLock),
     Terminal(WakeWatchersLock),
-    Terminal(UtsNamespaceLock),
-    Terminal(PidToKoidMapLock),
-    Terminal(FuchsiaRemoteTargetLock),
-    Terminal(DeviceTerminalsLock),
-
-    // eBPF locks
-    UninterruptibleLock => EbpfStateLock,
-    UninterruptibleLock => EbpfMapStateLevel,
-    EbpfStateLock => EbpfSuspendLock,
-    EbpfMapStateLevel => EbpfSuspendLock,
-
-    // Timer locks
-    UninterruptibleLock => IntervalTimerState,
+    // keep-sorted end
 }
