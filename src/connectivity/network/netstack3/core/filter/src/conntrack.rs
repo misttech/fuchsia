@@ -847,13 +847,15 @@ impl<BT: FilterBindingsTypes> ConnectionState<BT> {
         transport_data: &TransportPacketData,
         now: BT::Instant,
     ) -> Result<ConnectionUpdateAction, ConnectionUpdateError> {
+        let action = self.protocol_state.update(dir, transport_data)?;
+
         if self.last_packet_time < now {
             self.last_packet_time = now;
         }
 
         self.establishment_lifecycle = self.establishment_lifecycle.update(dir);
 
-        self.protocol_state.update(dir, transport_data)
+        Ok(action)
     }
 
     fn is_expired(&self, now: BT::Instant) -> bool {
@@ -2406,5 +2408,118 @@ mod tests {
 
         assert!(!table.contains_tuple(&tuple));
         assert!(!table.contains_tuple(&reply_tuple));
+    }
+
+    // Regression test for https://fxbug.dev/518686402
+    #[ip_test(I)]
+    fn tcp_invalid_packet_does_not_advance_lifecycle<I: IpExt + TestIpExt>() {
+        let mut bindings_ctx = FakeBindingsCtx::new();
+        let table = Table::<_, (), _>::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
+
+        // Begin connection setup.
+
+        let syn_packet = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            TransportProtocol::Tcp,
+            TransportPacketData::Tcp {
+                src_port: I::SRC_PORT,
+                dst_port: I::DST_PORT,
+                segment: SegmentHeader {
+                    seq: SeqNum::new(1000),
+                    wnd: UnscaledWindowSize::from(1000u16),
+                    control: Some(Control::SYN),
+                    ..Default::default()
+                },
+                payload_len: 0,
+            },
+        );
+
+        let (conn, dir) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, syn_packet.clone())
+            .expect("packet should be valid")
+            .expect("packet should be trackable");
+
+        assert_eq!(dir, ConnectionDirection::Original);
+        assert_matches!(conn.state().establishment_lifecycle, EstablishmentLifecycle::SeenOriginal);
+
+        let (inserted, finalized_conn) =
+            table.finalize_connection(&mut bindings_ctx, conn).expect("finalize should succeed");
+        assert!(inserted);
+        let _finalized_conn = finalized_conn.expect("should have connection");
+
+        let syn_ack_packet = PacketMetadata::<I>::new(
+            I::DST_IP,
+            I::SRC_IP,
+            TransportProtocol::Tcp,
+            TransportPacketData::Tcp {
+                src_port: I::DST_PORT,
+                dst_port: I::SRC_PORT,
+                segment: SegmentHeader {
+                    seq: SeqNum::new(2000),
+                    ack: Some(SeqNum::new(1001)),
+                    wnd: UnscaledWindowSize::from(1000u16),
+                    control: Some(Control::SYN),
+                    ..Default::default()
+                },
+                payload_len: 0,
+            },
+        );
+
+        let (conn, dir) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, syn_ack_packet)
+            .expect("packet should be valid")
+            .expect("packet should be trackable");
+
+        assert_eq!(dir, ConnectionDirection::Reply);
+        assert_matches!(conn.state().establishment_lifecycle, EstablishmentLifecycle::SeenReply);
+
+        let (inserted, _) =
+            table.finalize_connection(&mut bindings_ctx, conn).expect("finalize should succeed");
+        assert!(!inserted);
+
+        // Verify connection in table is indeed SeenReply
+        assert_matches!(
+            table
+                .get_connection(&syn_packet.tuple())
+                .expect("should exist")
+                .state()
+                .establishment_lifecycle,
+            EstablishmentLifecycle::SeenReply
+        );
+
+        // End connection setup.
+
+        // Send invalid ACK in the original direction (ACK of 2002 > max_next_seq 2001)
+        let invalid_ack_packet = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            TransportProtocol::Tcp,
+            TransportPacketData::Tcp {
+                src_port: I::SRC_PORT,
+                dst_port: I::DST_PORT,
+                segment: SegmentHeader {
+                    seq: SeqNum::new(1001),
+                    ack: Some(SeqNum::new(2002)),
+                    wnd: UnscaledWindowSize::from(1000u16),
+                    ..Default::default()
+                },
+                payload_len: 0,
+            },
+        );
+
+        let update_result =
+            table.get_connection_for_packet_and_update(&bindings_ctx, invalid_ack_packet);
+        assert_matches!(update_result, Err(GetConnectionError::InvalidPacket(_, _)));
+
+        // The connection lifecycle didn't change.
+        assert_matches!(
+            table
+                .get_connection(&syn_packet.tuple())
+                .expect("should exist")
+                .state()
+                .establishment_lifecycle,
+            EstablishmentLifecycle::SeenReply
+        );
     }
 }
