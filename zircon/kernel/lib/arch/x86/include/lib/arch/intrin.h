@@ -39,6 +39,15 @@ inline void DeviceMemoryBarrier() { __asm__ volatile("mfence" ::: "memory"); }
 /// Synchronize the ordering of all memory accesses wrt other CPUs.
 inline void ThreadMemoryBarrier() { DeviceMemoryBarrier(); }
 
+/// Ensure all stores that appear before this barrier (in program order) complete before any stores
+/// that appear after this barrier.
+inline void StoreMemoryBarrier() {
+  // No need to emit a fence instruction. Stores will not be re-ordered with other stores.
+  // [intel/vol3]: 8.2.2 Memory Ordering in P6 and More Recent Processor Families
+  // [amd/vol2]: 7.2 Multiprocessor Memory Access Ordering
+  __asm__ volatile("" ::: "memory");
+}
+
 // Force the processor to complete all modifications to register state and
 // memory by previous instructions (including draining any buffered writes)
 // before the next instruction is fetched.

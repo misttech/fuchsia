@@ -903,6 +903,16 @@ zx_status_t VmMappingCoalescer<NumPages>::Flush() {
       ktl::all_of(phys_, &phys_[count_], [](paddr_t p) { return p != vm_get_zero_page_paddr(); }) ||
       !mapping_->aspace()->is_user());
 
+  // The caller likely overwrote the previous contents of the new pages before supplying them to
+  // this VmMappingCoalescer. It's important that these writes are observed before the page table
+  // entries corresponding to these pages are written out. Otherwise, there is a risk of leaking the
+  // previous content.
+  //
+  // This site needs special synchronization; other sites guarantee this order by at least releasing
+  // and acquiring the object lock between manipulating the new pages and modifying mappings. See
+  // https://fxrev.dev/517176302.
+  arch::StoreMemoryBarrier();
+
   zx_status_t ret = mapping_->aspace()->arch_aspace().Map(base_, phys_, count_, mmu_flags_,
                                                           existing_entry_action_);
   if (ret != ZX_OK) {

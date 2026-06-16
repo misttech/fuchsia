@@ -155,6 +155,10 @@ inline void DeviceMemoryBarrier() { __dsb(ARM_MB_SY); }
 /// Synchronize the ordering of all memory accesses wrt other CPUs.
 inline void ThreadMemoryBarrier() { __dmb(ARM_MB_SY); }
 
+/// Ensure all stores that appear before this barrier (in program order) complete before any stores
+/// that appear after this barrier.
+inline void StoreMemoryBarrier() { __dmb(ARM_MB_ISHST); }
+
 /// Return the current CPU cycle count.
 inline uint64_t Cycles() { return __arm_rsr64("pmccntr_el0"); }
 

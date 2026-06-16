@@ -30,6 +30,10 @@ inline void DeviceMemoryBarrier() { __asm__("fence iorw, iorw" ::: "memory"); }
 /// Synchronize the ordering of all memory accesses wrt other CPUs.
 inline void ThreadMemoryBarrier() { __asm__("fence iorw, iorw" ::: "memory"); }
 
+/// Ensure all stores that appear before this barrier (in program order) complete before any stores
+/// that appear after this barrier.
+inline void StoreMemoryBarrier() { __asm__("fence w, w" ::: "memory"); }
+
 /// Return the current CPU cycle count.
 inline uint64_t Cycles() {
   uint64_t time;
