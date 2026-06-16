@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::server_impl::{ServeStarted, get_repo_base_name, serve_impl};
-use crate::{CommandStatus, ServerStartTool};
-use anyhow::anyhow;
-use ffx_command_error::{Result, bug, user_error};
+use crate::CommandStatus;
+use crate::server_impl::{ServeError, ServeStarted, get_repo_base_name, serve_impl};
+
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
-use ffx_writer::ToolIO;
-use fho::{Deferred, FfxMain};
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
+use fho::{Deferred, FfxError};
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
 use futures::StreamExt as _;
 use pkg::{PkgServerInstanceInfo, PkgServerInstances, ServerMode};
@@ -19,6 +18,8 @@ use std::time::Duration;
 use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
 use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
+use thiserror::Error;
+use timeout::TimeoutError;
 
 pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     let mut argv: Vec<String> = vec![];
@@ -71,6 +72,21 @@ pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     argv
 }
 
+#[derive(FfxError, Error, Debug)]
+pub enum ForegroundServerError {
+    #[transparent]
+    #[error(transparent)]
+    Server(#[from] ServeError),
+
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+}
+
 /// Runs the repository server in the foreground.
 ///
 /// # Arguments
@@ -82,10 +98,10 @@ pub async fn run_foreground_server(
     target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_addr: Deferred<HostAddrHolder>,
-    mut w: <ServerStartTool as FfxMain>::Writer,
+    mut w: VerifiedMachineWriter<CommandStatus>,
     mode: ServerMode,
     repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
-) -> Result<()> {
+) -> std::result::Result<(), ForegroundServerError> {
     let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
     let drain_task = async {
         while let Some(msg) = rx.next().await {
@@ -108,7 +124,7 @@ pub async fn run_foreground_server(
         .await
     };
     let (_, res) = futures::join!(drain_task, main_task);
-    let res = res?;
+    let res = res.map_err(ForegroundServerError::Server)?;
     // Write the message.
     match res {
         ServeStarted::AlreadyRunning { address, repo_path, name, pid } => {
@@ -117,30 +133,37 @@ pub async fn run_foreground_server(
                  the repo path: {repo_path}"
             );
             log::warn!("{s}");
-            writeln!(w, "{s}").map_err(|e| bug!(e))?;
+            writeln!(w, "{s}")?;
         }
         ServeStarted::Started { address, repo_path } => {
             let s = format!("Serving repository '{repo_path}' over address '{}'.", address);
-            w.item(&CommandStatus::Message { message: s.clone() })
-                .map_err(|e| anyhow!("Failed to write to output: {:?}", e))?;
+            w.item(&CommandStatus::Message { message: s.clone() })?;
             log::info!("{}", s);
         }
     };
     Ok(())
 }
 
+#[derive(Error, Debug)]
+pub enum WaitForStartError {
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[error("Timed out waiting for the server to start: {0}")]
+    Timeout(#[from] TimeoutError),
+}
+
 pub(crate) async fn wait_for_start(
     context: EnvironmentContext,
     cmd: StartCommand,
     time_to_wait: Duration,
-) -> Result<SocketAddr> {
-    let instance_root =
-        context.get("repository.process_dir").map_err(|e: ffx_config::api::ConfigError| bug!(e))?;
+) -> std::result::Result<SocketAddr, WaitForStartError> {
+    let instance_root = context.get("repository.process_dir")?;
     let mgr = PkgServerInstances::new(instance_root);
 
     let repo_base_name = get_repo_base_name(&cmd.repository, &context)?;
     log::debug!("waiting up to {time_to_wait:?} for {repo_base_name} to start.");
-    timeout::timeout(time_to_wait, async move {
+    let addr = timeout::timeout(time_to_wait, async move {
         loop {
             match mgr.list_instances() {
                 Ok(running_instances) => {
@@ -148,7 +171,7 @@ pub(crate) async fn wait_for_start(
                         .iter()
                         .find(|instance| instance.name.starts_with(&repo_base_name))
                     {
-                        return Ok(instance.address.clone());
+                        return instance.address.clone();
                     }
                     log::debug!(
                         "waiting for {repo_base_name} to start. Got: {running_instances:?}"
@@ -161,8 +184,8 @@ pub(crate) async fn wait_for_start(
             fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
         }
     })
-    .await
-    .map_err(|e| user_error!(e))?
+    .await?;
+    Ok(addr)
 }
 
 #[cfg(test)]

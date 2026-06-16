@@ -129,7 +129,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(output_json["type"], "user")
         asserts.assert_equal(
             output_json["message"],
-            "--background and --foreground are mutually exclusive",
+            "Mutually exclusive arguments: --background is mutually exclusive with --foreground and --disconnected",
         )
         asserts.assert_equal(output_json["code"], 1)
 

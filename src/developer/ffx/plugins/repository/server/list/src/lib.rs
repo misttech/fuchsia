@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use errors;
 use ffx_config::EnvironmentContext;
-use ffx_config::api::ConfigError;
 use ffx_repository_server_list_args::ListCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Error, FfxMain, FfxTool, Result, bug};
+use fho::{FfxError, FfxMain, FfxTool, Result};
 
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
 use fuchsia_repo::repository::RepositorySpec;
@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 /// PathType is an enum encapulating filesystem and URL based paths.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
@@ -97,56 +98,67 @@ pub enum CommandStatus {
     /// A known kind of error that can be reported usefully to the user
     UserError { message: String },
 }
+
+#[derive(FfxError, Error, Debug)]
+pub enum RepoListError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error("Repository server instances enumeration failed: {0}")]
+    Instances(#[from] pkg::InstanceError),
+
+    #[transparent]
+    #[error(transparent)]
+    Fho(#[from] fho::Error),
+}
+
 #[derive(FfxTool)]
+#[main_error(RepoListError)]
 pub struct RepoListTool {
     #[command]
     cmd: ListCommand,
     context: EnvironmentContext,
 }
 
-fho::embedded_plugin!(RepoListTool);
+fho::embedded_plugin!(RepoListTool, RepoListError);
 
 #[async_trait(?Send)]
 impl FfxMain for RepoListTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+    type Error = RepoListError;
 
-    type Error = ::fho::Error;
-
-    async fn main(self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
         let full = self.cmd.full;
         let names = self.cmd.names.clone();
-        match self.list().await {
-            Ok(info) => {
-                // filter by names
-                let filtered: Vec<PkgServerData> = info
-                    .into_iter()
-                    .filter(|s| names.contains(&s.name) || names.is_empty())
-                    .map(Into::into)
-                    .collect();
-                writer.machine_or_else(&CommandStatus::Ok { data: filtered.clone() }, || {
-                    format_text(filtered, full)
-                })?;
-                Ok(())
-            }
-            Err(e @ Error::User(_)) => {
-                writer.machine(&CommandStatus::UserError { message: e.to_string() })?;
-                Err(e)
-            }
-            Err(e) => {
-                writer.machine(&CommandStatus::UnexpectedError { message: e.to_string() })?;
-                Err(e)
-            }
-        }
+        let info = self.list().await?;
+        // filter by names
+        let filtered: Vec<PkgServerData> = info
+            .into_iter()
+            .filter(|s| names.contains(&s.name) || names.is_empty())
+            .map(Into::into)
+            .collect();
+        writer.machine_or_else(&CommandStatus::Ok { data: filtered.clone() }, || {
+            format_text(filtered, full)
+        })?;
+        Ok(())
     }
 }
 
 impl RepoListTool {
-    async fn list(self) -> Result<Vec<PkgServerInfo>> {
-        let instance_root =
-            self.context.get("repository.process_dir").map_err(|e: ConfigError| bug!(e))?;
+    async fn list(self) -> Result<Vec<PkgServerInfo>, RepoListError> {
+        let instance_root = self.context.get("repository.process_dir")?;
         let mgr = PkgServerInstances::new(instance_root);
-        let instances =
-            mgr.list_instances().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        let instances = mgr.list_instances()?;
 
         Ok(instances)
     }
@@ -205,7 +217,7 @@ mod tests {
             context: test_env.context.clone(),
         };
         let buffers = TestBuffers::default();
-        let writer = <RepoListTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
 
         tool.main(writer).await.expect("ok");
 
@@ -252,7 +264,7 @@ mod tests {
             context: test_env.context.clone(),
         };
         let buffers = TestBuffers::default();
-        let writer = <RepoListTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
 
         tool.main(writer).await.expect("ok");
 
@@ -298,7 +310,7 @@ mod tests {
             context: test_env.context.clone(),
         };
         let buffers = TestBuffers::default();
-        let writer = <RepoListTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
 
         tool.main(writer).await.expect("ok");
 
@@ -365,7 +377,7 @@ mod tests {
             context: env.context.clone(),
         };
         let buffers = TestBuffers::default();
-        let writer = <RepoListTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
 
         tool.main(writer).await.expect("ok");
 
@@ -412,7 +424,7 @@ mod tests {
             context: test_env.context.clone(),
         };
         let buffers = TestBuffers::default();
-        let writer = <RepoListTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &buffers);
 
         tool.main(writer).await.expect("ok");
 
@@ -423,11 +435,45 @@ mod tests {
         let data = serde_json::from_str(&stdout).expect("json value");
 
         assert_eq!(format!("{expected}\n"), stdout);
-        match <RepoListTool as FfxMain>::Writer::verify_schema(&data) {
+        match VerifiedMachineWriter::<CommandStatus>::verify_schema(&data) {
             Ok(_) => (),
             Err(e) => {
                 panic!("Error verifying schema: {e} for data {data:?}");
             }
         };
+    }
+
+    #[fuchsia::test]
+    async fn test_list_instances_failed() {
+        use std::os::unix::fs::PermissionsExt;
+        let builder = ffx_config::test_env();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("unreadable.json");
+        std::fs::write(&file_path, b"{}").unwrap();
+
+        // Set file to be completely unreadable (000)
+        let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&file_path, perms).unwrap();
+
+        let env = builder
+            .user_config("repository.process_dir", temp_dir.path().to_string_lossy())
+            .build()
+            .unwrap();
+
+        let tool = RepoListTool {
+            context: env.context.clone(),
+            cmd: ListCommand { full: false, names: vec![] },
+        };
+        let res = tool.list().await;
+
+        // Re-enable permissions so tempdir cleanup doesn't fail
+        if let Ok(mut perms) = std::fs::metadata(&file_path).map(|m| m.permissions()) {
+            perms.set_mode(0o644);
+            let _ = std::fs::set_permissions(&file_path, perms);
+        }
+
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), RepoListError::Instances(_)));
     }
 }

@@ -5,11 +5,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use errors;
 use ffx_config::EnvironmentContext;
-use ffx_config::api::ConfigError;
 use ffx_repository_server_stop_args::StopCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Error, FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
+use fho::{FfxMain, FfxTool};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,47 +24,80 @@ pub enum CommandStatus {
     /// A known kind of error that can be reported usefully to the user
     UserError { message: String },
 }
+use fho::FfxError;
+use thiserror::Error;
+
+#[derive(FfxError, Error, Debug)]
+pub enum RepoStopError {
+    #[exit_with_code(1)]
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[exit_with_code(1)]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[exit_with_code(1)]
+    #[error("FFX Writer error: {0}")]
+    Writer(#[from] ffx_writer::Error),
+
+    #[exit_with_code(1)]
+    #[error(
+        "no running server named {0} is found. Try checking running servers with `ffx repository server list`."
+    )]
+    ServerNotFoundByName(String),
+
+    #[exit_with_code(1)]
+    #[error("no running server serving a product bundle {0} is found.")]
+    ServerNotFoundByProductBundle(String),
+
+    #[exit_with_code(1)]
+    #[error(
+        "more than 1 server running. Use --all or specify the name and port (if needed) of the server to stop."
+    )]
+    MultipleServersRunning,
+
+    #[exit_with_code(1)]
+    #[error("Could not terminate server: {0}")]
+    TerminateServerFailed(#[source] pkg::InstanceError),
+
+    #[exit_with_code(1)]
+    #[error("Failed to list running server instances: {0}")]
+    ListInstancesFailed(#[from] pkg::InstanceError),
+
+    #[transparent]
+    #[error(transparent)]
+    Fho(#[from] fho::Error),
+}
+
 #[derive(FfxTool)]
+#[main_error(RepoStopError)]
 pub struct RepoStopTool {
     #[command]
     cmd: StopCommand,
     context: EnvironmentContext,
 }
 
-fho::embedded_plugin!(RepoStopTool);
+fho::embedded_plugin!(RepoStopTool, RepoStopError);
 
 #[async_trait(?Send)]
 impl FfxMain for RepoStopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
+    type Error = RepoStopError;
 
-    type Error = ::fho::Error;
-
-    async fn main(self, mut writer: Self::Writer) -> Result<()> {
-        match self.stop().await {
-            Ok(info) => {
-                let message = info.unwrap_or_else(|| "Stopped the repository server".into());
-                writer.machine_or(&CommandStatus::Ok { message: message.clone() }, message)?;
-                Ok(())
-            }
-            Err(e @ Error::User(_)) => {
-                writer.machine(&CommandStatus::UserError { message: e.to_string() })?;
-                Err(e)
-            }
-            Err(e) => {
-                writer.machine(&CommandStatus::UnexpectedError { message: e.to_string() })?;
-                Err(e)
-            }
-        }
+    async fn main(self, mut writer: Self::Writer) -> Result<(), Self::Error> {
+        let info = self.stop().await?;
+        let message = info.unwrap_or_else(|| "Stopped the repository server".into());
+        writer.machine_or(&CommandStatus::Ok { message: message.clone() }, message)?;
+        Ok(())
     }
 }
 
 impl RepoStopTool {
-    pub async fn stop(self) -> Result<Option<String>> {
-        let instance_root =
-            self.context.get("repository.process_dir").map_err(|e: ConfigError| bug!(e))?;
+    pub async fn stop(self) -> Result<Option<String>, RepoStopError> {
+        let instance_root = self.context.get("repository.process_dir")?;
         let mgr = PkgServerInstances::new(instance_root);
-        let instances: Vec<PkgServerInfo> =
-            mgr.list_instances().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        let instances: Vec<PkgServerInfo> = mgr.list_instances()?;
         if instances.is_empty() {
             return Ok(Some("no running servers".into()));
         }
@@ -81,9 +114,7 @@ impl RepoStopTool {
             }) {
                 return Self::stop_instance(instance).await;
             } else {
-                return_user_error!(
-                    "no running server named {repo_name} is found. Try checking running servers with `ffx repository server list`."
-                );
+                return Err(RepoStopError::ServerNotFoundByName(repo_name.clone()));
             }
         } else if let Some(product_bundle) = &self.cmd.product_bundle {
             if let Some(instance) = instances.iter().find(|s| {
@@ -92,9 +123,9 @@ impl RepoStopTool {
             }) {
                 return Self::stop_instance(instance).await;
             } else {
-                return_user_error!(
-                    "no running server serving a product bundle {product_bundle} is found."
-                );
+                return Err(RepoStopError::ServerNotFoundByProductBundle(
+                    product_bundle.to_string(),
+                ));
             }
         } else {
             match instances.len() {
@@ -105,17 +136,15 @@ impl RepoStopTool {
                         Self::stop_instance(instance).await
                     };
                 }
-                _ => return_user_error!(
-                    "more than 1 server running. Use --all or specify the name and port (if needed) of the server to stop."
-                ),
+                _ => return Err(RepoStopError::MultipleServersRunning),
             }
         }
     }
 
-    async fn stop_instance(instance: &PkgServerInfo) -> Result<Option<String>> {
+    async fn stop_instance(instance: &PkgServerInfo) -> Result<Option<String>, RepoStopError> {
         match instance.terminate(Duration::from_secs(3)).await {
             Ok(_) => Ok(None),
-            Err(e) => return_bug!("Could not terminate server: {e}"),
+            Err(e) => Err(RepoStopError::TerminateServerFailed(e)),
         }
     }
 }
@@ -125,6 +154,7 @@ mod tests {
     use super::*;
     use camino::Utf8PathBuf;
     use ffx_config::TestEnv;
+    use fho::Result;
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
     };
@@ -225,7 +255,7 @@ mod tests {
             cmd: StopCommand { all: true, name: None, port: None, product_bundle: None },
         };
         let buffers = ffx_writer::TestBuffers::default();
-        let writer = <RepoStopTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
         let res = tool.main(writer).await;
 
         let (stdout, stderr) = buffers.into_strings();
@@ -267,7 +297,7 @@ mod tests {
             },
         };
         let buffers = ffx_writer::TestBuffers::default();
-        let writer = <RepoStopTool as FfxMain>::Writer::new_test(None, &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &buffers);
         let res = tool.main(writer).await;
         let (stdout, stderr) = buffers.into_strings();
 
@@ -277,5 +307,106 @@ mod tests {
         assert_eq!(stdout, "Stopped the repository server\n", "stderr: {stderr}");
         assert_eq!(stderr, "");
         assert!(res.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_server_not_found_by_name() {
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config(
+                "repository.process_dir",
+                isolate_root.join("repo_servers").to_string_lossy(),
+            )
+            .build()
+            .unwrap();
+
+        let (_mgr, mut server_proc) =
+            make_standalone_instance("default".into(), None, &env.context, &env)
+                .expect("test daemon instance");
+
+        let tool = RepoStopTool {
+            context: env.context.clone(),
+            cmd: StopCommand {
+                all: false,
+                name: Some("nonexistent_server".to_string()),
+                port: None,
+                product_bundle: None,
+            },
+        };
+        let res = tool.stop().await;
+        let _ = server_proc.kill();
+
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            RepoStopError::ServerNotFoundByName(name) if name == "nonexistent_server"
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_server_not_found_by_product_bundle() {
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config(
+                "repository.process_dir",
+                isolate_root.join("repo_servers").to_string_lossy(),
+            )
+            .build()
+            .unwrap();
+
+        let (_mgr, mut server_proc) =
+            make_standalone_instance("default".into(), None, &env.context, &env)
+                .expect("test daemon instance");
+
+        let tool = RepoStopTool {
+            context: env.context.clone(),
+            cmd: StopCommand {
+                all: false,
+                name: None,
+                port: None,
+                product_bundle: Some(camino::Utf8PathBuf::from("/nonexistent/pb")),
+            },
+        };
+        let res = tool.stop().await;
+        let _ = server_proc.kill();
+
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            RepoStopError::ServerNotFoundByProductBundle(path) if path == "/nonexistent/pb"
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_multiple_servers_running() {
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config(
+                "repository.process_dir",
+                isolate_root.join("repo_servers").to_string_lossy(),
+            )
+            .build()
+            .unwrap();
+
+        let (_mgr1, mut server_proc1) =
+            make_standalone_instance("server1".into(), None, &env.context, &env)
+                .expect("test daemon instance 1");
+        let (_mgr2, mut server_proc2) =
+            make_standalone_instance("server2".into(), None, &env.context, &env)
+                .expect("test daemon instance 2");
+
+        let tool = RepoStopTool {
+            context: env.context.clone(),
+            cmd: StopCommand { all: false, name: None, port: None, product_bundle: None },
+        };
+        let res = tool.stop().await;
+        let _ = server_proc1.kill();
+        let _ = server_proc2.kill();
+
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), RepoStopError::MultipleServersRunning));
     }
 }

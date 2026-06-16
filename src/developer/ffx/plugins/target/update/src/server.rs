@@ -130,7 +130,7 @@ pub(crate) async fn package_server_task(
         .await;
 
         log::info!("product bundle server exited: {server_result:?}");
-        server_result
+        server_result.map_err(Into::into)
     });
 
     Ok(PackageServerTask { repo_name, repo_host_rx, task })

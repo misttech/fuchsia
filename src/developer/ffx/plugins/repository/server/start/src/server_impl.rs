@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use crate::target;
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::FfxError;
-use ffx_command_error::{Result, bug, return_bug, return_user_error};
+use ffx_command_error::Result;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_repository_server_start_args::{StartCommand, default_address, default_tunnel_addr};
 use ffx_ssh::parse::HostAddr;
 use ffx_target::LocalRcsKnockerImpl;
-use fho::Deferred;
+use fho::{Deferred, FfxError};
 use fuchsia_async as fasync;
 use fuchsia_repo::manager::RepositoryManager;
 use fuchsia_repo::repo_client::RepoClient;
@@ -26,10 +26,10 @@ use pkg::config::DEFAULT_REPO_NAME;
 use pkg::{
     PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances, ServerMode, write_instance_info,
 };
+use thiserror::Error;
 
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::error::Error as _;
 use std::fs;
 use std::sync::Arc;
 use target_connector::Connector;
@@ -93,7 +93,7 @@ async fn repo_client_from_optional_trusted_root(
 
 /// Refreshes repository metadata, in the same way running a shell command
 /// `ffx repository publish /path/to/repository` would
-async fn refresh_repository_metadata(path: &Utf8PathBuf) -> Result<()> {
+async fn refresh_repository_metadata(path: &Utf8PathBuf) -> std::result::Result<(), ServeError> {
     let rf = RepoPublishCommand {
         signing_keys: None,
         trusted_keys: None,
@@ -117,31 +117,137 @@ async fn refresh_repository_metadata(path: &Utf8PathBuf) -> Result<()> {
     };
     cmd_repo_publish(rf)
         .await
-        .map_err(|e| fho::user_error!(format!("failed publishing to repo {}: {}", path, e)))
+        .map_err(|e| ServeError::User(anyhow!("failed publishing to repo {}: {}", path, e)))
 }
 
 pub fn get_repo_base_name(
     cmd_line: &Option<String>,
     context: &EnvironmentContext,
-) -> Result<String> {
+) -> std::result::Result<String, ffx_config::api::ConfigError> {
     if let Some(repo_name) = cmd_line.as_ref() {
         return Ok(repo_name.to_string());
-    } else {
-        if let Some(repo_name) = context
-            .get::<Option<String>, _>(CONFIG_KEY_DEFAULT_REPOSITORY)
-            .map_err(|e| bug!("{e}"))?
-        {
-            return Ok(repo_name);
-        }
+    } else if let Some(repo_name) =
+        context.get::<Option<String>, _>(CONFIG_KEY_DEFAULT_REPOSITORY)?
+    {
+        return Ok(repo_name);
     }
     Ok(DEFAULT_REPO_NAME.to_string())
+}
+
+#[derive(FfxError, Error, Debug)]
+pub enum ServerValidationError {
+    #[user]
+    #[error("{0}")]
+    TargetAmbiguous(String),
+
+    #[user]
+    #[error("{0}")]
+    TargetNotFound(String),
+
+    #[unexpected]
+    #[error("Target connection failed: {0}")]
+    TargetConnectionFailed(#[source] anyhow::Error),
+
+    #[unexpected]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[user]
+    #[error("Cannot specify both --repo-path and --product-bundle")]
+    PathConflict,
+
+    #[user]
+    #[error("product bundle {0:?} does not exist")]
+    ProductBundleDoesNotExist(Utf8PathBuf),
+
+    #[user]
+    #[error("repo-path {0:?} does not exist")]
+    RepositoryDoesNotExist(Utf8PathBuf),
+
+    #[user]
+    #[error("package manifest {0:?} does not exist")]
+    PackageManifestDoesNotExist(Utf8PathBuf),
+
+    #[user]
+    #[error("Either --repo-path or --product-bundle need to be specified")]
+    MissingPaths,
+
+    #[user]
+    #[error(
+        "Repository address conflict. \
+            Cannot start a server named {repo_name} serving {repo_path:?}. \
+            Repository server \"{duplicate_name}\" is already running on {addr} serving a different path: {duplicate_path}\n\
+            Use `ffx repository server list` to list running servers"
+    )]
+    AddressConflict {
+        repo_name: String,
+        repo_path: Utf8PathBuf,
+        duplicate_name: String,
+        duplicate_path: String,
+        addr: std::net::SocketAddr,
+    },
+
+    #[user]
+    #[error(
+        "Repository name conflict. \
+            Cannot start a server named {repo_name} serving {repo_path:?}. \
+            Repository server \"{duplicate_name}\" is already running on {addr} serving a different path: {duplicate_path}\n\
+            Use `ffx repository server list` to list running servers"
+    )]
+    NameConflict {
+        repo_name: String,
+        repo_path: Utf8PathBuf,
+        duplicate_name: String,
+        duplicate_path: String,
+        addr: std::net::SocketAddr,
+    },
+
+    #[unexpected]
+    #[error("Unexpected error: {0}")]
+    Unexpected(#[source] anyhow::Error),
+}
+
+#[derive(FfxError, Error, Debug)]
+pub enum ServeError {
+    #[transparent]
+    #[error(transparent)]
+    Validation(#[from] ServerValidationError),
+
+    #[exit_with_code(1)]
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[user]
+    #[error("{0}")]
+    User(anyhow::Error),
+
+    #[unexpected]
+    #[error("Unexpected error: {0}")]
+    Unexpected(anyhow::Error),
+}
+
+impl From<ffx_command_error::Error> for ServeError {
+    fn from(e: ffx_command_error::Error) -> Self {
+        match e {
+            ffx_command_error::Error::User(err) => Self::User(err),
+            ffx_command_error::Error::Unexpected(err) => Self::Unexpected(err),
+            ffx_command_error::Error::Config(err) => Self::Unexpected(err),
+            e => Self::Unexpected(anyhow!(e)),
+        }
+    }
+}
+
+impl From<anyhow::Error> for ServeError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Unexpected(e)
+    }
 }
 
 pub async fn serve_impl_validate_args(
     cmd: &StartCommand,
     rcs_proxy_connector: &Connector<RemoteControlProxyHolder>,
     context: &EnvironmentContext,
-) -> Result<Option<PkgServerInfo>> {
+) -> std::result::Result<Option<PkgServerInfo>, ServerValidationError> {
     // Check that there is a target device identified, it is OK if it is not online.
     if !cmd.no_device {
         let res = rcs_proxy_connector
@@ -161,38 +267,19 @@ pub async fn serve_impl_validate_args(
                 }
             })
             .await;
-        match res {
-            //  For validating the arguments to this command, we're only checking for there being
-            // 1 device identified as the target. If there is more than one or zero, print an error.
-            Err(fho::Error::User(e)) => {
-                // This is a little bit of a hack, based on insider information of the Error structure.
-                // fho::Error::User can be based on the error type, FfxError.
-                // FfxError can be caused by the domain specific error FfxTargetError.
-                // FfxTargetError provides the detail of which error was encountered. If it is
-                // because a device cannot be targeted because there are too many, or zero and none
-                // explicitly requested, return the error and stop looping.
-                if let Some(ee) = e.downcast_ref::<FfxError>() {
-                    match ee {
-                        FfxError::OpenTargetError { .. } => {
-                            if let Some(source) = ee.source() {
-                                match source.downcast_ref::<FfxTargetError>() {
-                                    Some(FfxTargetError::OpenTargetError { err, .. } )
-                                     if err == &fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous ||
-                                     err == &fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound => return_user_error!(e),
-                                    _ => ()
-                                }
-                            }
-                        }
-                        _ => (),
-                    };
-                } else {
-                    log::warn!(
-                        "Expected error to be downcasted to FfxError but wasn't. Maybe the Error structure changed? {e:?}"
-                    );
+        if let Err(fho::Error::User(ref user_err)) = res {
+            if let Some(FfxError::OpenTargetError { .. }) = user_err.downcast_ref::<FfxError>() {
+                if let Some(FfxTargetError::OpenTargetError { err, .. }) =
+                    user_err.source().and_then(|s| s.downcast_ref::<FfxTargetError>())
+                {
+                    if err == &fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous {
+                        return Err(ServerValidationError::TargetAmbiguous(user_err.to_string()));
+                    } else if err == &fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound {
+                        return Err(ServerValidationError::TargetNotFound(user_err.to_string()));
+                    }
                 }
             }
-            _ => (),
-        };
+        }
     }
 
     let repo_base_name = get_repo_base_name(&cmd.repository, context)?;
@@ -203,25 +290,26 @@ pub async fn serve_impl_validate_args(
         cmd.product_bundle.clone(),
     ) {
         (Some(_), Some(_)) => {
-            return_user_error!("Cannot specify both --repo-path and --product-bundle");
+            return Err(ServerValidationError::PathConflict);
         }
         (None, Some(product_bundle)) => {
             if !product_bundle.exists() {
-                return_user_error!("product bundle {product_bundle:?} does not exist");
+                return Err(ServerValidationError::ProductBundleDoesNotExist(product_bundle));
             }
             let repositories = product_bundle::get_repositories(product_bundle.clone())
                 .with_context(|| {
                     format!("getting repositories from product bundle {product_bundle}")
-                })?;
+                })
+                .map_err(ServerValidationError::Unexpected)?;
             let mut pb_repo_name_paths = vec![];
             for r in repositories {
                 if let Some(first_alias) = r.aliases().clone().first() {
                     pb_repo_name_paths
                         .push((format!("{repo_base_name}.{first_alias}"), product_bundle.clone()));
                 } else {
-                    return_bug!(
+                    return Err(ServerValidationError::Unexpected(anyhow!(
                         "Invalid repository configuration in the product bundle {product_bundle}. No aliases defined for a repository"
-                    );
+                    )));
                 }
             }
             pb_repo_name_paths
@@ -229,7 +317,7 @@ pub async fn serve_impl_validate_args(
         (repo_path, None) => {
             if let Some(path) = repo_path {
                 if !path.exists() {
-                    return_user_error!("repo-path {path:?} does not exist");
+                    return Err(ServerValidationError::RepositoryDoesNotExist(path));
                 }
                 vec![(repo_base_name, path)]
             // TODO(b/359927881): Use the configuration to read repo-path
@@ -238,18 +326,17 @@ pub async fn serve_impl_validate_args(
                 context.env_kind()
             {
                 let path = build_dir.join(REPO_PATH_RELATIVE_TO_BUILD_DIR);
-                if !path.exists() {
-                    return_user_error!("build directory relative path {path:?} does not exist");
+                let path_utf8 = Utf8Path::from_path(&path)
+                    .with_context(|| format!("converting repo path to UTF-8 {:?}", path))
+                    .map_err(ServerValidationError::Unexpected)?
+                    .to_path_buf();
+                if !path_utf8.exists() {
+                    return Err(ServerValidationError::RepositoryDoesNotExist(path_utf8));
                 }
-                vec![(
-                    repo_base_name,
-                    Utf8Path::from_path(&path)
-                        .with_context(|| format!("converting repo path to UTF-8 {:?}", repo_path))?
-                        .into(),
-                )]
+                vec![(repo_base_name, path_utf8)]
             } else {
                 log::warn!("repo-path not found in env: {:?}", context.env_kind());
-                return_user_error!("Either --repo-path or --product-bundle need to be specified");
+                return Err(ServerValidationError::MissingPaths);
             }
         }
     };
@@ -258,15 +345,19 @@ pub async fn serve_impl_validate_args(
         if !package_manifest.exists() {
             let msg = format!("package manifest {package_manifest:?} does not exist");
             log::error!("{msg}");
-            return_user_error!("{msg}");
+            return Err(ServerValidationError::PackageManifestDoesNotExist(
+                package_manifest.clone(),
+            ));
         }
     }
 
     // Compare against running instances.
     let instance_root =
-        context.get("repository.process_dir").map_err(|e: ffx_config::api::ConfigError| bug!(e))?;
+        context.get("repository.process_dir").map_err(ServerValidationError::Config)?;
     let mgr = PkgServerInstances::new(instance_root);
-    let running_instances = mgr.list_instances().map_err(anyhow::Error::from)?;
+    let running_instances = mgr
+        .list_instances()
+        .map_err(|e| ServerValidationError::Unexpected(anyhow::Error::from(e)))?;
 
     // Check all the name/path pairs for conflicts. If there is an exact match, return it as
     // an indicator that the server is already running and does not need to be started again.
@@ -281,25 +372,23 @@ pub async fn serve_impl_validate_args(
             // which is the path to the product bundle
             if let Some(pb_path) = &cmd.product_bundle {
                 if *pb_path != duplicate.repo_path_display() {
-                    return_user_error!(
-                        "Repository address conflict. \
-                Cannot start a server named {repo_name} serving {repo_path:?}. \
-                Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
-                Use `ffx repository server list` to list running servers",
-                        duplicate.name,
-                        duplicate.repo_path_display()
-                    );
+                    return Err(ServerValidationError::AddressConflict {
+                        repo_name,
+                        repo_path,
+                        duplicate_name: duplicate.name.clone(),
+                        duplicate_path: duplicate.repo_path_display(),
+                        addr,
+                    });
                 }
             } else {
                 if repo_name != duplicate.name {
-                    return_user_error!(
-                        "Repository address conflict. \
-                Cannot start a server named {repo_name} serving {repo_path:?}. \
-                Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
-                Use `ffx repository server list` to list running servers",
-                        duplicate.name,
-                        duplicate.repo_path_display()
-                    );
+                    return Err(ServerValidationError::AddressConflict {
+                        repo_name,
+                        repo_path,
+                        duplicate_name: duplicate.name.clone(),
+                        duplicate_path: duplicate.repo_path_display(),
+                        addr,
+                    });
                 }
             }
             if already_running_instance.is_none() {
@@ -309,15 +398,13 @@ pub async fn serve_impl_validate_args(
         let duplicate = running_instances.iter().find(|instance| instance.name == repo_name);
         if let Some(duplicate) = duplicate {
             if addr != duplicate.address {
-                return_user_error!(
-                    "Repository name conflict. \
-            Cannot start a server named {repo_name} serving {repo_path:?}. \
-            Repository server  \"{dupe_name}\" is already running on {dupe_addr} serving a different path: {dupe_path}\n\
-            Use `ffx repository server list` to list running servers",
-                    dupe_name = duplicate.name,
-                    dupe_addr = duplicate.address,
-                    dupe_path = duplicate.repo_path_display()
-                );
+                return Err(ServerValidationError::NameConflict {
+                    repo_name,
+                    repo_path,
+                    duplicate_name: duplicate.name.clone(),
+                    duplicate_path: duplicate.repo_path_display(),
+                    addr: duplicate.address.clone(),
+                });
             }
             if already_running_instance.is_none() {
                 already_running_instance = Some(duplicate.clone());
@@ -341,7 +428,7 @@ pub async fn serve_impl(
     mode: ServerMode,
     tx: &mut mpsc::UnboundedSender<crate::target::ConnectEvent>,
     repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
-) -> Result<ServeStarted> {
+) -> std::result::Result<ServeStarted, ServeError> {
     // Validate the cmd args before processing. This allows good error messages to be presented
     // to the user when running in Background mode. If the server is already running, this returns
     // Ok.
@@ -366,7 +453,9 @@ pub async fn serve_impl(
 
     let repo_path = match (cmd.repo_path.clone(), cmd.product_bundle.clone()) {
         (Some(_), Some(_)) => {
-            return_user_error!("Cannot specify both --repo-path and --product-bundle");
+            return Err(ServeError::User(anyhow!(
+                "Cannot specify both --repo-path and --product-bundle"
+            )));
         }
         (None, Some(product_bundle)) => {
             let repositories = product_bundle::get_repositories(product_bundle.clone())
@@ -404,8 +493,9 @@ pub async fn serve_impl(
 
                 build_dir.join(REPO_PATH_RELATIVE_TO_BUILD_DIR)
             } else {
-                log::warn!("repo-path not found in env: {:?}", context.env_kind());
-                return_user_error!("Either --repo-path or --product-bundle need to be specified");
+                return Err(ServeError::User(anyhow!(
+                    "Either --repo-path or --product-bundle need to be specified"
+                )));
             };
 
             // Create PmRepository and RepoClient
@@ -472,16 +562,16 @@ pub async fn serve_impl(
 
     // Write out the instance data
     for (repo_name, repo_client) in repo_manager.repositories() {
-        let repo_url =
-            fuchsia_url::RepositoryUrl::parse_host(repo_name.clone()).map_err(|e| bug!(e))?;
+        let repo_url = fuchsia_url::RepositoryUrl::parse_host(repo_name.clone())
+            .map_err(|e| anyhow!("{e}"))?;
         let mirror_url = format!("http://{server_addr}/{repo_name}")
             .parse()
-            .map_err(|e: http::uri::InvalidUri| bug!(e))?;
+            .map_err(|e: http::uri::InvalidUri| anyhow!("{e}"))?;
         let repo_config = repo_client
             .read()
             .await
             .get_config(repo_url, mirror_url, cmd.storage_type.clone())
-            .map_err(|e| bug!("{e}"))?;
+            .map_err(|e| anyhow!("{e}"))?;
         let repo_spec = repo_client.read().await.spec();
         if let Err(e) = write_instance_info(
             &context,
@@ -594,7 +684,7 @@ pub async fn serve_impl(
     // Wait for the server to shut down.
     server_task.await;
     let _ = tx.close().await;
-    result
+    result.map_err(Into::into)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -602,14 +692,15 @@ pub async fn serve_impl(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ServerStartTool;
+    use crate::{CommandStatus, ServerStartTool};
     use assert_matches::assert_matches;
     use discovery::query::TargetInfoQuery;
     use fdomain_fuchsia_pkg_rewrite_ext::Rule;
+    use ffx_command_error::bug;
     use ffx_config::TestEnv;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_target_net_testutil::FakeNetstack;
-    use ffx_writer::{Format, TestBuffers};
+    use ffx_writer::{Format, TestBuffers, VerifiedMachineWriter};
     use fho::{FfxMain, FhoEnvironment, TryFromEnv, user_error};
     use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
     use fidl_fuchsia_developer_remotecontrol as frcs;
@@ -1156,7 +1247,9 @@ mod test {
         let rcs_proxy_connector = make_fake_rcs_proxy_connector(&env).await;
 
         for (cmd, expected) in test_cases {
-            let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context).await;
+            let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context)
+                .await
+                .map_err(ffx_command_error::Error::from);
             match expected {
                 Ok(Some(pkg_server_info)) => {
                     if let Some(actual_info) = result.ok().expect("Ok result") {
@@ -1204,14 +1297,14 @@ mod test {
             foreground: true,
             disconnected: false,
         };
-        let expected: Result<Option<PkgServerInfo>> = Err(user_error!(
-            "build directory relative path {:?} does not exist",
-            build_dir.path().join("amber-files")
-        ));
+        let expected: Result<Option<PkgServerInfo>> =
+            Err(user_error!("repo-path {:?} does not exist", build_dir.path().join("amber-files")));
 
         let fake_rcs_proxy_connector = make_fake_rcs_proxy_connector(&env).await;
 
-        let result = serve_impl_validate_args(&cmd, &fake_rcs_proxy_connector, &env.context).await;
+        let result = serve_impl_validate_args(&cmd, &fake_rcs_proxy_connector, &env.context)
+            .await
+            .map_err(ffx_command_error::Error::from);
         match expected {
             Ok(Some(pkg_server_info)) => {
                 if let Some(actual_info) = result.ok().expect("Ok result") {
@@ -1298,7 +1391,7 @@ mod test {
                 Err(user_error!(
                     "Repository address conflict. \
             Cannot start a server named another-name serving {repo_path:?}. \
-            Repository server  \"{name}\" is already running on {addr} serving a different path: {dupe_path}\n\
+            Repository server \"{name}\" is already running on {addr} serving a different path: {dupe_path}\n\
             Use `ffx repository server list` to list running servers",
                     addr = server_info.address,
                     name = server_info.name,
@@ -1352,7 +1445,7 @@ mod test {
                 Err(user_error!(
                     "Repository name conflict. \
     Cannot start a server named {name} serving {repo_path:?}. \
-    Repository server  \"{dupe_name}\" is already running on {addr} serving a different path: {dupe_path}\n\
+    Repository server \"{dupe_name}\" is already running on {addr} serving a different path: {dupe_path}\n\
     Use `ffx repository server list` to list running servers",
                     name = instance_name,
                     dupe_name = instance_name,
@@ -1427,7 +1520,9 @@ mod test {
 
         let rcs_proxy_connector = make_no_target_connector(&env).await;
 
-        let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context).await;
+        let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context)
+            .await
+            .map_err(ffx_command_error::Error::from);
 
         let err = result.expect_err("Expected an error but did not get one");
 
@@ -1466,7 +1561,9 @@ mod test {
 
         let rcs_proxy_connector = make_ambiguous_connector(&env).await;
 
-        let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context).await;
+        let result = serve_impl_validate_args(&cmd, &rcs_proxy_connector, &env.context)
+            .await
+            .map_err(ffx_command_error::Error::from);
 
         let err = result.expect_err("Expected an error but did not get one");
 
@@ -1552,7 +1649,7 @@ mod test {
         };
 
         let buffers = TestBuffers::default();
-        let writer = <ServerStartTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+        let writer = VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &buffers);
 
         // Run main in background
         let _task = fasync::Task::local(async move { serve_tool.main(writer).await.unwrap() });

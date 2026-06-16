@@ -20,6 +20,7 @@ ffx_plugin("ffx_repository_server_list") {
 
   deps = [
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/pkg",
     "//src/developer/ffx/lib/writer:lib",
@@ -28,6 +29,7 @@ ffx_plugin("ffx_repository_server_list") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
     "//src/lib/fuchsia",
@@ -35,5 +37,6 @@ ffx_plugin("ffx_repository_server_list") {
     "//src/sys/pkg/lib/fuchsia-repo",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:tempfile",
   ]
 }

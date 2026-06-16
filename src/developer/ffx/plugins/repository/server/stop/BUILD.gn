@@ -21,12 +21,14 @@ ffx_plugin("ffx_repository_server_stop") {
 
   deps = [
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/pkg",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
     "//src/lib/fuchsia",
