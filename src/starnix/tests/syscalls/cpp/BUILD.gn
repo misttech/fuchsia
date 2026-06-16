@@ -465,8 +465,6 @@ foreach(test_def, syscall_tests_flaky) {
 }
 
 test("crash") {
-  # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-  exclude_toolchain_tags = [ "asan" ]
   sources = [ "crash.cc" ]
   deps = [
     ":test_utils",
@@ -509,11 +507,7 @@ if (is_linux) {
     emit_tool_path = false
     sources = [ "procfs_test_exec_child.cc" ]
 
-    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-    exclude_toolchain_tags = [
-      "asan",
-      "coverage",
-    ]
+    exclude_toolchain_tags = [ "coverage" ]
     deps = [ ":test_utils" ]
   }
 
@@ -522,11 +516,7 @@ if (is_linux) {
     emit_tool_path = false
     sources = [ "ptrace_test_exec_child.cc" ]
 
-    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-    exclude_toolchain_tags = [
-      "asan",
-      "coverage",
-    ]
+    exclude_toolchain_tags = [ "coverage" ]
     deps = [ ":test_utils" ]
   }
 
@@ -535,11 +525,7 @@ if (is_linux) {
     emit_tool_path = false
     sources = [ "signal_handling_test_exec_child.cc" ]
 
-    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-    exclude_toolchain_tags = [
-      "asan",
-      "coverage",
-    ]
+    exclude_toolchain_tags = [ "coverage" ]
     deps = [ ":test_utils" ]
   }
 
@@ -548,11 +534,7 @@ if (is_linux) {
     emit_tool_path = false
     sources = [ "syscall_test_exec_child.cc" ]
 
-    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-    exclude_toolchain_tags = [
-      "asan",
-      "coverage",
-    ]
+    exclude_toolchain_tags = [ "coverage" ]
     deps = [ ":test_utils" ]
   }
 
@@ -561,11 +543,7 @@ if (is_linux) {
     emit_tool_path = false
     sources = [ "print_uid_gid_exec_child.cc" ]
 
-    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-    exclude_toolchain_tags = [
-      "asan",
-      "coverage",
-    ]
+    exclude_toolchain_tags = [ "coverage" ]
     deps = [ ":test_utils" ]
   }
 }

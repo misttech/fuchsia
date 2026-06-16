@@ -58,9 +58,6 @@ rustc_test("syscalls_rust_test_bin") {
   source_root = "src/lib.rs"
   sources = _common_sources
   deps = _common_deps
-
-  # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-  exclude_toolchain_tags = [ "asan" ]
 }
 
 rustc_binary("fscrypt_test_bin") {
