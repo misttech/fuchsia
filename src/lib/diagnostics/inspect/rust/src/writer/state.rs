@@ -94,12 +94,14 @@ macro_rules! metric_fns {
             ) -> Result<BlockIndex, Error> {
                 let pending = self.allocate_reserved_value(
                     name, parent_index, constants::MIN_ORDER_SIZE)?;
+                let name_index = pending.name_block_index();
+                let block_index = pending.block_index;
                 pending
                     .state
                     .heap
                     .container
-                    .block_at_unchecked_mut::<Reserved>(pending.block_index)
-                    .[<become_ $name _value>](value, pending.name_block_index, parent_index);
+                    .block_at_unchecked_mut::<Reserved>(block_index)
+                    .[<become_ $name _value>](value, name_index, parent_index);
                 Ok(pending.commit())
             }
 
@@ -177,13 +179,15 @@ macro_rules! arithmetic_array_fns {
                 }
                 let pending = self.allocate_reserved_value(
                     name, parent_index, block_size)?;
+                let name_index = pending.name_block_index();
+                let block_index = pending.block_index;
                 pending
                     .state
                     .heap
                     .container
-                    .block_at_unchecked_mut::<Reserved>(pending.block_index)
+                    .block_at_unchecked_mut::<Reserved>(block_index)
                     .become_array_value::<$marker>(
-                        slots, array_format, pending.name_block_index, parent_index
+                        slots, array_format, name_index, parent_index
                     )?;
                 Ok(pending.commit())
             }
@@ -613,86 +617,128 @@ impl InnerState {
     }
 }
 
-struct PendingValueBlock<'a> {
-    state: &'a mut InnerState,
-    block_index: BlockIndex,
-    name_block_index: BlockIndex,
-    parent_index: BlockIndex,
+trait PendingState {
+    type Context;
+    fn cleanup(state: &mut InnerState, block_index: BlockIndex, context: &Self::Context);
 }
 
-impl Drop for PendingValueBlock<'_> {
-    fn drop(&mut self) {
-        if self.state.heap.container.block_at(self.block_index).block_type()
-            == Some(BlockType::Reserved)
-        {
-            self.state
-                .heap
-                .container
-                .block_at_unchecked_mut::<Reserved>(self.block_index)
-                .become_node(self.name_block_index, self.parent_index);
-        }
-
-        if let Err(e) = self.state.delete_value(self.block_index) {
-            panic!("failed to free pending block: {:?}", e);
-        }
+impl PendingState for Reserved {
+    type Context = ();
+    fn cleanup(state: &mut InnerState, block_index: BlockIndex, _context: &Self::Context) {
+        let _ = state.heap.free_block(block_index);
     }
 }
 
-impl PendingValueBlock<'_> {
-    fn commit(self) -> BlockIndex {
-        let index = self.block_index;
-        std::mem::forget(self);
-        index
-    }
-}
-
-struct PendingStringReference<'a> {
-    state: &'a mut InnerState,
-    block_index: BlockIndex,
-}
-
-impl Drop for PendingStringReference<'_> {
-    fn drop(&mut self) {
-        if let Err(e) = self.state.maybe_free_string_reference(self.block_index) {
+impl PendingState for StringRef {
+    type Context = ();
+    fn cleanup(state: &mut InnerState, block_index: BlockIndex, _context: &Self::Context) {
+        if let Err(e) = state.maybe_free_string_reference(block_index) {
             log::error!("failed to maybe free pending string reference: {:?}", e);
         }
     }
 }
 
-impl<'a> PendingStringReference<'a> {
-    fn new<'b>(state: &'a mut InnerState, value: impl Into<Cow<'b, str>>) -> Result<Self, Error> {
-        let block_index = state.get_or_create_string_reference(value)?;
-        Ok(Self { state, block_index })
+struct ValueContext {
+    name_block_index: BlockIndex,
+    parent_index: BlockIndex,
+}
+
+impl PendingState for Node {
+    type Context = ValueContext;
+    fn cleanup(state: &mut InnerState, block_index: BlockIndex, context: &Self::Context) {
+        if state.heap.container.block_at(block_index).block_type() == Some(BlockType::Reserved) {
+            state
+                .heap
+                .container
+                .block_at_unchecked_mut::<Reserved>(block_index)
+                .become_node(context.name_block_index, context.parent_index);
+        }
+
+        if let Err(e) = state.delete_value(block_index) {
+            log::error!("failed to free pending block: {:?}", e);
+        }
+    }
+}
+
+struct Pending<'a, T: PendingState> {
+    state: &'a mut InnerState,
+    block_index: BlockIndex,
+    context: T::Context,
+    committed: bool,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: PendingState> Drop for Pending<'_, T> {
+    fn drop(&mut self) {
+        if !self.committed {
+            T::cleanup(self.state, self.block_index, &self.context);
+        }
+    }
+}
+
+impl<'a> Pending<'a, Reserved> {
+    fn new(state: &'a mut InnerState, block_index: BlockIndex) -> Self {
+        Self {
+            state,
+            block_index,
+            context: (),
+            committed: false,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn commit(self) -> Result<BlockIndex, Error> {
+    fn commit(mut self) -> BlockIndex {
+        self.committed = true;
+        self.block_index
+    }
+}
+
+impl<'a> Pending<'a, StringRef> {
+    fn new<'b>(state: &'a mut InnerState, value: impl Into<Cow<'b, str>>) -> Result<Self, Error> {
+        let block_index = state.get_or_create_string_reference(value)?;
+        Ok(Self {
+            state,
+            block_index,
+            context: (),
+            committed: false,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
+    fn commit(mut self) -> Result<BlockIndex, Error> {
         self.state
             .heap
             .container
             .block_at_unchecked_mut::<StringRef>(self.block_index)
             .increment_ref_count()?;
-        let index = self.block_index;
-        std::mem::forget(self);
-        Ok(index)
+        self.committed = true;
+        Ok(self.block_index)
     }
 }
 
-struct PendingBlock<'a> {
-    state: &'a mut InnerState,
-    block_index: BlockIndex,
-}
-
-impl Drop for PendingBlock<'_> {
-    fn drop(&mut self) {
-        let _ = self.state.heap.free_block(self.block_index);
+impl<'a> Pending<'a, Node> {
+    fn new(
+        state: &'a mut InnerState,
+        block_index: BlockIndex,
+        name_block_index: BlockIndex,
+        parent_index: BlockIndex,
+    ) -> Self {
+        Self {
+            state,
+            block_index,
+            context: ValueContext { name_block_index, parent_index },
+            committed: false,
+            _marker: std::marker::PhantomData,
+        }
     }
-}
 
-impl PendingBlock<'_> {
-    fn commit(self) -> BlockIndex {
-        let index = self.block_index;
-        std::mem::forget(self);
-        index
+    fn commit(mut self) -> BlockIndex {
+        self.committed = true;
+        self.block_index
+    }
+
+    fn name_block_index(&self) -> BlockIndex {
+        self.context.name_block_index
     }
 }
 
@@ -740,12 +786,14 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
         pending
             .state
             .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_node(pending.name_block_index, parent_index);
+            .block_at_unchecked_mut::<Reserved>(block_index)
+            .become_node(name_index, parent_index);
         Ok(pending.commit())
     }
 
@@ -803,14 +851,16 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        let content_index = PendingStringReference::new(pending.state, content)?.commit()?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
+        let content_index = Pending::<StringRef>::new(pending.state, content)?.commit()?;
 
-        pending
-            .state
-            .heap
-            .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_link(pending.name_block_index, parent_index, content_index, disposition);
+        pending.state.heap.container.block_at_unchecked_mut::<Reserved>(block_index).become_link(
+            name_index,
+            parent_index,
+            content_index,
+            disposition,
+        );
         Ok(pending.commit())
     }
 
@@ -829,13 +879,15 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
         pending
             .state
             .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_property(pending.name_block_index, parent_index, PropertyFormat::Bytes);
-        pending.state.inner_set_buffer_property_value(pending.block_index, value)?;
+            .block_at_unchecked_mut::<Reserved>(block_index)
+            .become_property(name_index, parent_index, PropertyFormat::Bytes);
+        pending.state.inner_set_buffer_property_value(block_index, value)?;
         Ok(pending.commit())
     }
 
@@ -849,21 +901,18 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
         pending
             .state
             .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_property(
-                pending.name_block_index,
-                parent_index,
-                PropertyFormat::StringReference,
-            );
+            .block_at_unchecked_mut::<Reserved>(block_index)
+            .become_property(name_index, parent_index, PropertyFormat::StringReference);
 
-        let value_index = PendingStringReference::new(pending.state, value)?.commit()?;
+        let value_index = Pending::<StringRef>::new(pending.state, value)?.commit()?;
 
-        let mut block =
-            pending.state.heap.container.block_at_unchecked_mut::<Buffer>(pending.block_index);
+        let mut block = pending.state.heap.container.block_at_unchecked_mut::<Buffer>(block_index);
         block.set_extent_index(value_index);
         block.set_total_length(0);
 
@@ -1107,12 +1156,14 @@ impl InnerState {
     ) -> Result<BlockIndex, Error> {
         let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
         pending
             .state
             .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
-            .become_bool_value(value, pending.name_block_index, parent_index);
+            .block_at_unchecked_mut::<Reserved>(block_index)
+            .become_bool_value(value, name_index, parent_index);
         Ok(pending.commit())
     }
 
@@ -1140,17 +1191,19 @@ impl InnerState {
             return Err(Error::BlockSizeTooBig(block_size));
         }
         let pending = self.allocate_reserved_value(name, parent_index, block_size)?;
+        let name_index = pending.name_block_index();
+        let block_index = pending.block_index;
         pending
             .state
             .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .block_at_unchecked_mut::<Reserved>(block_index)
             .become_array_value::<StringRef>(
-            slots,
-            ArrayFormat::Default,
-            pending.name_block_index,
-            parent_index,
-        )?;
+                slots,
+                ArrayFormat::Default,
+                name_index,
+                parent_index,
+            )?;
         Ok(pending.commit())
     }
 
@@ -1181,7 +1234,7 @@ impl InnerState {
             .ok_or(Error::InvalidArrayIndex(slot_index))?;
 
         let reference_index = if !value.is_empty() {
-            PendingStringReference::new(self, value)?.commit()?
+            Pending::<StringRef>::new(self, value)?.commit()?
         } else {
             BlockIndex::EMPTY
         };
@@ -1253,11 +1306,11 @@ impl InnerState {
         name: impl Into<Cow<'a, str>>,
         parent_index: BlockIndex,
         block_size: usize,
-    ) -> Result<PendingValueBlock<'b>, Error> {
+    ) -> Result<Pending<'b, Node>, Error> {
         let block_index = self.heap.allocate_block(block_size)?;
-        let pending_block = PendingBlock { state: self, block_index };
+        let pending_block = Pending::<Reserved>::new(self, block_index);
 
-        let pending_name = PendingStringReference::new(pending_block.state, name)?;
+        let pending_name = Pending::<StringRef>::new(pending_block.state, name)?;
 
         let result = {
             let mut parent_block =
@@ -1278,12 +1331,7 @@ impl InnerState {
         let name_index = pending_name.commit()?;
         let block_index = pending_block.commit();
 
-        Ok(PendingValueBlock {
-            state: self,
-            block_index,
-            name_block_index: name_index,
-            parent_index,
-        })
+        Ok(Pending::<Node>::new(self, block_index, name_index, parent_index))
     }
 
     fn delete_value(&mut self, block_index: BlockIndex) -> Result<(), Error> {
@@ -1345,7 +1393,7 @@ impl InnerState {
     ) -> Result<(), Error> {
         let old_string_ref_idx =
             self.heap.container.block_at_unchecked::<Buffer>(block_index).extent_index();
-        let new_string_ref_idx = PendingStringReference::new(self, value.into())?.commit()?;
+        let new_string_ref_idx = Pending::<StringRef>::new(self, value.into())?.commit()?;
 
         self.heap
             .container
@@ -3005,11 +3053,11 @@ mod tests {
             // 1. `allocate_reserved_value("n", ...)`:
             //    - `allocate_block` succeeds (takes the freed slot).
             //    - `get_or_create_string_reference("n")` succeeds (reused).
-            //    - Returns PendingBlock.
+            //    - Returns Pending<Node>.
             // 2. `get_or_create_string_reference("new_content")`:
             //    - Tries to allocate new string ref block.
             //    - Fails (no space).
-            // 3. PendingBlock drops.
+            // 3. Pending<Node> drops.
             //    - Should cleanly free the reserved block and release "n" ref.
 
             let result = state.create_lazy_node("n", 0.into(), LinkNodeDisposition::Inline, || {
@@ -3092,5 +3140,37 @@ mod tests {
         // Verify parent is now Free (freed when child count became 0).
         let parent_block = state.get_block::<Free>(parent_index);
         assert_eq!(parent_block.block_type(), Some(BlockType::Free));
+    }
+
+    #[fuchsia::test]
+    fn test_uncommitted_pending_drop_no_panic() {
+        let core_state = get_state(4096);
+        let mut state = core_state.try_lock().expect("lock state");
+
+        // 1. Pending<Reserved>
+        {
+            let block_index = state.inner_lock.heap.allocate_block(16).unwrap();
+            let _pending = Pending::<Reserved>::new(&mut state.inner_lock, block_index);
+            // drops without commit
+        }
+
+        // 2. Pending<StringRef>
+        {
+            let _pending = Pending::<StringRef>::new(&mut state.inner_lock, "hello").unwrap();
+            // drops without commit
+        }
+
+        // 3. Pending<Node>
+        {
+            let name_block_index = state.inner_lock.heap.allocate_block(16).unwrap();
+            let block_index = state.inner_lock.heap.allocate_block(32).unwrap();
+            let _pending = Pending::<Node>::new(
+                &mut state.inner_lock,
+                block_index,
+                name_block_index,
+                0.into(),
+            );
+            // drops without commit
+        }
     }
 }
