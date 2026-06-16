@@ -129,6 +129,33 @@ def main():
 
     unlisted_sources = actual_sources.difference(expected_sources)
     if unlisted_sources:
+        # Resolve symlinks for ignore prefixes.
+        # This is needed because some compilers (like rustc) may resolve
+        # symlinks in depfiles (e.g. pointing to .jiri_root/packages when
+        # package-cache is enabled), while the ignore-prefixes passed from GN
+        # are unresolved paths in the workspace (e.g. under prebuilt/).
+        abs_real_prefixes = set()
+        for p in args.ignore_prefix:
+            abs_real_prefixes.add(os.path.realpath(p))
+            if os.path.exists(p) and os.path.isdir(p):
+                try:
+                    for entry in os.scandir(p):
+                        if entry.is_symlink():
+                            abs_real_prefixes.add(os.path.realpath(entry.path))
+                except OSError as e:
+                    print(
+                        f"Warning: verify_depfile.py failed to scan {p} for symlinks: {e}",
+                        file=sys.stderr,
+                    )
+
+        real_unlisted_matched = set()
+        for source in unlisted_sources:
+            real_source = os.path.realpath(source)
+            if any(real_source.startswith(p) for p in abs_real_prefixes):
+                real_unlisted_matched.add(source)
+        unlisted_sources -= real_unlisted_matched
+
+    if unlisted_sources:
         # There is a mismatch in expected sources and actual sources used by the compiler.
         # We don't treat overly-specified sources as an error. Ninja will still complain
         # if those source files don't exist.

@@ -1011,6 +1011,30 @@ def main() -> int:
         ignored_prefixes.add(
             os.path.normpath(os.path.join(os.getcwd(), prefix))
         )
+
+    # Resolve all ignored prefixes to their realpaths as well,
+    # because tools might access them via resolved symlinks.
+    # We also find and resolve any symlinks directly under these prefixes
+    # (depth 1) to handle directory structures like prebuilt/third_party/tool/linux-x64
+    # where the symlink is inside the ignored directory.
+    resolved_ignored_prefixes = set()
+    for prefix in ignored_prefixes:
+        resolved_ignored_prefixes.add(prefix)
+        if os.path.exists(prefix):
+            resolved_ignored_prefixes.add(os.path.realpath(prefix))
+            if os.path.isdir(prefix):
+                try:
+                    for entry in os.scandir(prefix):
+                        if entry.is_symlink():
+                            resolved_ignored_prefixes.add(
+                                os.path.realpath(entry.path)
+                            )
+                except OSError as e:
+                    print(
+                        f"Warning: failed to scan directory {prefix} for symlinks: {e}",
+                        file=sys.stderr,
+                    )
+    ignored_prefixes = resolved_ignored_prefixes
     ignored_suffixes = {
         # TODO(jayzhuang): Figure out whether `.dart_tool/package_config.json`
         # should be included in inputs.
