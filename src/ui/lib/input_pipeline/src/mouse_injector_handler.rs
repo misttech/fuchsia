@@ -96,7 +96,7 @@ impl InputHandler for MouseInjectorHandler {
         fuchsia_trace::duration!("input", "mouse_injector_handler");
         match input_event {
             input_device::InputEvent {
-                device_event: input_device::InputDeviceEvent::Mouse(ref mouse_event),
+                device_event: input_device::InputDeviceEvent::Mouse(ref mut mouse_event),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::Mouse(ref mouse_device_descriptor),
                 event_time,
@@ -124,7 +124,7 @@ impl InputHandler for MouseInjectorHandler {
 
                 // Create a new injector if this is the first time seeing device_id.
                 if let Err(e) = self
-                    .ensure_injector_registered(&mouse_event, &mouse_device_descriptor, event_time)
+                    .ensure_injector_registered(mouse_event, &mouse_device_descriptor, event_time)
                     .await
                 {
                     self.metrics_logger.log_error(
@@ -135,7 +135,7 @@ impl InputHandler for MouseInjectorHandler {
                 // Handle the event.
                 if let Err(e) = self
                     .send_event_to_scenic(
-                        &mouse_event,
+                        mouse_event,
                         &mouse_device_descriptor,
                         event_time,
                         trace_id.into(),
@@ -308,7 +308,7 @@ impl MouseInjectorHandler {
     /// - `event_time`: The time in nanoseconds when the event was first recorded.
     async fn ensure_injector_registered(
         self: &Rc<Self>,
-        mouse_event: &mouse_binding::MouseEvent,
+        mouse_event: &mut mouse_binding::MouseEvent,
         mouse_descriptor: &mouse_binding::MouseDeviceDescriptor,
         event_time: zx::MonotonicInstant,
     ) -> Result<(), anyhow::Error> {
@@ -440,7 +440,7 @@ impl MouseInjectorHandler {
     /// - `event_time`: The time in nanoseconds when the event was first recorded.
     async fn send_event_to_scenic(
         &self,
-        mouse_event: &mouse_binding::MouseEvent,
+        mouse_event: &mut mouse_binding::MouseEvent,
         mouse_descriptor: &mouse_binding::MouseDeviceDescriptor,
         event_time: zx::MonotonicInstant,
         tracing_id: u64,
@@ -487,7 +487,7 @@ impl MouseInjectorHandler {
     /// - `relative_motion`: The relative motion to send to Scenic.
     fn create_pointer_sample_event(
         &self,
-        mouse_event: &mouse_binding::MouseEvent,
+        mouse_event: &mut mouse_binding::MouseEvent,
         event_time: zx::MonotonicInstant,
         phase: pointerinjector::EventPhase,
         current_position: Position,
@@ -533,7 +533,7 @@ impl MouseInjectorHandler {
             timestamp: Some(event_time.into_nanos()),
             data: Some(pointerinjector::Data::PointerSample(pointer_sample)),
             trace_flow_id: trace_id,
-            wake_lease: mouse_event.wake_lease.lock().take(),
+            wake_lease: mouse_event.wake_lease.take(),
             ..Default::default()
         }
     }

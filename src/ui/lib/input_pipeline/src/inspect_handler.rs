@@ -235,7 +235,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
 
         let has_wake_lease = match &input_event.device_event {
             InputDeviceEvent::ConsumerControls(e) => e.wake_lease.is_some(),
-            InputDeviceEvent::Mouse(e) => e.wake_lease.lock().is_some(),
+            InputDeviceEvent::Mouse(e) => e.wake_lease.is_some(),
             InputDeviceEvent::TouchScreen(e) => e.wake_lease.is_some(),
             _ => false,
         };

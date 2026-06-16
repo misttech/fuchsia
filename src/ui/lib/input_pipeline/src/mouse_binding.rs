@@ -10,7 +10,6 @@ use async_trait::async_trait;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
-use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use sorted_vec_map::SortedVecSet;
@@ -111,7 +110,7 @@ pub struct MouseEvent {
     pub pressed_buttons: SortedVecSet<MouseButton>,
 
     /// The wake lease for this event.
-    pub wake_lease: Mutex<Option<zx::EventPair>>,
+    pub wake_lease: Option<zx::EventPair>,
 }
 
 impl Clone for MouseEvent {
@@ -125,7 +124,7 @@ impl Clone for MouseEvent {
             phase: self.phase,
             affected_buttons: self.affected_buttons.clone(),
             pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: None.into(),
+            wake_lease: None,
         }
     }
 }
@@ -168,7 +167,7 @@ impl MouseEvent {
             affected_buttons,
             pressed_buttons,
             is_precision_scroll,
-            wake_lease: Mutex::new(wake_lease),
+            wake_lease,
         }
     }
 
