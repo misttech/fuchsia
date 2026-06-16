@@ -18,14 +18,14 @@
 //!     }
 //! ```
 
-use fuchsia_sync::{Mutex, MutexGuard};
+use fuchsia_sync::{Condvar, Mutex, MutexGuard};
 use std::future::poll_fn;
 use std::marker::PhantomPinned;
 use std::ops::{Deref, DerefMut};
 use std::pin::{Pin, pin};
 use std::ptr::NonNull;
 use std::sync::Arc;
-use std::task::{Poll, Waker};
+use std::task::{Poll, Wake, Waker};
 
 /// An async condition which combines a mutex and a condition variable.
 // Condition is implemented as an intrusive doubly linked list.  Typical use should avoid any
@@ -72,7 +72,7 @@ impl<T> Condition<T> {
     /// Returns a new waker entry.
     pub fn waker_entry(&self) -> WakerEntry<T> {
         WakerEntry {
-            list: self.0.clone(),
+            list: Some(self.0.clone()),
             node: Node { next: None, prev: None, waker: None, _pinned: PhantomPinned },
         }
     }
@@ -99,10 +99,9 @@ impl<'a, T> ConditionGuard<'a, T> {
     /// This will panic if the waker entry is associated with a different Condition.
     pub fn add_waker(&mut self, waker_entry: Pin<&mut WakerEntry<T>>, waker: Waker) {
         // The waker must be associated with right list.
-        assert!(
-            waker_entry.list.data_ptr() == &mut *self.0,
-            "Cannot add waker to different Condition"
-        );
+        if let Some(list) = &waker_entry.list {
+            assert!(list.data_ptr() == &mut *self.0, "Cannot add waker to different Condition");
+        }
         // SAFETY: We never move the data out.
         let waker_entry = unsafe { waker_entry.get_unchecked_mut() };
         // SAFETY: We set list correctly above.
@@ -123,6 +122,35 @@ impl<'a, T> ConditionGuard<'a, T> {
     pub fn waker_count(&self) -> usize {
         self.0.count
     }
+
+    /// Blocks the current thread until `condition` returns true.
+    ///
+    /// The mutex is unlocked while waiting and re-locked before this function returns.
+    pub fn block_until(&mut self, mut condition: impl FnMut(&mut T) -> bool) {
+        struct Condv(Condvar);
+
+        impl Wake for Condv {
+            fn wake(self: Arc<Self>) {
+                self.0.notify_one();
+            }
+        }
+
+        let condv = Arc::new(Condv(Condvar::new()));
+        let mut entry = pin!(WakerEntry {
+            list: None,
+            node: Node { next: None, prev: None, waker: None, _pinned: PhantomPinned },
+        });
+
+        while !condition(&mut **self) {
+            self.add_waker(entry.as_mut(), Waker::from(condv.clone()));
+            condv.0.wait(&mut self.0);
+        }
+
+        // SAFETY: We don't move data out of the mutable reference.
+        unsafe {
+            entry.get_unchecked_mut().node.remove(&mut *self.0);
+        }
+    }
 }
 
 impl<T> Deref for ConditionGuard<'_, T> {
@@ -141,13 +169,15 @@ impl<T> DerefMut for ConditionGuard<'_, T> {
 
 /// A waker entry that can be added to a list.
 pub struct WakerEntry<T> {
-    list: Arc<Mutex<Inner<T>>>,
+    list: Option<Arc<Mutex<Inner<T>>>>,
     node: Node,
 }
 
 impl<T> Drop for WakerEntry<T> {
     fn drop(&mut self) {
-        self.node.remove(&mut *self.list.lock());
+        if let Some(list) = &self.list {
+            self.node.remove(&mut *list.lock());
+        }
     }
 }
 
@@ -349,5 +379,39 @@ mod tests {
         let mut guard = condition1.lock();
         // The entry is for `condition2` not `condition1` so this should panic.
         guard.add_waker(entry2, std::task::Waker::noop().clone());
+    }
+
+    #[test]
+    fn test_block_until_immediate() {
+        let condition = Condition::new(42);
+        let mut guard = condition.lock();
+        guard.block_until(|val| *val == 42);
+        assert_eq!(*guard, 42);
+    }
+
+    #[test]
+    fn test_block_until_blocking() {
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        let condition = Arc::new(Condition::new(0));
+        let condition_clone = condition.clone();
+
+        let handle = thread::spawn(move || {
+            // Wait a bit to ensure the other thread has blocked.
+            thread::sleep(Duration::from_millis(50));
+            let mut guard = condition_clone.lock();
+            *guard = 1;
+            for waker in guard.drain_wakers() {
+                waker.wake();
+            }
+        });
+
+        let mut guard = condition.lock();
+        guard.block_until(|val| *val == 1);
+        assert_eq!(*guard, 1);
+
+        handle.join().unwrap();
     }
 }
