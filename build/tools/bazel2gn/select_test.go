@@ -50,12 +50,12 @@ rust_library(
 
 rust_library(
 	name = "simple_cond",
-	srcs = [ "fuchsia.rs" ] if is_fuchsia else [ "default.rs" ],
+	srcs = [ "some_feature.rs" ] if some_build_arg else [ "default.rs" ],
 )`,
 			wantGN: `rustc_library("simple_cond") {
-	if (is_fuchsia) {
+	if (some_build_arg) {
 		sources = [
-			"fuchsia.rs",
+			"some_feature.rs",
 		]
 	} else {
 		sources = [
@@ -70,16 +70,16 @@ rust_library(
 
 rust_library(
 	name = "empty_else_cond",
-	srcs = [ "foo.rs" ] + ([ "fuchsia.rs" ] if is_fuchsia else []),
+	srcs = [ "common.rs" ] + ([ "some_feature.rs" ] if some_build_arg else []),
 )`,
 			wantGN: `rustc_library("empty_else_cond") {
 	sources = []
 	sources += [
-		"foo.rs",
+		"common.rs",
 	]
-	if (is_fuchsia) {
+	if (some_build_arg) {
 		sources += [
-			"fuchsia.rs",
+			"some_feature.rs",
 		]
 	}
 }`,
@@ -91,7 +91,7 @@ rust_library(
 rust_library(
 	name = "mixed_cond_select",
 	srcs = [
-		"foo.rs",
+		"common_for_condition.rs",
 	] + select({
 		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
 		"//conditions:default": [ "linux.rs" ],
@@ -103,7 +103,7 @@ rust_library(
 	if (some_condition) {
 		sources = []
 		sources += [
-			"foo.rs",
+			"common_for_condition.rs",
 		]
 		if (is_fuchsia) {
 			sources += [
@@ -131,7 +131,7 @@ rust_library(
 rust_library(
 	name = "cond_with_parens",
 	srcs = [
-		"foo.rs",
+		"common.rs",
 	] + select({
 		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
 		"//conditions:default": [ "linux.rs" ],
@@ -142,7 +142,7 @@ rust_library(
 			wantGN: `rustc_library("cond_with_parens") {
 	sources = []
 	sources += [
-		"foo.rs",
+		"common.rs",
 	]
 	if (is_fuchsia) {
 		sources += [
