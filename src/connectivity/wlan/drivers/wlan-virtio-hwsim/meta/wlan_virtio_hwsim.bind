@@ -4,10 +4,6 @@
 
 composite wlan_virtio_hwsim;
 
-using fuchsia.acpi;
-using fuchsia.hardware.pci;
-using fuchsia.pci;
-
 primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
   fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
