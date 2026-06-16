@@ -49,7 +49,7 @@ def is_valid() -> bool:
         True if stdout goes somewhere we support (like a TTY), and
         False otherwise.
     """
-    return os.isatty(sys.stdout.fileno())
+    return os.isatty(sys.stdout.fileno()) and os.environ.get("TERM") != "dumb"
 
 
 def _suspend_echo() -> None:
