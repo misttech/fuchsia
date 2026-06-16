@@ -228,6 +228,20 @@ generated_file("gn_build_variables_for_bazel") {
   # LINT.ThenChange(//src/connectivity/policy/netcfg/delegated_network_provisioning.gni)
 
   # LINT.IfChange
+  declaration = "//src/lib/fuchsia-sync/build/args.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "fuchsia_sync_detect_lock_cycles"
+      value = fuchsia_sync_detect_lock_cycles
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//src/lib/fuchsia-sync/build/args.gni)
+
+  # LINT.IfChange
   declaration = "//build/info/info.gni"
   import(declaration)
   contents += [

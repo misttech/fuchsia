@@ -2,12 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "compilation_mode")
+load("@fuchsia_build_info//:args.bzl", "fuchsia_sync_detect_lock_cycles")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
 
 package(default_visibility = ["//visibility:public"])
-
-fuchsia_sync_detect_lock_cycles = compilation_mode == "dbg"
 
 FUCHSIA_SYNC_SRCS = [
     "src/condvar.rs",

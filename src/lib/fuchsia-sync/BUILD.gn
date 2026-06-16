@@ -57,12 +57,6 @@ if (is_host) {
   }
 }
 
-fuchsia_sync_detect_lock_cycles = compilation_mode == "dbg"
-
-# To avoid "Assignment had no effect" from GN.
-# It's possible this variable is only used in if conditions (e.g. is_host).
-not_needed([ "fuchsia_sync_detect_lock_cycles" ])
-
 FUCHSIA_SYNC_SRCS = [
   "src/condvar.rs",
   "src/lib.rs",
